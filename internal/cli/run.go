@@ -1116,6 +1116,10 @@ func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(
 		if err == nil {
 			return nil
 		}
+		if ctx.Err() != nil {
+			// Ctrl-C killed this ssh: not a missing ssh client.
+			return ctx.Err()
+		}
 		if first && slow != nil {
 			slow()
 		}
@@ -1233,21 +1237,68 @@ func renewFor(e *Env, project *Project) func(context.Context) error {
 }
 
 // startToWork is what attach, ssh and code do with a project that is not
-// running: a stopped machine starts, as with run, and is not synced; a
-// start in progress is waited for (I-631, review G7; ssh and code since
-// I-641). The other states, and a machine stopped for abuse, cannot.
+// running: whatever run would do to bring it up, without a sync (I-631,
+// review G7; ssh and code since I-641). A stopped machine starts, one in
+// error restarts, a start, stop or restore in progress is waited for and
+// then started, and a machine whose server is restarting is waited for
+// (I-709). A machine stopped for abuse, or being destroyed, cannot.
 func startToWork(ctx context.Context, e *Env, project *Project, pr *progress) error {
-	if project.State == "running" {
+	if project.State == "running" && !project.HostUnreachable {
 		return nil
 	}
 	switch project.State {
-	case "stopped", "creating", "building", "starting", "stopping":
+	case "running", "stopped", "error", "creating", "building", "starting", "stopping", "restoring":
 		if abuseStopReason(project) != "" {
 			return notRunningError(project)
 		}
 		return ensureRunningFrom(ctx, e, project, pr, true)
 	}
 	return notRunningError(project)
+}
+
+// hostWaitTimeout is how long a command waits for a machine's server
+// to answer again: the api's own wait for a silent host
+// (ops.HostUnreachableGrace), well past a restart with its machines
+// frozen (I-652, about 2 minutes on host-01).
+var hostWaitTimeout = 10 * time.Minute
+
+// waitHost waits while the api marks project's server unreachable
+// (I-709). A server restarting freezes its running machines and brings
+// them back as they were (I-652), and a stopped machine's disk is on
+// that server, so nothing is started or restarted meanwhile: the start
+// would be refused (lifecycle.UnreachableMessage), and the frozen machine
+// needs none. It returns once the server answers; the caller then goes
+// on from the state the machine is in by then.
+func waitHost(ctx context.Context, e *Env, project *Project, pr *progress) error {
+	started := time.Now()
+	pr.Phase("Waiting for "+project.Slug+"'s server to come back", "")
+	for project.HostUnreachable {
+		if time.Since(started) > hostWaitTimeout {
+			pr.Fail()
+			return exitf(ExitGuestNotRunning, "%s's server has not answered for %s. `repose status %s` shows when it is back.", project.Slug, fmtWait(hostWaitTimeout), project.Slug)
+		}
+		if err := sleepOrDone(ctx, 2*opPollInterval); err != nil {
+			return err
+		}
+		p, err := e.Client.GetProject(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		*project = *p
+	}
+	// The machine's first ssh after a restore or a cold start may take
+	// the whole minute.
+	e.longSSHWait = true
+	pr.End()
+	return nil
+}
+
+// fmtWait is a whole wait as people say it: "10m", "1s".
+func fmtWait(d time.Duration) string {
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	return fmt.Sprintf("%ds", int(d.Round(time.Second)/time.Second))
 }
 
 // ensureRunningFrom is step 2: wait out a create or start in flight,
@@ -1276,6 +1327,14 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			}
 		}
 	}
+	switch project.State {
+	case "running", "stopped", "error":
+		if project.HostUnreachable {
+			if err := waitHost(ctx, e, project, pr); err != nil {
+				return err
+			}
+		}
+	}
 	if project.State == "running" && !guestdDead(project) {
 		return nil
 	}
@@ -1290,7 +1349,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	// in it a moment after POST /projects answers "creating", which is what
 	// the first M3 run hit (DECISIONS I-114).
 	switch project.State {
-	case "creating", "building", "starting", "stopping":
+	case "creating", "building", "starting", "stopping", "restoring":
 		if project.OpID != "" {
 			op, err := waitOpPhased(ctx, e, project, project.OpID, pr, true)
 			if err != nil {
@@ -1303,7 +1362,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 				pr.Fail()
 				e.warn("%s: %s.", project.Slug, strings.TrimSuffix(w, "."))
 			}
-			if e.guestUp != nil && project.State != "stopping" {
+			if e.guestUp != nil && project.State != "stopping" && project.State != "restoring" {
 				e.guestUp(project)
 			}
 		} else if err := waitState(ctx, e, project, pr); err != nil {
@@ -1317,7 +1376,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		if project.State == "running" {
 			return nil
 		}
-	case "restoring", "destroying", "destroyed":
+	case "destroying", "destroyed":
 		return notRunningError(project)
 	}
 
@@ -1454,7 +1513,7 @@ func waitState(ctx context.Context, e *Env, project *Project, pr *progress) erro
 		}
 		*project = *p
 		switch p.State {
-		case "creating", "building", "starting", "stopping":
+		case "creating", "building", "starting", "stopping", "restoring":
 		default:
 			return nil
 		}

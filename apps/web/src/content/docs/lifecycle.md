@@ -79,7 +79,7 @@ todo-app: running again; its last agent turn was interrupted.
 
 A machine that wasn't started gets `not started:`, the reason, and `repose start NAME`. Machines you stopped or removed meanwhile aren't listed. A machine still waiting 10 minutes after the server came back is listed as `waiting to start`, and there is no second notification when it does. `repose events` shows `server restarted` on each machine that stopped.
 
-`repose start api` starts one that wasn't started. While the server is down, `repose start`, `repose ssh` and `repose code` say ``api's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start api` works then``.
+`repose start api` starts one that wasn't started. While the server is down, `repose run`, `attach`, `start`, `ssh` and `code` wait for it with `Waiting for api's server to come back`, then go on: a machine that was running is there as it was, and a stopped one starts. After 10 minutes they exit 5 with ``api's server has not answered for 10m. `repose status api` shows when it is back.``
 
 ## Unused machines
 
@@ -190,12 +190,13 @@ In a folder with no git remote, such as `~/Downloads/job search`, a plain `repos
 
 ### From your home folder
 
-Your home folder, and every folder above it, belongs to no machine. There, `repose run NAME` creates NAME or uses it, and syncs nothing:
+Your home folder, and every folder above it, belongs to no machine. There, `repose run NAME` creates NAME or uses it, starting it if it is stopped, and syncs nothing; `repose attach NAME` starts it too:
 
 ```
 $ cd ~
 $ repose run scratch -p "try the new API"
 $ repose run notes
+$ repose attach notes
 $ repose run --temp
 ```
 

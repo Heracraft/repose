@@ -473,7 +473,8 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"of the checkout; after that, repose sync sends new work. Your tool logins and\n" +
 			"settings are copied each time.\n\n" +
 			"PROJECT is the machine of that name, created if there is none: a second\n" +
-			"machine for this checkout, or one for a folder with no git remote.",
+			"machine for this checkout, one for a folder with no git remote, or, from your\n" +
+			"home folder, any machine of yours, with nothing synced.",
 		Example: "  repose run\n" +
 			"  repose run -p \"fix the flaky login test\"\n" +
 			"  repose run -d --worktree --agent codex -p \"try approach B\"\n" +
@@ -577,8 +578,10 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Attach to a project's session, or to one of its windows",
 		Long: "Attach to PROJECT's session (this checkout's, by default) on its current window,\n" +
 			"without syncing. With WINDOW (or -w), open on that window: a tmux window's name\n" +
-			"or number as repose ps shows it, or on herdr an agent's name. A stopped machine\n" +
-			"starts first. One word that names no project is WINDOW of this checkout's.",
+			"or number as repose ps shows it, or on herdr an agent's name. A machine that is\n" +
+			"not running comes up first, as with run: a stopped one starts, one in error\n" +
+			"restarts, and one starting, stopping, being restored or on a restarting server\n" +
+			"is waited for. One word that names no project is WINDOW of this checkout's.",
 		Example: "  repose attach\n  repose attach todo-app claude-2\n  repose attach -w 2",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 2 {
@@ -690,9 +693,10 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 
 func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:               "start [PROJECT]",
-		Short:             "Start a project, or restart one in error",
-		Long:              "Start a stopped machine, or restart one in error. Nothing is synced.",
+		Use:   "start [PROJECT]",
+		Short: "Start a project, or restart one in error",
+		Long: "Start a stopped machine, or restart one in error. Nothing is synced. One\n" +
+			"starting, stopping, being restored or on a restarting server is waited for.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

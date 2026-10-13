@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -253,4 +254,94 @@ func TestSyncOutsideARepositoryRefuses(t *testing.T) {
 	if ps := listed(t, e); len(ps) != 0 {
 		t.Fatalf("created %+v", ps)
 	}
+}
+
+// From the home folder, `repose attach NAME` and `repose run NAME` on a
+// stopped machine start it and connect in one step, as they do in its
+// checkout; `run NAME` syncs nothing from the home folder and links
+// nothing to it (I-601, I-603, I-709).
+func TestAttachAndRunByNameFromTheHomeFolder(t *testing.T) {
+	f, home := homeFixture(t)
+	ctx := context.Background()
+	// The machine, made and synced from its checkout.
+	if err := runRun(ctx, f.env, RunOptions{Name: "unwrap", NoAttach: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	p := bySlug(listed(t, f.env), "unwrap")
+	if p == nil {
+		t.Fatal("no unwrap")
+	}
+	stop := func() {
+		t.Helper()
+		if _, err := f.env.Client.StopProject(ctx, p.ID, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	running := func(what string) {
+		t.Helper()
+		got, err := f.env.Client.GetProject(ctx, p.ID)
+		if err != nil || got.State != "running" {
+			t.Fatalf("%s: %+v %v", what, got, err)
+		}
+	}
+
+	stop()
+	e, _, _ := freshEnv(f.env, home)
+	// The attach itself execs ssh, which would end the test: the
+	// context ends once the machine runs, and the start is what this
+	// part is about.
+	actx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer cancel()
+		for actx.Err() == nil {
+			if got, err := f.env.Client.GetProject(ctx, p.ID); err == nil && got.State == "running" {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	e.TargetFor = func(string) sshTarget { return sshTarget{Args: []string{"-p", "1", "127.0.0.1"}} }
+	// orWindow is what `repose attach WORD` goes through; in the home
+	// folder no project resolves, so the word is the project.
+	err := orWindow(actx, e, []string{"unwrap"}, "", "", func(project, window string) error {
+		if project != "unwrap" || window != "" {
+			t.Fatalf("attach unwrap read as project %q window %q", project, window)
+		}
+		return runRun(actx, e, RunOptions{ProjectArg: project, Window: window}, true)
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("attach unwrap: %v", err)
+	}
+	running("attach unwrap")
+
+	stop()
+	e, out, errOut := freshEnv(f.env, home)
+	// `repose run unwrap`: the word is the project (I-603).
+	opts := RunOptions{NoAttach: true}
+	if err := runArgs(&opts, []string{"unwrap"}, "", errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := runRun(ctx, e, opts, false); err != nil {
+		t.Fatalf("run unwrap: %v (stderr %q)", err, errOut.buf.String())
+	}
+	running("run unwrap")
+	if ps := listed(t, e); len(ps) != 1 {
+		t.Fatalf("run unwrap made another machine: %+v", ps)
+	}
+	for _, s := range []string{"Syncing", "synced", "Not a git repository", "Checkout:"} {
+		if strings.Contains(out.buf.String()+errOut.buf.String(), s) {
+			t.Fatalf("run unwrap from the home folder printed %q: %q %q", s, out.buf.String(), errOut.buf.String())
+		}
+	}
+	disk, err := loadProjectsCache(f.env.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := disk.ByDir[home]; ok {
+		t.Fatal("run unwrap linked the home folder")
+	}
+	// A plain run there still refuses.
+	e, _, _ = freshEnv(f.env, home)
+	err = runRun(ctx, e, RunOptions{NoAttach: true}, false)
+	wantExit(t, "plain run", err, ExitUsage, "Your home folder is not a project.")
 }
