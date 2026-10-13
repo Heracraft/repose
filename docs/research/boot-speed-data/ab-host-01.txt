@@ -158,3 +158,90 @@ guest /proc/stat: cpu  1931 12 5939 17398 1257 4497 2071 4471 0 0
 freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
 == nopin 15:56:29 load=17.02
 freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== run 5, 18:00-18:02Z: closure view as hostd shares it (I-463), balloon on, DIAG=1; base = 2026.10.12 (iswjhprp), new = boot-fast 47b42a9 (I-705, I-706); after each, the stamp, pin-profile's main process start and exit and home-manager's exit (monotonic us), and the guest's uptime
+ 17:59:50  up 3 days 12:13,  0 users,  load average: 4.31, 4.51, 5.22
+== base 17:59:50 load=4.31
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=15628 paths_ms=9617 setup_ms=14781 ready_total_ms=40037 home_manager_ms=11155 faults_to_setup=201494 faults_10s_after=10621
+host cpu.stat: usage_usec 133702283 user_usec 122701959 system_usec 11000323 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 506 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      176        0    15576       78     8095        0   460944   364639        1     2630   364744      505        0 42598248       27        0        0
+guest cpu: some avg10=12.83 avg60=13.35 avg300=3.95 total=13050842
+guest io: some avg10=11.39 avg60=7.01 avg300=1.94 total=6534261
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=5
+22.079s docker.service
+12.804s home-manager-dev.service
+ 9.197s repose-paths.service
+ 7.706s suid-sgid-wrappers.service
+ 5.863s user@1000.service
+ 4.855s dev-vda.device
+ 3.730s systemd-vconsole-setup.service
+ 2.807s repose-zram-swap.service
+ 2.233s sshd.service
+ 2.077s systemd-networkd.service
+ 2.021s lastlog2-import.service
+ 1.941s systemd-networkd-persistent-storage.service
+guest /proc/stat: cpu  1664 179 5824 8342 1698 3658 1617 1963 0 0
+249990 CAL:      77893      82186      32084      57827   Function call interrupts
+180886 LOC:      45578      44873      47709      42726   Local timer interrupts
+152155  30:          0          0     152155          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+55190 TLB:      14427      13318      12968      14477   TLB shootdowns
+12102507000 repose-pin-profile.service
+11752928000 init.scope
+10533748000 docker.service
+7530911000 guestd.service
+6109536000 systemd-udevd.service
+5980380000 user@1000.service
+4731545000 home-manager-dev.service
+2386710000 suid-sgid-wrappers.service
+1774536000 repose-paths.service
+1284010000 systemd-journald.service
+1014264000 nscd.service
+774281000 dbus-broker.service
+ls: cannot access '/run/repose/project-set-up': No such file or directory
+ActiveState=inactive
+ExecMainStartTimestampMonotonic=24246150
+ExecMainExitTimestampMonotonic=63532955
+ExecMainExitTimestampMonotonic=35196801
+69.92 95.87
+== new 18:01:07 load=9.21
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=13980 paths_ms=4181 setup_ms=8192 ready_total_ms=26365 home_manager_ms=5397 faults_to_setup=205032 faults_10s_after=8223
+host cpu.stat: usage_usec 85277634 user_usec 74643746 system_usec 10633887 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 366 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      344        0    30224      150    19106        0  1009376   708799        0     6593   709405     1010        0 85196480      456        0        0
+guest cpu: some avg10=9.71 avg60=6.80 avg300=1.83 total=6005106
+guest io: some avg10=7.85 avg60=4.09 avg300=1.05 total=3590255
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+9.910s docker.service
+6.026s home-manager-dev.service
+4.374s repose-paths.service
+4.250s suid-sgid-wrappers.service
+2.522s dev-vda.device
+2.034s user@1000.service
+1.791s repose-zram-swap.service
+1.445s systemd-vconsole-setup.service
+1.045s systemd-networkd.service
+ 847ms sshd.service
+ 720ms systemd-modules-load.service
+ 672ms dbus-broker.service
+guest /proc/stat: cpu  1053 102 4153 8553 1292 2546 1146 1306 0 0
+242885 CAL:      78282      83234      29658      51711   Function call interrupts
+156016  30:          0          0     156016          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+143904 LOC:      35796      34567      39781      33760   Local timer interrupts
+40686 TLB:       9512      10999      10134      10041   TLB shootdowns
+11210917000 init.scope
+9766932000 repose-pin-profile.service
+5443625000 docker.service
+5337833000 guestd.service
+4417245000 user@1000.service
+3993903000 systemd-udevd.service
+2668330000 home-manager-dev.service
+1331837000 suid-sgid-wrappers.service
+802543000 repose-paths.service
+783857000 nscd.service
+733828000 systemd-journald.service
+392392000 systemd-modules-load.service
+-rw-r--r-- 1 root root 21 1791914496.859776223 /run/repose/project-set-up
+ActiveState=inactive
+ExecMainStartTimestampMonotonic=25989563
+ExecMainExitTimestampMonotonic=56472861
+ExecMainExitTimestampMonotonic=22899116
+61.34 100.82
+ 18:02:15  up 3 days 12:15,  0 users,  load average: 10.46, 7.06, 6.08

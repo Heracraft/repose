@@ -17,21 +17,23 @@
 #   freeze-bench.sh hup ID CLASS VOL     boot a host's guest closure ($CLOSURE) on the
 #                                        block device VOL the way hostd's create does
 #                                        (fresh ext4, hostd's argv and unit limits,
-#                                        the host store over virtiofs), then register
-#                                        and set up; prints a timings line
+#                                        a view of the closure over virtiofs), then
+#                                        register and set up; prints a timings line
+#                                        (DIAG=1 adds where the guest's time went)
 #   freeze-bench.sh hdown ID             stop a hup guest, keep the volume
 #
 # BALLOON=1 on up and hup adds a virtio-balloon with free page reporting.
 # CMDLINE on hup is appended to the kernel command line. LATE=1 on hup
 # loads virtio_balloon in the guest after setup (with CMDLINE carrying
-# modprobe.blacklist=virtio_balloon).
+# modprobe.blacklist=virtio_balloon). hup needs CH (cloud-hypervisor) and
+# VIRTIOFSD set, or on PATH, and no RUNNER (DECISIONS I-704).
 # Environment: RUNNER (guest runner, default /tmp/gf/runner), FB (freezebench
 # binary), ROOT (work dir, default /mnt/nixstore/gf).
 set -euo pipefail
 RUNNER=${RUNNER:-/tmp/gf/runner}
 FB=${FB:-/tmp/gf/freezebench}
 ROOT=${ROOT:-/mnt/nixstore/gf}
-CH=${CH:-}; [ -n "$CH" ] || CH=$(grep -o '/nix/store/[^ ]*cloud-hypervisor[^/]*/bin/cloud-hypervisor' "$(readlink -f "$RUNNER/bin/run")" | head -1)
+CH=${CH:-}; [ -n "$CH" ] || [ ! -e "$RUNNER/bin/run" ] || CH=$(grep -o '/nix/store/[^ ]*cloud-hypervisor[^/]*/bin/cloud-hypervisor' "$(readlink -f "$RUNNER/bin/run")" | head -1)
 
 now_ms() { date +%s%3N; }
 api() { # api ID METHOD PATH [JSON]
@@ -218,6 +220,7 @@ hup() {
   local id=$1 class=$2 vol=$3 d=$ROOT/$1 n; n=$(num "$id")
   : "${CLOSURE:?CLOSURE=/nix/store/...-nixos-system-repose-guest-...}"
   local vfsd=${VIRTIOFSD:-$(command -v virtiofsd)} mem cpu
+  CH=${CH:-$(command -v cloud-hypervisor)}
   mem=$(mem_of "$class"); cpu=$(cpu_of "$class")
   mkdir -p "$d"; echo "$class" > "$d/class"
   [ -f "$ROOT/$(basename "$CLOSURE").reg" ] || nix-store --dump-db $(nix-store -qR "$CLOSURE") > "$ROOT/$(basename "$CLOSURE").reg"

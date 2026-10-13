@@ -20709,7 +20709,13 @@ bench boots of I-704 failed the same way in RegisterPaths (`nix-store
 - Either half alone changes nothing (the other still cuts at 30 s); each
   is safe with the other's old version. The guest half ships with a base,
   the host half with a host switch. docs/workstreams/04-guestd.md's
-  deadline sentence names it. No user-visible text changes.
+  deadline sentence names it.
+- A boot that answered and then ran out in RegisterPaths or SetupProject
+  now reads "the environment started but did not finish setting up within
+  3 minutes", where it read "did not answer within a minute of starting",
+  which stays for a guest that never sent Ready (humanError,
+  internal/api/ops/recover.go). troubleshooting.md already says the
+  message names how a boot failed, so the page is unchanged.
 
 **I-706. repose-pin-profile waits until the project is set up (boot-fast,
 2026-10-13).** *Made during implementation.* The copy-up of dev's
@@ -20721,6 +20727,10 @@ the volume: 14.6 s of CPU in a 46 s bench boot, the second-largest unit
 after PID 1, and on mailflare it ran for 3 min 59 s. Masked on the kernel
 line, the same boot reached set up in 34.4 s against 46.0 s beside it, at
 the same host load (n=1; later pairs were cut off by the host's load).
+The branch's own guest, booted with hostd's closure view right after the
+2026.10.12 base, reached set up in 26.4 s against 40.0 s, with
+home-manager 5.4 s against 11.2 s, while host load rose from 4.3 to 9.2
+(docs/research/boot-speed.md, run 5; one pair).
 - guestd writes `/run/repose/project-set-up` once SetupProject has started
   the session unit. The service's `ExecStartPre` waits for that stamp, or
   for 3 minutes of uptime when no hostd sends SetupProject (a NixOS test,

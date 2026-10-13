@@ -61,6 +61,31 @@ Start of the hypervisor to SetupProject done, in seconds:
   guestd's 30 s bound. Production creates on host-01 failed the same way
   while the bench ran (I-705).
 
+## The branch's closure against the base, with the closure view
+
+Run 5 shared a view of the closure, as hostd does, with the balloon on.
+`base` is 2026.10.12; `new` is the boot-fast guest (I-705, I-706) built
+from 47b42a9 and copied to host-01. One boot each, back to back:
+
+| | base | new |
+|---|---|---|
+| host load at start | 4.3 | 9.2 |
+| guestd answers | 15.6 s | 14.0 s |
+| RegisterPaths | 9.6 s | 4.2 s |
+| SetupProject | 14.8 s | 8.2 s |
+| start to set up | 40.0 s | 26.4 s |
+| home-manager-dev | 11.2 s | 5.4 s |
+| docker.service | 22.1 s | 9.9 s |
+| repose-pin-profile main process | 24.2 to 63.5 s of uptime | 26.0 to 56.5 s |
+| `/run/repose/project-set-up` | absent | written at set up |
+
+On the base, the copy-up started as soon as repose-paths finished and ran
+beside home-manager and the session; on the branch it started once the
+project was set up. home-manager, SetupProject and docker, which ran
+beside it on the base, took about half as long, on a host that was
+busier. RegisterPaths finishes before the copy-up can start, so its
+4.2 s against 9.6 s is this pair's noise, and one pair is one pair.
+
 ## What changed
 
 - Free page reporting stays on (I-704).
