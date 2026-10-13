@@ -12,7 +12,10 @@
 # servers notice nothing but a reconnect. That browser runs in the system slice
 # repose-browser.slice; the MCP servers and any chromium a user starts run
 # in the per-user slice of the same name, so a runaway page cannot take the
-# agent down with it. The ceiling is a share of the guest's memory, which
+# agent down with it. A renderer the ceiling kills ends that tab, not the
+# whole browser: those scopes run with the user manager's
+# OOMPolicy=continue, as the system unit below does (keystroke-path.nix,
+# DECISIONS I-697). The ceiling is a share of the guest's memory, which
 # systemd resolves at boot: 37.5 percent is 1.5 GB small, 3 GB large, 6 GB
 # xl, so one system closure serves every class (DECISIONS I-34, I-43).
 { config, lib, pkgs, ... }:

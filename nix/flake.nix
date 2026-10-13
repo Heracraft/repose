@@ -288,6 +288,7 @@
             logind = sys "systemd-logind.service";
             dbus = sys "dbus-broker.service";
             tmux = usr "repose-tmux-session.service";
+            herdr = usr "repose-herdr-server.service";
             appSlice = usr "app.slice";
             userConf = pkgs.writeText "user.conf" (builtins.unsafeDiscardStringContext cfg.environment.etc."systemd/user.conf".text);
             tmpfiles = pkgs.writeText "tmpfiles" (lib.concatStringsSep "\n" cfg.systemd.tmpfiles.rules);
@@ -305,12 +306,19 @@
             fail=0
             need() { grep -qx "$2" "$1" || { echo "$1 lacks $2" >&2; fail=1; }; }
             need "$userManager" 'OOMScoreAdjust=-900'
+            need "$userManager" 'OOMPolicy=continue'
             need "$userManager" 'MemoryLow=64M'
             need "$userConf" 'DefaultOOMScoreAdjust=0'
+            # The kernel's ranking is undone if systemd stops the cgroup
+            # the kill happened in: every unit and scope of dev's, and
+            # each session scope, holds an agent beside the work it
+            # started (I-697).
+            need "$userConf" 'DefaultOOMPolicy=continue'
             need "$sshd" 'OOMScoreAdjust=-800'
             need "$sshd" 'MemoryLow=16M'
             need "$session" 'CPUWeight=1000'
             need "$session" 'MemoryLow=32M'
+            need "$session" 'OOMPolicy=continue'
             need "$systemSlice" 'MemoryLow=176M'
             need "$userSlice" 'MemoryLow=128M'
             need "$userUidSlice" 'MemoryLow=128M'
@@ -322,6 +330,9 @@
             need "$tmux" 'CPUWeight=1000'
             need "$tmux" 'MemoryLow=48M'
             need "$tmux" 'OOMPolicy=continue'
+            # herdr's panes share this unit's cgroup, so the policy is
+            # what keeps its agents (I-560, I-697).
+            need "$herdr" 'OOMPolicy=continue'
             need "$appSlice" 'MemoryLow=48M'
             need "$tmpfiles" 'w- /sys/kernel/mm/lru_gen/min_ttl_ms - - - - 1000'
             # Every not-found handler, with a PATH that lacks the helper and
@@ -364,7 +375,7 @@
               expect fish "$got" "cowsayzz: stub, once, and status=127"
             fi
             [ "$fail" = 0 ] || exit 1
-            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, tmux OOMPolicy=continue, min_ttl_ms 1000; bash-env.sh, bash, zsh and fish not-found handlers answer once with 127"
+            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, OOMPolicy=continue for dev's units and each session scope, tmux and herdr OOMPolicy=continue, min_ttl_ms 1000; bash-env.sh, bash, zsh and fish not-found handlers answer once with 127"
             touch $out
           '';
         # The session units start their servers outside a login shell and

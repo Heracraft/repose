@@ -20648,3 +20648,95 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-697. An OOM kill in a pane no longer stops the pane: dev's user
+manager, its units and each session scope run with `OOMPolicy=continue`
+(pane-oom, 2026-10-13).** Amends I-576 and I-560. *Made during implementation*: an
+agent left running overnight on kanali was gone in the morning, and the
+journal said why.
+- *What happened.* At 02:10:46 the kernel's OOM killer picked one
+  process, a headless Chromium a Playwright test had launched from code,
+  holding 1.4 GB on a machine with 7.8 GB of RAM and 2 GB of zram, both
+  full. That part is I-200 and I-576 working: the agent was at -800,
+  Chromium at Chrome's own +300, and the kernel took the right one. Two
+  seconds later systemd stopped the pane: `tmux-spawn-04e95bda….scope:
+  The kernel OOM killer killed some processes in this unit`, then
+  `Failed with result 'oom-kill'` at a 6.5 GB memory peak. `OOMPolicy`
+  defaults to `stop`, and in a scope there is nothing else to stop: the
+  agent and everything it had started were in that one cgroup.
+  systemd-oomd was running and watching nothing, as I-576 left it, and
+  played no part.
+- *Why it was not caught.* I-560 reasoned that the tmux unit needed no
+  `OOMPolicy` because each pane is a scope of its own. That is
+  backwards: a scope of its own is what exposes a pane, since the
+  scope's own policy is `stop`. I-576's test ran its memory hog as the
+  pane's own command, where the stop costs nothing because the window
+  ends with the process anyway. The case that fails is a hog that is a
+  child of the pane's process, which is where every test run, build and
+  dev server an agent starts is.
+- *The fix.* `DefaultOOMPolicy=continue` on dev's user manager
+  (keystroke-path.nix), rather than a drop-in per scope name: three
+  families of cgroup of dev's hold an agent beside the work it started
+  (a tmux pane's `tmux-spawn-*.scope`; `repose-herdr-server.service`,
+  whose panes share its cgroup; and the transient scope
+  `repose-browser-scope` puts a `chromium` and its renderers in, where
+  the slice's 37.5 percent ceiling is what kills), and naming them one
+  at a time leaves the next one. Both session units keep the policy on
+  themselves, where their own reasons are. Each logind `session-N.scope`
+  takes it through the prefix drop-in it already has for I-494's CPU
+  weight, since a `repose exec` command or a test run under `repose
+  code` shares the session's scope; a session whose own sshd is the
+  victim still ends, since logind tracks the session leader rather than
+  the scope's policy. The system manager's default stays `stop`: a
+  system service left half dead should be restarted, and nothing of a
+  tenant's runs there. `user@.service` carries the policy as well: the
+  kernel's kill is reported against every unit above the cgroup it
+  happened in, that one included (`systemd[1]: user@1000.service: The
+  kernel OOM killer killed some processes in this unit`, in the test
+  below), upstream's unit sets no policy of its own, and its stop is
+  what I-576 calls the last thing that may go. Current systemd does not
+  act on an ancestor's event; the unit says it so that no change in
+  that has to be noticed. Slices have no such property at all, so the
+  same notice against `app.slice` and `user.slice` acts on nothing.
+- *What it makes true.* machine.md's "Memory and disk" says the agents,
+  the tmux or herdr server and the SSH connection are kept to the last,
+  "so the largest of the rest goes first, usually a runaway test or dev
+  server", and that a tab past the browser's ceiling crashes. Both were
+  false whenever the kernel's victim shared a cgroup with the agent, so
+  no public page changes here: the fix is what they already promise.
+  guest-conventions.md "Memory pressure" carries the policy beside the
+  `oom_score_adj` values.
+- *Rejected.* A `MemoryHigh` or `MemoryMax` on pane scopes, the memory
+  version of the `CPUQuota` on panes I-494 rejected: it would slow a
+  build on an idle machine, and it throttles the agent along with its
+  build. Wrapping the browsers in `$PLAYWRIGHT_BROWSERS_PATH` so a
+  Playwright launch lands in `repose-browser.slice`: that cache is
+  writable and `playwright install` replaces what is in it, and
+  Playwright drives the browser over inherited pipes. machine.md
+  already says those browsers have no limit of their own, and with this
+  change the kernel killing one is a failed test run the agent sees
+  rather than a lost agent.
+- *A live switch reaches the panes already open.* The policy is a
+  manager default, and systemd resolves it late: on the dev box
+  (systemd 255), with a transient scope already running, writing the
+  default and a `daemon-reload` moved that scope's `OOMPolicy` from
+  `stop` to `continue`. NixOS's switch reexecutes and reloads `dev`'s
+  manager in its per-user pass, so a machine that switches base with
+  agents running is covered by the switch, not only at its next start.
+- *Evidence.* Flake check `guest-keystroke-path`:
+  `DefaultOOMPolicy=continue` in user.conf and `OOMPolicy=continue` on
+  `session-.scope`, `user@.service` and both session units. guest-base,
+  23 subtests to the known I-513 failure (`mark=read`, which fails on
+  main too): its I-576 subtest (16.78 s) starts a hog as a child of a
+  pane's shell, and after `Out of memory: Killed process 5993
+  (python3.12)` the pane's shell pid, its window and
+  `systemctl --user is-active tmux-spawn-09ef4bc3-….scope` are all as
+  they were; its I-501/I-503 subtest (24.21 s) runs one in a herdr pane
+  (`herdr pane run w1:p1`), and after the kill the server's MainPID,
+  the unit's state and `herdr pane list` are untouched and the pane
+  took its next command. Each kill prints "The kernel OOM killer killed
+  some processes in this unit" for the scope and for
+  `user@1000.service`, and no `Failed with result 'oom-kill'` follows
+  either, which is the line that ended the agent on kanali.
+- *Revisit when:* a user unit of dev's needs a restart after an OOM kill
+  (then: `OOMPolicy=stop` on that unit, beside its `Restart=`).

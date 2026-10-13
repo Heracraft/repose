@@ -960,7 +960,18 @@ The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `DefaultOOMScoreAdjust=0` (upstream gives its units the manager's value
 plus 100), `sshd.service` `OOMScoreAdjust=-800` (sshd hands it to each
 session it forks), guestd -900 and journald upstream's -250.
-`repose-tmux-session.service` has `OOMPolicy=continue`. MGLRU's
+
+The ranking only holds if the cgroup the kill happened in is left alone,
+so `dev`'s user manager runs with `DefaultOOMPolicy=continue` (I-697):
+systemd's default is to stop that unit, which takes the agent beside the
+kill with it. Every cgroup of `dev`'s holds one: a tmux pane is a
+`tmux-spawn-*.scope` with the agent and everything it started, herdr's
+panes share `repose-herdr-server.service`, a `chromium` runs in a
+transient scope of `repose-browser.slice` with its renderers. Both
+session units set `OOMPolicy=continue` on themselves as well, and each
+logind `session-N.scope` has it by prefix drop-in (`repose exec` and
+`repose code` run what they start in the session's own scope; the system
+manager's default stays `stop`). MGLRU's
 `/sys/kernel/mm/lru_gen/min_ttl_ms` is 1000: the kernel runs its OOM
 killer when it cannot keep the pages touched in the last second.
 

@@ -477,6 +477,31 @@ in
           guest.succeed("sudo -u dev tmux has-session -t =todo-app")
           guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal)\\)'")
           guest.execute("sudo -u dev tmux kill-window -t todo-app:hog")
+
+          # I-697: the hog as a child of the pane's own process, which is
+          # where an agent's test run or dev server is. The kernel kills
+          # the hog; the pane's process, the window and the scope that
+          # holds the agent stay. Before I-697 systemd stopped the scope
+          # and the pane went with the hog (kanali, 2026-10-13).
+          assert guest.succeed("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p DefaultOOMPolicy --value").strip() == "continue"
+          # The kill is reported against every unit above the scope, this
+          # one included, and its stop would end every pane.
+          assert guest.succeed("systemctl show -p OOMPolicy --value user@1000.service").strip() == "continue"
+          guest.succeed("dmesg -C")
+          # `;` so tmux runs the string through a shell: the shell is the
+          # pane's process and the hog its child. The shell outlives it
+          # and holds the window open. The first sleep leaves time to read
+          # the pane and its scope before the kernel acts.
+          guest.succeed("""sudo -u dev tmux new-window -d -t todo-app -n child 'sleep 2; python3 /tmp/hog.py; sleep 600'""")
+          child = guest.succeed("sudo -u dev tmux display -p -t todo-app:child '#{pane_pid}'").strip()
+          scope = guest.succeed(f"awk -F/ '{{ print $NF }}' /proc/{child}/cgroup").strip()
+          assert scope.startswith("tmux-spawn-") and scope.endswith(".scope"), scope
+          assert guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p OOMPolicy --value {scope}").strip() == "continue"
+          guest.wait_until_succeeds("dmesg | grep -q 'Killed process [0-9]* (python3'", timeout=180)
+          print(guest.succeed("dmesg | grep -E 'Killed process|invoked oom-killer'"))
+          assert guest.succeed("sudo -u dev tmux display -p -t todo-app:child '#{pane_pid}'").strip() == child
+          guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active {scope}")
+          guest.succeed("sudo -u dev tmux kill-window -t todo-app:child")
           guest.succeed("sysctl -w vm.panic_on_oom=2")
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
@@ -563,6 +588,21 @@ in
           main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
           environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
           assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
+          # I-697: herdr's panes run in the unit's cgroup, so the unit's
+          # OOMPolicy is what keeps the server and the agents in the other
+          # panes when the kernel kills a test run in one of them. The
+          # tmux half of this is the I-576 subtest's pane scope.
+          assert user("systemctl --user show -p OOMPolicy --value repose-herdr-server.service").strip() == "continue"
+          hog_pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
+          guest.succeed("dmesg -C")
+          guest.succeed("sysctl -w vm.panic_on_oom=0")
+          user(f"herdr pane run {hog_pane} 'python3 /tmp/hog.py'")
+          guest.wait_until_succeeds("dmesg | grep -q 'Killed process [0-9]* (python3'", timeout=180)
+          print(guest.succeed("dmesg | grep -E 'Killed process|invoked oom-killer'"))
+          guest.succeed("sysctl -w vm.panic_on_oom=2")
+          assert unit_state("repose-herdr-server.service") == "active"
+          assert user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip() == main
+          json.loads(user("herdr pane list"))
           # I-560: a live handoff keeps the unit and every pane; a server
           # that stops comes back with its workspaces.
           pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
