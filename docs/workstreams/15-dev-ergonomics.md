@@ -278,11 +278,12 @@ final report. `just done-check` and `just lint` pass.
       alive on a guest with the I-213 base is not pasted.
 - [ ] **cp:** `repose cp :logs/x.log .` and the reverse, transcript pasted.
       Open: the live `repose cp` transcript both ways is not pasted.
-- [ ] **Hybrid:** first-run times for this repo and for a repo over
-      500 MB, bundle vs clone, pasted, and the threshold set from them in
-      the decision. Open: bundle-vs-clone first-run times for this repo and
-      a repo over 500 MB are not pasted, and I-203 still says the 20 MB
-      `size-pack` threshold is "to be set from measurement".
+- [x] **Hybrid:** first-run times, bundle vs clone, pasted, and the
+      threshold set from them in the decision. Closed by I-715 (sync-fast,
+      2026-10-13): fetch times of 7 to 26 MB histories from a host-01
+      guest, and main against sync-fast on one prod guest at a 5 Mbit/s
+      uplink (sync 35.6 and 32.4 s against 15.0 and 16.8 s); the
+      threshold is 4 MiB. A repo over 500 MB was not timed.
 - [ ] **Caches:** a cold `pnpm install` on a large repo in two guests on one
       host, the second measurably faster, with the times pasted; `docker
       pull` twice likewise; the fallback when the cache is stopped, shown.

@@ -209,7 +209,7 @@ A plain `repose run` there stops with ``Your home folder is not a project. cd in
 $ cd ~/code/todo-app
 $ repose run --temp
 ✓ Created tmp-k3f9 (large, temporary until Sep 29 14:02)  4s
-Synced: 2 modified, 1 untracked (48 new commits)
+Synced: 2 modified, 1 untracked (48 new commits)  3.2s
 Ready in 21s.
 tmp-k3f9 is temporary: destroyed in 24h.
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-704 entries.
+709 entries.
 
 ## Scope
 
@@ -286,7 +286,7 @@ pointer, not a summary.
 - **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; L4421
 - **I-201** `repose cp` — L4433
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4438
-- **I-203** The first sync of a large GitHub repository clones in the guest — L4446
+- **I-203** The first sync of a large GitHub repository clones in the guest — amended by I-713; amended by I-714; L4446
 - **I-204** Nothing on GitHub may name the platform — L4456
 - **I-205** The trial is one day of compute — L4464
 - **I-206** The carry's hashes live in the guest; `attach` carries through a session helper; tmux stops taking `TZ` from the attaching client — 2026-09-23; L4470
@@ -308,7 +308,7 @@ pointer, not a summary.
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L5026
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5063
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5094
-- **I-224** The sync's writes are one ssh, and none when nothing changed — L5141
+- **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; L5141
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — amended by I-588; L5175
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5204
 - **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-520; amended by I-563; L5274
@@ -343,7 +343,7 @@ pointer, not a summary.
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6561
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6582
 - **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; L6599
-- **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; L6643
+- **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; amended by I-712; L6643
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6704
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6749
 - **I-259** Agents start in the checkout's dev environment — 2026-09-26; partly amended by I-483; amended by I-488; L6775
@@ -736,3 +736,8 @@ pointer, not a summary.
 - **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20457
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
+- **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L20652
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L20677
+- **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L20712
+- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L20736
+- **I-716** The fetch does not start during boot — 2026-10-13; L20770

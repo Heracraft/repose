@@ -49,7 +49,7 @@ repose sync
 ```
 
 ```text
-Synced: 0 modified, 1 untracked
+Synced: 0 modified, 1 untracked  0.8s
 ```
 
 Neither command restarts or rebuilds the machine.
