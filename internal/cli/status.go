@@ -617,11 +617,12 @@ func uptime(p *Project) string {
 // agentStateWords are guestd's agent states as text prints them
 // (I-617); --json keeps the api's snake_case. `unknown` (an agent quiet
 // for less than the idle time, or a window that just closed) tells the
-// reader nothing, so it is not named.
-var agentStateWords = map[string]string{"needs_input": "needs input", "working": "working", "idle": "idle"}
+// reader nothing, so it is not named. `running` is an agent with no turn
+// hooks whose process is alive (I-694).
+var agentStateWords = map[string]string{"needs_input": "needs input", "working": "working", "running": "running", "idle": "idle"}
 
 // agentStateOrder puts the agent that needs you first.
-var agentStateOrder = []string{"needs_input", "working", "idle"}
+var agentStateOrder = []string{"needs_input", "working", "running", "idle"}
 
 func agentWord(state string) string {
 	if w, ok := agentStateWords[state]; ok {

@@ -610,6 +610,14 @@ in
           notif_cmds = [h["command"] for e in s["hooks"]["Notification"] for h in e["hooks"]]
           assert "echo user-hook" in stop_cmds and "repose-hook" in stop_cmds, stop_cmds
           assert "repose-hook" in notif_cmds, notif_cmds
+          # I-690: the prompt hook, also for a file an earlier base merged
+          # Notification and Stop into.
+          prompt_cmds = [h["command"] for e in s["hooks"]["UserPromptSubmit"] for h in e["hooks"]]
+          assert prompt_cmds == ["repose-hook"], prompt_cmds
+          guest.succeed("""sudo -u dev sh -c 'mkdir -p /tmp/old/.claude && echo "{\\"hooks\\":{\\"Stop\\":[{\\"matcher\\":\\"\\",\\"hooks\\":[{\\"type\\":\\"command\\",\\"command\\":\\"repose-hook\\"}]}]}}" > /tmp/old/.claude/settings.json && HOME=/tmp/old repose-agent-setup claude'""")
+          old = json.loads(guest.succeed("cat /tmp/old/.claude/settings.json"))
+          assert [h["command"] for e in old["hooks"]["UserPromptSubmit"] for h in e["hooks"]] == ["repose-hook"], old
+          assert len(old["hooks"]["Stop"]) == 1, old
           assert s["permissions"]["allow"] == ["Bash(ls:*)"], s
           # idempotent
           guest.succeed("sudo -u dev repose-agent-setup claude")
@@ -2525,12 +2533,15 @@ in
           assert guest.succeed("cat /etc/claude-code/CLAUDE.md") == guide
           assert guest.succeed("cat /etc/repose/gemini-extension/GEMINI.md") == guide
           codex = tomllib.loads(guest.succeed("cat /etc/codex/config.toml"))
-          # I-546 defaults as top-level keys and the guide; nothing else.
+          # I-546 defaults as top-level keys and the guide, and the prompt
+          # hook (I-690); nothing else.
           assert codex == {
               "approval_policy": "never",
               "sandbox_mode": "danger-full-access",
               "check_for_update_on_startup": False,
               "developer_instructions": guide,
+              "features": {"hooks": True},
+              "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "repose-hook --agent codex"}]}]},
           }, codex
           oc = json.loads(guest.succeed("cat /etc/opencode/opencode.json"))
           assert oc["instructions"] == ["/etc/repose/agent-guide.md"], oc
@@ -2540,6 +2551,8 @@ in
           assert set(oc["mcp"]) == set(reg) and not any("enabled" in v for v in oc["mcp"].values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
+          hooks = json.loads(guest.succeed("cat /etc/repose/gemini-extension/hooks/hooks.json"))["hooks"]
+          assert sorted(hooks) == ["AfterAgent", "BeforeAgent"] and all(g["hooks"][0]["command"] == "repose-hook --agent gemini" for v in hooks.values() for g in v), hooks
           assert "${pkgs.playwright-driver.version}" in guide and "@playwrightVersion@" not in guide, guide
           guest.succeed("grep -q /etc/repose/agent-guide.md /etc/repose/pi-extension.js")
 

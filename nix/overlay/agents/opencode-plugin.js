@@ -77,7 +77,14 @@ const onV2 = async (event) => {
 export default {
   id: "repose",
   async server() {
-    return { event: async ({ event }) => onV1(event) };
+    return {
+      event: async ({ event }) => onV1(event),
+      // The user sent a message (checked against 1.18.34): guestd closes
+      // the questions this opencode asked and marks it working (DECISIONS
+      // I-690). The message itself is not read. Not awaited, so the
+      // message is never held up.
+      "chat.message": async () => { void send("prompt", ""); },
+    };
   },
   setup(ctx) {
     const controller = new AbortController();

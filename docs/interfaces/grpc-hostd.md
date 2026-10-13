@@ -197,7 +197,7 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 root_used_bytes; uint64 root_size_bytes; }   // I-567
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
-AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|unknown
+AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
 ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only; never argv
@@ -207,19 +207,20 @@ HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_runn
 **Event** (host-originated, at most once each, api acks by `event_id`):
 `guest_state_changed {guest_id, state, reason}`, `agent_event {guest_id,
 agent, kind (completed|needs_input|error|agent_message|agent_done; agent_done
-since I-688), summary (capped 1 KB),
+from `repose-notify --done`, I-688), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
-KB), options, timeout_s, state}` (a guest's `Question` notify, relayed;
+KB), options, timeout_s, state, reason}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement
 after a hostd restart is a no-op, and `state` cancelled|expired closes it;
 the text is tenant content and is never logged; `reason` (field 9, I-690)
-says why a close happened: `terminal` (answered in the agent's terminal,
+says why the guest closed it: `terminal` (answered in the agent's terminal,
 stored as `answered` with `answered_via` `terminal`), `withdrawn` (the
 agent took it back, stored as `cancelled` with `answered_via` `agent`),
-`interrupted` or `asker_gone` (stored as a plain cancel); an older hostd
-drops it and the close is a plain cancel),
+`interrupted` or `asker_gone` (stored as a plain cancel); empty for an
+expiry and on an open question; an older hostd drops it and the close is a
+plain cancel),
 `snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (80
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
@@ -240,17 +241,22 @@ event id however often the event is re-sent.
 and a relayed `host_warning` start as a guest's `Notify`, which root in the
 guest can write, so hostd bounds them before sending: `agent_event.kind` is
 one of the five above (another is dropped; a hostd before I-688 drops
-`agent_done`); `agent` is at most 32 bytes of
+`agent_done` too, so hostd ships before a base whose `repose-notify` sends it); `agent` is at most 32 bytes of
 `[a-z0-9_-]`, anything else `unknown`; `tmux_window` at most 64 bytes and
 `summary` and `text` at most 1 KB, valid UTF-8 without control characters
 (newline and tab allowed in `summary` and `text`); `question_id` is a uuid
-and `state` empty, `cancelled` or `expired` (else dropped); `reason` empty
-or one of the four above (else dropped from the event); at most 3
+and `state` empty, `cancelled` or `expired` (else dropped), and `reason`
+one of the four above on a close (anything else becomes empty); at most 3
 `options` of 64 bytes; a relayed warning's `detail` is written by hostd
 (`guest <id>` and, for the known kinds, the numbers or the process name
 guestd reported). Each guest gets a burst of 30 such notifications and one
 every 2 s after it; the rest are dropped and counted in
-`repose_host_guest_notify_dropped_total{reason}`. hostd keeps guest-raised
+`repose_host_guest_notify_dropped_total{reason}`. The first close (a
+`Question` with a state) of a question hostd passed as open passes without
+a token (I-690): hostd keeps the ids it passed as open per guest (at most
+512, for 24 h 10 min), so these closes are bounded by the opens the bucket
+counted. Any other close (an id hostd never saw open, a repeat, one opened
+before a hostd restart) takes a token. hostd keeps guest-raised
 events awaiting an ack apart from its own (at most 2,000 against 10,000),
 and sends them without blocking its own events or results.
 
@@ -274,7 +280,8 @@ clamped to the api's clock.
 **Samples** (DECISIONS I-446). hostd cleans the guest-reported part of a
 `GuestSample` (at most 32 `agents` and 128 `procs`, `comm` at most 16
 bytes without control characters, agent `state` one of `working`, `idle`,
-`needs_input`, `unknown`). The api stores each guest's rows in a batch of
+`needs_input`, `running`, `unknown`; a hostd before I-694 sends `running`
+as `unknown`). The api stores each guest's rows in a batch of
 its own; when a guest's rows are refused it stores the host-measured
 fields alone, and counts it in `repose_api_samples_failed_total{reason}`.
 

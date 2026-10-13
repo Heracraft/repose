@@ -70,10 +70,10 @@ The user may have added other repositories to this machine as folders beside it,
 
 ## Reaching the user
 
-- The user is notified when you finish or wait for input. <!-- /docs/notifications#what-youll-get -->
+- A finished turn notifies nobody. When work the user asked for is done and they should look at it, run `repose-notify --done "WHAT, AND WHERE TO LOOK"` once; skip it while background work you started still runs, and when the user is talking with you in this session. <!-- /docs/notifications#what-youll-get --> <!-- needs: repose-notify -->
 - To tell the user something while they're away, run `repose-notify "MESSAGE"`. It reaches their phone or email. <!-- /docs/notifications#agents-can-message-you-and-ask-questions --> <!-- needs: repose-notify -->
 - To hand the user a file, give them the command for their laptop: `repose cp NAME:/home/dev/PATH .`, where NAME is this project's name, which `jq -r .slug ~/.repose/project.json` prints. Their scp, rsync and editor reach this machine as the SSH host NAME.repose. <!-- /docs/ssh-and-editors -->
-- When you're blocked on a decision only the user can make, run `repose-ask --options yes,no "QUESTION"` (or without `--options` for a free answer). It waits up to 30 minutes (`--timeout`) and prints their answer; exit 3 means no answer came, 4 that they have no notifications set up. Don't ask what you can decide yourself. <!-- /docs/agents#let-it-ask-you --> <!-- needs: repose-ask -->
+- When you're blocked on a decision only the user can make, run `repose-ask --options yes,no "QUESTION"` (or without `--options` for a free answer), in the background or with a command timeout above its `--timeout` (30 minutes by default). It prints their answer; exit 3 means no answer came, 4 that they have no notifications set up. If the user answers you in the terminal instead, the question closes by itself and `repose-ask` exits 6. To take a question back, run `repose-ask --cancel`. Don't ask what you can decide yourself. <!-- /docs/agents#let-it-ask-you --> <!-- needs: repose-ask -->
 
 ## Git
 
