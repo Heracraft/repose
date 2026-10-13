@@ -156,9 +156,11 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 	case codeGuestUnresponsive:
 		if phase == PhaseCreateGuest || phase == PhaseStartGuest || phase == PhaseRestore {
 			// guestd answered, and then the closure's registration or
-			// the project's setup ran past their 3 minutes (I-705).
+			// the project's setup ran out of time (I-705). No number: a
+			// hostd before I-705 cuts SetupProject at 30 s, a later one
+			// at 3 minutes, and the api cannot tell which it talks to.
 			if (strings.Contains(msg, "SetupProject: ") || strings.Contains(msg, "RegisterPaths: ")) && strings.Contains(msg, "deadline exceeded") {
-				return "the environment started but did not finish setting up within 3 minutes; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
+				return "the environment started but did not finish setting up in time; `repose logs --kind console` shows what it printed, and `repose start` tries again", true
 			}
 			// Not "booted": a guest that stopped before its system
 			// started never answers either (I-592).

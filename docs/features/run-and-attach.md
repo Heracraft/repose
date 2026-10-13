@@ -10,13 +10,17 @@ leaves it running whether or not you stay attached. Everything above
 ## What the user sees
 
 First run on a new project (stderr shows a spinner with the elapsed time
-on a terminal; this is what stays on screen, DECISIONS I-154):
+on a terminal; this is what stays on screen, DECISIONS I-154). A create
+that needs a build shows the build's steps, as `repose config` does
+(I-320), and then the boot (I-708); a create whose build is reused shows
+`Created` and `Booted` alone:
 
 ```
 $ repose run
 ✓ Created todo-app (large)  0.3s
-nix › building '/nix/store/…-repose-guest.drv'...
-✓ Built the configuration  41s
+✓ Evaluated your config  4.1s
+✓ Fetched 212 paths (310 MiB)  19s
+✓ Built 2 derivations  12s
 ✓ Booted todo-app  6.2s
 Connected to todo-app (large)
 Synced: 3 modified, 1 untracked (12 new commits)
@@ -26,7 +30,8 @@ dev@todo-app:~/todo-app$
 ```
 
 Without a terminal on stderr (CI, a pipe) the phases are plain lines,
-`Creating todo-app...`, `Building the configuration...`, `Booting
+`Creating todo-app...`, the build's steps (`Evaluating your config...`
+and the rest, with Nix's own lines after `nix ›`), `Booting
 todo-app...`, `Connecting to todo-app...`, `Syncing...`. One `repose run`
 makes one SSH connection and asks for nothing: the CLI's own key has no
 passphrase (I-149).

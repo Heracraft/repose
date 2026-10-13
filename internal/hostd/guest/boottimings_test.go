@@ -49,4 +49,14 @@ func TestBootLogsItsSteps(t *testing.T) {
 	if lines[1]["volume_ms"].(float64) != 0 {
 		t.Fatalf("a start made no volume: %v", lines[1])
 	}
+
+	// A start on a guest that is already running boots nothing, so it
+	// carries no timings and logs no line.
+	again := h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	if b := again.GetStart().GetBoot(); b != nil {
+		t.Fatalf("a start of a running guest carries an earlier boot's timings: %v", b)
+	}
+	if n := len(logLines(t, h, "boot timings")); n != 2 {
+		t.Fatalf("%d \"boot timings\" lines after a start of a running guest", n)
+	}
 }

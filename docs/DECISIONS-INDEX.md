@@ -738,6 +738,6 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L20652
 - **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L20689
-- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20720
-- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20747
-- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L20770
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20727
+- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20754
+- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L20790

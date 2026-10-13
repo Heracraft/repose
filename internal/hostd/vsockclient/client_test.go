@@ -82,3 +82,32 @@ func TestSetupProjectWaitsPastGuestdsBootDeadline(t *testing.T) {
 		t.Fatalf("SetupTimeout %s is not above DefaultTimeout %s", SetupTimeout, DefaultTimeout)
 	}
 }
+
+// The same, run: a SetupProject that answers after the default bound has
+// passed still succeeds, because the call carries SetupTimeout. The bounds
+// are scaled down so the test takes under a second.
+func TestSetupProjectOutlivesTheDefaultTimeout(t *testing.T) {
+	dir := t.TempDir()
+	srv, err := fakeguestd.Listen(filepath.Join(dir, "guestd.sock"), fakeguestd.Options{Delay: map[string]time.Duration{"SetupProject": 300 * time.Millisecond, "SetPrincipals": 300 * time.Millisecond}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sess, err := UnixDialer{}.Dial(ctx, Target{GuestID: "g", Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sess.Close() }()
+	s := sess.(*session)
+	s.t = timeouts{def: 100 * time.Millisecond, sw: time.Second, setup: 2 * time.Second}
+	bg := context.Background() // no deadline of its own, as hostd's boot calls
+	if err := s.SetupProject(bg, &guestdv1.SetupProject{ProjectSlug: "todo-app"}); err != nil {
+		t.Fatalf("SetupProject past the default bound: %v", err)
+	}
+	// The control: a default-bound call with the same delay runs out.
+	if err := s.SetPrincipals(bg, []string{"dev"}); err == nil {
+		t.Fatal("SetPrincipals answered past its 100 ms bound without an error")
+	}
+}

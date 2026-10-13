@@ -20711,11 +20711,18 @@ bench boots of I-704 failed the same way in RegisterPaths (`nix-store
   the host half with a host switch. docs/workstreams/04-guestd.md's
   deadline sentence names it.
 - A boot that answered and then ran out in RegisterPaths or SetupProject
-  now reads "the environment started but did not finish setting up within
-  3 minutes", where it read "did not answer within a minute of starting",
+  now reads "the environment started but did not finish setting up in
+  time", where it read "did not answer within a minute of starting",
   which stays for a guest that never sent Ready (humanError,
-  internal/api/ops/recover.go). troubleshooting.md already says the
-  message names how a boot failed, so the page is unchanged.
+  internal/api/ops/recover.go). It names no bound: the api ships apart
+  from the host switch, and a hostd before this entry cuts SetupProject
+  at 30 s, so "within 3 minutes" would be false until every host runs
+  the new one. troubleshooting.md already says the message names how a
+  boot failed, so the page is unchanged.
+- The hostd half is tested by behaviour, not by the constant: a session's
+  bounds are scaled down in TestSetupProjectOutlivesTheDefaultTimeout,
+  the fake guestd holds SetupProject past the default bound, and the call
+  succeeds; pointed at the default bound, it fails.
 
 **I-706. repose-pin-profile waits until the project is set up (boot-fast,
 2026-10-13).** *Made during implementation.* The copy-up of dev's
@@ -20758,27 +20765,48 @@ as it leaves out `console` (I-592): the numbers are for operators, and
 - The contract: docs/interfaces/grpc-hostd.md names the field on both
   results. An api that ignores it reads the result as before, and a hostd
   before it sends none, which the api stores as no `boot` key.
-- The alert `BootSlow` (warn) fires when a CreateGuest or StartGuest
-  command took over 30 s in the last 30 minutes, from
-  `repose_host_command_duration_seconds` (its 30 s bucket was already
-  there), with promtool cases in ops/alerts_test.yaml and a RUNBOOK
-  heading that reads the line.
+- A StartGuest for a guest that is already running boots nothing, so it
+  carries no timings, as create's running case does not; the api then
+  stores no `boot` on that op.
+- The alert `BootSlow` (warn) fires when more than half of a host's
+  CreateGuest and StartGuest commands in 30 minutes, two at least, took
+  over 2 minutes, held for 5 minutes, from
+  `repose_host_command_duration_seconds` (its 120 s bucket was already
+  there). Why not 30 s: a busy host boots in 30 to 70 s (on 2026-10-13
+  host-01's creates had a p50 of 42 s and its starts 58 s, I-704), so a
+  30 s line would page all day for a host that has no fix but capacity.
+  Past 2 minutes a boot is close to the 3-minute setup bound of I-705 and
+  about to fail. Two boots at least, so one stuck tenant does not read as
+  a host problem. promtool cases in ops/alerts_test.yaml cover a busy
+  host's 30 to 70 s boots (quiet), one slow boot (quiet) and most boots
+  past 2 minutes (fires); the RUNBOOK heading reads the line.
+- `ops/dev/freeze-bench.sh hup`, which the RUNBOOK names, wipes and
+  formats its VOL as root on a tenant host, so it refuses any VOL that is
+  not `/dev/VG/bench-*` and an LVM volume named `bench-*` by `lvs`.
 - What was not done: the ops table still has no per-phase times for the
   build phase; the build's own time is in `build_phase_duration_seconds`
   and in its log lines.
 
 **I-708. A create shows its build's steps, then "Booting" (boot-fast,
-2026-10-13).** *Made during implementation.* A create op's build log
-(`log_url`) stays open until the whole op ends, the boot included, and
-the CLI followed it under whichever label the project's state had at the
-first read. With a build that state is `building`, so a 39 s build and a
-15 s boot printed as one `✓ Built the configuration  55s` line, with Nix's
-lines raw on the terminal (a test against a stub api reproduced it). `run`
-now follows a create's log with the configuration ops' build view
-(I-320): the build's steps (`Got a build slot`, `Evaluated your config`,
-`Fetched N paths`, `Built N derivations`), Nix's lines only with `-v` or
-off a terminal, and the build's `built` line starts `Booting <slug>`. The
-`building` state no longer starts a phase of its own. A create whose build
-is reused shows `Created` and `Booted` as before. The change is in run.go
-and buildprogress.go; progress.go is untouched. The quickstart's example
-output and config.md's build steps paragraph say what a first run prints.
+2026-10-13).** *Made during implementation.* A create's progress came
+from the project's states: `run` reads the project again after the
+create, and a project read carries no op id (only the create's 201
+does), so the wait fell back to polling states and printed `✓ Built the
+configuration  9.2s` and `✓ Booted <slug>  6.2s` with nothing of the
+build in between (main's CLI against the real api in-process, with a
+fake hostd that builds for 9 s and boots for 6 s). Where the op id was
+kept (the fake api's project read carries one), the create's log, which
+stays open until the whole op ends, made the first state's label cover
+build and boot together. `run` now keeps the create's op id across that
+read while the project is creating, building or starting, and follows
+the create's log with the configuration ops' build view (I-320): the
+build's steps (`Got a build slot`, `Evaluated your config`, `Fetched N
+paths`, `Built N derivations`), Nix's lines only with `-v` or off a
+terminal, and the build's `built` line starts `Booting <slug>`. The
+`building` state no longer starts a phase of its own. A create whose
+build is reused shows `Created` and `Booted` as before. The change is in
+run.go and buildprogress.go; progress.go is untouched, so a step whose
+done text is empty ("Working out what to fetch" with nothing to fetch)
+prints no line, as in `repose config`. The quickstart's example output,
+config.md's build steps paragraph and docs/features/run-and-attach.md
+say what a first run prints.

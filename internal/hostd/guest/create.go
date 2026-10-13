@@ -581,7 +581,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	switch g.State {
 	case StateRunning:
-		return startResult(g, resent, "", m.lastBoot(g.GuestID)), nil
+		// Nothing booted for this command, so it carries no timings, as
+		// create's running case does not (I-707).
+		return startResult(g, resent, "", nil), nil
 	case StateStopped, StateError, StateStarting:
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; start needs stopped", g.State)

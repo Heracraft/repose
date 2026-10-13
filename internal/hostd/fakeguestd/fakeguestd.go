@@ -39,6 +39,9 @@ type Options struct {
 	// of that kind (the shape of guestd restarted by an activation, I-148);
 	// the next connection answers normally.
 	DropOnce map[string]bool
+	// Delay holds a request kind's answer back for that long (a guest
+	// whose SetupProject waits on a slow home-manager activation).
+	Delay map[string]time.Duration
 	// Sample is the canned Sample reply; nil gives a small default.
 	Sample *guestdv1.SampleResult
 	// Version and BootID for Ping.
@@ -253,7 +256,11 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		}
 		return fail("dropped", "connection closed by the fake")
 	}
+	d := s.opts.Delay[kind]
 	s.mu.Unlock()
+	if d > 0 {
+		time.Sleep(d)
+	}
 	ok := &guestdv1.Response{Ok: true}
 	switch r := req.Req.(type) {
 	case *guestdv1.Request_Ping:

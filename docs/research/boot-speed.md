@@ -93,4 +93,5 @@ busier. RegisterPaths finishes before the copy-up can start, so its
   (I-705).
 - repose-pin-profile waits for `/run/repose/project-set-up` (I-706).
 - hostd logs `"boot timings"` and the api keeps them in `ops.result.boot`;
-  `BootSlow` warns past 30 s (I-707).
+  `BootSlow` warns when most of a host's boots in 30 minutes take over
+  2 minutes (I-707).

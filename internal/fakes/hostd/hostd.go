@@ -57,7 +57,10 @@ type Options struct {
 	SampleInterval time.Duration
 	Heartbeat      time.Duration
 	BuildDelay     time.Duration
-	FakeClosure    string
+	// BootDelay is how long a CreateGuest or StartGuest spends in
+	// "starting" before the guest runs, as a real boot does.
+	BootDelay   time.Duration
+	FakeClosure string
 	// Fail maps a command kind ("CreateGuest", "Build", ...) to the error
 	// code every command of that kind returns.
 	Fail map[string]string
@@ -527,6 +530,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "creating", "")
 		f.setState(g, "starting", "")
+		time.Sleep(f.opts.BootDelay)
 		if bad {
 			f.setState(g, "error", BadBootMessage)
 			return bootFailed(id, console)
@@ -557,6 +561,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			console, bad := f.bad[g.Closure]
 			f.mu.Unlock()
 			f.setState(g, "starting", "")
+			time.Sleep(f.opts.BootDelay)
 			if bad {
 				// As hostd: fall back to the last good closure once, or
 				// fail with the boot's reason when there is none.
@@ -634,7 +639,13 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		send := f.send
 		f.mu.Unlock()
-		for i, line := range []string{"evaluating configuration", "building fake system", "built"} {
+		closure := f.opts.FakeClosure
+		if c.Build.RevisionId != "" {
+			closure = f.opts.FakeClosure + "-" + c.Build.RevisionId
+		}
+		// nixbuild's own lines (internal/hostd/nixbuild): the CLI reads
+		// them to show the build's steps (I-320, I-708).
+		for i, line := range []string{"evaluating configuration", "building nixos-system-repose-guest", "built " + closure} {
 			if send != nil {
 				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Log{Log: &hostdv1.BuildLog{CommandId: id, Seq: uint64(i + 1), Line: line}}}) // dead stream ends Recv
 			}
@@ -646,10 +657,6 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		// broken machine.nix does on a real host (DECISIONS I-490).
 		if strings.Contains(string(c.Build.Personal), "fake-eval-error") {
 			return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: "eval_failed", Message: "attribute 'fake-eval-error' missing at machine.nix:1:3\n\nerror: attribute 'fake-eval-error' missing", PersonalLine: 1}}
-		}
-		closure := f.opts.FakeClosure
-		if c.Build.RevisionId != "" {
-			closure = f.opts.FakeClosure + "-" + c.Build.RevisionId
 		}
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Build{Build: &hostdv1.BuildResult{SystemClosure: closure, ClosureBytes: 3 << 30, KernelChanged: f.opts.KernelChanged}}

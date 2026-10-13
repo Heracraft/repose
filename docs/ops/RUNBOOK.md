@@ -519,10 +519,13 @@ destroy) resumes it.
 
 ## BootSlow
 
-A create or start took over 30 s to reach running (the p50 is 11 s). On
-the host, `journalctl -t hostd | grep '"boot timings"'`: one line per boot
-that reached running, with `op` (`create` or `start`), `volume_ms` (the
-create's thin volume and mkfs), `prepare_ms` (the argv, the tap and
+More than half of a host's creates and starts in 30 minutes, two at
+least, took over 2 minutes to reach running. A busy host boots in 30 to
+70 s (creates on host-01 had a p50 of 42 s and starts 58 s on
+2026-10-13), and past 2 minutes a boot is close to the 3-minute setup
+bound (I-705). On the host, `journalctl -t hostd | grep '"boot
+timings"'`: one line per boot that reached running, with `op` (`create`
+or `start`), `volume_ms` (the create's thin volume and mkfs), `prepare_ms` (the argv, the tap and
 virtiofsd), `ready_ms` (the hypervisor started to guestd's Ready),
 `paths_ms` (RegisterPaths, its wait for `nix-store --dump-db`
 included), `setup_ms` (secrets, principals and SetupProject) and

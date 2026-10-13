@@ -206,32 +206,54 @@ func TestLogLinesAndSince(t *testing.T) {
 }
 
 // A create that builds shows the build's steps and then the boot as its
-// own step, instead of one line for both: the create log stays open until
-// the whole op ends, so the phase seen first used to label all of it, a
-// 39 s build included (DECISIONS I-708).
+// own step, instead of one line for both (DECISIONS I-708). The stub
+// answers as the real api does: GET /projects/:id carries no op_id (only
+// the create's 201 does), the project moves building, starting, running,
+// and the create's log carries nixbuild's lines and stays open through
+// the boot. run reaches the wait through ensureRunningFrom, which reads
+// the project again after the create.
 func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
-	var reads int32
+	var opReads, projReads atomic.Int32
+	var booting atomic.Bool
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/projects/p", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"p","slug":"todo-app","state":"building"}`)
+		state := "building"
+		if projReads.Add(1) > 4 {
+			booting.Store(true) // a client that never reads the log still sees the boot end
+		}
+		switch {
+		case booting.Load() && projReads.Load() > 2:
+			state = "running"
+		case booting.Load():
+			state = "starting"
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"p","slug":"todo-app","state":%q,"op_id":null}`, state)
 	})
 	mux.HandleFunc("/v1/projects/p/ops/o", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if atomic.AddInt32(&reads, 1) == 1 {
-			_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"running","phase":"build","log_url":"/v1/projects/p/ops/o/log"}`)
-			return
+		n := opReads.Add(1)
+		switch {
+		case !booting.Load():
+			_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"running","phase":"build","project_state":"building","log_url":"/v1/projects/p/ops/o/log"}`)
+		case n < 4:
+			_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"running","phase":"create_guest","project_state":"starting","log_url":"/v1/projects/p/ops/o/log"}`)
+		default:
+			_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"done","project_state":"running"}`)
 		}
-		_, _ = io.WriteString(w, `{"op_id":"o","kind":"create","state":"done"}`)
 	})
-	lines := append(append([]string{}, configBuildLines[:len(configBuildLines)-1]...), "booting") // no switch in a create
+	// A config op's lines without its switch: a create's build log is
+	// the same nixbuild output, and the boot follows it.
+	lines := configBuildLines[:len(configBuildLines)-1]
 	mux.HandleFunc("/v1/projects/p/ops/o/log", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		for i, l := range lines[:len(lines)-1] {
+		for i, l := range lines {
 			_, _ = fmt.Fprintf(w, "id: %d\ndata: {\"seq\":%d,\"line\":%q,\"ts\":\"2026-10-13T01:02:03.456Z\"}\n\n", i+1, i+1, l)
+			w.(http.Flusher).Flush()
+			time.Sleep(20 * time.Millisecond)
 		}
-		w.(http.Flusher).Flush()
-		time.Sleep(50 * time.Millisecond) // the boot
+		booting.Store(true)
+		time.Sleep(50 * time.Millisecond) // the boot, with the log open
 		_, _ = io.WriteString(w, "event: done\ndata: {\"state\":\"done\"}\n\n")
 	})
 	srv := httptest.NewServer(mux)
@@ -239,20 +261,23 @@ func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
 	c := newClient(srv.URL+"/v1", staticToken("t"))
 
 	for _, tty := range []bool{true, false} {
-		reads = 0
+		opReads.Store(0)
+		projReads.Store(0)
+		booting.Store(false)
 		errOut := &discardWriter{}
 		e := &Env{Client: c, Out: &discardWriter{}, ErrOut: errOut, TTY: tty}
 		pr := newProgress(errOut, tty)
-		p := &Project{ID: "p", Slug: "todo-app", State: "creating"}
+		// As createProjectForRun leaves it: the 201's state and op id.
+		p := &Project{ID: "p", Slug: "todo-app", State: "creating", OpID: "o"}
 		pr.Phase("Creating todo-app", "Created todo-app (large)")
-		op, err := waitOpPhased(context.Background(), e, p, "o", pr, true)
-		if err != nil || op.State != "done" {
-			t.Fatalf("wait: %v %+v", err, op)
+		if err := ensureRunningFrom(context.Background(), e, p, pr, false); err != nil {
+			t.Fatalf("tty=%v: %v", tty, err)
 		}
 		pr.End()
 		got := errOut.buf.String()
+		t.Logf("tty=%v:\n%s", tty, got)
 		last := -1
-		for _, want := range []string{"✓ Created todo-app (large)", "✓ Evaluated your config", "✓ Built 2 derivations", "✓ Booted todo-app"} {
+		for _, want := range []string{"✓ Created todo-app (large)", "✓ Got a build slot", "✓ Evaluated your config", "✓ Fetched 3 paths", "✓ Built 2 derivations", "✓ Booted todo-app"} {
 			i := strings.Index(got, want)
 			if i < 0 || i < last {
 				t.Fatalf("tty=%v: step %q missing or out of order in:\n%s", tty, want, got)
@@ -261,6 +286,9 @@ func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
 		}
 		if strings.Contains(got, "Built the configuration") {
 			t.Fatalf("tty=%v: the state's label covers the build's steps:\n%s", tty, got)
+		}
+		if n := strings.Count(got, "✓ Booted todo-app"); n != 1 {
+			t.Fatalf("tty=%v: %d Booted lines:\n%s", tty, n, got)
 		}
 		if tty && strings.Contains(got, "nix ›") {
 			t.Fatalf("nix lines shown on a terminal without -v:\n%s", got)
