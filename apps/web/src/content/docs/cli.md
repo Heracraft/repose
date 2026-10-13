@@ -338,7 +338,7 @@ The [questions](/docs/notifications#agents-can-message-you-and-ask-questions) ag
 
 Answer a waiting question: `repose reply todo-app yes`. The first word is the project when it names one of your projects; otherwise every word is the answer, which works when only one question is waiting. A project with no waiting question exits 1 and sends nothing. For an answer that starts with a project's name, put `--` before it: `repose reply -- todo-app is fine`. With several waiting, it lists them and sends nothing; name the project or pass `--question ID` (the id `repose questions` shows). With no answer, it asks for one in the terminal. If the question has options, the answer must be one of them. `--json` prints the answered question.
 
-`repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way, and the agent's `repose-ask` exits 5. A question that closed first, for example one you answered in the agent's terminal, says how it ended and exits 1.
+`repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way, and the agent's `repose-ask` exits 5. With no question waiting it exits 1, as `reply` does. One that closes while the dismiss is on its way, for example because you answered it in the agent's terminal, prints `Not dismissed: answered in the terminal.` and exits 1.
 
 ## Snapshots
 

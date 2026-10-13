@@ -206,14 +206,20 @@ HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_runn
 
 **Event** (host-originated, at most once each, api acks by `event_id`):
 `guest_state_changed {guest_id, state, reason}`, `agent_event {guest_id,
-agent, kind (completed|needs_input|error|agent_message), summary (capped 1 KB),
+agent, kind (completed|needs_input|error|agent_message|agent_done; agent_done
+since I-688), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
 KB), options, timeout_s, state}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement
 after a hostd restart is a no-op, and `state` cancelled|expired closes it;
-the text is tenant content and is never logged),
+the text is tenant content and is never logged; `reason` (field 9, I-690)
+says why a close happened: `terminal` (answered in the agent's terminal,
+stored as `answered` with `answered_via` `terminal`), `withdrawn` (the
+agent took it back, stored as `cancelled` with `answered_via` `agent`),
+`interrupted` or `asker_gone` (stored as a plain cancel); an older hostd
+drops it and the close is a plain cancel),
 `snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (80
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
@@ -233,11 +239,13 @@ event id however often the event is re-sent.
 **Guest-raised events** (DECISIONS I-445). `agent_event`, `agent_question`
 and a relayed `host_warning` start as a guest's `Notify`, which root in the
 guest can write, so hostd bounds them before sending: `agent_event.kind` is
-one of the four above (another is dropped); `agent` is at most 32 bytes of
+one of the five above (another is dropped; a hostd before I-688 drops
+`agent_done`); `agent` is at most 32 bytes of
 `[a-z0-9_-]`, anything else `unknown`; `tmux_window` at most 64 bytes and
 `summary` and `text` at most 1 KB, valid UTF-8 without control characters
 (newline and tab allowed in `summary` and `text`); `question_id` is a uuid
-and `state` empty, `cancelled` or `expired` (else dropped); at most 3
+and `state` empty, `cancelled` or `expired` (else dropped); `reason` empty
+or one of the four above (else dropped from the event); at most 3
 `options` of 64 bytes; a relayed warning's `detail` is written by hostd
 (`guest <id>` and, for the known kinds, the numbers or the process name
 guestd reported). Each guest gets a burst of 30 such notifications and one

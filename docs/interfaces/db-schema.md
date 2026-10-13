@@ -169,7 +169,7 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
               project_id fk, guest_id uuid, event_id uuid,  -- the agent_question event that notified the owner
               agent text, tmux_window text null, text text, options text[],  -- 0..3
               state text,          -- pending|answered|cancelled|expired|no_channel
-              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email
+              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email|terminal|agent (I-690)
               expires_at, answered_at null,
               delivered_at null, delivery text null,  -- ok|gone|given_up|guest: the close reached the guest, or why not
               deliver_command_id uuid null, deliver_attempts int, deliver_next_at null)

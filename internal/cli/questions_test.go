@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -263,5 +264,51 @@ func TestReplyDismiss(t *testing.T) {
 	}
 	if got := fake.Questions()[1]; got.State != "answered" || got.Answer != nil || *got.AnsweredVia != "terminal" {
 		t.Fatalf("closed in the terminal: %+v", got)
+	}
+}
+
+// closeBeforeCancel is a transport that closes the question in the fake
+// just before the cancel POST reaches it, as an answer typed in the
+// agent's terminal would between `repose reply --dismiss` listing the
+// question and cancelling it.
+type closeBeforeCancel struct {
+	next  http.RoundTripper
+	close func()
+}
+
+func (c closeBeforeCancel) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/cancel") {
+		c.close()
+	}
+	return c.next.RoundTrip(r)
+}
+
+// TestReplyDismissLosesTheRace: a question that closes in the terminal
+// after the list and before the cancel prints how it ended and exits 1
+// (I-690).
+func TestReplyDismissLosesTheRace(t *testing.T) {
+	e, p, fake, out, _ := questionEnv(t)
+	ctx := context.Background()
+	q, err := fake.AddQuestion(p.ID, "claude", "First?", nil, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := e.Client.HTTP.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	hc := *e.Client.HTTP
+	hc.Transport = closeBeforeCancel{next: next, close: func() {
+		if _, err := fake.CloseQuestion(q.ID, "cancelled", "terminal"); err != nil {
+			t.Error(err)
+		}
+	}}
+	e.Client.HTTP = &hc
+	err = DismissCmd(ctx, e, []string{"todo-app"}, "", "")
+	if exitCodeOf(err) != ExitGeneric || err.Error() != "Not dismissed: answered in the terminal." {
+		t.Fatalf("lost race: %v", err)
+	}
+	if out.buf.String() != "" {
+		t.Fatalf("printed %q", out.buf.String())
 	}
 }
