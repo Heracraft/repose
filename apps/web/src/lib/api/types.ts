@@ -83,6 +83,9 @@ export interface Me {
 	notify?: {
 		email: boolean;
 		ntfy_url: string | null;
+		/** The Google Chat channel (I-692): the webhook's space and when
+		 * Google refused it. The webhook URL itself is never sent back. */
+		gchat?: { space: string; broken_at: string | null } | null;
 	};
 	/** The place on the waitlist while the user holds one (I-269, I-290). */
 	waitlist?: WaitlistPlace | null;
@@ -410,7 +413,7 @@ export interface Question {
 	options: string[];
 	state: QuestionState;
 	answer: string | null;
-	answered_via: 'dashboard' | 'cli' | 'ntfy' | 'email' | null;
+	answered_via: 'dashboard' | 'cli' | 'ntfy' | 'email' | 'gchat' | null;
 	created_at: string;
 	expires_at: string;
 	answered_at: string | null;
