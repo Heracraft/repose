@@ -20,8 +20,9 @@ change to them is a change to the product.
 email address or with GitHub. We store your email address, your GitHub
 login if you use GitHub, a handle derived from your GitHub login or, without
 one, from the part of your email address before the @, your time zone, and
-your notification settings (an email address and, if you set one, an ntfy
-endpoint).
+your notification settings (an email address and, if you set them, an ntfy
+endpoint and a Google Chat webhook URL, which we never show again or write
+to a log).
 
 **Your projects.** For each project: its name, the git remote URL you
 created it from, its size class, its state, which server it runs on, its
@@ -104,7 +105,8 @@ numbers. Polar holds your repose account id, to match its records to
 yours, and each period's egress past your plan's allowance, which it
 bills. Email notifications are sent through Resend;
 push notifications go to the ntfy endpoint you configure, which may be a
-third party of your choosing. Our feedback board at
+third party of your choosing, and Google Chat notifications go to Google,
+under your Google Workspace account's terms. Our feedback board at
 [repose.fider.io](https://repose.fider.io) is hosted by Fider: when you
 sign in there with your repose account, Fider receives your name and
 email address, and what you post there is public and held under

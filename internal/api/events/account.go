@@ -31,7 +31,14 @@ var AccountKinds = map[string]bool{
 	"plan_changed":           true,
 	"egress_stopped":         true,
 	"disk_over_plan":         true,
+	// A channel stopped working (I-692): sent whatever notify_email says,
+	// since the user may have no working channel left to hear it on.
+	KindChannelBroken: true,
 }
+
+// KindChannelBroken is the account email sent once when Google refuses a
+// user's Chat webhook. Its summary is {channel, space, since}.
+const KindChannelBroken = "notify_channel_broken"
 
 // ErrNotAccountKind is InsertAccount's answer to a kind outside
 // AccountKinds: a project event written without a project would reach
@@ -109,18 +116,12 @@ func InsertUserNotice(ctx context.Context, q store.Querier, userID uuid.UUID, ts
 		id, userID, ts, ts.Unix(), kind, store.CleanText(summary, MaxNoticeSummary)); err != nil {
 		return uuid.Nil, err
 	}
-	var notifyEmail bool
-	var email, ntfy *string
-	if err := q.QueryRow(ctx, "select notify_email, email, ntfy_url from users where id = $1", userID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+	channels, err := UserChannels(ctx, q, userID)
+	if err != nil {
 		return uuid.Nil, err
 	}
-	if notifyEmail && email != nil && *email != "" {
-		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'email')", id); err != nil {
-			return uuid.Nil, err
-		}
-	}
-	if ntfy != nil && *ntfy != "" {
-		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'ntfy')", id); err != nil {
+	for _, ch := range channels {
+		if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", id, ch); err != nil {
 			return uuid.Nil, err
 		}
 	}
@@ -141,4 +142,47 @@ func InsertProjectQuiet(ctx context.Context, q store.Querier, projectID uuid.UUI
 	_, err := q.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, $5, $6, 'api')`,
 		store.NewID(), projectID, ts, ts.Unix(), kind, store.CleanText(summary, MaxSummary))
 	return err
+}
+
+// QuestionClosedKind is the Google Chat reply that says how a question
+// closed, posted in the question's thread (DECISIONS I-692): Chat cannot
+// edit the card that asked it. It is a user-only event, so no project's
+// events list shows it, and its one outbox row is gchat's. The summary is
+// a QuestionClosed object.
+const QuestionClosedKind = "question_closed"
+
+// QuestionClosed is a question_closed event's summary.
+type QuestionClosed struct {
+	QuestionID uuid.UUID `json:"question_id"`
+	Text       string    `json:"text"`
+}
+
+// InsertQuestionClosed queues the Google Chat reply saying how a question
+// closed, when the user's Google Chat channel is on. It writes nothing
+// otherwise and reports whether it queued one.
+func InsertQuestionClosed(ctx context.Context, q store.Querier, userID uuid.UUID, ts time.Time, c QuestionClosed) (bool, error) {
+	chans, err := UserChannels(ctx, q, userID)
+	if err != nil {
+		return false, err
+	}
+	on := false
+	for _, ch := range chans {
+		on = on || ch == ChannelGChat
+	}
+	if !on {
+		return false, nil
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return false, err
+	}
+	id := store.NewID()
+	if _, err := q.Exec(ctx, `insert into events (id, project_id, user_id, ts, ts_second, kind, summary, source) values ($1, null, $2, $3, $4, $5, $6, 'api')`,
+		id, userID, ts, ts.Unix(), QuestionClosedKind, string(b)); err != nil {
+		return false, err
+	}
+	if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", id, ChannelGChat); err != nil {
+		return false, err
+	}
+	return true, nil
 }

@@ -1,0 +1,26 @@
+{
+  "fallbackText": "todo-app: notifications paused: 30+ events in the last hour; notifications for this project are paused until the top of the hour. See the dashboard.",
+  "cardsV2": [
+    {
+      "cardId": "repose",
+      "card": {
+        "header": {
+          "title": "todo-app",
+          "subtitle": "notifications paused"
+        },
+        "sections": [
+          {
+            "widgets": [
+              {
+                "textParagraph": {
+                  "text": "30+ events in the last hour; notifications for this project are paused until the top of the hour. See the dashboard."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+threadKey: e-01a0c14a-0000-7000-8000-0000000000aa

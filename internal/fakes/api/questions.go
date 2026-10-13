@@ -224,7 +224,7 @@ func (f *Fake) replyQuestion(w http.ResponseWriter, r *http.Request) *apiError {
 		return nil
 	}
 	via := r.FormValue("via")
-	if via != "email" {
+	if via != "email" && via != "gchat" {
 		via = "ntfy"
 	}
 	if e := f.answer(q, q.Options[opt], via); e != nil {

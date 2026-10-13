@@ -2006,8 +2006,8 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "notify",
 		Short: "Show or change where agent notifications go",
-		Long: "Show where notifications go: email and ntfy. Agents on a machine send their own\n" +
-			"with repose-notify and repose-ask.",
+		Long: "Show where notifications go: email, ntfy and Google Chat. Agents on a machine\n" +
+			"send their own with repose-notify and repose-ask.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g.json = showJSON
@@ -2019,7 +2019,7 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	root.Flags().BoolVar(&showJSON, "json", false, "print the settings as JSON")
-	var emailFlag, ntfyFlag string
+	var emailFlag, ntfyFlag, gchatFlag string
 	set := &cobra.Command{
 		Use:   "set",
 		Short: "Change where notifications go",
@@ -2037,15 +2037,19 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				b := emailFlag == "on"
 				email = &b
 			}
-			var ntfy *string
+			var ntfy, gchat *string
 			if ntfyFlag != "" {
 				ntfy = &ntfyFlag
 			}
-			return NotifySetCmd(cmd.Context(), e, email, ntfy)
+			if gchatFlag != "" {
+				gchat = &gchatFlag
+			}
+			return NotifySetCmd(cmd.Context(), e, email, ntfy, gchat)
 		},
 	}
 	set.Flags().StringVar(&emailFlag, "email", "", "`on|off`: notify by email, to your account's address")
 	set.Flags().StringVar(&ntfyFlag, "ntfy", "", "`URL|off`: notify on this ntfy topic")
+	set.Flags().StringVar(&gchatFlag, "gchat", "", "`URL|off`: notify in the Google Chat space of this webhook")
 	_ = set.RegisterFlagCompletionFunc("email", cobra.FixedCompletions([]string{"on", "off"}, cobra.ShellCompDirectiveNoFileComp))
 	test := &cobra.Command{
 		Use:   "test",

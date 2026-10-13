@@ -187,7 +187,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 			}
 		},
 	})
-	senders := map[string]notify.Sender{"email": &notify.Email{APIKey: cfg.ResendAPIKey, From: cfg.NotifyFrom}, "ntfy": &notify.Ntfy{}}
+	senders := map[string]notify.Sender{"email": &notify.Email{APIKey: cfg.ResendAPIKey, From: cfg.NotifyFrom}, "ntfy": &notify.Ntfy{}, "gchat": &notify.GChat{}}
 	a.outbox = notify.New(a.pool, senders, a.m, log)
 	a.outbox.Dashboard = cfg.DashboardURL
 	a.outbox.APIBase = cfg.APIResource

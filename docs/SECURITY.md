@@ -143,6 +143,10 @@ they stop an actor the component map does not draw.
     (IMDS), CGNAT and other reserved ranges and the Azure wire server,
     ignores proxy settings, and follows no redirect; a literal such
     address or `localhost` is refused when the URL is saved (I-444).
+    The Google Chat sender posts only to `chat.googleapis.com` through the
+    same client; its webhook URL is a credential, stored in one canonical
+    form and never logged, returned by the api or written into
+    `events.delivered` (I-692).
     Stops: a user using the api as a probe into the platform's network.
 11. **Guest-sent data is bounded at hostd and again at the api** (I-445..
     I-447). Root in a guest can replace guestd, so every notification and

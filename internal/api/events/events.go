@@ -238,17 +238,9 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 // enqueue writes one outbox row per enabled channel, applying the
 // per-project hourly cap with a single digest event past it.
 func (i *Ingest) enqueue(ctx context.Context, tx db.Tx, eventID, projectID uuid.UUID, kind string, ts time.Time) error {
-	var notifyEmail bool
-	var email, ntfy *string
-	if err := tx.QueryRow(ctx, "select u.notify_email, u.email, u.ntfy_url from users u join projects p on p.user_id = u.id where p.id = $1", projectID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+	channels, err := ProjectChannels(ctx, tx, projectID)
+	if err != nil {
 		return err
-	}
-	var channels []string
-	if notifyEmail && email != nil && *email != "" {
-		channels = append(channels, "email")
-	}
-	if ntfy != nil && *ntfy != "" {
-		channels = append(channels, "ntfy")
 	}
 	if len(channels) == 0 {
 		return nil

@@ -36,6 +36,8 @@ type Me struct {
 	Notify struct {
 		Email   bool    `json:"email"`
 		NtfyURL *string `json:"ntfy_url"`
+		// GChat is the Google Chat channel, never its URL (I-692).
+		GChat *GChatChannel `json:"gchat"`
 	} `json:"notify"`
 }
 
@@ -274,7 +276,16 @@ type Route struct {
 // NotifyTestResult is POST /me/notify-test's answer: "ok" or "error" per
 // channel that is on, absent for one that is off, and why ntfy failed.
 type NotifyTestResult struct {
-	Email     string `json:"email"`
-	Ntfy      string `json:"ntfy"`
-	NtfyError string `json:"ntfy_error"`
+	Email      string `json:"email"`
+	Ntfy       string `json:"ntfy"`
+	NtfyError  string `json:"ntfy_error"`
+	GChat      string `json:"gchat"`
+	GChatError string `json:"gchat_error"`
+}
+
+// GChatChannel is GET /me's notify.gchat: the webhook's space, and when
+// Google refused it.
+type GChatChannel struct {
+	Space    string     `json:"space"`
+	BrokenAt *time.Time `json:"broken_at"`
 }

@@ -95,9 +95,20 @@ type limitsView struct {
 }
 
 type notifyView struct {
-	Email   bool    `json:"email"`
-	NtfyURL *string `json:"ntfy_url"`
+	Email   bool       `json:"email"`
+	NtfyURL *string    `json:"ntfy_url"`
+	GChat   *gchatView `json:"gchat"`
 }
+
+// gchatView is notify.gchat: the space, never the webhook URL (I-692).
+type gchatView struct {
+	Space    string     `json:"space"`
+	BrokenAt *time.Time `json:"broken_at"`
+}
+
+// gchatHookRe is the api's check of a Google Chat webhook, as a pattern:
+// the fixed host, a space, a key and a token.
+var gchatHookRe = regexp.MustCompile(`^https://chat\.googleapis\.com/v1/spaces/([A-Za-z0-9_-]+)/messages\?key=[^&]+&token=[^&]+$`)
 
 func (f *Fake) meOf(u *userRec) meView {
 	v := meView{User: u.User, TZ: u.TZ, CreatedAt: u.CreatedAt,
@@ -108,6 +119,9 @@ func (f *Fake) meOf(u *userRec) meView {
 	if u.NtfyURL != "" {
 		url := u.NtfyURL
 		v.Notify.NtfyURL = &url
+	}
+	if m := gchatHookRe.FindStringSubmatch(u.GChatURL); m != nil {
+		v.Notify.GChat = &gchatView{Space: m[1], BrokenAt: u.GChatBrokenAt}
 	}
 	return v
 }
@@ -121,8 +135,9 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		TZ     *string `json:"tz"`
 		Notify *struct {
-			Email   *bool           `json:"email"`
-			NtfyURL json.RawMessage `json:"ntfy_url"`
+			Email    *bool           `json:"email"`
+			NtfyURL  json.RawMessage `json:"ntfy_url"`
+			GChatURL json.RawMessage `json:"gchat_url"`
 		} `json:"notify"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
@@ -150,6 +165,20 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 				return invalid("notify.ntfy_url: must be an http(s) URL")
 			} else {
 				u.NtfyURL = *url
+			}
+		}
+		if len(body.Notify.GChatURL) > 0 {
+			var url *string
+			if err := json.Unmarshal(body.Notify.GChatURL, &url); err != nil {
+				return invalid("gchat_url must be a string or null")
+			}
+			switch {
+			case url == nil || strings.TrimSpace(*url) == "":
+				u.GChatURL, u.GChatBrokenAt = "", nil
+			case !gchatHookRe.MatchString(strings.TrimSpace(*url)):
+				return invalid("gchat_url must be a Google Chat webhook URL (https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...)")
+			default:
+				u.GChatURL, u.GChatBrokenAt = strings.TrimSpace(*url), nil
 			}
 		}
 	}
@@ -203,6 +232,20 @@ func (f *Fake) notifyTest(w http.ResponseWriter, r *http.Request) *apiError {
 		res["ntfy"] = "ok"
 		if strings.Contains(u.NtfyURL, "fail") {
 			res["ntfy"], res["ntfy_error"] = "error", "the server answered 403"
+		}
+	}
+	// A webhook whose token starts with "fail" is refused and marked
+	// broken; one that gets through clears the mark (I-692).
+	if u.GChatURL != "" {
+		res["gchat"] = "ok"
+		if strings.Contains(u.GChatURL, "token=fail") {
+			res["gchat"], res["gchat_error"] = "error", "the server answered 403: the webhook was deleted, or its space removed it"
+			if u.GChatBrokenAt == nil {
+				now := time.Now().UTC()
+				u.GChatBrokenAt = &now
+			}
+		} else {
+			u.GChatBrokenAt = nil
 		}
 	}
 	writeJSON(w, http.StatusOK, res)
