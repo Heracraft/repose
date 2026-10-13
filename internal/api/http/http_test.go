@@ -1182,9 +1182,10 @@ func TestSSELiveStreamAndConcurrentLoad(t *testing.T) {
 	}
 	wg.Wait()
 	for i, n := range counts {
-		// hostd's three, then the api's "switching the machine" as the
-		// running project's build moves to its apply (I-320).
-		if n != 4 {
+		// The fake hostd's eleven (nixbuild's lines with Nix's lists,
+		// I-708), then the api's "switching the machine" as the running
+		// project's build moves to its apply (I-320).
+		if n != 12 {
 			t.Fatalf("stream %d saw %d lines (negative: no switching line)", i, n)
 		}
 	}
