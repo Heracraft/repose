@@ -149,8 +149,14 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   page whose button answers; replying to the email does nothing), the
   dashboard's project page (buttons or a text box, and Dismiss), or the
   laptop: `repose questions` lists the waiting ones, `repose reply
-  [PROJECT] [ANSWER]` answers, and lists instead of guessing when several
-  are waiting. The first answer wins everywhere; a later one is refused
+  [PROJECT] [ANSWER]` answers and `repose reply --dismiss [PROJECT]`
+  dismisses (I-690), both listing instead of guessing when several are
+  waiting. A question the owner answered in the agent's terminal, or the
+  agent withdrew, closes from the guest with a reason: the api stores
+  `answered` with no answer and `answered_via='terminal'`, or `cancelled`
+  with `answered_via='agent'`, and says "answered in the terminal" or
+  "withdrawn by the agent" wherever it describes a closed question
+  (I-690). The first answer wins everywhere; a later one is refused
   with the answer that won.
 - The answer reaches the waiting command within seconds over the
   hostd↔guestd channel, and survives a hostd, api or guestd restart; a

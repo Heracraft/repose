@@ -221,3 +221,47 @@ func TestQuestionsNameTheWindow(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// TestReplyDismiss (DECISIONS I-690): `repose reply --dismiss [PROJECT]`
+// cancels the one waiting question through the api's cancel route, lists
+// instead of guessing when several wait, refuses an answer, and says how
+// a question that closed meanwhile ended.
+func TestReplyDismiss(t *testing.T) {
+	e, p, fake, out, errOut := questionEnv(t)
+	ctx := context.Background()
+	if err := DismissCmd(ctx, e, nil, "", ""); exitCodeOf(err) != ExitGeneric {
+		t.Fatalf("with nothing waiting: %v", err)
+	}
+	q1, _ := fake.AddQuestion(p.ID, "claude", "First?", nil, time.Hour)
+	q2, _ := fake.AddQuestion(p.ID, "codex", "Second?", []string{"a", "b"}, time.Hour)
+	if err := DismissCmd(ctx, e, []string{"todo-app"}, "", ""); exitCodeOf(err) != ExitUsage || !strings.Contains(errOut.buf.String(), "2 questions are waiting") {
+		t.Fatalf("ambiguous: %v\n%s", err, errOut.buf.String())
+	}
+	if err := DismissCmd(ctx, e, []string{"todo-app", "yes"}, "", ""); exitCodeOf(err) != ExitUsage {
+		t.Fatalf("an answer with --dismiss: %v", err)
+	}
+	for _, q := range fake.Questions() {
+		if q.State != "pending" {
+			t.Fatalf("%s closed by a refused dismiss", q.ID)
+		}
+	}
+	if err := DismissCmd(ctx, e, []string{"todo-app"}, "", shortID(q1.ID)); err != nil {
+		t.Fatalf("dismiss: %v", err)
+	}
+	if s := out.buf.String(); s != "Dismissed the question claude asked in todo-app.\n" {
+		t.Fatalf("dismiss said %q", s)
+	}
+	if got := fake.Questions()[0]; got.State != "cancelled" || *got.AnsweredVia != "dashboard" {
+		t.Fatalf("after dismiss: %+v", got)
+	}
+	// The one left closes in the terminal before the dismiss lands.
+	if _, err := fake.CloseQuestion(q2.ID, "cancelled", "terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DismissCmd(ctx, e, nil, "", ""); exitCodeOf(err) != ExitGeneric {
+		t.Fatalf("nothing left: %v", err)
+	}
+	if got := fake.Questions()[1]; got.State != "answered" || got.Answer != nil || *got.AnsweredVia != "terminal" {
+		t.Fatalf("closed in the terminal: %+v", got)
+	}
+}

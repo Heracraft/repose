@@ -107,11 +107,12 @@ A question can be answered in four places:
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
 - **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box. The Projects page lists every waiting question, each with **Answer**.
-- **Your laptop:** `repose questions` lists the waiting ones and `repose reply` answers:
+- **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses:
 
 ```
 repose questions
 repose reply todo-app yes
+repose reply --dismiss todo-app
 ```
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.

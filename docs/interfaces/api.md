@@ -280,16 +280,25 @@ forms) are Nix's, not part of this contract, and may change with Nix.
 A question is what an agent asked with `repose-ask` in the guest:
 `Question = {id, project_id, project (slug), agent, window, text, options:
 [string] (0 to 3), state: pending|answered|cancelled|expired|no_channel,
-answer: string|null, answered_via: dashboard|cli|ntfy|email|null,
+answer: string|null, answered_via: dashboard|cli|ntfy|email|terminal|agent|null,
 created_at, expires_at, answered_at: time|null}`. `text` and `answer` are
 tenant content (at most 1 KB each): shown to the owner, never logged.
+Since I-690 a guest's close carries a reason: `terminal` (the owner
+answered the agent in its terminal) is stored as `state: answered`,
+`answer: null`, `answered_via: terminal`; `withdrawn` (the agent took it
+back with `repose-ask --cancel`) as `state: cancelled`, `answered_via:
+agent`; any other reason, or none from a hostd older than I-690, as a
+plain `cancelled` (or `expired`) with `answered_via: null`. A client
+shows them as "answered in the terminal" and "withdrawn by the agent",
+the words a `conflict` message and the reply page use. A `gchat` value
+arrives with I-692.
 
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/questions?state=pending\|all` | `{questions: [Question]}` across the user's projects, newest first, at most 50; `pending` (the default) lists only questions still waiting |
 | GET | `/projects/:id/questions?state=pending` | `{questions: [Question]}`, pending first, then the latest, at most 20 |
 | POST | `/projects/:id/questions/:qid/answer` | `{answer, via?: cli\|dashboard}` → `Question`. With options, `answer` must equal one of them (case does not matter; the stored answer uses the option's spelling), else `invalid` with `detail.options`. A question no longer pending (answered, expired, cancelled) is `conflict` with `detail.question`: the first answer wins |
-| POST | `/projects/:id/questions/:qid/cancel` | no body → `Question` in state `cancelled`; the waiting `repose-ask` exits 5. `conflict` when it is no longer pending |
+| POST | `/projects/:id/questions/:qid/cancel` | no body → `Question` in state `cancelled`, `answered_via: dashboard` (the dashboard's Dismiss and `repose reply --dismiss` both send it); the waiting `repose-ask` exits 5. `conflict` when it is no longer pending, with the `Describe` message (`answered in the terminal`, `withdrawn by the agent`, `already answered: yes`, ...) |
 | GET | `/questions/reply?token=&via=` | no auth; the one-click link an email or ntfy notification carries for one option. The token is signed (the unsubscribe key, a separate domain) and names the question, the option and the question's expiry. Answers an HTML page showing the question and a button that POSTs; a GET never answers, because mail scanners open links. Expired → `410`, invalid → `400`, both HTML |
 | POST | `/questions/reply?token=&via=` | no auth; answers with the token's option (`token` and `via` may also be form fields). ntfy's `http` button calls it. `200` HTML on success; a question already answered or closed → `409` naming the answer it has; 20 tries per question per minute, then `429` |
 
