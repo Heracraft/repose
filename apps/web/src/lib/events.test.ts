@@ -34,6 +34,7 @@ describe('eventKind', () => {
 			'boot_failed',
 			'snapshot_failed',
 			'destroy_failed',
+			'stop_failed',
 			'base_update_failed',
 			'personal_failed',
 			'abuse_stopped'

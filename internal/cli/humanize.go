@@ -179,7 +179,7 @@ func notRunningMessage(p *Project) string {
 	case "creating", "building", "starting":
 		return fmt.Sprintf("%s is still %s. `repose run` in its checkout waits for it and attaches; `repose status %s` shows progress.", s, p.State, s)
 	case "stopping":
-		return fmt.Sprintf("%s is stopping. Once it has stopped, `repose start %s` brings it back.", s, s)
+		return fmt.Sprintf("%s is stopping. `repose start %s` waits for the stop and starts it again.", s, s)
 	case "restoring":
 		return fmt.Sprintf("%s is being restored from a snapshot. `repose status %s` shows when it is done.", s, s)
 	case "destroying":

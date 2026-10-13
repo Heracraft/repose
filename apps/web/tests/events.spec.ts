@@ -121,6 +121,29 @@ test('the Errors filter shows only errors', async ({ page }) => {
 	await expect(ev.card.getByTestId('events-total')).toHaveText('10 events');
 });
 
+// A stop that failed reaches the user by itself since `repose stop`
+// returns early (I-710): it is an error, and the Errors filter finds it.
+test('a failed stop is an error', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'stop-app',
+		remote_url: 'github.com/heracraft/stop-app'
+	});
+	await addEvents(p.id, 4, {
+		kinds: ['stop_failed', 'agent_message'],
+		agents: ['', 'claude'],
+		summaries: ['stopping stop-app failed: the host did not answer', 'working']
+	});
+	await page.goto(`/projects/${p.id}`);
+	const ev = eventsCard(page);
+	await ev.card.getByRole('link', { name: 'Errors' }).click();
+	await expect(page).toHaveURL(/events_kind=errors/);
+	await expect(ev.rows).toHaveCount(2);
+	for (const kind of await ev.rows.evaluateAll((els) => els.map((e) => e.dataset.kind))) {
+		expect(kind).toBe('stop_failed');
+	}
+	await expect(ev.rows.first()).toContainText('failed');
+});
+
 test('a project with few events has one page', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'calm-app',

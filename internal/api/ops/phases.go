@@ -1205,6 +1205,19 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		reason := "destroying " + p.Slug + " failed: " + strings.TrimSuffix(short, ".") + ". `repose rm " + p.Slug + "` tries again"
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'error', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+reason) // best effort; the op carries the error
 		e.notifyPlatform(ctx, p.ID, "destroy_failed", reason+".")
+	case op.Kind == KindStop:
+		// `repose stop` returns once the stop is under way (I-710), so
+		// the failure reaches the user the way a destroy's does (I-165):
+		// the project's state and reason in every list, and a
+		// notification. The guest may still be on (a freeze that failed
+		// stops nothing); a second stop takes it down without a snapshot
+		// (I-158).
+		reason := "stopping " + p.Slug + " failed: " + strings.TrimSuffix(short, ".")
+		if !strings.Contains(short, "`repose ") {
+			reason += ". `repose stop " + p.Slug + "` tries again"
+		}
+		_, _ = e.pool.Exec(ctx, "update projects set state = 'error', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+reason) // best effort; the op carries the error
+		e.notifyPlatform(ctx, p.ID, EventStopFailed, reason+".")
 	case op.Kind == KindStart && code == codeVolumeUnavailable:
 		// The host's pool is down (I-644): nothing booted and the disk is
 		// intact, so the project is stopped, not error, and the next
@@ -1212,7 +1225,7 @@ func (e *Engine) onFail(ctx context.Context, op *store.Op, code, msg string, lin
 		// error with its host: freeing the placement would orphan hostd's
 		// record, and the scheduler already places nothing there.
 		_, _ = e.pool.Exec(ctx, "update projects set state = 'stopped', last_error = $2 where id = $1 and state <> 'destroyed'", p.ID, code+": "+short) // best effort; the op carries the error
-	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindStop || op.Kind == KindRestore:
+	case op.Kind == KindCreate || op.Kind == KindStart || op.Kind == KindRestore:
 		if code == "capacity" {
 			_, _ = e.pool.Exec(ctx, "update projects set host_id = null where id = $1", p.ID) // free the placement
 		}

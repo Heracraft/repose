@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-712 entries.
+714 entries.
 
 ## Scope
 
@@ -625,7 +625,7 @@ pointer, not a summary.
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15161
 - **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L15211
 - **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15319
-- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; L15343
+- **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15343
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15370
 - **I-572** A guest's shutdown waits at most 10 s for dev's user manager — 2026-10-07; L15429
 - **I-573** A sync refuses only over the machine's changes to the paths it writes, names only those, and keeps the rest — 2026-10-07; amended by I-618; L15446
@@ -655,7 +655,7 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16624
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16669
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16696
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; L16757
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16757
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16824
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16874
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16908
@@ -683,7 +683,7 @@ pointer, not a summary.
 - **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; L17783
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; L18017
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; L18017
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18080
 - **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; L18112
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
@@ -744,3 +744,5 @@ pointer, not a summary.
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20718
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20729
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20738
+- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — L20744
+- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20759

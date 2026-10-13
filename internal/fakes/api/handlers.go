@@ -715,6 +715,10 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 		// What the api answers while the create op is still running.
 		return errf("conflict", "%s is already starting", p.Slug)
 	}
+	if p.State == "stopping" {
+		// lifecycle.Start's refusal while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	if p.State != "running" {
 		if e := f.gate(userFrom(r), p.Class, nil, p); e != nil {
 			return e
@@ -758,11 +762,48 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	if p.State == "stopping" {
+		// What the api answers while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	o := f.newOp(p, "stop")
+	snapshot := body.Snapshot == nil || *body.Snapshot
+	if p.State == "running" && f.opts.StopDelay > 0 {
+		// Under f.mu already (ServeHTTP); only the goroutines take it.
+		o.State = "running"
+		o.phase = "stop_guest"
+		o.LogURL = ""
+		if f.opts.StopPickup <= 0 {
+			p.State = "stopping"
+		} else {
+			o.State, o.phase = "pending", ""
+			go func() {
+				time.Sleep(f.opts.StopPickup)
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				o.State, o.phase = "running", "stop_guest"
+				if p.State == "running" {
+					p.State = "stopping"
+				}
+			}()
+		}
+		go func() {
+			time.Sleep(f.opts.StopPickup + f.opts.StopDelay)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			p.State = "running" // what stop snapshots from
+			if s := f.stop(p, snapshot); s != nil {
+				o.Result = map[string]any{"snapshot_id": s.ID}
+			}
+			o.State = "done"
+			o.phase = ""
+		}()
+		return opResult(w, o)
+	}
 	if p.State != "stopped" {
 		// The api's stop op carries the snapshot it recorded, as a
 		// snapshot op does.
-		if s := f.stop(p, body.Snapshot == nil || *body.Snapshot); s != nil {
+		if s := f.stop(p, snapshot); s != nil {
 			o.Result = map[string]any{"snapshot_id": s.ID}
 		}
 	}

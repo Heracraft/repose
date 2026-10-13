@@ -60,6 +60,15 @@ type Options struct {
 	// done, the way the real destroy op does. Zero keeps the instant
 	// destroy.
 	DestroyDelay time.Duration
+	// StopDelay makes POST /projects/:id/stop on a running project leave
+	// it "stopping" and its op "running" for the delay, then stopped and
+	// done, as the real stop op does while it snapshots and shuts down.
+	// Zero keeps the instant stop.
+	StopDelay time.Duration
+	// StopPickup, with StopDelay, keeps the project "running" for this
+	// long after the stop is accepted: the real api reads "stopping" only
+	// once its engine has picked the op up.
+	StopPickup time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.

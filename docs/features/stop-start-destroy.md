@@ -13,11 +13,14 @@ Every command takes the project as its argument, or finds the checkout's
 and elapsed time on a terminal, or one line per phase elsewhere (I-154).
 
 ```
-$ repose stop todo-app
+$ repose stop todo-app                  # returns once the stop is under way (I-710)
+Stopping todo-app; 1 file not committed.
+
+$ repose stop todo-app --wait
 Snapshotting and stopping todo-app...
 Stopped todo-app in 11s with a 2.1 GB snapshot.
 
-$ repose stop --no-snapshot
+$ repose stop --no-snapshot --wait
 Stopped todo-app in 6.2s.
 
 $ repose start todo-app
@@ -36,13 +39,11 @@ kanali is running (xl), ready in 1m31s.
 
 $ repose stop api                       # an agent mid-turn (I-614)
 api has claude (working). Stopping ends it. Stop api? [y/N] y
-Snapshotting and stopping api...
-Stopped api in 12s with a 1.4 GB snapshot.
+Stopping api.
 
 $ repose stop --unused                  # several stop at once (I-615)
-Stopping web and docs...
-Stopped web in 9.8s with a 0.9 GB snapshot.
-Stopped docs in 11s with a 1.2 GB snapshot.
+Stopping web.
+Stopping docs.
 
 $ repose rm todo-app
 Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
@@ -112,8 +113,8 @@ Stop:
   waiting for an answer, the CLI asks before stopping (`api has claude
   (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops
   nothing, and without a terminal it refuses with exit 2 unless
-  `-y`/`--yes`, after which the stop line is followed by `Ended claude
-  (working) and claude-2 (needs input).` Idle agents are not named, and no
+  `-y`/`--yes`, after which the stop line is followed by `Ending claude
+  (working) and claude-2 (needs input).` (`Ended` with `--wait`, I-710). Idle agents are not named, and no
   line names a command (DECISIONS I-614, revising I-500; I-484).
 - `stop` takes several projects, or `--unused` for every running project
   the api reports idle (I-262); they are resolved first, asked about once
@@ -132,10 +133,25 @@ Stop:
   starts, and uploads while the guest shuts down; the stop waits for the
   longer of the two (I-404). Its time follows the data the filesystem
   uses, read eight chunks at a time (I-571). `--no-snapshot` skips it.
-- The stop line is `Stopped <slug> in <time> with a <size> snapshot.`,
-  or `Stopped <slug> in <time>.` without one; a stop whose snapshot failed
-  says so on stderr (I-158). It says nothing about cost: a stopped project
-  costs nothing (I-570).
+- `stop` returns once the api has taken the stop and the project reads
+  `stopping` (it polls up to 10 s for the engine's pickup), so a `start`,
+  `attach`, `run` or `ls` right after sees the stop; before that it asks,
+  fetches and reads what the machine keeps (I-710). Its line is
+  `Stopping <slug>.`, with the I-634 clause (`Stopping job; 1 file not
+  committed.`), and `-y` past busy agents adds `Ending claude (working).`
+  A project already `stopping` prints `<slug> is already stopping.` and
+  sends nothing. A stop op that fails leaves the project in `error` with
+  `stopping <slug> failed: <why>`, then "`repose stop <slug>` tries again", and
+  records `stop_failed`, which notifies. `start`, `attach`, `run`, `ssh`
+  and `code` on a `stopping` project wait for the stop, then start it.
+  `resize --size`, `fork` and run's plan question still wait for their
+  stops: they need the stopped volume or the freed memory.
+- `--wait` waits for the whole stop. Its line is `Stopped <slug> in
+  <time> with a <size> snapshot.`, or `Stopped <slug> in <time>.` without
+  one, then `Ended claude (working).`; a stop whose snapshot failed says
+  so on stderr (I-158), and a failed stop exits 1. `--wait` on a project
+  already stopping waits for that stop. No line says anything about
+  cost: a stopped project costs nothing (I-570).
 - SSH sessions to a stopping guest are closed; the gateway rejects new ones
   with `todo-app is stopped; run \`repose start\`` from the moment the
   state leaves `running`.

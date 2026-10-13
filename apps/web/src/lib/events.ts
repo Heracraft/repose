@@ -39,6 +39,7 @@ export const EVENT_FILTERS = {
 		'base_update_failed',
 		'snapshot_failed',
 		'destroy_failed',
+		'stop_failed',
 		'personal_failed',
 		'boot_failed',
 		'abuse_stopped',

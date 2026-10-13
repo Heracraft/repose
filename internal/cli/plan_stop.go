@@ -154,7 +154,7 @@ func stopToFit(ctx context.Context, e *Env, err error, target, class string, pr 
 		errors.As(err, &ae)
 		return false, exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(ae))
 	}
-	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: slugsOf(stop), Snapshot: true, Yes: true, asked: true}); err != nil {
+	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: slugsOf(stop), Snapshot: true, Yes: true, Wait: true, asked: true}); err != nil {
 		return false, err
 	}
 	return true, nil
