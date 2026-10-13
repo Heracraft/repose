@@ -287,7 +287,12 @@ func (o *Outbox) runLane(ctx context.Context, k laneKey) {
 	for {
 		o.mu.Lock()
 		l := o.lanes[k]
-		if len(l.rows) == 0 {
+		// At shutdown the rows left wait for the next worker: their
+		// next_at is a minute on, and no attempt is counted.
+		if len(l.rows) == 0 || ctx.Err() != nil {
+			for _, r := range l.rows {
+				delete(o.inflight, rowKey{r.eventID, r.channel})
+			}
 			delete(o.lanes, k)
 			o.mu.Unlock()
 			return
