@@ -66,7 +66,7 @@ Every email comes as HTML with a plain-text version. There are no images and no 
 
 The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
 
-Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
+All five agents report through hooks, within about 10 seconds; Gemini CLI and pi through the machine's extension for them ([Agent states](/docs/agents#agent-states)). Until a Gemini CLI or pi reports, the machine records `gemini went idle` or `pi went idle` in `repose events` when its process goes quiet for about 90 seconds. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 
@@ -92,10 +92,11 @@ Two commands on every machine let an agent reach you from any shell, including i
 
 ```
 repose-notify "Deploy to staging is green"
+repose-notify --done "PR 12 is up: retries for the webhook sender"
 repose-ask --options yes,no "Drop the legacy sessions table?"
 ```
 
-`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
+`repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
 
 A question can be answered in four places:
 
@@ -109,29 +110,35 @@ repose questions
 repose reply todo-app yes
 ```
 
+You can also answer the agent in its own terminal. Any prompt you send the agent that asked closes its open questions as answered in the terminal, and `repose-ask` exits 6. This works for all five agents; for Gemini CLI and pi, through the machine's extension for them.
+
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.
+
+An agent takes its own questions back with `repose-ask --cancel`, one with `repose-ask --cancel ID`, and every open question on the machine with `repose-ask --cancel --all`; each prints how many it withdrew. A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
 
 Tell your agent about the commands in its instructions, for example in `CLAUDE.md`: "When you need a decision from me, run `repose-ask` with the question and use its output as my answer."
 
 `repose-ask` options:
 
-| Option            | Default    |                                                                                   |
-| ----------------- | ---------- | --------------------------------------------------------------------------------- |
-| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.      |
-| `--agent NAME`    | detected   | Who is asking. Usually detected from the agent running the command, else `shell`. |
+| Option            | Default    |                                                                                                             |
+| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                          |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.                                |
+| `--agent NAME`    | detected   | Who is asking. Usually detected from the agent running the command, else `shell`.                           |
+| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with ID. With `--all`, every open question on the machine. |
 
 It exits with:
 
-| Code | Meaning                                                                   |
-| ---- | ------------------------------------------------------------------------- |
-| 0    | You answered. The answer is on standard output.                           |
-| 1    | The machine's agent service couldn't be reached.                          |
-| 2    | Wrong usage, such as no question or more than three options.              |
-| 3    | No answer before the timeout.                                             |
-| 4    | Email is off and there's no ntfy topic, so nobody would see the question. |
-| 5    | Cancelled: you dismissed it, the machine stopped, or it restarted.        |
-| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.        |
+| Code | Meaning                                                                                   |
+| ---- | ----------------------------------------------------------------------------------------- |
+| 0    | You answered. The answer is on standard output.                                           |
+| 1    | The machine's agent service couldn't be reached.                                          |
+| 2    | Wrong usage, such as no question or more than three options.                              |
+| 3    | No answer before the timeout.                                                             |
+| 4    | Email is off and there's no ntfy topic, so nobody would see the question.                 |
+| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted. |
+| 6    | You answered the agent in its terminal. Nothing is on standard output.                    |
+| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.                        |
 
 Messages and questions are capped at 1 KB and count toward the project's 30 notifications an hour. The text is shown to you and nobody else, and it isn't written to any log.
 
@@ -139,7 +146,7 @@ Messages and questions are capped at 1 KB and count toward the project's 30 noti
 
 Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications an hour; past that, one message says they're paused until the next hour.
 
-Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
+Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A question closing on the machine is never dropped. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
 
 ## Check what happened
 

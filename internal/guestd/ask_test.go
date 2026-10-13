@@ -155,7 +155,7 @@ func TestQuestionsSurviveAGuestdRestart(t *testing.T) {
 	dir := t.TempDir()
 	var emitted []questions.Question
 	s1 := questions.New(dir, func(q questions.Question) { emitted = append(emitted, q) }, testLog(t), nil)
-	q, err := s1.Open("claude", "claude", "merge?", nil, time.Minute)
+	q, err := s1.Open("claude", "claude", "", "merge?", nil, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,4 +170,98 @@ func TestQuestionsSurviveAGuestdRestart(t *testing.T) {
 	if got.Answer != "go" {
 		t.Fatalf("answer = %q", got.Answer)
 	}
+}
+
+// TestNotifyDoneIsAgentDone (I-688): repose-notify --done sends kind
+// agent_done; another kind is refused.
+func TestNotifyDoneIsAgentDone(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	if code, _ := hookDo(t, c, http.MethodPost, "/notify", hooks.MessagePayload{Agent: "claude", Kind: hooks.KindDone, Text: "PR 12 is up"}); code != http.StatusNoContent {
+		t.Fatalf("POST /notify done = %d", code)
+	}
+	n := h.waitForNotify(t, "agent_done", func(n *guestdv1.Notify) bool { return n.GetAgentEvent().GetKind() == "agent_done" })
+	if n.GetAgentEvent().GetSummary() != "PR 12 is up" {
+		t.Fatalf("event = %+v", n.GetAgentEvent())
+	}
+	if code, _ := hookDo(t, c, http.MethodPost, "/notify", hooks.MessagePayload{Agent: "claude", Kind: "completed", Text: "x"}); code != http.StatusBadRequest {
+		t.Fatalf("kind completed through /notify = %d, want 400", code)
+	}
+}
+
+// TestPromptClosesQuestionsAsTerminal (I-690): a prompt hook closes the
+// questions asked from its window (no agent process in the harness),
+// hostd hears the close with reason terminal, the asker's poll gets the
+// reason, and the prompt itself is never relayed.
+func TestPromptClosesQuestionsAsTerminal(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	_, body := hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: "claude", Window: "claude", Text: "ok to push?"})
+	var st hooks.AskState
+	_ = json.Unmarshal(body, &st)
+	if code, _ := hookDo(t, c, http.MethodPost, "/", hooks.Payload{Agent: "claude", Kind: hooks.KindPrompt, Window: "claude", Summary: "PROMPT-TEXT"}); code != http.StatusNoContent {
+		t.Fatalf("prompt = %d", code)
+	}
+	h.waitForNotify(t, "terminal close", func(n *guestdv1.Notify) bool {
+		q := n.GetQuestion()
+		return q.GetQuestionId() == st.ID && q.GetState() == "cancelled" && q.GetReason() == "terminal"
+	})
+	_, body = hookDo(t, c, http.MethodGet, "/ask/"+st.ID+"?wait=0", nil)
+	if !strings.Contains(string(body), `"reason":"terminal"`) {
+		t.Fatalf("poll = %s", body)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, n := range h.notifies {
+		if strings.Contains(n.String(), "PROMPT-TEXT") || n.GetAgentEvent().GetKind() == "prompt" {
+			t.Fatalf("the prompt left the guest: %v", n)
+		}
+	}
+}
+
+// TestCancelMineAndAll (I-690): DELETE /ask withdraws the caller's own
+// questions, or every one with scope=all, and says how many; GET /ask
+// lists what is open.
+func TestCancelMineAndAll(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	for _, w := range []string{"claude", "claude", "codex"} {
+		hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: w, Window: w, Text: "q"})
+	}
+	_, body := hookDo(t, c, http.MethodGet, "/ask?scope=all", nil)
+	var l hooks.AskList
+	if err := json.Unmarshal(body, &l); err != nil || len(l.Questions) != 3 {
+		t.Fatalf("list = %s", body)
+	}
+	_, body = hookDo(t, c, http.MethodDelete, "/ask?agent=claude&window=claude&reason=withdrawn", nil)
+	if string(bytes.TrimSpace(body)) != `{"closed":2}` {
+		t.Fatalf("cancel mine = %s", body)
+	}
+	h.waitForNotify(t, "withdrawn close", func(n *guestdv1.Notify) bool { return n.GetQuestion().GetReason() == "withdrawn" })
+	_, body = hookDo(t, c, http.MethodDelete, "/ask?scope=all&reason=withdrawn", nil)
+	if string(bytes.TrimSpace(body)) != `{"closed":1}` {
+		t.Fatalf("cancel all = %s", body)
+	}
+	if code, _ := hookDo(t, c, http.MethodDelete, "/ask?scope=all&reason=terminal", nil); code != http.StatusBadRequest {
+		t.Fatalf("a client claiming terminal = %d, want 400", code)
+	}
+}
+
+// TestReconnectResendsAGuestClose (I-690): a close made while no hostd
+// was connected reaches the next one.
+func TestReconnectResendsAGuestClose(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	_, body := hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Text: "q"})
+	var st hooks.AskState
+	_ = json.Unmarshal(body, &st)
+	hookDo(t, c, http.MethodDelete, "/ask/"+st.ID+"?reason=withdrawn", nil)
+	h.waitForNotify(t, "first close", func(n *guestdv1.Notify) bool { return n.GetQuestion().GetState() == "cancelled" })
+	h.mu.Lock()
+	h.notifies = nil
+	h.mu.Unlock()
+	h.client = h.dial(t)
+	h.waitForNotify(t, "re-sent close", func(n *guestdv1.Notify) bool {
+		return n.GetQuestion().GetQuestionId() == st.ID && n.GetQuestion().GetReason() == "withdrawn"
+	})
 }

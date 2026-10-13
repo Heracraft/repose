@@ -78,8 +78,9 @@ Events (see agents.md for how each agent produces them):
 - The summary is what the agent's hook provided, truncated. It may include
   the agent's own last message. It never includes the prompt the user typed
   or terminal contents beyond what the hook payload carries.
-- Heuristic events (pane idle for agents without hooks) are labelled as
-  such in the message: `gemini went idle` rather than `gemini finished`.
+- Heuristic events (pane idle for a gemini or pi that has sent no hook
+  yet, I-690) are labelled as such in the message: `gemini went idle`
+  rather than `gemini finished`.
   As shipped, the heuristic never reads pane *text*. It reads only whether
   the pane's process tree has used CPU recently, a stronger guarantee than
   "never sent" (DECISIONS I-49).
@@ -100,14 +101,27 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
 - `repose-notify TEXT` in any guest shell sends TEXT (1 KB) as an
   `agent_message`: title `<project>: <agent> says`, ntfy priority 3. It
   returns at once. Messages are never collapsed into each other and count
-  against the 30-an-hour cap like any event.
+  against the 30-an-hour cap like any event. `repose-notify --done TEXT`
+  sends it as `agent_done` instead (I-688): the agent says the work the
+  owner asked for is finished, since a finished turn notifies nobody.
 - `repose-ask [--options A,B,C] [--timeout 30m] QUESTION` sends an
   `agent_question` (title `<project>: <agent> asks`, ntfy priority 5) and
   blocks until the owner answers, then prints the answer. Exit codes: 0
   answered, 1 guestd unreachable, 2 usage, 3 timeout, 4 no channel on, 5
-  cancelled (dismissed, guest stopped, or the question is gone after a
-  reboot), 130 interrupted. At most 3 options; timeout 30 minutes by
-  default, 24 hours at most.
+  cancelled (dismissed, withdrawn by the agent, guest stopped, or the
+  question is gone after a reboot), 6 answered in the terminal, 130
+  interrupted. At most 3 options; timeout 30 minutes by default, 24 hours
+  at most.
+- Answering in the terminal (I-690): any prompt the owner sends the agent
+  that asked closes its open questions; all five agents report the prompt
+  through a hook (gemini and pi through the platform's extensions). The
+  guest matches the agent process, not the window, and never reads the
+  prompt. `repose-ask --cancel` withdraws the agent's own open questions
+  (`--cancel ID` one, `--cancel --all` every one on the machine), and a
+  question whose asker was killed closes after 90 seconds without a poll.
+  Each close reaches the api with its reason and is re-sent on hostd
+  reconnects for 10 minutes, so a lost close no longer leaves a question
+  pending until it expires.
 - The owner answers from ntfy (one `http` button per option, calling a
   signed reply link; no login), email (one link per option, which opens a
   page whose button answers; replying to the email does nothing), the

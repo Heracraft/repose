@@ -135,22 +135,52 @@ func TestMapOpencode(t *testing.T) {
 	}
 }
 
-func TestMapHooklessAgentsAcceptOnlyTheNativeShape(t *testing.T) {
-	// features/agents.md: gemini and pi have no completion hook, so there is
-	// nothing to map; the pane-idle heuristic reports them instead. A wrapper
-	// that can speak the socket's own shape is still accepted.
-	for _, agent := range []string{"gemini", "pi"} {
-		if _, err := Map(agent, []byte(`{"type":"whatever"}`)); !errors.Is(err, ErrNoEvent) {
-			t.Errorf("%s: err = %v, want ErrNoEvent", agent, err)
-		}
-		p, err := Map(agent, fixture(t, agent+"/heuristic.json"))
-		if err != nil {
-			t.Errorf("%s: %v", agent, err)
-			continue
-		}
-		if p.Agent != agent || p.Kind != "completed" {
-			t.Errorf("%s: payload = %+v", agent, p)
-		}
+// pi's hooks come from the platform's pi extension (DECISIONS I-690), which
+// speaks the socket's own shape; any other payload is no event.
+func TestMapPiAcceptsOnlyTheNativeShape(t *testing.T) {
+	if _, err := Map("pi", []byte(`{"type":"whatever"}`)); !errors.Is(err, ErrNoEvent) {
+		t.Errorf("err = %v, want ErrNoEvent", err)
+	}
+	p, err := Map("pi", fixture(t, "pi/heuristic.json"))
+	if err != nil || p.Agent != "pi" || p.Kind != "completed" {
+		t.Errorf("payload = %+v %v", p, err)
+	}
+	p, err = Map("pi", []byte(`{"agent":"pi","kind":"prompt"}`))
+	if err != nil || p.Kind != KindPrompt {
+		t.Errorf("prompt = %+v %v", p, err)
+	}
+}
+
+// Gemini CLI 0.61.0's extension hooks (I-690), captured from the real
+// binary: BeforeAgent is the prompt, AfterAgent the end of the turn, with
+// the reply as the summary; one a Stop-style hook forced is a pause.
+func TestMapGemini(t *testing.T) {
+	p, err := Map("gemini", fixture(t, "gemini/before-agent.json"))
+	if err != nil || p.Kind != KindPrompt || p.Summary != "" {
+		t.Fatalf("BeforeAgent = %+v %v", p, err)
+	}
+	p, err = Map("gemini", fixture(t, "gemini/after-agent.json"))
+	if err != nil || p.Kind != "completed" || p.Summary != "Probe reply: all done." {
+		t.Fatalf("AfterAgent = %+v %v", p, err)
+	}
+	if _, err := Map("gemini", fixture(t, "gemini/after-agent-hook-active.json")); !errors.Is(err, ErrNoEvent) {
+		t.Fatalf("a forced AfterAgent: %v", err)
+	}
+	if _, err := Map("gemini", []byte(`{"hook_event_name":"BeforeModel"}`)); !errors.Is(err, ErrNoEvent) {
+		t.Fatalf("BeforeModel: %v", err)
+	}
+	p, err = Map("gemini", fixture(t, "gemini/heuristic.json"))
+	if err != nil || p.Kind != "completed" {
+		t.Fatalf("native shape: %+v %v", p, err)
+	}
+}
+
+// Codex 0.157.1 runs a UserPromptSubmit hook from /etc/codex/config.toml
+// (I-690), captured from the real binary; the prompt is not read.
+func TestMapCodexUserPromptSubmit(t *testing.T) {
+	p, err := Map("codex", fixture(t, "codex/user-prompt-submit.json"))
+	if err != nil || p.Agent != "codex" || p.Kind != KindPrompt || p.Summary != "" {
+		t.Fatalf("payload = %+v %v", p, err)
 	}
 }
 
@@ -186,5 +216,51 @@ func TestTranscriptTailIsReadFromTheEnd(t *testing.T) {
 	}
 	if got := lastAssistantLine(path); got != "the final word" {
 		t.Fatalf("lastAssistantLine = %q, want the final word", got)
+	}
+}
+
+// TestMapClaudeStopSummaryIsTheLastMessage (I-688): Claude Code 2.1.283's
+// Stop carries the last assistant message, captured from the real binary.
+func TestMapClaudeStopSummaryIsTheLastMessage(t *testing.T) {
+	p, err := Map("claude", fixture(t, "claude/stop-last-message.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Kind != "completed" || p.Summary != "Probe reply: all done. The tests pass." {
+		t.Fatalf("payload = %+v", p)
+	}
+}
+
+// TestMapClaudeStopPauses (I-688): a Stop while a background task runs,
+// or one a Stop hook forced, is a pause: no event, the agent stays
+// working. A finished task and a cron are no pause.
+func TestMapClaudeStopPauses(t *testing.T) {
+	for _, f := range []string{"claude/stop-background-task.json", "claude/stop-hook-active.json"} {
+		if _, err := Map("claude", fixture(t, f)); !errors.Is(err, ErrNoEvent) {
+			t.Errorf("%s: err = %v, want ErrNoEvent", f, err)
+		}
+	}
+	p, err := Map("claude", fixture(t, "claude/stop-finished-task.json"))
+	if err != nil || p.Kind != "completed" || p.Summary != "The wait finished." {
+		t.Fatalf("finished task: %+v %v", p, err)
+	}
+}
+
+// TestMapClaudeUserPromptSubmit (I-690): the prompt hook is kind prompt
+// and the prompt's text goes nowhere.
+func TestMapClaudeUserPromptSubmit(t *testing.T) {
+	p, err := Map("claude", fixture(t, "claude/user-prompt-submit.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Agent != "claude" || p.Kind != KindPrompt || p.Summary != "" {
+		t.Fatalf("payload = %+v, want a prompt with no summary", p)
+	}
+	// Claude Code 2.1.283 fires the hook for the turn a finished
+	// background task starts, with its own <task-notification> as the
+	// prompt: nobody typed it, so it closes no question. The agent is
+	// working already: the Stop before it was a pause.
+	if _, err := Map("claude", fixture(t, "claude/user-prompt-submit-task-notification.json")); !errors.Is(err, ErrNoEvent) {
+		t.Fatalf("task notification: %v, want ErrNoEvent", err)
 	}
 }

@@ -45,8 +45,9 @@ const (
 
 // guestAgentKinds are the AgentEvent kinds a guest may send
 // (docs/interfaces/grpc-hostd.md). Platform kinds such as billing_stopped
-// are the api's to raise, never a guest's.
-var guestAgentKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+// are the api's to raise, never a guest's. agent_done is `repose-notify
+// --done` (DECISIONS I-688).
+var guestAgentKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
 
 // guestWarningKinds are the Warning kinds guestd sends
 // (docs/interfaces/vsock-guestd.md). Any other becomes guestOtherWarning.
@@ -63,8 +64,13 @@ const guestOtherWarning = "guest_other"
 // open question.
 var questionStates = map[string]bool{"": true, "cancelled": true, "expired": true}
 
-// agentStates are the agent states guestd reports in a sample.
-var agentStates = map[string]bool{"working": true, "idle": true, "needs_input": true, "unknown": true}
+// questionReasons are the reasons a guest-side close may carry (DECISIONS
+// I-690); any other becomes "", a plain close.
+var questionReasons = map[string]bool{"terminal": true, "withdrawn": true, "interrupted": true, "asker_gone": true}
+
+// agentStates are the agent states guestd reports in a sample. running is
+// an agent with no turn hooks whose process is alive (I-694).
+var agentStates = map[string]bool{"working": true, "idle": true, "needs_input": true, "unknown": true, "running": true}
 
 // cleanText makes s valid UTF-8 with no control characters other than
 // newline and tab, and at most n bytes, cut on a rune boundary.
@@ -147,9 +153,12 @@ func cleanAgentEvent(guestID, agent, kind, summary, window string) (*hostdv1.Age
 
 // cleanQuestion bounds a guest's Question; ok is false for an id that is not
 // a uuid or a state a guest may not send.
-func cleanQuestion(guestID string, id, agent, window, text string, options []string, timeoutS uint32, st string) (*hostdv1.AgentQuestion, bool) {
+func cleanQuestion(guestID string, id, agent, window, text string, options []string, timeoutS uint32, st, reason string) (*hostdv1.AgentQuestion, bool) {
 	if _, err := uuid.Parse(id); err != nil || !questionStates[st] {
 		return nil, false
+	}
+	if st == "" || !questionReasons[reason] {
+		reason = ""
 	}
 	var opts []string
 	for _, o := range options {
@@ -162,7 +171,7 @@ func cleanQuestion(guestID string, id, agent, window, text string, options []str
 	}
 	return &hostdv1.AgentQuestion{
 		GuestId: guestID, QuestionId: id, Agent: cleanToken(agent, capAgent), TmuxWindow: cleanLine(window, capWindow),
-		Text: cleanText(text, capText), Options: opts, TimeoutS: timeoutS, State: st,
+		Text: cleanText(text, capText), Options: opts, TimeoutS: timeoutS, State: st, Reason: reason,
 	}, true
 }
 

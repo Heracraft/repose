@@ -126,38 +126,155 @@ func TestAgentOf(t *testing.T) {
 	}
 }
 
-func TestWatcherReportsWorkingThenIdle(t *testing.T) {
+// I-694: a hooked agent's state comes from its hooks only. CPU in its
+// pane (a dev server it started) is not working; a prompt is, until the
+// turn ends; a permission prompt is needs_input; the end of the turn is
+// idle. Before any hook it waits at its prompt.
+func TestHookedAgentStateComesFromHooks(t *testing.T) {
 	procs := []fakeProc{
 		{pid: 100, ppid: 1, comm: "bash"},
 		{pid: 101, ppid: 100, comm: "claude", ticks: 50},
+		{pid: 102, ppid: 101, comm: "node", ticks: 50},
 	}
 	w, run, rec, clk, p := newWatcherFixture(t, procs)
 	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
 	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
 
 	ctx := context.Background()
-	w.Refresh(ctx) // first look: the window appears
+	settle := func() {
+		clk.advance(Interval)
+		w.Refresh(ctx)
+		clk.advance(StateDebounce)
+		w.Refresh(ctx)
+	}
+	state := func() string {
+		sig, _ := w.Signals()
+		if len(sig.GetAgents()) != 1 {
+			t.Fatalf("agents = %v", sig.GetAgents())
+		}
+		return sig.GetAgents()[0].GetState()
+	}
+	w.Refresh(ctx)
+	if got := state(); got != StateIdle {
+		t.Fatalf("before any hook = %q, want idle", got)
+	}
+	// The dev server burns CPU: still idle.
+	writeProc(t, p, []fakeProc{{pid: 102, ppid: 101, comm: "node", ticks: 900}})
+	settle()
+	if got := state(); got != StateIdle {
+		t.Fatalf("with CPU and no prompt = %q, want idle", got)
+	}
+	w.RecordHook("claude", KindPrompt, clk.now())
+	if got := state(); got != StateWorking {
+		t.Fatalf("after a prompt = %q, want working at once", got)
+	}
+	settle()
+	states, _, _ := rec.snapshot()
+	if !containsState(states, "claude/claude="+StateWorking) {
+		t.Fatalf("states = %v, want working announced", states)
+	}
+	w.RecordHook("claude", KindNeedsInput, clk.now())
+	settle()
+	if got := state(); got != StateNeedsInput {
+		t.Fatalf("after a permission prompt = %q", got)
+	}
+	w.RecordHook("claude", KindPrompt, clk.now())
+	settle()
+	w.RecordHook("claude", KindCompleted, clk.now())
+	settle()
+	if got := state(); got != StateIdle {
+		t.Fatalf("after the turn = %q, want idle", got)
+	}
+}
 
-	// The agent burns CPU: working.
-	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "claude", ticks: 200}})
+// I-694: an agent with no turn hooks shows running while its process is
+// alive, busy or not.
+func TestHeuristicAgentIsRunning(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 200, ppid: 1, comm: "bash"},
+		{pid: 201, ppid: 200, comm: "pi", ticks: 5},
+	}
+	w, run, rec, clk, p := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"pi", "201", "pi", "0"})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	writeProc(t, p, []fakeProc{{pid: 201, ppid: 200, comm: "pi", ticks: 500}})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	clk.advance(IdleAfter + StateDebounce)
+	w.Refresh(ctx)
+	states, _, _ := rec.snapshot()
+	for _, s := range states {
+		if s != "pi/pi="+StateRunning {
+			t.Fatalf("states = %v, want only running", states)
+		}
+	}
+	if !containsState(states, "pi/pi="+StateRunning) {
+		t.Fatalf("states = %v, want running", states)
+	}
+}
+
+// I-694: a dev server in a plain shell window is no agent, however much
+// CPU it uses.
+func TestCPUInAShellWindowIsNoAgent(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "node", ticks: 50},
+	}
+	w, run, rec, clk, p := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"shell", "100", "node", "0"})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "node", ticks: 5000}})
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	clk.advance(StateDebounce)
 	w.Refresh(ctx)
-
+	sig, _ := w.Signals()
 	states, _, _ := rec.snapshot()
-	if !containsState(states, "claude/claude="+StateWorking) {
-		t.Fatalf("states = %v, want a working state", states)
+	if len(sig.GetAgents()) != 0 || len(states) != 0 {
+		t.Fatalf("agents = %v, states = %v, want none", sig.GetAgents(), states)
 	}
+}
 
-	// Then it stops for longer than IdleAfter.
-	clk.advance(IdleAfter)
+// The hook states outlive a guestd restart: a turn in progress is still
+// working in the new guestd, and a record for a window that is gone at
+// the first refresh is dropped.
+func TestHookStatesSurviveARestart(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "claude", ticks: 50},
+	}
+	w, run, _, clk, p := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
+	ctx := context.Background()
 	w.Refresh(ctx)
-	clk.advance(StateDebounce)
-	w.Refresh(ctx)
-	states, _, _ = rec.snapshot()
-	if !containsState(states, "claude/claude="+StateIdle) {
-		t.Fatalf("states = %v, want an idle state", states)
+	w.RecordHook("claude", KindPrompt, clk.now())
+	w.RecordHook("claude-9", KindPrompt, clk.now())
+
+	w2 := NewWatcher(p, run, &sysdep.FakeDocker{Up: true}, fixedSlug("todo-app"), &recorder{}, quietLog(), clk.now)
+	w2.Refresh(ctx)
+	sig, _ := w2.Signals()
+	if got := sig.GetAgents(); len(got) != 1 || got[0].GetState() != StateWorking {
+		t.Fatalf("after a restart: %v, want claude still working", got)
+	}
+	run.Match["list-windows"] = tmuxOutput(
+		[4]string{"claude", "101", "claude", "0"},
+		[4]string{"claude-9", "101", "claude", "0"},
+	)
+	clk.advance(Interval)
+	w2.Refresh(ctx)
+	for _, a := range func() []string {
+		sig, _ := w2.Signals()
+		var out []string
+		for _, a := range sig.GetAgents() {
+			out = append(out, a.GetTmuxWindow()+"="+a.GetState())
+		}
+		return out
+	}() {
+		if a == "claude-9="+StateWorking {
+			t.Fatal("a record for a window that was gone at the first refresh came back")
+		}
 	}
 }
 
@@ -571,7 +688,10 @@ func TestWatcherMarksTheTmuxWindowState(t *testing.T) {
 	run.Match["list-windows"] = tmuxOutput([4]string{"claude-2", "101", "claude", "0"})
 	ctx := context.Background()
 	w.Refresh(ctx)
-	writeProc(t, p, []fakeProc{{pid: 101, ppid: 100, comm: "claude", ticks: 200}})
+	clk.advance(StateDebounce)
+	w.Refresh(ctx)
+	run.Reset()
+	w.RecordHook("claude-2", KindPrompt, clk.now())
 	clk.advance(Interval)
 	w.Refresh(ctx)
 	clk.advance(StateDebounce)
@@ -612,5 +732,32 @@ func TestWatcherMarksTheTmuxWindowState(t *testing.T) {
 	}
 	if want := "tmux set-option -wu -t =todo-app:=claude-2 " + StateOption; last != want {
 		t.Fatalf("last set-option %q, want %q", last, want)
+	}
+}
+
+// I-690, I-694: once pi's extension reports, its window follows its hooks
+// and the heuristic stays quiet.
+func TestAHookMakesAHeuristicAgentHooked(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 200, ppid: 1, comm: "bash"},
+		{pid: 201, ppid: 200, comm: "pi", ticks: 5},
+	}
+	w, run, rec, clk, _ := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"pi", "201", "pi", fmt.Sprint(clk.now().Unix())})
+	ctx := context.Background()
+	w.Refresh(ctx)
+	w.RecordHook("pi", KindPrompt, clk.now())
+	clk.advance(HeuristicIdleAfter + time.Second)
+	w.Refresh(ctx)
+	sig, _ := w.Signals()
+	if got := sig.GetAgents()[0].GetState(); got != StateWorking {
+		t.Fatalf("pi after its prompt hook = %q", got)
+	}
+	if _, events, _ := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("events = %v, want no heuristic completion for a hooked window", events)
+	}
+	w.RecordHook("pi", KindCompleted, clk.now())
+	if sig, _ := w.Signals(); sig.GetAgents()[0].GetState() != StateIdle {
+		t.Fatalf("after agent_end = %q", sig.GetAgents()[0].GetState())
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,13 +33,16 @@ import (
 // Exit codes of repose-notify and repose-ask
 // (docs/interfaces/guest-conventions.md "Asking the user").
 const (
-	ExitOK          = 0
-	ExitError       = 1 // guestd unreachable, or refused the request
-	ExitUsage       = 2
-	ExitTimeout     = 3 // no answer before --timeout
-	ExitNoChannel   = 4 // the owner has neither email nor ntfy turned on
-	ExitCancelled   = 5 // dismissed, the machine stopped, or the question was lost
-	ExitInterrupted = 130
+	ExitOK        = 0
+	ExitError     = 1 // guestd unreachable, or refused the request
+	ExitUsage     = 2
+	ExitTimeout   = 3 // no answer before --timeout
+	ExitNoChannel = 4 // the owner has neither email nor ntfy turned on
+	ExitCancelled = 5 // dismissed, withdrawn, the machine stopped, or the question was lost
+	// ExitAnsweredInTerminal: the user sent the agent a prompt, which
+	// closed its open questions (DECISIONS I-690).
+	ExitAnsweredInTerminal = 6
+	ExitInterrupted        = 130
 )
 
 // LostAfter is how long repose-ask keeps retrying a guestd it cannot reach
@@ -48,24 +52,29 @@ var LostAfter = 2 * time.Minute
 // pollWait is the long-poll length asked of guestd.
 var pollWait = 25
 
-const notifyUsage = `usage: repose-notify [--agent NAME] MESSAGE...
+const notifyUsage = `usage: repose-notify [--done] [--agent NAME] MESSAGE...
 
-Sends MESSAGE to the project owner's notification channels (email, ntfy)
-and returns at once. Without MESSAGE it reads the message from stdin.
-Messages are capped at 1 KB and share the project's notification limit of
-30 an hour.
+Sends MESSAGE to the project owner's notification channels and returns at
+once. Without MESSAGE it reads the message from stdin. With --done the
+message says the work they asked for is finished. Messages are capped at
+1 KB and share the project's notification limit of 30 an hour.
 `
 
 const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
+       repose-ask --cancel [ID | --all]
 
 Sends QUESTION to the project owner's channels and waits for the reply,
 which it prints on stdout. With --options (at most three) the reply is one
 of them, and ntfy and email offer one-click buttons. The owner can also
-reply on the dashboard or with ` + "`repose reply`" + ` on their laptop.
+reply on the dashboard or with ` + "`repose reply`" + ` on their laptop. A prompt
+the user types to the asking agent closes its open questions.
+
+--cancel withdraws this agent's open questions, or the one with ID, or
+with --all every open question on the machine, and prints how many.
 
 exit status: 0 answered, 1 error, 2 usage, 3 timed out, 4 no notification
-channel is on, 5 cancelled (dismissed, the machine stopped, or lost), 130
-interrupted
+channel is on, 5 cancelled (dismissed, withdrawn, the machine stopped, or
+lost), 6 the user answered in the terminal, 130 interrupted
 `
 
 // isSub reports whether this binary is running as notify or ask, from its
@@ -90,6 +99,9 @@ type subOpts struct {
 	options []string
 	timeout time.Duration
 	help    bool
+	done    bool
+	cancel  bool
+	all     bool
 	rest    []string
 }
 
@@ -123,6 +135,20 @@ func parseSub(args []string, ask bool) (subOpts, error) {
 		switch name {
 		case "h", "help":
 			o.help = true
+		case "done":
+			if ask {
+				return o, fmt.Errorf("unknown flag %s", a)
+			}
+			o.done = true
+		case "cancel", "all":
+			if !ask {
+				return o, fmt.Errorf("unknown flag %s", a)
+			}
+			if name == "cancel" {
+				o.cancel = true
+			} else {
+				o.all = true
+			}
 		case "agent":
 			o.agent, err = take()
 		case "socket":
@@ -294,9 +320,13 @@ func runNotify(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "repose-notify: no message\n\n%s", notifyUsage)
 		return ExitUsage
 	}
+	kind := ""
+	if o.done {
+		kind = hooks.KindDone
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
-	code, body, err := call(ctx, socketClient(o.socket, Timeout), http.MethodPost, "/notify", hooks.MessagePayload{Agent: o.agent, Window: o.window, Text: text})
+	code, body, err := call(ctx, socketClient(o.socket, Timeout), http.MethodPost, "/notify", hooks.MessagePayload{Agent: o.agent, Window: o.window, Kind: kind, Text: text})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "repose-notify: guestd is not answering on %s: %v\n", o.socket, err)
 		return ExitError
@@ -318,6 +348,9 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 	if o.help {
 		_, _ = fmt.Fprint(stdout, askUsage)
 		return ExitOK
+	}
+	if o.cancel || o.all {
+		return runCancel(o, stdout, stderr)
 	}
 	text, err := words(o.rest, stdin)
 	if err != nil || strings.TrimSpace(text) == "" {
@@ -414,6 +447,14 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 			_, _ = fmt.Fprintf(stderr, "repose-ask: %s\n", out.msg)
 			return out.code
 		}
+		switch out.st.Reason {
+		case "terminal":
+			_, _ = fmt.Fprintln(stderr, "repose-ask: the user answered in the terminal")
+			return ExitAnsweredInTerminal
+		case "withdrawn":
+			_, _ = fmt.Fprintln(stderr, "repose-ask: the question was withdrawn")
+			return ExitCancelled
+		}
 		switch out.st.State {
 		case "answered":
 			_, _ = fmt.Fprintln(stdout, out.st.Answer)
@@ -429,6 +470,67 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 			return ExitCancelled
 		}
 	}
+}
+
+// runCancel is repose-ask --cancel [ID | --all]: withdraw open questions
+// (reason withdrawn) and print how many.
+func runCancel(o subOpts, stdout, stderr io.Writer) int {
+	usage := func(msg string) int {
+		_, _ = fmt.Fprintf(stderr, "repose-ask: %s\n\n%s", msg, askUsage)
+		return ExitUsage
+	}
+	switch {
+	case !o.cancel:
+		return usage("--all goes with --cancel")
+	case len(o.options) > 0 || o.timeout != 0:
+		return usage("--cancel takes no --options or --timeout")
+	case len(o.rest) > 1, o.all && len(o.rest) == 1:
+		return usage("--cancel takes one question ID, or --all")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	c := socketClient(o.socket, Timeout)
+	n := 1
+	if len(o.rest) == 1 {
+		id := o.rest[0]
+		code, body, err := call(ctx, c, http.MethodDelete, "/ask/"+url.PathEscape(id)+"?reason=withdrawn", nil)
+		switch {
+		case err != nil:
+			_, _ = fmt.Fprintf(stderr, "repose-ask: guestd is not answering on %s: %v\n", o.socket, err)
+			return ExitError
+		case code == http.StatusNotFound, code == http.StatusConflict:
+			_, _ = fmt.Fprintf(stderr, "repose-ask: no open question %s\n", id)
+			return ExitError
+		case code != http.StatusNoContent:
+			_, _ = fmt.Fprintf(stderr, "repose-ask: guestd refused: %s\n", strings.TrimSpace(string(body)))
+			return ExitError
+		}
+	} else {
+		q := url.Values{"reason": {"withdrawn"}}
+		if o.all {
+			q.Set("scope", "all")
+		} else {
+			q.Set("agent", o.agent)
+			q.Set("window", o.window)
+		}
+		code, body, err := call(ctx, c, http.MethodDelete, "/ask?"+q.Encode(), nil)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "repose-ask: guestd is not answering on %s: %v\n", o.socket, err)
+			return ExitError
+		}
+		var res hooks.AskClosed
+		if code != http.StatusOK || json.Unmarshal(body, &res) != nil {
+			_, _ = fmt.Fprintf(stderr, "repose-ask: guestd refused: %s\n", strings.TrimSpace(string(body)))
+			return ExitError
+		}
+		n = res.Closed
+	}
+	noun := "questions"
+	if n == 1 {
+		noun = "question"
+	}
+	_, _ = fmt.Fprintf(stdout, "withdrew %d %s\n", n, noun)
+	return ExitOK
 }
 
 // runSub runs notify or ask with the process's real stdio and signals.

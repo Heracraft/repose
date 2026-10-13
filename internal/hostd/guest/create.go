@@ -874,10 +874,16 @@ func (mon *monitor) regained() {
 
 func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	m := mon.m
-	switch n.N.(type) {
+	switch v := n.N.(type) {
 	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning:
 		// The ones that become api events pass the guest's bucket, so one
-		// guest cannot fill the host's stream (I-445).
+		// guest cannot fill the host's stream (I-445). A question's close
+		// is never dropped (I-690): a lost one leaves the question pending
+		// on the dashboard, and closes are bounded by the opens before
+		// them, which the bucket counted.
+		if q, ok := v.(*guestdv1.Notify_Question); ok && q.Question.GetState() != "" {
+			break
+		}
 		if !mon.notifyBucket.take(m.d.Now()) {
 			mon.notifyBucket.dropped++
 			if mon.notifyBucket.dropped == 1 {
@@ -905,13 +911,13 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:
 		q := v.Question
-		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State)
+		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State, q.Reason)
 		if !ok {
 			m.notifyDropped("invalid")
 			return
 		}
 		// The text is tenant content: counted, never logged.
-		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", aq.Agent, "question_id", aq.QuestionId, "state", aq.State, "text_bytes", len(q.Text))
+		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", aq.Agent, "question_id", aq.QuestionId, "state", aq.State, "reason", aq.Reason, "text_bytes", len(q.Text))
 		m.emitGuestEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: aq})
 	case *guestdv1.Notify_AgentState:
 		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", cleanToken(v.AgentState.Agent, capAgent), "state", cleanToken(v.AgentState.State, capAgent))

@@ -1,18 +1,14 @@
-# pi has no completion hook
+# pi: extension events
 
-`docs/features/agents.md` records pi's mechanism as the tmux
-pane-idle heuristic, because the shipped version has no completion hook to
-install. There is therefore no payload to map: `hooks.Map("pi", ...)`
-returns `ErrNoEvent` for anything, and `repose-hook` exits 0 without
-posting.
+pi 1.0.4 has no hook configuration; the platform's pi extension
+(`/etc/repose/pi-extension.js`) listens to pi's own events and runs
+`repose-hook --agent pi` with the socket's shape (DECISIONS I-690):
 
-What reports a finished pi turn is `internal/guestd/sample`'s watcher:
-an agent window whose pane has produced no output for 90 seconds and whose
-foreground process is still `pi` becomes one `completed` event saying
-"pi went idle". The tests for that mechanism are
-`TestHeuristicCompletionForAHooklessAgent` in
-`internal/guestd/sample/watcher_test.go`.
+- `input` (not from an extension): `{"agent":"pi","kind":"prompt"}`.
+- `agent_end`: `completed`, with the last assistant text as the summary.
 
-`heuristic.json` below is what a caller would send if a future release of
-pi did gain a hook: the socket's own shape, which `Map` accepts for
-any agent.
+Both events were seen firing from the real binary in a temp HOME against a
+stand-in model API (2026-10-12). `Map("pi", ...)` therefore accepts only
+the socket's own shape (`heuristic.json`); anything else is no event.
+Until the first hook arrives a pi window is `running` and the pane-idle
+heuristic reports its turns.

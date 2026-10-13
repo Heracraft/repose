@@ -176,6 +176,7 @@ func New(cfg Config) (*Server, error) {
 	_, devGID := sysdep.DevIdentity()
 	s.hooks = hooks.NewServer(hookPath, devGID, s.onHook, s.sampler.WindowOfPane, log)
 	s.hooks.SetHerdrResolver(s.watcher.ResolveHerdr)
+	s.hooks.SetProcRoot(paths.Proc())
 	s.asks = questions.New(paths.QuestionsDir(), s.emitQuestion, log, cfg.Now)
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
 	return s, nil
@@ -303,6 +304,8 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 	// Every question still waiting is announced again: the hostd that
 	// carried the first announcement may have restarted before the api
 	// acked it, and the api inserts by question_id (DECISIONS I-244).
+	// So is every close made here in the last questions.Keep, which the
+	// api applies only to a pending row (I-690).
 	for _, q := range s.asks.Pending() {
 		s.emitQuestion(q)
 	}
@@ -410,7 +413,7 @@ func (s *Server) emitQuestion(q questions.Question) {
 	}
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: &guestdv1.Question{
 		QuestionId: q.ID, Agent: q.Agent, TmuxWindow: q.Window, Text: q.Text,
-		Options: q.Options, TimeoutS: q.TimeoutS, State: state,
+		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason,
 	}}})
 }
 
@@ -422,7 +425,16 @@ func (s *Server) Questions() *questions.Store { return s.asks }
 // hook with no window (outside tmux, or a herdr pane no agent is in,
 // I-506) is relayed under the agent's name and changes no window's state:
 // the tmux window named "claude" is not the Claude in a herdr pane.
+//
+// A prompt (I-690) never leaves the guest: it only marks the window
+// working.
 func (s *Server) onHook(agent, window, kind, summary string) {
+	if kind == hooks.KindPrompt {
+		if window != "" {
+			s.watcher.RecordHook(window, kind, s.now())
+		}
+		return
+	}
 	if window == "" {
 		s.AgentEvent(agent, agent, kind, summary)
 		return

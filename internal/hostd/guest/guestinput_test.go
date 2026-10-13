@@ -267,3 +267,58 @@ func TestCleanText(t *testing.T) {
 		t.Errorf("token %q", got)
 	}
 }
+
+// TestGuestCloseCarriesItsReasonAndPassesAFullBucket (I-690): a close
+// carries a reason from the fixed set (anything else becomes ""), and a
+// guest whose bucket is empty still gets its closes through.
+func TestGuestCloseCarriesItsReasonAndPassesAFullBucket(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	gd := h.guestd(gid1)
+	for i := 0; i < notifyBurst+5; i++ {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{AgentEvent: &guestdv1.AgentEvent{Agent: "shell", Kind: "agent_message", Summary: "m"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	closes := []*guestdv1.Question{
+		{QuestionId: "0199aaaa-0000-7000-8000-0000000000a1", State: "cancelled", Reason: "terminal"},
+		{QuestionId: "0199aaaa-0000-7000-8000-0000000000a2", State: "cancelled", Reason: "made-up"},
+		{QuestionId: "0199aaaa-0000-7000-8000-0000000000a3", State: "expired"},
+	}
+	for _, q := range closes {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: q}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]string{}
+	h.waitEvents(func(e []*hostdv1.Event) bool {
+		for _, ev := range e {
+			if q := ev.GetAgentQuestion(); q != nil {
+				got[q.QuestionId] = q.State + "/" + q.Reason
+			}
+		}
+		return len(got) == 3
+	})
+	want := map[string]string{
+		"0199aaaa-0000-7000-8000-0000000000a1": "cancelled/terminal",
+		"0199aaaa-0000-7000-8000-0000000000a2": "cancelled/",
+		"0199aaaa-0000-7000-8000-0000000000a3": "expired/",
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s = %q, want %q", id, got[id], w)
+		}
+	}
+}
+
+// TestAgentDoneAndRunningAreAccepted: agent_done (I-688) is a guest kind
+// and running (I-694) a guest agent state.
+func TestAgentDoneAndRunningAreAccepted(t *testing.T) {
+	if _, ok := cleanAgentEvent(gid1, "claude", "agent_done", "PR is up", "claude"); !ok {
+		t.Fatal("agent_done refused")
+	}
+	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{{Agent: "pi", TmuxWindow: "pi", State: "running"}}})
+	if out.Agents[0].State != "running" {
+		t.Fatalf("running became %q", out.Agents[0].State)
+	}
+}
