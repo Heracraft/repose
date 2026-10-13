@@ -163,8 +163,10 @@ func TestMapGemini(t *testing.T) {
 	if err != nil || p.Kind != "completed" || p.Summary != "Probe reply: all done." {
 		t.Fatalf("AfterAgent = %+v %v", p, err)
 	}
-	if _, err := Map("gemini", fixture(t, "gemini/after-agent-hook-active.json")); !errors.Is(err, ErrNoEvent) {
-		t.Fatalf("a forced AfterAgent: %v", err)
+	// stop_hook_active marks the end of a turn an AfterAgent hook forced
+	// on, as with Claude's Stop: the turn's end.
+	if p, err := Map("gemini", fixture(t, "gemini/after-agent-hook-active.json")); err != nil || p.Kind != "completed" {
+		t.Fatalf("a forced AfterAgent: %+v %v", p, err)
 	}
 	if _, err := Map("gemini", []byte(`{"hook_event_name":"BeforeModel"}`)); !errors.Is(err, ErrNoEvent) {
 		t.Fatalf("BeforeModel: %v", err)
@@ -231,18 +233,22 @@ func TestMapClaudeStopSummaryIsTheLastMessage(t *testing.T) {
 	}
 }
 
-// TestMapClaudeStopPauses (I-688): a Stop while a background task runs,
-// or one a Stop hook forced, is a pause: no event, the agent stays
-// working. A finished task and a cron are no pause.
+// TestMapClaudeStopPauses (I-688): a Stop while a background task runs
+// is a pause: no event. A finished task and a cron are no pause. A Stop
+// with stop_hook_active true ends the turn a Stop hook forced on, so it
+// is the turn's end too: Claude Code sets the flag on the Stop after the
+// continuation, not on the one a hook is about to block.
 func TestMapClaudeStopPauses(t *testing.T) {
-	for _, f := range []string{"claude/stop-background-task.json", "claude/stop-hook-active.json"} {
-		if _, err := Map("claude", fixture(t, f)); !errors.Is(err, ErrNoEvent) {
-			t.Errorf("%s: err = %v, want ErrNoEvent", f, err)
-		}
+	if _, err := Map("claude", fixture(t, "claude/stop-background-task.json")); !errors.Is(err, ErrNoEvent) {
+		t.Errorf("background task: err = %v, want ErrNoEvent", err)
 	}
 	p, err := Map("claude", fixture(t, "claude/stop-finished-task.json"))
 	if err != nil || p.Kind != "completed" || p.Summary != "The wait finished." {
 		t.Fatalf("finished task: %+v %v", p, err)
+	}
+	p, err = Map("claude", fixture(t, "claude/stop-hook-active.json"))
+	if err != nil || p.Kind != "completed" || p.Summary != "Continuing." {
+		t.Fatalf("stop_hook_active: %+v %v", p, err)
 	}
 }
 
@@ -258,9 +264,10 @@ func TestMapClaudeUserPromptSubmit(t *testing.T) {
 	}
 	// Claude Code 2.1.283 fires the hook for the turn a finished
 	// background task starts, with its own <task-notification> as the
-	// prompt: nobody typed it, so it closes no question. The agent is
-	// working already: the Stop before it was a pause.
-	if _, err := Map("claude", fixture(t, "claude/user-prompt-submit-task-notification.json")); !errors.Is(err, ErrNoEvent) {
-		t.Fatalf("task notification: %v, want ErrNoEvent", err)
+	// prompt: nobody typed it, so it closes no question. It is kind
+	// resume, which marks the agent working again and nothing else.
+	p, err = Map("claude", fixture(t, "claude/user-prompt-submit-task-notification.json"))
+	if err != nil || p.Kind != KindResume || p.Summary != "" {
+		t.Fatalf("task notification: %+v %v, want kind resume", p, err)
 	}
 }

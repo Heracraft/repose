@@ -230,11 +230,17 @@ guest, and never its login or its history:
 - `repose status` shows per agent window: `working`, `idle`,
   `needs_input`, `running` or `unknown`, from guestd's `AgentState`
   notifications. Since I-694 a hooked agent's state comes from its hooks
-  only: `working` from a prompt to the end of a turn with no background
-  task running, `needs_input` at a permission prompt, `idle` after and
-  before any hook. CPU in the pane says nothing (a dev server the agent
-  started uses it too). An agent with no hooks shows `running` while its
-  process is alive. A shell window with no agent in front is no agent,
+  only: `working` from a prompt (or Claude's own turn after a background
+  task, hook kind `resume`) to the end of a turn with no background task
+  running, `needs_input` at a permission prompt, `idle` after and before
+  any hook. A `working` window whose tmux pane printed nothing for 2
+  minutes is `idle` until the next hook: Claude and codex send no turn end
+  for a turn interrupted with Esc, and a pause on a background dev server
+  lasts as long as the server. CPU in the pane says nothing (a dev server
+  the agent started uses it too). Claude and codex are hooked from the
+  start; gemini, pi and opencode once their window sent a prompt hook.
+  OpenCode 2 sends none and, like any agent with no hooks, shows `running`
+  while its process is alive. A shell window with no agent in front is no agent,
   and `repose stop` asks only about agents `working` or `needs_input`.
   An agent started by hand in another window (the `shell` window) is one
   of them while it is that window's foreground program (I-421).

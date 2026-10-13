@@ -603,21 +603,24 @@ never blocks an agent. Mapping:
 
 | Agent | Payload | kind | summary |
 |---|---|---|---|
-| claude | `hook_event_name=UserPromptSubmit` (I-690) | `prompt` | none; the prompt is never decoded. One whose prompt starts with Claude Code's own `<task-notification>` (the turn a finished background task starts) is no event |
-| claude | `hook_event_name=Stop` with `stop_hook_active` false and no `background_tasks` entry `running` or `pending` (I-688) | `completed` | `last_assistant_message` (200 chars), else the last assistant text from the transcript tail, else `claude finished`. A `Stop` that fails the condition is a pause: no event, the agent stays `working` |
+| claude | `hook_event_name=UserPromptSubmit` (I-690) | `prompt` | none; the prompt is never decoded. One whose prompt starts with Claude Code's own `<task-notification>` (the turn a finished background task starts) is `resume` instead |
+| claude | `hook_event_name=Stop` with no `background_tasks` entry `running` or `pending` (I-688) | `completed` | `last_assistant_message` (200 chars), else the last assistant text from the transcript tail, else `claude finished`. A `Stop` that fails the condition is a pause: no event, the agent stays `working` until its pane is quiet for 2 minutes. `stop_hook_active` is not read: it marks the end of a turn a Stop hook forced on |
 | claude | `Notification` with `notification_type` in `permission_prompt`, `agent_needs_input` (`idle_prompt` is no event since DECISIONS I-418) | `needs_input` | `message` |
 | claude | `StopFailure` | `error` | `error` or `message` |
 | codex | `type=agent-turn-complete` | `completed` | `last-assistant-message` |
 | codex | `hook_event_name=UserPromptSubmit` (stdin, from `/etc/codex/config.toml`, I-690) | `prompt` | none |
 | gemini | `hook_event_name=BeforeAgent` (I-690) | `prompt` | none |
-| gemini | `hook_event_name=AfterAgent` with `stop_hook_active` false | `completed` | `prompt_response`, else `gemini finished` |
+| gemini | `hook_event_name=AfterAgent` | `completed` | `prompt_response`, else `gemini finished` |
 | pi | the extension's `{agent, kind, summary}`: `input` → `prompt`, `agent_end` → `completed` (summary: the last assistant text, else `pi finished`) | | |
 | opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1's `chat.message` hook → `prompt` (I-690; checked with 1.18.34) | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
-Anything else is dropped silently. The kind `prompt` never leaves the
-guest: guestd closes the caller's open questions (see "Messages and
-questions") and marks the window `working`. `window` is the tmux window name of the
+Anything else is dropped silently. The kinds `prompt` and `resume` never
+leave the guest. On `prompt` guestd closes the caller's open questions (see
+"Messages and questions") and marks the window `working`; `resume` only
+marks it `working`. A window marked `working` whose pane has printed
+nothing for 2 minutes becomes `idle` (an interrupted turn sends no turn
+end, DECISIONS I-694). `window` is the tmux window name of the
 caller's `$TMUX_PANE` when set; else, with `HERDR_ENV=1`,
 `herdr:<$HERDR_PANE_ID>` (I-506); else absent.
 

@@ -297,7 +297,7 @@ func TestAskExitCodes(t *testing.T) {
 			t.Fatalf("question after ^C: %+v", got)
 		}
 	})
-	// I-690: the user answered in the agent's chat (exit 6), or the
+	// I-690: the user answered in the agent's terminal (exit 6), or the
 	// agent took the question back (exit 5).
 	for _, c := range []struct {
 		reason, msg string
@@ -310,8 +310,10 @@ func TestAskExitCodes(t *testing.T) {
 			done, out, errb := ask([]string{"q?"}, make(chan os.Signal))
 			q := g.open(t)
 			g.store.CloseWhere(func(o questions.Question) bool { return o.ID == q.ID }, c.reason)
-			if got := waitExit(t, done); got != c.want || out.Len() != 0 || errb.String() != c.msg {
-				t.Fatalf("exit %d stdout %q stderr %q, want %d %q", got, out, errb, c.want, c.msg)
+			// The first line names the question, for --cancel ID.
+			want := "repose-ask: asked " + q.ID + "\n" + c.msg
+			if got := waitExit(t, done); got != c.want || out.Len() != 0 || errb.String() != want {
+				t.Fatalf("exit %d stdout %q stderr %q, want %d %q", got, out, errb, c.want, want)
 			}
 		})
 	}

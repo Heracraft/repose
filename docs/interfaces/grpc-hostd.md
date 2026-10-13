@@ -247,9 +247,12 @@ one of the four above on a close (anything else becomes empty); at most 3
 (`guest <id>` and, for the known kinds, the numbers or the process name
 guestd reported). Each guest gets a burst of 30 such notifications and one
 every 2 s after it; the rest are dropped and counted in
-`repose_host_guest_notify_dropped_total{reason}`. A question's close (a
-`Question` with a state) passes without a token (I-690): it is bounded by
-the opens before it, which the bucket counted. hostd keeps guest-raised
+`repose_host_guest_notify_dropped_total{reason}`. The first close (a
+`Question` with a state) of a question hostd passed as open passes without
+a token (I-690): hostd keeps the ids it passed as open per guest (at most
+512, for 24 h 10 min), so these closes are bounded by the opens the bucket
+counted. Any other close (an id hostd never saw open, a repeat, one opened
+before a hostd restart) takes a token. hostd keeps guest-raised
 events awaiting an ack apart from its own (at most 2,000 against 10,000),
 and sends them without blocking its own events or results.
 

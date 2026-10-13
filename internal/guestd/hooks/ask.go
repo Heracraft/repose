@@ -89,6 +89,8 @@ func callerAgent(name string) string {
 	return Shell
 }
 
+// callerWindow is the window a notify or an ask is recorded under, and
+// the one DELETE /ask matches: windowOf, else the agent's name.
 func (s *Server) callerWindow(r *http.Request, given, agent string) string {
 	if w := s.windowOf(r, given); w != "" {
 		return w
@@ -226,7 +228,9 @@ func (s *Server) callerMatch(r *http.Request) (func(questions.Question) bool, bo
 		return nil, false
 	}
 	agent := callerAgent(r.URL.Query().Get("agent"))
-	return askedFrom(s.agentProcOf(r, agent), s.windowOf(r, r.URL.Query().Get("window"))), true
+	// The window as POST /ask stored it, the agent's name when the caller
+	// is in no window, so a script outside tmux finds its own questions.
+	return askedFrom(s.agentProcOf(r, agent), s.callerWindow(r, r.URL.Query().Get("window"), agent)), true
 }
 
 // handleAskList is GET /ask: the open questions in scope, oldest first.

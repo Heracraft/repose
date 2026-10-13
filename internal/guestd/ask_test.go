@@ -219,6 +219,31 @@ func TestPromptClosesQuestionsAsTerminal(t *testing.T) {
 	}
 }
 
+// TestResumeClosesNoQuestion (I-688, I-690): the turn Claude Code starts
+// after a background task finished is kind resume: it closes no question
+// and never leaves the guest.
+func TestResumeClosesNoQuestion(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	_, body := hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: "claude", Window: "claude", Text: "ok to push?"})
+	var st hooks.AskState
+	_ = json.Unmarshal(body, &st)
+	if code, _ := hookDo(t, c, http.MethodPost, "/", hooks.Payload{Agent: "claude", Kind: hooks.KindResume, Window: "claude"}); code != http.StatusNoContent {
+		t.Fatalf("resume = %d", code)
+	}
+	_, body = hookDo(t, c, http.MethodGet, "/ask/"+st.ID+"?wait=0", nil)
+	if !strings.Contains(string(body), `"state":"open"`) {
+		t.Fatalf("poll after a resume = %s, want open", body)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, n := range h.notifies {
+		if n.GetAgentEvent().GetKind() == hooks.KindResume || n.GetQuestion().GetState() != "" {
+			t.Fatalf("a resume left the guest or closed a question: %v", n)
+		}
+	}
+}
+
 // TestCancelMineAndAll (I-690): DELETE /ask withdraws the caller's own
 // questions, or every one with scope=all, and says how many; GET /ask
 // lists what is open.
@@ -238,6 +263,13 @@ func TestCancelMineAndAll(t *testing.T) {
 		t.Fatalf("cancel mine = %s", body)
 	}
 	h.waitForNotify(t, "withdrawn close", func(n *guestdv1.Notify) bool { return n.GetQuestion().GetReason() == "withdrawn" })
+	// A script with no agent and no window (repose exec, an SSH shell
+	// outside tmux) withdraws what it asked from the same place.
+	hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Text: "q"})
+	_, body = hookDo(t, c, http.MethodDelete, "/ask?reason=withdrawn", nil)
+	if string(bytes.TrimSpace(body)) != `{"closed":1}` {
+		t.Fatalf("cancel mine from no window = %s", body)
+	}
 	_, body = hookDo(t, c, http.MethodDelete, "/ask?scope=all&reason=withdrawn", nil)
 	if string(bytes.TrimSpace(body)) != `{"closed":1}` {
 		t.Fatalf("cancel all = %s", body)

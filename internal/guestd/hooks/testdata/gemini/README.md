@@ -9,12 +9,13 @@ also in a folder the user has not trusted. The platform's extension
 - `BeforeAgent` (`before-agent.json`): the user sent a prompt. It maps to
   the socket kind `prompt`; the `prompt` field is never decoded.
 - `AfterAgent` (`after-agent.json`): the turn ended. It maps to
-  `completed` with `prompt_response` as the summary. With
-  `stop_hook_active` true it is a pause and no event.
+  `completed` with `prompt_response` as the summary, also with
+  `stop_hook_active` true, which marks the end of a turn a hook forced on
+  (`after-agent-hook-active.json`, written by hand in the captured shape).
 
 Both fixtures were captured from the real binary in a temp HOME against a
-stand-in model API (2026-10-12). Until the first hook arrives a gemini
-window is `running` and the pane-idle heuristic reports its turns
+stand-in model API (2026-10-12). Until the first prompt hook arrives a
+gemini window is `running` and the pane-idle heuristic reports its turns
 (`TestHeuristicCompletionForAHooklessAgent`).
 
 `heuristic.json` is the socket's own shape, which `Map` accepts for any

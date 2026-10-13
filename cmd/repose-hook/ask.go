@@ -69,8 +69,9 @@ of them, and ntfy and email offer one-click buttons. The owner can also
 reply on the dashboard or with ` + "`repose reply`" + ` on their laptop. A prompt
 the user types to the asking agent closes its open questions.
 
---cancel withdraws this agent's open questions, or the one with ID, or
-with --all every open question on the machine, and prints how many.
+--cancel withdraws this agent's open questions, or the one with ID (printed
+on stderr when it was asked), or with --all every open question on the
+machine, and prints how many.
 
 exit status: 0 answered, 1 error, 2 usage, 3 timed out, 4 no notification
 channel is on, 5 cancelled (dismissed, withdrawn, the machine stopped, or
@@ -382,6 +383,8 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 		_, _ = fmt.Fprintf(stderr, "repose-ask: guestd answered something unexpected\n")
 		return ExitError
 	}
+	// The id is what `--cancel ID` takes (I-690); stdout stays the answer.
+	_, _ = fmt.Fprintf(stderr, "repose-ask: asked %s\n", st.ID)
 
 	type outcome struct {
 		st   hooks.AskState

@@ -43,7 +43,7 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 
 | Title                                           | When                                                                                                                                                                                          |
 |-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                            |
+| `todo-app: claude is done`                      | The agent ran `repose-notify --done`: work you asked for is finished. A turn that ends sends nothing.                                                                                         |
 | `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                      |
 | `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                  |
 | `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                                 |
@@ -110,11 +110,11 @@ repose questions
 repose reply todo-app yes
 ```
 
-You can also answer the agent in its own terminal. Any prompt you send the agent that asked closes its open questions as answered in the terminal, and `repose-ask` exits 6. This works for all five agents; for Gemini CLI and pi, through the machine's extension for them.
+You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.
 
-An agent takes its own questions back with `repose-ask --cancel`, one with `repose-ask --cancel ID`, and every open question on the machine with `repose-ask --cancel --all`; each prints how many it withdrew. A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
+An agent takes its own questions back with `repose-ask --cancel`, one with `repose-ask --cancel ID` (the ID `repose-ask` printed when it asked), and every open question on the machine with `repose-ask --cancel --all`; each prints how many it withdrew. A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
 
 Tell your agent about the commands in its instructions, for example in `CLAUDE.md`: "When you need a decision from me, run `repose-ask` with the question and use its output as my answer."
 

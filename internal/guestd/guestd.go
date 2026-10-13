@@ -426,10 +426,10 @@ func (s *Server) Questions() *questions.Store { return s.asks }
 // I-506) is relayed under the agent's name and changes no window's state:
 // the tmux window named "claude" is not the Claude in a herdr pane.
 //
-// A prompt (I-690) never leaves the guest: it only marks the window
-// working.
+// A prompt (I-690) or a resume never leaves the guest: it only marks the
+// window working.
 func (s *Server) onHook(agent, window, kind, summary string) {
-	if kind == hooks.KindPrompt {
+	if kind == hooks.KindPrompt || kind == hooks.KindResume {
 		if window != "" {
 			s.watcher.RecordHook(window, kind, s.now())
 		}

@@ -35,6 +35,14 @@ const (
 	// KindPrompt is the prompt-submit hook (I-690): the agent works from
 	// it until the turn ends. It is a hook kind only, never an event.
 	KindPrompt = "prompt"
+	// KindResume is a turn the agent starts by itself (Claude Code's turn
+	// after a background task finished): working, like a prompt, but it
+	// closes no question. A hook kind only, never an event.
+	KindResume = "resume"
+	// kindQuiet is what a working window's record becomes once its pane
+	// has printed nothing for PromptQuietAfter: idle until the next hook.
+	// The watcher writes it; no hook sends it.
+	kindQuiet = "quiet"
 )
 
 // hooksFile is where the hook states are kept across a guestd restart,
@@ -61,6 +69,12 @@ const (
 	// HeuristicIdleAfter is how long without pane output makes a hookless
 	// agent's turn count as finished (features/agents.md).
 	HeuristicIdleAfter = 90 * time.Second
+	// PromptQuietAfter is how long a working hooked agent's pane may print
+	// nothing before the agent counts as idle (DECISIONS I-694, Built). An
+	// agent's spinner prints through a turn, tool calls included; a turn
+	// interrupted with Esc sends no turn end, and a pause on a background
+	// dev server lasts as long as the server.
+	PromptQuietAfter = 2 * time.Minute
 	// StateDebounce is how long a new state must hold before it is announced.
 	StateDebounce = 5 * time.Second
 	// CacheStale is how old the cache may be before Sample reports partial.
@@ -109,6 +123,10 @@ type SetupSource interface {
 type hookRecord struct {
 	Kind string    `json:"kind"`
 	At   time.Time `json:"at"`
+	// Prompted is set once the window's agent sent a prompt hook: from
+	// then on its state comes from hooks (I-694). OpenCode 2 and an older
+	// extension send turn ends only, and stay running.
+	Prompted bool `json:"prompted,omitempty"`
 }
 
 type windowState struct {
@@ -455,6 +473,8 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 	for k := range tmuxKeys {
 		live[k] = true
 	}
+	hooksBefore := len(w.hooks)
+	hooksMoved := false
 	if w.pruneLoaded && tmuxErr == nil {
 		w.pruneLoaded = false
 		for k := range w.hooks {
@@ -485,6 +505,7 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 			if rec, ok := w.hooks[old]; ok {
 				w.hooks[p.Key] = rec
 				delete(w.hooks, old)
+				hooksMoved = true
 			}
 		}
 		busy := false
@@ -504,6 +525,9 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 			}
 		}
 
+		if w.quieten(ws, now) {
+			hooksMoved = true
+		}
 		state := w.computeState(ws, busy, p.Reported, now)
 		if state != ws.state {
 			ws.state = state
@@ -544,6 +568,11 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 		}
 		delete(w.windows, name)
 		delete(w.hooks, name)
+	}
+	if hooksMoved || len(w.hooks) != hooksBefore {
+		// A record that went with its window, or moved, or quietened,
+		// is kept that way across a restart too.
+		w.saveHooks()
 	}
 	if tmuxErr == nil {
 		// The OOM priority covers every pane of the session, not only each
@@ -596,12 +625,12 @@ func (w *Watcher) refreshPanes(ctx context.Context) {
 
 // computeState is the state machine of docs/workstreams/04-guestd.md §5,
 // as DECISIONS I-694 left it. A state the multiplexer reports (herdr) is
-// taken as is; a needs_input hook still wins. An agent with turn hooks
-// (HookedAgents, or any agent a hook has reported for) is what its last
-// hook says: working from a prompt, needs_input at a permission prompt,
-// idle after the turn, and idle before any hook, at its prompt. CPU says
-// nothing: a dev server the agent started burns it too. Any other agent
-// is running.
+// taken as is; a needs_input hook still wins. An agent with prompt hooks
+// (PromptHookedAgents, or any agent whose window sent a prompt hook) is
+// what its last hook says: working from a prompt, needs_input at a
+// permission prompt, idle after the turn or a quiet pane, and idle before
+// any hook, at its prompt. CPU says nothing: a dev server the agent
+// started burns it too. Any other agent is running.
 func (w *Watcher) computeState(ws *windowState, _ bool, reported string, _ time.Time) string {
 	rec, hooked := w.hooks[keyFor(ws)]
 	if hooked && rec.Kind == KindNeedsInput {
@@ -610,17 +639,41 @@ func (w *Watcher) computeState(ws *windowState, _ bool, reported string, _ time.
 	if reported != "" {
 		return reported
 	}
-	if !hooked && !HookedAgents[ws.agent] {
+	if !rec.Prompted && !PromptHookedAgents[ws.agent] {
 		return StateRunning
 	}
 	return hookState(rec.Kind)
+}
+
+// quieten turns a working window's record into kindQuiet once its pane has
+// printed nothing for PromptQuietAfter since the hook (I-694, Built): a
+// turn interrupted with Esc sends no turn end, and a pause on a
+// background task that never ends (a dev server) would otherwise stay
+// working. Only a tmux pane's output counts, and only to leave working;
+// a pane whose activity tmux did not report keeps its state. It reports
+// whether the record changed.
+func (w *Watcher) quieten(ws *windowState, now time.Time) bool {
+	rec, ok := w.hooks[keyFor(ws)]
+	if !ok || hookState(rec.Kind) != StateWorking || ws.lastActivity == 0 {
+		return false
+	}
+	last := rec.At
+	if a := time.Unix(ws.lastActivity, 0); a.After(last) {
+		last = a
+	}
+	if now.Sub(last) < PromptQuietAfter {
+		return false
+	}
+	rec.Kind, rec.At = kindQuiet, now
+	w.hooks[keyFor(ws)] = rec
+	return true
 }
 
 // hookState is the agent state a hook kind leaves; "" (no hook yet) is
 // idle.
 func hookState(kind string) string {
 	switch kind {
-	case KindPrompt:
+	case KindPrompt, KindResume:
 		return StateWorking
 	case KindNeedsInput:
 		return StateNeedsInput
@@ -724,8 +777,8 @@ func (w *Watcher) oneShot(kind string, bad bool, detail string) {
 	}
 }
 
-// RecordHook folds an agent hook into the state machine: a prompt makes
-// the window working, a needs_input hook needs_input, a completion or an
+// RecordHook folds an agent hook into the state machine: a prompt or a
+// resume makes the window working, a needs_input hook needs_input, a completion or an
 // error idle (I-694). A prompt or a completion changes the state at once
 // rather than at the next refresh.
 func (w *Watcher) RecordHook(window, kind string, at time.Time) {
@@ -734,7 +787,8 @@ func (w *Watcher) RecordHook(window, kind string, at time.Time) {
 	if window == "" {
 		return
 	}
-	w.hooks[window] = hookRecord{Kind: kind, At: at}
+	prompted := w.hooks[window].Prompted || kind == KindPrompt || kind == KindResume
+	w.hooks[window] = hookRecord{Kind: kind, At: at, Prompted: prompted}
 	w.saveHooks()
 	if ws, ok := w.windows[window]; ok && kind != KindNeedsInput {
 		if st := hookState(kind); ws.state != st {

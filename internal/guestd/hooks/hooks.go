@@ -38,8 +38,14 @@ const SummaryCap = 1 << 10
 // from that agent process and marks the agent working.
 const KindPrompt = "prompt"
 
+// KindResume is the socket kind of a turn the agent starts by itself:
+// Claude Code's turn after a background task finished, whose prompt is
+// its own <task-notification> (DECISIONS I-688, I-690). It never leaves
+// the guest and closes no question; guestd marks the agent working.
+const KindResume = "resume"
+
 // Kinds an agent may report.
-var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true, KindPrompt: true}
+var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true, KindPrompt: true, KindResume: true}
 
 // agents that may report. A wrapper for an agent not in this list is a
 // packaging mistake, and saying so is more useful than accepting it.
@@ -210,6 +216,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	if p.Kind == KindPrompt {
 		s.handlePrompt(w, r, p)
+		return
+	}
+	if p.Kind == KindResume {
+		s.sink(p.Agent, s.windowOf(r, p.Window), KindResume, "")
+		s.log.Info("agent resumed", "event", "agent_event", "agent", p.Agent, "kind", KindResume)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

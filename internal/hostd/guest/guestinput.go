@@ -270,3 +270,45 @@ func (b *bucket) take(now time.Time) bool {
 	b.tokens--
 	return true
 }
+
+// openQuestions is the set of question ids a guest's monitor passed as
+// open, for I-690's free close. It is bounded: past openQuestionsCap ids
+// the expired go first, and an open that still finds no room is not
+// recorded, so its close takes a token.
+type openQuestions map[string]time.Time
+
+const (
+	openQuestionsCap = 512
+	// openQuestionTTL is the longest a question stays open in guestd
+	// (questions.MaxTimeout) plus the time guestd keeps re-sending its
+	// close (questions.Keep).
+	openQuestionTTL = 24*time.Hour + 10*time.Minute
+)
+
+func (o *openQuestions) open(id string, now time.Time) {
+	if *o == nil {
+		*o = openQuestions{}
+	}
+	if len(*o) >= openQuestionsCap {
+		for k, at := range *o {
+			if now.Sub(at) > openQuestionTTL {
+				delete(*o, k)
+			}
+		}
+		if len(*o) >= openQuestionsCap {
+			return
+		}
+	}
+	(*o)[id] = now
+}
+
+// close reports whether id was passed as open and not closed since, and
+// forgets it, so only its first close is free.
+func (o *openQuestions) close(id string, now time.Time) bool {
+	at, ok := (*o)[id]
+	if !ok {
+		return false
+	}
+	delete(*o, id)
+	return now.Sub(at) <= openQuestionTTL
+}

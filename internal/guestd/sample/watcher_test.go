@@ -761,3 +761,120 @@ func TestAHookMakesAHeuristicAgentHooked(t *testing.T) {
 		t.Fatalf("after agent_end = %q", sig.GetAgents()[0].GetState())
 	}
 }
+
+// I-694: an interrupted turn sends no turn end (Claude Code fires no
+// Stop on Esc), and a pause can outlast the session (a dev server started
+// in the background). A working window whose pane has printed nothing for
+// PromptQuietAfter is idle, and pane output alone never makes it working
+// again: only a hook does.
+func TestAQuietPaneEndsAWorkingState(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "claude", ticks: 50},
+	}
+	w, run, _, clk, _ := newWatcherFixture(t, procs)
+	ctx := context.Background()
+	output := func() {
+		run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", fmt.Sprint(clk.now().Unix())})
+	}
+	state := func() string {
+		sig, _ := w.Signals()
+		return sig.GetAgents()[0].GetState()
+	}
+	output()
+	w.Refresh(ctx)
+	w.RecordHook("claude", KindPrompt, clk.now())
+	// A long turn: the spinner keeps the pane printing.
+	for i := 0; i < 10; i++ {
+		clk.advance(time.Minute)
+		output()
+		w.Refresh(ctx)
+	}
+	if got := state(); got != StateWorking {
+		t.Fatalf("a long turn with output = %q, want working", got)
+	}
+	// Esc: no Stop, the pane goes quiet.
+	clk.advance(PromptQuietAfter - time.Second)
+	w.Refresh(ctx)
+	if got := state(); got != StateWorking {
+		t.Fatalf("quiet for less than the bound = %q, want working", got)
+	}
+	clk.advance(2 * time.Second)
+	w.Refresh(ctx)
+	if got := state(); got != StateIdle {
+		t.Fatalf("quiet past the bound = %q, want idle", got)
+	}
+	// The user types at the prompt: output, but no hook.
+	clk.advance(Interval)
+	output()
+	w.Refresh(ctx)
+	if got := state(); got != StateIdle {
+		t.Fatalf("output after the bound = %q, want idle until a hook", got)
+	}
+	// A finished background task starts a turn.
+	w.RecordHook("claude", KindResume, clk.now())
+	if got := state(); got != StateWorking {
+		t.Fatalf("after a resume = %q, want working", got)
+	}
+}
+
+// I-694: opencode is hook-driven only once its window sent a prompt hook.
+// OpenCode 2 sends turn ends and no prompt, so it stays running rather
+// than idle in the middle of a turn.
+func TestOpencodeWithoutAPromptHookIsRunning(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "opencode", ticks: 50},
+	}
+	w, run, _, clk, _ := newWatcherFixture(t, procs)
+	run.Match["list-windows"] = tmuxOutput([4]string{"opencode", "101", "opencode", fmt.Sprint(clk.now().Unix())})
+	ctx := context.Background()
+	state := func() string {
+		sig, _ := w.Signals()
+		return sig.GetAgents()[0].GetState()
+	}
+	w.Refresh(ctx)
+	if got := state(); got != StateRunning {
+		t.Fatalf("before any hook = %q, want running", got)
+	}
+	w.RecordHook("opencode", KindCompleted, clk.now())
+	clk.advance(Interval)
+	w.Refresh(ctx)
+	if got := state(); got != StateRunning {
+		t.Fatalf("after a turn end with no prompt hook = %q, want running", got)
+	}
+	w.RecordHook("opencode", KindPrompt, clk.now())
+	if got := state(); got != StateWorking {
+		t.Fatalf("after a prompt = %q, want working", got)
+	}
+	w.RecordHook("opencode", KindCompleted, clk.now())
+	if got := state(); got != StateIdle {
+		t.Fatalf("after the turn = %q, want idle", got)
+	}
+}
+
+// A window that closes takes its hook record off the disk too: a new
+// agent in a window of the same name starts idle after a guestd restart,
+// not with the old agent's working.
+func TestAClosedWindowLeavesNoHookRecordOnDisk(t *testing.T) {
+	procs := []fakeProc{
+		{pid: 100, ppid: 1, comm: "bash"},
+		{pid: 101, ppid: 100, comm: "claude", ticks: 50},
+	}
+	w, run, _, clk, p := newWatcherFixture(t, procs)
+	ctx := context.Background()
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", fmt.Sprint(clk.now().Unix())})
+	w.Refresh(ctx)
+	w.RecordHook("claude", KindPrompt, clk.now())
+	run.Match["list-windows"] = tmuxOutput([4]string{"shell", "100", "bash", "0"})
+	clk.advance(Interval)
+	w.Refresh(ctx)
+
+	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", fmt.Sprint(clk.now().Unix())})
+	w2 := NewWatcher(p, run, &sysdep.FakeDocker{Up: true}, fixedSlug("todo-app"), &recorder{}, quietLog(), clk.now)
+	w2.Refresh(ctx)
+	sig, _ := w2.Signals()
+	if got := sig.GetAgents(); len(got) != 1 || got[0].GetState() != StateIdle {
+		t.Fatalf("after a restart: %v, want the new claude idle", got)
+	}
+}

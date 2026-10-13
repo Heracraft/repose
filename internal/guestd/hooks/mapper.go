@@ -79,24 +79,22 @@ type claudeHook struct {
 	NotificationType string          `json:"notification_type"`
 	Error            string          `json:"error"`
 	// Stop, Claude Code 2.1.x (DECISIONS I-688; fixtures captured from
-	// 2.1.283): the final assistant text, whether a Stop hook already
-	// made the agent continue, and the background tasks still running.
+	// 2.1.283): the final assistant text and the background tasks still
+	// running.
 	LastAssistantMessage string `json:"last_assistant_message"`
-	StopHookActive       bool   `json:"stop_hook_active"`
 	BackgroundTasks      []struct {
 		Status string `json:"status"`
 	} `json:"background_tasks"`
 }
 
 // paused reports whether a Stop is a pause rather than the end of the
-// turn: a Stop hook forced the agent on, or a background task is still
-// running or pending, after which the agent takes another turn by
-// itself. A recurring cron (session_crons) is no pause: between its runs
-// the agent waits at its prompt.
+// turn: a background task is still running or pending, after which the
+// agent takes another turn by itself. A recurring cron (session_crons) is
+// no pause: between its runs the agent waits at its prompt.
+// stop_hook_active is no pause either: Claude Code sets it on the Stop
+// that ends a turn a Stop hook forced on, and repose's hook cannot know
+// whether another hook will block this Stop (DECISIONS I-688, Built).
 func (h claudeHook) paused() bool {
-	if h.StopHookActive {
-		return true
-	}
 	for _, t := range h.BackgroundTasks {
 		switch t.Status {
 		case "running", "pending", "":
@@ -125,9 +123,9 @@ func mapClaude(payload []byte) (Payload, error) {
 	case "UserPromptSubmit":
 		if bytes.HasPrefix(h.Prompt, []byte(`"<task-notification>`)) {
 			// The turn a finished background task starts (2.1.283):
-			// nobody typed it. The agent is working already, since the
-			// Stop before it was a pause.
-			return Payload{}, ErrNoEvent
+			// nobody typed it, so it closes no question; the agent works
+			// again.
+			return Payload{Agent: "claude", Kind: KindResume}, nil
 		}
 		return Payload{Agent: "claude", Kind: KindPrompt}, nil
 	case "Stop":
@@ -212,7 +210,6 @@ func mapCodex(agent string, payload []byte) (Payload, error) {
 type geminiHook struct {
 	HookEventName  string `json:"hook_event_name"`
 	PromptResponse string `json:"prompt_response"`
-	StopHookActive bool   `json:"stop_hook_active"`
 }
 
 func mapGemini(payload []byte) (Payload, error) {
@@ -224,9 +221,8 @@ func mapGemini(payload []byte) (Payload, error) {
 	case "BeforeAgent":
 		return Payload{Agent: "gemini", Kind: KindPrompt}, nil
 	case "AfterAgent":
-		if h.StopHookActive {
-			return Payload{}, ErrNoEvent
-		}
+		// stop_hook_active is read by nobody: as with Claude's Stop, it
+		// marks the end of a turn a hook forced on.
 		summary := clip(h.PromptResponse)
 		if summary == "" {
 			summary = "gemini finished"
