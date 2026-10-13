@@ -1,0 +1,41 @@
+{
+  "fallbackText": "todo-app: Your machines were stopped: a payment failed\nYour payment has been failing for three days, so todo-app was snapshotted and stopped.",
+  "cardsV2": [
+    {
+      "cardId": "repose",
+      "card": {
+        "header": {
+          "title": "todo-app",
+          "subtitle": "Your machines were stopped: a payment failed"
+        },
+        "sections": [
+          {
+            "widgets": [
+              {
+                "textParagraph": {
+                  "text": "Your payment has been failing for three days, so todo-app was snapshotted and stopped."
+                }
+              },
+              {
+                "buttonList": {
+                  "buttons": [
+                    {
+                      "text": "Open project",
+                      "type": "OUTLINED",
+                      "onClick": {
+                        "openLink": {
+                          "url": "https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+threadKey: e-01a0c14a-0000-7000-8000-0000000000aa

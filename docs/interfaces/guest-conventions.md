@@ -798,7 +798,7 @@ repose-ask --cancel [ID | --all]
   unreachable or refused, 2 usage.
 - `repose-ask` POSTs `/ask`, then long-polls `GET /ask/<id>` and prints the
   answer on stdout. `--options` (at most 3, comma-separated, 64 bytes each)
-  makes the answer one of them and gives ntfy and email one-click buttons;
+  makes the answer one of them and gives ntfy, email and Google Chat buttons;
   `--timeout` is a duration or seconds, default 30 minutes, at most 24
   hours. Flags may come before or after the question. While guestd is
   unreachable (a restart) it retries for 2 minutes. SIGINT, SIGTERM or
@@ -831,7 +831,7 @@ repose-ask --cancel [ID | --all]
 | 1 | guestd unreachable, refused the question, or lost for 2 minutes |
 | 2 | usage: no question, more than 3 options, a bad `--timeout` |
 | 3 | no answer before the timeout |
-| 4 | no notification channel is on for the owner (email off and no ntfy) |
+| 4 | no notification channel is on for the owner (email off, no ntfy, no working Google Chat webhook) |
 | 5 | cancelled: the owner dismissed it, the agent withdrew it, the guest stopped, or the question is gone (the guest rebooted) |
 | 6 | the user sent the asking agent a prompt, which closed the question (I-690) |
 | 130 | interrupted |

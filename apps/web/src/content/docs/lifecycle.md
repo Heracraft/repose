@@ -69,7 +69,7 @@ A machine isn't started again when:
 - a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped, as it doesn't stop a running machine ([Billing](/docs/billing));
 - its start fails, after one more try when the machine doesn't answer in time.
 
-If any machine stopped, you get one [notification](/docs/notifications) per server restart, by email and ntfy if you have them on, with a line for each:
+If any machine stopped, you get one [notification](/docs/notifications) per server restart, on every channel you have on, with a line for each:
 
 ```text
 The server running your machines restarted; it was back at 05:46 UTC.
@@ -94,7 +94,7 @@ todo-app: unused for 26h; claude needs input 3h
 
 - `repose status` shows the same line, and the dashboard's project list shows `unused 26h` under the state.
 - `repose run` and `repose attach` in another project print one line naming it, once per unused stretch.
-- You get one notification, by email and ntfy if you have them on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
+- You get one notification on every channel you have on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
 
 An unused machine costs nothing extra on a plan, but its memory counts against what your plan runs at once, so another machine can be refused until it stops ([Billing](/docs/billing)). When the server hasn't reported on the machine for 10 minutes, for example while it's unreachable, repose can't tell and says nothing.
 

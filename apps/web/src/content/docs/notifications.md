@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Get told by email or on your phone when an agent is done, needs you, or asks you something, and answer from there.
+description: Get told by email, on your phone or in Google Chat when an agent is done, needs you, or asks you something, and answer from there.
 section: Using repose
 order: 16
 ---
@@ -37,7 +37,26 @@ ntfy: sent
 
 A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 
-Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy URL saves with the **Save** button next to it.
+## Google Chat
+
+Google Chat posts each notification to a space you choose, as a card with buttons. It needs a Google Workspace account: a personal Gmail account can't add webhooks.
+
+1. In a desktop browser, open the space (a space of your own works), then **Apps & integrations**, **Webhooks**, **Add webhooks**. The Chat mobile app can't create one.
+2. Name it `repose` and copy its URL.
+3. Tell repose, with the URL in single quotes because of its `&`, and send a test:
+
+```
+repose notify set --gchat 'WEBHOOK_URL'
+repose notify test
+```
+
+The URL lets anyone who has it post to the space, so repose treats it like a password: it's never shown again, in the CLI or on the dashboard, which show the space's id instead.
+
+Each notification starts its own thread, so it alerts like a new message. A question's options are buttons; each opens a page where you confirm the answer. When the question closes, a reply in its thread says how, such as `Answered yes from the dashboard`. A question that closes before its card goes out is not posted.
+
+If Google refuses the webhook (it was deleted, or the space removed it), repose stops sending to it and emails you once. `repose notify` then shows `broken since` and the date. Saving a URL, or a `repose notify test` that gets through, turns it back on. Turn Google Chat off with `repose notify set --gchat off`.
+
+Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy and Google Chat URLs each save with their own **Save** button.
 
 ## What you'll get
 
@@ -69,7 +88,7 @@ On ntfy, questions and permission prompts come at urgent priority, done reports,
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them. Times in emails, and in the paused notice, are in the timezone on the **Settings** page, or UTC when none is set.
 
-The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
+The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh, Google or your email provider, so use a self-hosted ntfy server if that matters.
 
 An agent finishing its turn sends you nothing. The turn shows in `repose events` as `finished`, and `repose ls` shows the agent `idle`. All five agents report through hooks, within about 10 seconds, and permission prompts and errors reach you that way; Gemini CLI and pi report through the machine's extension for them ([Agent states](/docs/agents#agent-states)). Until a Gemini CLI or pi reports, the machine records `gemini went idle` or `pi went idle` in `repose events` when its process goes quiet for about 90 seconds. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
@@ -90,6 +109,7 @@ Some emails are about your account rather than a machine. They are sent even whe
 | `Your plan has ended`                          | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
 | `Your plan changed`                            | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
 | `Your machines were stopped: egress limit`     | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
+| `Google Chat notifications stopped`            | Google refused your Chat webhook. Nothing goes to Google Chat until you save a new URL or a test gets through.                                                      |
 
 ## Agents can message you and ask questions
 
@@ -103,9 +123,10 @@ repose-ask --options yes,no "Drop the legacy sessions table?"
 
 `repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
 
-A question can be answered in four places:
+A question can be answered in five places:
 
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
+- **Google Chat:** the card has a button for each option. It opens a page with the question and a button; pressing it answers.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
 - **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box. The Projects page lists every waiting question, each with **Answer**.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses:
@@ -135,22 +156,22 @@ Tell your agent about the commands in its instructions, for example in `CLAUDE.m
 
 It exits with:
 
-| Code | Meaning                                                                                   |
-| ---- | ----------------------------------------------------------------------------------------- |
-| 0    | You answered. The answer is on standard output.                                           |
-| 1    | The machine's agent service couldn't be reached.                                          |
-| 2    | Wrong usage, such as no question or more than three options.                              |
-| 3    | No answer before the timeout.                                                             |
-| 4    | Email is off and there's no ntfy topic, so nobody would see the question.                 |
-| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted. |
-| 6    | You answered the agent in its terminal. Nothing is on standard output.                    |
-| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.                        |
+| Code | Meaning                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------- |
+| 0    | You answered. The answer is on standard output.                                                                |
+| 1    | The machine's agent service couldn't be reached.                                                               |
+| 2    | Wrong usage, such as no question or more than three options.                                                   |
+| 3    | No answer before the timeout.                                                                                  |
+| 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question. |
+| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                      |
+| 6    | You answered the agent in its terminal. Nothing is on standard output.                                         |
+| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.                                             |
 
 Messages and questions are capped at 1 KB and count toward the project's 30 notifications an hour. The text is shown to you and nobody else, and it isn't written to any log.
 
 ## Limits
 
-Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says when they resume. Its events still show in `repose events`.
+Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says when they resume. Its events still show in `repose events`. Google Chat takes one message a second per space, so a burst arrives a second apart.
 
 Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A question closing on the machine is never dropped. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
 

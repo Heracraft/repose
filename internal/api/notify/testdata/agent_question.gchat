@@ -1,0 +1,55 @@
+{
+  "fallbackText": "todo-app: claude asks: Drop the legacy sessions table? It has 3 rows, all from 2024.",
+  "cardsV2": [
+    {
+      "cardId": "repose",
+      "card": {
+        "header": {
+          "title": "todo-app",
+          "subtitle": "claude asks"
+        },
+        "sections": [
+          {
+            "widgets": [
+              {
+                "textParagraph": {
+                  "text": "Drop the legacy sessions table? It has 3 rows, all from 2024."
+                }
+              },
+              {
+                "textParagraph": {
+                  "text": "Waits until 20:30 CEST"
+                }
+              },
+              {
+                "buttonList": {
+                  "buttons": [
+                    {
+                      "text": "yes",
+                      "type": "OUTLINED",
+                      "onClick": {
+                        "openLink": {
+                          "url": "https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb\u0026via=gchat"
+                        }
+                      }
+                    },
+                    {
+                      "text": "no",
+                      "type": "OUTLINED",
+                      "onClick": {
+                        "openLink": {
+                          "url": "https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd\u0026via=gchat"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+threadKey: q-01a0c14a-fdb3-78af-9c30-5abd8fce0a84

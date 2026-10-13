@@ -179,7 +179,7 @@ func (s *Server) writeReplyPage(w http.ResponseWriter, status int, v replyView) 
 func (s *Server) replyToken(w http.ResponseWriter, r *http.Request) (uuid.UUID, int, string, bool) {
 	token := r.FormValue("token")
 	via := r.FormValue("via")
-	if via != "email" {
+	if via != "email" && via != "gchat" {
 		via = "ntfy"
 	}
 	if s.d.Unsub == nil || s.d.Questions == nil {

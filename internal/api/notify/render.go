@@ -268,6 +268,20 @@ func block(t *texttemplate.Template, name string, d kindData) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
+// Heading is the email's heading for m's kind, or "" when its partial
+// has none. Google Chat uses it as a card title (gchat.go).
+func Heading(m Message) string {
+	if err := loadTemplates(); err != nil {
+		return ""
+	}
+	d := kindData{M: m, Title: Title(m), Dashboard: strings.TrimRight(m.Dashboard, "/"), P: payload{}}
+	h, err := block(partialFor(m.Kind), "heading", d)
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
 // Render builds the subject, the HTML and the text of a message.
 func Render(m Message) (Rendered, error) {
 	if err := loadTemplates(); err != nil {

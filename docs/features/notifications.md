@@ -1,7 +1,7 @@
 # Notifications
 
-The user hears on their phone or in their inbox when an agent says it is
-done, asks something or gets stuck, whichever agent it was. Agents' own notification features
+The user hears on their phone, in their inbox or in a Google Chat space
+when an agent says it is done, asks something or gets stuck, whichever agent it was. Agents' own notification features
 keep working on top.
 
 ## What the user sees
@@ -16,8 +16,20 @@ email: ok
 ntfy: ok
 ```
 
-`notify set` takes `--email on|off` and `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619) and sends
-no test; `notify test` does, and exits 1 when neither channel answered ok.
+`notify set` takes `--email on|off`, `--ntfy URL|off` (I-8; `none`, the first spelling, still works, I-619) and `--gchat URL|off` (I-692) and sends
+no test; `notify test` does, and exits 1 when a channel failed.
+
+```
+$ repose notify set --gchat 'https://chat.googleapis.com/v1/spaces/AAAAx1yZ/messages?key=...&token=...'
+email: on
+ntfy: off
+gchat: on, space AAAAx1yZ
+
+$ repose notify
+email: on
+ntfy: off
+gchat: broken since 2026-10-12 (Google refused the webhook)
+```
 
 On the phone (ntfy):
 
@@ -157,7 +169,9 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   reconnects for 10 minutes, so a lost close no longer leaves a question
   pending until it expires.
 - The owner answers from ntfy (one `http` button per option, calling a
-  signed reply link; no login), email (one link per option, which opens a
+  signed reply link; no login), Google Chat (one `openLink` button per
+  option to the same link with `via=gchat`, whose GET shows the confirm
+  page), email (one link per option, which opens a
   page whose button answers; replying to the email does nothing), the
   dashboard's project page (buttons or a text box, and Dismiss), or the
   laptop: `repose questions` lists the waiting ones, `repose reply
@@ -219,8 +233,44 @@ Channels (`workstreams/13-notifications.md` §5.6):
   test button, `POST /me/notify-test`), at most 6 a minute, titled
   `repose: test`.
   Topic URLs are stored as configuration, not secrets, but never logged.
-- Both can be on. Neither is required. Turning one off (`PATCH /me` or
-  the unsubscribe link) deletes its already-queued deliveries, the user
+- Google Chat (DECISIONS I-692): the user saves a space's incoming
+  webhook, which needs a Google Workspace account and is created in a
+  desktop browser. The URL must be
+  `https://chat.googleapis.com/v1/spaces/<id>/messages?key=..&token=..`,
+  is stored with only its key and token, and is a credential: never
+  logged (`gchat_url` and `webhook` are on the logger's deny list), never
+  returned by the api, the CLI or the dashboard, which show the space id,
+  and never in `events.delivered` or an error. A message is one `cardsV2`
+  card plus a plain `fallbackText`: a header with the project and
+  `<agent> <verb>`, the tenant text HTML-escaped in a `textParagraph`,
+  and `openLink` buttons: one per option to its signed reply link;
+  Answer (to the project) for a question without reply links; Dashboard
+  (to `/projects`) for a user notice or an event with no project; else
+  Open project. A close reply has none. A notice whose text opens with
+  its subject (`machines_restarted`) takes the email heading as its card
+  title, and `fallbackText` (the phone notification) leaves the subject
+  out; a platform subtitle and its text are joined by a line break, not
+  a third colon.
+  Each message has its own `threadKey` (`e-<event id>`, or
+  `q-<question id>` for a question) with
+  `messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`, and a
+  `requestId` of the event id so a retry posts once. When a question
+  that reached Chat closes, a `question_closed` user event (no project,
+  gchat only) posts a reply in its thread saying how: `Answered yes from
+  the dashboard`, `Answered in the terminal`, `Withdrawn by the agent`,
+  `Expired without an answer`. A queued question card whose question
+  has closed is dropped, not posted, like a held row (`dropped:
+  resolved`, I-689). One that posts while its question
+  closes calls `questions.ReplyIfClosed` after `delivered.gchat` is
+  written, so it still gets its reply; `InsertQuestionClosed` writes at
+  most one `question_closed` per question. Posts to one space are at least 1.1 s
+  apart; 429 and 5xx retry; 400 fails the row. 401, 403 and 404 set
+  `users.gchat_broken_at` once and write one `notify_channel_broken`
+  account email in the same transaction; no gchat row is queued or sent
+  while it is set, and the channel does not count for `repose-ask`.
+  Saving a URL, or a `notify test` that gets through, clears it.
+- All can be on. None is required. Turning one off (`PATCH /me` or the
+  unsubscribe link) deletes its already-queued deliveries, the user
   notices such as `machines_restarted` included, rather than sending one
   more batch to a channel the user just disabled; queued account mail
   stays (I-691). The channels a user has on come from one function,
@@ -263,6 +313,7 @@ one email, ours.
 | `subscription_ended` | Your plan has ended | billing, at the end: machines stopped, the retention date, how to come back | `{plan, ended_at, retention_until}` |
 | `plan_changed` | Your plan changed | billing, on an upgrade or a scheduled downgrade | `{from_plan, to_plan, effective_at}` |
 | `egress_stopped` | Your machines were stopped: egress limit | billing, at four times the egress allowance: the period's egress, the limit, until when, the upgrade link | `{plan, egress_gb, limit_gb, until}` |
+| `notify_channel_broken` | Google Chat notifications stopped | the outbox, the first time Google refuses the user's Chat webhook with 401, 403 or 404 (I-692), in the transaction that sets `gchat_broken_at`: the space, the date, that nothing goes to Google Chat until a new URL is saved or a test gets through | `{channel, space, since}` |
 | `disk_over_plan` | Your projects hold more than your plan's disk | billing's hourly tick, once a period, when the projects hold more than the plan's disk (I-585): what they hold, the plan's disk, that machines keep running and starting, what is refused until they hold less, and that a deleted file stops counting within a day or at the machine's stop | `{plan, held_gb, limit_gb}` |
 
 `billing_stopped` (`Your machines were stopped: a payment failed`) and
@@ -294,7 +345,7 @@ Dashboard and CLI:
 
 ## Depends on
 
-Workstreams 13 (delivery, dedupe, rate cap, Resend, ntfy, unsubscribe), 04
+Workstreams 13 (delivery, dedupe, rate cap, Resend, ntfy, Google Chat, unsubscribe), 04
 (hook socket, AgentEvent, the tmux-idle watcher), 03 (Event forwarding), 05
 (ingest, events routes, `PATCH /me` notify settings, the ops engine's
 platform-event hook), 07 (`notify` and `events` commands), 08 (settings and

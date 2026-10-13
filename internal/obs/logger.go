@@ -33,7 +33,7 @@ const Redacted = "[redacted]"
 var forbidden = []string{
 	"token", "secret", "password", "authorization", "cert", "key",
 	"email", "handle", "remote_url", "argv", "args", "environ", "env",
-	"prompt", "summary", "fragment", "ntfy_url", "github_login",
+	"prompt", "summary", "fragment", "ntfy_url", "gchat_url", "webhook", "github_login",
 	"public_key", "ciphertext", "cmdline", "command_line", "user_agent",
 	"transcript",
 }

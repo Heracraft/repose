@@ -5,10 +5,10 @@ import (
 	"fmt"
 )
 
-// setNtfyURL builds the **string PatchMeRequest.Notify.NtfyURL needs to
-// tell "not touching it" (nil outer pointer, omitted) from "clearing it"
-// (non-nil outer pointer to a nil inner one, marshals to JSON null) from
-// "setting it" (both non-nil).
+// setNtfyURL builds the **string PatchMeRequest.Notify.NtfyURL (and
+// GChatURL) needs to tell "not touching it" (nil outer pointer, omitted)
+// from "clearing it" (non-nil outer pointer to a nil inner one, marshals
+// to JSON null) from "setting it" (both non-nil).
 func setNtfyURL(v string) **string {
 	if v == "off" || v == "none" { // "none" is the old spelling (I-619)
 		var inner *string
@@ -19,14 +19,18 @@ func setNtfyURL(v string) **string {
 }
 
 // NotifySetCmd implements `repose notify set --email on|off --ntfy
-// <url>|off` (I-8). email/ntfy are nil when that flag was not given.
-func NotifySetCmd(ctx context.Context, e *Env, email *bool, ntfy *string) error {
+// <url>|off --gchat <url>|off` (I-8, I-692). email/ntfy/gchat are nil when
+// that flag was not given.
+func NotifySetCmd(ctx context.Context, e *Env, email *bool, ntfy, gchat *string) error {
 	patch := PatchMeRequest{Notify: &NotifyPatch{}}
 	if email != nil {
 		patch.Notify.Email = email
 	}
 	if ntfy != nil {
 		patch.Notify.NtfyURL = setNtfyURL(*ntfy)
+	}
+	if gchat != nil {
+		patch.Notify.GChatURL = setNtfyURL(*gchat)
 	}
 	me, err := e.Client.PatchMe(ctx, patch)
 	if err != nil {
@@ -58,7 +62,19 @@ func writeNotifySettings(e *Env, me *Me) {
 	if me.Notify.NtfyURL != nil {
 		ntfyURL = *me.Notify.NtfyURL
 	}
-	_, _ = fmt.Fprintf(e.Out, "email: %s\nntfy: %s\n", email, ntfyURL)
+	_, _ = fmt.Fprintf(e.Out, "email: %s\nntfy: %s\ngchat: %s\n", email, ntfyURL, gchatLine(me.Notify.GChat))
+}
+
+// gchatLine is the Google Chat channel in a few words: its space, never
+// the webhook URL, which is a credential (I-692).
+func gchatLine(g *GChatChannel) string {
+	switch {
+	case g == nil:
+		return "off"
+	case g.BrokenAt != nil:
+		return "broken since " + g.BrokenAt.Local().Format("2006-01-02") + " (Google refused the webhook)"
+	}
+	return "on, space " + g.Space
 }
 
 func onOff(b bool) string {
@@ -75,8 +91,8 @@ func NotifyTestCmd(ctx context.Context, e *Env) error {
 	if err != nil {
 		return err
 	}
-	if res.Email == "" && res.Ntfy == "" {
-		return exitf(ExitGeneric, "Every channel is off; nothing was sent. `repose notify set --email on` or `--ntfy URL` turns one on.")
+	if res.Email == "" && res.Ntfy == "" && res.GChat == "" {
+		return exitf(ExitGeneric, "Every channel is off; nothing was sent. `repose notify set --email on`, `--ntfy URL` or `--gchat 'URL'` turns one on.")
 	}
 	failed := false
 	word := func(result, why string) string {
@@ -92,7 +108,7 @@ func NotifyTestCmd(ctx context.Context, e *Env) error {
 		}
 		return "failed"
 	}
-	_, _ = fmt.Fprintf(e.Out, "email: %s\nntfy: %s\n", word(res.Email, ""), word(res.Ntfy, res.NtfyError))
+	_, _ = fmt.Fprintf(e.Out, "email: %s\nntfy: %s\ngchat: %s\n", word(res.Email, ""), word(res.Ntfy, res.NtfyError), word(res.GChat, res.GChatError))
 	if failed {
 		return silent(ExitGeneric)
 	}

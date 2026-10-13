@@ -1,8 +1,8 @@
 import { goto } from '$app/navigation';
 
-// Settings holds two forms that each guard a navigation away while they
-// are unsaved: the ntfy URL and machine.nix (DECISIONS I-578). Both guards
-// run on the same navigation, so both ask at once; a Leave pressed in one
+// Settings holds two guards on a navigation away while something is
+// unsaved: one for the ntfy URL and the Google Chat webhook, one for
+// machine.nix (DECISIONS I-578, I-692). The guards run on the same navigation, so both ask at once; a Leave pressed in one
 // has to pass the other's guard too. With a flag of its own per form, the
 // other form cancelled that Leave and asked again, and its Leave was
 // cancelled by the first, so the page never let go.

@@ -35,13 +35,17 @@ type Message struct {
 	Agent   string
 	// Window is the agent's tmux window or herdr pane; At is when the
 	// event happened. The question and done emails print both.
-	Window    string
-	At        time.Time
-	Project   string // slug
-	Summary   string
-	Email     string
-	NtfyURL   string
+	Window  string
+	At      time.Time
+	Project string // slug
+	Summary string
+	Email   string
+	NtfyURL string
+	// GChatURL is the user's Google Chat webhook (I-692), a credential.
+	GChatURL  string
 	Dashboard string
+	// TZ is the user's IANA zone, for times a message states; "" is UTC.
+	TZ string
 	// Unsubscribe is the one-click link the email template embeds; empty
 	// when no Unsubscriber is configured (dev) or the channel is not email.
 	Unsubscribe string
@@ -68,6 +72,19 @@ func (m Message) ProjectURL() string {
 		return m.Dashboard + "/projects"
 	}
 	return m.Dashboard + "/projects/" + m.ProjectID.String()
+}
+
+// Location is the user's zone, or UTC.
+func (m Message) Location() *time.Location {
+	if m.Loc != nil {
+		return m.Loc
+	}
+	if m.TZ != "" {
+		if l, err := time.LoadLocation(m.TZ); err == nil {
+			return l
+		}
+	}
+	return time.UTC
 }
 
 // Sender delivers on one channel.
@@ -111,6 +128,10 @@ type Outbox struct {
 	// one user's channel go in order on one lane, so a hanging endpoint
 	// holds its own rows only.
 	Workers int
+	// QuestionCardPosted, when set, is called after a question's card
+	// posts to Google Chat, so a question that closed while the card was
+	// in flight still gets the close reply in its thread (I-692).
+	QuestionCardPosted func(ctx context.Context, questionID uuid.UUID)
 
 	mu       sync.Mutex
 	lanes    map[laneKey]*lane
@@ -194,6 +215,8 @@ type row struct {
 	slug        string
 	email       *string
 	ntfy        *string
+	gchat       *string
+	gchatBroken *time.Time
 	notifyEmail bool
 	userID      uuid.UUID
 	eventTS     time.Time
@@ -231,7 +254,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel, u.tz
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -242,7 +265,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered, &r.tz); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -319,12 +342,25 @@ func (o *Outbox) runLane(ctx context.Context, k laneKey) {
 }
 
 func (o *Outbox) deliver(ctx context.Context, r row) {
+	if r.channel == "gchat" {
+		// Read again: a refusal earlier in this pass marks the channel
+		// broken, and the rest of the batch must see it (I-692).
+		if err := o.pool.QueryRow(ctx, "select gchat_url, gchat_broken_at from users where id = $1", r.userID).Scan(&r.gchat, &r.gchatBroken); err != nil {
+			o.mark(ctx, r, errors.New("user lookup failed"), false)
+			return
+		}
+	}
 	// A channel disabled since the row was queued is dropped. Account
 	// mail is transactional and ignores notify_email (I-269, I-291).
-	if (r.channel == "email" && ((!r.notifyEmail && !transactional(r.kind)) || r.email == nil || *r.email == "")) || (r.channel == "ntfy" && (r.ntfy == nil || *r.ntfy == "")) {
+	if (r.channel == "email" && ((!r.notifyEmail && !transactional(r.kind)) || r.email == nil || *r.email == "")) || (r.channel == "ntfy" && (r.ntfy == nil || *r.ntfy == "")) ||
+		// Google Chat stops at a webhook Google refused (I-692).
+		(r.channel == "gchat" && (r.gchat == nil || *r.gchat == "" || r.gchatBroken != nil)) {
 		_, _ = o.pool.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel) // best effort; it is re-picked and dropped again otherwise
 		return
 	}
+	// A row whose news is over is dropped on every channel, held or not:
+	// a question card whose question closed while it waited would show
+	// buttons that answer nothing (I-689, I-692).
 	if heldKinds[r.kind] && r.projectID != uuid.Nil {
 		if over, err := o.resolved(ctx, r); err != nil {
 			o.log.Error("outbox resolved check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
@@ -382,6 +418,23 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	if r.ntfy != nil {
 		m.NtfyURL = *r.ntfy
 	}
+	if r.gchat != nil && r.channel == "gchat" {
+		m.GChatURL = *r.gchat
+	}
+	if r.tz != nil {
+		m.TZ = *r.tz
+	}
+	if r.kind == events.QuestionClosedKind {
+		// The reply in a question's Chat thread (I-692): its summary
+		// names the question and says how it closed.
+		var c events.QuestionClosed
+		if err := json.Unmarshal([]byte(r.summary), &c); err != nil || c.QuestionID == uuid.Nil {
+			o.mark(ctx, r, errors.New("malformed question_closed"), true)
+			return
+		}
+		m.Summary = c.Text
+		m.Question = &QuestionLinks{ID: c.QuestionID}
+	}
 	if r.channel == "email" && o.Unsub != nil && !transactional(r.kind) {
 		// The link's expiry runs from the event, not the clock, so a
 		// retry under the same Idempotency-Key sends the same bytes;
@@ -395,8 +448,37 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	err := s.Send(sctx, m)
 	cancel()
+	var broken *ErrChannelBroken
+	if errors.As(err, &broken) && r.channel == "gchat" {
+		o.markBroken(ctx, r.userID, m.GChatURL)
+	}
 	var perm Permanent
 	o.mark(ctx, r, err, errors.As(err, &perm))
+	if err == nil && r.channel == "gchat" && r.questionID != nil && r.kind != events.QuestionClosedKind && o.QuestionCardPosted != nil {
+		o.QuestionCardPosted(ctx, *r.questionID)
+	}
+}
+
+// markBroken records that Google refused the user's Chat webhook, once:
+// the first refusal of the URL still saved sets gchat_broken_at and writes
+// one notify_channel_broken account email in the same transaction, so the
+// user hears of it even with notify_email off. A URL saved since is not
+// marked by a refusal of the old one.
+func (o *Outbox) markBroken(ctx context.Context, userID uuid.UUID, gchatURL string) {
+	now := o.Now()
+	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
+		tag, err := tx.Exec(ctx, "update users set gchat_broken_at = $3 where id = $1 and gchat_url = $2 and gchat_broken_at is null", userID, gchatURL, now)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		_, err = events.InsertAccount(ctx, tx, userID, now, events.KindChannelBroken, map[string]any{"channel": "gchat", "space": GChatSpace(gchatURL), "since": now.UTC().Format(time.RFC3339)})
+		return err
+	})
+	if err != nil {
+		o.log.Error("mark channel broken", "event", "notify_fail", "channel", "gchat", "err", err.Error())
+		return
+	}
+	o.log.Warn("notification channel refused", "event", "notify_fail", "channel", "gchat", "user_id", userID.String())
 }
 
 // heldKinds are what an agent reports to its owner: held while the owner
@@ -598,6 +680,7 @@ var platformSubjects = map[string]string{
 	"egress_stopped":         "Your machines were stopped: egress limit",
 	"disk_over_plan":         "Your projects hold more than your plan's disk",
 	"machines_restarted":     "The server running your machines restarted",
+	"notify_channel_broken":  "Google Chat notifications stopped",
 }
 
 // Subject is the email subject line: Title for agent events, the
@@ -803,6 +886,12 @@ func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 	if u.NtfyURL != nil {
 		m.NtfyURL = *u.NtfyURL
 	}
+	if u.GChatURL != nil {
+		m.GChatURL = *u.GChatURL
+	}
+	if u.TZ != nil {
+		m.TZ = *u.TZ
+	}
 	if u.NotifyEmail && m.Email != "" {
 		out["email"], _ = o.try(ctx, "email", m)
 	}
@@ -814,22 +903,48 @@ func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 			out["ntfy_error"] = why
 		}
 	}
+	// A broken Google Chat webhook is tried too: a test that gets through
+	// clears the mark, and one Google refuses marks it (I-692).
+	if m.GChatURL != "" {
+		var why string
+		gm := m
+		gm.EventID = uuid.New()
+		var err error
+		if out["gchat"], why, err = o.tryErr(ctx, "gchat", gm); why != "" {
+			out["gchat_error"] = why
+		}
+		var broken *ErrChannelBroken
+		switch {
+		case err == nil && u.GChatBrokenAt != nil:
+			if _, err := o.pool.Exec(ctx, "update users set gchat_broken_at = null where id = $1 and gchat_url = $2", u.ID, m.GChatURL); err != nil {
+				o.log.Error("clear channel broken", "event", "notify_fail", "channel", "gchat", "err", err.Error())
+			}
+		case errors.As(err, &broken):
+			o.markBroken(ctx, u.ID, m.GChatURL)
+		}
+	}
 	return out
 }
 
 // try sends m on channel: "ok", or "error" with why in a few words.
 func (o *Outbox) try(ctx context.Context, channel string, m Message) (string, string) {
+	res, why, _ := o.tryErr(ctx, channel, m)
+	return res, why
+}
+
+// tryErr is try, with the send's error.
+func (o *Outbox) tryErr(ctx context.Context, channel string, m Message) (string, string, error) {
 	s := o.senders[channel]
 	if s == nil {
-		return "error", "not configured on this server"
+		return "error", "not configured on this server", errors.New("no sender")
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := s.Send(sctx, m); err != nil {
 		o.log.Warn("notify test failed", "event", "notify_fail", "channel", channel)
-		return "error", sendFailure(err)
+		return "error", sendFailure(err), err
 	}
-	return "ok", ""
+	return "ok", "", nil
 }
 
 // TestKind is the kind of POST /me/notify-test's message, titled
@@ -848,11 +963,14 @@ var (
 func sendFailure(err error) string {
 	var status *statusError
 	var dns *net.DNSError
+	var broken *ErrChannelBroken
 	switch {
 	case errors.Is(err, ErrNotConfigured):
 		return "not configured on this server"
 	case errors.Is(err, ErrRender):
 		return "the message did not render"
+	case errors.As(err, &broken):
+		return fmt.Sprintf("the server answered %d: the webhook was deleted, or its space removed it", broken.Code)
 	case errors.As(err, &status):
 		return fmt.Sprintf("the server answered %d", status.code)
 	case errors.Is(err, ErrNonPublicAddress):

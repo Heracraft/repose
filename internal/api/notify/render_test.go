@@ -92,6 +92,7 @@ func fixtures() map[string]notify.Message {
 		"disk_over_plan":         account("disk_over_plan", map[string]any{"plan": "solo", "held_gb": 112.4, "limit_gb": 100}),
 		"machines_restarted":     machinesRestarted(),
 		"test":                   {Kind: notify.TestKind, Summary: "This is a test from repose.", Email: "u@example.com", Dashboard: dash},
+		"notify_channel_broken":  account("notify_channel_broken", map[string]any{"channel": "gchat", "space": "AAAAx1yZ", "since": "2026-10-12T09:30:00Z"}),
 	}
 }
 

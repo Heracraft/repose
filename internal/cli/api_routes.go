@@ -31,6 +31,8 @@ type NotifyPatch struct {
 	// it alone" (nil, omitted) from "clear it" (points at a nil *string,
 	// marshals to JSON null) from "set it" (points at a non-nil one).
 	NtfyURL **string `json:"ntfy_url,omitempty"`
+	// GChatURL is the Google Chat webhook, the same way (I-692).
+	GChatURL **string `json:"gchat_url,omitempty"`
 }
 
 func (c *Client) PatchMe(ctx context.Context, req PatchMeRequest) (*Me, error) {

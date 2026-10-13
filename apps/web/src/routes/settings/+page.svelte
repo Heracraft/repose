@@ -16,8 +16,8 @@
 	import type { Me } from '$lib/api/types';
 
 	// The timezone and the email toggle save the moment they change; the
-	// ntfy URL is typed, so it has its own Save next to the field
-	// (DECISIONS I-332).
+	// ntfy URL and the Google Chat webhook are typed, so each has its own
+	// Save next to the field (DECISIONS I-332, I-692).
 	let me = $state<Me | undefined>(undefined);
 	let tz = $state('');
 	let savedTz = '';
@@ -27,6 +27,10 @@
 	let ntfyUrl = $state('');
 	let savedNtfyUrl = $state('');
 	let savingNtfy = $state(false);
+	// The Google Chat webhook is a credential (I-692): the api never sends
+	// it back, so the field starts empty and holds only a new URL.
+	let gchatUrl = $state('');
+	let savingGChat = $state(false);
 	let testAvailable = $state(true);
 	let testing = $state(false);
 	let deleting = $state(false);
@@ -40,6 +44,8 @@
 	let heldFrom: HTMLElement | undefined;
 
 	let ntfyDirty = $derived(ntfyUrl.trim() !== savedNtfyUrl);
+	let gchatDirty = $derived(gchatUrl.trim() !== '');
+	let gchat = $derived(me?.notify?.gchat ?? null);
 
 	// Each section is a row of two tracks from lg (I-664): the h2 and one
 	// fact in 280px on the left, the controls on the right, held to 560px
@@ -73,6 +79,7 @@
 			emailOn = me.notify?.email ?? true;
 			ntfyUrl = me.notify?.ntfy_url ?? '';
 			savedNtfyUrl = ntfyUrl;
+			gchatUrl = '';
 		} catch (err) {
 			loadError = loadErrorText(err, 'Could not load settings.');
 			return;
@@ -99,7 +106,7 @@
 	onMount(load);
 
 	beforeNavigate(({ cancel, type, to }) => {
-		if (!ntfyDirty || leavingAnyway()) return;
+		if ((!ntfyDirty && !gchatDirty) || leavingAnyway()) return;
 		// A tab close or reload gets the browser's own prompt from cancel().
 		// A link inside the dashboard is held, and the page asks beside the
 		// field that is unsaved, so the question uses the house banner and
@@ -119,7 +126,9 @@
 	 */
 	async function stay() {
 		heldNavigation = undefined;
-		const back = heldFrom?.isConnected ? heldFrom : document.getElementById('ntfy-url');
+		const back = heldFrom?.isConnected
+			? heldFrom
+			: document.getElementById(ntfyDirty ? 'ntfy-url' : 'gchat-url');
 		heldFrom = undefined;
 		await tick();
 		back?.focus();
@@ -172,6 +181,36 @@
 		}
 	}
 
+	async function saveGChat(e: SubmitEvent) {
+		e.preventDefault();
+		const next = gchatUrl.trim();
+		if (!next) return;
+		savingGChat = true;
+		try {
+			me = await patchMe({ notify: { gchat_url: next } });
+			gchatUrl = '';
+			heldNavigation = undefined;
+			toast.success('Google Chat webhook saved.');
+		} catch (err) {
+			toastApiError(err, 'Could not save the Google Chat webhook.');
+		} finally {
+			savingGChat = false;
+		}
+	}
+
+	async function removeGChat() {
+		savingGChat = true;
+		try {
+			me = await patchMe({ notify: { gchat_url: null } });
+			gchatUrl = '';
+			toast.success('Google Chat turned off.');
+		} catch (err) {
+			toastApiError(err, 'Could not turn Google Chat off.');
+		} finally {
+			savingGChat = false;
+		}
+	}
+
 	async function onDelete() {
 		deleting = true;
 		try {
@@ -188,8 +227,17 @@
 		testing = true;
 		try {
 			const result = await notifyTest();
-			if (result.email === 'ok' || result.ntfy === 'ok') toast.success('Test notification sent.');
-			else toast.error('The test notification failed on every channel.');
+			const failed = [
+				result.ntfy === 'error' && `ntfy: ${result.ntfy_error ?? 'failed'}`,
+				result.gchat === 'error' && `Google Chat: ${result.gchat_error ?? 'failed'}`
+			].filter(Boolean);
+			if (result.email === 'ok' || result.ntfy === 'ok' || result.gchat === 'ok') {
+				if (failed.length) toast.error(`Test sent, but failed on ${failed.join('; ')}.`);
+				else toast.success('Test notification sent.');
+			} else toast.error('The test notification failed on every channel.');
+			// A test that got through to Google Chat clears its broken mark,
+			// and one Google refused sets it.
+			if (result.gchat) me = await getMe();
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'not_found') testAvailable = false;
 			else toastApiError(err, 'Could not send a test notification.');
@@ -318,6 +366,66 @@
 							</div>
 						</div>
 					{:else if ntfyDirty}
+						<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
+					{/if}
+				</form>
+				<form class="mt-4" onsubmit={saveGChat}>
+					<div class="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+						<label for="gchat-url" class="block text-sm font-medium text-ink"
+							>Google Chat webhook</label
+						>
+						{#if gchat}
+							<span class="text-sm text-ink-muted"
+								>space <span class="font-mono text-compact">{gchat.space}</span></span
+							>
+							{#if gchat.broken_at}
+								<span class="badge badge--warn">broken since {dateOnly(gchat.broken_at)}</span>
+							{/if}
+							<!-- Remove sits on the label line so the input and Save keep the ntfy row's tracks. -->
+							<button
+								type="button"
+								class="btn-ghost btn--sm ml-auto"
+								disabled={savingGChat}
+								onclick={removeGChat}>Remove</button
+							>
+						{/if}
+					</div>
+					<div class="flex gap-2">
+						<input
+							id="gchat-url"
+							type="password"
+							autocomplete="off"
+							spellcheck="false"
+							class="field min-w-0 flex-1"
+							placeholder={gchat ? 'New webhook URL' : 'https://chat.googleapis.com/v1/spaces/...'}
+							bind:value={gchatUrl}
+						/>
+						<button type="submit" class="btn-quiet shrink-0" disabled={savingGChat || !gchatDirty}>
+							{savingGChat ? 'Saving…' : 'Save'}
+						</button>
+					</div>
+					{#if gchat?.broken_at}
+						<p class="mt-1.5 text-sm text-ink-muted">
+							Google refused the webhook. Save a new one, or send a test once it works again.
+						</p>
+					{/if}
+					{#if gchatDirty && !ntfyDirty && heldNavigation}
+						<div
+							class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
+							role="alert"
+						>
+							<p>The Google Chat webhook is not saved. Leave this page anyway?</p>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="btn-quiet btn--sm"
+									bind:this={stayButton}
+									onclick={stay}>Stay</button
+								>
+								<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
+							</div>
+						</div>
+					{:else if gchatDirty}
 						<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
 					{/if}
 				</form>

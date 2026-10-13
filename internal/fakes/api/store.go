@@ -206,7 +206,10 @@ type userRec struct {
 	CreatedAt   time.Time
 	NotifyEmail bool
 	NtfyURL     string
-	Cancelling  bool
+	// GChatURL and GChatBrokenAt are the Google Chat channel (I-692).
+	GChatURL      string
+	GChatBrokenAt *time.Time
+	Cancelling    bool
 	// personal is the account's machine.nix saves, oldest first (I-490).
 	personal []*personalRev
 }

@@ -38,9 +38,22 @@ func (s *Server) userJSON(ctx context.Context, u *store.User) (map[string]any, e
 		"id": u.ID, "handle": u.Handle, "email": u.Email, "github_login": u.GithubLogin, "tz": u.TZ, "created_at": u.CreatedAt,
 		"billing":  b,
 		"limits":   billing.LimitsFor(u, sub).JSON(),
-		"notify":   map[string]any{"email": u.NotifyEmail, "ntfy_url": u.NtfyURL},
+		"notify":   map[string]any{"email": u.NotifyEmail, "ntfy_url": u.NtfyURL, "gchat": gchatJSON(u)},
 		"waitlist": place.JSON(),
 	}, nil
+}
+
+// gchatJSON is GET /me's notify.gchat: the space and the broken mark,
+// never the webhook URL, whose key and token let anyone post (I-692).
+func gchatJSON(u *store.User) any {
+	if u.GChatURL == nil || *u.GChatURL == "" {
+		return nil
+	}
+	var broken any
+	if u.GChatBrokenAt != nil {
+		broken = u.GChatBrokenAt.UTC()
+	}
+	return map[string]any{"space": notify.GChatSpace(*u.GChatURL), "broken_at": broken}
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) error {
@@ -63,6 +76,8 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 			// absent key (leave alone); a *string made both nil, and
 			// `--ntfy none` silently kept the old topic.
 			NtfyURL json.RawMessage `json:"ntfy_url"`
+			// GChatURL is a Google Chat webhook (I-692), null or "" to clear.
+			GChatURL json.RawMessage `json:"gchat_url"`
 		} `json:"notify"`
 	}
 	if err := decode(r, &body); err != nil {
@@ -112,6 +127,11 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 		}
+		if len(body.Notify.GChatURL) > 0 {
+			if err := s.setGChat(r.Context(), u, body.Notify.GChatURL); err != nil {
+				return err
+			}
+		}
 		if body.Notify.Email != nil {
 			if _, err := s.d.Pool.Exec(r.Context(), "update users set notify_email = $2 where id = $1", u.ID, *body.Notify.Email); err != nil {
 				return err
@@ -133,6 +153,29 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, http.StatusOK, j)
 	return nil
+}
+
+// setGChat saves or clears the user's Google Chat webhook. A URL is
+// stored in canonical form and clears the broken mark; clearing drops
+// the channel's queued rows through events.DropQueued, project events and
+// user notices alike (I-691). Neither the URL nor anything quoting it reaches the answer.
+func (s *Server) setGChat(ctx context.Context, u *store.User, raw json.RawMessage) error {
+	var v *string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return errf("invalid", "gchat_url must be a string or null")
+	}
+	if v == nil || strings.TrimSpace(*v) == "" {
+		if _, err := s.d.Pool.Exec(ctx, "update users set gchat_url = null, gchat_broken_at = null where id = $1", u.ID); err != nil {
+			return err
+		}
+		return events.DropQueued(ctx, s.d.Pool, u.ID, events.ChannelGChat)
+	}
+	canonical, _, err := notify.CanonicalGChatURL(*v)
+	if err != nil {
+		return errf("invalid", "%s", notify.ErrGChatURL.Error())
+	}
+	_, err = s.d.Pool.Exec(ctx, "update users set gchat_url = $2, gchat_broken_at = null where id = $1", u.ID, canonical)
+	return err
 }
 
 // deleteMe begins cancellation: any pending egress overage is sent to

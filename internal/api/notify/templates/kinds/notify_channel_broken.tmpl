@@ -1,0 +1,9 @@
+{{/* Google refused the user's Chat webhook (DECISIONS I-692): sent once, when the channel is marked broken. */}}
+{{define "heading"}}Google Chat notifications stopped{{end}}
+{{define "body"}}Google refused the webhook{{if .P.Has "space"}} of space {{.P.Str "space"}}{{end}}{{if .P.Has "since"}} on {{.P.Date "since"}}{{end}}. It was deleted, or the space removed it.
+
+repose sends nothing to Google Chat until you save a new webhook URL or a test message gets through.{{end}}
+{{define "command_label"}}Save a new webhook{{end}}
+{{define "command"}}repose notify set --gchat 'URL'{{end}}
+{{define "link_label"}}Notification settings{{end}}
+{{define "link_url"}}{{.Dashboard}}/settings{{end}}

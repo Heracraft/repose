@@ -37,7 +37,7 @@ const (
 	ExitError     = 1 // guestd unreachable, or refused the request
 	ExitUsage     = 2
 	ExitTimeout   = 3 // no answer before --timeout
-	ExitNoChannel = 4 // the owner has neither email nor ntfy turned on
+	ExitNoChannel = 4 // the owner has no channel on: email, ntfy or Google Chat
 	ExitCancelled = 5 // dismissed, withdrawn, the machine stopped, or the question was lost
 	// ExitAnsweredInTerminal: the user sent the agent a prompt, which
 	// closed its open questions (DECISIONS I-690).
@@ -54,10 +54,11 @@ var pollWait = 25
 
 const notifyUsage = `usage: repose-notify [--done] [--agent NAME] MESSAGE...
 
-Sends MESSAGE to the project owner's notification channels and returns at
-once. Without MESSAGE it reads the message from stdin. With --done the
-message says the work they asked for is finished. Messages are capped at
-1 KB and share the project's notification limit of 30 an hour.
+Sends MESSAGE to the project owner's notification channels (email, ntfy,
+Google Chat) and returns at once. Without MESSAGE it reads the message
+from stdin. With --done the message says the work they asked for is
+finished. Messages are capped at 1 KB and share the project's notification
+limit of 30 an hour.
 `
 
 const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
@@ -65,9 +66,10 @@ const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--agent N
 
 Sends QUESTION to the project owner's channels and waits for the reply,
 which it prints on stdout. With --options (at most three) the reply is one
-of them, and ntfy and email offer one-click buttons. The owner can also
-reply on the dashboard or with ` + "`repose reply`" + ` on their laptop. A prompt
-the user types to the asking agent closes its open questions.
+of them, and ntfy, email and Google Chat offer one-click buttons. The
+owner can also reply on the dashboard or with ` + "`repose reply`" + ` on their
+laptop. A prompt the user types to the asking agent closes its open
+questions.
 
 --cancel withdraws this agent's open questions, or the one with ID (printed
 on stderr when it was asked), or with --all every open question on the
