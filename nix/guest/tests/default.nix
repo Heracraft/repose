@@ -938,19 +938,36 @@ in
           pane = guest.succeed("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe")
           assert "mark=read" in pane, pane
           guest.succeed("sudo -H -u dev tmux kill-window -t todo-app:rcprobe")
-          # An SSH shell.
+          # An SSH shell. sshd runs a command through a non-interactive
+          # `bash -c`, and nixpkgs builds bash with -DSSH_SOURCE_BASHRC, so
+          # that wrapper reads ~/.bashrc itself whenever SSH_CLIENT is in its
+          # environment, login files or not. `env -u` drops what the wrapper
+          # exported, so a marker here is the login shell's own work
+          # (DECISIONS I-725); an alias never crosses a process either way.
           guest.succeed("ssh-keygen -q -s /root/ca -I 'user:heracraft' -n 0192e4b0-0000-7000-8000-000000000001 -V -1m:+12h /root/user.pub")
           ssh = "ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o CertificateFile=/root/user-cert.pub -i /root/user dev@127.0.0.1"
-          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
+          out = guest.succeed(ssh + " \"env -u REPOSE_RC_MARK bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
           print(out)
           for want in ["mark=read", "alias-ok", "user-ll", "alias ls='ls --color=tty'", "hist=100000", "histappend", "function"]:
               assert want in out, out
           assert "/bin/vi" in out and "/bin/vim" in out, out
-          # A user's ~/.bash_profile decides for itself.
-          guest.succeed("install -o dev -g dev /dev/null /home/dev/.bash_profile")
-          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK'\" 2>/dev/null")
-          assert "mark=read" not in out, out
-          guest.succeed("rm /home/dev/.bash_profile /home/dev/.bashrc")
+
+          # A login file of the user's own decides for itself: the base
+          # leaves ~/.bashrc alone for any of ~/.bash_profile,
+          # ~/.bash_login and a ~/.profile that names bashrc (I-513).
+          def rc_left_alone(name):
+              out = guest.succeed(ssh + " \"env -u REPOSE_RC_MARK bash -lic 'echo mark=\\$REPOSE_RC_MARK; type -t rcprobe || echo no-rcprobe; alias ll'\" 2>/dev/null")
+              assert "mark=read" not in out, (name, out)
+              assert "no-rcprobe" in out, (name, out)
+              assert "alias ll='eza -al --group-directories-first'" in out, (name, out)
+
+          for name in [".bash_profile", ".bash_login"]:
+              guest.succeed(f"install -o dev -g dev /dev/null /home/dev/{name}")
+              rc_left_alone(name)
+              guest.succeed(f"rm /home/dev/{name}")
+          guest.succeed("echo '# nvm appended to ~/.bashrc' > /home/dev/.profile; chown dev:dev /home/dev/.profile")
+          rc_left_alone(".profile")
+          guest.succeed("rm /home/dev/.profile /home/dev/.bashrc")
 
       with subtest("store overlay and profile pinning"):
           mounts = guest.succeed("mount | grep -E 'ro-store|rw-store|/nix/store'")

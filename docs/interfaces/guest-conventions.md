@@ -286,7 +286,11 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   (I-512).
 - Shell: a login bash sources `~/.bashrc` last in `/etc/bashrc` when
   there is no `~/.bash_profile` or `~/.bash_login` and `~/.profile` does
-  not mention bashrc (I-513). `ls` is GNU ls; `ll`, `la`, `lt` run eza;
+  not mention bashrc (I-513). Not the base's doing, and not suppressed by
+  a login file: nixpkgs' bash has `-DSSH_SOURCE_BASHRC`, so the
+  non-interactive `bash -c` sshd runs a command in reads `~/.bashrc`
+  itself and exports what it sets to the shells it starts (I-725). `ls`
+  is GNU ls; `ll`, `la`, `lt` run eza;
   `histappend`, `HISTSIZE=100000`, `HISTFILESIZE=200000`,
   `HISTCONTROL=ignoredups` when unset; fzf key bindings and completion;
   `vi` and `vim` are neovim (I-514). A fragment's `home.shellAliases` are

@@ -20648,3 +20648,51 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-725. The guest-base check for "a user's login file decides" measures
+the login shell, not the shell sshd wraps it in.** (rc-decides,
+2026-10-13; corrects guest-base's I-513 subtest, which has failed on
+main since 2026-10-08) *Made during implementation*: I-513's promise is
+about `/etc/bashrc` ("The last lines of `/etc/bashrc`'s interactive part
+... now source `~/.bashrc` in a login shell when it is readable, there
+is no `~/.bash_profile` or `~/.bash_login`, and `~/.profile` does not
+mention bashrc. A user who has one of those decides for themselves"),
+and the base keeps it: the guard in `nix/guest/base/shell.nix` is
+exactly those four conditions, and I-513 verified it by evaluating
+`/etc/bashrc` in a temp HOME. The VM subtest checked the same promise
+through `ssh dev@127.0.0.1 "bash -lic 'echo mark=$REPOSE_RC_MARK'"` with
+an empty `~/.bash_profile` in place, and read `mark=read` anyway, so the
+assertion fired and the six subtests after it (the store overlay, I-533,
+I-529, I-585 and the guest profile script) never ran at all.
+Nothing in the base reads `~/.bashrc` there. sshd runs a command as
+`bash -c '<command>'` — not a login shell, so no login file of the
+user's is consulted by bash in the first place — and nixpkgs builds bash
+with `-DSSH_SOURCE_BASHRC` (pkgs/shells/bash/5.nix), which makes a
+non-interactive `bash -c` read `~/.bashrc` itself whenever `SSH_CLIENT`
+or `SSH2_CLIENT` is in its environment. That wrapper exports
+`REPOSE_RC_MARK`, and the `bash -lic` it runs inherits it. Reproduced
+with the pinned nixpkgs bash: `env -i HOME=$t SSH_CLIENT='1.2.3.4 1 2'
+bash -c 'echo mark=$REPOSE_RC_MARK'` prints `mark=read` with an empty
+`$t/.bash_profile` present, and prints nothing without `SSH_CLIENT`.
+So the probe could not tell "the base sourced my `~/.bashrc`" from
+"bash's own ssh rule sourced it one process earlier", in either
+direction: the subtest's *positive* `mark=read` proved nothing about the
+base either.
+The test is corrected, not weakened. Both ssh probes now run the login
+shell under `env -u REPOSE_RC_MARK`, so a marker in it is that shell's
+own work, and the negative case also asserts what cannot cross a process
+at all: `rcprobe` undefined and `ll` still the base's
+`eza -al --group-directories-first`. The negative case now covers all
+three of I-513's guards — `~/.bash_profile`, `~/.bash_login` and a
+`~/.profile` that names bashrc — where it covered only the first.
+*Rejected:* dropping the base's `~/.bashrc` read to somewhere bash reads
+after a user's login file, which is what the assertion looked like it
+asked for. There is no such place for the shell sshd wraps a command in:
+it is not a login shell, so bash never looks at `~/.bash_profile` there,
+and the read is bash's own, inside a process the base does not start.
+Patching bash to drop `SSH_SOURCE_BASHRC` was rejected too: it is
+nixpkgs' and Debian's long-standing default, it is what makes
+`ssh <machine> <command>` find the tools a user's `~/.bashrc` puts on
+`PATH`, and a guest's bash must stay the one the base's closure already
+has. machine.md gains the sentence that a login file of the user's own
+takes `~/.bashrc` back.
