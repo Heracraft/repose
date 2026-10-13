@@ -21,11 +21,11 @@ $ repose run
 ✓ Evaluated your config  4.1s
 ✓ Fetched 212 paths (310 MiB)  19s
 ✓ Built 2 derivations  12s
-✓ Booted todo-app  6.2s
+✓ Booted todo-app  38s
 Connected to todo-app (large)
 Synced: 3 modified, 1 untracked (12 new commits)
 Logins copied: gh, git
-Ready in 49s.
+Ready in 1m15s.
 dev@todo-app:~/todo-app$
 ```
 

@@ -209,7 +209,7 @@ func (m *Manager) apply(ctx context.Context, commandID string, c *hostdv1.ApplyC
 			return nil, err
 		}
 		g.BootFallback = nil
-		fb, tail, err := m.bootOrFallBack(ctx, g, commandID)
+		fb, tail, err := m.bootOrFallBack(ctx, g, commandID, "apply")
 		if err != nil {
 			return nil, err
 		}

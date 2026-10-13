@@ -175,9 +175,11 @@ func (m *Manager) fallbackTarget(ctx context.Context, g *state.Guest) string {
 // nil once a boot reached running. The failure that caused a fallback is
 // recorded on the guest under commandID before the second boot, so a
 // resend of the command after a hostd restart answers the same way.
-// tail is the failed boot's console tail, for the result.
-func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID string) (fb *state.BootFallback, tail string, err *Error) {
-	err = m.boot(ctx, g, stepRunner, "start", 0)
+// tail is the failed boot's console tail, for the result. op names the
+// command in the "boot timings" line: "start", or "apply" for an apply's
+// forced reboot (I-707).
+func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID, op string) (fb *state.BootFallback, tail string, err *Error) {
+	err = m.boot(ctx, g, stepRunner, op, 0)
 	if err == nil {
 		return nil, "", nil
 	}
@@ -196,7 +198,7 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID 
 		return nil, "", err
 	}
 	m.log(g).Warn("boot never reached ready; booting the last good closure", "event", "boot_fallback", "code", fb.Code)
-	if err2 := m.boot(ctx, g, stepRunner, "start", 0); err2 != nil {
+	if err2 := m.boot(ctx, g, stepRunner, op, 0); err2 != nil {
 		// Both failed: the guest is in error on its last good closure,
 		// and the first failure is the one to report.
 		err.Message += "; its previous system did not boot either: " + err2.Message

@@ -20755,7 +20755,7 @@ home-manager 5.4 s against 11.2 s, while host load rose from 4.3 to 9.2
 (boot-fast, 2026-10-13).** *Made during implementation.* A slow create
 had to be pieced together from journal timestamps and the guest's
 console. hostd now logs one `"boot timings"` line (`event` guest_start,
-`op` create or start) per boot that reached running, with `volume_ms`,
+`op` create, start, or apply for an apply's forced reboot) per boot that reached running, with `volume_ms`,
 `prepare_ms`, `ready_ms`, `paths_ms`, `setup_ms` and `total_ms`, the shape
 of I-571's "stop timings". The same numbers ride back as `BootTimings
 boot` on CreateResult (field 3) and StartResult (field 4), and the api
@@ -20807,6 +20807,13 @@ terminal, and the build's `built` line starts `Booting <slug>`. The
 build is reused shows `Created` and `Booted` as before. The change is in
 run.go and buildprogress.go; progress.go is untouched, so a step whose
 done text is empty ("Working out what to fetch" with nothing to fetch)
-prints no line, as in `repose config`. The quickstart's example output,
+prints no line, as in `repose config`; in a create, a build that
+printed none of Nix's lists (everything was in the host's store) ends on
+`Built the configuration`, so `Booted` does not carry the build's time.
+The fake hostd's build sends Nix's lists between nixbuild's lines and
+spends none of its delay after `built`. Against the real api in-process
+(fake hostd, 9 s build, 6 s boot) the branch's CLI printed `✓ Evaluated
+your config 1.0s`, `✓ Fetched 2 paths (1.5 MiB) 2.6s`, `✓ Built 2
+derivations 1.8s`, `✓ Booted e2e-tty 6.5s`. The quickstart's example output,
 config.md's build steps paragraph and docs/features/run-and-attach.md
 say what a first run prints.

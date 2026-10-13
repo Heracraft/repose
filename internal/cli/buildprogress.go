@@ -69,11 +69,18 @@ func (v *buildView) Line(line string) {
 		v.stage = stageNone
 		v.pr.Phase("Working out what to fetch", "")
 	case line == "built" || strings.HasPrefix(line, "built /"):
-		v.stage = stageBuilt
 		if v.built != nil {
+			// Nix printed no lists (all of it was in the host's store), so
+			// no step has ended with a line: the build gets one, or the
+			// boot's line would carry its time.
+			if v.stage == stageNone {
+				v.pr.Relabel("Building the configuration", "Built the configuration")
+			}
+			v.stage = stageBuilt
 			v.built()
 			return
 		}
+		v.stage = stageBuilt
 		v.pr.End()
 	case line == "switching the machine":
 		v.switching()

@@ -60,3 +60,21 @@ func TestBootLogsItsSteps(t *testing.T) {
 		t.Fatalf("%d \"boot timings\" lines after a start of a running guest", n)
 	}
 }
+
+// TestApplyRebootLogsAsApply: an apply's forced reboot is no StartGuest,
+// so its "boot timings" line says op=apply and an operator counting
+// starts in the journal does not count config reboots (I-707).
+func TestApplyRebootLogsAsApply(t *testing.T) {
+	h := newHarness(t, nil)
+	closure := fakeClosure(t, "nixos-system-v2")
+	h.gopts.NeedsReboot = map[string]bool{closure: true}
+	h.create(gid1)
+	res := h.mustOK(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: closure, ForceReboot: true}))
+	if !res.GetApply().Rebooted {
+		t.Fatalf("apply result %v", res.GetApply())
+	}
+	lines := logLines(t, h, "boot timings")
+	if len(lines) != 2 || lines[0]["op"] != "create" || lines[1]["op"] != "apply" {
+		t.Fatalf("boot timings after a forced apply: %v", lines)
+	}
+}

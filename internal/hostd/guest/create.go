@@ -676,7 +676,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	// A fallback another command made is over once this one boots.
 	g.BootFallback = nil
-	fb, tail, err := m.bootOrFallBack(ctx, g, commandID)
+	fb, tail, err := m.bootOrFallBack(ctx, g, commandID, "start")
 	if err != nil {
 		return nil, err
 	}

@@ -295,3 +295,29 @@ func TestCreateShowsTheBuildThenTheBoot(t *testing.T) {
 		}
 	}
 }
+
+// A create whose build finds everything in the host's store prints none
+// of Nix's lists, so no fetch or build step ends with a line. The build
+// still gets its own line before the boot, or "Booted" would carry the
+// build's time and the screen would show less than before I-708.
+func TestCreateBuildWithNothingToFetch(t *testing.T) {
+	for _, tty := range []bool{true, false} {
+		out := &discardWriter{}
+		pr := newProgress(out, tty)
+		v := &buildView{pr: pr}
+		v.built = func() { pr.Phase("Booting todo-app", "Booted todo-app") }
+		for _, l := range []string{"evaluating configuration", "building nixos-system-todo-app", "built /nix/store/ffff-nixos-system-todo-app"} {
+			v.Line(l)
+		}
+		pr.End()
+		got := out.buf.String()
+		last := -1
+		for _, want := range []string{"✓ Evaluated your config", "✓ Built the configuration", "✓ Booted todo-app"} {
+			i := strings.Index(got, want)
+			if i < 0 || i < last {
+				t.Fatalf("tty=%v: step %q missing or out of order in:\n%s", tty, want, got)
+			}
+			last = i
+		}
+	}
+}

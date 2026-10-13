@@ -643,14 +643,29 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		if c.Build.RevisionId != "" {
 			closure = f.opts.FakeClosure + "-" + c.Build.RevisionId
 		}
-		// nixbuild's own lines (internal/hostd/nixbuild): the CLI reads
-		// them to show the build's steps (I-320, I-708).
-		for i, line := range []string{"evaluating configuration", "building nixos-system-repose-guest", "built " + closure} {
+		// nixbuild's own lines (internal/hostd/nixbuild) with Nix's lists
+		// between them: the CLI reads them to show the build's steps
+		// (I-320, I-708). BuildDelay is spent across the build, none of it
+		// after "built", which is when the real build answers.
+		lines := []string{
+			"evaluating configuration",
+			"building nixos-system-repose-guest",
+			"these 2 derivations will be built:",
+			"  /nix/store/aaaa-home-manager-files.drv",
+			"  /nix/store/bbbb-nixos-system-repose-guest.drv",
+			"these 2 paths will be fetched (1.5 MiB download, 5.9 MiB unpacked):",
+			"copying path '/nix/store/cccc-cloudflared' from 'https://cache.nixos.org'...",
+			"copying path '/nix/store/dddd-ripgrep' from 'https://cache.nixos.org'...",
+			"building '/nix/store/aaaa-home-manager-files.drv'...",
+			"building '/nix/store/bbbb-nixos-system-repose-guest.drv'...",
+			"built " + closure,
+		}
+		for i, line := range lines {
+			if i > 0 && f.opts.BuildDelay > 0 {
+				time.Sleep(f.opts.BuildDelay / time.Duration(len(lines)-1))
+			}
 			if send != nil {
 				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Log{Log: &hostdv1.BuildLog{CommandId: id, Seq: uint64(i + 1), Line: line}}}) // dead stream ends Recv
-			}
-			if f.opts.BuildDelay > 0 {
-				time.Sleep(f.opts.BuildDelay / 3)
 			}
 		}
 		// A personal layer carrying "fake-eval-error" fails the way a
