@@ -52,7 +52,7 @@ repose notify test
 
 The URL lets anyone who has it post to the space, so repose treats it like a password: it's never shown again, in the CLI or on the dashboard, which show the space's id instead.
 
-Each notification starts its own thread, so it alerts like a new message. A question's options are buttons; each opens a page where you confirm the answer. When the question closes, a reply in its thread says how, such as `Answered yes from the dashboard`.
+Each notification starts its own thread, so it alerts like a new message. A question's options are buttons; each opens a page where you confirm the answer. When the question closes, a reply in its thread says how, such as `Answered yes from the dashboard`. A question that closes before its card goes out is not posted.
 
 If Google refuses the webhook (it was deleted, or the space removed it), repose stops sending to it and emails you once. `repose notify` then shows `broken since` and the date. Saving a URL, or a `repose notify test` that gets through, turns it back on. Turn Google Chat off with `repose notify set --gchat off`.
 

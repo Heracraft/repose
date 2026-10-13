@@ -145,3 +145,83 @@ func TestCloseLine(t *testing.T) {
 		}
 	}
 }
+
+// A question whose Chat card posted after it closed gets its close reply
+// when the outbox reports the post, once, and a pending one gets none.
+func TestReplyIfClosed(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ev := events.New(pool, metrics.NewNop(), log)
+	svc := questions.New(pool, ev, nil, log)
+	pid, gid := seed(t, pool, "late")
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "update users set gchat_url = 'https://chat.googleapis.com/v1/spaces/S1/messages?key=k&token=t' where id = (select user_id from projects where id = $1) returning id", pid).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	ask := func() uuid.UUID {
+		t.Helper()
+		id := uuid.Must(uuid.NewV7())
+		if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: id.String(), Agent: "claude", Text: "Ship it?", Options: []string{"yes", "no"}}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	posted := func(id uuid.UUID) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, "update events set delivered = jsonb_build_object('gchat', '2026-10-12T10:00:00Z') where id = (select event_id from questions where id = $1)", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	replies := func(id uuid.UUID) []string {
+		t.Helper()
+		rows, err := pool.Query(ctx, "select summary from events where user_id = $1 and kind = 'question_closed' and summary::jsonb->>'question_id' = $2", uid, id.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var out []string
+		for rows.Next() {
+			var s string
+			_ = rows.Scan(&s)
+			var c events.QuestionClosed
+			_ = json.Unmarshal([]byte(s), &c)
+			out = append(out, c.Text)
+		}
+		return out
+	}
+
+	// Pending: the card posted and nothing closed.
+	a := ask()
+	posted(a)
+	svc.ReplyIfClosed(ctx, a)
+	if got := replies(a); len(got) != 0 {
+		t.Fatalf("reply to a pending question: %v", got)
+	}
+
+	// Expired in the guest while the card was in flight.
+	b := ask()
+	if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: b.String(), State: "expired"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := replies(b); len(got) != 0 {
+		t.Fatalf("reply before the card posted: %v", got)
+	}
+	posted(b)
+	svc.ReplyIfClosed(ctx, b)
+	svc.ReplyIfClosed(ctx, b) // a second report sends no second reply
+	if got := replies(b); len(got) != 1 || got[0] != "Expired without an answer" {
+		t.Fatalf("late reply: %v", got)
+	}
+
+	// The machine stopped while the card was in flight.
+	c := ask()
+	if err := svc.GuestStopped(ctx, pid); err != nil {
+		t.Fatal(err)
+	}
+	posted(c)
+	svc.ReplyIfClosed(ctx, c)
+	if got := replies(c); len(got) != 1 || got[0] != "Closed: the machine stopped" {
+		t.Fatalf("machine stopped: %v", got)
+	}
+}

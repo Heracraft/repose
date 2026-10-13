@@ -1,5 +1,5 @@
 {
-  "fallbackText": "todo-app: Your machines were stopped: a payment failed: Your payment has been failing for three days, so todo-app was snapshotted and stopped.",
+  "fallbackText": "todo-app: Your machines were stopped: a payment failed\nYour payment has been failing for three days, so todo-app was snapshotted and stopped.",
   "cardsV2": [
     {
       "cardId": "repose",

@@ -381,6 +381,13 @@
 							{#if gchat.broken_at}
 								<span class="badge badge--warn">broken since {dateOnly(gchat.broken_at)}</span>
 							{/if}
+							<!-- Remove sits on the label line so the input and Save keep the ntfy row's tracks. -->
+							<button
+								type="button"
+								class="btn-ghost btn--sm ml-auto"
+								disabled={savingGChat}
+								onclick={removeGChat}>Remove</button
+							>
 						{/if}
 					</div>
 					<div class="flex gap-2">
@@ -396,14 +403,6 @@
 						<button type="submit" class="btn-quiet shrink-0" disabled={savingGChat || !gchatDirty}>
 							{savingGChat ? 'Saving…' : 'Save'}
 						</button>
-						{#if gchat}
-							<button
-								type="button"
-								class="btn-ghost shrink-0"
-								disabled={savingGChat}
-								onclick={removeGChat}>Remove</button
-							>
-						{/if}
 					</div>
 					{#if gchat?.broken_at}
 						<p class="mt-1.5 text-sm text-ink-muted">

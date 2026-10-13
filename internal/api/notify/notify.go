@@ -114,6 +114,10 @@ type Outbox struct {
 	// APIBase is the api's own public origin, which serves
 	// GET /notify/unsubscribe; distinct from Dashboard.
 	APIBase string
+	// QuestionCardPosted, when set, is called after a question's card
+	// posts to Google Chat, so a question that closed while the card was
+	// in flight still gets the close reply in its thread (I-692).
+	QuestionCardPosted func(ctx context.Context, questionID uuid.UUID)
 }
 
 // New builds an outbox with the given channel senders.
@@ -169,6 +173,7 @@ type row struct {
 	eventTS     time.Time
 	projectID   uuid.UUID
 	questionID  *uuid.UUID
+	qState      *string
 	options     []string
 	expires     *time.Time
 }
@@ -179,7 +184,7 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.tz, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.tz, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 order by o.next_at limit 100 for update of o skip locked`, now)
@@ -189,7 +194,7 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.tz, &r.notifyEmail, &r.projectID, &r.questionID, &r.options, &r.expires); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.tz, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -228,7 +233,10 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	// mail is transactional and ignores notify_email (I-269, I-291).
 	if (r.channel == "email" && ((!r.notifyEmail && !transactional(r.kind)) || r.email == nil || *r.email == "")) || (r.channel == "ntfy" && (r.ntfy == nil || *r.ntfy == "")) ||
 		// Google Chat stops at a webhook Google refused (I-692).
-		(r.channel == "gchat" && (r.gchat == nil || *r.gchat == "" || r.gchatBroken != nil)) {
+		(r.channel == "gchat" && (r.gchat == nil || *r.gchat == "" || r.gchatBroken != nil)) ||
+		// A question card whose question closed while it waited would
+		// show buttons that answer nothing, with no close reply after it.
+		(r.channel == "gchat" && r.qState != nil && *r.qState != "pending") {
 		_, _ = o.pool.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel) // best effort; it is re-picked and dropped again otherwise
 		return
 	}
@@ -285,6 +293,9 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	}
 	var perm Permanent
 	o.mark(ctx, r, err, errors.As(err, &perm))
+	if err == nil && r.channel == "gchat" && r.questionID != nil && r.kind != events.QuestionClosedKind && o.QuestionCardPosted != nil {
+		o.QuestionCardPosted(ctx, *r.questionID)
+	}
 }
 
 // markBroken records that Google refused the user's Chat webhook, once:

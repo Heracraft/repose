@@ -15,6 +15,7 @@ import (
 	"time"
 	_ "time/tzdata" // PATCH /me validates tz without depending on the host's zoneinfo
 
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/menu"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -106,10 +107,6 @@ type gchatView struct {
 	BrokenAt *time.Time `json:"broken_at"`
 }
 
-// gchatHookRe is the api's check of a Google Chat webhook, as a pattern:
-// the fixed host, a space, a key and a token.
-var gchatHookRe = regexp.MustCompile(`^https://chat\.googleapis\.com/v1/spaces/([A-Za-z0-9_-]+)/messages\?key=[^&]+&token=[^&]+$`)
-
 func (f *Fake) meOf(u *userRec) meView {
 	v := meView{User: u.User, TZ: u.TZ, CreatedAt: u.CreatedAt,
 		Billing:  f.meBilling(),
@@ -120,8 +117,8 @@ func (f *Fake) meOf(u *userRec) meView {
 		url := u.NtfyURL
 		v.Notify.NtfyURL = &url
 	}
-	if m := gchatHookRe.FindStringSubmatch(u.GChatURL); m != nil {
-		v.Notify.GChat = &gchatView{Space: m[1], BrokenAt: u.GChatBrokenAt}
+	if _, space, err := notify.CanonicalGChatURL(u.GChatURL); err == nil {
+		v.Notify.GChat = &gchatView{Space: space, BrokenAt: u.GChatBrokenAt}
 	}
 	return v
 }
@@ -172,13 +169,15 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 			if err := json.Unmarshal(body.Notify.GChatURL, &url); err != nil {
 				return invalid("gchat_url must be a string or null")
 			}
-			switch {
-			case url == nil || strings.TrimSpace(*url) == "":
+			if url == nil || strings.TrimSpace(*url) == "" {
 				u.GChatURL, u.GChatBrokenAt = "", nil
-			case !gchatHookRe.MatchString(strings.TrimSpace(*url)):
-				return invalid("gchat_url must be a Google Chat webhook URL (https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...)")
-			default:
-				u.GChatURL, u.GChatBrokenAt = strings.TrimSpace(*url), nil
+			} else {
+				// The api's own check and canonical form (I-692).
+				canonical, _, err := notify.CanonicalGChatURL(*url)
+				if err != nil {
+					return invalid("%s", notify.ErrGChatURL.Error())
+				}
+				u.GChatURL, u.GChatBrokenAt = canonical, nil
 			}
 		}
 	}

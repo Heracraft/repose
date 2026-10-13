@@ -120,8 +120,6 @@ type GChat struct {
 	HTTP *http.Client
 	// Pace is the least gap between posts to one space; 0 is GChatPace.
 	Pace time.Duration
-	// Location renders a question's expiry when the message has no zone.
-	Location *time.Location
 }
 
 // gchatClient is the default client, built once so connections are reused.
@@ -298,13 +296,25 @@ func RenderGChat(m Message) any {
 	if m.Kind != QuestionClosedKind {
 		card.Header = head
 	}
+	// fallbackText is what a phone's notification shows: the heading
+	// once, and no run of colons.
+	b := strings.TrimSpace(body)
 	fallback := head.Title
-	if head.Subtitle != "" {
+	switch {
+	case m.Kind == QuestionClosedKind:
+		fallback = b
+	case head.Subtitle != "" && b != "" && m.Agent == "":
+		// A platform subtitle may carry its own colon ("Your machines
+		// were stopped: a payment failed"), so the body takes a new line.
+		fallback += ": " + head.Subtitle + "\n" + b
+	case head.Subtitle != "":
 		fallback += ": " + head.Subtitle
-	}
-	if m.Kind == QuestionClosedKind {
-		fallback = strings.TrimSpace(body)
-	} else if b := strings.TrimSpace(body); b != "" {
+		if b != "" {
+			fallback += ": " + b
+		}
+	case strings.HasPrefix(b, Subject(m)):
+		fallback = b // the notice opens with its own subject
+	case b != "":
 		fallback += ": " + b
 	}
 	return gchatMessage{FallbackText: gchatPlain(fallback, 400), CardsV2: []gchatCard{{CardID: "repose", Card: card}}}
@@ -316,7 +326,15 @@ func gchatHeading(m Message) (*gchatHeader, string) {
 	case m.Kind == QuestionClosedKind:
 		return &gchatHeader{Title: gchatPlain(m.Project, 200)}, m.Summary
 	case events.UserNoticeKinds[m.Kind] || events.AccountKinds[m.Kind] || m.Project == "":
-		return &gchatHeader{Title: gchatPlain(Subject(m), 200)}, m.Summary
+		title := Subject(m)
+		if strings.HasPrefix(strings.TrimSpace(m.Summary), title) {
+			// The notice opens with its subject; the header takes the
+			// email's shorter heading so the card does not say it twice.
+			if h := Heading(m); h != "" {
+				title = h
+			}
+		}
+		return &gchatHeader{Title: gchatPlain(title, 200)}, m.Summary
 	case m.Agent != "":
 		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(m.Agent+" "+gchatVerb(m.Kind), 200)}, m.Summary
 	}
@@ -338,10 +356,12 @@ func gchatVerb(kind string) string {
 
 // gchatButtons are the card's openLink buttons: one per option of a
 // question, each to its signed reply link (whose GET shows a confirm page,
-// so a link preview answers nothing), else one to the project.
+// so a link preview answers nothing); "Answer" to the project for a
+// question without reply links; "Dashboard" for a notice with no project;
+// else "Open project". A close reply has none: its thread holds the card.
 func gchatButtons(m Message) []gchatButton {
 	switch {
-	case m.Kind == QuestionClosedKind || m.Kind == "notifications_paused":
+	case m.Kind == QuestionClosedKind:
 		return nil
 	case m.Question != nil && len(m.Question.Options) > 0 && len(m.Question.Replies) == len(m.Question.Options):
 		var bs []gchatButton

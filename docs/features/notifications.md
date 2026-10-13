@@ -176,7 +176,14 @@ Channels (`workstreams/13-notifications.md` §5.6):
   and never in `events.delivered` or an error. A message is one `cardsV2`
   card plus a plain `fallbackText`: a header with the project and
   `<agent> <verb>`, the tenant text HTML-escaped in a `textParagraph`,
-  and `openLink` buttons (an option each, else Answer or Open project).
+  and `openLink` buttons: one per option to its signed reply link;
+  Answer (to the project) for a question without reply links; Dashboard
+  (to `/projects`) for a user notice or an event with no project; else
+  Open project. A close reply has none. A notice whose text opens with
+  its subject (`machines_restarted`) takes the email heading as its card
+  title, and `fallbackText` (the phone notification) leaves the subject
+  out; a platform subtitle and its text are joined by a line break, not
+  a third colon.
   Each message has its own `threadKey` (`e-<event id>`, or
   `q-<question id>` for a question) with
   `messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`, and a
@@ -184,7 +191,11 @@ Channels (`workstreams/13-notifications.md` §5.6):
   that reached Chat closes, a `question_closed` user event (no project,
   gchat only) posts a reply in its thread saying how: `Answered yes from
   the dashboard`, `Answered in the terminal`, `Withdrawn by the agent`,
-  `Expired without an answer`. Posts to one space are at least 1.1 s
+  `Expired without an answer`. A queued question card whose question
+  has closed is dropped, not posted. One that posts while its question
+  closes calls `questions.ReplyIfClosed` after `delivered.gchat` is
+  written, so it still gets its reply; `InsertQuestionClosed` writes at
+  most one `question_closed` per question. Posts to one space are at least 1.1 s
   apart; 429 and 5xx retry; 400 fails the row. 401, 403 and 404 set
   `users.gchat_broken_at` once and write one `notify_channel_broken`
   account email in the same transaction; no gchat row is queued or sent

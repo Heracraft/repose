@@ -1,5 +1,5 @@
 {
-  "fallbackText": "todo-app: snapshot failed: The nightly snapshot failed: the volume was busy. The next one runs tonight.",
+  "fallbackText": "todo-app: snapshot failed\nThe nightly snapshot failed: the volume was busy. The next one runs tonight.",
   "cardsV2": [
     {
       "cardId": "repose",

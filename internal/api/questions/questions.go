@@ -604,6 +604,25 @@ func CloseLine(q *Question) string {
 	return "Closed"
 }
 
+// ReplyIfClosed is notify.Outbox.QuestionCardPosted: a question that
+// closed while its Google Chat card was still queued or in flight got no
+// close reply then, because the card had not posted; it gets it now.
+// InsertQuestionClosed sends one reply per question, so a close racing
+// this call sends no second one.
+func (s *Service) ReplyIfClosed(ctx context.Context, id uuid.UUID) {
+	var state string
+	var stopped bool
+	err := s.pool.QueryRow(ctx, "select state, state = 'cancelled' and delivery = 'gone' and answered_via is null from questions where id = $1", id).Scan(&state, &stopped)
+	if err != nil || state == StatePending {
+		return
+	}
+	how := ""
+	if stopped {
+		how = closedMachineStopped
+	}
+	s.replyInChat(ctx, how, id)
+}
+
 // replyInChat queues, for each question that reached Google Chat, the
 // reply in its thread that says how it closed (a webhook cannot edit the
 // card that asked it). how overrides CloseLine. Best effort: a failure is

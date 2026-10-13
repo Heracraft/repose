@@ -191,6 +191,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.outbox = notify.New(a.pool, senders, a.m, log)
 	a.outbox.Dashboard = cfg.DashboardURL
 	a.outbox.APIBase = cfg.APIResource
+	a.outbox.QuestionCardPosted = a.questions.ReplyIfClosed
 	unsub, err := notify.LoadOrCreateUnsubscriber(ctx, a.sec)
 	if err != nil {
 		log.Warn("unsubscribe key unavailable; email unsubscribe links are disabled", "event", "notify_unsub_unavailable", "err", err.Error())

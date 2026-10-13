@@ -167,3 +167,149 @@ func TestGChatQuestionClosedReply(t *testing.T) {
 		t.Fatalf("queued with chat off: %v %v", ok, err)
 	}
 }
+
+// A `notify test` that Google refuses marks an unmarked channel broken,
+// with one account email, as an outbox refusal does.
+func TestGChatTestMarksBroken(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	uid, _ := seedGChat(t, pool)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(404) }))
+	defer srv.Close()
+	c, _ := gchatClient(srv)
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	u, err := store.GetUser(ctx, pool, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := ob.Test(ctx, u)
+	if want := "the server answered 404: the webhook was deleted, or its space removed it"; res["gchat"] != "error" || res["gchat_error"] != want {
+		t.Fatalf("test result %v", res)
+	}
+	var broken *time.Time
+	if err := pool.QueryRow(ctx, "select gchat_broken_at from users where id = $1", uid).Scan(&broken); err != nil || broken == nil {
+		t.Fatalf("a refused test did not mark the channel: %v", err)
+	}
+	var mails int
+	if err := pool.QueryRow(ctx, "select count(*) from events e join events_outbox o on o.event_id = e.id and o.channel = 'email' where e.user_id = $1 and e.kind = 'notify_channel_broken'", uid).Scan(&mails); err != nil || mails != 1 {
+		t.Fatalf("broken emails queued %d %v", mails, err)
+	}
+}
+
+// A refusal of a URL the user has since replaced does not mark the new one.
+func TestGChatRefusalOfReplacedURL(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	uid, pid := seedGChat(t, pool)
+	const second = "https://chat.googleapis.com/v1/spaces/BBBBx2yZ/messages?key=k2&token=t2"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The user saves a new webhook while the post to the old one is
+		// in flight; Google then refuses the old one.
+		if _, err := pool.Exec(context.Background(), "update users set gchat_url = $2 where id = $1", uid, second); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(403)
+	}))
+	defer srv.Close()
+	c, _ := gchatClient(srv)
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}, "email": &recorder{}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	now := time.Now()
+	ob.Now = func() time.Time { return now.Add(5 * time.Second) }
+	if _, _, err := events.New(pool, metrics.NewNop(), slog.New(slog.DiscardHandler)).Insert(ctx, events.Incoming{ProjectID: pid, TS: now, Kind: "agent_message", Agent: "claude", Summary: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := ob.Once(ctx); err != nil || n != 1 {
+		t.Fatalf("once %d %v", n, err)
+	}
+	var broken *time.Time
+	if err := pool.QueryRow(ctx, "select gchat_broken_at from users where id = $1", uid).Scan(&broken); err != nil || broken != nil {
+		t.Fatalf("the new webhook was marked broken by the old one's refusal: %v", err)
+	}
+	var mails int
+	_ = pool.QueryRow(ctx, "select count(*) from events where user_id = $1 and kind = 'notify_channel_broken'", uid).Scan(&mails)
+	if mails != 0 {
+		t.Fatalf("broken emails %d", mails)
+	}
+}
+
+// seedGChatQuestion is a pending question with options whose event has a
+// gchat outbox row.
+func seedGChatQuestion(t *testing.T, pool *db.Pool, pid uuid.UUID, now time.Time) (qid, eid uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	qid, eid = store.NewID(), store.NewID()
+	if _, err := pool.Exec(ctx, "insert into events (id, project_id, ts, ts_second, kind, agent, summary, source) values ($1, $2, $3, $4, 'agent_question', 'claude', 'Ship it?', 'host')", eid, pid, now, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "insert into questions (id, project_id, guest_id, event_id, agent, text, options, expires_at, state) values ($1, $2, $5, $3, 'claude', 'Ship it?', '{yes,no}', $4, 'pending')", qid, pid, eid, now.Add(time.Hour), store.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, 'gchat')", eid); err != nil {
+		t.Fatal(err)
+	}
+	return qid, eid
+}
+
+// A question card still queued when its question closes is not posted:
+// its buttons would answer nothing, and no close reply would follow it.
+func TestGChatClosedQuestionCardDropped(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	_, pid := seedGChat(t, pool)
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { posts.Add(1) }))
+	defer srv.Close()
+	c, _ := gchatClient(srv)
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	var hooked []uuid.UUID
+	ob.QuestionCardPosted = func(_ context.Context, id uuid.UUID) { hooked = append(hooked, id) }
+	now := time.Now()
+	ob.Now = func() time.Time { return now.Add(5 * time.Second) }
+	qid, eid := seedGChatQuestion(t, pool, pid, now)
+	if _, err := pool.Exec(ctx, "update questions set state = 'answered', answer = 'yes', answered_via = 'terminal' where id = $1", qid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 0 || len(hooked) != 0 {
+		t.Fatalf("posts %d, hooked %v: a closed question's card went out", posts.Load(), hooked)
+	}
+	var left int
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox where event_id = $1", eid).Scan(&left)
+	if left != 0 {
+		t.Fatalf("the closed question's row stayed queued")
+	}
+}
+
+// A question card that posts calls QuestionCardPosted, so a question that
+// closed while its card was in flight still gets its close reply.
+func TestGChatQuestionCardPostedHook(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	_, pid := seedGChat(t, pool)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	c, _ := gchatClient(srv)
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	var hooked []uuid.UUID
+	var delivered string
+	ob.QuestionCardPosted = func(ctx context.Context, id uuid.UUID) {
+		hooked = append(hooked, id)
+		// The delivered timestamp is written before the hook runs, so the
+		// close reply's own check sees the card as posted.
+		_ = pool.QueryRow(ctx, "select coalesce(e.delivered->>'gchat', '') from events e join questions q on q.event_id = e.id where q.id = $1", id).Scan(&delivered)
+	}
+	now := time.Now()
+	ob.Now = func() time.Time { return now.Add(5 * time.Second) }
+	qid, _ := seedGChatQuestion(t, pool, pid, now)
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(hooked) != 1 || hooked[0] != qid {
+		t.Fatalf("hooked %v, want [%s]", hooked, qid)
+	}
+	if delivered == "" || strings.HasPrefix(delivered, "failed") {
+		t.Fatalf("delivered at hook time %q", delivered)
+	}
+}

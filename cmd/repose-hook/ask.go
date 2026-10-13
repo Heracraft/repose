@@ -36,7 +36,7 @@ const (
 	ExitError       = 1 // guestd unreachable, or refused the request
 	ExitUsage       = 2
 	ExitTimeout     = 3 // no answer before --timeout
-	ExitNoChannel   = 4 // the owner has neither email nor ntfy turned on
+	ExitNoChannel   = 4 // the owner has no channel on: email, ntfy or Google Chat
 	ExitCancelled   = 5 // dismissed, the machine stopped, or the question was lost
 	ExitInterrupted = 130
 )
@@ -50,8 +50,9 @@ var pollWait = 25
 
 const notifyUsage = `usage: repose-notify [--agent NAME] MESSAGE...
 
-Sends MESSAGE to the project owner's notification channels (email, ntfy)
-and returns at once. Without MESSAGE it reads the message from stdin.
+Sends MESSAGE to the project owner's notification channels (email, ntfy,
+Google Chat) and returns at once. Without MESSAGE it reads the message
+from stdin.
 Messages are capped at 1 KB and share the project's notification limit of
 30 an hour.
 `
@@ -60,8 +61,9 @@ const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--agent N
 
 Sends QUESTION to the project owner's channels and waits for the reply,
 which it prints on stdout. With --options (at most three) the reply is one
-of them, and ntfy and email offer one-click buttons. The owner can also
-reply on the dashboard or with ` + "`repose reply`" + ` on their laptop.
+of them, and ntfy, email and Google Chat offer one-click buttons. The
+owner can also reply on the dashboard or with ` + "`repose reply`" + ` on their
+laptop.
 
 exit status: 0 answered, 1 error, 2 usage, 3 timed out, 4 no notification
 channel is on, 5 cancelled (dismissed, the machine stopped, or lost), 130

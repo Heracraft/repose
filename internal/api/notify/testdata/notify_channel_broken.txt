@@ -5,7 +5,7 @@ Google refused the webhook of space AAAAx1yZ on 12 October 2026 at 09:30 UTC. It
 repose sends nothing to Google Chat until you save a new webhook URL or a test message gets through.
 
 Save a new webhook
-  repose notify set --gchat URL
+  repose notify set --gchat 'URL'
 
 Notification settings: https://repose.herakraft.co/settings
 

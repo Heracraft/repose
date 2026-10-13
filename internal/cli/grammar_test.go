@@ -364,6 +364,19 @@ func TestNotifyGChat(t *testing.T) {
 		t.Fatalf("set: %q", got)
 	}
 	out.buf.Reset()
+	// A URL copied from a thread, token first, is accepted as the api
+	// accepts it.
+	copied := "https://chat.googleapis.com/v1/spaces/AAAAcli2/messages?token=" + token + "&key=" + key + "&threadKey=t1"
+	if err := NotifySetCmd(ctx, e, nil, nil, &copied); err != nil {
+		t.Fatalf("set a copied thread URL: %v", err)
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli2\n") {
+		t.Fatalf("set copied: %q", got)
+	}
+	if err := NotifySetCmd(ctx, e, nil, nil, &hook); err != nil {
+		t.Fatal(err)
+	}
+	out.buf.Reset()
 	if err := NotifyTestCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}

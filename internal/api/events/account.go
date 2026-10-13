@@ -177,8 +177,13 @@ func InsertQuestionClosed(ctx context.Context, q store.Querier, userID uuid.UUID
 		return false, err
 	}
 	id := store.NewID()
-	if _, err := q.Exec(ctx, `insert into events (id, project_id, user_id, ts, ts_second, kind, summary, source) values ($1, null, $2, $3, $4, $5, $6, 'api')`,
-		id, userID, ts, ts.Unix(), QuestionClosedKind, string(b)); err != nil {
+	// One reply per question: a close and the outbox's late call
+	// (questions.ReplyIfClosed) may both try.
+	tag, err := q.Exec(ctx, `insert into events (id, project_id, user_id, ts, ts_second, kind, summary, source)
+		select $1, null, $2, $3, $4, $5, $6, 'api'
+		where not exists (select 1 from events where user_id = $2 and kind = $5 and summary::jsonb->>'question_id' = $7)`,
+		id, userID, ts, ts.Unix(), QuestionClosedKind, string(b), c.QuestionID.String())
+	if err != nil || tag.RowsAffected() == 0 {
 		return false, err
 	}
 	if _, err := q.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", id, ChannelGChat); err != nil {

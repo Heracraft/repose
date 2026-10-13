@@ -92,7 +92,7 @@ func NotifyTestCmd(ctx context.Context, e *Env) error {
 		return err
 	}
 	if res.Email == "" && res.Ntfy == "" && res.GChat == "" {
-		return exitf(ExitGeneric, "Every channel is off; nothing was sent. `repose notify set --email on`, `--ntfy URL` or `--gchat URL` turns one on.")
+		return exitf(ExitGeneric, "Every channel is off; nothing was sent. `repose notify set --email on`, `--ntfy URL` or `--gchat 'URL'` turns one on.")
 	}
 	failed := false
 	word := func(result, why string) string {
