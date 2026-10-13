@@ -1350,6 +1350,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	// the first M3 run hit (DECISIONS I-114).
 	switch project.State {
 	case "creating", "building", "starting", "stopping", "restoring":
+		probed := false
 		if project.OpID != "" {
 			op, err := waitOpPhased(ctx, e, project, project.OpID, pr, true)
 			if err != nil {
@@ -1362,8 +1363,11 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 				pr.Fail()
 				e.warn("%s: %s.", project.Slug, strings.TrimSuffix(w, "."))
 			}
+			// A create or start ends running: the probe goes out beside
+			// the read below (I-237).
 			if e.guestUp != nil && project.State != "stopping" && project.State != "restoring" {
 				e.guestUp(project)
+				probed = true
 			}
 		} else if err := waitState(ctx, e, project, pr); err != nil {
 			return err
@@ -1374,6 +1378,11 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		}
 		*project = *p
 		if project.State == "running" {
+			// A restore that booted the machine, or a start with no op
+			// named, gets the probe once it is known to be running.
+			if e.guestUp != nil && !probed {
+				e.guestUp(project)
+			}
 			return nil
 		}
 	case "destroying", "destroyed":

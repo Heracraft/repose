@@ -20675,8 +20675,9 @@ asked for is the rule, so this entry pins it and closes what was left.
 - *`attach`, `ssh`, `code`, `run` and `start` bring the machine up as
   `run` always did:* a stopped one starts, one in `error` restarts (as
   `run` and `start` did; I-631 had kept `attach` at exit 5 there),
-  one creating, starting or stopping is waited for and then started,
-  and one being restored is now waited for too and then started (the
+  one creating or starting is waited for, one stopping is waited for
+  and then started, and one being restored is now waited for too and
+  then started (the
   restore op, then the state; it exited 5 before, a second step for
   nothing). Destroying and destroyed still exit 5, and so does a machine
   stopped for a miner (I-239, I-631: after an abuse stop, `repose start`
@@ -20695,9 +20696,19 @@ asked for is the rule, so this entry pins it and closes what was left.
   back.``; Ctrl-C ends the wait. Rejected: a restart of a frozen machine
   (it would throw away the image the freeze kept), and a shorter wait (a
   host-01 restart with frozen guests is about 2 minutes, I-686).
-  `repose start` on a frozen machine still says it is running, which is
-  true. Not covered: the first 90 s of a restart, before the api marks
-  the server, which reach the ssh wait as before.
+  `ssh` and `code` wait on a frozen running machine too (their
+  connect gate checks `host_unreachable`, not only the state), and so
+  does `repose start`, which then says the machine is running: the
+  public docs promised the wait for all five, and an "already running"
+  at once, before a connection that cannot answer, is the two-step
+  answer this entry removes. Not covered: the first 90 s of a restart,
+  before the api marks the server, which reach the ssh wait as before;
+  lifecycle.md says so. Rejected for now: re-reading the project when
+  that ssh wait fails, since the 15 s wait ends long before the api's
+  90 s mark.
+- A wait that leaves the machine running (a restore op that booted it,
+  or a start with no op named) sends the early boot probe once the
+  re-read says running (I-237); before, only a create or start op did.
 - The idle "frozen" look of I-683 is a mock with no api field, so there
   is nothing for the CLI to wake yet; when `resting` lands, attach is
   the command that wakes it.
@@ -20709,8 +20720,10 @@ asked for is the rule, so this entry pins it and closes what was left.
   client".
 `TestAttachStartsAStoppedMachine`, `TestAttachGivesUpOnAServerThatStaysAway`,
 `TestAttachToAnErroredGuestRestartsIt` (was `TestAttachToAnErroredGuestSaysError`),
-`TestSSHStartsAStoppedMachineAndExecDoesNot`,
-`TestAttachAndRunByNameFromTheHomeFolder`. Docs: cli.md (attach, ssh,
+`TestSSHStartsAStoppedMachineAndExecDoesNot` (frozen running too),
+`TestStartWaitsForARestartingServer`, `TestWaitThatEndsRunningCallsGuestUp`,
+`TestAttachAndRunByNameFromTheHomeFolder`. Specs: features/run-and-attach.md,
+features/stop-start-destroy.md. Docs: cli.md (attach, ssh,
 code, start), run-and-attach.md, lifecycle.md (home folder, server
 restart).
 *Evidence (2026-10-13, prod, this branch's CLI, from `/home/dev`, a

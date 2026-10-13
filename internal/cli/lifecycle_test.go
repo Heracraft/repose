@@ -225,6 +225,9 @@ func TestSSHStartsAStoppedMachineAndExecDoesNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.Cache.ByDir[e.Cwd] = p.ID
+	// This env has no ssh: each connection burns its whole wait.
+	defer func(l, s time.Duration) { sshWaitTimeout, sshWaitShort = l, s }(sshWaitTimeout, sshWaitShort)
+	sshWaitTimeout, sshWaitShort = 300*time.Millisecond, 300*time.Millisecond
 
 	err = ExecCmd(ctx, e, ExecOptions{Command: []string{"true"}}, nil)
 	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
@@ -249,6 +252,27 @@ func TestSSHStartsAStoppedMachineAndExecDoesNot(t *testing.T) {
 	_ = SSHCmd(ctx, e, "")
 	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
 		t.Fatalf("after ssh while restoring: %+v %v", got, err)
+	}
+	// Frozen across its server's restart (I-652): ssh waits for the
+	// server, as attach does, and sends no op.
+	fake.SetHostUnreachable(p.ID, true)
+	ops := len(fake.OpKinds(p.ID))
+	waited := time.Now()
+	go func() {
+		time.Sleep(700 * time.Millisecond)
+		fake.SetHostUnreachable(p.ID, false)
+	}()
+	errOut := &discardWriter{}
+	e.ErrOut = errOut
+	_ = SSHCmd(ctx, e, "")
+	if time.Since(waited) < 500*time.Millisecond {
+		t.Fatalf("ssh did not wait for the server (%s)", time.Since(waited))
+	}
+	if n := len(fake.OpKinds(p.ID)); n != ops {
+		t.Fatalf("ssh to a frozen machine sent %d ops", n-ops)
+	}
+	if !strings.Contains(errOut.buf.String(), "Waiting for todo-app's server to come back") {
+		t.Fatalf("stderr %q", errOut.buf.String())
 	}
 	fake.SetState(p.ID, "destroying")
 	err = SSHCmd(ctx, e, "")
@@ -445,5 +469,79 @@ func TestStopLineSaysWhatTheStopDid(t *testing.T) {
 	}
 	if got := out2.String(); got != "waterville is already stopped.\n" {
 		t.Errorf("already stopped printed %q", got)
+	}
+}
+
+// `repose start` on a machine frozen across its server's restart waits
+// for the server, as attach does, sends no op, and says it is running
+// (I-709).
+func TestStartWaitsForARestartingServer(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Cache.ByDir[e.Cwd] = p.ID
+	fake.SetHostUnreachable(p.ID, true)
+	ops := len(fake.OpKinds(p.ID))
+	go func() {
+		time.Sleep(700 * time.Millisecond)
+		fake.SetHostUnreachable(p.ID, false)
+	}()
+	var out bytes.Buffer
+	e.Out = &out
+	errOut := &discardWriter{}
+	e.ErrOut = errOut
+	waited := time.Now()
+	if err := StartCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(waited) < 500*time.Millisecond {
+		t.Fatalf("start did not wait for the server (%s)", time.Since(waited))
+	}
+	if n := len(fake.OpKinds(p.ID)); n != ops {
+		t.Fatalf("start on a frozen machine sent %d ops", n-ops)
+	}
+	if !strings.Contains(errOut.buf.String(), "Waiting for todo-app's server to come back") {
+		t.Fatalf("stderr %q", errOut.buf.String())
+	}
+	if !strings.Contains(out.String(), "todo-app is running (large)") {
+		t.Fatalf("out %q", out.String())
+	}
+}
+
+// A machine that a wait leaves running (a restore that booted it, a
+// start someone else sent) gets the early boot probe, as one this
+// command started does (I-237, I-709).
+func TestWaitThatEndsRunningCallsGuestUp(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{"restoring", "starting"} {
+		fake.SetState(p.ID, from)
+		go func() {
+			time.Sleep(700 * time.Millisecond)
+			fake.SetState(p.ID, "running")
+		}()
+		called := 0
+		e.guestUp = func(*Project) { called++ }
+		project, err := e.Client.GetProject(ctx, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ensureRunningFrom(ctx, e, project, e.newProgress(), true); err != nil {
+			t.Fatal(err)
+		}
+		if project.State != "running" || called != 1 {
+			t.Fatalf("from %s: state %s, guestUp called %d times", from, project.State, called)
+		}
 	}
 }

@@ -97,12 +97,18 @@ repose/claude-2`, documented in /docs/run-and-attach).
 Running against a stopped project starts it first (the `Starting
 todo-app` phase on stderr) before the usual `Connected to todo-app
 (large)` line; `run` prints no separate "stopped" message.
-`attach` starts a stopped machine the same way, without a sync, and waits
-for one already starting (I-631, review G7); a machine in `error`,
-`restoring` or `destroying`, or stopped for abuse, still exits 5 for
-attach. `open`, `ps`, `exec`, `ssh`, `code` and `cp` refuse a machine that
-is not running, exit 5: a read or a command does not start a machine and
-take the plan's memory unasked. With one operand that names no project,
+`attach`, `ssh` and `code` bring the machine up the same way, without a
+sync (I-631, review G7, I-641, I-709): a stopped one starts, one in
+`error` restarts, one starting is waited for, and one stopping or being
+restored is waited for and then started. While the api marks its server
+unreachable (`host_unreachable`, after 90 s of silence) they wait up to
+10 minutes (`hostWaitTimeout`) with `Waiting for NAME's server to come
+back`, sending no op, then go on from the state the machine is in; a
+frozen machine is attached as it was (I-652). Past that they exit 5. A
+machine `destroying` or `destroyed`, or stopped for abuse, still exits 5.
+`open`, `ps`, `exec` and `cp` refuse a machine that is not running, exit
+5: a read or a command does not start a machine and take the plan's
+memory unasked. With one operand that names no project,
 `attach` and `ps` resolve this folder's project and take the operand as
 WINDOW (I-631), as `exec` reads its first word. A project in `error` is restarted by the
 api on the same start (`Restarting todo-app (its agent stopped
