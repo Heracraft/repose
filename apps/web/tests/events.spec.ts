@@ -165,3 +165,24 @@ test('the project page holds still while it loads, at 390', async ({ page }) => 
 	const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 	expect(cls).toBeLessThanOrEqual(0.05);
 });
+
+// The same on /projects: the questions come with the list, so "Waiting on
+// you" is in the first paint above the strip, and the strip does not move
+// once drawn (I-693). (The page's skeleton giving way to the list is a
+// shift of its own, which this does not measure.)
+test('the projects list draws Waiting on you with the strip, at 390', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'still-list-app',
+		remote_url: 'github.com/heracraft/still-list-app'
+	});
+	await addQuestion(p.id, { agent: 'claude', text: 'Hold still?', options: ['yes', 'no'] });
+	await page.goto('/projects');
+	const strip = page.getByTestId('plan-strip');
+	await strip.waitFor();
+	const card = page.getByTestId('pending-questions');
+	expect(await card.isVisible()).toBe(true);
+	const first = await strip.boundingBox();
+	await page.waitForTimeout(1500);
+	expect(await strip.boundingBox()).toEqual(first);
+});

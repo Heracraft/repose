@@ -122,9 +122,46 @@ func (f *Fake) findQuestion(u *userRec, projectID, qid string) (*Question, *apiE
 	return nil, notFound("question")
 }
 
+// CloseQuestion closes a pending question from the guest's side, as
+// guestd's close with a reason reaches the api (DECISIONS I-690): terminal
+// is stored as answered with no answer and answered_via terminal;
+// withdrawn, interrupted and asker_gone as cancelled with answered_via
+// agent.
+func (f *Fake) CloseQuestion(id, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var q *Question
+	for _, c := range f.questions {
+		if c.ID == id {
+			q = c
+		}
+	}
+	if q == nil {
+		return fmt.Errorf("question %s not found", id)
+	}
+	if !f.pendingNow(q) {
+		return fmt.Errorf("question %s is %s", id, q.State)
+	}
+	now := f.now()
+	switch reason {
+	case "terminal":
+		via := "terminal"
+		q.State, q.Answer, q.AnsweredVia, q.AnsweredAt = "answered", nil, &via, &now
+	case "withdrawn", "interrupted", "asker_gone":
+		via := "agent"
+		q.State, q.AnsweredVia, q.AnsweredAt = "cancelled", &via, &now
+	default:
+		return fmt.Errorf("unknown reason %q", reason)
+	}
+	return nil
+}
+
 func describe(q *Question) string {
 	switch q.State {
 	case "answered":
+		if q.Answer == nil {
+			return "already answered in the terminal"
+		}
 		return "already answered: " + *q.Answer
 	case "expired":
 		return "this question has expired"

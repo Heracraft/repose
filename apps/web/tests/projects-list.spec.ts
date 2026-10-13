@@ -120,26 +120,95 @@ test('with Pro and 15 projects at 768 the memory squares stay in their cell', as
 	expect(squares.x + squares.width).toBeLessThanOrEqual(cell.x + cell.width);
 });
 
-test('a pending question shows in the callout and on its row, and links to the project', async ({
+test('a pending question shows in Waiting on you and on its row, and is answered in place', async ({
 	page
 }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'asking-app',
 		remote_url: 'github.com/heracraft/asking-app'
 	});
-	await addQuestion(p.id, { agent: 'claude', text: 'Ship the list page?', options: ['yes', 'no'] });
+	const q = await addQuestion(p.id, {
+		agent: 'claude',
+		text: 'Ship the list page?',
+		options: ['yes', 'no']
+	});
 	await page.goto('/projects');
 
-	const callout = page.getByRole('region', { name: 'Questions waiting' });
-	const item = callout.getByRole('listitem').filter({ hasText: 'Ship the list page?' });
+	const card = page.getByRole('region', { name: 'Waiting on you' });
+	await expect(card).toHaveAttribute('data-testid', 'pending-questions');
+	// Other files' questions wait in the same account; past 3 rows the
+	// rest are behind Show all.
+	await expect(card.getByTestId('question').first()).toBeVisible();
+	const all = card.getByRole('button', { name: /^Show all \d+$/ });
+	if (await all.isVisible()) await all.click();
+	const item = card.locator(`[data-qid="${q.id}"]`);
+	await expect(item).toContainText('Ship the list page?');
 	await expect(item).toBeVisible();
-	await expect(item).toContainText(p.name);
-	await expect(item).toContainText('claude asks');
-	await expect(item.getByRole('link', { name: /^Answer/ })).toHaveAttribute(
+	await expect(item).toContainText('claude');
+	// The project's name links to it, in the row or over its group.
+	await expect(card.getByRole('link', { name: p.name, exact: true }).first()).toHaveAttribute(
 		'href',
-		`/projects/${p.id}#questions`
+		`/projects/${p.id}`
 	);
 	await expect(row(page, p.name).getByText('question', { exact: true })).toBeVisible();
+
+	await item.getByRole('button', { name: 'yes', exact: true }).click();
+	await expect(item).toHaveText('Answered yes from the dashboard');
+	const res = await fetch(`${apiURLFromEnv()}/projects/${p.id}/questions`, {
+		headers: { Authorization: 'Bearer playwright' }
+	});
+	const got = ((await res.json()).questions as { id: string }[]).find((x) => x.id === q.id);
+	expect(got).toMatchObject({ state: 'answered', answer: 'yes', answered_via: 'dashboard' });
+	await expect(row(page, p.name).getByText('question', { exact: true })).toHaveCount(0, {
+		timeout: 15_000
+	});
+});
+
+test('Waiting on you groups by project and shows 3 rows before Show all', async ({ page }) => {
+	const now = Date.now();
+	const mk = (
+		i: number,
+		project: string,
+		agent: string,
+		minutes: number,
+		options: string[] = []
+	) => ({
+		id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+		project_id: `00000000-0000-4000-9000-${project === 'alpha' ? '000000000001' : '000000000002'}`,
+		project,
+		agent,
+		window: agent,
+		text: `Question ${i} from ${agent}?`,
+		options,
+		state: 'pending',
+		answer: null,
+		answered_via: null,
+		created_at: new Date(now - minutes * 60_000).toISOString(),
+		expires_at: new Date(now + 3600_000).toISOString(),
+		answered_at: null
+	});
+	const questions = [
+		mk(1, 'alpha', 'claude', 3, ['yes', 'no']),
+		mk(2, 'alpha', 'codex', 20),
+		mk(3, 'beta', 'pi', 50),
+		mk(4, 'beta', 'opencode', 5),
+		mk(5, 'alpha', 'gemini', 1)
+	];
+	await page.route(/\/questions\?state=pending$/, (route) =>
+		route.fulfill({ json: { questions } })
+	);
+	await page.goto('/projects');
+	const card = page.getByTestId('pending-questions');
+	await expect(card.getByRole('heading', { name: 'Waiting on you' })).toBeVisible();
+	await expect(card.locator('.badge--warn')).toHaveText('5');
+	// beta has waited longest, so it leads; its newest row first.
+	await expect(card.getByRole('link')).toHaveText(['beta', 'alpha']);
+	await expect(card.getByTestId('question')).toHaveCount(3);
+	await expect(card.getByTestId('question').nth(0)).toContainText('Question 4 from opencode?');
+	await card.getByRole('button', { name: 'Show all 5' }).click();
+	await expect(card.getByTestId('question')).toHaveCount(5);
+	await card.getByRole('button', { name: 'Show fewer' }).click();
+	await expect(card.getByTestId('question')).toHaveCount(3);
 });
 
 test("clicking a row's empty area opens the project", async ({ page }) => {

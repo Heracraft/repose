@@ -111,8 +111,8 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
 - The owner answers from ntfy (one `http` button per option, calling a
   signed reply link; no login), email (one link per option, which opens a
   page whose button answers; replying to the email does nothing), the
-  dashboard's project page (buttons or a text box, and Dismiss), or the
-  laptop: `repose questions` lists the waiting ones, `repose reply
+  dashboard's "Waiting on you" card on /projects and on the project page
+  (buttons or a text box, and Dismiss; I-693), or the laptop: `repose questions` lists the waiting ones, `repose reply
   [PROJECT] [ANSWER]` answers, and lists instead of guessing when several
   are waiting. The first answer wins everywhere; a later one is refused
   with the answer that won.
@@ -212,8 +212,13 @@ Dashboard and CLI:
 - `repose status` shows the last event per agent window.
 - `repose events`, its own command, lists
   the last 50 events with timestamps.
-- `repose questions` and `repose reply` (above); the dashboard project
-  page shows pending questions above everything else.
+- `repose questions` and `repose reply` (above); the dashboard shows
+  pending questions in one "Waiting on you" card, first on /projects
+  (grouped by project, 3 rows before "Show all N") and across the project
+  page under its status line. Both answer in place. A question that closes
+  while on screen, wherever it was answered, stays 8 seconds as one line
+  naming the answer and where it came from (`answered_via`), then leaves
+  (I-693).
 - The dashboard project page's Events card shows the event stream, newest
   first, with the agent and the summary. It answers the first half of "I
   got nothing": whether the event happened. It does not yet answer the

@@ -742,5 +742,5 @@ pointer, not a summary.
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20684
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20695
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20705
-- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20715
-- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20723
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20716
+- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20724

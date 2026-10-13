@@ -126,6 +126,21 @@ export async function addQuestion(
 	return res.json();
 }
 
+/** Closes a question from the guest's side (cmd/fakeapi POST /question/close, I-690). */
+export async function closeQuestion(
+	id: string,
+	reason: 'terminal' | 'withdrawn' | 'interrupted' | 'asker_gone'
+): Promise<void> {
+	const adminURL = process.env.FAKEAPI_ADMIN_URL;
+	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');
+	const res = await fetch(`${adminURL}/question/close`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ id, reason })
+	});
+	if (!res.ok) throw new Error(`/question/close: ${res.status} ${await res.text()}`);
+}
+
 /**
  * count events on a project, spacingMinutes apart (default 1) ending now,
  * e000 oldest (cmd/fakeapi POST /events). kinds, agents, windows and

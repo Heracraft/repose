@@ -101,7 +101,7 @@ A question can be answered in four places:
 
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
-- **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box. The Projects page lists every waiting question, each with **Answer**.
+- **The dashboard:** waiting questions show under **Waiting on you** at the top of the Projects page and of the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones and `repose reply` answers:
 
 ```
@@ -109,7 +109,7 @@ repose questions
 repose reply todo-app yes
 ```
 
-The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.
+The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering, and `repose-ask` exits 5. When a question on screen is answered somewhere else, its row says where for a few seconds, for example `Answered yes by email`, before it goes.
 
 Tell your agent about the commands in its instructions, for example in `CLAUDE.md`: "When you need a decision from me, run `repose-ask` with the question and use its output as my answer."
 

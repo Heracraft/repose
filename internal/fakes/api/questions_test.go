@@ -61,3 +61,41 @@ func TestFakeQuestions(t *testing.T) {
 		t.Fatalf("project list %+v", list)
 	}
 }
+
+// TestFakeQuestionGuestClose: a guest-side close with a reason (I-690)
+// lands as the api stores it: terminal is answered with no answer and
+// answered_via terminal, withdrawn is cancelled by the agent; a later
+// answer from the dashboard is a conflict that says so.
+func TestFakeQuestionGuestClose(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	p, err := f.CreateProject("todo-app", "large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q1, _ := f.AddQuestion(p.ID, "claude", "Which port?", nil, time.Hour)
+	q2, _ := f.AddQuestion(p.ID, "claude", "Ship?", []string{"yes", "no"}, time.Hour)
+	if err := f.CloseQuestion(q1.ID, "terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.CloseQuestion(q2.ID, "withdrawn"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.CloseQuestion(q2.ID, "terminal"); err == nil {
+		t.Fatal("a closed question closed again")
+	}
+	if err := f.CloseQuestion(q1.ID, "bogus"); err == nil {
+		t.Fatal("an unknown reason accepted")
+	}
+	got := f.Questions()
+	if got[0].State != "answered" || got[0].Answer != nil || got[0].AnsweredVia == nil || *got[0].AnsweredVia != "terminal" {
+		t.Fatalf("terminal: %+v", got[0])
+	}
+	if got[1].State != "cancelled" || got[1].AnsweredVia == nil || *got[1].AnsweredVia != "agent" {
+		t.Fatalf("withdrawn: %+v", got[1])
+	}
+	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q1.ID+"/answer", tok, map[string]any{"answer": "4173"})
+	if r.status != 409 || r.errCode(t) != "conflict" {
+		t.Fatalf("answer after terminal: %d %s", r.status, r.body)
+	}
+}

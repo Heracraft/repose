@@ -20711,6 +20711,7 @@ The owner: "absolutely fucking ugly". Captured at 1440 and 390: a blue 3px rule 
 - /projects answers in place, grouped by project when more than one project waits; 3 rows show before "Show all N". On a project page several questions from one agent window show the newest open and the older ones folded to one line.
 - An answered row collapses for 8 seconds to one line saying the answer and where it came from ("Answered in the terminal", "Answered yes by email"), then leaves.
 - The Events card keeps question rows; the Agents card and the projects table keep their `question` badge.
+- *Built:* `QuestionRow.svelte` and `WaitingCard.svelte` in `apps/web/src/lib/components/questions/`, wording and layout in `lib/question-view.ts`, the clock in `lib/clock.svelte.ts`. The fold of older questions from one agent window applies on /projects too, inside each project's group, so the two pages lay out the same; "Show all N" counts rows after that fold. A question that leaves the open list without the card closing it is looked up once in the project's (or the account's) full list, so its line can say how it closed. /projects fetches the questions with the project list on its first load, so the card is in the first paint. `completed` events read "turn ended" in the Events card and `agent_done` reads "done" (I-688).
 
 **I-694. The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614.**
 
