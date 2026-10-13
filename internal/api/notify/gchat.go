@@ -284,7 +284,7 @@ func RenderGChat(m Message) any {
 	}
 	if q := m.Question; q != nil && m.Kind != QuestionClosedKind && !q.Expires.IsZero() {
 		loc := m.Location()
-		widgets = append(widgets, map[string]any{"textParagraph": map[string]any{"text": html.EscapeString("Waits until " + q.Expires.In(loc).Format("15:04 MST"))}})
+		widgets = append(widgets, map[string]any{"textParagraph": map[string]any{"text": html.EscapeString("Open until " + expiryAt(m.At, q.Expires, loc))}})
 	}
 	if bs := gchatButtons(m); len(bs) > 0 {
 		widgets = append(widgets, map[string]any{"buttonList": map[string]any{"buttons": bs}})

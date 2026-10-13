@@ -198,6 +198,71 @@ func TestHeldRowDroppedWhenResolved(t *testing.T) {
 	}
 }
 
+// TestQuestionClosedWhileQueuedOnItsLane (I-689): the "is it over" check
+// reads the question at send time. A question row picked while pending
+// that waits on its lane behind a slower send, and whose question closes
+// meanwhile, is dropped, not sent with answer buttons.
+func TestQuestionClosedWhileQueuedOnItsLane(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	qid, eid := store.NewID(), store.NewID()
+	if _, err := h.pool.Exec(h.ctx, `insert into questions (id, project_id, guest_id, event_id, agent, text, options, state, expires_at, created_at) values ($1, $2, $3, $4, 'claude', 'ok?', '{}', 'pending', $5, $6)`,
+		qid, h.pid, store.NewID(), eid, start.Add(time.Hour), start); err != nil {
+		t.Fatal(err)
+	}
+	first := h.insert("agent_done", "main")
+	h.now = start.Add(time.Millisecond)
+	if _, _, err := h.ing.Insert(h.ctx, events.Incoming{ID: eid, ProjectID: h.pid, TS: h.now, Kind: "agent_question", Agent: "claude", Summary: "ok?"}); err != nil {
+		t.Fatal(err)
+	}
+	// The first send closes the question, as an answer in the terminal
+	// would while the lane is busy with it.
+	h.ob = notify.New(h.pool, map[string]notify.Sender{"ntfy": notify.SenderFunc(func(ctx context.Context, m notify.Message) error {
+		if m.EventID == first {
+			if _, err := h.pool.Exec(ctx, "update questions set state = 'answered', answered_via = 'terminal' where id = $1", qid); err != nil {
+				return err
+			}
+		}
+		return h.sent.Send(ctx, m)
+	})}, h.m, slog.New(slog.DiscardHandler))
+	h.ob.Now = func() time.Time { return h.now }
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.sent.sent[0].EventID != first {
+		t.Fatalf("sent %d, want only the done report", len(h.sent.sent))
+	}
+	if got := h.delivered(eid); got != notify.DeliveredDropped {
+		t.Fatalf("question %q, want dropped", got)
+	}
+}
+
+// TestSlowLaneKeepsLagAtZero (I-691): rows waiting on a lane behind slow
+// sends to one user's server are not due, so the lag that pages stays 0
+// while the lane works through them.
+func TestSlowLaneKeepsLagAtZero(t *testing.T) {
+	h := newHoldEnv(t)
+	start := h.now
+	for i := 0; i < 5; i++ {
+		h.insert("agent_done", "main")
+	}
+	var lags []float64
+	h.ob = notify.New(h.pool, map[string]notify.Sender{"ntfy": notify.SenderFunc(func(ctx context.Context, m notify.Message) error {
+		h.now = h.now.Add(40 * time.Second) // a slow server
+		h.ob.Gauges(ctx)
+		lags = append(lags, testutil.ToFloat64(h.m.OutboxLagSeconds))
+		return h.sent.Send(ctx, m)
+	})}, h.m, slog.New(slog.DiscardHandler))
+	h.ob.Now = func() time.Time { return h.now }
+	h.pass(start.Add(time.Second))
+	if len(h.sent.sent) != 5 {
+		t.Fatalf("sent %d, want 5", len(h.sent.sent))
+	}
+	for i, lag := range lags {
+		if lag != 0 {
+			t.Fatalf("send %d: lag %v while the rows wait on a working lane", i, lag)
+		}
+	}
+}
+
 // near compares a time read back from Postgres, which keeps microseconds.
 func near(a, b time.Time) bool { return a.Sub(b).Abs() < time.Millisecond }
 

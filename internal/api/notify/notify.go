@@ -331,7 +331,13 @@ func (o *Outbox) runLane(ctx context.Context, k laneKey) {
 		}
 		r := l.rows[0]
 		l.rows = l.rows[1:]
+		ids := make([]uuid.UUID, 0, len(l.rows)+1)
+		ids = append(ids, r.eventID)
+		for _, w := range l.rows {
+			ids = append(ids, w.eventID)
+		}
 		o.mu.Unlock()
+		o.keepOnLane(ctx, k.channel, ids)
 		o.sem <- struct{}{}
 		o.deliver(ctx, r)
 		<-o.sem
@@ -512,11 +518,21 @@ func (o *Outbox) present(ctx context.Context, projectID uuid.UUID, now time.Time
 
 // resolved says what a row reports is over: its question is no longer
 // pending (answered anywhere, withdrawn, expired), or a needs_input was
-// followed by a later event from the same agent window.
+// followed by a later event from the same agent window. It reads the
+// question's state now, not at pick time: a row can wait on its lane
+// behind slow sends, and the question may close meanwhile (I-689).
 func (o *Outbox) resolved(ctx context.Context, r row) (bool, error) {
 	switch r.kind {
 	case "agent_question":
-		return r.qState != nil && *r.qState != "pending", nil
+		if r.questionID == nil {
+			return false, nil
+		}
+		var state string
+		err := o.pool.QueryRow(ctx, "select state from questions where id = $1", *r.questionID).Scan(&state)
+		if db.IsNoRows(err) {
+			return r.qState != nil && *r.qState != "pending", nil
+		}
+		return err == nil && state != "pending", err
 	case "needs_input":
 		var later bool
 		err := o.pool.QueryRow(ctx, `select exists (select 1 from events l join events e on e.id = $1
@@ -604,6 +620,16 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 	next := now.Add(backoff[attempts-1])
 	_, _ = o.pool.Exec(ctx, "update events_outbox set attempts = $3, next_at = $4, last_error = $5 where event_id = $1 and channel = $2", r.eventID, r.channel, attempts, next, reason) // best effort; the held row is re-picked in a minute
 	_, _ = o.pool.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, "error: "+reason)
+}
+
+// keepOnLane moves the next_at of rows waiting on a live lane a minute on
+// before each send, so they stay out of the lag: a lane slowed by one
+// user's hanging server delays its own rows only, and pages nobody
+// (I-691). Rows of a worker that died come due a minute after its last
+// send and are picked up again.
+func (o *Outbox) keepOnLane(ctx context.Context, channel string, ids []uuid.UUID) {
+	until := o.Now().Add(time.Minute)
+	_, _ = o.pool.Exec(ctx, "update events_outbox set next_at = $3 where channel = $1 and event_id = any($2) and next_at < $3", channel, ids, until) // best effort; a row it misses only shows as lag
 }
 
 // gaugeLoop sets the gauges every GaugeInterval until ctx ends.

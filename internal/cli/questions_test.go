@@ -252,7 +252,7 @@ func TestReplyDismiss(t *testing.T) {
 	if s := out.buf.String(); s != "Dismissed the question claude asked in todo-app.\n" {
 		t.Fatalf("dismiss said %q", s)
 	}
-	if got := fake.Questions()[0]; got.State != "cancelled" || *got.AnsweredVia != "dashboard" {
+	if got := fake.Questions()[0]; got.State != "cancelled" || *got.AnsweredVia != "cli" {
 		t.Fatalf("after dismiss: %+v", got)
 	}
 	// The one left closes in the terminal before the dismiss lands.

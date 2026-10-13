@@ -2557,7 +2557,8 @@ error does.
    config file, `guest-conventions.md` "Agent wrappers").
 2. If the event is there but `delivered` has no key for the channel: the
    outbox has not picked it up yet, or the channel is disabled
-   (`notify_email` false, `ntfy_url` null) or over the 30/hour rate cap
+   (`notify_email` false, `ntfy_url` null, `gchat_url` null or
+   `gchat_broken_at` set) or over the 30/hour rate cap
    (`kind = 'notifications_paused'` events on the project in the last
    hour). `repose_api_outbox_lag_seconds` rising (the age of the oldest
    due row; `NotifyFailing` pages past 5 minutes) means the worker itself

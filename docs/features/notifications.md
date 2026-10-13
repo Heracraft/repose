@@ -78,7 +78,8 @@ Events (see agents.md for how each agent produces them):
   `machines_restarted` (DECISIONS I-645: one per user per host restart,
   naming no project, titled `The server running your machines
   restarted`, with a line per machine started again or not and why; it
-  follows `notify_email` and the ntfy URL like any machine notification,
+  follows `notify_email`, the ntfy URL and the Google Chat webhook like
+  any machine notification,
   and is never sent twice for one restart; the per-machine
   `host_restarted` project event notifies nobody), and
   the agent-sent `agent_message`, `agent_question` and `agent_done`

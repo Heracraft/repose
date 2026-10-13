@@ -148,6 +148,9 @@ else integrated with it.
    is the pushed main commit), `cli` tag (the next `v0.1.N`, with notes
    from every branch since the last tag, in the release-notes style), `host`
    switches (RUNBOOK "Switch a host to main") and the `edge` switch.
+   When the base sends a guest kind or field the running hostd refuses
+   (`agent_done`, I-688), switch the hosts first and publish the base
+   after them.
    A `cli` tag pushed before the owner has set up the `release`
    environment and its signing key stays an unpublished draft ("The
    release signing key" below).

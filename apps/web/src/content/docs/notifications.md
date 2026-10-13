@@ -31,9 +31,10 @@ repose notify test
 ```text
 email: sent
 ntfy: sent
+gchat: off
 ```
 
-`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1. You can send 6 tests a minute.
+`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason the server gave, such as `failed: the server answered 403`, and the command exits 1. You can send 6 tests a minute.
 
 A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 

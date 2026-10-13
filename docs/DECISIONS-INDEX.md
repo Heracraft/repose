@@ -737,10 +737,10 @@ pointer, not a summary.
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L20652
-- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20664
-- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — L20673
-- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20689
-- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20702
-- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20714
-- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20725
-- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20734
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20665
+- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — L20675
+- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20691
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20705
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20718
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20729
+- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20738

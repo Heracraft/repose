@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/metrics"
@@ -260,7 +261,8 @@ func TestGChatClosedQuestionCardDropped(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { posts.Add(1) }))
 	defer srv.Close()
 	c, _ := gchatClient(srv)
-	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	m := metrics.NewNop()
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, m, slog.New(slog.DiscardHandler))
 	var hooked []uuid.UUID
 	ob.QuestionCardPosted = func(_ context.Context, id uuid.UUID) { hooked = append(hooked, id) }
 	now := time.Now()
@@ -279,6 +281,41 @@ func TestGChatClosedQuestionCardDropped(t *testing.T) {
 	_ = pool.QueryRow(ctx, "select count(*) from events_outbox where event_id = $1", eid).Scan(&left)
 	if left != 0 {
 		t.Fatalf("the closed question's row stayed queued")
+	}
+	var got string
+	_ = pool.QueryRow(ctx, "select coalesce(delivered ->> 'gchat', '') from events where id = $1", eid).Scan(&got)
+	if got != notify.DeliveredDropped {
+		t.Fatalf("delivered.gchat %q, want %q", got, notify.DeliveredDropped)
+	}
+	if n := testutil.ToFloat64(m.NotifyTotal.WithLabelValues("gchat", "dropped")); n != 1 {
+		t.Fatalf("dropped counted %v, want 1", n)
+	}
+}
+
+// A Google Chat row is held while the owner is attached, like ntfy's
+// (I-689, I-692).
+func TestGChatHeldWhilePresent(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	_, pid := seedGChat(t, pool)
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { posts.Add(1) }))
+	defer srv.Close()
+	c, _ := gchatClient(srv)
+	ob := notify.New(pool, map[string]notify.Sender{"gchat": &notify.GChat{HTTP: c, Pace: time.Millisecond}}, metrics.NewNop(), slog.New(slog.DiscardHandler))
+	now := time.Now()
+	ob.Now = func() time.Time { return now.Add(5 * time.Second) }
+	if _, err := pool.Exec(ctx, `insert into meter_samples (ts, project_id, state, class, tmux_clients, ssh_sessions) values ($1, $2, 'running', 'large', 1, 0)`, now, pid); err != nil {
+		t.Fatal(err)
+	}
+	_, eid := seedGChatQuestion(t, pool, pid, now)
+	if _, err := ob.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	_ = pool.QueryRow(ctx, "select coalesce(delivered ->> 'gchat', '') from events where id = $1", eid).Scan(&got)
+	if posts.Load() != 0 || got != notify.DeliveredHeld {
+		t.Fatalf("posts %d, delivered.gchat %q: want held while attached", posts.Load(), got)
 	}
 }
 

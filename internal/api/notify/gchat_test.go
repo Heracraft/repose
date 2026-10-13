@@ -275,7 +275,9 @@ func gchatFixtures() map[string]notify.Message {
 	}
 	out["agent_question"] = q
 	free := q
-	free.Question = &notify.QuestionLinks{ID: q.Question.ID, Expires: q.Question.Expires}
+	// Asked with the longest timeout: the expiry falls on the next day,
+	// so the card names the date.
+	free.Question = &notify.QuestionLinks{ID: q.Question.ID, Expires: q.At.Add(24 * time.Hour)}
 	free.Summary = "Which branch should the release come from?"
 	out["agent_question_free"] = free
 	done := fx["agent_message"]

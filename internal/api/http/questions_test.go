@@ -244,8 +244,14 @@ func TestQuestionAnswerRouteAuthAndOptions(t *testing.T) {
 	if r := a.do(t, a.tok, "POST", p2+"/answer", map[string]any{"answer": "  "}); r.status != 400 {
 		t.Fatalf("empty answer: %d", r.status)
 	}
-	if r := a.do(t, a.tok, "POST", p2+"/cancel", nil); r.status != 200 || r.body["state"] != "cancelled" {
+	if r := a.do(t, a.tok, "POST", p2+"/cancel", nil); r.status != 200 || r.body["state"] != "cancelled" || r.body["answered_via"] != "dashboard" {
 		t.Fatalf("cancel: %d %s", r.status, r.raw)
+	}
+	// The CLI's dismissal says where it came from.
+	q3 := a.ask(t, "Ship it?", nil, 600)
+	p3 := "/projects/" + a.p.ID.String() + "/questions/" + q3.String()
+	if r := a.do(t, a.tok, "POST", p3+"/cancel", map[string]any{"via": "cli"}); r.status != 200 || r.body["answered_via"] != "cli" {
+		t.Fatalf("cancel from the CLI: %d %s", r.status, r.raw)
 	}
 	if err := a.h.Questions.Once(a.h.Ctx); err != nil {
 		t.Fatal(err)

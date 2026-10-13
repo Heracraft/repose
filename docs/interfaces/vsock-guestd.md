@@ -54,8 +54,9 @@ Agents (via their wrappers) POST JSON to the Unix socket
 `/run/repose/hooks.sock` (HTTP over unix, group `dev`):
 `{"agent":"claude","kind":"completed","summary":"...","window":"claude"}`.
 guestd relays as `AgentEvent`. `agent` must be one of the five the platform
-ships, `kind` one of `completed|needs_input|error|prompt`, and `summary` is truncated
-to 1 KB. A `prompt` (I-690) is not relayed: guestd closes the open questions
+ships, `kind` one of `completed|needs_input|error|prompt|resume`, and `summary` is truncated
+to 1 KB. A `resume` (I-690) is a turn the agent started on its own: it marks
+the window `working`, closes no question and is not relayed. A `prompt` (I-690) is not relayed: guestd closes the open questions
 asked from the caller's agent process (or, where either has none, from its
 window) with reason `terminal`, and marks the window `working`; its
 `summary`, if any, is dropped unread. The api treats a guest's `AgentEvent` as guest-sourced whatever it

@@ -93,14 +93,21 @@ func (d kindData) Meta() string {
 		}
 	}
 	if q := d.M.Question; q != nil && !q.Expires.IsZero() {
-		exp := q.Expires.In(loc)
-		if !d.M.At.IsZero() && exp.YearDay() == at.YearDay() && exp.Year() == at.Year() {
-			parts = append(parts, "open until "+exp.Format("15:04 MST"))
-		} else {
-			parts = append(parts, "open until "+exp.Format("2 Jan 15:04 MST"))
-		}
+		parts = append(parts, "open until "+expiryAt(d.M.At, q.Expires, loc))
 	}
 	return strings.Join(parts, " · ")
+}
+
+// expiryAt is a question's expiry in the owner's zone, as the email and
+// the Google Chat card both print it: with the date when it falls on
+// another day than the ask, or the ask's time is unknown.
+func expiryAt(asked, expires time.Time, loc *time.Location) string {
+	exp := expires.In(loc)
+	at := asked.In(loc)
+	if !asked.IsZero() && exp.YearDay() == at.YearDay() && exp.Year() == at.Year() {
+		return exp.Format("15:04 MST")
+	}
+	return exp.Format("2 Jan 15:04 MST")
 }
 
 // Rendered is one email, ready for Resend.

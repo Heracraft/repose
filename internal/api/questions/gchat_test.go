@@ -79,11 +79,20 @@ func TestCloseRepliesInChatThread(t *testing.T) {
 
 	b := ask()
 	posted(b)
-	if _, err := svc.Cancel(ctx, user, b); err != nil {
+	if _, err := svc.Cancel(ctx, user, b, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := replies(b); len(got) != 1 || got[0] != "Dismissed from the dashboard" {
 		t.Fatalf("dismiss: %v", got)
+	}
+
+	b2 := ask()
+	posted(b2)
+	if _, err := svc.Cancel(ctx, user, b2, "cli"); err != nil {
+		t.Fatal(err)
+	}
+	if got := replies(b2); len(got) != 1 || got[0] != "Dismissed from the CLI" {
+		t.Fatalf("dismiss from the CLI: %v", got)
 	}
 
 	c := ask()
@@ -137,6 +146,7 @@ func TestCloseLine(t *testing.T) {
 		{questions.Question{State: "answered", Answer: s("main, after the tests"), AnsweredVia: s("cli")}, "Answered from the CLI: main, after the tests"},
 		{questions.Question{State: "answered", AnsweredVia: s("terminal")}, "Answered in the terminal"},
 		{questions.Question{State: "cancelled", AnsweredVia: s("agent")}, "Withdrawn by the agent"},
+		{questions.Question{State: "cancelled", AnsweredVia: s("cli")}, "Dismissed from the CLI"},
 		{questions.Question{State: "cancelled"}, "The agent stopped waiting"},
 		{questions.Question{State: "expired"}, "Expired without an answer"},
 	} {

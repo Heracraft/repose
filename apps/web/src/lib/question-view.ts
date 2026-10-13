@@ -45,8 +45,8 @@ export function closedLine(q: Question): ClosedLine {
 	}
 	if (q.state === 'cancelled') {
 		if (via === 'agent') return { text: 'Withdrawn by the agent', tone: 'closed' };
-		// The api's Cancel (the dashboard's Dismiss and `repose reply
-		// --dismiss`) stores dashboard; a close with no source (asker_gone,
+		// The api's Cancel stores dashboard (Dismiss) or cli (`repose reply
+		// --dismiss`); a close with no source (asker_gone,
 		// interrupted, a machine stop) is not the owner's doing.
 		if (via === 'dashboard' || via === 'cli') return { text: 'Dismissed', tone: 'closed' };
 		return { text: 'The agent stopped waiting', tone: 'closed' };

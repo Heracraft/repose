@@ -239,8 +239,17 @@ func (f *Fake) cancelQuestion(w http.ResponseWriter, r *http.Request) *apiError 
 	if !f.pendingNow(q) {
 		return errf("conflict", "%s", describe(q)).withDetail(map[string]any{"question": *q})
 	}
+	var body struct {
+		Via string `json:"via"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
 	now := f.now()
 	via := "dashboard"
+	if body.Via == "cli" {
+		via = "cli"
+	}
 	q.State, q.AnsweredVia, q.AnsweredAt = "cancelled", &via, &now
 	writeJSON(w, http.StatusOK, *q)
 	return nil

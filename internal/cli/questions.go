@@ -71,7 +71,7 @@ func (c *Client) AnswerQuestion(ctx context.Context, projectID, questionID, answ
 func (c *Client) CancelQuestion(ctx context.Context, projectID, questionID string) (*Question, error) {
 	var q Question
 	path := "/projects/" + url.PathEscape(projectID) + "/questions/" + url.PathEscape(questionID) + "/cancel"
-	if err := c.post(ctx, path, nil, &q); err != nil {
+	if err := c.post(ctx, path, map[string]string{"via": "cli"}, &q); err != nil {
 		return nil, err
 	}
 	return &q, nil

@@ -21,7 +21,7 @@ Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
 this month
 ```
 
-`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
+`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished), `needs input` (waiting on a permission prompt or a question) or `running` (its process is alive and repose can't tell more, [Agent states](/docs/agents#agent-states)), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
 
 `repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
@@ -83,7 +83,7 @@ A machine that wasn't started gets `not started:`, the reason, and `repose start
 
 ## Unused machines
 
-A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count as working. repose doesn't stop an unused machine; it tells you instead:
+A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent `working` or `running`. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count. One shown as `running` does, since repose can't tell whether it is mid-task. repose doesn't stop an unused machine; it tells you instead:
 
 ```
 $ repose ls

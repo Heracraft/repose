@@ -398,19 +398,23 @@ func (s *Service) AnswerOption(ctx context.Context, id uuid.UUID, opt int, via s
 }
 
 // Cancel dismisses a pending question; the waiting ask exits cancelled.
-func (s *Service) Cancel(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*Question, error) {
+// via is where the owner dismissed it: cli or dashboard.
+func (s *Service) Cancel(ctx context.Context, userID uuid.UUID, id uuid.UUID, via string) (*Question, error) {
+	if via != "cli" {
+		via = "dashboard"
+	}
 	q, err := s.Get(ctx, &userID, id)
 	if err != nil {
 		return nil, err
 	}
-	tag, err := s.pool.Exec(ctx, "update questions set state = 'cancelled', answered_via = 'dashboard', answered_at = now(), deliver_next_at = now() where id = $1 and state = 'pending'", id)
+	tag, err := s.pool.Exec(ctx, "update questions set state = 'cancelled', answered_via = $2, answered_at = now(), deliver_next_at = now() where id = $1 and state = 'pending'", id, via)
 	if err != nil {
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
 		return q, ErrClosed
 	}
-	s.log.Info("question dismissed", "event", "agent_question", "question_id", id.String())
+	s.log.Info("question dismissed", "event", "agent_question", "question_id", id.String(), "via", via)
 	s.replyInChat(ctx, "", id)
 	return s.Get(ctx, &userID, id)
 }
