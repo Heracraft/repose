@@ -60,6 +60,12 @@ type Options struct {
 	// done, the way the real destroy op does. Zero keeps the instant
 	// destroy.
 	DestroyDelay time.Duration
+	// ForkStepDelay makes each fork copy's restore op run its steps the
+	// way the engine does: phase restore (project "restoring") for the
+	// delay, then, when the copy starts, phase start_guest (project
+	// "starting") for the delay times the copy's number, then done. Zero
+	// keeps the instant fork.
+	ForkStepDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.

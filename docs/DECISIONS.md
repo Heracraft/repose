@@ -20773,8 +20773,19 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
   mounted read-write with its journal replayed, held every file as it
   was at the freeze (502 files, `sha256sum`), and was `e2fsck -fn`
   clean; the point was removed. 3 copies in 3.2 s, `clone_ms` 386 to 450.
-  No VM booted on a clone: kanali cannot reach a host where one could
-  boot outside a tenant's project.
+  A VM booted on a clone on host-01 (review round 2, 2026-10-13 20:33Z,
+  load 3): a small guest of base 2026.10.12 booted the way hostd's create
+  does on a `bench-ff-src` volume and wrote 256 MB of random data and an
+  uncommitted file; hostd's own `vsockclient` Freeze, `lvm.Real.Snapshot`
+  and Thaw made the point (`point_ms` 2990, the freeze flushing those
+  256 MB), `lvm.Real.Clone` made the copy (`clone_ms` 185, attr
+  `Vwi-a-tz--`), and a second guest booted on the copy with no mkfs and
+  no fsck by hostd: set up in 9.4 s, `systemctl is-system-running`
+  running, both files matched by `sha256sum -c`, a file the source wrote
+  after the point absent. Every bench volume removed, pool back to 34.88%.
+  The api, a real hostd over its stream and the CLI together have not run
+  a clone: that is the post-release live check, since prod runs main and
+  there is no staging host (staging.tfvars `hosts = []`).
 - *Evidence.* `TestForkClonesOnePointOnTheHost` (one freeze, the point in
   time held, no blob written or read, no fsck, the point removed),
   `TestForkCloneResentAfterSourceGone`, `TestForkCloneRefusals`,
@@ -20782,7 +20793,9 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
   `TestForkPointExpiresAndIsSweptAtStart`, `TestHelloNamesLocalClone`,
   `TestRealCloneIsAnActiveVolume`; the api's
   `TestForkClonesOnTheSourcesHost` (placement, the shared point, no
-  snapshot row, no host_moved, 409 snapshot_needed without the feature).
+  snapshot row, no host_moved, 409 snapshot_needed without the feature;
+  no host_moved for a copy forked from a snapshot or a restore as a new
+  project, which fails with the old `p.HostID == nil ||` rule put back).
 - *Rejected:* cloning on the source's host and copying to another host
   over the network (a second transfer path beside Blob for a case
   production does not have yet); one Clone command on the source's host
@@ -20795,15 +20808,25 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
 - `repose fork` showed `Forking` and `Starting` with no done text, so
   minutes passed and ended in silence. Each copy's wait now follows its
   op's phase: `Copying SRC's disk into COPY` (or `Restoring COPY from the
-  snapshot`), `Building COPY's system`, `Starting COPY`, each ending in a
-  `✓` line with its time. A copy whose op had finished before the CLI
-  read it (the copies run side by side) gets one `✓ Started COPY` line
-  with the op's own time, from the op's `created_at` and `finished_at`.
+  snapshot`), `Building COPY's system`, `Starting COPY`. The CLI waits
+  on the copies in turn while the api runs them side by side, so only
+  the first copy is watched from its start: each of its steps ends in a
+  `✓` line with that step's time. Every other copy shows the step it is
+  on and ends in one `✓ Started COPY` line (`Restored`/`Copied` with
+  `--no-start`) with its whole op's time, from the op's `created_at` and
+  `finished_at`. Timing a later copy's step from when the CLI reached it
+  would print a few seconds for a step that ran for a minute (review
+  round 2).
+- A cloned copy whose restore failed has no snapshot of its own, so
+  `start` on it says to remove it and fork the source again instead of
+  "restore a snapshot into it again" (same `restore_unfinished` reason).
 - The summary line drops "from its snapshot of ..." for a cloned fork,
   which has none, and a failed copy's message names `repose fork SRC`
   instead of `--snapshot ID`.
 - *Evidence.* `TestFork` ("✓ Started izma-fork-1"),
-  `TestForkFallsBackToAForkSnapshot`.
+  `TestForkFallsBackToAForkSnapshot`, `TestForkTimesEachStep` (the fake
+  api's `ForkStepDelay`; fails with every copy timed per step),
+  `TestStartOfAFailedCloneSaysForkAgain`.
 
 **I-703. A fork's own snapshot is reason `fork` and expires in a day
 (fork-fast, 2026-10-13).** *Made during implementation.*

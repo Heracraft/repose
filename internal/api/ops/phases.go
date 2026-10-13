@@ -128,6 +128,15 @@ func UnfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID
 	return u.unfinished, err
 }
 
+// UnfinishedClone is UnfinishedRestore for a fork's copy cloned on its
+// source's host (DECISIONS I-701): such a copy has no snapshot to restore
+// into it, so the way back is another fork. It names the source project,
+// or uuid.Nil when the unfinished restore was not a clone.
+func UnfinishedClone(ctx context.Context, q store.Querier, projectID uuid.UUID) (unfinished bool, source uuid.UUID, err error) {
+	u, err := unfinishedRestore(ctx, q, projectID)
+	return u.unfinished, u.cloneOf, err
+}
+
 // restoreFailure is what a project's newest failed restore says.
 type restoreFailure struct {
 	unfinished bool
@@ -135,6 +144,9 @@ type restoreFailure struct {
 	// failure, so the guest the project named then is gone and the host
 	// has released its address.
 	destroyedOld bool
+	// cloneOf: the op cloned this project from its fork source, named
+	// here, instead of reading a snapshot.
+	cloneOf uuid.UUID
 }
 
 func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID) (restoreFailure, error) {
@@ -156,7 +168,17 @@ func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID
 	if ph != PhaseBuild && ph != PhaseRestore {
 		return restoreFailure{}, nil
 	}
-	return restoreFailure{unfinished: true, destroyedOld: slices.Contains(phases(op)[:step], PhaseDestroyGuest)}, nil
+	rf := restoreFailure{unfinished: true, destroyedOld: slices.Contains(phases(op)[:step], PhaseDestroyGuest)}
+	if cloneOf(op) != nil {
+		if of, _ := params["fork_of"].(string); of != "" {
+			src, err := uuid.Parse(of)
+			if err != nil {
+				return restoreFailure{}, err
+			}
+			rf.cloneOf = src
+		}
+	}
+	return rf, nil
 }
 
 // PlanBuild builds and, when the guest runs, applies.

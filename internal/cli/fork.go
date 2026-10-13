@@ -228,12 +228,12 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	}
 
 	// Each fork's restore is its own op; they run side by side on the
-	// api, so waiting on them in turn takes as long as the slowest. Each
-	// step of each copy gets its ✓ line with its time (I-702).
+	// api, so waiting on them in turn takes as long as the slowest. The
+	// first copy's steps each get a ✓ line, the others one each (I-702).
 	failed := 0
 	for i := range res.Projects {
 		f := &res.Projects[i]
-		op, err := waitForkCopy(ctx, e, src, f, res.SnapshotID == "", opts.NoStart, pr)
+		op, err := waitForkCopy(ctx, e, src, f, res.SnapshotID == "", opts.NoStart, i == 0, pr)
 		if err != nil {
 			if interrupted(ctx, err) {
 				return interruptedFork(res, opts.NoStart)
@@ -373,19 +373,29 @@ func forkStep(src *Project, slug, phase string, cloned bool) (label, done string
 	return "", ""
 }
 
-// waitForkCopy waits for one copy's restore op, showing each of its steps
-// as it reaches it. A copy whose op had ended before the wait read it
-// (the copies run side by side) gets one line with the op's own time.
-func waitForkCopy(ctx context.Context, e *Env, src *Project, f *ForkedProject, cloned, noStart bool, pr *progress) (*Op, error) {
-	seen := false
+// waitForkCopy waits for one copy's restore op. The first copy is
+// watched from its start, so each of its steps gets a ✓ line with that
+// step's time. The others run beside it, and by the time the wait reads
+// one it may be steps in: it shows the step it is on and ends in one ✓
+// line with the op's own time, from its created_at and finished_at
+// (I-702).
+func waitForkCopy(ctx context.Context, e *Env, src *Project, f *ForkedProject, cloned, noStart, first bool, pr *progress) (*Op, error) {
 	last := ""
+	watched := time.Now()
 	w := &opWatch{phase: func(phase string) {
 		label, done := forkStep(src, f.Slug, phase, cloned)
 		if label == "" || phase == last {
 			return
 		}
-		last, seen = phase, true
-		pr.Phase(label, done)
+		switch {
+		case first:
+			pr.Phase(label, done)
+		case last == "":
+			pr.Phase(label, "")
+		default:
+			pr.Relabel(label, "")
+		}
+		last = phase
 	}}
 	op, err := waitOpWith(ctx, e.Client, f.ProjectID, f.OpID, pr, w)
 	if err != nil {
@@ -395,16 +405,21 @@ func waitForkCopy(ctx context.Context, e *Env, src *Project, f *ForkedProject, c
 		pr.Fail()
 		return op, nil
 	}
-	if !seen {
-		last := "start_guest"
-		if noStart {
-			last = "restore"
-		}
-		_, done := forkStep(src, f.Slug, last, cloned)
-		pr.Done(done, op.took())
+	if first && last != "" {
+		pr.End()
 		return op, nil
 	}
-	pr.End()
+	step := "start_guest"
+	if noStart {
+		step = "restore"
+	}
+	_, done := forkStep(src, f.Slug, step, cloned)
+	took := op.took()
+	if took == 0 {
+		// An api that leaves the op's times out.
+		took = time.Since(watched)
+	}
+	pr.Done(done, took)
 	return op, nil
 }
 

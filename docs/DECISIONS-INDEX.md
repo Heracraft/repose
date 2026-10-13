@@ -738,5 +738,5 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-700** A restore downloads its snapshot once and checks the digest as it writes (fork-fast, 2026-10-13) — L20652
 - **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L20703
-- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L20793
-- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L20808
+- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L20806
+- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L20831

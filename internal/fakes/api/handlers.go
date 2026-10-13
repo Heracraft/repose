@@ -760,6 +760,15 @@ func (f *Fake) opView(p *project, o *op) Op {
 	v.ProjectState = p.State
 	v.Phase = o.phase
 	v.Version = o.State + "." + o.phase + "." + p.State
+	created := o.created
+	v.CreatedAt = &created
+	if o.State == "done" || o.State == "error" {
+		end := created
+		if o.finished != nil {
+			end = *o.finished
+		}
+		v.FinishedAt = &end
+	}
 	return v
 }
 
@@ -1449,6 +1458,9 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 			f.event(np, "volume.restored", "", "cloned from "+p.Name)
 		}
 		o := f.newOp(np, "restore")
+		if d := f.opts.ForkStepDelay; d > 0 {
+			f.stepFork(np, o, body.Start == nil || *body.Start, d, time.Duration(len(list)+1)*d)
+		}
 		list = append(list, forked{ProjectID: np.ID, Name: np.Name, Slug: np.Slug, Class: np.Class, OpID: o.id})
 		rec = append(rec, forkRec{projectID: np.ID, name: np.Slug, class: np.Class, opID: o.id})
 	}
@@ -1456,6 +1468,37 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		f.forks[u.ID+"/"+body.RequestID] = rec
 	}
 	return answer(list)
+}
+
+// stepFork runs a fork copy's restore op through its phases (Options.
+// ForkStepDelay). Callers hold mu; only the goroutine takes it.
+func (f *Fake) stepFork(np *project, o *op, start bool, restore, starting time.Duration) {
+	final := np.State
+	// The op's own times to the nanosecond: the CLI prints them for a
+	// copy it did not watch.
+	now := func() time.Time {
+		if f.opts.Now != nil {
+			return f.now()
+		}
+		return time.Now().UTC()
+	}
+	o.created = now()
+	o.State, o.phase, o.LogURL = "running", "restore", ""
+	np.State, np.OpID = "restoring", o.id
+	go func() {
+		time.Sleep(restore)
+		if start {
+			f.mu.Lock()
+			o.phase, np.State = "start_guest", "starting"
+			f.mu.Unlock()
+			time.Sleep(starting)
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		end := now()
+		np.State, np.OpID = final, ""
+		o.State, o.phase, o.finished = "done", "", &end
+	}()
 }
 
 func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError {

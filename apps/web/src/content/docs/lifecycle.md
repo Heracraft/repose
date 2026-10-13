@@ -128,7 +128,7 @@ The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Rest
 
 Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it as it writes the new disk, and if they differ it stops with `snapshot checksum mismatch` and deletes what it wrote, so the machine never starts on it. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
 
-If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`.
+If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`. A [fork](#fork-a-project)'s copy whose disk copy failed has no snapshot of its own, so `start` says to remove it and fork the source again.
 
 ## Destroy and restore
 

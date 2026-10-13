@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
@@ -235,5 +236,52 @@ func TestNewRequestIDIsAUUID(t *testing.T) {
 	a, b := newRequestID(), newRequestID()
 	if a == b || !looksLikeUUID(a) || a[14] != '4' {
 		t.Fatalf("request ids %q %q", a, b)
+	}
+}
+
+// The first copy is watched from its start, so each of its steps gets a
+// line with that step's time. The others run beside it, so by the time the
+// CLI reads one it may be steps in: it gets one line with its op's own
+// time, never a step timed from when the CLI got to it (I-702).
+func TestForkTimesEachStep(t *testing.T) {
+	const d = 400 * time.Millisecond
+	fake := fakeapi.New(fakeapi.Options{ForkStepDelay: d})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out, errOut strings.Builder
+	e.Out, e.ErrOut = &out, &errOut
+	ctx := context.Background()
+	if _, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 2}); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	took := func(prefix string) time.Duration {
+		t.Helper()
+		for _, l := range strings.Split(errOut.String(), "\n") {
+			if rest, ok := strings.CutPrefix(l, prefix+"  "); ok {
+				v, err := time.ParseDuration(rest)
+				if err != nil {
+					t.Fatalf("line %q: %v", l, err)
+				}
+				return v
+			}
+		}
+		t.Fatalf("fork's progress:\n%s\nwant a line %q", errOut.String(), prefix)
+		return 0
+	}
+	if v := took("✓ Copied izma's disk into izma-fork-1"); v < d-50*time.Millisecond || v > 2*d {
+		t.Fatalf("copy 1's disk step took %v, want about %v", v, d)
+	}
+	if v := took("✓ Started izma-fork-1"); v < d-50*time.Millisecond || v > 2*d {
+		t.Fatalf("copy 1's start took %v, want about %v", v, d)
+	}
+	// Copy 2: restore d, start 2d; the CLI reaches it a d into its start.
+	if v := took("✓ Started izma-fork-2"); v < 3*d-50*time.Millisecond {
+		t.Fatalf("copy 2's line says %v, want its whole op's time, about %v:\n%s", v, 3*d, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "into izma-fork-2") {
+		t.Fatalf("copy 2's disk step, which the CLI did not watch, got a line:\n%s", errOut.String())
 	}
 }

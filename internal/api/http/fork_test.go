@@ -376,4 +376,90 @@ func TestForkClonesOnTheSourcesHost(t *testing.T) {
 	if sent != "manual" {
 		t.Fatalf("hostd was sent reason %q, which a hostd before I-703 refuses", sent)
 	}
+
+	// A new project restored from a snapshot (the fallback fork's copy, a
+	// restore --as) had no host before, so it did not move: no host_moved
+	// in its op or its events (I-701).
+	var sid string
+	if err := e.h.Pool.QueryRow(ctx, "select id::text from snapshots where project_id = $1", pid).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	notMoved := func(what string, projectID, opID string) {
+		t.Helper()
+		op := e.h.WaitOp(uuid.MustParse(opID))
+		if op.State != "done" {
+			t.Fatalf("%s restore op: %+v", what, op.Error)
+		}
+		if moved, ok := op.Params["host_moved"].(bool); !ok || moved {
+			t.Fatalf("%s: host_moved %v in the op's params, want false", what, op.Params["host_moved"])
+		}
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'host_moved'", projectID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Fatalf("%s was told it moved host", what)
+		}
+	}
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"count": 1, "snapshot_id": sid})
+	if r.status != 202 {
+		t.Fatalf("fork from a snapshot: %d %s", r.status, r.raw)
+	}
+	fs, _ := r.body["projects"].([]any)
+	if len(fs) != 1 {
+		t.Fatalf("fork from a snapshot: %s", r.raw)
+	}
+	f := fs[0].(map[string]any)
+	notMoved("a copy forked from a snapshot", f["project_id"].(string), f["op_id"].(string))
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"as_new_project": "izma-then", "start": false})
+	if r.status != 202 {
+		t.Fatalf("restore as a new project: %d %s", r.status, r.raw)
+	}
+	notMoved("a restore as a new project", r.body["project_id"].(string), r.body["op_id"].(string))
+}
+
+// A cloned copy whose restore failed has no snapshot of its own to restore
+// into it, so a start of it says to remove it and fork the source again.
+func TestStartOfAFailedCloneSaysForkAgain(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-elm", "elm")
+	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt' where logto_sub = 'sub-elm'"); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "rowan"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	var srcHost string
+	if err := e.h.Pool.QueryRow(ctx, "select host_id::text from projects where id = $1", pid).Scan(&srcHost); err != nil {
+		t.Fatal(err)
+	}
+	e.h.WaitFor("the host's Hello names local_clone", func() bool {
+		var ok bool
+		_ = e.h.Pool.QueryRow(ctx, "select 'local_clone' = any(features) from hosts where id = $1", srcHost).Scan(&ok)
+		return ok
+	})
+	e.h.Fake.SetFail("Restore", "internal")
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"count": 1, "start": false})
+	if r.status != 202 {
+		t.Fatalf("fork: %d %s", r.status, r.raw)
+	}
+	f := r.body["projects"].([]any)[0].(map[string]any)
+	if op := e.h.WaitOp(uuid.MustParse(f["op_id"].(string))); op.State != "error" {
+		t.Fatalf("clone restore with the host failing it: %s", op.State)
+	}
+	e.h.Fake.SetFail("Restore", "")
+	st := e.do(t, tok, "POST", "/projects/"+f["project_id"].(string)+"/start", nil)
+	errObj, _ := st.body["error"].(map[string]any)
+	detail, _ := errObj["detail"].(map[string]any)
+	msg, _ := errObj["message"].(string)
+	want := "rowan-fork-1 has no usable volume because copying rowan's disk into it did not finish; remove it with `repose rm rowan-fork-1` and fork rowan again"
+	if st.status != 409 || detail["reason"] != "restore_unfinished" || msg != want {
+		t.Fatalf("start of a failed clone: %d %s\nwant message %q", st.status, st.raw, want)
+	}
 }

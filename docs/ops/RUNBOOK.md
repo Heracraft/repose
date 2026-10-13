@@ -2249,11 +2249,12 @@ its timer; `SnapshotStale` fires if a running project stays without one.
 
 ## hostd: snapshot checksum mismatch
 
-Restore result `internal: snapshot checksum mismatch` (DECISIONS I-462):
-the blob in the store is not the one hostd uploaded, by the SHA-256 the
-api recorded in `snapshots.sha256`. Nothing was written: the check runs
-before any volume or guest state exists ("changed during the restore"
-means the second check failed and the new volume was removed). Treat it
+Restore result `internal: snapshot checksum mismatch` (DECISIONS I-462,
+I-700): the blob in the store is not the one hostd uploaded, by the
+SHA-256 the api recorded in `snapshots.sha256`. hostd downloads the blob
+once and hashes it while writing it into the new volume, so the bytes
+were written by the time the digest was known: the new volume was then
+removed, no guest booted from it, and the project is in `error`. Treat it
 as a possible tampering incident, not a retry: do not restore that
 snapshot, keep the blob, read the storage account's access logs for
 writes to its path after `taken_at`, and record what you find in
@@ -2261,6 +2262,48 @@ writes to its path after `taken_at`, and record what you find in
 digest matches. A restore that fails this way leaves the project in
 `error` with `start` refused (`restore_unfinished`, I-461) until a
 restore succeeds.
+
+## hostd: fork point volume left over
+
+`lvs` on a host shows an `fp-<32 hex>` volume more than 30 minutes old.
+A fork point is the one snapshot of a source that a same-host fork's
+copies clone (DECISIONS I-701); hostd removes it when every copy named in
+the fork has restored, after `ForkPointTTL` (30 min) whatever happened,
+and at its next start (`reconcile_snapshots` "removed stale snapshot
+volume"). Grep `journalctl -u hostd` for `"event":"fork_point"`: "fork
+point not removed" carries lvremove's error, usually the pool's metadata
+being full or the volume still open. No guest boots from a fork point,
+so `lvremove repose/fp-...` is safe once no restore with that point is in
+flight (no `restore` op `running` on that host in the api).
+
+## hostd: clone restore refused
+
+Restore result `not_found: the guest a clone copies, <id>, is not on this
+host`: the api sent a clone (I-701) for a source that this host no longer
+holds, because the source moved, was destroyed, or the host's state lost
+it between the api's `FitsOn` and the restore. The copy is in `error`;
+`start` on it says to remove it and fork the source again, which the api
+then sends as a clone to the source's current host or answers
+`snapshot_needed`. `internal: fork point: context deadline exceeded`
+means the restore's deadline ran out before the fork point was taken:
+the point waits behind every command queued for the source (a stop and
+its snapshot upload, a build), or the freeze hung (see "Freeze
+timeout"). Each copy's `restore_done`
+log line carries `"source":"clone"`, `point_ms` and `clone_ms`; a blob
+restore carries `verify_ms` 0, `write_ms` and `fsck_ms`.
+
+## api: every fork takes a snapshot
+
+Forks print `✓ Snapshot of X taken` and restore from Blob although the
+source's host has room: the api answered `409 snapshot_needed`. It sends
+clones only to a host whose `Hello` named `local_clone` (DECISIONS
+I-701). On `repose-control`, `select name, features from hosts`: an empty
+array means that host's hostd predates I-701, so switch the host to the
+current generation (docs/ops/RELEASE.md); hostd sends `Hello` again on
+reconnect and the api stores the features then. A host that lists
+`local_clone` and still refuses has no room for the copies by
+`scheduler.FitsOn` (memory of every copy that starts, disk for every
+copy's volume), which is correct.
 
 ## api: project in error after a failed restore
 
