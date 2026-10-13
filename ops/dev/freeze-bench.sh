@@ -14,8 +14,17 @@
 #   freeze-bench.sh rm ID                remove everything
 #   freeze-bench.sh x ID USER CMD...     run a command in the guest
 #   freeze-bench.sh hfreeze|hthaw ID     the same through hostd's code (KEY, REC, VG)
+#   freeze-bench.sh hup ID CLASS VOL     boot a host's guest closure ($CLOSURE) on the
+#                                        block device VOL the way hostd's create does
+#                                        (fresh ext4, hostd's argv and unit limits,
+#                                        the host store over virtiofs), then register
+#                                        and set up; prints a timings line
+#   freeze-bench.sh hdown ID             stop a hup guest, keep the volume
 #
-# BALLOON=1 on up adds a virtio-balloon with free page reporting.
+# BALLOON=1 on up and hup adds a virtio-balloon with free page reporting.
+# CMDLINE on hup is appended to the kernel command line. LATE=1 on hup
+# loads virtio_balloon in the guest after setup (with CMDLINE carrying
+# modprobe.blacklist=virtio_balloon).
 # Environment: RUNNER (guest runner, default /tmp/gf/runner), FB (freezebench
 # binary), ROOT (work dir, default /mnt/nixstore/gf).
 set -euo pipefail
@@ -199,11 +208,75 @@ down() {
   net_down "$id"
 }
 
+# hup boots the way internal/hostd/guest/create.go does: mkfs.ext4 on the
+# volume, cloud-hypervisor in a transient unit with GuestUnitProps' memory and
+# CPU limits, the store over virtiofsd with hostd's flags, the closure's
+# kernel, initrd and params, then RegisterPaths and SetupProject. Times are
+# from the unit's start. Faults are the hypervisor's minor faults from
+# start to set up, then over the 10 s after.
+hup() {
+  local id=$1 class=$2 vol=$3 d=$ROOT/$1 n; n=$(num "$id")
+  : "${CLOSURE:?CLOSURE=/nix/store/...-nixos-system-repose-guest-...}"
+  local vfsd=${VIRTIOFSD:-$(command -v virtiofsd)} mem cpu
+  mem=$(mem_of "$class"); cpu=$(cpu_of "$class")
+  mkdir -p "$d"; echo "$class" > "$d/class"
+  [ -f "$ROOT/$(basename "$CLOSURE").reg" ] || nix-store --dump-db $(nix-store -qR "$CLOSURE") > "$ROOT/$(basename "$CLOSURE").reg"
+  wipefs -qa "$vol"; mkfs.ext4 -q -L guest -E lazy_itable_init=1 "$vol"
+  net_up "$id"
+  rm -f "$d/virtiofsd.sock" "$d/ch.sock" "$d/vsock.sock" "$d/console.log"
+  setsid "$vfsd" --socket-path "$d/virtiofsd.sock" --shared-dir /nix/store --sandbox namespace --cache auto --xattr --no-announce-submounts >>"$d/virtiofsd.log" 2>&1 < /dev/null &
+  echo $! > "$d/virtiofsd.pid"
+  for _ in $(seq 200); do [ -S "$d/virtiofsd.sock" ] && break; sleep 0.01; done
+  local iops mbps
+  case "$class" in small) iops=2000 mbps=80 ;; large) iops=3000 mbps=120 ;; xl) iops=4000 mbps=150 ;; esac
+  local cmdline="init=$CLOSURE/init $(cat "$CLOSURE/kernel-params") console=ttyS0 ip=10.99.$n.2::10.99.$n.1:255.255.255.0:gf$id:eth0:off systemd.hostname=gf$id${CMDLINE:+ $CMDLINE}"
+  local t0; t0=$(now_ms)
+  systemd-run --quiet --unit="bench-gf$id" -p Slice=guests.slice -p "MemoryMax=$((mem + 512))M" -p "MemoryHigh=$((mem + 512 - 128))M" -p "CPUQuota=$((cpu * 100))%" -p Restart=no \
+    "$CH" --api-socket "$d/ch.sock" --kernel "$CLOSURE/kernel" --initramfs "$CLOSURE/initrd" --cmdline "$cmdline" \
+    --cpus "boot=$cpu" --memory "size=${mem}M,shared=on" \
+    --disk "path=$vol,image_type=raw,direct=on,bw_size=$((mbps * 1000000)),bw_refill_time=1000,ops_size=$iops,ops_refill_time=1000" \
+    --net "tap=$(tap_of "$id"),mac=52:54:00:99:00:$(printf %02x "$n")" --fs "tag=ro-store,socket=$d/virtiofsd.sock" \
+    --vsock "cid=$((1000 + n)),socket=$d/vsock.sock" --serial "file=$d/console.log" --console off --seccomp true \
+    ${BALLOON:+--balloon size=0,free_page_reporting=on}
+  local ms; ms=$("$FB" wait "$d" 180s)
+  local t1; t1=$(now_ms)
+  "$FB" register "$d" "$ROOT/$(basename "$CLOSURE").reg"
+  local t2; t2=$(now_ms)
+  "$FB" setup "$d" "gf$id"
+  local t3; t3=$(now_ms)
+  local pid; pid=$(systemctl show -p MainPID --value "bench-gf$id")
+  local f1; f1=$(awk '{print $10}' "/proc/$pid/stat")
+  [ "${LATE:-0}" = 1 ] && "$FB" exec "$d" root modprobe virtio_balloon
+  sleep 10
+  local f2; f2=$(awk '{print $10}' "/proc/$pid/stat")
+  local hm; hm=$("$FB" exec "$d" root systemctl show -p ExecMainStartTimestampMonotonic -p ExecMainExitTimestampMonotonic --value home-manager-dev.service 2>/dev/null | tr '\n' ' ' | awk '{printf "%d", ($2-$1)/1000}')
+  echo "class=$class balloon=${BALLOON:-0} late=${LATE:-0} cmdline_extra='${CMDLINE:-}' guestd_ms=$ms paths_ms=$((t2 - t1)) setup_ms=$((t3 - t2)) ready_total_ms=$((t3 - t0)) home_manager_ms=$hm faults_to_setup=$f1 faults_10s_after=$((f2 - f1))"
+  "$FB" exec "$d" root systemd-analyze 2>/dev/null | head -1 || true
+  if [ "${DIAG:-0}" = 1 ]; then
+    # Where the boot waited: the guest's pressure stall counters, its
+    # slowest units, the hypervisor's CPU throttling and the volume's IO.
+    local dm; dm=$(basename "$(readlink -f "$vol")")
+    echo "host cpu.stat: $(tr '\n' ' ' < "/sys/fs/cgroup/guests.slice/bench-gf$id.service/cpu.stat")"
+    echo "host volume stat ($dm): $(cat "/sys/block/$dm/stat")"
+    "$FB" exec "$d" root sh -c 'for f in cpu io memory; do echo "guest $f: $(head -1 /proc/pressure/$f)"; done; systemd-analyze blame | head -12; echo "guest /proc/stat: $(head -1 /proc/stat)"; awk "NR>1{t=0; for(i=2;i<=NF;i++) if(\$i ~ /^[0-9]+\$/) t+=\$i; print t, \$0}" /proc/interrupts | sort -rn | head -4 | cut -c1-160; for u in $(systemctl list-units --all --no-legend --plain --type=service,scope | cut -d" " -f1); do echo "$(systemctl show -p CPUUsageNSec --value "$u") $u"; done | grep -v "^\[" | sort -rn | head -12' || true
+  fi
+}
+
+hdown() {
+  local id=$1 d=$ROOT/$1
+  systemctl stop "bench-gf$id" 2>/dev/null || true
+  systemctl reset-failed "bench-gf$id" 2>/dev/null || true
+  kill_pidfile "$d/virtiofsd.pid"
+  net_down "$id"
+}
+
 case "${1:-}" in
   up) up "$2" "${3:-large}" ;;
   freeze) freeze "$2" ;;
   thaw) thaw "$2" "${3:-copy}" ;;
   down) down "$2" ;;
+  hup) hup "$2" "${3:-large}" "${4:?VOL}" ;;
+  hdown) hdown "$2" ;;
   rm) down "$2"; rm -rf "${ROOT:?}/$2" ;;
   x) id=$2 user=$3; shift 3; "$FB" exec "$ROOT/$id" "$user" "$@" ;;
   # The same freeze and restore through hostd's own code (freeze.Image on a
