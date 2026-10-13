@@ -387,6 +387,11 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 				return nil, uuid.Nil, false, err
 			}
 		}
+		// hostd takes scheduled, stop or manual; a fork's snapshot (I-703)
+		// is a manual one there, where the reason only labels its log line.
+		if reason == "fork" {
+			reason = "manual"
+		}
 		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Snapshot{Snapshot: &hostdv1.Snapshot{GuestId: p.GuestID.String(), Reason: reason}}}, *p.HostID, false, nil
 	case PhaseDestroyGuest:
 		if p.GuestID == nil || p.HostID == nil {
@@ -778,28 +783,35 @@ func (e *Engine) buildStart(ctx context.Context, op *store.Op, p *store.Project,
 }
 
 func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Project, u *store.User) (*hostdv1.Command, uuid.UUID, bool, error) {
-	if op.SnapshotID == nil {
+	// A fork's copy cloned on its source's host (DECISIONS I-701) reads no
+	// snapshot: hostd copies the source's volume there.
+	clone := cloneOf(op)
+	if op.SnapshotID == nil && clone == nil {
 		return nil, uuid.Nil, false, &opError{code: "invalid", msg: "restore needs a snapshot"}
 	}
-	snap, err := store.GetSnapshot(ctx, e.pool, *op.SnapshotID)
-	if err != nil {
-		return nil, uuid.Nil, false, &opError{code: "not_found", msg: "snapshot not found"}
-	}
-	// Mark the snapshot as in use by this op inside the same lock the
-	// expiry job takes, so it is never deleted under a running restore.
-	err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
-		var deleted *time.Time
-		if err := tx.QueryRow(ctx, "select deleted_at from snapshots where id = $1 for update", snap.ID).Scan(&deleted); err != nil {
+	var snap *store.Snapshot
+	if clone == nil {
+		var err error
+		snap, err = store.GetSnapshot(ctx, e.pool, *op.SnapshotID)
+		if err != nil {
+			return nil, uuid.Nil, false, &opError{code: "not_found", msg: "snapshot not found"}
+		}
+		// Mark the snapshot as in use by this op inside the same lock the
+		// expiry job takes, so it is never deleted under a running restore.
+		err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
+			var deleted *time.Time
+			if err := tx.QueryRow(ctx, "select deleted_at from snapshots where id = $1 for update", snap.ID).Scan(&deleted); err != nil {
+				return err
+			}
+			if deleted != nil {
+				return &opError{code: "not_found", msg: "snapshot was deleted"}
+			}
+			_, err := tx.Exec(ctx, "update snapshots set restoring_op_id = $2 where id = $1", snap.ID, op.ID)
 			return err
+		})
+		if err != nil {
+			return nil, uuid.Nil, false, err
 		}
-		if deleted != nil {
-			return &opError{code: "not_found", msg: "snapshot was deleted"}
-		}
-		_, err := tx.Exec(ctx, "update snapshots set restoring_op_id = $2 where id = $1", snap.ID, op.ID)
-		return err
-	})
-	if err != nil {
-		return nil, uuid.Nil, false, err
 	}
 	// The new guest id is fixed on first build so a re-send is identical.
 	gidStr, _ := op.Params["new_guest_id"].(string)
@@ -817,6 +829,10 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	}
 	if to, ok := op.Params["to_host_id"].(string); ok && to != "" {
 		hostID = uuid.MustParse(to)
+	}
+	if clone != nil {
+		// Only the source's host holds what a clone copies.
+		hostID = clone.host
 	}
 	if hostID == uuid.Nil {
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
@@ -841,8 +857,10 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	// build so a re-send says the same (I-142): the host_moved event is
 	// for a project that came up somewhere else, not for a restore over
 	// the same host's volume.
+	// A new project (a fork's copy, a restore as a new project) had no
+	// host, so it moved from nowhere: not a move either.
 	if _, ok := op.Params["host_moved"]; !ok {
-		op.Params["host_moved"] = p.HostID == nil || *p.HostID != hostID
+		op.Params["host_moved"] = p.HostID != nil && *p.HostID != hostID
 	}
 	if _, err := e.pool.Exec(ctx, "update projects set host_id = $2, guest_id = $3, guest_ip = null, vsock_cid = null where id = $1", p.ID, hostID, gidStr); err != nil {
 		return nil, uuid.Nil, false, err
@@ -872,11 +890,44 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	if p.RemoteURL != nil {
 		remote = *p.RemoteURL
 	}
-	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: &hostdv1.Restore{
-		ProjectId: p.ID.String(), GuestId: gidStr, BlobPath: snap.BlobPath, Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: closure, Sha256: sha256Of(snap),
+	r := &hostdv1.Restore{
+		ProjectId: p.ID.String(), GuestId: gidStr, Class: p.Class, VolumeBytes: uint64(p.VolumeBytes), SystemClosure: closure,
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
 		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project,
-	}}}, hostID, false, nil
+	}
+	if clone != nil {
+		r.Clone = &hostdv1.RestoreClone{SourceGuestId: clone.guest, PointId: clone.point, SiblingGuestIds: clone.siblings}
+	} else {
+		r.BlobPath, r.Sha256 = snap.BlobPath, sha256Of(snap)
+	}
+	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: r}}, hostID, false, nil
+}
+
+// forkClone is what a fork's restore op carries to clone its source on
+// the source's host (I-701), from the params the fork route wrote.
+type forkClone struct {
+	guest, point string
+	host         uuid.UUID
+	siblings     []string
+}
+
+func cloneOf(op *store.Op) *forkClone {
+	guest, _ := op.Params["clone_of_guest"].(string)
+	hostStr, _ := op.Params["clone_host_id"].(string)
+	point, _ := op.Params["fork_point"].(string)
+	host, err := uuid.Parse(hostStr)
+	if guest == "" || point == "" || err != nil {
+		return nil
+	}
+	c := &forkClone{guest: guest, point: point, host: host}
+	if raw, ok := op.Params["fork_siblings"].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				c.siblings = append(c.siblings, s)
+			}
+		}
+	}
+	return c
 }
 
 // sha256Of is the digest a Restore checks the blob against (I-462): ""
@@ -1110,6 +1161,10 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 	return nil
 }
 
+// ForkSnapshotTTL is how long a snapshot a fork took for itself is kept
+// (DECISIONS I-703).
+const ForkSnapshotTTL = 24 * time.Hour
+
 // recordSnapshot writes the snapshot row. sha256 is the digest hostd
 // computed while uploading, "" from a hostd older than I-462.
 func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Project, blobPath string, bytes int64, sha256, reason string) error {
@@ -1117,6 +1172,12 @@ func (e *Engine) recordSnapshot(ctx context.Context, op *store.Op, p *store.Proj
 	var expires *time.Time
 	if op.Kind == KindDestroy {
 		t := e.now().Add(30 * 24 * time.Hour)
+		expires = &t
+	}
+	if reason == "fork" {
+		// Long enough to fork from again after a copy failed, and no
+		// longer: it is not one of the project's snapshots (I-703).
+		t := e.now().Add(ForkSnapshotTTL)
 		expires = &t
 	}
 	var got uuid.UUID

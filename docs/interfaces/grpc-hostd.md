@@ -94,6 +94,11 @@ Resume after a host restart (DECISIONS I-645), all additive:
   nothing on its own, which is the behaviour before. An api older than
   I-645 ignores them.
 
+`Hello.features` (field 9, DECISIONS I-701) lists what this hostd takes
+beyond the commands every hostd takes: `local_clone`, a `Restore` with
+`clone`. The api keeps it in `hosts.features` and sends a shape only to a
+host that names it. A hostd older than I-701 sends none.
+
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
 places nothing on a draining host), `pool_bytes` (field 6, I-586) and
@@ -122,7 +127,7 @@ command_id returns the stored result) and one of:
 | `Build` | project_id, revision_id, fragment (bytes), base_ref (git rev of nix/ in the platform repo), limits {eval_s, build_s, cores, closure_bytes}, base_version (the `base_versions` label the closure is stamped with, `[A-Za-z0-9._-]{1,64}`; optional, I-118: empty keeps the flake's own stamp), personal (bytes, field 7: the account's machine.nix written as `personal.nix` beside the fragment; optional, I-490: empty is the build without it, and a hostd that predates the field ignores it) | system_closure, closure_bytes, kernel_changed (bool) |
 | `ApplyConfig` | guest_id, system_closure, force_reboot (bool) | rebooted (bool), reboot_required (bool: the closure changes kernel or initrd and force_reboot was false; nothing was applied). On a stopped guest hostd moves the root after checking the closure's kernel, initrd, init and requisites, else `not_found` (I-591). A Switch error guestd codes `not_found`, `invalid_argument` or `store_path_hidden` keeps its code; any other is `internal` (I-593). `store_path_hidden` (I-589, added with it; a guestd before it answers `not_found`) is guestd refusing a closure, or a path of it, that an overlayfs whiteout in the guest's own store hides; the guest keeps its system, and a start removes the whiteouts (I-587). A forced reboot that never reaches Ready falls back to the guest's last good closure and answers `boot_failed`, the guest running (I-590) |
 | `Snapshot` | guest_id, reason (`scheduled|stop|manual`) | snapshot_id, blob_path, bytes, sha256 (I-462: hex SHA-256 of the bytes uploaded; hostd checks the store holds `bytes` before answering) |
-| `Restore` | project_id, guest_id (new), blob_path, class, volume_bytes, system_closure (I-26; empty means the api rebuilds before StartGuest), sha256 (I-462; see below), plus every CreateGuest field (secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, user_id, project_slug, remote_url, project_json) | as CreateGuest; the guest ends `stopped`. A failure removes the new volume (I-461) |
+| `Restore` | project_id, guest_id (new), blob_path or clone (I-701; see below), class, volume_bytes, system_closure (I-26; empty means the api rebuilds before StartGuest), sha256 (I-462; see below), plus every CreateGuest field (secrets, env, ssh_ca_pub, principals, hooks_config, host_key, host_cert, user_id, project_slug, remote_url, project_json) | as CreateGuest; the guest ends `stopped`. A failure removes the new volume (I-461) |
 | `UpdateSecrets` | guest_id, secrets | |
 | `SetPrincipals` | guest_id, principals | |
 | `Exec` | guest_id, argv, timeout_s, audit_id (required, I-26; operator use only, audited: hostd logs `{audit_id, guest_id, argv}` at notice) | exit_code, stdout, stderr (each capped 64 KB) |
@@ -144,12 +149,29 @@ snapshot moves between hosts.
 `sha256` (added with DECISIONS I-462) is the lower-case hex SHA-256 of
 the stored blob, as hostd computed it while uploading. The api records it
 from `SnapshotResult`, `StopResult` or the `SnapshotDone` event and sends
-it in `Restore`. With it set, hostd hashes the whole blob at the version
-it found (the ETag) before creating any guest state or volume, and fails
-with `internal` "snapshot checksum mismatch" when it differs; the write
-reads the same version and is hashed again. Empty means unchecked: a
-snapshot from before I-462, or an api older than it. A value that is not
-64 hex digits is `invalid_argument`. Error codes:
+it in `Restore`. With it set, hostd downloads the blob once, at the
+version it found (the ETag), hashing it as it writes the new volume, with
+the decompressor in a sandbox with no device (I-700, which replaced
+I-462's download to hash before the write). When the digest differs it
+fails with `internal` "snapshot checksum mismatch", removes the volume
+and leaves the guest `error`, so nothing starts it. Empty means
+unchecked: a snapshot from before I-462, or an api older than it. A
+value that is not 64 hex digits is `invalid_argument`.
+
+`clone` (field 19, I-701) is set instead of `blob_path` for a fork's copy
+on its source's host, only to a host whose Hello names `local_clone`:
+`{source_guest_id, point_id, sibling_guest_ids}`. The first copy of a
+fork to arrive freezes the source on its own worker, snapshots its volume
+into `fp-<point_id>` and thaws; every copy (`sibling_guest_ids`, this one
+included) becomes a thin clone of that point, grown to `volume_bytes`
+when the source's is smaller (smaller is `invalid_argument`), with no
+e2fsck. A source not on the host is `not_found`; `point_id` not 32 hex
+digits, a `sibling_guest_ids` without the guest, or both `blob_path` and
+`clone`, is `invalid_argument`. The point is removed once every sibling
+has finished its restore, after 30 minutes, or at hostd's next start.
+`restore_done` then logs `source: clone`, `point_ms` and `clone_ms`
+(`source: blob` and `verify_ms` 0 otherwise). A Restore sent again for a
+copy already `stopped` answers as the first did. Error codes:
 `invalid_argument`, `not_found`, `already_exists`, `insufficient_capacity`,
 `build_failed`, `build_timeout`, `eval_failed`, `closure_too_large`,
 `guest_unresponsive`, `boot_failed`, `store_path_hidden`, `volume_unavailable`, `internal`. `store_path_hidden` (I-589) is ApplyConfig only; see its row.

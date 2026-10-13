@@ -11,12 +11,13 @@ import (
 	"time"
 )
 
-// `repose fork` (DECISIONS I-254): snapshot a project now (or take one of
-// its snapshots) and restore it into N new projects, each its own machine,
-// so N agents can try N approaches from the same state. The api creates
-// all N in one transaction (POST /projects/:id/fork); the CLI takes the
-// snapshot, waits for the forks to run, and optionally starts an agent
-// with the same prompt in each.
+// `repose fork` (DECISIONS I-254): copy a project as it is now (or one of
+// its snapshots) into N new projects, each its own machine, so N agents
+// can try N approaches from the same state. The api creates all N in one
+// transaction (POST /projects/:id/fork) and clones the project's volume on
+// its host (I-701); when the host cannot hold the copies the CLI takes a
+// fork snapshot (I-703) and forks from it. It waits for the forks to run,
+// and optionally starts an agent with the same prompt in each.
 
 // ForkOptions is `repose fork`'s flags.
 type ForkOptions struct {
@@ -32,9 +33,10 @@ type ForkOptions struct {
 	NoStart bool
 }
 
-// ForkRequest is POST /projects/:id/fork's body.
+// ForkRequest is POST /projects/:id/fork's body. Without SnapshotID the
+// copies are of the project as it is now (I-701).
 type ForkRequest struct {
-	SnapshotID string `json:"snapshot_id"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
 	Count      int    `json:"count"`
 	Name       string `json:"name,omitempty"`
 	Class      string `json:"class,omitempty"`
@@ -161,44 +163,8 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 			return err
 		}
 		snapID = id
-	}
-	if snapID == "" {
-		if src.State != "running" && src.State != "stopped" {
-			return notRunningError(src)
-		}
-		opID, err := e.Client.CreateSnapshot(ctx, src.ID)
-		if err != nil {
-			return err
-		}
-		pr.Phase("Snapshotting "+src.Slug, "Snapshot of "+src.Slug+" taken")
-		op, err := waitOpPhased(ctx, e, src, opID, pr, false)
-		if err != nil {
-			if interrupted(ctx, err) {
-				// Ctrl-C says what exists (review A6, I-633).
-				return exitf(ExitInterrupted, "Interrupted. The snapshot of %s goes on; nothing was forked.", src.Slug)
-			}
-			return err
-		}
-		if op.State == "error" {
-			pr.Fail()
-			return e.opFailed("snapshot", src.Slug, op.Error, "Nothing was forked.")
-		}
-		snapID, _ = op.Result["snapshot_id"].(string)
-		if snapID == "" {
-			// An api that does not return the op's result: the newest
-			// manual snapshot is the one just taken.
-			snaps, err := e.Client.ListSnapshots(ctx, src.ID)
-			if err != nil {
-				return err
-			}
-			if s := newestSnapshot(snaps); s != nil {
-				snapID = s.ID
-			}
-		}
-		if snapID == "" {
-			pr.Fail()
-			return exitf(ExitGeneric, "The snapshot of %s finished but the api did not say which it is. `repose snapshots list %s` shows it; `repose fork %s --snapshot ID` forks from it.", src.Slug, src.Slug, src.Slug)
-		}
+	} else if src.State != "running" && src.State != "stopped" {
+		return notRunningError(src)
 	}
 
 	req := ForkRequest{SnapshotID: snapID, Count: opts.Count, Name: opts.Name, Class: opts.Size, RequestID: newRequestID()}
@@ -210,6 +176,19 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	}
 	pr.Phase(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
 	res, err := forkWithRetry(ctx, e, src.ID, req)
+	if snapID == "" && needsForkSnapshot(err) {
+		// The project's server cannot hold the copies, or the api is
+		// older than clones (I-701): they are restored from a snapshot
+		// taken for the fork, which expires a day later (I-703).
+		pr.Phase("Snapshotting "+src.Slug, "Snapshot of "+src.Slug+" taken")
+		snapID, err = takeForkSnapshot(ctx, e, src, pr)
+		if err != nil {
+			return err
+		}
+		req.SnapshotID = snapID
+		pr.Phase(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
+		res, err = forkWithRetry(ctx, e, src.ID, req)
+	}
 	if err != nil {
 		pr.Fail()
 		if interrupted(ctx, err) {
@@ -223,7 +202,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				return exitf(ExitPaymentRequired, "%s", projectLimitMessage(have, limit, n))
 			}
 		}
-		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found") {
+		if apiErr != nil && (apiErr.Code == "invalid" || apiErr.Code == "not_found" || apiErr.Code == "conflict") {
 			return exitf(ExitGeneric, "Could not fork %s: %s. Nothing was created.", src.Slug, strings.TrimSuffix(humaneMessage(apiErr.Message), "."))
 		}
 		return err
@@ -233,16 +212,12 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 	}
 
 	// Each fork's restore is its own op; they run side by side on the
-	// api, so waiting on them in turn takes as long as the slowest.
+	// api, so waiting on them in turn takes as long as the slowest. Each
+	// step of each copy gets its ✓ line with its time (I-702).
 	failed := 0
 	for i := range res.Projects {
 		f := &res.Projects[i]
-		if opts.NoStart {
-			pr.Phase("Restoring "+f.Slug, "")
-		} else {
-			pr.Phase("Starting "+f.Slug, "")
-		}
-		op, err := waitOp(ctx, e.Client, f.ProjectID, f.OpID, pr)
+		op, err := waitForkCopy(ctx, e, src, f, res.SnapshotID == "", opts.NoStart, pr)
 		if err != nil {
 			if interrupted(ctx, err) {
 				return interruptedFork(res, opts.NoStart)
@@ -305,9 +280,116 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		if opts.NoStart {
 			verb = "restore"
 		}
+		if res.SnapshotID == "" {
+			return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s` makes another.", failed, len(res.Projects), verb, src.Slug)
+		}
 		return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), verb, src.Slug, res.SnapshotID)
 	}
 	return nil
+}
+
+// needsForkSnapshot is a fork without a snapshot the api would not clone:
+// 409 snapshot_needed (the project's server cannot hold the copies,
+// I-701), or an api from before clones asking for snapshot_id.
+func needsForkSnapshot(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	if ae.Code == "conflict" && ae.Detail["reason"] == "snapshot_needed" {
+		return true
+	}
+	return ae.Code == "invalid" && strings.Contains(ae.Message, "snapshot_id is required")
+}
+
+// takeForkSnapshot takes the snapshot a fork restores its copies from
+// when they cannot be cloned, and returns its id.
+func takeForkSnapshot(ctx context.Context, e *Env, src *Project, pr *progress) (string, error) {
+	opID, err := e.Client.CreateForkSnapshot(ctx, src.ID)
+	if err != nil {
+		return "", err
+	}
+	op, err := waitOpPhased(ctx, e, src, opID, pr, false)
+	if err != nil {
+		if interrupted(ctx, err) {
+			// Ctrl-C says what exists (review A6, I-633).
+			return "", exitf(ExitInterrupted, "Interrupted. The snapshot of %s goes on; nothing was forked.", src.Slug)
+		}
+		return "", err
+	}
+	if op.State == "error" {
+		pr.Fail()
+		return "", e.opFailed("snapshot", src.Slug, op.Error, "Nothing was forked.")
+	}
+	snapID, _ := op.Result["snapshot_id"].(string)
+	if snapID == "" {
+		// An api that does not return the op's result: the newest
+		// snapshot is the one just taken.
+		snaps, err := e.Client.ListSnapshots(ctx, src.ID)
+		if err != nil {
+			return "", err
+		}
+		if s := newestSnapshot(snaps); s != nil {
+			snapID = s.ID
+		}
+	}
+	if snapID == "" {
+		pr.Fail()
+		return "", exitf(ExitGeneric, "The snapshot of %s finished but the api did not say which it is. `repose snapshots list %s` shows it; `repose fork %s --snapshot ID` forks from it.", src.Slug, src.Slug, src.Slug)
+	}
+	return snapID, nil
+}
+
+// forkStep is the progress line of one step of a copy's restore op, by
+// the op's phase: what it is doing and what its ✓ line says.
+func forkStep(src *Project, slug, phase string, cloned bool) (label, done string) {
+	switch phase {
+	case "build":
+		return "Building " + slug + "'s system", "Built " + slug + "'s system"
+	case "restore":
+		if cloned {
+			return "Copying " + src.Slug + "'s disk into " + slug, "Copied " + src.Slug + "'s disk into " + slug
+		}
+		return "Restoring " + slug + " from the snapshot", "Restored " + slug + " from the snapshot"
+	case "start_guest":
+		return "Starting " + slug, "Started " + slug
+	}
+	return "", ""
+}
+
+// waitForkCopy waits for one copy's restore op, showing each of its steps
+// as it reaches it. A copy whose op had ended before the wait read it
+// (the copies run side by side) gets one line with the op's own time.
+func waitForkCopy(ctx context.Context, e *Env, src *Project, f *ForkedProject, cloned, noStart bool, pr *progress) (*Op, error) {
+	seen := false
+	last := ""
+	w := &opWatch{phase: func(phase string) {
+		label, done := forkStep(src, f.Slug, phase, cloned)
+		if label == "" || phase == last {
+			return
+		}
+		last, seen = phase, true
+		pr.Phase(label, done)
+	}}
+	op, err := waitOpWith(ctx, e.Client, f.ProjectID, f.OpID, pr, w)
+	if err != nil {
+		return nil, err
+	}
+	if op.State != "done" {
+		pr.Fail()
+		return op, nil
+	}
+	if !seen {
+		last := "start_guest"
+		if noStart {
+			last = "restore"
+		}
+		_, done := forkStep(src, f.Slug, last, cloned)
+		pr.Done(done, op.took())
+		return op, nil
+	}
+	pr.End()
+	return op, nil
 }
 
 // interruptedFork is Ctrl-C while the copies start: they exist, and
@@ -367,7 +449,12 @@ func writeForkSummary(e *Env, src *Project, res *ForkResult, took time.Duration)
 	if n == 1 {
 		noun = "project"
 	}
-	_, _ = fmt.Fprintf(e.Out, "Forked %s into %d %s from its snapshot of %s in %s:\n", src.Slug, n, noun, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(took))
+	if res.SnapshotID == "" {
+		// The copies are of the project as it was a moment ago (I-701).
+		_, _ = fmt.Fprintf(e.Out, "Forked %s into %d %s in %s:\n", src.Slug, n, noun, fmtElapsed(took))
+	} else {
+		_, _ = fmt.Fprintf(e.Out, "Forked %s into %d %s from its snapshot of %s in %s:\n", src.Slug, n, noun, res.SnapshotCreatedAt.Local().Format("2006-01-02 15:04"), fmtElapsed(took))
+	}
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
 	for _, f := range res.Projects {
 		state := stateWords(f.State) + " (" + f.Class + ")"

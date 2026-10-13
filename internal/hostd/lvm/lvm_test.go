@@ -55,6 +55,48 @@ func TestRealRendersDocumentedCommands(t *testing.T) {
 	}
 }
 
+// A clone is a thin snapshot without the activation skip flag, made
+// active at once, so it boots like a volume lvcreate -V made and comes
+// back with the group after a reboot (DECISIONS I-701).
+func TestRealCloneIsAnActiveVolume(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: poolStatusArgv, Result: shell.Result{Stdout: []byte(activePool)}},
+		{Prefix: []string{"lvs", "vg-guests/g-2"}, Result: shell.Result{ExitCode: 5, Stderr: []byte(notFoundStderr)}},
+	}}
+	l := &Real{VG: "vg-guests", Pool: "thin", R: r}
+	if err := l.Clone(context.Background(), "fp-1", "g-2"); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range r.Calls {
+		if c[0] == "lvcreate" || c[0] == "lvchange" {
+			got = append(got, strings.Join(c, " "))
+		}
+	}
+	want := []string{"lvcreate -s -kn -n g-2 vg-guests/fp-1", "lvchange -ay vg-guests/g-2"}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Fatalf("clone ran %v, want %v", got, want)
+	}
+}
+
+// A clone that exists already (a restore sent again) is activated, not
+// made again.
+func TestRealCloneExistingIsKept(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{
+		{Prefix: poolStatusArgv, Result: shell.Result{Stdout: []byte(activePool)}},
+		{Prefix: []string{"lvs", "vg-guests/g-2"}, Result: shell.Result{Stdout: []byte("  g-2\n")}},
+	}}
+	l := &Real{VG: "vg-guests", Pool: "thin", R: r}
+	if err := l.Clone(context.Background(), "fp-1", "g-2"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range r.Calls {
+		if c[0] == "lvcreate" {
+			t.Fatalf("made the clone again: %v", c)
+		}
+	}
+}
+
 func TestFakeLifecycle(t *testing.T) {
 	f := NewFake()
 	ctx := context.Background()
@@ -172,6 +214,7 @@ func TestRealMutatorsRefuseInactivePool(t *testing.T) {
 		"extend":   func() error { return l.ExtendVolume(ctx, "g-1", 2<<30) },
 		"snapshot": func() error { return l.Snapshot(ctx, "g-1", "snap-1") },
 		"activate": func() error { return l.Activate(ctx, "g-1") },
+		"clone":    func() error { return l.Clone(ctx, "fp-1", "g-2") },
 	} {
 		if err := op(); !errors.Is(err, ErrPoolUnavailable) {
 			t.Fatalf("%s: err %v", name, err)

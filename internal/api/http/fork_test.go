@@ -3,11 +3,13 @@ package httpapi_test
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/billing"
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
 // TestFork is I-254: POST /projects/:id/fork restores one snapshot of a
@@ -48,9 +50,6 @@ func TestFork(t *testing.T) {
 	}
 
 	// Refusals before anything exists.
-	if r := e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"count": 2}); r.status != 400 {
-		t.Fatalf("no snapshot_id: %d %s", r.status, r.raw)
-	}
 	if r := e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": sid, "count": 0}); r.status != 400 {
 		t.Fatalf("count 0: %d %s", r.status, r.raw)
 	}
@@ -224,5 +223,157 @@ func TestFork(t *testing.T) {
 	other := e.signIn(t, "sub-gus", "gus")
 	if r := e.do(t, other, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": sid}); r.status != 404 {
 		t.Fatalf("someone else's project: %d %s", r.status, r.raw)
+	}
+}
+
+// TestForkClonesOnTheSourcesHost is I-701: a fork without snapshot_id
+// copies the project as it is now, as thin clones on its own host: no
+// snapshot row, each copy placed on the source's host, every copy's
+// Restore naming the same fork point and all the copies, no host_moved
+// notice for a new project; a host whose hostd cannot clone answers 409
+// snapshot_needed and creates nothing.
+func TestForkClonesOnTheSourcesHost(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-oak", "oak")
+	if _, err := e.h.Pool.Exec(ctx, "update users set billing_status = 'exempt' where logto_sub = 'sub-oak'"); err != nil {
+		t.Fatal(err)
+	}
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "izma", "class": "large"})
+	if r.status != 201 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("create op: %+v", op.Error)
+	}
+	var srcHost, srcGuest string
+	if err := e.h.Pool.QueryRow(ctx, "select host_id::text, guest_id::text from projects where id = $1", pid).Scan(&srcHost, &srcGuest); err != nil {
+		t.Fatal(err)
+	}
+	e.h.WaitFor("the host's Hello names local_clone", func() bool {
+		var ok bool
+		_ = e.h.Pool.QueryRow(ctx, "select 'local_clone' = any(features) from hosts where id = $1", srcHost).Scan(&ok)
+		return ok
+	})
+
+	req := uuid.NewString()
+	body := map[string]any{"count": 2, "request_id": req}
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", body)
+	if r.status != 202 || r.body["snapshot_id"] != nil || r.body["snapshot_created_at"] == nil || r.body["from_project_id"] != pid {
+		t.Fatalf("fork: %d %s", r.status, r.raw)
+	}
+	forks, _ := r.body["projects"].([]any)
+	if len(forks) != 2 {
+		t.Fatalf("fork answer: %s", r.raw)
+	}
+	var ids []string
+	for i, f := range forks {
+		m := f.(map[string]any)
+		ids = append(ids, m["project_id"].(string))
+		if op := e.h.WaitOp(uuid.MustParse(m["op_id"].(string))); op.State != "done" {
+			t.Fatalf("fork %d restore op: %+v", i, op.Error)
+		}
+		var host, state string
+		if err := e.h.Pool.QueryRow(ctx, "select host_id::text, state from projects where id = $1", m["project_id"]).Scan(&host, &state); err != nil {
+			t.Fatal(err)
+		}
+		if host != srcHost || state != "running" {
+			t.Fatalf("fork %d is %s on %s, want running on the source's host %s", i, state, host, srcHost)
+		}
+		var moved int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'host_moved'", m["project_id"]).Scan(&moved); err != nil {
+			t.Fatal(err)
+		}
+		if moved != 0 {
+			t.Fatalf("fork %d was told it moved host", i)
+		}
+	}
+	var snaps int
+	if err := e.h.Pool.QueryRow(ctx, "select count(*) from snapshots where project_id = $1", pid).Scan(&snaps); err != nil {
+		t.Fatal(err)
+	}
+	if snaps != 0 {
+		t.Fatalf("a cloned fork left %d snapshots", snaps)
+	}
+	// Both Restores clone the source at one point and name both copies.
+	var restores []*hostdv1.Restore
+	for _, c := range e.h.Fake.Commands() {
+		if rs := c.GetRestore(); rs != nil {
+			restores = append(restores, rs)
+		}
+	}
+	if len(restores) != 2 {
+		t.Fatalf("%d Restores sent, want 2", len(restores))
+	}
+	for _, rs := range restores {
+		if rs.BlobPath != "" || rs.Clone == nil || rs.Clone.SourceGuestId != srcGuest || rs.Clone.PointId != restores[0].Clone.PointId ||
+			len(rs.Clone.PointId) != 32 || !slices.Contains(rs.Clone.SiblingGuestIds, rs.GuestId) || len(rs.Clone.SiblingGuestIds) != 2 {
+			t.Fatalf("restore %+v", rs)
+		}
+	}
+	cloned := 0
+	for _, g := range e.h.Fake.Guests() {
+		if g.ClonedFrom == srcGuest {
+			cloned++
+		}
+	}
+	if cloned != 2 {
+		t.Fatalf("the host holds %d clones of the source, want 2", cloned)
+	}
+	// The same request again answers with the same projects.
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", body)
+	again, _ := r.body["projects"].([]any)
+	if r.status != 202 || len(again) != 2 || again[0].(map[string]any)["project_id"] != ids[0] {
+		t.Fatalf("resend: %d %s", r.status, r.raw)
+	}
+
+	// A host whose hostd cannot clone: 409 snapshot_needed, nothing made.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set features = '{}' where id = $1", srcHost); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, "select count(*) from projects where destroyed_at is null").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := count()
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"count": 1})
+	if r.status != 409 || errCode(r) != "conflict" {
+		t.Fatalf("no local_clone: %d %s", r.status, r.raw)
+	}
+	if det, _ := r.body["error"].(map[string]any)["detail"].(map[string]any); det["reason"] != "snapshot_needed" {
+		t.Fatalf("detail: %s", r.raw)
+	}
+	if count() != before {
+		t.Fatal("a fork refused for a snapshot created projects")
+	}
+
+	// The snapshot a fork takes then is reason fork and lasts a day (I-703).
+	r = e.do(t, tok, "POST", "/projects/"+pid+"/snapshots", map[string]any{"reason": "fork"})
+	if r.status != 202 {
+		t.Fatalf("fork snapshot: %d %s", r.status, r.raw)
+	}
+	if op := e.waitOp(t, r); op.State != "done" {
+		t.Fatalf("fork snapshot op: %+v", op.Error)
+	}
+	var reason string
+	var left float64
+	if err := e.h.Pool.QueryRow(ctx, "select reason, extract(epoch from expires_at - taken_at) from snapshots where project_id = $1", pid).Scan(&reason, &left); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "fork" || left < 23*3600 || left > 25*3600 {
+		t.Fatalf("fork snapshot reason %s, expires %.0f s after it was taken", reason, left)
+	}
+	var sent string
+	for _, c := range e.h.Fake.Commands() {
+		if sn := c.GetSnapshot(); sn != nil {
+			sent = sn.Reason
+		}
+	}
+	if sent != "manual" {
+		t.Fatalf("hostd was sent reason %q, which a hostd before I-703 refuses", sent)
 	}
 }

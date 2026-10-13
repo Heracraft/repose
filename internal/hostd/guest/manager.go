@@ -372,6 +372,12 @@ type Deps struct {
 type job struct {
 	cmd      *hostdv1.Command
 	internal func(ctx context.Context)
+	// noSlot runs an internal job without taking one of the MaxOps
+	// slots: one a running command waits for (a fork's restore waiting
+	// on its source's fork point, I-701), which would otherwise deadlock
+	// once every slot is held by a command doing that wait. Only for a
+	// job of milliseconds.
+	noSlot bool
 }
 
 type worker struct {
@@ -423,6 +429,10 @@ type Manager struct {
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// forkLocks serialises the work on one fork point: taking it, each
+	// sibling's clone of it, and its removal (clone.go, I-701).
+	forkLocks sync.Map // point id -> *sync.Mutex
 
 	// shuttingDown is set once hostd or the host is going down (I-650):
 	// from then on a guest that exits, or a boot that fails, leaves its
@@ -774,7 +784,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable()}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features()}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
@@ -1093,6 +1103,10 @@ func (m *Manager) setQueueDepth() {
 }
 
 func (m *Manager) runJob(j job) {
+	if j.noSlot && j.internal != nil {
+		j.internal(m.ctx)
+		return
+	}
 	select {
 	case m.ops <- struct{}{}:
 	case <-m.ctx.Done():

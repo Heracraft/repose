@@ -36,8 +36,23 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) error {
 	if p.GuestID == nil || (p.State != "running" && p.State != "stopped") {
 		return errf("conflict", "%s is %s; snapshots need a running or stopped guest", p.Slug, p.State)
 	}
+	// `{"reason": "fork"}` is the snapshot a fork takes when its copies
+	// cannot be cloned on the project's host: it expires a day after it is
+	// taken (DECISIONS I-703). No body, or any other reason, is manual.
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if r.ContentLength != 0 {
+		if err := decode(r, &body); err != nil {
+			return err
+		}
+	}
+	reason := "manual"
+	if body.Reason == "fork" {
+		reason = "fork"
+	}
 	pid := p.ID
-	id, err := s.enqueue(r.Context(), ops.NewOp{Kind: ops.KindSnapshot, ProjectID: &pid, Params: map[string]any{"reason": "manual"}, Phases: ops.PlanSnapshot()}, false)
+	id, err := s.enqueue(r.Context(), ops.NewOp{Kind: ops.KindSnapshot, ProjectID: &pid, Params: map[string]any{"reason": reason}, Phases: ops.PlanSnapshot()}, false)
 	if err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-704 entries.
+708 entries.
 
 ## Scope
 
@@ -226,7 +226,7 @@ pointer, not a summary.
 - **I-139** `RegisterResponse` carries the SSH Host CA's public key; hostd writes it to `host.json` and re-renders the host's network files after a rotate that changes it — 2026-09-21; L3045
 - **I-140** Operator SSH logins reach `audit_log` as an `operator_login` host event carrying the certificate's key id and serial, never its body — 2026-09-21; L3080
 - **I-141** A security sweep is due while the release is newer than this process's last sweep — 2026-09-21; L3110
-- **I-142** `host_moved` is raised only when a restore leaves the project's host — 2026-09-21; L3129
+- **I-142** `host_moved` is raised only when a restore leaves the project's host — 2026-09-21; amended by I-701; L3129
 - **I-143** The system activation leaves guestd running; guestd restarts itself after a switch — 2026-09-21; L3145
 - **I-144** One clone per base ref — 2026-09-21; L3171
 - **I-145** A bump that built but could not switch says so — 2026-09-21; L3181
@@ -338,7 +338,7 @@ pointer, not a summary.
 - **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; amended by I-546; L6321
 - **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; L6373
 - **I-253** Any number of agent windows in one guest, and `repose run --worktree` puts one in its own git worktree beside the checkout — 2026-09-25; partly superseded by I-342; amended by I-509; L6388
-- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; L6438
+- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; amended by I-701; L6438
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6530
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6561
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6582
@@ -521,7 +521,7 @@ pointer, not a summary.
 - **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11688
 - **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11714
 - **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11731
-- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11769
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; amended by I-700; L11769
 - **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11804
 - **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11867
 - **I-465** dumpe2fs, e2fsck and blkid run in a sandboxed transient unit — 2026-10-03; L11893
@@ -736,3 +736,7 @@ pointer, not a summary.
 - **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20457
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
+- **I-700** A restore downloads its snapshot once and checks the digest as it writes (fork-fast, 2026-10-13) — L20652
+- **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L20703
+- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L20770
+- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L20785

@@ -31,6 +31,7 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
                                                              -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
+              features text[] not null default '{}',  -- Hello.features: local_clone (0025, I-701)
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
 
 projects     (id pk, user_id fk, name text, slug text, remote_url text,
@@ -86,7 +87,8 @@ certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp te
               issued_at, expires_at, revoked_at)
 
 snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes bigint,
-              reason text,  -- scheduled|stop|manual
+              reason text,  -- scheduled|stop|manual|fork (fork: a fork's own, expires_at a day on, never
+                            -- the project's newest for retention; 0025, I-703)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
               sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
 

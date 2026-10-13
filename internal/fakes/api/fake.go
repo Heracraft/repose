@@ -110,25 +110,29 @@ type Fake struct {
 	mux    *http.ServeMux
 	routes []string
 
-	mu           sync.Mutex
-	seq          int64
-	reqSeq       int64
-	ipSeq        int
-	serial       uint64
-	tokens       map[string]string // token -> user id
-	users        map[string]*userRec
-	projects     map[string]*project
-	ops          map[string]*op
-	forks        map[string][]forkRec // by user id and request_id (I-254)
-	certs        map[uint64]*cert
-	revoked      []revocation
-	failOnce     []failRule
-	failAlways   map[string]string
-	hits         map[string][]time.Time
-	hosts        []Host // nil means the one canned host
-	gatewayCerts int    // POST /internal/gateway-certs calls, for cache tests
-	sessions     []SessionReport
-	questions    []*Question // newest last (DECISIONS I-245)
+	mu       sync.Mutex
+	seq      int64
+	reqSeq   int64
+	ipSeq    int
+	serial   uint64
+	tokens   map[string]string // token -> user id
+	users    map[string]*userRec
+	projects map[string]*project
+	ops      map[string]*op
+	forks    map[string][]forkRec // by user id and request_id (I-254)
+	// forkNoClone makes a fork without snapshot_id answer 409
+	// snapshot_needed, as the api does when the source's host cannot hold
+	// the copies (I-701); oldFork answers it as an api before I-701 did.
+	forkNoClone, oldFork bool
+	certs                map[uint64]*cert
+	revoked              []revocation
+	failOnce             []failRule
+	failAlways           map[string]string
+	hits                 map[string][]time.Time
+	hosts                []Host // nil means the one canned host
+	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
+	sessions             []SessionReport
+	questions            []*Question // newest last (DECISIONS I-245)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
 	bill billingState
@@ -634,6 +638,15 @@ func (f *Fake) register() {
 type startOutcome struct {
 	failCode, failMsg string
 	warnCode, warnMsg string
+}
+
+// SetForkClone sets what a fork without snapshot_id gets: clones (the
+// default), 409 snapshot_needed (noClone), or an api before I-701's
+// "snapshot_id is required" (old).
+func (f *Fake) SetForkClone(noClone, old bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forkNoClone, f.oldFork = noClone, old
 }
 
 // SetStartFailure makes the next start op of the project end in error

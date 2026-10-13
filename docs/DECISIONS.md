@@ -20648,3 +20648,158 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-700. A restore downloads its snapshot once and checks the digest as
+it writes (fork-fast, 2026-10-13).** Amends I-462 (the check before the
+write). *Made during implementation* (the owner's backlog: "repose fork
+is slow"; the brief left this one to decide).
+- *Why.* I-462 downloaded the whole blob to hash it, then downloaded it
+  again to write it. The owner's fork of kanali on 2026-10-11 spent
+  17.9 s of its 116 s restore in that first download (host-01's
+  `restore_done`: `verify_ms` 17877, `write_ms` 87547, `fsck_ms` 11028,
+  11.5 GB of blob for 51.8 GB used). Every restore paid it: a fork from a
+  snapshot, `snapshots restore`, `repose restore`, a project moved to
+  another host.
+- *What changes.* hostd hashes the bytes as they stream into the new
+  volume (the write already did) and drops the pass before it. A digest
+  that differs fails the restore with "snapshot checksum mismatch",
+  removes the volume and leaves the guest `error`. When the write fails
+  first, the download runs on into the hash alone, so a changed blob is
+  reported as one and not as whatever its bytes made zstd or the extent
+  reader fail with. The restore's `zstd -d` now runs in
+  `shell.SandboxedFilter`: I-465's parser sandbox (a dynamic user, no
+  capabilities, no network, none of hostd's state or sockets) with no
+  device at all.
+- *Why that is as safe as the check before.* What I-462 protects is that
+  bytes the host did not upload never reach a tenant's running machine.
+  That holds: the bytes land in a volume made for this restore, which no
+  guest reads; the guest stays `restoring` until the digest matches, and
+  a mismatch removes the volume (I-461) and fails the op, after which the
+  api refuses a start (`restore_unfinished`). A hostd that dies mid-write
+  leaves the guest `restoring`, which reconcile makes `error`, and the
+  resent Restore starts again on a fresh volume. What the pre-pass also
+  kept from altered bytes was the decompressor and the extent reader:
+  the extent reader is hostd's own Go, bounded to the new device, and
+  zstd is now sandboxed with nothing but its pipes. I-462's rejection of
+  "hashing only during the write" was about writing bytes before they
+  are known good; the volume they are written to is the only thing they
+  touch.
+- *Measured* on host-01 through hostd's own `snapshot.Pipeline` and
+  `AzureBlob`, on a `bench-*` volume holding 7.8 GB (2.28 GB of blob):
+  old restore 15.5 s (verify 3.7, write 10.2, fsck 1.6), new 12.6 s
+  (write 11.0 with zstd sandboxed, fsck 1.6). Scaled to the owner's
+  11.5 GB blob that is the 17.9 s the log shows.
+- *Kept for one release.* `restore_done` still logs `verify_ms` (0) and
+  `verified`, for whatever reads them.
+- *Evidence.* `TestSnapshotRestoreRoundTrip` fails with the pre-pass put
+  back ("a checked restore downloaded the blob 2 times, want once"), and
+  checks the mismatch, the volume removed and the guest in `error`;
+  `TestRestoreDecompressorSandboxed`, `TestSandboxedFilterHasNoDevice`.
+- *Rejected:* keeping the pre-pass only for snapshots from other hosts
+  (the threat, a writer to the store, does not depend on where the
+  restore runs); hashing per range so a bad range stops early (Azure
+  gives no per-range digest of the bytes the host uploaded).
+
+**I-701. A fork whose copies stay on their source's host clones its
+volume there (fork-fast, 2026-10-13).** Amends I-254 and I-142: the
+fork's snapshot, and `host_moved`. *Made during implementation.*
+- *Why.* A fork snapshotted the source to Blob and restored each copy
+  from Blob, although every copy on production lands on host-01, where
+  the source's volume already is: the owner's fork of kanali took 3m57s,
+  82 s of it uploading 11.5 GB and 116 s downloading and writing it back.
+- *What.* `POST /projects/:id/fork` without `snapshot_id` copies the
+  project as it is now. In one transaction the api checks that the
+  source's host can take all the copies (`scheduler.FitsOn`: ready, not
+  draining, pool under 70 percent, slots, memory for the started copies,
+  and `local_clone` in the host's last Hello, `hosts.features`), places
+  each copy on that host and gives every copy's restore op the same fork
+  point id and the list of copies. buildRestore sends `Restore.clone`
+  instead of a blob path. In hostd the first copy to arrive runs the fork
+  point on the source's own worker (after any command queued for it, as
+  a snapshot would be): freeze, `lvcreate -s` into `fp-<point>`, thaw;
+  each copy is then `lvcreate -s -kn` of the point, active at once and
+  activated with the group at boot, grown when it is asked for more than
+  the source has. One freeze for all the copies, so they hold the same
+  moment.
+- *No e2fsck on a clone.* Its blocks are the source's own at a frozen
+  moment, never bytes from a store; the guest's mount replays the journal
+  as the source's would. The check stays on every blob restore.
+- *The fork point* is removed when every copy has finished its restore,
+  well or not, after 30 minutes when one never arrives, and at hostd's
+  start with the `snap-*` sweep. It pins the source's old blocks, so the
+  pool pays for what the source writes while it lives.
+- *Idempotent.* A Restore sent again for a copy already `stopped` answers
+  as the first did, even with the source gone; one that finds a partial
+  copy removes it and clones again (a new point if the old one went). The
+  point is taken on a job that holds no op slot, because ten copies of
+  one fork can hold every slot while they wait for it
+  (`TestForkOfTenDoesNotDeadlockTheSlots` deadlocks without it).
+- *Otherwise a snapshot.* When the source's host cannot take the copies
+  the api answers `409 snapshot_needed` and creates nothing; the CLI then
+  takes a fork snapshot (I-703) and forks from it as before, each copy
+  placed by the scheduler. The CLI does the same against an api older
+  than this entry, which answers `400` "snapshot_id is required". An old
+  hostd never gets a clone: it sends no `local_clone`.
+- *host_moved.* A new project (a fork's copy, `snapshots restore --as`)
+  had no host, and buildRestore counted that as moved, so every copy
+  sent its owner "kanali-fork-1 was restored onto a new host"
+  (production's events: kanali-fork-1 on 2026-10-11, and four e2e forks
+  before it, all on the one host). A project moves only from a host it
+  had.
+- *Measured* on host-01 with `lvm.Real` on a `bench-*` volume holding
+  7.8 GB: the fork point 175 ms, the clone 159 ms, the clone's files the
+  same as the source's (`sha256sum -c`). The same volume through Blob:
+  12.7 s to snapshot and upload, 12.6 to 15.5 s to restore. The owner's
+  fork would have spent well under a second where it spent 198 s; what
+  is left is the copies' boot.
+- *Evidence.* `TestForkClonesOnePointOnTheHost` (one freeze, the point in
+  time held, no blob written or read, no fsck, the point removed),
+  `TestForkCloneResentAfterSourceGone`, `TestForkCloneRefusals`,
+  `TestForkCloneGrowsToTheVolumeAsked`, `TestForkCloneFailureLeavesNoVolume`,
+  `TestForkPointExpiresAndIsSweptAtStart`, `TestHelloNamesLocalClone`,
+  `TestRealCloneIsAnActiveVolume`; the api's
+  `TestForkClonesOnTheSourcesHost` (placement, the shared point, no
+  snapshot row, no host_moved, 409 snapshot_needed without the feature).
+- *Rejected:* cloning on the source's host and copying to another host
+  over the network (a second transfer path beside Blob for a case
+  production does not have yet); one Clone command on the source's host
+  making all the copies (each copy's restore is its own op with its own
+  failure, I-254); deciding clone or blob in buildRestore (by then the
+  snapshot the blob path needs would not exist).
+
+**I-702. Each step of a fork's copies prints a timed line (fork-fast,
+2026-10-13).** *Made during implementation.*
+- `repose fork` showed `Forking` and `Starting` with no done text, so
+  minutes passed and ended in silence. Each copy's wait now follows its
+  op's phase: `Copying SRC's disk into COPY` (or `Restoring COPY from the
+  snapshot`), `Building COPY's system`, `Starting COPY`, each ending in a
+  `✓` line with its time. A copy whose op had finished before the CLI
+  read it (the copies run side by side) gets one `✓ Started COPY` line
+  with the op's own time, from the op's `created_at` and `finished_at`.
+- The summary line drops "from its snapshot of ..." for a cloned fork,
+  which has none, and a failed copy's message names `repose fork SRC`
+  instead of `--snapshot ID`.
+- *Evidence.* `TestFork` ("✓ Started izma-fork-1"),
+  `TestForkFallsBackToAForkSnapshot`.
+
+**I-703. A fork's own snapshot is reason `fork` and expires in a day
+(fork-fast, 2026-10-13).** *Made during implementation.*
+- *Why.* Each fork left a manual snapshot of the source in Blob, 11.5 GB
+  for the owner's kanali, kept like any snapshot for seven days and, as
+  the newest of a project that then stops, for good. Nobody asked for it.
+- *What.* A cloned fork (I-701) takes no snapshot at all. A fork that has
+  to restore from Blob asks `POST /projects/:id/snapshots` with `{"reason":
+  "fork"}`: the row is reason `fork` (migration 0025 adds it to the
+  check), `expires_at` a day after it is taken, deleted then by the
+  expiry job even on a live project, and never the project's "newest"
+  that retention keeps, so a project's last real snapshot is not
+  displaced by it. hostd is sent `manual`, the reason it already takes,
+  since there the reason only labels its log line.
+- *A day*, not at once, because a copy that failed is retried with
+  `repose fork SRC --snapshot ID`, which the failure message names.
+- *Evidence.* `TestForkSnapshotExpires` (the expired fork snapshot goes,
+  the old manual one is kept although it is 30 days old),
+  `TestForkClonesOnTheSourcesHost` (reason, a day, hostd sent `manual`).
+- *Rejected:* deleting the snapshot once the copies are restored (the
+  retry above), and a hidden snapshot outside the list (it holds a
+  tenant's disk; the list is where they see what repose keeps).

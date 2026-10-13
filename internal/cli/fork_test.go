@@ -10,16 +10,17 @@ import (
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
-// TestFork is I-254 against the fake api: a snapshot now, N projects
-// named <slug>-fork-<k> running with the source's secrets and without its
-// remote, the summary, --json, the prompt sent to each, and the refusals
-// that happen before anything is created.
+// TestFork is I-254 against the fake api: N projects cloned from the
+// source as it is now (I-701), named <slug>-fork-<k>, running with the
+// source's secrets and without its remote, the summary, a timed line per
+// copy (I-702), --json, the prompt sent to each, and the refusals that
+// happen before anything is created.
 func TestFork(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	e := newLifecycleEnv(t, fake)
-	var out strings.Builder
-	e.Out = &out
+	var out, errOut strings.Builder
+	e.Out, e.ErrOut = &out, &errOut
 	ctx := context.Background()
 	src, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large", RemoteURL: "github.com/owner/izma"})
 	if err != nil {
@@ -42,13 +43,22 @@ func TestFork(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"Forked izma into 2 projects from its snapshot of ",
+		"Forked izma into 2 projects in ",
 		"  izma-fork-1  running (large)\n",
 		"  izma-fork-2  running (large)\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fork said:\n%s\nwant %q", got, want)
 		}
+	}
+	// Every copy's start ends in a timed line, not in silence (I-702).
+	for _, want := range []string{"✓ Started izma-fork-1  ", "✓ Started izma-fork-2  "} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("fork's progress:\n%s\nwant %q", errOut.String(), want)
+		}
+	}
+	if strings.Contains(errOut.String(), "Snapshot") {
+		t.Fatalf("a cloned fork took a snapshot:\n%s", errOut.String())
 	}
 	// No footer: the table is the answer, and a stopped or running fork
 	// is not billed by the hour (I-484, I-570).
@@ -71,9 +81,16 @@ func TestFork(t *testing.T) {
 			t.Fatalf("%s secrets: %+v %v", slug, secrets, err)
 		}
 	}
-	// The source still has its remote, and a snapshot was taken of it.
+	// The source still has its remote, and no snapshot was taken of it:
+	// the copies are clones (I-701, I-703).
 	if p, _ := findByIDOrSlug(ctx, e.Client, "izma"); p == nil || p.RemoteURL != "github.com/owner/izma" || p.State != "running" {
 		t.Fatalf("source after the fork: %+v", p)
+	}
+	if snaps, err := e.Client.ListSnapshots(ctx, src.ID); err != nil || len(snaps) != 0 {
+		t.Fatalf("a cloned fork left snapshots of the source: %+v %v", snaps, err)
+	}
+	if _, err := e.Client.CreateSnapshot(ctx, src.ID); err != nil {
+		t.Fatal(err)
 	}
 	snaps, err := e.Client.ListSnapshots(ctx, src.ID)
 	if err != nil || len(snaps) != 1 || snaps[0].Reason != "manual" {
@@ -140,6 +157,48 @@ func TestFork(t *testing.T) {
 	// izma, izma-fork-1 and the fillers.
 	if ps, _ := e.Client.ListProjects(ctx); len(ps) != fakeapi.ProjectCap-1 {
 		t.Fatalf("projects after a refused fork: %d", len(ps))
+	}
+}
+
+// When the source's server cannot hold the copies (409 snapshot_needed),
+// or the api is older than clones, fork takes a snapshot of its own,
+// reason fork, and restores the copies from it (I-701, I-703).
+func TestForkFallsBackToAForkSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		noClone, older bool
+	}{{"server full", true, false}, {"older api", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := fakeapi.New(fakeapi.Options{})
+			defer fake.Close()
+			fake.SetForkClone(tc.noClone, tc.older)
+			e := newLifecycleEnv(t, fake)
+			var out, errOut strings.Builder
+			e.Out, e.ErrOut = &out, &errOut
+			ctx := context.Background()
+			src, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1}); err != nil {
+				t.Fatalf("fork: %v", err)
+			}
+			if !strings.Contains(out.String(), "Forked izma into 1 project from its snapshot of ") {
+				t.Fatalf("fork said:\n%s", out.String())
+			}
+			for _, want := range []string{"✓ Snapshot of izma taken  ", "✓ Started izma-fork-1  "} {
+				if !strings.Contains(errOut.String(), want) {
+					t.Fatalf("fork's progress:\n%s\nwant %q", errOut.String(), want)
+				}
+			}
+			snaps, err := e.Client.ListSnapshots(ctx, src.ID)
+			if err != nil || len(snaps) != 1 || snaps[0].Reason != "fork" || snaps[0].ExpiresAt == nil {
+				t.Fatalf("the fork's snapshot: %+v %v", snaps, err)
+			}
+			if p, _ := findByIDOrSlug(ctx, e.Client, "izma-fork-1"); p == nil || p.State != "running" {
+				t.Fatalf("copy: %+v", p)
+			}
+		})
 	}
 }
 

@@ -1701,7 +1701,7 @@ func newForkCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, er
 	cmd := &cobra.Command{
 		Use:   "fork [PROJECT]",
 		Short: "Copy a project into new projects, each on its own machine",
-		Long: "Snapshot PROJECT (this checkout's, by default) and restore the snapshot into\n" +
+		Long: "Copy PROJECT's disk (this checkout's project, by default) as it is now into\n" +
 			"--count new projects, NAME-1, NAME-2, ... (NAME defaults to PROJECT-fork), each\n" +
 			"running on its own machine with the same files, configuration and secrets.\n" +
 			"PROJECT keeps running. In its checkout, each fork gets a git remote of its\n" +
