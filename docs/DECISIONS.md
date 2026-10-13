@@ -20720,7 +20720,12 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
   each copy is then `lvcreate -s -kn` of the point, active at once and
   activated with the group at boot, grown when it is asked for more than
   the source has. One freeze for all the copies, so they hold the same
-  moment.
+  moment, with one limit: a copy whose Restore first arrives after the
+  point is gone (its 30 minutes passed, or hostd restarted between the
+  copies' restores) takes a new point and holds a later moment than its
+  siblings. Each copy is still a whole copy of the project at one frozen
+  moment, which is what a fork promises; failing it instead would leave
+  an errored project for a case that needs a hostd restart mid-fork.
 - *No e2fsck on a clone.* Its blocks are the source's own at a frozen
   moment, never bytes from a store; the guest's mount replays the journal
   as the source's would. The check stays on every blob restore.
@@ -20730,10 +20735,16 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
   pool pays for what the source writes while it lives.
 - *Idempotent.* A Restore sent again for a copy already `stopped` answers
   as the first did, even with the source gone; one that finds a partial
-  copy removes it and clones again (a new point if the old one went). The
-  point is taken on a job that holds no op slot, because ten copies of
-  one fork can hold every slot while they wait for it
-  (`TestForkOfTenDoesNotDeadlockTheSlots` deadlocks without it).
+  copy removes it and clones again (a new point if the old one went).
+- *No deadlock on the op slots.* Ten copies of one fork can hold every
+  slot while they wait for the point, and the point's job queues behind
+  any command for the source, which needs a slot too. So the point is
+  taken on a job that holds no slot, and a copy gives its own slot back
+  while it waits for the point or for a sibling taking it, and takes one
+  again after. `TestForkOfTenDoesNotDeadlockTheSlots` deadlocks without
+  the first; `TestForkOfTenWithASourceCommandDoesNotDeadlock` (an
+  `UpdateSecrets` for the source dispatched among the copies, MaxOps 2)
+  deadlocks without the second, found in review.
 - *Otherwise a snapshot.* When the source's host cannot take the copies
   the api answers `409 snapshot_needed` and creates nothing; the CLI then
   takes a fork snapshot (I-703) and forks from it as before, each copy
@@ -20752,6 +20763,18 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
   12.7 s to snapshot and upload, 12.6 to 15.5 s to restore. The owner's
   fork would have spent well under a second where it spent 198 s; what
   is left is the copies' boot.
+- *On a host, through hostd.* `TestHostClone` (build tag `hostbench`,
+  `clone_host_test.go`) runs hostd's Manager with `lvm.Real` on host-01's
+  pool, every volume it names mapped to `bench-ff-*`: a source created by
+  hostd and mounted with a writer running, three copies restored with
+  `clone` and an `UpdateSecrets` for the source among them, the guest's
+  Freeze and Thaw done by `fsfreeze` on the source. Each copy came up
+  active with no activation skip, started and stopped through hostd,
+  mounted read-write with its journal replayed, held every file as it
+  was at the freeze (502 files, `sha256sum`), and was `e2fsck -fn`
+  clean; the point was removed. 3 copies in 3.2 s, `clone_ms` 386 to 450.
+  No VM booted on a clone: kanali cannot reach a host where one could
+  boot outside a tenant's project.
 - *Evidence.* `TestForkClonesOnePointOnTheHost` (one freeze, the point in
   time held, no blob written or read, no fsck, the point removed),
   `TestForkCloneResentAfterSourceGone`, `TestForkCloneRefusals`,

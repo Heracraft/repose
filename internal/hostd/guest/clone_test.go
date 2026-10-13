@@ -189,6 +189,35 @@ func TestForkPointExpiresAndIsSweptAtStart(t *testing.T) {
 // all finish: the fork point runs on the source's worker without taking a
 // slot the copies hold while they wait for it.
 func TestForkOfTenDoesNotDeadlockTheSlots(t *testing.T) {
+	forkOfTen(t, nil)
+}
+
+// A command for the source queued while every slot is held by a copy
+// waiting for the fork point sits in front of the point's job on the
+// source's worker: the copies give their slots back while they wait, or
+// that command never gets one and the whole host stops.
+func TestForkOfTenWithASourceCommandDoesNotDeadlock(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		var sec *hostdv1.Command
+		h := forkOfTen(t, func(h *harness) {
+			sec = cmd(&hostdv1.UpdateSecrets{GuestId: gid1, Secrets: []*hostdv1.Secret{{Name: "TOKEN", Value: []byte("t")}}})
+			h.m.Dispatch(sec)
+		})
+		deadline := time.Now().Add(5 * time.Second)
+		for h.rec.resultFor(sec.CommandId) == nil {
+			if time.Now().After(deadline) {
+				t.Fatal("the source's command never finished")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if r := h.rec.resultFor(sec.CommandId); !r.Ok {
+			t.Fatalf("source's command: %v", r)
+		}
+	}
+}
+
+func forkOfTen(t *testing.T, during func(h *harness)) *harness {
+	t.Helper()
 	h := newHarness(t, func(c *Config) { c.MaxOps = 2 })
 	h.create(gid1)
 	var ids []string
@@ -196,10 +225,13 @@ func TestForkOfTenDoesNotDeadlockTheSlots(t *testing.T) {
 		ids = append(ids, "0192f0d"+string(rune('0'+i))+"-1111-7000-8000-00000000000"+string(rune('0'+i)))
 	}
 	var cmds []*hostdv1.Command
-	for _, id := range ids {
+	for i, id := range ids {
 		c := cmd(cloneReq(h, id, ids...))
 		cmds = append(cmds, c)
 		h.m.Dispatch(c)
+		if i == 1 && during != nil {
+			during(h)
+		}
 	}
 	results := make([]*hostdv1.Result, len(cmds))
 	deadline := time.Now().Add(10 * time.Second)
@@ -224,6 +256,7 @@ func TestForkOfTenDoesNotDeadlockTheSlots(t *testing.T) {
 	if _, ok := h.lvm.Volumes[ForkPointName(forkPoint)]; ok {
 		t.Fatal("the fork point outlived the fork")
 	}
+	return h
 }
 
 func TestHelloNamesLocalClone(t *testing.T) {

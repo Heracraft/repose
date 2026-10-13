@@ -168,7 +168,9 @@ when the source's is smaller (smaller is `invalid_argument`), with no
 e2fsck. A source not on the host is `not_found`; `point_id` not 32 hex
 digits, a `sibling_guest_ids` without the guest, or both `blob_path` and
 `clone`, is `invalid_argument`. The point is removed once every sibling
-has finished its restore, after 30 minutes, or at hostd's next start.
+has finished its restore, after 30 minutes, or at hostd's next start; a
+copy whose Restore first arrives after that takes a new point, a later
+moment than its siblings.
 `restore_done` then logs `source: clone`, `point_ms` and `clone_ms`
 (`source: blob` and `verify_ms` 0 otherwise). A Restore sent again for a
 copy already `stopped` answers as the first did. Error codes:

@@ -253,7 +253,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	logger := obs.NewTestLogger(t, obs.ComponentHostd, &h.logs)
 	h.metrics = metrics.New()
 	m, err := New(cfg, Deps{
-		State: st, LVM: h.lvm, Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
+		State: st, LVM: harnessLVM(h), Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
 		Stream: h.stream, Emit: h.rec, Metrics: h.metrics, Log: logger,
 		Guestd:  vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") }},
 		MemInfo: func() (uint64, uint64, error) { return 64 << 30, 40 << 30, nil },
@@ -280,6 +280,17 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 		_ = st.Close()
 	})
 	return h
+}
+
+// realLVM, set by the hostbench host check, gives the harness's Manager
+// a real volume group in place of the fake.
+var realLVM lvm.LVM
+
+func harnessLVM(h *harness) lvm.LVM {
+	if realLVM != nil {
+		return realLVM
+	}
+	return h.lvm
 }
 
 func (h *harness) guestd(id string) *fakeguestd.Server {

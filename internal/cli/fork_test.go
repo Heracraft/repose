@@ -145,11 +145,31 @@ func TestFork(t *testing.T) {
 	}
 	e.JSON = false
 
-	// A snapshot that is not the project's: nothing is created.
 	try1, _ := findByIDOrSlug(ctx, e.Client, "try-1")
 	if err := DestroyCmd(ctx, e, try1.ID, true, false, nil); err != nil {
 		t.Fatal(err)
 	}
+	// A cloned fork has no snapshot: --json says null, as the api does.
+	out.Reset()
+	e.JSON = true
+	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1, Name: "cl"}); err != nil {
+		t.Fatalf("fork --json: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(out.String()), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := raw["snapshot_id"]; !ok || v != nil {
+		t.Fatalf("a cloned fork's --json snapshot_id: %#v\n%s", v, out.String())
+	}
+	if cl1, _ := findByIDOrSlug(ctx, e.Client, "cl-1"); cl1 == nil {
+		t.Fatal("no cl-1")
+	} else if err := DestroyCmd(ctx, e, cl1.ID, true, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.JSON = false
+
+	// A snapshot that is not the project's: nothing is created.
 	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1, SnapshotID: "01900000-0000-7000-8000-999999999999"})
 	if ee, ok := err.(*exitError); !ok || !strings.Contains(ee.msg, "Could not fork izma: that snapshot is not one of izma's, or it has expired. Nothing was created.") {
 		t.Fatalf("unknown snapshot: %v", err)
@@ -167,7 +187,8 @@ func TestForkFallsBackToAForkSnapshot(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		noClone, older bool
-	}{{"server full", true, false}, {"older api", false, true}} {
+		reason         string
+	}{{"server full", true, false, "fork"}, {"older api", false, true, "manual"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := fakeapi.New(fakeapi.Options{})
 			defer fake.Close()
@@ -191,8 +212,15 @@ func TestForkFallsBackToAForkSnapshot(t *testing.T) {
 					t.Fatalf("fork's progress:\n%s\nwant %q", errOut.String(), want)
 				}
 			}
+			// Off a terminal the fork is announced once, the snapshot
+			// between its start and its copies.
+			if n := strings.Count(errOut.String(), "Forking izma into 1"); n != 1 {
+				t.Fatalf("Forking announced %d times:\n%s", n, errOut.String())
+			}
 			snaps, err := e.Client.ListSnapshots(ctx, src.ID)
-			if err != nil || len(snaps) != 1 || snaps[0].Reason != "fork" || snaps[0].ExpiresAt == nil {
+			// An api older than I-703 ignores the body's reason and keeps
+			// the snapshot as a manual one, with no expiry.
+			if err != nil || len(snaps) != 1 || snaps[0].Reason != tc.reason || (snaps[0].ExpiresAt == nil) != (tc.reason == "manual") {
 				t.Fatalf("the fork's snapshot: %+v %v", snaps, err)
 			}
 			if p, _ := findByIDOrSlug(ctx, e.Client, "izma-fork-1"); p == nil || p.State != "running" {

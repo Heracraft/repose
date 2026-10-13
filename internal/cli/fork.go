@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -64,6 +65,20 @@ type ForkResult struct {
 	SnapshotCreatedAt time.Time       `json:"snapshot_created_at"`
 	FromProjectID     string          `json:"from_project_id"`
 	Projects          []ForkedProject `json:"projects"`
+}
+
+// MarshalJSON writes snapshot_id as null for a cloned fork, which has no
+// snapshot, as the api answers it (I-701).
+func (r ForkResult) MarshalJSON() ([]byte, error) {
+	type plain ForkResult
+	var id *string
+	if r.SnapshotID != "" {
+		id = &r.SnapshotID
+	}
+	return json.Marshal(struct {
+		plain
+		SnapshotID *string `json:"snapshot_id"`
+	}{plain(r), id})
 }
 
 func (c *Client) Fork(ctx context.Context, projectID string, req ForkRequest) (*ForkResult, error) {
@@ -186,7 +201,8 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 			return err
 		}
 		req.SnapshotID = snapID
-		pr.Phase(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
+		// Off a terminal "Forking" printed once already (I-633).
+		pr.Resume(fmt.Sprintf("Forking %s into %d", src.Slug, opts.Count), "")
 		res, err = forkWithRetry(ctx, e, src.ID, req)
 	}
 	if err != nil {

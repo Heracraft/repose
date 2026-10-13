@@ -1308,7 +1308,7 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 		return e
 	}
 	reason := "manual"
-	if body.Reason == "fork" {
+	if body.Reason == "fork" && !f.oldFork {
 		reason = "fork" // a fork's own, gone a day later (I-703)
 	}
 	o := f.newOp(p, "snapshot")

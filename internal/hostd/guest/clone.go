@@ -70,7 +70,7 @@ func (m *Manager) cloneSource(c *hostdv1.Restore) (*state.Guest, *Error) {
 // and the clone took.
 func (m *Manager) cloneVolume(ctx context.Context, src *state.Guest, cl *hostdv1.RestoreClone, vol string, volumeBytes uint64) (pointMs, cloneMs int64, e *Error) {
 	l := m.forkLock(cl.PointId)
-	l.Lock()
+	m.withoutSlot(ctx, l.Lock)
 	defer l.Unlock()
 	fp := ForkPointName(cl.PointId)
 	ok, err := m.d.LVM.VolumeExists(ctx, fp)
@@ -79,7 +79,9 @@ func (m *Manager) cloneVolume(ctx context.Context, src *state.Guest, cl *hostdv1
 	}
 	if !ok {
 		start := m.d.Now()
-		if e := m.takeForkPoint(ctx, src.GuestID, fp); e != nil {
+		var e *Error
+		m.withoutSlot(ctx, func() { e = m.takeForkPoint(ctx, src.GuestID, fp) })
+		if e != nil {
 			return 0, 0, e
 		}
 		pointMs = m.d.Now().Sub(start).Milliseconds()
@@ -101,7 +103,9 @@ func (m *Manager) cloneVolume(ctx context.Context, src *state.Guest, cl *hostdv1
 // takeForkPoint freezes the source (when it runs), snapshots its volume
 // into fp and thaws, on the source's own worker: after any command queued
 // for it, never beside its stop or its own snapshot. The job takes no op
-// slot, since the restore waiting for it holds one (job.noSlot).
+// slot (job.noSlot), and the restore waiting for it gives its own back
+// (withoutSlot), so a command for the source queued in front of the job
+// can take one.
 func (m *Manager) takeForkPoint(ctx context.Context, sourceID, fp string) *Error {
 	done := make(chan *Error, 1)
 	m.enqueue(sourceID, job{noSlot: true, internal: func(context.Context) {

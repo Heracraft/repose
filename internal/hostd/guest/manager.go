@@ -1102,6 +1102,27 @@ func (m *Manager) setQueueDepth() {
 	}
 }
 
+// slotHeld marks the context of a job that holds one of the MaxOps slots.
+type slotHeld struct{}
+
+// withoutSlot runs wait with the caller's op slot given back, and takes a
+// slot again before returning. A fork's copy waits this way for its fork
+// point: the point's job queues behind any command for the source, and
+// that command needs a slot, which a waiting copy would otherwise hold
+// (DECISIONS I-701). A caller outside a slotted job (Execute in tests)
+// just waits.
+func (m *Manager) withoutSlot(ctx context.Context, wait func()) {
+	if held, _ := ctx.Value(slotHeld{}).(bool); !held {
+		wait()
+		return
+	}
+	<-m.ops
+	// Taken again whatever the context says: runJob's deferred release
+	// expects a slot held.
+	defer func() { m.ops <- struct{}{} }()
+	wait()
+}
+
 func (m *Manager) runJob(j job) {
 	if j.noSlot && j.internal != nil {
 		j.internal(m.ctx)
@@ -1113,11 +1134,12 @@ func (m *Manager) runJob(j job) {
 		return
 	}
 	defer func() { <-m.ops }()
+	ctx := context.WithValue(m.ctx, slotHeld{}, true)
 	if j.internal != nil {
-		j.internal(m.ctx)
+		j.internal(ctx)
 		return
 	}
-	if res := m.run(m.ctx, j.cmd); res != nil {
+	if res := m.run(ctx, j.cmd); res != nil {
 		m.d.Emit.Result(res)
 	}
 }
