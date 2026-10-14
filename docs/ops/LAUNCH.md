@@ -92,11 +92,14 @@ Measurement on prod on 2026-10-14 says a `D64s_v7` delivers about 11
 seats, not 30: its 64 Azure vCPUs are 32 physical cores, placement has no
 CPU term, and past roughly one busy guest vCPU per core typing in every
 guest on the host goes from 3 ms to 17-45 ms. Two consequences for the
-steps below: `Total Regional vCPUs` in East US is 65 with 40 used, so the
-`D64s_v7` of step 1 **cannot be created** until that quota is raised; and
-`SEATS_TOTAL` must be set by hand in step 2, because deriving it from
-memory oversells by about 2x. Nothing in that proposal is decided, but
-the quota and the seat count both bite on launch day.
+steps below: `SEATS_TOTAL` must be set by hand in step 2, because
+deriving it from memory oversells by about 2x; and the size in step 1 is
+now bounded by the Azure credit balance rather than by quota, since
+`Total Regional vCPUs` in East US was raised from 65 to **350** on
+2026-10-14 (40 used). Everything up to a `D248ls_v7` is creatable;
+only `D372s_v7` would need a further raise, of the regional total and of
+the `Dsv7` family. Nothing in that proposal is decided, but the seat
+count bites on launch day.
 
 0. Before the launch host registers, give it a free WireGuard address.
    The api numbers hosts on the edge's WireGuard network by themselves:

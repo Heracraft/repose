@@ -26,7 +26,7 @@ and credits REST APIs and the public retail price API, all read on
 | Root cause in the model | R3-2's "CPU 2:1 oversubscribed" is computed against Azure's vCPU count, which is SMT threads. Against physical cores a full `D64s_v7` is 3.75:1 |
 | Seats per launch host | Not 30. About 11 at a 40% duty cycle, 14 at 30%, on the shape we should buy |
 | Shape to buy | `D<n>ls_v7` (4 GB per core), not `D<n>s_v7` (8 GB per core). Same delivered seats, 12% cheaper, nothing stranded |
-| Blocking today | `Total Regional vCPUs` in East US is 65 with 40 used. The documented launch host (64 vCPU) cannot be created |
+| Blocking today | Nothing in Azure: the regional vCPU quota was raised 65 → 350 on 2026-10-14. What binds now is the credit balance |
 | What the credits carry | $8,542 estimated. 2× `D128ls_v7` is 27 days of runway. A `D64ls_v7` is 2.7 months, and is also what the $150k milestone needs |
 | Is it monitored | No. `ops/alerts.yaml` has `HostMemory80` and no host CPU alert, though hostd already reports `load1` and per-guest CPU pressure (I-493) |
 
@@ -234,19 +234,24 @@ SKUs, 680 creatable (not `NotAvailableForSubscription`).
 
 | Quota, East US | used | limit |
 |---|---|---|
-| Total Regional vCPUs | 40 | **65** |
+| Total Regional vCPUs | 40 | **350** (was 65; raised 2026-10-14) |
 | Standard Dsv7 Family vCPUs | 32 | 350 |
 | Standard Dlsv7 Family vCPUs | 0 | 350 |
 | Standard Dldsv7 Family vCPUs | 0 | 350 |
 
-I-39 recorded the 350-vCPU family grants but the **regional total was
-never raised**. `D64s_v7` or `D64ls_v7` needs 104 of a 65 cap, so the
-launch host of LAUNCH.md §3 cannot be created. Raising
-`Total Regional vCPUs` to 350 (matching the family grants) covers every
-option in §3 up to `D248ls_v7`. Portal → Quotas → Compute → East US →
-Total Regional vCPUs → New Quota Request. `Microsoft.Quota` is not a
-registered provider on the subscription, so the REST and `az quota`
-routes need `az provider register --namespace Microsoft.Quota` first.
+I-39 recorded the 350-vCPU family grants but the regional total was left
+at 65, so a `D64s_v7` or `D64ls_v7` (104 vCPU with what is already
+running) could not be created. **The owner raised the regional total to
+350 on 2026-10-14**, which clears every option in §3 up to `D248ls_v7`
+(288 of 350). `D372s_v7` would need 412 and a `Dsv7` family raise as
+well. The binding constraint on host size is therefore the credit
+balance in §5, not quota.
+
+The route, for the next region or the next raise: Portal → Quotas →
+Compute → East US → Total Regional vCPUs → New Quota Request.
+`Microsoft.Quota` is not a registered provider on the subscription, so
+the REST and `az quota` routes need `az provider register --namespace
+Microsoft.Quota` first.
 
 ## 5. What the credits carry
 
