@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/store"
@@ -35,6 +36,27 @@ const (
 	StateExpired   = "expired"
 	StateNoChannel = "no_channel"
 )
+
+// Reasons a guest gives for a close (DECISIONS I-690), and the
+// answered_via values two of them store.
+const (
+	ReasonTerminal    = "terminal"
+	ReasonWithdrawn   = "withdrawn"
+	ReasonInterrupted = "interrupted"
+	ReasonAskerGone   = "asker_gone"
+	ViaTerminal       = "terminal"
+	ViaAgent          = "agent"
+)
+
+// reasonLabel is a close reason for a log line: one of the fixed set, or
+// "other".
+func reasonLabel(r string) string {
+	switch r {
+	case ReasonTerminal, ReasonWithdrawn, ReasonInterrupted, ReasonAskerGone, "":
+		return r
+	}
+	return "other"
+}
 
 // Limits, matching the guest's (internal/guestd/questions).
 const (
@@ -134,9 +156,22 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		if st != StateCancelled && st != StateExpired {
 			return nil
 		}
-		tag, err := s.pool.Exec(ctx, "update questions set state = $2, delivered_at = now(), delivery = 'guest' where id = $1 and project_id = $3 and state = 'pending'", id, st, p.ID)
+		// The guest says why it closed (DECISIONS I-690): the owner
+		// answered the agent in the terminal, or the agent withdrew it.
+		// An older hostd drops the reason, and the close stays a cancel.
+		var via any
+		var answeredAt any
+		switch q.GetReason() {
+		case ReasonTerminal:
+			st, via, answeredAt = StateAnswered, ViaTerminal, s.Now()
+		case ReasonWithdrawn:
+			via, answeredAt = ViaAgent, s.Now()
+		}
+		tag, err := s.pool.Exec(ctx, `update questions set state = $2, answered_via = coalesce($4, answered_via), answered_at = coalesce($5, answered_at), delivered_at = now(), delivery = 'guest'
+			where id = $1 and project_id = $3 and state = 'pending'`, id, st, p.ID, via, answeredAt)
 		if err == nil && tag.RowsAffected() > 0 {
-			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st)
+			s.log.Info("question closed by the guest", "event", "agent_question", "question_id", id.String(), "state", st, "reason", reasonLabel(q.GetReason()))
+			s.replyInChat(ctx, "", id)
 		}
 		return err
 	}
@@ -175,14 +210,13 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 		if ts.IsZero() || ts.Sub(now).Abs() > 5*time.Minute {
 			ts = now
 		}
-		var channels int
-		if err := s.pool.QueryRow(ctx, `select (case when u.notify_email and coalesce(u.email,'') <> '' then 1 else 0 end) + (case when coalesce(u.ntfy_url,'') <> '' then 1 else 0 end)
-			from users u where u.id = $1`, p.UserID).Scan(&channels); err != nil {
+		channels, err := events.Channels(ctx, s.pool, p.UserID)
+		if err != nil {
 			return err
 		}
 		state := StatePending
 		var nextAt any
-		if channels == 0 {
+		if len(channels) == 0 {
 			// Nobody would hear it: the ask fails at once with its own
 			// exit code instead of waiting out the timeout.
 			state, nextAt = StateNoChannel, now
@@ -232,11 +266,20 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 // GuestStopped cancels the pending questions of a project whose guest
 // stopped (events.QuestionHandler). Nothing is delivered: the asker is gone.
 func (s *Service) GuestStopped(ctx context.Context, projectID uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx, "update questions set state = 'cancelled', delivered_at = now(), delivery = 'gone' where project_id = $1 and state = 'pending'", projectID)
-	if err == nil && tag.RowsAffected() > 0 {
-		s.log.Info("questions cancelled with their guest", "event", "agent_question", "project_id", projectID.String(), "count", tag.RowsAffected())
+	ids, err := closedIDs(s.pool.Query(ctx, "update questions set state = 'cancelled', delivered_at = now(), delivery = 'gone' where project_id = $1 and state = 'pending' returning id", projectID))
+	if err == nil && len(ids) > 0 {
+		s.log.Info("questions cancelled with their guest", "event", "agent_question", "project_id", projectID.String(), "count", len(ids))
+		s.replyInChat(ctx, closedMachineStopped, ids...)
 	}
 	return err
+}
+
+// closedIDs collects the ids an update ... returning id closed.
+func closedIDs(rows pgx.Rows, err error) ([]uuid.UUID, error) {
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 }
 
 const selectCols = `q.id, q.project_id, p.slug, q.agent, coalesce(q.tmux_window, ''), q.text, q.options, q.state, q.answer, q.answered_via, q.created_at, q.expires_at, q.answered_at`
@@ -338,6 +381,7 @@ func (s *Service) Answer(ctx context.Context, userID *uuid.UUID, id uuid.UUID, a
 		return q, ErrClosed
 	}
 	s.log.Info("question answered", "event", "agent_question", "question_id", id.String(), "via", via)
+	s.replyInChat(ctx, "", id)
 	return s.Get(ctx, userID, id)
 }
 
@@ -354,19 +398,24 @@ func (s *Service) AnswerOption(ctx context.Context, id uuid.UUID, opt int, via s
 }
 
 // Cancel dismisses a pending question; the waiting ask exits cancelled.
-func (s *Service) Cancel(ctx context.Context, userID uuid.UUID, id uuid.UUID) (*Question, error) {
+// via is where the owner dismissed it: cli or dashboard.
+func (s *Service) Cancel(ctx context.Context, userID uuid.UUID, id uuid.UUID, via string) (*Question, error) {
+	if via != "cli" {
+		via = "dashboard"
+	}
 	q, err := s.Get(ctx, &userID, id)
 	if err != nil {
 		return nil, err
 	}
-	tag, err := s.pool.Exec(ctx, "update questions set state = 'cancelled', answered_via = 'dashboard', answered_at = now(), deliver_next_at = now() where id = $1 and state = 'pending'", id)
+	tag, err := s.pool.Exec(ctx, "update questions set state = 'cancelled', answered_via = $2, answered_at = now(), deliver_next_at = now() where id = $1 and state = 'pending'", id, via)
 	if err != nil {
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
 		return q, ErrClosed
 	}
-	s.log.Info("question dismissed", "event", "agent_question", "question_id", id.String())
+	s.log.Info("question dismissed", "event", "agent_question", "question_id", id.String(), "via", via)
+	s.replyInChat(ctx, "", id)
 	return s.Get(ctx, &userID, id)
 }
 
@@ -413,14 +462,16 @@ type pendingDelivery struct {
 // Once expires overdue questions and sends every due delivery.
 func (s *Service) Once(ctx context.Context) error {
 	now := s.Now()
-	if _, err := s.pool.Exec(ctx, "update questions set state = 'expired', delivered_at = now(), delivery = 'guest' where state = 'pending' and expires_at < $1", now.Add(-ExpireGrace)); err != nil {
+	expired, err := closedIDs(s.pool.Query(ctx, "update questions set state = 'expired', delivered_at = now(), delivery = 'guest' where state = 'pending' and expires_at < $1 returning id", now.Add(-ExpireGrace)))
+	if err != nil {
 		return err
 	}
+	s.replyInChat(ctx, "", expired...)
 	if _, err := s.pool.Exec(ctx, "update questions set delivered_at = now(), delivery = 'given_up' where state <> 'pending' and delivered_at is null and created_at < $1", now.Add(-GiveUpAfter)); err != nil {
 		return err
 	}
 	var due []pendingDelivery
-	err := db.InTx(ctx, s.pool, func(tx db.Tx) error {
+	err = db.InTx(ctx, s.pool, func(tx db.Tx) error {
 		rows, err := tx.Query(ctx, `select q.id, q.guest_id, q.state, q.answer, p.host_id, q.created_at
 			from questions q join projects p on p.id = q.project_id and p.guest_id = q.guest_id
 			where q.state <> 'pending' and q.delivered_at is null and q.deliver_next_at <= $1
@@ -517,6 +568,9 @@ func (s *Service) OnResult(ctx context.Context, hostID uuid.UUID, r *hostdv1.Res
 func Describe(q *Question) string {
 	switch q.State {
 	case StateAnswered:
+		if q.AnsweredVia != nil && *q.AnsweredVia == ViaTerminal {
+			return "answered in the terminal"
+		}
 		if q.Answer != nil {
 			return fmt.Sprintf("already answered: %s", *q.Answer)
 		}
@@ -524,6 +578,9 @@ func Describe(q *Question) string {
 	case StateExpired:
 		return "this question has expired"
 	case StateCancelled:
+		if q.AnsweredVia != nil && *q.AnsweredVia == ViaAgent {
+			return "withdrawn by the agent"
+		}
 		return "this question was cancelled"
 	case StateNoChannel:
 		return "this question was closed"
@@ -532,4 +589,108 @@ func Describe(q *Question) string {
 		return "waiting for an answer"
 	}
 	return q.State
+}
+
+// closedMachineStopped is GuestStopped's close: the asker went with its
+// machine.
+const closedMachineStopped = "Closed: the machine stopped"
+
+// viaWords says where an answer came from, after "Answered".
+var viaWords = map[string]string{
+	"dashboard": "from the dashboard",
+	"cli":       "from the CLI",
+	"email":     "by email",
+	"ntfy":      "in ntfy",
+	"gchat":     "in Google Chat",
+}
+
+// CloseLine says how a closed question closed, in the words of the reply
+// in its Google Chat thread (DECISIONS I-692): "Answered yes from the
+// dashboard", "Answered in the terminal", "Withdrawn by the agent".
+func CloseLine(q *Question) string {
+	via := ""
+	if q.AnsweredVia != nil {
+		via = *q.AnsweredVia
+	}
+	switch q.State {
+	case StateAnswered:
+		if via == "terminal" || q.Answer == nil {
+			return "Answered in the terminal"
+		}
+		where := viaWords[via]
+		if where == "" {
+			where = "from " + via
+		}
+		if len(q.Options) > 0 {
+			return "Answered " + *q.Answer + " " + where
+		}
+		a := *q.Answer
+		if len(a) > 300 {
+			cut := 300
+			for cut > 0 && (a[cut]&0xC0) == 0x80 {
+				cut--
+			}
+			a = a[:cut] + "..."
+		}
+		return "Answered " + where + ": " + a
+	case StateCancelled:
+		switch via {
+		case "agent":
+			return "Withdrawn by the agent"
+		case "dashboard", "cli":
+			return "Dismissed " + viaWords[via]
+		}
+		return "The agent stopped waiting"
+	case StateExpired:
+		return "Expired without an answer"
+	}
+	return "Closed"
+}
+
+// ReplyIfClosed is notify.Outbox.QuestionCardPosted: a question that
+// closed while its Google Chat card was still queued or in flight got no
+// close reply then, because the card had not posted; it gets it now.
+// InsertQuestionClosed sends one reply per question, so a close racing
+// this call sends no second one.
+func (s *Service) ReplyIfClosed(ctx context.Context, id uuid.UUID) {
+	var state string
+	var stopped bool
+	err := s.pool.QueryRow(ctx, "select state, state = 'cancelled' and delivery = 'gone' and answered_via is null from questions where id = $1", id).Scan(&state, &stopped)
+	if err != nil || state == StatePending {
+		return
+	}
+	how := ""
+	if stopped {
+		how = closedMachineStopped
+	}
+	s.replyInChat(ctx, how, id)
+}
+
+// replyInChat queues, for each question that reached Google Chat, the
+// reply in its thread that says how it closed (a webhook cannot edit the
+// card that asked it). how overrides CloseLine. Best effort: a failure is
+// logged and the close stands.
+func (s *Service) replyInChat(ctx context.Context, how string, ids ...uuid.UUID) {
+	for _, id := range ids {
+		var userID uuid.UUID
+		var posted bool
+		err := s.pool.QueryRow(ctx, `select p.user_id, coalesce(e.delivered->>'gchat', '') ~ '^[0-9]{4}-' from questions q
+			join projects p on p.id = q.project_id join events e on e.id = q.event_id where q.id = $1`, id).Scan(&userID, &posted)
+		if db.IsNoRows(err) || (err == nil && !posted) {
+			continue
+		}
+		line := how
+		if err == nil && line == "" {
+			var q *Question
+			if q, err = s.Get(ctx, nil, id); err == nil {
+				line = CloseLine(q)
+			}
+		}
+		if err == nil {
+			_, err = events.InsertQuestionClosed(ctx, s.pool, userID, s.Now(), events.QuestionClosed{QuestionID: id, Text: line})
+		}
+		if err != nil {
+			s.log.Error("question close reply", "event", "agent_question", "question_id", id.String(), "err", err.Error())
+		}
+	}
 }

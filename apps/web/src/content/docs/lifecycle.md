@@ -21,7 +21,7 @@ Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
 this month
 ```
 
-`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished) or `needs input` (waiting on a permission prompt or a question), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
+`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished), `needs input` (waiting on a permission prompt or a question) or `running` (its process is alive and repose can't tell more, [Agent states](/docs/agents#agent-states)), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
 
 `repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
@@ -69,7 +69,7 @@ A machine isn't started again when:
 - a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped, as it doesn't stop a running machine ([Billing](/docs/billing));
 - its start fails, after one more try when the machine doesn't answer in time.
 
-If any machine stopped, you get one [notification](/docs/notifications) per server restart, by email and ntfy if you have them on, with a line for each:
+If any machine stopped, you get one [notification](/docs/notifications) per server restart, on every channel you have on, with a line for each:
 
 ```text
 The server running your machines restarted; it was back at 05:46 UTC.
@@ -83,7 +83,7 @@ A machine that wasn't started gets `not started:`, the reason, and `repose start
 
 ## Unused machines
 
-A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent working. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count as working. repose doesn't stop an unused machine; it tells you instead:
+A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent `working` or `running`. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count. One shown as `running` does, since repose can't tell whether it is mid-task. repose doesn't stop an unused machine; it tells you instead:
 
 ```
 $ repose ls
@@ -94,7 +94,7 @@ todo-app: unused for 26h; claude needs input 3h
 
 - `repose status` shows the same line, and the dashboard's project list shows `unused 26h` under the state.
 - `repose run` and `repose attach` in another project print one line naming it, once per unused stretch.
-- You get one notification, by email and ntfy if you have them on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
+- You get one notification on every channel you have on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
 
 An unused machine costs nothing extra on a plan, but its memory counts against what your plan runs at once, so another machine can be refused until it stops ([Billing](/docs/billing)). When the server hasn't reported on the machine for 10 minutes, for example while it's unreachable, repose can't tell and says nothing.
 

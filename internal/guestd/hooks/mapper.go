@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,9 +40,11 @@ func Map(agent string, payload []byte) (Payload, error) {
 		return mapCodex(agent, payload)
 	case "opencode":
 		return mapOpencode(agent, payload)
-	case "gemini", "pi":
-		// features/agents.md: these have no completion hook in the shipped
-		// versions; guestd's pane-idle heuristic reports them instead.
+	case "gemini":
+		return mapGemini(payload)
+	case "pi":
+		// The platform's pi extension posts the socket's own shape
+		// (asNative above); nothing else is an event.
 		return Payload{}, ErrNoEvent
 	}
 	return Payload{}, ErrNoEvent
@@ -65,12 +68,40 @@ func asNative(agent string, payload []byte) (Payload, bool) {
 }
 
 // claudeHook is the part of Claude Code's hook payload repose reads.
+// UserPromptSubmit's prompt is kept undecoded, and only its first bytes
+// are compared with Claude Code's own task-notification marker; it is
+// never stored, logged or sent.
 type claudeHook struct {
-	HookEventName    string `json:"hook_event_name"`
-	TranscriptPath   string `json:"transcript_path"`
-	Message          string `json:"message"`
-	NotificationType string `json:"notification_type"`
-	Error            string `json:"error"`
+	Prompt           json.RawMessage `json:"prompt"`
+	HookEventName    string          `json:"hook_event_name"`
+	TranscriptPath   string          `json:"transcript_path"`
+	Message          string          `json:"message"`
+	NotificationType string          `json:"notification_type"`
+	Error            string          `json:"error"`
+	// Stop, Claude Code 2.1.x (DECISIONS I-688; fixtures captured from
+	// 2.1.283): the final assistant text and the background tasks still
+	// running.
+	LastAssistantMessage string `json:"last_assistant_message"`
+	BackgroundTasks      []struct {
+		Status string `json:"status"`
+	} `json:"background_tasks"`
+}
+
+// paused reports whether a Stop is a pause rather than the end of the
+// turn: a background task is still running or pending, after which the
+// agent takes another turn by itself. A recurring cron (session_crons) is
+// no pause: between its runs the agent waits at its prompt.
+// stop_hook_active is no pause either: Claude Code sets it on the Stop
+// that ends a turn a Stop hook forced on, and repose's hook cannot know
+// whether another hook will block this Stop (DECISIONS I-688, Built).
+func (h claudeHook) paused() bool {
+	for _, t := range h.BackgroundTasks {
+		switch t.Status {
+		case "running", "pending", "":
+			return true
+		}
+	}
+	return false
 }
 
 // needsInputNotifications are the notification types that mean the agent is
@@ -89,11 +120,26 @@ func mapClaude(payload []byte) (Payload, error) {
 		return Payload{}, fmt.Errorf("hooks: parse claude payload: %w", err)
 	}
 	switch h.HookEventName {
+	case "UserPromptSubmit":
+		if bytes.HasPrefix(h.Prompt, []byte(`"<task-notification>`)) {
+			// The turn a finished background task starts (2.1.283):
+			// nobody typed it, so it closes no question; the agent works
+			// again.
+			return Payload{Agent: "claude", Kind: KindResume}, nil
+		}
+		return Payload{Agent: "claude", Kind: KindPrompt}, nil
 	case "Stop":
-		// The last assistant line from the transcript tail, else the
+		if h.paused() {
+			return Payload{}, ErrNoEvent
+		}
+		// The payload's last assistant message, else the last assistant
+		// line from the transcript tail (older builds), else the
 		// fallback guest-conventions.md names (an empty summary reached
 		// the api from the first real Stop on host-01, I-121).
-		summary := lastAssistantLine(h.TranscriptPath)
+		summary := clip(h.LastAssistantMessage)
+		if summary == "" {
+			summary = lastAssistantLine(h.TranscriptPath)
+		}
 		if summary == "" {
 			summary = "claude finished"
 		}
@@ -134,10 +180,12 @@ func classifyClaudeMessage(msg string) string {
 	}
 }
 
-// codexHook is Codex CLI's notify argument.
+// codexHook is Codex CLI's notify argument, or the stdin of a hook from
+// its hooks table (UserPromptSubmit, I-690), whose prompt is not decoded.
 type codexHook struct {
 	Type                 string `json:"type"`
 	LastAssistantMessage string `json:"last-assistant-message"`
+	HookEventName        string `json:"hook_event_name"`
 }
 
 func mapCodex(agent string, payload []byte) (Payload, error) {
@@ -145,9 +193,41 @@ func mapCodex(agent string, payload []byte) (Payload, error) {
 	if err := json.Unmarshal(payload, &h); err != nil {
 		return Payload{}, fmt.Errorf("hooks: parse codex payload: %w", err)
 	}
+	if h.HookEventName == "UserPromptSubmit" {
+		return Payload{Agent: agent, Kind: KindPrompt}, nil
+	}
 	switch h.Type {
 	case "agent-turn-complete":
 		return Payload{Agent: agent, Kind: "completed", Summary: clip(h.LastAssistantMessage)}, nil
+	default:
+		return Payload{}, ErrNoEvent
+	}
+}
+
+// geminiHook is the part of a Gemini CLI hook payload repose reads
+// (0.61.0, from the platform extension's hooks/hooks.json, I-690). The
+// prompt is not decoded.
+type geminiHook struct {
+	HookEventName  string `json:"hook_event_name"`
+	PromptResponse string `json:"prompt_response"`
+}
+
+func mapGemini(payload []byte) (Payload, error) {
+	var h geminiHook
+	if err := json.Unmarshal(payload, &h); err != nil {
+		return Payload{}, fmt.Errorf("hooks: parse gemini payload: %w", err)
+	}
+	switch h.HookEventName {
+	case "BeforeAgent":
+		return Payload{Agent: "gemini", Kind: KindPrompt}, nil
+	case "AfterAgent":
+		// stop_hook_active is read by nobody: as with Claude's Stop, it
+		// marks the end of a turn a hook forced on.
+		summary := clip(h.PromptResponse)
+		if summary == "" {
+			summary = "gemini finished"
+		}
+		return Payload{Agent: "gemini", Kind: "completed", Summary: summary}, nil
 	default:
 		return Payload{}, ErrNoEvent
 	}

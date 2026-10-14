@@ -15,6 +15,7 @@ import (
 	"time"
 	_ "time/tzdata" // PATCH /me validates tz without depending on the host's zoneinfo
 
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/menu"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -95,8 +96,15 @@ type limitsView struct {
 }
 
 type notifyView struct {
-	Email   bool    `json:"email"`
-	NtfyURL *string `json:"ntfy_url"`
+	Email   bool       `json:"email"`
+	NtfyURL *string    `json:"ntfy_url"`
+	GChat   *gchatView `json:"gchat"`
+}
+
+// gchatView is notify.gchat: the space, never the webhook URL (I-692).
+type gchatView struct {
+	Space    string     `json:"space"`
+	BrokenAt *time.Time `json:"broken_at"`
 }
 
 func (f *Fake) meOf(u *userRec) meView {
@@ -108,6 +116,9 @@ func (f *Fake) meOf(u *userRec) meView {
 	if u.NtfyURL != "" {
 		url := u.NtfyURL
 		v.Notify.NtfyURL = &url
+	}
+	if _, space, err := notify.CanonicalGChatURL(u.GChatURL); err == nil {
+		v.Notify.GChat = &gchatView{Space: space, BrokenAt: u.GChatBrokenAt}
 	}
 	return v
 }
@@ -121,8 +132,9 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		TZ     *string `json:"tz"`
 		Notify *struct {
-			Email   *bool           `json:"email"`
-			NtfyURL json.RawMessage `json:"ntfy_url"`
+			Email    *bool           `json:"email"`
+			NtfyURL  json.RawMessage `json:"ntfy_url"`
+			GChatURL json.RawMessage `json:"gchat_url"`
 		} `json:"notify"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
@@ -150,6 +162,22 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 				return invalid("notify.ntfy_url: must be an http(s) URL")
 			} else {
 				u.NtfyURL = *url
+			}
+		}
+		if len(body.Notify.GChatURL) > 0 {
+			var url *string
+			if err := json.Unmarshal(body.Notify.GChatURL, &url); err != nil {
+				return invalid("gchat_url must be a string or null")
+			}
+			if url == nil || strings.TrimSpace(*url) == "" {
+				u.GChatURL, u.GChatBrokenAt = "", nil
+			} else {
+				// The api's own check and canonical form (I-692).
+				canonical, _, err := notify.CanonicalGChatURL(*url)
+				if err != nil {
+					return invalid("%s", notify.ErrGChatURL.Error())
+				}
+				u.GChatURL, u.GChatBrokenAt = canonical, nil
 			}
 		}
 	}
@@ -203,6 +231,20 @@ func (f *Fake) notifyTest(w http.ResponseWriter, r *http.Request) *apiError {
 		res["ntfy"] = "ok"
 		if strings.Contains(u.NtfyURL, "fail") {
 			res["ntfy"], res["ntfy_error"] = "error", "the server answered 403"
+		}
+	}
+	// A webhook whose token starts with "fail" is refused and marked
+	// broken; one that gets through clears the mark (I-692).
+	if u.GChatURL != "" {
+		res["gchat"] = "ok"
+		if strings.Contains(u.GChatURL, "token=fail") {
+			res["gchat"], res["gchat_error"] = "error", "the server answered 403: the webhook was deleted, or its space removed it"
+			if u.GChatBrokenAt == nil {
+				now := time.Now().UTC()
+				u.GChatBrokenAt = &now
+			}
+		} else {
+			u.GChatBrokenAt = nil
 		}
 	}
 	writeJSON(w, http.StatusOK, res)

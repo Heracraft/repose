@@ -30,9 +30,25 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0022 (resume after a host reboot, I-645) is the newest: its two
-	// tables go, and nothing older does.
+	// 0023 (Google Chat, I-692) is the newest: its two users columns go,
+	// and nothing older does.
 	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'users' and column_name in ('gchat_url', 'gchat_broken_at')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("0023's columns are still there after down 1")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatal("down 1 reverted 0022 too")
+	}
+	if _, err := db.MigrateDown(ctx, pool, 1); err != nil {
+		t.Fatal(err)
+	}
+	// 0022 (resume after a host reboot, I-645): its two tables go.
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
 		t.Fatal(err)
 	}

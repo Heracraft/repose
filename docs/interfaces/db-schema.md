@@ -9,6 +9,8 @@ trigger. Ids are `uuid` (UUIDv7 generated in Go). Money is `bigint` cents.
 ```sql
 users        (id pk, logto_sub text unique, handle text unique, email text,
               github_login text, tz text, notify_email bool, ntfy_url text,
+              gchat_url text,              -- Google Chat webhook, canonical; a credential (0023, I-692)
+              gchat_broken_at timestamptz, -- when Google refused it; no gchat delivery while set
               billing_customer_id text unique,  -- Polar's customer id; was stripe_customer_id (0008, I-289),
                                                -- then paddle_customer_id (0020, I-604)
               billing_anchor timestamptz,   -- signup; unused since I-289, the period is the subscription's
@@ -95,10 +97,11 @@ events       (id pk, project_id fk null, user_id fk null,  -- one of them is set
               ts timestamptz, ts_second bigint, kind text, agent text null,
               tmux_window text null, summary text, source text,  -- host|http|api
               skew_seconds int null, host_event_id text unique,
-              delivered jsonb)  -- {email: ts|"error: ..."|"failed: ...", ntfy: ...}
+              delivered jsonb)  -- {email: ts|"held"|"dropped: resolved"|"error: <why>"|"failed: <why>", ntfy: ..., gchat: ...}; <why> is a few words, never a URL (I-689, I-691, I-692)
               -- unique (project_id, agent, kind, ts_second) for kinds completed|needs_input|error
 
-events_outbox (event_id fk, channel text, attempts int, next_at, last_error text,
+events_outbox (event_id fk, channel text,  -- email|ntfy|gchat
+              attempts int, next_at, last_error text,
               primary key (event_id, channel))
 
 meter_samples (ts timestamptz, project_id, host_id, state text, class text,
@@ -169,7 +172,7 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
               project_id fk, guest_id uuid, event_id uuid,  -- the agent_question event that notified the owner
               agent text, tmux_window text null, text text, options text[],  -- 0..3
               state text,          -- pending|answered|cancelled|expired|no_channel
-              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email
+              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email|gchat|terminal|agent (I-690, I-692)
               expires_at, answered_at null,
               delivered_at null, delivery text null,  -- ok|gone|given_up|guest: the close reached the guest, or why not
               deliver_command_id uuid null, deliver_attempts int, deliver_next_at null)
@@ -233,7 +236,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0022_resume`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0023_notify_gchat`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

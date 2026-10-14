@@ -510,3 +510,22 @@ func TestAgentWaitAges(t *testing.T) {
 		t.Fatalf("stale cell %q", got)
 	}
 }
+
+// I-694: an agent with no turn hooks shows running, after the ones
+// whose state a hook proves and before the idle ones.
+func TestAgentRunning(t *testing.T) {
+	now := time.Now()
+	p := &Project{State: "running", Signals: &Signals{SampledAt: &now, Agents: []AgentSignal{
+		{Agent: "pi", Window: "pi", State: "running"},
+	}}}
+	if got := agentState(p); got != "pi: running" {
+		t.Fatalf("one running agent %q", got)
+	}
+	p.Signals.Agents = append(p.Signals.Agents,
+		AgentSignal{Agent: "claude", Window: "claude", State: "idle"},
+		AgentSignal{Agent: "gemini", Window: "gemini", State: "running"},
+		AgentSignal{Agent: "codex", Window: "codex", State: "working"})
+	if got := agentState(p); got != "4 agents: 1 working, 2 running, 1 idle" {
+		t.Fatalf("ls cell %q", got)
+	}
+}

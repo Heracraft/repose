@@ -618,7 +618,7 @@ func TestHerdrAgentKeys(t *testing.T) {
 	w.Refresh(context.Background())
 	got := agentStates(w)
 	want := map[string]string{
-		"claude":         "claude:unknown", // the tmux window: no CPU history yet
+		"claude":         "claude:idle", // the tmux window: no hook yet (I-694)
 		"claude (herdr)": "claude:idle",
 		"gemini w1:p2":   "gemini:idle",
 		"api/codex":      "codex:working",

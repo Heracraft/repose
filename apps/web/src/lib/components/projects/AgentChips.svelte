@@ -1,7 +1,8 @@
 <!--
   A project's agents as small chips (signals.agents, I-617): the agent's
   name, with an emerald dot while it works, amber "needs input" when it
-  waits on you, muted when idle. SSH sessions follow as a count. With
+  waits on you, muted when idle or only `running` (an agent without turn
+  hooks: its process is alive, which says nothing of its work, I-694). SSH sessions follow as a count. With
   neither, "none" in faint text. The state is also in each chip's name for
   a screen reader, so the dot is never the only sign of it.
 -->

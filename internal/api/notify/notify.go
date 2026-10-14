@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,14 +30,22 @@ import (
 
 // Message is one notification to deliver.
 type Message struct {
-	EventID   uuid.UUID
-	Kind      string
-	Agent     string
-	Project   string // slug
-	Summary   string
-	Email     string
-	NtfyURL   string
+	EventID uuid.UUID
+	Kind    string
+	Agent   string
+	// Window is the agent's tmux window or herdr pane; At is when the
+	// event happened. The question and done emails print both.
+	Window  string
+	At      time.Time
+	Project string // slug
+	Summary string
+	Email   string
+	NtfyURL string
+	// GChatURL is the user's Google Chat webhook (I-692), a credential.
+	GChatURL  string
 	Dashboard string
+	// TZ is the user's IANA zone, for times a message states; "" is UTC.
+	TZ string
 	// Unsubscribe is the one-click link the email template embeds; empty
 	// when no Unsubscriber is configured (dev) or the channel is not email.
 	Unsubscribe string
@@ -44,6 +53,8 @@ type Message struct {
 	ProjectID uuid.UUID
 	// Question is set on an agent_question (DECISIONS I-245).
 	Question *QuestionLinks
+	// Loc is the user's zone for the times an email prints; nil is UTC.
+	Loc *time.Location
 }
 
 // QuestionLinks is what a question's notification carries beyond its text:
@@ -61,6 +72,19 @@ func (m Message) ProjectURL() string {
 		return m.Dashboard + "/projects"
 	}
 	return m.Dashboard + "/projects/" + m.ProjectID.String()
+}
+
+// Location is the user's zone, or UTC.
+func (m Message) Location() *time.Location {
+	if m.Loc != nil {
+		return m.Loc
+	}
+	if m.TZ != "" {
+		if l, err := time.LoadLocation(m.TZ); err == nil {
+			return l
+		}
+	}
+	return time.UTC
 }
 
 // Sender delivers on one channel.
@@ -100,15 +124,55 @@ type Outbox struct {
 	// APIBase is the api's own public origin, which serves
 	// GET /notify/unsubscribe; distinct from Dashboard.
 	APIBase string
+	// Workers is how many sends run at once (DECISIONS I-691). Rows of
+	// one user's channel go in order on one lane, so a hanging endpoint
+	// holds its own rows only.
+	Workers int
+	// QuestionCardPosted, when set, is called after a question's card
+	// posts to Google Chat, so a question that closed while the card was
+	// in flight still gets the close reply in its thread (I-692).
+	QuestionCardPosted func(ctx context.Context, questionID uuid.UUID)
+
+	mu       sync.Mutex
+	lanes    map[laneKey]*lane
+	inflight map[rowKey]bool
+	sem      chan struct{}
+	wg       sync.WaitGroup
 }
+
+// DefaultWorkers is Workers' default.
+const DefaultWorkers = 8
+
+// laneKey is one user's channel: its rows are sent in order.
+type laneKey struct {
+	user    uuid.UUID
+	channel string
+}
+
+// rowKey is one outbox row.
+type rowKey struct {
+	event   uuid.UUID
+	channel string
+}
+
+// lane is the rows of one laneKey waiting for their turn.
+type lane struct{ rows []row }
 
 // New builds an outbox with the given channel senders.
 func New(pool *db.Pool, senders map[string]Sender, m *metrics.M, log *slog.Logger) *Outbox {
-	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.herakraft.co", APIBase: "https://api.repose.herakraft.co", Interval: 2 * time.Second}
+	return &Outbox{pool: pool, senders: senders, m: m, log: log.With("component", "api"), Now: time.Now, Dashboard: "https://repose.herakraft.co", APIBase: "https://api.repose.herakraft.co", Interval: 2 * time.Second,
+		Workers: DefaultWorkers, lanes: map[laneKey]*lane{}, inflight: map[rowKey]bool{}}
 }
 
-// Run polls until ctx ends, under the outbox advisory lock.
+// GaugeInterval is how often every replica sets the outbox gauges.
+const GaugeInterval = 15 * time.Second
+
+// Run polls until ctx ends, under the outbox advisory lock. The gauges
+// are set on every replica on their own ticker, whether or not it holds
+// the lock and whether or not its passes succeed, so a worker that is
+// stuck, failing or not running shows as lag (I-691).
 func (o *Outbox) Run(ctx context.Context) {
+	go o.gaugeLoop(ctx)
 	for {
 		release, ok, err := db.TryLock(ctx, o.pool, db.LockOutbox)
 		if err != nil {
@@ -117,12 +181,15 @@ func (o *Outbox) Run(ctx context.Context) {
 		if ok {
 			t := time.NewTicker(o.Interval)
 			for {
-				if _, err := o.Once(ctx); err != nil && ctx.Err() == nil {
+				// A pass does not wait for its sends: a slow lane keeps
+				// sending while the next pass picks up everyone else's rows.
+				if _, err := o.pass(ctx); err != nil && ctx.Err() == nil {
 					o.log.Error("outbox pass", "event", "notify_fail", "err", err.Error())
 				}
 				select {
 				case <-ctx.Done():
 					t.Stop()
+					o.wg.Wait()
 					release()
 					return
 				case <-t.C:
@@ -143,36 +210,62 @@ type row struct {
 	attempts    int
 	kind        string
 	agent       *string
+	window      *string
 	summary     string
 	slug        string
 	email       *string
 	ntfy        *string
+	gchat       *string
+	gchatBroken *time.Time
 	notifyEmail bool
 	userID      uuid.UUID
 	eventTS     time.Time
 	projectID   uuid.UUID
 	questionID  *uuid.UUID
+	qState      *string
 	options     []string
 	expires     *time.Time
+	delivered   *string // this channel's delivered value, if any
+	tz          *string // the user's zone, for the times an email prints
 }
 
-// Once delivers every due row and returns how many it attempted.
+// Once delivers every due row, waits for the sends, and returns how many
+// rows it picked.
 func (o *Outbox) Once(ctx context.Context) (int, error) {
+	n, err := o.pass(ctx)
+	o.wg.Wait()
+	o.Gauges(ctx)
+	return n, err
+}
+
+// pass picks the due rows that are not already on a lane and hands them
+// to their lanes.
+func (o *Outbox) pass(ctx context.Context) (int, error) {
 	now := o.Now()
+	o.mu.Lock()
+	if o.lanes == nil {
+		o.lanes, o.inflight = map[laneKey]*lane{}, map[rowKey]bool{}
+	}
+	busy := make([]string, 0, len(o.inflight))
+	for k := range o.inflight {
+		busy = append(busy, k.event.String()+"/"+k.channel)
+	}
+	o.mu.Unlock()
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.options, q.expires_at
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
-			where o.next_at <= $1 order by o.next_at limit 100 for update of o skip locked`, now)
+			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
+			order by o.next_at limit 100 for update of o skip locked`, now, busy)
 		if err != nil {
 			return err
 		}
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.notifyEmail, &r.projectID, &r.questionID, &r.options, &r.expires); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -191,26 +284,128 @@ func (o *Outbox) Once(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, r := range rows {
-		o.deliver(ctx, r)
-	}
-	o.gauges(ctx)
+	o.dispatch(ctx, rows)
 	return len(rows), nil
 }
 
+// dispatch appends each row to its lane, starting a lane that is idle.
+// At most Workers sends run at once across lanes.
+func (o *Outbox) dispatch(ctx context.Context, rows []row) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.sem == nil {
+		w := o.Workers
+		if w <= 0 {
+			w = DefaultWorkers
+		}
+		o.sem = make(chan struct{}, w)
+	}
+	for _, r := range rows {
+		o.inflight[rowKey{r.eventID, r.channel}] = true
+		k := laneKey{r.userID, r.channel}
+		if l, ok := o.lanes[k]; ok {
+			l.rows = append(l.rows, r)
+			continue
+		}
+		o.lanes[k] = &lane{rows: []row{r}}
+		o.wg.Add(1)
+		go o.runLane(ctx, k)
+	}
+}
+
+// runLane sends a lane's rows one at a time, in order, until it is empty.
+func (o *Outbox) runLane(ctx context.Context, k laneKey) {
+	defer o.wg.Done()
+	for {
+		o.mu.Lock()
+		l := o.lanes[k]
+		// At shutdown the rows left wait for the next worker: their
+		// next_at is a minute on, and no attempt is counted.
+		if len(l.rows) == 0 || ctx.Err() != nil {
+			for _, r := range l.rows {
+				delete(o.inflight, rowKey{r.eventID, r.channel})
+			}
+			delete(o.lanes, k)
+			o.mu.Unlock()
+			return
+		}
+		r := l.rows[0]
+		l.rows = l.rows[1:]
+		ids := make([]uuid.UUID, 0, len(l.rows)+1)
+		ids = append(ids, r.eventID)
+		for _, w := range l.rows {
+			ids = append(ids, w.eventID)
+		}
+		o.mu.Unlock()
+		o.keepOnLane(ctx, k.channel, ids)
+		o.sem <- struct{}{}
+		o.deliver(ctx, r)
+		<-o.sem
+		o.mu.Lock()
+		delete(o.inflight, rowKey{r.eventID, r.channel})
+		o.mu.Unlock()
+	}
+}
+
 func (o *Outbox) deliver(ctx context.Context, r row) {
+	if r.channel == "gchat" {
+		// Read again: a refusal earlier in this pass marks the channel
+		// broken, and the rest of the batch must see it (I-692).
+		if err := o.pool.QueryRow(ctx, "select gchat_url, gchat_broken_at from users where id = $1", r.userID).Scan(&r.gchat, &r.gchatBroken); err != nil {
+			o.mark(ctx, r, errors.New("user lookup failed"), false)
+			return
+		}
+	}
 	// A channel disabled since the row was queued is dropped. Account
 	// mail is transactional and ignores notify_email (I-269, I-291).
-	if (r.channel == "email" && ((!r.notifyEmail && !transactional(r.kind)) || r.email == nil || *r.email == "")) || (r.channel == "ntfy" && (r.ntfy == nil || *r.ntfy == "")) {
+	if (r.channel == "email" && ((!r.notifyEmail && !transactional(r.kind)) || r.email == nil || *r.email == "")) || (r.channel == "ntfy" && (r.ntfy == nil || *r.ntfy == "")) ||
+		// Google Chat stops at a webhook Google refused (I-692).
+		(r.channel == "gchat" && (r.gchat == nil || *r.gchat == "" || r.gchatBroken != nil)) {
 		_, _ = o.pool.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel) // best effort; it is re-picked and dropped again otherwise
 		return
 	}
+	// A row whose news is over is dropped on every channel, held or not:
+	// a question card whose question closed while it waited would show
+	// buttons that answer nothing (I-689, I-692).
+	if heldKinds[r.kind] && r.projectID != uuid.Nil {
+		if over, err := o.resolved(ctx, r); err != nil {
+			o.log.Error("outbox resolved check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
+			return // the row's next_at already moved a minute on; it is tried again then
+		} else if over {
+			o.drop(ctx, r)
+			return
+		}
+		now := o.Now()
+		if until := r.eventTS.Add(MaxHold); now.Before(until) {
+			present, err := o.present(ctx, r.projectID, now)
+			if err != nil {
+				o.log.Error("outbox presence check", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "err", err.Error())
+				return
+			}
+			if present {
+				next := now.Add(HoldStep)
+				if next.After(until) {
+					next = until
+				}
+				o.hold(ctx, r, next)
+				return
+			}
+		}
+	}
 	s := o.senders[r.channel]
 	if s == nil {
-		o.mark(ctx, r, errors.New("no sender configured"), true)
+		o.mark(ctx, r, ErrNotConfigured, true)
 		return
 	}
-	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID}
+	m := Message{EventID: r.eventID, Kind: r.kind, Project: r.slug, Summary: r.summary, Dashboard: o.Dashboard, ProjectID: r.projectID, At: r.eventTS}
+	if r.tz != nil && *r.tz != "" {
+		if l, err := time.LoadLocation(*r.tz); err == nil {
+			m.Loc = l
+		}
+	}
+	if r.window != nil {
+		m.Window = *r.window
+	}
 	if r.questionID != nil && r.expires != nil {
 		q := &QuestionLinks{ID: *r.questionID, Options: r.options, Expires: *r.expires}
 		if o.Unsub != nil {
@@ -229,15 +424,163 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	if r.ntfy != nil {
 		m.NtfyURL = *r.ntfy
 	}
+	if r.gchat != nil && r.channel == "gchat" {
+		m.GChatURL = *r.gchat
+	}
+	if r.tz != nil {
+		m.TZ = *r.tz
+	}
+	if r.kind == events.QuestionClosedKind {
+		// The reply in a question's Chat thread (I-692): its summary
+		// names the question and says how it closed.
+		var c events.QuestionClosed
+		if err := json.Unmarshal([]byte(r.summary), &c); err != nil || c.QuestionID == uuid.Nil {
+			o.mark(ctx, r, errors.New("malformed question_closed"), true)
+			return
+		}
+		m.Summary = c.Text
+		m.Question = &QuestionLinks{ID: c.QuestionID}
+	}
 	if r.channel == "email" && o.Unsub != nil && !transactional(r.kind) {
-		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, time.Now())
+		// The link's expiry runs from the event, not the clock, so a
+		// retry under the same Idempotency-Key sends the same bytes;
+		// Resend answers 409 to a reused key with another body (I-691).
+		base := r.eventTS
+		if base.IsZero() {
+			base = o.Now()
+		}
+		m.Unsubscribe = o.Unsub.URL(o.APIBase, r.userID, base)
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	err := s.Send(sctx, m)
 	cancel()
+	var broken *ErrChannelBroken
+	if errors.As(err, &broken) && r.channel == "gchat" {
+		o.markBroken(ctx, r.userID, m.GChatURL)
+	}
 	var perm Permanent
 	o.mark(ctx, r, err, errors.As(err, &perm))
+	if err == nil && r.channel == "gchat" && r.questionID != nil && r.kind != events.QuestionClosedKind && o.QuestionCardPosted != nil {
+		o.QuestionCardPosted(ctx, *r.questionID)
+	}
 }
+
+// markBroken records that Google refused the user's Chat webhook, once:
+// the first refusal of the URL still saved sets gchat_broken_at and writes
+// one notify_channel_broken account email in the same transaction, so the
+// user hears of it even with notify_email off. A URL saved since is not
+// marked by a refusal of the old one.
+func (o *Outbox) markBroken(ctx context.Context, userID uuid.UUID, gchatURL string) {
+	now := o.Now()
+	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
+		tag, err := tx.Exec(ctx, "update users set gchat_broken_at = $3 where id = $1 and gchat_url = $2 and gchat_broken_at is null", userID, gchatURL, now)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		_, err = events.InsertAccount(ctx, tx, userID, now, events.KindChannelBroken, map[string]any{"channel": "gchat", "space": GChatSpace(gchatURL), "since": now.UTC().Format(time.RFC3339)})
+		return err
+	})
+	if err != nil {
+		o.log.Error("mark channel broken", "event", "notify_fail", "channel", "gchat", "err", err.Error())
+		return
+	}
+	o.log.Warn("notification channel refused", "event", "notify_fail", "channel", "gchat", "user_id", userID.String())
+}
+
+// heldKinds are what an agent reports to its owner: held while the owner
+// is at the machine (DECISIONS I-689). Platform and account kinds are
+// never held.
+var heldKinds = map[string]bool{"agent_question": true, "agent_done": true, "agent_message": true, "needs_input": true, "error": true}
+
+// The hold (DECISIONS I-689): a row of a held kind waits HoldStep at a
+// time while the owner is present, for at most MaxHold from its event;
+// presence is a tmux client or an SSH session in the project's latest
+// sample, when that sample is at most PresenceFresh old.
+const (
+	HoldStep      = time.Minute
+	MaxHold       = 10 * time.Minute
+	PresenceFresh = 2 * time.Minute
+)
+
+// present says the project's owner is at the machine now.
+func (o *Outbox) present(ctx context.Context, projectID uuid.UUID, now time.Time) (bool, error) {
+	var ts time.Time
+	var n int
+	err := o.pool.QueryRow(ctx, "select ts, tmux_clients + ssh_sessions from meter_samples where project_id = $1 order by ts desc limit 1", projectID).Scan(&ts, &n)
+	if db.IsNoRows(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return n > 0 && now.Sub(ts) <= PresenceFresh, nil
+}
+
+// resolved says what a row reports is over: its question is no longer
+// pending (answered anywhere, withdrawn, expired), or a needs_input was
+// followed by a later event from the same agent window. It reads the
+// question's state now, not at pick time: a row can wait on its lane
+// behind slow sends, and the question may close meanwhile (I-689).
+func (o *Outbox) resolved(ctx context.Context, r row) (bool, error) {
+	switch r.kind {
+	case "agent_question":
+		if r.questionID == nil {
+			return false, nil
+		}
+		var state string
+		err := o.pool.QueryRow(ctx, "select state from questions where id = $1", *r.questionID).Scan(&state)
+		if db.IsNoRows(err) {
+			return r.qState != nil && *r.qState != "pending", nil
+		}
+		return err == nil && state != "pending", err
+	case "needs_input":
+		var later bool
+		err := o.pool.QueryRow(ctx, `select exists (select 1 from events l join events e on e.id = $1
+			where l.project_id = e.project_id and coalesce(l.agent, '') = coalesce(e.agent, '') and coalesce(l.tmux_window, '') = coalesce(e.tmux_window, '')
+			and l.ts > e.ts and l.id <> e.id)`, r.eventID).Scan(&later)
+		return later, err
+	}
+	return false, nil
+}
+
+// hold moves a row's next_at on without counting an attempt and records
+// "held" on the event.
+func (o *Outbox) hold(ctx context.Context, r row, next time.Time) {
+	_ = db.InTx(ctx, o.pool, func(tx db.Tx) error { // best effort: the row's next_at already moved a minute on
+		if _, err := tx.Exec(ctx, "update events_outbox set next_at = $3 where event_id = $1 and channel = $2", r.eventID, r.channel, next); err != nil {
+			return err
+		}
+		if r.delivered != nil && *r.delivered == DeliveredHeld {
+			return nil
+		}
+		_, err := tx.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, DeliveredHeld)
+		return err
+	})
+	if r.delivered == nil || *r.delivered != DeliveredHeld {
+		o.m.NotifyTotal.WithLabelValues(r.channel, "held").Inc()
+		o.log.Info("notification held", "event", "notify_hold", "channel", r.channel, "kind", r.kind)
+	}
+}
+
+// drop deletes a row whose news is over and records "dropped: resolved".
+func (o *Outbox) drop(ctx context.Context, r row) {
+	o.m.NotifyTotal.WithLabelValues(r.channel, "dropped").Inc()
+	o.log.Info("notification dropped", "event", "notify_drop", "channel", r.channel, "kind", r.kind)
+	_ = db.InTx(ctx, o.pool, func(tx db.Tx) error { // best effort: re-picked and dropped again otherwise
+		if _, err := tx.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, DeliveredDropped); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, "delete from events_outbox where event_id = $1 and channel = $2", r.eventID, r.channel)
+		return err
+	})
+}
+
+// The delivered values of the hold (DECISIONS I-689), beside a send time,
+// "error: <why>" and "failed: <why>".
+const (
+	DeliveredHeld    = "held"
+	DeliveredDropped = "dropped: resolved"
+)
 
 func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 	now := o.Now()
@@ -257,10 +600,10 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 		return
 	}
 	attempts := r.attempts + 1
-	reason := err.Error()
-	if len(reason) > 200 {
-		reason = reason[:200]
-	}
+	// Never err.Error(): a network error carries the URL it dialled (an
+	// ntfy topic), and delivered is returned by the events route
+	// (DECISIONS I-691).
+	reason := sendFailure(err)
 	if permanent || attempts > len(backoff) {
 		o.m.NotifyTotal.WithLabelValues(r.channel, "failed").Inc()
 		o.log.Warn("notification failed", "event", "notify_fail", "channel", r.channel, "kind", r.kind, "attempts", attempts)
@@ -279,10 +622,38 @@ func (o *Outbox) mark(ctx context.Context, r row, err error, permanent bool) {
 	_, _ = o.pool.Exec(ctx, "update events set delivered = delivered || jsonb_build_object($2::text, $3::text) where id = $1", r.eventID, r.channel, "error: "+reason)
 }
 
-func (o *Outbox) gauges(ctx context.Context) {
+// keepOnLane moves the next_at of rows waiting on a live lane a minute on
+// before each send, so they stay out of the lag: a lane slowed by one
+// user's hanging server delays its own rows only, and pages nobody
+// (I-691). Rows of a worker that died come due a minute after its last
+// send and are picked up again.
+func (o *Outbox) keepOnLane(ctx context.Context, channel string, ids []uuid.UUID) {
+	until := o.Now().Add(time.Minute)
+	_, _ = o.pool.Exec(ctx, "update events_outbox set next_at = $3 where channel = $1 and event_id = any($2) and next_at < $3", channel, ids, until) // best effort; a row it misses only shows as lag
+}
+
+// gaugeLoop sets the gauges every GaugeInterval until ctx ends.
+func (o *Outbox) gaugeLoop(ctx context.Context) {
+	t := time.NewTicker(GaugeInterval)
+	defer t.Stop()
+	for {
+		o.Gauges(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// Gauges sets the outbox depth and lag gauges from the table.
+func (o *Outbox) Gauges(ctx context.Context) {
+	// The lag is how long the oldest due row has waited for a send: a
+	// held row, a retry waiting out its backoff and a row being sent
+	// (next_at moved a minute on) are not due (DECISIONS I-691).
 	var depth int
 	var oldest *time.Time
-	if err := o.pool.QueryRow(ctx, "select count(*), min(created_at) from events_outbox").Scan(&depth, &oldest); err == nil {
+	if err := o.pool.QueryRow(ctx, "select count(*), min(next_at) filter (where next_at <= $1) from events_outbox", o.Now()).Scan(&depth, &oldest); err == nil {
 		o.m.OutboxDepth.Set(float64(depth))
 		if oldest != nil {
 			o.m.OutboxLagSeconds.Set(o.Now().Sub(*oldest).Seconds())
@@ -301,6 +672,9 @@ func transactional(kind string) bool { return events.AccountKinds[kind] }
 // Title renders the one-line title of a message: what the ntfy Title
 // header and ordinary email subjects use.
 func Title(m Message) string {
+	if m.Kind == TestKind {
+		return "repose: test"
+	}
 	// A user notice names no project: its subject is its title (I-645).
 	if events.UserNoticeKinds[m.Kind] {
 		return Subject(m)
@@ -332,6 +706,7 @@ var platformSubjects = map[string]string{
 	"egress_stopped":         "Your machines were stopped: egress limit",
 	"disk_over_plan":         "Your projects hold more than your plan's disk",
 	"machines_restarted":     "The server running your machines restarted",
+	"notify_channel_broken":  "Google Chat notifications stopped",
 }
 
 // Subject is the email subject line: Title for agent events, the
@@ -354,7 +729,7 @@ type Email struct {
 // Send implements Sender.
 func (e *Email) Send(ctx context.Context, m Message) error {
 	if e.APIKey == "" {
-		return errors.New("email: RESEND_API_KEY not set")
+		return fmt.Errorf("email: RESEND_API_KEY not set: %w", ErrNotConfigured)
 	}
 	if m.Email == "" {
 		return Permanent{errors.New("email: user has no address")}
@@ -371,7 +746,7 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	// (DECISIONS I-291); a client that shows neither still has the subject.
 	r, err := Render(m)
 	if err != nil {
-		return Permanent{fmt.Errorf("email: render %s: %w", m.Kind, err)}
+		return Permanent{fmt.Errorf("email: render %s: %w: %w", m.Kind, ErrRender, err)}
 	}
 	body := map[string]any{"from": from, "to": []string{m.Email}, "subject": "[repose] " + r.Subject, "html": r.HTML, "text": r.Text}
 	if m.Unsubscribe != "" {
@@ -388,6 +763,11 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+e.APIKey)
 	req.Header.Set("Content-Type", "application/json")
+	// A send that timed out after Resend took it, or a failed mark after a
+	// sent one, is retried; the key makes Resend take it once (I-691).
+	if m.EventID != uuid.Nil {
+		req.Header.Set("Idempotency-Key", m.EventID.String()+"/email")
+	}
 	client := e.HTTP
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -397,11 +777,15 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 		return err
 	}
 	_ = resp.Body.Close() // status is all we need
-	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		return fmt.Errorf("email: status %d", resp.StatusCode)
+	// A 409 on a keyed request is Resend saying the key is still in
+	// flight or was used with another body, not a refusal of the mail:
+	// retried, the in-flight one finishes and the same body is answered
+	// with the first result.
+	if resp.StatusCode >= 500 || resp.StatusCode == 429 || (resp.StatusCode == http.StatusConflict && req.Header.Get("Idempotency-Key") != "") {
+		return &statusError{"email", resp.StatusCode}
 	}
 	if resp.StatusCode >= 400 {
-		return Permanent{fmt.Errorf("email: status %d", resp.StatusCode)}
+		return Permanent{&statusError{"email", resp.StatusCode}}
 	}
 	return nil
 }
@@ -421,24 +805,11 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		return Permanent{err}
 	}
 	req.Header.Set("Title", Title(m))
-	prio, tag := "3", "white_check_mark"
-	switch m.Kind {
-	case "needs_input":
-		prio, tag = "5", "question"
-	case "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed", "boot_failed":
-		prio, tag = "4", "x"
-	case "agent_message":
-		prio, tag = "3", "speech_balloon"
-	case "agent_question":
-		prio, tag = "5", "question"
-	case "machines_restarted":
-		prio, tag = "4", "arrows_counterclockwise"
-	}
-	req.Header.Set("Priority", prio)
-	req.Header.Set("Tags", tag)
-	req.Header.Set("Click", m.Dashboard+"/projects")
+	// Priority says the urgency; no tag, since ntfy shows tags as emoji
+	// (DECISIONS I-691).
+	req.Header.Set("Priority", ntfyPriority(m.Kind))
+	req.Header.Set("Click", m.ProjectURL())
 	if m.Question != nil {
-		req.Header.Set("Click", m.ProjectURL())
 		if a := ntfyActions(m); a != "" {
 			req.Header.Set("Actions", a)
 		}
@@ -466,6 +837,19 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 		return Permanent{&statusError{"ntfy", resp.StatusCode}}
 	}
 	return nil
+}
+
+// ntfyPriority is 5 for what waits on the owner, 4 for a done report, a
+// failure or a host restart (which may have left machines stopped,
+// I-645), 3 for the rest (a message, a platform notice).
+func ntfyPriority(kind string) string {
+	switch kind {
+	case "needs_input", "agent_question":
+		return "5"
+	case "agent_done", "error", "snapshot_failed", "base_update_failed", "billing_stopped", "destroy_failed", "abuse_stopped", "personal_failed", "boot_failed", "machines_restarted":
+		return "4"
+	}
+	return "3"
 }
 
 // ntfyAction is one entry of ntfy's JSON action list.
@@ -521,12 +905,18 @@ func asciiJSON(s string) string {
 // of the user and returns per-channel results (POST /me/notify-test).
 func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 	out := map[string]string{}
-	m := Message{Kind: "completed", Project: "repose", Summary: "This is a test from repose", Dashboard: o.Dashboard}
+	m := Message{Kind: TestKind, Summary: "This is a test from repose.", Dashboard: o.Dashboard}
 	if u.Email != nil {
 		m.Email = *u.Email
 	}
 	if u.NtfyURL != nil {
 		m.NtfyURL = *u.NtfyURL
+	}
+	if u.GChatURL != nil {
+		m.GChatURL = *u.GChatURL
+	}
+	if u.TZ != nil {
+		m.TZ = *u.TZ
 	}
 	if u.NotifyEmail && m.Email != "" {
 		out["email"], _ = o.try(ctx, "email", m)
@@ -539,30 +929,74 @@ func (o *Outbox) Test(ctx context.Context, u *store.User) map[string]string {
 			out["ntfy_error"] = why
 		}
 	}
+	// A broken Google Chat webhook is tried too: a test that gets through
+	// clears the mark, and one Google refuses marks it (I-692).
+	if m.GChatURL != "" {
+		var why string
+		gm := m
+		gm.EventID = uuid.New()
+		var err error
+		if out["gchat"], why, err = o.tryErr(ctx, "gchat", gm); why != "" {
+			out["gchat_error"] = why
+		}
+		var broken *ErrChannelBroken
+		switch {
+		case err == nil && u.GChatBrokenAt != nil:
+			if _, err := o.pool.Exec(ctx, "update users set gchat_broken_at = null where id = $1 and gchat_url = $2", u.ID, m.GChatURL); err != nil {
+				o.log.Error("clear channel broken", "event", "notify_fail", "channel", "gchat", "err", err.Error())
+			}
+		case errors.As(err, &broken):
+			o.markBroken(ctx, u.ID, m.GChatURL)
+		}
+	}
 	return out
 }
 
 // try sends m on channel: "ok", or "error" with why in a few words.
 func (o *Outbox) try(ctx context.Context, channel string, m Message) (string, string) {
+	res, why, _ := o.tryErr(ctx, channel, m)
+	return res, why
+}
+
+// tryErr is try, with the send's error.
+func (o *Outbox) tryErr(ctx context.Context, channel string, m Message) (string, string, error) {
 	s := o.senders[channel]
 	if s == nil {
-		return "error", "not configured on this server"
+		return "error", "not configured on this server", errors.New("no sender")
 	}
 	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := s.Send(sctx, m); err != nil {
 		o.log.Warn("notify test failed", "event", "notify_fail", "channel", channel)
-		return "error", sendFailure(err)
+		return "error", sendFailure(err), err
 	}
-	return "ok", ""
+	return "ok", "", nil
 }
 
+// TestKind is the kind of POST /me/notify-test's message, titled
+// "repose: test" (DECISIONS I-691). It is never an event.
+const TestKind = "test"
+
+// Errors a send names without the URL.
+var (
+	ErrNotConfigured = errors.New("not configured on this server")
+	ErrRender        = errors.New("the message did not render")
+)
+
 // sendFailure is a failed send in a few words a user can act on: the
-// status the server answered, or why there was none. Never the URL.
+// status the server answered, or why there was none. Never the URL. It is
+// what events.delivered stores and what the test route answers.
 func sendFailure(err error) string {
 	var status *statusError
 	var dns *net.DNSError
+	var broken *ErrChannelBroken
 	switch {
+	case errors.Is(err, ErrNotConfigured):
+		return "not configured on this server"
+	case errors.Is(err, ErrRender):
+		return "the message did not render"
+	case errors.As(err, &broken):
+		return fmt.Sprintf("the server answered %d: the webhook was deleted, or its space removed it", broken.Code)
 	case errors.As(err, &status):
 		return fmt.Sprintf("the server answered %d", status.code)
 	case errors.Is(err, ErrNonPublicAddress):

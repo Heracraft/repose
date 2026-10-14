@@ -9,6 +9,7 @@ package events
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"strings"
@@ -22,16 +23,19 @@ import (
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
-// Kinds that reach the user's channels.
+// Kinds that reach the user's channels. A turn end (completed) is an
+// event and sets the agent's state, and notifies nobody: an agent says it
+// is done on purpose with agent_done (DECISIONS I-688).
 var notifyKinds = map[string]bool{
-	"completed": true, "needs_input": true, "error": true,
+	"needs_input": true, "error": true,
 	"billing_stopped": true, "base_updated": true, "base_update_failed": true, "snapshot_failed": true, "host_moved": true,
 	"destroy_failed":       true,
 	"notifications_paused": true,
 	// A guest stopped because a miner was running (DECISIONS I-239).
 	"abuse_stopped": true,
-	// repose-notify and repose-ask (DECISIONS I-244).
-	"agent_message": true, "agent_question": true,
+	// repose-notify, repose-notify --done and repose-ask (DECISIONS
+	// I-244, I-688).
+	"agent_message": true, "agent_question": true, "agent_done": true,
 	// A running machine nobody used for a day, once per idle stretch
 	// (internal/api/idle, DECISIONS I-262).
 	"idle_running": true,
@@ -46,13 +50,13 @@ var notifyKinds = map[string]bool{
 	"boot_failed": true,
 }
 
-// GuestKinds are the notifying kinds a guest may report, over vsock or the
-// edge's hook path: the hook kinds and repose-notify's message (guestd's
-// hooks package sends nothing else). Every other kind in notifyKinds is
+// GuestKinds are the kinds a guest may report, over vsock or the edge's
+// hook path: the hook kinds and repose-notify's message and done report
+// (guestd's hooks package sends nothing else). Every other kind in notifyKinds is
 // written by the api itself, and a guest that names one is refused, so a
 // tenant's own code cannot send its owner mail worded as a platform notice
 // or reach notifications_paused, which skips the dedupe and the hourly cap.
-var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
 
 // guestAgents are the agent names a guest may attribute an event to:
 // guestd's five and "shell" for repose-notify and repose-ask run from a
@@ -96,7 +100,14 @@ const GuestEventsPerHour = 600
 // noDedupe are kinds the user sent on purpose, one notification each: two
 // messages in a minute are two messages, and a question collapsed into an
 // earlier one would never be answerable.
-var noDedupe = map[string]bool{"agent_message": true, "agent_question": true}
+var noDedupe = map[string]bool{"agent_message": true, "agent_question": true, "agent_done": true}
+
+// dedupes says a kind collapses a repeat within DedupeWindow: the
+// notifying kinds a person did not send on purpose, and a turn end, which
+// notifies nobody but is still one event per burst.
+func dedupes(kind string) bool {
+	return (notifyKinds[kind] || kind == "completed") && kind != "notifications_paused" && !noDedupe[kind]
+}
 
 // QuestionHandler is the question store (internal/api/questions), which
 // sits on top of this package.
@@ -190,7 +201,7 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 		}
 	}
 	err = db.InTx(ctx, i.pool, func(tx db.Tx) error {
-		if notifyKinds[n.Kind] && n.Kind != "notifications_paused" && !noDedupe[n.Kind] {
+		if dedupes(n.Kind) {
 			// Collapse a repeat within the window, appending a new summary.
 			var prevID uuid.UUID
 			var prevSummary string
@@ -238,45 +249,22 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 // enqueue writes one outbox row per enabled channel, applying the
 // per-project hourly cap with a single digest event past it.
 func (i *Ingest) enqueue(ctx context.Context, tx db.Tx, eventID, projectID uuid.UUID, kind string, ts time.Time) error {
-	var notifyEmail bool
-	var email, ntfy *string
-	if err := tx.QueryRow(ctx, "select u.notify_email, u.email, u.ntfy_url from users u join projects p on p.user_id = u.id where p.id = $1", projectID).Scan(&notifyEmail, &email, &ntfy); err != nil {
+	var userID uuid.UUID
+	var tz *string
+	if err := tx.QueryRow(ctx, "select u.id, u.tz from users u join projects p on p.user_id = u.id where p.id = $1", projectID).Scan(&userID, &tz); err != nil {
 		return err
 	}
-	var channels []string
-	if notifyEmail && email != nil && *email != "" {
-		channels = append(channels, "email")
-	}
-	if ntfy != nil && *ntfy != "" {
-		channels = append(channels, "ntfy")
+	channels, err := Channels(ctx, tx, userID)
+	if err != nil {
+		return err
 	}
 	if len(channels) == 0 {
 		return nil
 	}
 	if kind != "notifications_paused" {
-		var recent int
-		if err := tx.QueryRow(ctx, `select count(distinct o.event_id) from events_outbox o join events e on e.id = o.event_id where e.project_id = $1 and e.ts > $2 and e.kind <> 'notifications_paused'`, projectID, ts.Add(-time.Hour)).Scan(&recent); err != nil {
+		capped, err := i.overNotifyCap(ctx, tx, projectID, ts, tz)
+		if err != nil || capped {
 			return err
-		}
-		if recent >= RatePerHour {
-			var paused int
-			if err := tx.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'notifications_paused' and ts > $2", projectID, ts.Add(-time.Hour)).Scan(&paused); err != nil {
-				return err
-			}
-			if paused == 0 {
-				did := store.NewID()
-				if _, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, 'notifications_paused', $5, 'api')`,
-					did, projectID, ts, ts.Unix(), "30+ events in the last hour; notifications for this project are paused until the top of the hour. See the dashboard."); err != nil {
-					return err
-				}
-				for _, ch := range channels {
-					if _, err := tx.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", did, ch); err != nil {
-						return err
-					}
-				}
-			}
-			i.m.EventsTotal.WithLabelValues("rate_limited").Inc()
-			return nil
 		}
 	}
 	for _, ch := range channels {
@@ -285,6 +273,72 @@ func (i *Ingest) enqueue(ctx context.Context, tx db.Tx, eventID, projectID uuid.
 		}
 	}
 	return nil
+}
+
+// queuedSQL picks the project's events of the hour before $2 that queued
+// a delivery: a row still in the outbox, or a delivery result recorded on
+// the event (sent, failed, held, dropped). The outbox row alone is not
+// enough, since a sent row is deleted (DECISIONS I-691: counting only the
+// outbox, the cap never fired).
+const queuedSQL = `from events e where e.project_id = $1 and e.ts > $2 and e.kind <> 'notifications_paused'
+	and (e.delivered <> '{}'::jsonb or exists (select 1 from events_outbox o where o.event_id = e.id))`
+
+// overNotifyCap reports whether the project already queued RatePerHour
+// notifications in the hour before ts, and writes the one
+// notifications_paused event of that hour when it has.
+func (i *Ingest) overNotifyCap(ctx context.Context, tx db.Tx, projectID uuid.UUID, ts time.Time, tz *string) (bool, error) {
+	var recent int
+	if err := tx.QueryRow(ctx, "select count(*) "+queuedSQL, projectID, ts.Add(-time.Hour)).Scan(&recent); err != nil {
+		return false, err
+	}
+	if recent < RatePerHour {
+		return false, nil
+	}
+	i.m.EventsTotal.WithLabelValues("rate_limited").Inc()
+	var paused int
+	if err := tx.QueryRow(ctx, "select count(*) from events where project_id = $1 and kind = 'notifications_paused' and ts > $2", projectID, ts.Add(-time.Hour)).Scan(&paused); err != nil {
+		return true, err
+	}
+	if paused > 0 {
+		return true, nil
+	}
+	// The window slides: the cap lifts when the oldest event that keeps
+	// the count at RatePerHour is an hour old.
+	var oldest time.Time
+	if err := tx.QueryRow(ctx, "select e.ts "+queuedSQL+" order by e.ts limit 1 offset $3", projectID, ts.Add(-time.Hour), recent-RatePerHour).Scan(&oldest); err != nil {
+		return true, err
+	}
+	did := store.NewID()
+	if _, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, summary, source) values ($1, $2, $3, $4, 'notifications_paused', $5, 'api')`,
+		did, projectID, ts, ts.Unix(), PausedSummary(oldest.Add(time.Hour), tz)); err != nil {
+		return true, err
+	}
+	var userID uuid.UUID
+	if err := tx.QueryRow(ctx, "select user_id from projects where id = $1", projectID).Scan(&userID); err != nil {
+		return true, err
+	}
+	channels, err := Channels(ctx, tx, userID)
+	if err != nil {
+		return true, err
+	}
+	for _, ch := range channels {
+		if _, err := tx.Exec(ctx, "insert into events_outbox (event_id, channel) values ($1, $2)", did, ch); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
+}
+
+// PausedSummary is the notifications_paused text: the cap and the time it
+// lifts, in the user's zone when they set one.
+func PausedSummary(until time.Time, tz *string) string {
+	loc := time.UTC
+	if tz != nil && *tz != "" {
+		if l, err := time.LoadLocation(*tz); err == nil {
+			loc = l
+		}
+	}
+	return fmt.Sprintf("%d notifications in the last hour. Paused until %s.", RatePerHour, until.In(loc).Format("15:04 MST"))
 }
 
 // OnEvent handles a hostd Event and reports whether to ack it.
@@ -471,7 +525,7 @@ func (i *Ingest) projectOnHost(ctx context.Context, hostID uuid.UUID, guestID st
 func (i *Ingest) overGuestCap(ctx context.Context, projectID uuid.UUID) (bool, error) {
 	var n int
 	err := i.pool.QueryRow(ctx, `select count(*) from (select 1 from events where project_id = $1 and ts > $2 and source in ('host', 'http')
-		and kind in ('completed','needs_input','error','agent_message','agent_question') limit $3) x`,
+		and kind in ('completed','needs_input','error','agent_message','agent_question','agent_done') limit $3) x`,
 		projectID, i.now().Add(-time.Hour), GuestEventsPerHour).Scan(&n)
 	if err != nil {
 		return false, err

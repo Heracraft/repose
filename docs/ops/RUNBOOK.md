@@ -631,6 +631,25 @@ which the rollup records as a gap.
 3. `insert` across many projects: Postgres itself (partitions, disk,
    connections); see the api's other errors at the same time.
 
+## NotifyFailing
+
+Notifications are not reaching users (DECISIONS I-691): email sends kept
+failing for good (`repose_api_notify_total{result="failed",channel="email"}`)
+for 10 minutes, or a due outbox row has waited more than 5 minutes for the
+worker (`repose_api_outbox_lag_seconds`, which leaves out held rows and
+retries waiting out their backoff). ntfy and Google Chat failures do not
+page: the topic and the webhook are the user's own, and a refused Chat
+webhook marks the channel broken and mails the user (I-692).
+
+1. Failed sends: Loki `{component="api"} | json | event="notify_fail"`
+   gives the kind. Email across many users is Resend: a 401 or 403 in
+   `delivered` (`failed: the server answered 401`) is a revoked key or an
+   unverified domain; rotate `RESEND_API_KEY` or fix the domain in Resend.
+2. Lag: the worker is stuck, failing every pass, or not running. Every
+   replica sets the gauge from the table every 15 s, with or without
+   `db.LockOutbox`, which one replica's worker holds; see "No
+   notifications arriving" step 2.
+
 ## HostReportsRefused
 
 The api dropped a host's report (DECISIONS I-447). `foreign_guest`: an
@@ -2525,7 +2544,9 @@ secret NAME`.
 ## No notifications arriving
 
 A user reports nothing on their phone or in their inbox for an agent that
-finished.
+reported something. A finished turn notifies nobody since I-688; only
+`repose-notify --done`, a question, a message, a permission prompt or an
+error does.
 
 1. `repose status` / `GET /projects/:id/events` first: if the event is not
    there, the problem is upstream of the outbox (the hook never
@@ -2536,16 +2557,29 @@ finished.
    config file, `guest-conventions.md` "Agent wrappers").
 2. If the event is there but `delivered` has no key for the channel: the
    outbox has not picked it up yet, or the channel is disabled
-   (`notify_email` false, `ntfy_url` null) or over the 30/hour rate cap
+   (`notify_email` false, `ntfy_url` null, `gchat_url` null or
+   `gchat_broken_at` set) or over the 30/hour rate cap
    (`kind = 'notifications_paused'` events on the project in the last
-   hour). `repose_api_outbox_depth` and `repose_api_outbox_lag_seconds`
-   rising together mean the worker itself is stuck: it holds
+   hour). `repose_api_outbox_lag_seconds` rising (the age of the oldest
+   due row; `NotifyFailing` pages past 5 minutes) means the worker itself
+   is stuck: it holds
    `db.LockOutbox`, so look for `select pg_advisory_lock_...` on the wrong
    replica or a stuck transaction; only one replica runs it
    (`api: rollup or expiry not running on one replica` is the same shape
    for a different job).
-3. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
-   channel-specific entries below have the fix. Nothing to do if it says a
+3. `held` means the owner was at the machine when it was due (a tmux
+   client or an SSH session in the project's latest sample, I-689): it
+   goes out when they leave, or 10 minutes after the event. `dropped:
+   resolved` means what it reported was over before it went out (the
+   question closed, or the agent moved past the permission prompt);
+   nothing to fix. `select ts, tmux_clients, ssh_sessions from
+   meter_samples where project_id = '<id>' order by ts desc limit 3`
+   shows the presence the worker saw.
+4. If `delivered[channel]` says `"error: ..."` or `"failed: ..."`, the
+   channel-specific entries below have the fix. The text after the colon
+   is a few words (`the server answered 403`, `no answer within 15
+   seconds`, `could not connect`), never the URL (I-691); Loki's
+   `notify_fail` lines carry no more. Nothing to do if it says a
    timestamp: delivery succeeded and the miss is client-side (a stale
    ntfy subscription, a spam folder).
 

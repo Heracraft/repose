@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-705 entries.
+713 entries.
 
 ## Scope
 
@@ -134,7 +134,7 @@ pointer, not a summary.
 - **I-46** The agent overlay is built from upstream release binaries pinned in `versions.json` and cached on Cachix — L942
 - **I-47** Base bumps are a planner and a runner in `internal/basebump` over two interfaces the api implements — L964
 - **I-48** virtiofsd's sandbox is `namespace`, and hostd attaches taps with exactly the host-conventions sequence — 2026-09-20; amended by I-463; L978
-- **I-49** The tmux-idle heuristic never reads pane content, and its metrics carry the `repose_api_*` prefix, not `repose_notify_*` — amended by I-59; partly amended by I-442; amended by I-504; L1020
+- **I-49** The tmux-idle heuristic never reads pane content, and its metrics carry the `repose_api_*` prefix, not `repose_notify_*` — amended by I-59; partly amended by I-442; amended by I-504; amended by I-688; amended by I-694; L1020
 - **I-50** Gemini CLI and pi both gained hook mechanisms since 5.3's "at time of writing" rows were written; Gemini CLI itself stopped serving individual-tier requests on 2026-06-18 — 2026-09-20; L1077
 - **I-51** `guest@<id>` runs Cloud Hypervisor as the `hostd` user inside a systemd sandbox; hostd itself stays root — 2026-09-20; L1124
 - **I-52** The `obs` package fixes what §5 left to call sites, and its component and label lists are wider than §5's by two and three — L1166
@@ -329,8 +329,8 @@ pointer, not a summary.
 - **I-247** The laptop's ssh-agent is never forwarded; GitHub pushes go over HTTPS with the carried gh login — 2026-09-24; L5985
 - **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; amended by I-618; L6024
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6056
-- **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; L6073
-- **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; L6121
+- **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; amended by I-688; amended by I-690; L6073
+- **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; amended by I-690; L6121
 - **I-246** The agents' browser is one headed Chromium on the desktop's display, shared by both MCP servers over CDP, and the desktop only views it — 2026-09-24; amended by I-555; L6162
 - **I-256** Vercel and portless stay menu entries, voice mode is not a repose feature, and a quick path to production stays deferred — 2026-09-25; L6234
 - **I-257** The terms say a machine is not for serving production traffic to others — 2026-09-25; L6256
@@ -502,10 +502,10 @@ pointer, not a summary.
 - **I-441** Guests report guest kinds only; platform kinds come from the api — 2026-10-04; L11253
 - **I-442** The unsubscribe link confirms before it acts, and expires — 2026-10-04; L11273
 - **I-443** An unknown JWT key id fetches the JWKS at most once per 30 seconds — 2026-10-04; L11287
-- **I-444** The ntfy sender reaches public addresses only and follows no redirect — 2026-10-04; L11300
+- **I-444** The ntfy sender reaches public addresses only and follows no redirect — 2026-10-04; amended by I-692; L11300
 - **I-439** Tenant builds on a host reach the public internet only — 2026-10-03; L11316
 - **I-440** Build log redaction matches multi-line and encoded values, and covers a failed build's error — 2026-10-03; L11353
-- **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; L11370
+- **I-445** Guest notifications are bounded and rate-limited at hostd, and the api bounds them again — 2026-10-03; amended by I-690; amended by I-691; L11370
 - **I-446** Each guest's sample rows are stored apart, and the guest's part of a sample is cleaned — 2026-10-03; L11407
 - **I-447** A host's reports count only for its own guests; a question id acts only inside the sending guest's project — 2026-10-03; L11427
 - **I-434** The gateway remembers a revoked serial for the full user certificate lifetime, and refuses certificates that would outlive that memory — 2026-10-03; L11444
@@ -587,7 +587,7 @@ pointer, not a summary.
 - **I-501** herdr is a supported multiplexer: in the base at a pinned release, started by a boot unit on projects that choose it, read by guestd — 2026-10-05; amended by I-551; amended by I-560; amended by I-563; partly amended by I-597; L14192
 - **I-502** One multiplexer per project: chosen at create, changed with `--multiplexer`, applied at the next start — 2026-10-05; amended by I-549; L14230
 - **I-503** guestd starts the session unit `project.json` names, and the path unit goes — 2026-10-05; amended by I-551; L14264
-- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; L14280
+- **I-504** guestd reads herdr's agents from its socket, on every machine, by polling `agent.list` — 2026-10-05; amended by I-561; amended by I-688; amended by I-694; L14280
 - **I-505** The herdr server and its agents get I-200's memory protection and run at nice -5 — 2026-10-05; amended by I-535; amended by I-576; L14310
 - **I-506** A hook's window may be `herdr:<pane_id>`, sent by repose-hook; a window that resolves to no pane changes no agent's state — 2026-10-05; amended by I-561; L14329
 - **I-507** `herdr_down` joins the guest warning kinds — 2026-10-05; amended by I-562; L14344
@@ -655,7 +655,7 @@ pointer, not a summary.
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16624
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16669
 - **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16696
-- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; L16757
+- **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; L16757
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16824
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16874
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16908
@@ -701,10 +701,10 @@ pointer, not a summary.
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18585
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18592
 - **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18636
-- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; L18665
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; L18665
 - **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; L18752
 - **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; L18789
-- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; L18816
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; L18816
 - **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; L18846
 - **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18897
 - **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18937
@@ -737,3 +737,11 @@ pointer, not a summary.
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L20652
+- **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L20679
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20692
+- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — L20702
+- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20718
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20732
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
+- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765

@@ -7,13 +7,13 @@ order: 15
 
 Every machine has five coding agents installed, unmodified:
 
-| Agent       | `--agent`  | Login                                      | Notifies you          |
-| ----------- | ---------- | ------------------------------------------ | --------------------- |
-| Claude Code | `claude`   | Log in once, or a setup token              | Finished, needs input |
-| Codex CLI   | `codex`    | Copied from your laptop                    | Finished              |
-| opencode    | `opencode` | Copied from your laptop                    | Finished, needs input |
-| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | When it goes idle     |
-| pi          | `pi`       | A provider's API key as a secret           | When it goes idle     |
+| Agent       | `--agent`  | Login                                      | States                       |
+| ----------- | ---------- | ------------------------------------------ | ---------------------------- |
+| Claude Code | `claude`   | Log in once, or a setup token              | working, needs input, idle   |
+| Codex CLI   | `codex`    | Copied from your laptop                    | working, idle                |
+| opencode    | `opencode` | Copied from your laptop                    | working, needs input, idle   |
+| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | working, idle                |
+| pi          | `pi`       | A provider's API key as a secret           | working, idle                |
 
 `repose run -p "prompt"` uses Claude Code. To use another agent for one prompt:
 
@@ -89,14 +89,25 @@ ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
 
 You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode -p "..."` starts. Without it, the installer puts OpenCode 2 first on your `PATH` in `.bashrc`, so a plain `opencode` in a new shell is OpenCode 2, and it starts outside the project's dev environment.
 
-- **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and sends "finished", "needs input" and "error". If you edit the plugin, run `opencode2 service restart`.
+- **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and reports finished turns, "needs input" and "error"; only "needs input" and "error" notify you ([Notifications](/docs/notifications)). It doesn't report your prompts, so it shows `running` ([Agent states](#agent-states)), and a question it asked stays open when you answer it in its terminal. If you edit the plugin, run `opencode2 service restart`.
 - **Logins.** The first time it runs, OpenCode 2 imports the opencode logins `repose run` copied. After that, run `opencode2 auth login` on the machine, or store the provider's API key as a secret.
 - **Its web app.** OpenCode 2 keeps sessions in a background service on the machine's `localhost:49374`. Run `opencode2 pair` on the machine for a one-time link, then open it on your laptop within 5 minutes. If you're attached, the port is already on your laptop; if not, run `repose open 49374`.
 - **Updates.** `opencode2 upgrade` updates it, platform updates leave it as it is, and a restore takes it back with the rest of your home directory.
 
+## Agent states
+
+`repose ls`, `repose ps` and the dashboard show each agent's state as its hooks report it, within about 10 seconds:
+
+- `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
+- `needs input`: waiting for your permission (Claude Code and opencode).
+- `idle`: at its prompt. A finished turn sends no notification; an agent says its work is done with `repose-notify --done`.
+- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
+
+Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
+
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, `repose-notify --done "text"` says the work you asked for is finished, and `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it. If you answer the agent in its own terminal instead, the question closes by itself. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
 ## Log in
 

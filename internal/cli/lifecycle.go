@@ -376,8 +376,9 @@ func slugsOf(projects []*Project) []string {
 // middle of a turn or waiting for an answer, as "claude (working) and
 // codex-2 (needs input)", or "" when none is. A stop ends them
 // (features/stop-start-destroy.md), so stop asks first (I-614); an idle
-// agent loses nothing, so it is not named. The sample can be up to a
-// minute old.
+// agent loses nothing, so it is not named, and neither is one that only
+// shows running: no hook says it is in a turn (I-694). The sample can be
+// up to a minute old.
 func busyAgents(p *Project) string { return joinNames(busyAgentList(p)) }
 
 func busyAgentList(p *Project) []string {

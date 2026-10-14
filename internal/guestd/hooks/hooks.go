@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/guestd/questions"
+	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/multiplexer"
 	"golang.org/x/sys/unix"
@@ -31,8 +32,20 @@ import (
 // the AgentEvent summary at 1 KB).
 const SummaryCap = 1 << 10
 
+// KindPrompt is the socket kind of a prompt-submit hook (DECISIONS I-690):
+// the user sent the agent a prompt. It never leaves the guest, and the
+// prompt's text is never read: guestd closes the open questions asked
+// from that agent process and marks the agent working.
+const KindPrompt = "prompt"
+
+// KindResume is the socket kind of a turn the agent starts by itself:
+// Claude Code's turn after a background task finished, whose prompt is
+// its own <task-notification> (DECISIONS I-688, I-690). It never leaves
+// the guest and closes no question; guestd marks the agent working.
+const KindResume = "resume"
+
 // Kinds an agent may report.
-var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true}
+var kinds = map[string]bool{"completed": true, "needs_input": true, "error": true, KindPrompt: true, KindResume: true}
 
 // agents that may report. A wrapper for an agent not in this list is a
 // packaging mistake, and saying so is more useful than accepting it.
@@ -73,12 +86,15 @@ type Server struct {
 	// questions backs /notify and /ask once EnableAsk is called (I-244).
 	questions *questions.Store
 	msgSink   Sink
+	// procRoot is where the caller's process tree is read, /proc on a
+	// guest.
+	procRoot string
 }
 
 // NewServer builds the hook server. gid owns the socket's group, so the dev
 // user can write to it and nothing else can.
 func NewServer(path string, gid int, sink Sink, resolve WindowResolver, log *slog.Logger) *Server {
-	s := &Server{path: path, sink: sink, resolve: resolve, log: log, gid: gid}
+	s := &Server{path: path, sink: sink, resolve: resolve, log: log, gid: gid, procRoot: "/proc"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handle)
 	s.mux = mux
@@ -91,6 +107,10 @@ func NewServer(path string, gid int, sink Sink, resolve WindowResolver, log *slo
 	}
 	return s
 }
+
+// SetProcRoot reads callers' process trees under root instead of /proc
+// (tests, and guestd's own Root).
+func (s *Server) SetProcRoot(root string) { s.procRoot = root }
 
 // SetHerdrResolver resolves "herdr:" windows; without it every such window
 // is unresolved.
@@ -194,6 +214,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if p.Kind == KindPrompt {
+		s.handlePrompt(w, r, p)
+		return
+	}
+	if p.Kind == KindResume {
+		s.sink(p.Agent, s.windowOf(r, p.Window), KindResume, "")
+		s.log.Info("agent resumed", "event", "agent_event", "agent", p.Agent, "kind", KindResume)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	summary := truncate(p.Summary, SummaryCap)
 	// Empty when the caller is in no pane guestd can name (a script, a
 	// herdr pane no agent is in): the sink relays the event under the
@@ -205,6 +236,82 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("agent hook received",
 		"event", "agent_event", "agent", p.Agent, "kind", p.Kind, "summary_bytes", len(summary))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePrompt closes the questions the prompted agent asked (reason
+// terminal) and tells the sink, with no summary: whatever text the
+// payload carries is dropped unread.
+func (s *Server) handlePrompt(w http.ResponseWriter, r *http.Request, p Payload) {
+	window := s.windowOf(r, p.Window)
+	closed := 0
+	if s.questions != nil {
+		match := askedFrom(s.agentProcOf(r, p.Agent), window)
+		closed = s.questions.CloseWhere(match, questions.ReasonTerminal)
+	}
+	s.sink(p.Agent, window, KindPrompt, "")
+	s.log.Info("agent prompt received", "event", "agent_event", "agent", p.Agent, "kind", KindPrompt, "questions_closed", closed)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// askedFrom matches the open questions asked from one agent process (proc,
+// "pid:starttime"), and, where either side has no agent process, from
+// one window. A question asked from no agent and no window matches
+// nothing.
+func askedFrom(proc, window string) func(questions.Question) bool {
+	return func(q questions.Question) bool {
+		if proc != "" && q.AgentProc == proc {
+			return true
+		}
+		return (proc == "" || q.AgentProc == "") && window != "" && q.Window == window
+	}
+}
+
+// agentProcOf is the request's caller's agent process key.
+func (s *Server) agentProcOf(r *http.Request, agent string) string {
+	pid, _ := r.Context().Value(peerKey{}).(int)
+	return agentProc(s.procRoot, pid, agent)
+}
+
+// agentProc walks from pid up its parents to the nearest process that is
+// agent's program and returns it as "pid:starttime", so a reused pid
+// never matches; "" when there is none or agent is not one of the five.
+// It reads stat and comm only: a process name, never arguments or
+// environment.
+func agentProc(root string, pid int, agent string) string {
+	if !agents[agent] {
+		return ""
+	}
+	for i := 0; i < 32 && pid > 1; i++ {
+		b, err := os.ReadFile(filepath.Join(root, strconv.Itoa(pid), "stat"))
+		if err != nil {
+			return ""
+		}
+		st := string(b)
+		open, end := strings.IndexByte(st, '('), strings.LastIndexByte(st, ')')
+		if open < 0 || end < open {
+			return ""
+		}
+		comm := st[open+1 : end]
+		f := strings.Fields(st[end+1:])
+		if len(f) < 20 {
+			return ""
+		}
+		if sample.IsAgentCommand(agent, comm) || sample.IsAgentCommand(agent, exeName(root, pid)) {
+			return strconv.Itoa(pid) + ":" + f[19]
+		}
+		pid, _ = strconv.Atoi(f[1])
+	}
+	return ""
+}
+
+// exeName is the basename of a process's exe link: Gemini CLI is node,
+// whose main thread's comm is MainThread.
+func exeName(root string, pid int) string {
+	l, err := os.Readlink(filepath.Join(root, strconv.Itoa(pid), "exe"))
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(l)
 }
 
 // windowOf is the window a hook, a notify or an ask is recorded under: a

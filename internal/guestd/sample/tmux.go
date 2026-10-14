@@ -34,6 +34,10 @@ func isAgentCommand(agent, comm string) bool {
 	return matchesBinary(binaries[agent], comm)
 }
 
+// IsAgentCommand is isAgentCommand for the hook socket, which finds a
+// caller's agent process by its comm (DECISIONS I-690).
+func IsAgentCommand(agent, comm string) bool { return isAgentCommand(agent, comm) }
+
 // matchesBinary reports whether a process name (comm, or the exe link's
 // basename) is one of wants, directly or as nixpkgs' wrapper renames it:
 // makeWrapper moves the real program to `.X-wrapped`, so the nix claude
@@ -53,10 +57,20 @@ func matchesBinary(wants []string, name string) bool {
 	return false
 }
 
-// HookedAgents are the agents whose completion is reported by a real hook.
-// The rest fall back to the pane-idle heuristic, and the notification says so
-// (features/agents.md: "claude finished" versus "gemini went idle").
+// HookedAgents are the agents whose turns are always reported by a real
+// hook. gemini and pi report through the platform extensions (I-690),
+// which a user may replace, so they count as hooked once a hook from
+// their window arrives; until then they fall back to the pane-idle
+// heuristic, and the event says so ("gemini went idle"), and show
+// running (I-694).
 var HookedAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
+
+// PromptHookedAgents are the agents whose prompts are always reported by a
+// hook the base installs and the user cannot drop: Claude Code's merged
+// settings and Codex's /etc/codex/config.toml (I-690). Their state comes
+// from hooks from the start (I-694). Any other agent's does once its
+// window sent a prompt hook; OpenCode 2 sends none and stays running.
+var PromptHookedAgents = map[string]bool{"claude": true, "codex": true}
 
 // AgentOf maps a tmux window name to an agent name, or "" if the window is not
 // an agent window. "claude" and "claude-2" are both claude.

@@ -121,13 +121,22 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) error {
 }
 
 // cancelQuestion is POST /projects/:id/questions/:qid/cancel: the owner
-// dismisses a question; the waiting repose-ask exits cancelled.
+// dismisses a question; the waiting repose-ask exits cancelled. The body
+// {via} is optional: a client that sends none is the dashboard.
 func (s *Server) cancelQuestion(w http.ResponseWriter, r *http.Request) error {
 	qid, err := s.projectQuestion(r)
 	if err != nil {
 		return err
 	}
-	q, err := s.d.Questions.Cancel(r.Context(), userFrom(r.Context()).ID, qid)
+	var body struct {
+		Via string `json:"via"`
+	}
+	if r.ContentLength != 0 {
+		if err := decode(r, &body); err != nil {
+			return err
+		}
+	}
+	q, err := s.d.Questions.Cancel(r.Context(), userFrom(r.Context()).ID, qid, body.Via)
 	if err != nil {
 		return questionErr(q, err)
 	}
@@ -179,7 +188,7 @@ func (s *Server) writeReplyPage(w http.ResponseWriter, status int, v replyView) 
 func (s *Server) replyToken(w http.ResponseWriter, r *http.Request) (uuid.UUID, int, string, bool) {
 	token := r.FormValue("token")
 	via := r.FormValue("via")
-	if via != "email" {
+	if via != "email" && via != "gchat" {
 		via = "ntfy"
 	}
 	if s.d.Unsub == nil || s.d.Questions == nil {

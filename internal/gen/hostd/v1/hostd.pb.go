@@ -3853,11 +3853,14 @@ type AgentQuestion struct {
 	QuestionId string                 `protobuf:"bytes,2,opt,name=question_id,json=questionId,proto3" json:"question_id,omitempty"`
 	Agent      string                 `protobuf:"bytes,3,opt,name=agent,proto3" json:"agent,omitempty"`
 	// A tmux window name or a herdr agent key, at most 64 bytes (I-504).
-	TmuxWindow    string   `protobuf:"bytes,4,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
-	Text          string   `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
-	Options       []string `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`
-	TimeoutS      uint32   `protobuf:"varint,7,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
-	State         string   `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
+	TmuxWindow string   `protobuf:"bytes,4,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	Text       string   `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	Options    []string `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`
+	TimeoutS   uint32   `protobuf:"varint,7,opt,name=timeout_s,json=timeoutS,proto3" json:"timeout_s,omitempty"`
+	State      string   `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
+	// Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
+	// (I-690). Empty on an open and from older hosts.
+	Reason        string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3944,6 +3947,13 @@ func (x *AgentQuestion) GetTimeoutS() uint32 {
 func (x *AgentQuestion) GetState() string {
 	if x != nil {
 		return x.State
+	}
+	return ""
+}
+
+func (x *AgentQuestion) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -4666,7 +4676,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x18\n" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x1f\n" +
 	"\vtmux_window\x18\x05 \x01(\tR\n" +
-	"tmuxWindow\"\xe3\x01\n" +
+	"tmuxWindow\"\xfb\x01\n" +
 	"\rAgentQuestion\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vquestion_id\x18\x02 \x01(\tR\n" +
@@ -4677,7 +4687,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x18\n" +
 	"\aoptions\x18\x06 \x03(\tR\aoptions\x12\x1b\n" +
 	"\ttimeout_s\x18\a \x01(\rR\btimeoutS\x12\x14\n" +
-	"\x05state\x18\b \x01(\tR\x05state\"\x95\x01\n" +
+	"\x05state\x18\b \x01(\tR\x05state\x12\x16\n" +
+	"\x06reason\x18\t \x01(\tR\x06reason\"\x95\x01\n" +
 	"\fSnapshotDone\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vsnapshot_id\x18\x02 \x01(\tR\n" +

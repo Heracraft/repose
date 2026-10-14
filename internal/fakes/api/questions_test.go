@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,3 +62,44 @@ func TestFakeQuestions(t *testing.T) {
 		t.Fatalf("project list %+v", list)
 	}
 }
+
+// TestFakeGuestCloseAndGchatReply (DECISIONS I-690, I-692): a guest-side
+// close with reason terminal reads as answered in the terminal, withdrawn
+// as withdrawn by the agent, and a reply link with via=gchat answers via
+// gchat.
+func TestFakeGuestCloseAndGchatReply(t *testing.T) {
+	f := New(Options{})
+	defer f.Close()
+	p, err := f.CreateProject("todo-app", "large")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q1, _ := f.AddQuestion(p.ID, "claude", "One?", []string{"yes", "no"}, time.Hour)
+	q2, _ := f.AddQuestion(p.ID, "claude", "Two?", nil, time.Hour)
+	q3, _ := f.AddQuestion(p.ID, "claude", "Three?", []string{"a", "b"}, time.Hour)
+	got, err := f.CloseQuestion(q1.ID, "", "terminal")
+	if err != nil || got.State != "answered" || got.Answer != nil || *got.AnsweredVia != "terminal" || got.AnsweredAt == nil {
+		t.Fatalf("terminal: %+v %v", got, err)
+	}
+	if got, err = f.CloseQuestion(q2.ID, "cancelled", "withdrawn"); err != nil || got.State != "cancelled" || *got.AnsweredVia != "agent" {
+		t.Fatalf("withdrawn: %+v %v", got, err)
+	}
+	r := call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q1.ID+"/answer", tok, map[string]any{"answer": "yes"})
+	if r.status != 409 || !contains(string(r.body), "answered in the terminal") {
+		t.Fatalf("answer after a terminal close: %d %s", r.status, r.body)
+	}
+	r = call(t, f, "POST", "/v1/projects/"+p.ID+"/questions/"+q2.ID+"/cancel", tok, nil)
+	if r.status != 409 || !contains(string(r.body), "withdrawn by the agent") {
+		t.Fatalf("dismiss after a withdrawal: %d %s", r.status, r.body)
+	}
+	res, err := http.Post(f.URL()+"/v1/questions/reply?via=gchat&token="+ReplyToken(q3.ID, 0), "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if q := f.Questions()[2]; res.StatusCode != 200 || *q.AnsweredVia != "gchat" {
+		t.Fatalf("gchat reply: %d %+v", res.StatusCode, q)
+	}
+}
+
+func contains(s, sub string) bool { return strings.Contains(s, sub) }

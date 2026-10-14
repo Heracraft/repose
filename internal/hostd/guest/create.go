@@ -663,6 +663,9 @@ type monitor struct {
 
 	// notifyBucket limits the guest's notifications; only run() touches it.
 	notifyBucket bucket
+	// opened holds the questions passed as open, so each one's close
+	// passes without a token (I-690); only run() touches it.
+	opened openQuestions
 }
 
 func (m *Manager) startMonitor(g *state.Guest) *monitor {
@@ -874,10 +877,19 @@ func (mon *monitor) regained() {
 
 func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 	m := mon.m
-	switch n.N.(type) {
+	switch v := n.N.(type) {
 	case *guestdv1.Notify_AgentEvent, *guestdv1.Notify_Question, *guestdv1.Notify_Warning:
 		// The ones that become api events pass the guest's bucket, so one
-		// guest cannot fill the host's stream (I-445).
+		// guest cannot fill the host's stream (I-445). The first close of
+		// a question hostd passed as open takes no token (I-690): a lost
+		// one leaves the question pending on the dashboard, and such
+		// closes are bounded by the opens the bucket counted. Any other
+		// close (an id never seen open, a repeat, one opened before a
+		// hostd restart) takes a token, so made-up closes cannot flood
+		// the stream.
+		if q, ok := v.(*guestdv1.Notify_Question); ok && q.Question.GetState() != "" && mon.opened.close(q.Question.GetQuestionId(), m.d.Now()) {
+			break
+		}
 		if !mon.notifyBucket.take(m.d.Now()) {
 			mon.notifyBucket.dropped++
 			if mon.notifyBucket.dropped == 1 {
@@ -905,13 +917,16 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:
 		q := v.Question
-		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State)
+		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State, q.Reason)
 		if !ok {
 			m.notifyDropped("invalid")
 			return
 		}
+		if aq.State == "" {
+			mon.opened.open(aq.QuestionId, m.d.Now())
+		}
 		// The text is tenant content: counted, never logged.
-		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", aq.Agent, "question_id", aq.QuestionId, "state", aq.State, "text_bytes", len(q.Text))
+		m.log(mon.g).Info("agent question", "event", "agent_question", "agent", aq.Agent, "question_id", aq.QuestionId, "state", aq.State, "reason", aq.Reason, "text_bytes", len(q.Text))
 		m.emitGuestEvent(&hostdv1.Event_AgentQuestion{AgentQuestion: aq})
 	case *guestdv1.Notify_AgentState:
 		m.log(mon.g).Debug("agent state", "event", "agent_state", "agent", cleanToken(v.AgentState.Agent, capAgent), "state", cleanToken(v.AgentState.State, capAgent))

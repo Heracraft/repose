@@ -12,7 +12,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "GET /v1/me", a(s.getMe))
 	s.route(m, "PATCH /v1/me", a(s.patchMe))
 	s.route(m, "DELETE /v1/me", a(s.deleteMe))
-	s.route(m, "POST /v1/me/notify-test", a(s.notifyTest))
+	s.route(m, "POST /v1/me/notify-test", a(s.limited(s.tests, s.notifyTest)))
 	// The personal layer, machine.nix (DECISIONS I-490)
 	s.route(m, "GET /v1/me/config", a(s.getPersonal))
 	s.route(m, "PUT /v1/me/config", a(s.limited(s.cfg, s.putPersonal)))

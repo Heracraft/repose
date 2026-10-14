@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -11,10 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/guestd/questions"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewJSONHandler(io.Discard, nil)) }
@@ -253,5 +257,95 @@ func TestCloseRemovesTheSocket(t *testing.T) {
 	}
 	if _, err := os.Stat(s.Addr()); !os.IsNotExist(err) {
 		t.Fatal("the socket was left behind, so a restart would fail to bind")
+	}
+}
+
+// fakeProc writes a /proc tree in which the test process's parent chain
+// is self -> 400 (bash) -> 300 (.claude-wrapped, starttime 777) -> 1.
+func fakeProc(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(pid int, comm string, ppid int, start int) {
+		dir := filepath.Join(root, strconv.Itoa(pid))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Fields after the comm: state ppid pgrp session tty tpgid flags
+		// minflt cminflt majflt cmajflt utime stime cutime cstime priority
+		// nice threads itrealvalue starttime.
+		stat := fmt.Sprintf("%d (%s) S %d 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 %d 0 0\n", pid, comm, ppid, start)
+		_ = os.WriteFile(filepath.Join(dir, "stat"), []byte(stat), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, "comm"), []byte(comm+"\n"), 0o644)
+	}
+	write(os.Getpid(), "hooks.test", 400, 900)
+	write(400, "bash", 300, 800)
+	write(300, ".claude-wrapped", 1, 777)
+	return root
+}
+
+func TestAgentProcIsTheNearestAgentAncestor(t *testing.T) {
+	root := fakeProc(t)
+	if got := agentProc(root, os.Getpid(), "claude"); got != "300:777" {
+		t.Fatalf("agentProc = %q, want 300:777", got)
+	}
+	if got := agentProc(root, os.Getpid(), "codex"); got != "" {
+		t.Fatalf("a codex caller under claude = %q, want none", got)
+	}
+	if got := agentProc(root, os.Getpid(), "shell"); got != "" {
+		t.Fatalf("shell = %q, want none", got)
+	}
+	// Gemini CLI: node, whose comm is MainThread; the exe link says node.
+	_ = os.WriteFile(filepath.Join(root, "300", "stat"), []byte("300 (MainThread) S 1 1 1 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 777 0 0\n"), 0o644)
+	if err := os.Symlink("/nix/store/x-nodejs/bin/node", filepath.Join(root, "300", "exe")); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentProc(root, os.Getpid(), "gemini"); got != "300:777" {
+		t.Fatalf("gemini as node = %q", got)
+	}
+}
+
+// TestPromptClosesTheCallersQuestions (I-690): a prompt hook closes the
+// open questions of the agent process it runs under, as terminal, and
+// is passed to the sink as kind prompt without its text.
+func TestPromptClosesTheCallersQuestions(t *testing.T) {
+	s, rec, c := newHookServer(t, nil)
+	s.SetProcRoot(fakeProc(t))
+	var mu sync.Mutex
+	var emitted []questions.Question
+	store := questions.New(t.TempDir(), func(q questions.Question) { mu.Lock(); emitted = append(emitted, q); mu.Unlock() }, quietLog(), nil)
+	s.EnableAsk(store, rec.sink)
+	mine, _ := store.Open("claude", "claude", "300:777", "q", nil, 0)
+	other, _ := store.Open("claude", "claude-2", "301:1", "q", nil, 0)
+
+	resp := post(t, c, `{"agent":"claude","kind":"prompt","summary":"secret prompt text","window":"claude"}`)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if got, _ := store.Get(mine.ID); got.State != questions.StateCancelled || got.Reason != questions.ReasonTerminal {
+		t.Fatalf("mine = %+v", got)
+	}
+	if got, _ := store.Get(other.ID); !got.Open() {
+		t.Fatalf("another agent's question closed: %+v", got)
+	}
+	if got := rec.all(); len(got) != 1 || got[0] != "claude|claude|prompt|" {
+		t.Fatalf("sink = %v, want the prompt without its text", got)
+	}
+}
+
+// TestPromptFallsBackToTheWindow: with no agent ancestor, a prompt closes
+// the questions asked from its window.
+func TestPromptFallsBackToTheWindow(t *testing.T) {
+	s, rec, c := newHookServer(t, nil)
+	store := questions.New(t.TempDir(), func(questions.Question) {}, quietLog(), nil)
+	s.EnableAsk(store, rec.sink)
+	s.SetProcRoot(t.TempDir())
+	inWin, _ := store.Open("claude", "claude", "", "q", nil, 0)
+	elsewhere, _ := store.Open("claude", "claude-2", "", "q", nil, 0)
+	post(t, c, `{"agent":"claude","kind":"prompt","window":"claude"}`)
+	if got, _ := store.Get(inWin.ID); got.Reason != questions.ReasonTerminal {
+		t.Fatalf("window match = %+v", got)
+	}
+	if got, _ := store.Get(elsewhere.ID); !got.Open() {
+		t.Fatalf("another window's question closed: %+v", got)
 	}
 }

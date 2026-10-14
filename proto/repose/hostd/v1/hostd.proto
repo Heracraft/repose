@@ -358,6 +358,9 @@ message AgentQuestion {
   repeated string options = 6;
   uint32 timeout_s = 7;
   string state = 8;
+  // Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
+  // (I-690). Empty on an open and from older hosts.
+  string reason = 9;
 }
 message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; }
 message HostWarning { string kind = 1; string detail = 2; }

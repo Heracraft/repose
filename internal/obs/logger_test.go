@@ -119,7 +119,7 @@ func TestRedactionCatchesDerivedNames(t *testing.T) {
 		"token", "access_token", "join_token", "secret", "secret_value", "password",
 		"authorization", "cert", "host_cert", "key", "host_key", "private_key",
 		"email", "user_email", "handle", "remote_url", "argv", "environ", "prompt",
-		"summary", "fragment", "ntfy_url", "github_login", "public_key", "ciphertext",
+		"summary", "fragment", "ntfy_url", "gchat_url", "webhook", "github_login", "public_key", "ciphertext",
 	}
 	for _, k := range keys {
 		log.Info("x", "event", EventRequest, k, planted)

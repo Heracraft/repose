@@ -27,7 +27,7 @@ const (
 // the platform's own kinds (billing, abuse, notifications_paused, ...) are
 // written by the api and never come from a guest.
 var (
-	hookKinds  = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true}
+	hookKinds  = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
 	hookAgents = map[string]bool{"claude": true, "opencode": true, "codex": true, "gemini": true, "pi": true, "shell": true}
 )
 

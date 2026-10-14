@@ -128,11 +128,18 @@ async function requestWithHeaders<T>(
 export const getMe = () => request<Me>('/me');
 export const patchMe = (body: {
 	tz?: string;
-	notify?: { email?: boolean; ntfy_url?: string | null };
+	notify?: { email?: boolean; ntfy_url?: string | null; gchat_url?: string | null };
 }) => request<Me>('/me', { method: 'PATCH', body });
 export const deleteMe = () => request<void>('/me', { method: 'DELETE' });
-export const notifyTest = () =>
-	request<{ email: 'ok' | 'error'; ntfy: 'ok' | 'error' }>('/me/notify-test', { method: 'POST' });
+/** Each channel that is on: ok or error, with why for ntfy and Google Chat. */
+export interface NotifyTestResult {
+	email?: 'ok' | 'error';
+	ntfy?: 'ok' | 'error';
+	ntfy_error?: string;
+	gchat?: 'ok' | 'error';
+	gchat_error?: string;
+}
+export const notifyTest = () => request<NotifyTestResult>('/me/notify-test', { method: 'POST' });
 /** The account's machine.nix (DECISIONS I-490). */
 export const getPersonal = () => request<PersonalConfig>('/me/config');
 /** Saves machine.nix; base is the revision the text started from, refused with conflict when the account has another. */
@@ -264,9 +271,14 @@ export const listQuestions = (
 	state: 'pending' | 'all' = 'pending',
 	opts: { passive?: boolean } = {}
 ) => request<{ questions: Question[] }>(`/questions?state=${state}`, opts).then((r) => r.questions);
-export const listProjectQuestions = (id: string, pendingOnly = true) =>
+export const listProjectQuestions = (
+	id: string,
+	pendingOnly = true,
+	opts: { passive?: boolean } = {}
+) =>
 	request<{ questions: Question[] }>(
-		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`
+		`/projects/${id}/questions${pendingOnly ? '?state=pending' : ''}`,
+		opts
 	).then((r) => r.questions);
 export const answerQuestion = (id: string, qid: string, answer: string) =>
 	request<Question>(`/projects/${id}/questions/${qid}/answer`, {

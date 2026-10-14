@@ -83,6 +83,9 @@ export interface Me {
 	notify?: {
 		email: boolean;
 		ntfy_url: string | null;
+		/** The Google Chat channel (I-692): the webhook's space and when
+		 * Google refused it. The webhook URL itself is never sent back. */
+		gchat?: { space: string; broken_at: string | null } | null;
 	};
 	/** The place on the waitlist while the user holds one (I-269, I-290). */
 	waitlist?: WaitlistPlace | null;
@@ -400,6 +403,8 @@ export interface EventsPage {
 /** A repose-ask question (docs/interfaces/api.md "Questions", I-245). */
 export type QuestionState = 'pending' | 'answered' | 'cancelled' | 'expired' | 'no_channel';
 
+export type QuestionVia = 'dashboard' | 'cli' | 'ntfy' | 'email' | 'gchat' | 'terminal' | 'agent';
+
 export interface Question {
 	id: string;
 	project_id: string;
@@ -410,7 +415,12 @@ export interface Question {
 	options: string[];
 	state: QuestionState;
 	answer: string | null;
-	answered_via: 'dashboard' | 'cli' | 'ntfy' | 'email' | null;
+	/**
+	 * Where it was answered or closed: `terminal` is an answer typed to the
+	 * agent itself (state answered, answer null), `agent` a withdrawal by
+	 * the agent (state cancelled), I-690; `gchat` is Google Chat, I-692.
+	 */
+	answered_via: QuestionVia | null;
 	created_at: string;
 	expires_at: string;
 	answered_at: string | null;

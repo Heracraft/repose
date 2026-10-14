@@ -174,9 +174,11 @@ func TestStopAsksBeforeEndingABusyAgent(t *testing.T) {
 		t.Fatalf("out %q", got)
 	}
 
-	// No busy agent: no question.
+	// No busy agent: no question. An agent with no turn hooks shows
+	// running, which says nothing about a turn, so it is not asked about
+	// either (I-694).
 	q := runningProject(t, fake, e, "web")
-	fake.SetAgents(q.ID, []fakeapi.AgentSignal{{Agent: "claude", Window: "claude", State: "idle"}})
+	fake.SetAgents(q.ID, []fakeapi.AgentSignal{{Agent: "claude", Window: "claude", State: "idle"}, {Agent: "pi", Window: "pi", State: "running"}})
 	never := func(q string) (bool, error) { t.Fatalf("asked %q", q); return false, nil }
 	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"web"}, Confirm: never}); err != nil {
 		t.Fatal(err)

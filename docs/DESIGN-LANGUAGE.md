@@ -292,8 +292,8 @@ font-semibold`, card titles included; no dashboard page uses h3 (I-375).
 What each signed-in page leads with (I-664). A change to a page's order
 or its first screen goes through a DECISIONS entry.
 
-- **Projects**: the questions agents wait on, as one accent-ruled
-  callout; a stat strip (`PlanStrip`) of memory running, disk held and
+- **Projects**: the questions agents wait on, as the "Waiting on
+  you" card (I-693); a stat strip (`PlanStrip`) of memory running, disk held and
   egress against the plan, or, with no plan limits, four facts from the
   list (memory, machines running, agents needing input, disk in use);
   the table; Recent activity; Recently destroyed. The table's name link
@@ -301,7 +301,8 @@ or its first screen goes through a DECISIONS entry.
   rows stack, never scroll sideways. With no projects the empty state
   is one card across the frame: `repose run` on the left, the plan
   facts or the waitlist on the right (I-681).
-- **A project** (I-680): Questions across the frame while any wait;
+- **A project** (I-680): "Waiting on you" across the frame while any
+  question waits;
   then Events in two thirds beside Connect over Machine, the two
   columns ending on one line (I-682); Usage across
   the frame; then Snapshots in two thirds beside Agents (while the
@@ -453,6 +454,17 @@ takes the pointer without moving the layout (I-657).
   always printed. Filled for running (emerald), error (red) and busy
   (ink, pulsing under `motion-safe`); hollow, edged in `--control-edge`,
   for stopped and destroyed (I-373).
+- Questions (I-693): one `QuestionRow` on /projects and the project
+  page, in a `.card` titled "Waiting on you" with a `.badge--warn`
+  count. Rows split by hairlines, each marked by one amber square
+  (`.dot--warn`), never a rule down the side: amber is "waits on you",
+  blue stays links, focus and measures. A 13px meta line (agent in
+  mono, window muted, the age right-aligned, the expiry in amber only in
+  its last 10 minutes), the question at 16px held to about 80
+  characters a line and clamped to 3 lines (4 on a phone) with "Show
+  all" only when clamped, options as `.btn-quiet .btn--sm` chips or a
+  field that grows to 4 lines with a quiet "Send", and a `.btn-ghost`
+  "Dismiss". A closed question is one line for 8 seconds.
 - `.table`: hairlines, no fills, heads in `text-xs text-ink-muted`. A
   table that scrolls sideways on a phone sits in a `role=region` with an
   `aria-label` and `tabindex=0`, so a keyboard can scroll it.

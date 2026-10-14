@@ -1,5 +1,8 @@
 {{.Heading}}
-{{range .Paragraphs}}
+{{if .Meta}}{{.Meta}}
+{{end}}{{if .Quote}}
+{{.Quote}}
+{{end}}{{range .Paragraphs}}
 {{.}}
 {{end}}{{range .Steps}}
 {{.N}}. {{.Title}}{{if .Command}}
@@ -10,7 +13,9 @@
 {{end}}{{if .Buttons}}
 {{.ButtonsLabel}}
 {{range .Buttons}}  {{.Label}}: {{.URL}}
-{{end}}{{end}}{{if .Primary}}
+{{end}}{{end}}{{if .Quiet}}
+{{.Quiet.Label}}: {{.Quiet.URL}}
+{{end}}{{if .Primary}}
 {{.Primary.Label}}: {{.Primary.URL}}
 {{end}}{{range .Lines}}
 {{.}}

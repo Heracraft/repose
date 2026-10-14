@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Get told by email or on your phone when an agent finishes, needs you, or asks you something, and answer from there.
+description: Get told by email, on your phone or in Google Chat when an agent is done, needs you, or asks you something, and answer from there.
 section: Using repose
 order: 16
 ---
@@ -31,19 +31,39 @@ repose notify test
 ```text
 email: sent
 ntfy: sent
+gchat: off
 ```
 
-`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason ntfy gave, such as `failed: the server answered 403`, and the command exits 1.
+`repose notify` alone shows the settings. A channel that failed shows `failed` with the reason the server gave, such as `failed: the server answered 403`, and the command exits 1. You can send 6 tests a minute.
 
 A self-hosted ntfy server works the same way, as long as it's reachable from the internet. repose refuses an ntfy URL on `localhost` or a private address when you save it, never sends to a name that resolves to one, and doesn't follow redirects. For one that needs a login, put it in the URL (`https://user:password@ntfy.example.com/topic`). Turn ntfy off with `repose notify set --ntfy off`.
 
-Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy URL saves with the **Save** button next to it.
+## Google Chat
+
+Google Chat posts each notification to a space you choose, as a card with buttons. It needs a Google Workspace account: a personal Gmail account can't add webhooks.
+
+1. In a desktop browser, open the space (a space of your own works), then **Apps & integrations**, **Webhooks**, **Add webhooks**. The Chat mobile app can't create one.
+2. Name it `repose` and copy its URL.
+3. Tell repose, with the URL in single quotes because of its `&`, and send a test:
+
+```
+repose notify set --gchat 'WEBHOOK_URL'
+repose notify test
+```
+
+The URL lets anyone who has it post to the space, so repose treats it like a password: it's never shown again, in the CLI or on the dashboard, which show the space's id instead.
+
+Each notification starts its own thread, so it alerts like a new message. A question's options are buttons; each opens a page where you confirm the answer. When the question closes, a reply in its thread says how, such as `Answered yes from the dashboard`. A question that closes before its card goes out is not posted.
+
+If Google refuses the webhook (it was deleted, or the space removed it), repose stops sending to it and emails you once. `repose notify` then shows `broken since` and the date. Saving a URL, or a `repose notify test` that gets through, turns it back on. Turn Google Chat off with `repose notify set --gchat off`.
+
+Settings apply to every project. The dashboard's **Settings** page has the same controls, plus **Send test**. **Email notifications** and the timezone save as soon as you change them; the ntfy and Google Chat URLs each save with their own **Save** button.
 
 ## What you'll get
 
 | Title                                           | When                                                                                                                                                                                          |
 |-------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `todo-app: claude finished`                     | The agent finished and is waiting.                                                                                                                                                            |
+| `todo-app: claude is done`                      | The agent ran `repose-notify --done` to say the work you asked for is ready to look at. The body is its report. A turn that ends sends nothing.                                               |
 | `todo-app: claude needs input`                  | The agent is asking you something, usually a permission.                                                                                                                                      |
 | `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                  |
 | `todo-app: snapshot failed`                     | A snapshot couldn't be taken.                                                                                                                                                                 |
@@ -60,13 +80,18 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `tmp-k3f9: temporary machine destroyed`         | A temporary machine's time ran out and it was destroyed, with no snapshot.                                                                                                                    |
 | `todo-app: claude says`                         | An agent, or you, ran `repose-notify` on the machine. The body is the message.                                                                                                                |
 | `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                     |
-| `todo-app: notifications paused`                | The project reached 30 notifications this hour.                                                                                                                                               |
+| `todo-app: notifications paused`                | The project sent 30 notifications in the last hour; they're paused until the time in the body.                                                                                              |
+| `repose: test`                                  | You ran `repose notify test` or pressed **Send test**.                                                                                                                                        |
 
-Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them.
+While you're at the machine (attached in tmux, or connected over SSH, which includes your editor and a herdr bridge), what an agent sends waits until you leave, for at most 10 minutes. That covers a question, a done report, a message, a permission prompt and an error. One that's over by then isn't sent: a question you answered in the terminal or that the agent withdrew, or a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
-The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh or your email provider, so use a self-hosted ntfy server if that matters.
+On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page.
 
-Claude Code, Codex and opencode (OpenCode 2 too) report through hooks, within about 10 seconds. Gemini CLI and pi have no hooks, so the machine sends `finished` when their processes go quiet, within about 90 seconds, with the body `gemini went idle` or `pi went idle`. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead, and `finished` comes within about 5 seconds of the turn ending. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
+Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them. Times in emails, and in the paused notice, are in the timezone on the **Settings** page, or UTC when none is set.
+
+The body is what the agent said at that moment, up to 1 KB. It's never your prompt or your terminal. It does pass through ntfy.sh, Google or your email provider, so use a self-hosted ntfy server if that matters.
+
+An agent finishing its turn sends you nothing. The turn shows in `repose events` as `finished`, and `repose ls` shows the agent `idle`. All five agents report through hooks, within about 10 seconds, and permission prompts and errors reach you that way; Gemini CLI and pi report through the machine's extension for them ([Agent states](/docs/agents#agent-states)). Until a Gemini CLI or pi reports, the machine records `gemini went idle` or `pi went idle` in `repose events` when its process goes quiet for about 90 seconds. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) the machine takes their state from herdr instead. If herdr sees one of them waiting for you, `repose ls` shows `needs input`, with no notification.
 
 ## Emails about your account
 
@@ -85,6 +110,7 @@ Some emails are about your account rather than a machine. They are sent even whe
 | `Your plan has ended`                          | The period ended after a cancellation. Your machines are stopped; the email says until when the snapshots are kept and how to come back.                             |
 | `Your plan changed`                            | You changed plan: from what, to what, and when it takes effect.                                                                                                      |
 | `Your machines were stopped: egress limit`     | Your machines sent four times the plan's monthly egress and are stopped until the period renews ([Limits](/docs/limits#network)). Upgrading lifts the limit at once. |
+| `Google Chat notifications stopped`            | Google refused your Chat webhook. Nothing goes to Google Chat until you save a new URL or a test gets through.                                                      |
 
 ## Agents can message you and ask questions
 
@@ -92,54 +118,63 @@ Two commands on every machine let an agent reach you from any shell, including i
 
 ```
 repose-notify "Deploy to staging is green"
+repose-notify --done "PR 12 is up: retries for the webhook sender"
 repose-ask --options yes,no "Drop the legacy sessions table?"
 ```
 
-`repose-notify` sends the message and returns at once. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
+`repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
 
-A question can be answered in four places:
+A question can be answered in five places:
 
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
+- **Google Chat:** the card has a button for each option. It opens a page with the question and a button; pressing it answers.
 - **Email:** the email has a link for each option. The link opens a page with the question and a button; pressing it answers. Replying to the email doesn't work.
-- **The dashboard:** a waiting question shows at the top of the project's page, with a button per option or a text box. The Projects page lists every waiting question, each with **Answer**.
-- **Your laptop:** `repose questions` lists the waiting ones and `repose reply` answers:
+- **The dashboard:** waiting questions show under **Waiting on you** at the top of the Projects page and of the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
+- **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses:
 
 ```
 repose questions
 repose reply todo-app yes
+repose reply --dismiss todo-app
 ```
 
-The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Cancel question** on the dashboard cancels a question without answering.
+You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
+
+The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering. A question answered somewhere else while it is on screen shows where for 8 seconds, for example `Answered yes by email` or `Answered in the terminal`, then goes.
+
+An agent takes its own questions back with `repose-ask --cancel`, one with `repose-ask --cancel ID` (the ID `repose-ask` printed when it asked), and every open question on the machine with `repose-ask --cancel --all`; each prints how many it withdrew. A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
 
 Tell your agent about the commands in its instructions, for example in `CLAUDE.md`: "When you need a decision from me, run `repose-ask` with the question and use its output as my answer."
 
 `repose-ask` options:
 
-| Option            | Default    |                                                                                   |
-| ----------------- | ---------- | --------------------------------------------------------------------------------- |
-| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.      |
-| `--agent NAME`    | detected   | Who is asking. Usually detected from the agent running the command, else `shell`. |
+| Option            | Default    |                                                                                                             |
+| ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                          |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.                                |
+| `--agent NAME`    | detected   | Who is asking. Usually detected from the agent running the command, else `shell`.                           |
+| `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with ID. With `--all`, every open question on the machine. |
 
 It exits with:
 
-| Code | Meaning                                                                   |
-| ---- | ------------------------------------------------------------------------- |
-| 0    | You answered. The answer is on standard output.                           |
-| 1    | The machine's agent service couldn't be reached.                          |
-| 2    | Wrong usage, such as no question or more than three options.              |
-| 3    | No answer before the timeout.                                             |
-| 4    | Email is off and there's no ntfy topic, so nobody would see the question. |
-| 5    | Cancelled: you dismissed it, the machine stopped, or it restarted.        |
-| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.        |
+| Code | Meaning                                                                                                        |
+| ---- | -------------------------------------------------------------------------------------------------------------- |
+| 0    | You answered. The answer is on standard output.                                                                |
+| 1    | The machine's agent service couldn't be reached.                                                               |
+| 2    | Wrong usage, such as no question or more than three options.                                                   |
+| 3    | No answer before the timeout.                                                                                  |
+| 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question. |
+| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                      |
+| 6    | You answered the agent in its terminal. Nothing is on standard output.                                         |
+| 130  | Interrupted, for example with `Ctrl-C`. The question is withdrawn.                                             |
 
 Messages and questions are capped at 1 KB and count toward the project's 30 notifications an hour. The text is shown to you and nobody else, and it isn't written to any log.
 
 ## Limits
 
-Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications an hour; past that, one message says they're paused until the next hour.
+Repeats of the same event from the same agent within 60 seconds are sent once. A project sends at most 30 notifications in any hour; past that, one message says when they resume. Its events still show in `repose events`. Google Chat takes one message a second per space, so a burst arrives a second apart.
 
-Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
+Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped on the host: it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A question closing on the machine is never dropped. A project's event history keeps at most 600 of these an hour. Agent names longer than 32 bytes show as `unknown`, and window names are cut to 64 bytes.
 
 ## Check what happened
 

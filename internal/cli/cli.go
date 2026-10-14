@@ -1965,14 +1965,16 @@ func newQuestionsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*En
 
 func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *cobra.Command {
 	var question string
+	var dismiss bool
 	cmd := &cobra.Command{
 		Use:   "reply [PROJECT] [--] [ANSWER...]",
 		Short: "Answer a question an agent asked with repose-ask",
 		Long: "Answer a waiting question. A first word that names one of your projects is\n" +
 			"PROJECT; otherwise every word is the answer, which works while one question is\n" +
 			"waiting. Put -- before an answer that starts with a project's name. With no\n" +
-			"answer, ask for one. When the question has options, the answer is one of them.",
-		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine",
+			"answer, ask for one. When the question has options, the answer is one of them.\n" +
+			"--dismiss [PROJECT] cancels the question without an answer.",
+		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine\n  repose reply --dismiss todo-app",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := envJSON(cmd)
 			if err != nil {
@@ -1992,10 +1994,14 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 			case dash > 1:
 				return cobraUsageError{fmt.Errorf("only PROJECT goes before --: repose reply [PROJECT] -- ANSWER")}
 			}
+			if dismiss {
+				return DismissCmd(cmd.Context(), e, args, project, question)
+			}
 			return replyCmd(cmd.Context(), e, args, project, question, os.Stdin, canPrompt(os.Stdin), mayName)
 		},
 	}
 	cmd.Flags().Bool("json", false, "print the answered question as JSON")
+	cmd.Flags().BoolVar(&dismiss, "dismiss", false, "cancel the question without an answer; its repose-ask exits 5")
 	cmd.Flags().StringVar(&question, "question", "", "the question's `ID`, or its last characters, as questions shows it")
 	_ = cmd.RegisterFlagCompletionFunc("question", completeQuestionID(func() (*Env, error) { return envJSON(cmd) }))
 	return cmd
@@ -2006,8 +2012,8 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "notify",
 		Short: "Show or change where agent notifications go",
-		Long: "Show where notifications go: email and ntfy. Agents on a machine send their own\n" +
-			"with repose-notify and repose-ask.",
+		Long: "Show where notifications go: email, ntfy and Google Chat. Agents on a machine\n" +
+			"send their own with repose-notify and repose-ask.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			g.json = showJSON
@@ -2019,7 +2025,7 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	root.Flags().BoolVar(&showJSON, "json", false, "print the settings as JSON")
-	var emailFlag, ntfyFlag string
+	var emailFlag, ntfyFlag, gchatFlag string
 	set := &cobra.Command{
 		Use:   "set",
 		Short: "Change where notifications go",
@@ -2037,15 +2043,19 @@ func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				b := emailFlag == "on"
 				email = &b
 			}
-			var ntfy *string
+			var ntfy, gchat *string
 			if ntfyFlag != "" {
 				ntfy = &ntfyFlag
 			}
-			return NotifySetCmd(cmd.Context(), e, email, ntfy)
+			if gchatFlag != "" {
+				gchat = &gchatFlag
+			}
+			return NotifySetCmd(cmd.Context(), e, email, ntfy, gchat)
 		},
 	}
 	set.Flags().StringVar(&emailFlag, "email", "", "`on|off`: notify by email, to your account's address")
 	set.Flags().StringVar(&ntfyFlag, "ntfy", "", "`URL|off`: notify on this ntfy topic")
+	set.Flags().StringVar(&gchatFlag, "gchat", "", "`URL|off`: notify in the Google Chat space of this webhook")
 	_ = set.RegisterFlagCompletionFunc("email", cobra.FixedCompletions([]string{"on", "off"}, cobra.ShellCompDirectiveNoFileComp))
 	test := &cobra.Command{
 		Use:   "test",
