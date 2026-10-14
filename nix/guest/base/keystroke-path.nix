@@ -9,7 +9,7 @@
 # user manager (oom_score_adj 100) ahead of a 319 MB claude (0), which ended
 # the tmux server and every pane.
 #
-# Four parts:
+# Five parts:
 #   - CPU (I-494). The SSH session scopes and the tmux server run at
 #     CPUWeight=1000 against a pane's 100. Nothing is capped or reserved.
 #   - oom_score_adj. Upstream runs the user manager at 100 and its units
@@ -21,6 +21,14 @@
 #     -800 and puts every other process of dev's that inherited a negative
 #     value back to 0, so panes and what they start are ranked by size
 #     (internal/guestd/sample/oom.go).
+#   - OOM policy. The ranking above is undone if systemd then stops the
+#     cgroup the kill happened in, which `OOMPolicy=stop`, its default,
+#     does. Every cgroup of dev's holds an agent beside the work it
+#     started: a tmux pane is a `tmux-spawn-*.scope` with the agent and
+#     everything it ran, herdr's panes share the server's unit, a
+#     `chromium` runs in a transient scope with its renderers. The user
+#     manager's default is `continue`, and each logind session scope
+#     carries it too (I-697).
 #   - MemoryLow. The kernel reclaims these cgroups' pages last, so typing
 #     does not wait on the disk to read tmux, sshd or bash back in. The
 #     budget is the same on every size: these processes use about the
@@ -62,11 +70,37 @@ in
   systemd.services."user@".serviceConfig = {
     OOMScoreAdjust = -900;
     MemoryLow = low.userManager;
+    # The kernel's kill is reported against every unit above the cgroup
+    # it happened in, this one included ("systemd[1]:
+    # user@1000.service: The kernel OOM killer killed some processes in
+    # this unit", guest-base). Upstream's unit sets no policy, so it
+    # takes the system manager's default, `stop`, whose meaning here
+    # would be the whole session for a pane's dead build. Current
+    # systemd does not act on it at this level; saying it on the unit
+    # means no change in that has to be noticed (I-697). A kill of the
+    # manager itself still ends the unit, as the main process of any
+    # service does.
+    OOMPolicy = "continue";
   };
   # Upstream's default for a user manager's units is its own value plus
   # 100, which with the manager at -900 would protect every user unit and
   # everything it forks. 0: user units are ranked by size, like panes.
   systemd.user.settings.Manager.DefaultOOMScoreAdjust = 0;
+
+  # The companion to that value. When the kernel kills a process,
+  # systemd stops the unit whose cgroup it was in, which kills the rest
+  # of that cgroup beside it. On kanali, 2026-10-13, the kernel picked a
+  # 1.4 GB headless Chromium a Playwright test had launched over the
+  # agent at -800 in the same pane, which is the ranking above working;
+  # systemd then stopped the pane's tmux-spawn-*.scope and the agent
+  # went with it. Every unit and scope of dev's holds an agent beside
+  # the work it started, so `continue` is the default for all of them:
+  # the kill stands and nothing else in the cgroup is touched. Both
+  # session units carry the policy themselves as well, where their own
+  # reasons are (the tmux unit below, herdr.nix). A user unit that
+  # wanted a restart after an OOM kill would set its own; none does
+  # (DECISIONS I-697).
+  systemd.user.settings.Manager.DefaultOOMPolicy = "continue";
 
   # sshd hands its own unit's value to every session it forks (OpenSSH's
   # oom_adjust_restore; the listener itself runs at -1000). Shells and
@@ -80,12 +114,19 @@ in
   # logind session scope; the CPU weight keeps the keystrokes moving while
   # user@1000.service's panes hold every core (DECISIONS I-494). A prefix
   # drop-in, so it reaches the transient session-N.scope units.
+  #
+  # The scope holds what the session started too, a `repose exec` command
+  # or a test run under `repose code`, so it takes the panes' OOM policy:
+  # an OOM kill of the test run would otherwise end the session with it.
+  # logind's scopes belong to the system manager, which the user
+  # manager's default above does not reach (I-697).
   systemd.units."session-.scope" = {
     overrideStrategy = "asDropin";
     text = ''
       [Scope]
       CPUWeight=1000
       MemoryLow=${low.session}
+      OOMPolicy=continue
     '';
   };
 
@@ -125,7 +166,8 @@ in
     MemoryLow = low.tmux;
     # The unit's cgroup holds the server and its #() and run-shell jobs.
     # An OOM kill of a job must not stop the unit, which ends the server
-    # and every pane (KillMode=control-group); the default is stop.
+    # and every pane (KillMode=control-group). The manager's default
+    # above says the same; the unit says it where the reason is.
     OOMPolicy = "continue";
   };
 
