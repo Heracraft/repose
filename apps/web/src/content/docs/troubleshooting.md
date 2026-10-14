@@ -57,6 +57,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** The machine's store doesn't show paths the new system needs: on an older base, a `nix-collect-garbage` or `nix store gc` run inside the machine hid them; on a current base, the server no longer has them. The machine keeps running what it had.
 
+**``todo-app is running but repose has no address for it; run `repose stop todo-app` then `repose start todo-app` ``.** The machine is running, but repose doesn't hold the address connections go to, so nothing can reach it. The stop and the start give it one; waiting doesn't help.
+
 **`Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact`.** The server running the machine restarted and its disk storage for machines didn't come back. `todo-app` stays stopped with its disk as it was. `repose start todo-app` works once the storage is back.
 
 **`todo-app is being destroyed`.** `attach` and the other commands can't reach a machine that's going away. `repose run` in the checkout [waits for the destroy](/docs/lifecycle#start-over-with-a-fresh-machine), then creates a fresh `todo-app`.

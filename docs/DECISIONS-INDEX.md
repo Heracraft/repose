@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-709 entries.
+713 entries.
 
 ## Scope
 
@@ -741,3 +741,7 @@ pointer, not a summary.
 - **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20727
 - **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20754
 - **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L20790
+- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L20821
+- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L20894
+- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — L20936
+- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L20972

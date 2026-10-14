@@ -1858,7 +1858,13 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			continue
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
+			// host_unreachable was missing here while the real api has
+			// always sent it (internal/api/http/internal.go), so no
+			// gateway test could tell an unreachable host from a project
+			// with no address — the two the gateway collapsed into one
+			// banner until I-721.
 			"project_id": p.ID, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
+			"host_unreachable": p.HostUnreachable,
 		})
 		return nil
 	}

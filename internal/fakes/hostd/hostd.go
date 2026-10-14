@@ -578,7 +578,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 				f.setState(g, "running", "")
 				return ok(func(r *hostdv1.Result) {
 					r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: good, FailedClosure: failed,
-						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}, Boot: fakeBoot(false)}}
+						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}, Boot: fakeBoot(false),
+						GuestIp: g.IP, VsockCid: g.CID}}
 				})
 			}
 			f.mu.Lock()
@@ -590,7 +591,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		booted := g.Closure
 		f.mu.Unlock()
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false)}}
+			// As hostd since I-720: every start reports the guest's address.
+			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()

@@ -20817,3 +20817,180 @@ your config 1.0s`, `✓ Fetched 2 paths (1.5 MiB) 2.6s`, `✓ Built 2
 derivations 1.8s`, `✓ Booted e2e-tty 6.5s`. The quickstart's example output,
 config.md's build steps paragraph and docs/features/run-and-attach.md
 say what a first run prints.
+
+**I-720. The api learns a guest's address from the host, not only from a
+create's result (boot-real-addr, 05/03, 2026-10-13).** *Made during
+implementation.* `projects.guest_ip` had exactly one writer,
+`internal/api/ops/phases.go`'s `CreateResult`/`RestoreResult` phase, and
+four paths that null it. `StartResult` carried no address at all, and the
+api never read `Hello.GuestStatus.ip` or `vsock_cid` (`GetIp()` had no
+caller under `internal/api`). So a create that failed after the guest had
+booted left the row NULL under a guest the gateway could have reached,
+and no later message corrected it.
+
+teksafari-org, 2026-10-13, from the ops rows: `create` opened
+15:35:47.829Z and errored 15:37:07.848Z with `guest_unresponsive`
+(SetupProject, I-705); a `start` was accepted 15:37:08.537Z, 0.69 s
+later, and finished `done` at 15:38:11.092Z. **That start succeeded and
+still left `guest_ip` NULL**, which is the whole case for the proto
+change: nothing a start reported could fill the row. The project stayed
+unroutable until the conductor wrote an UPDATE by hand, and the gateway
+told the user, falsely, that the host could not be reached (I-721).
+
+Blast radius, from the read-only prod db: of 18 failed create/restore ops
+ever, 10 died before placement with no guest and 8 past it (5
+`guest_unresponsive`, 3 `internal`); 6 distinct projects have had a
+`start` finish `done` after such a failure.
+
+Two writers are added, both idempotent and both taking the host's word.
+The host is the authority: it allocates inside the disjoint /22 the api
+handed it at registration (`hostmgr.allocate`: 10.64.0.0/22,
+10.64.4.0/22, …) and keeps the allocation in bbolt across a stop, so a
+row that disagrees is a stale row and is overwritten, not warned about.
+
+- The `Hello` reconcile (`Engine.OnHello`) records the `ip` and
+  `vsock_cid` the host reports for a guest it owns, when the row holds
+  neither or holds another one, and only when the project has no open op
+  (an open op's result settles the address as it settles the state). A
+  host that reports an address for a project the api thinks is stopped
+  gets it written too: `guest_ip` is the allocation, not a liveness
+  signal, and the gateway routes on the project's state. A destroyed
+  project is never written — the write names the guest and carries `and
+  destroyed_at is null`.
+- `StartResult` gains `guest_ip` (field 5) and `vsock_cid` (field 6), and
+  the start phase records them. This is the half that closes the outage
+  in seconds rather than days. `internal/hostd/stream/stream.go:326`
+  sends `Hello` exactly once per stream session, right after `Dial`, so
+  Hello frequency *is* reconnect frequency: host-01's journal has 24
+  `stream_connect` events in 7 days with gaps up to 2 days, the last at
+  2026-10-12T22:13:07Z — about 17 hours before the failed create, and
+  none since. A Hello-only reconcile would never have touched
+  teksafari-org. Empty and 0 from a hostd before this, which the api
+  reads as "unchanged"; an api before it ignores both.
+
+`hostdev`, the api stand-in staging runs, learns an address the same two
+ways, so the staging bench models the api rather than the bug.
+
+Not done, deliberately: the Hello path does not re-sign the guest's host
+certificate with the address as a second principal the way the create
+result does (`resignHostCert`). The gateway verifies a guest's host key
+against `<slug>.<handle>`, never the address, so nothing depends on that
+principal for reachability, and decrypting a project's secrets and
+signing inside a reconcile that runs for every guest on every host
+connection is not worth it; the project's next create or restore adds it.
+
+Evidence, `go test` on woker-1 against the real Postgres
+`internal/db/testdb` boots: `TestHelloRecordsAGuestAddressTheApiLost`,
+`TestHelloCorrectsAnAddressThatDisagrees`,
+`TestStartRecordsTheGuestAddress`,
+`TestHelloLeavesAProjectWithAnOpenOpAlone`,
+`TestHelloRecordsTheAddressOfAStoppedGuestButNotADestroyedProject`, and
+`TestStartReportsTheGuestAddress` in `internal/hostd/guest`. Red before
+the change, with both writers removed: "timed out waiting for the address
+back from Hello", "timed out waiting for the stale address corrected",
+"guest_ip <nil> after a start, want 10.64.4.2".
+`docs/interfaces/grpc-hostd.md` in this commit.
+
+**I-721. "No address" is not "unreachable host" (boot-real-addr, 06,
+2026-10-13).** *Made during implementation.*
+`internal/gateway/server.go` collapsed `route.GuestIP == ""` and
+`route.HostUnreachable` into one banner, `<slug> is on a host the control
+plane cannot reach right now; try again shortly`. In the teksafari-org
+incident the host was answering and the machine was running; only the
+api's record of the address was missing, so the user was told something
+false, blamed the host, and was sent to wait for something that was never
+going to change. The two states now read differently:
+
+- `host_unreachable` keeps the existing banner, reason `route_error`.
+- No address: `<slug> is running but repose has no address for it; run
+  \`repose stop <slug>\` then \`repose start <slug>\``, reason
+  `no_address` (a new value of `repose_gateway_auth_fail_total{reason}`
+  and of the `auth_fail` event, so the api's own record being wrong can
+  be alerted on separately). It names the two commands because, since
+  I-720, a start writes the address — there is no third thing to try and
+  nothing to wait for. Should be zero in a healthy fleet; the RUNBOOK
+  says what a run of them means.
+
+Both are also added to the CLI's `otherRefusals`. Neither is a
+certificate refusal, and before this both fell through to the bare
+`permission denied` test and spent `connect`'s one forced re-issue
+(I-175) on a machine whose address the api did not hold.
+
+Found on the way: the fake api's `GET /internal/route` never returned
+`host_unreachable` although the real api always has
+(`internal/api/http/internal.go`), so no gateway test could tell the two
+states apart.
+
+Evidence: `TestRunningWithNoAddressIsNotAnUnreachableHost` (no address:
+"todo-app is running but repose has no address for it; run `repose stop
+todo-app` then `repose start todo-app`"; unreachable host: "todo-app is
+on a host the control plane cannot reach right now; try again shortly"),
+`TestNoAddressCountsAsItsOwnAuthFailReason`, with I-189's
+`TestStoppedAndOtherStates` and `TestOneBannerPerRefusal` still green.
+Red before, with the collapsed condition restored: the no-address case
+answered the unreachable-host banner and `no_address` counted 0.
+`docs/interfaces/ssh-gateway.md`,
+`docs/workstreams/06-gateway-edge.md`, `docs/ops/RUNBOOK.md` and
+`apps/web/src/content/docs/troubleshooting.md` in this commit.
+
+**I-722. A project read names the op in flight, so `repose run` never
+restarts a create it failed to read (boot-real-addr, 05/07,
+2026-10-13).** *Made during implementation.* One user action produced two
+ops on teksafari-org: the create errored at 15:37:07.848Z and a start was
+accepted 0.69 s later, from `repose run` itself, and nobody read the
+create's error (the api log shows about two `GET /v1/projects/{id}` a
+second in that window and zero reads of the create op).
+
+I-708's round-1 fix carries the create's op id across the re-read
+(`internal/cli/run.go:1281`) and closes the path the incident took, but
+only the `!fresh` path. When `resolveProject` has already found the
+project, `run.go:251` sets `fresh := res.Project != nil` to true and the
+whole `!fresh` block — the carry *and* I-356's guard — is skipped;
+`project.OpID` is empty because `projectJSON` emits no `op_id` (only
+`createProject`'s 201 did); `waitState` returns the moment the state goes
+to `error`; and the next statement calls `StartProject`. The same
+restart, from a different entry point.
+
+`GET /v1/projects/:id` now carries `op_id` when the project has an op
+pending or running, from `store.OpenOpsForProject` (ops are serialised
+per project, so the oldest open one is the one running). The wait then
+follows the op and reports what it said. The **list** route does not
+carry it: one query per project is an N+1, and no caller needs it there.
+The round-1 carry stays as the fallback against an api older than this.
+
+Evidence: `TestProjectReadCarriesTheOpInFlight` (the read names the same
+op the create's 201 named, the list names none, and the field is gone
+once nothing is open) and, on the CLI's side,
+`TestRunDoesNotStartACreateThatFailedOnAProjectItFound` — zero starts and
+"Could not start teksafari-org: the machine did not answer within a
+minute of starting (guest_unresponsive)", with
+`TestCreateThatFailedAtOnceReportsItsOwnError` and
+`TestStartOfAProjectWithNoGuestShowsTheCreate` still green. Red before:
+`read op_id "", want the create's "01a1379f-…"`.
+`docs/interfaces/api.md` in this commit.
+
+**I-723. One live project per guest address (boot-real-addr, 05,
+2026-10-13).** *Made during implementation.* Migration 0026 adds `unique
+(guest_ip) where destroyed_at is null and guest_ip is not null`. Guest
+addresses are unique across the fleet by construction — each host
+allocates inside the disjoint /22 it was handed at registration — so two
+live rows holding one address would relay two users' logins to one guest.
+Now that the api writes `guest_ip` from three places (I-720), the
+database is what refuses it rather than a code path that has to remember
+to check; a refused write leaves the row as it was and is retried on the
+next Hello rather than failing an op.
+
+**The predicate is keyed on `destroyed_at`, not on `state`, and that is
+load-bearing.** Prod today: 14 live projects, 13 holding an address, no
+two live rows sharing one, and one *destroyed* row repeating a live row's
+address from before a destroy released it — so keyed on `destroyed_at`
+the index creates cleanly, and keyed on `state` it would fail to create
+on production. (There are 0 rows with `state = 'destroyed'` while
+`destroyed_at` is NULL, so the two agree in the other direction; the
+difference is the destroyed rows that keep an address.)
+
+Evidence: `TestTwoLiveProjectsCannotHoldOneGuestAddress` (a second live
+row is refused the address, the same row takes it once destroyed, and the
+live row's address is unchanged), with `TestMigrateUpDownUp` covering
+0026's down. Red before: "two live projects took one guest address".
+`docs/interfaces/db-schema.md` in this commit.

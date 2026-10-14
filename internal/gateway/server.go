@@ -45,6 +45,11 @@ const (
 	MsgErrorFmt = "%s is in error; `repose status %s` says why"
 	// MsgUnreachableHostFmt takes the slug.
 	MsgUnreachableHostFmt = "%s is on a host the control plane cannot reach right now; try again shortly"
+	// MsgNoAddressFmt takes the slug three times: a running machine whose
+	// address the control plane does not hold, which is not its host being
+	// away (DECISIONS I-721). Nothing the user can wait for fixes it, so
+	// the banner names the two commands that do.
+	MsgNoAddressFmt = "%s is running but repose has no address for it; run `repose stop %s` then `repose start %s`"
 )
 
 // stateMessage is the banner for a project that is not running (I-189).
@@ -634,8 +639,16 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	}
 	switch route.State {
 	case "running":
-		if route.GuestIP == "" || route.HostUnreachable {
+		// Two different states, and until I-721 one message for both: the
+		// host is away, or the api holds no address for a machine that is
+		// running. The second told the user the host was unreachable when
+		// it was not (teksafari-org, 2026-10-13), and sent them to wait
+		// for something that was never going to change.
+		if route.HostUnreachable {
 			return g.fail(st, ResultRouteError, fmt.Sprintf(MsgUnreachableHostFmt, slug))
+		}
+		if route.GuestIP == "" {
+			return g.fail(st, ResultNoAddress, fmt.Sprintf(MsgNoAddressFmt, slug, slug, slug))
 		}
 	default:
 		return g.fail(st, ResultStopped, stateMessage(slug, route.State))

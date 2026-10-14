@@ -285,7 +285,18 @@ message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
 // set when the boot of the guest's recorded closure never reached Ready
 // and hostd booted booted_closure, the last one that did, instead
 // (DECISIONS I-590); boot_error is then why that boot failed.
-message StartResult { string booted_closure = 1; string failed_closure = 2; Error boot_error = 3; BootTimings boot = 4; }  // boot: the boot that reached running (I-707)
+// guest_ip and vsock_cid are the started guest's address, so a start
+// after a create that failed past the guest's own boot gives the api the
+// address that create never reported (DECISIONS I-720); empty and 0 from
+// a hostd that predates them, which the api reads as "unchanged".
+message StartResult {
+  string booted_closure = 1;
+  string failed_closure = 2;
+  Error boot_error = 3;
+  BootTimings boot = 4;  // the boot that reached running (I-707)
+  string guest_ip = 5;
+  uint32 vsock_cid = 6;
+}
 message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 
