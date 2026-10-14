@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-735 entries.
+737 entries.
 
 ## Scope
 
@@ -767,3 +767,5 @@ pointer, not a summary.
 - **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L21853
 - **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L21889
 - **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L21915
+- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L21945
+- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L21993

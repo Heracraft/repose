@@ -2558,6 +2558,29 @@ in
           disp = guest.succeed("sudo -u dev bash -lc 'echo -n $DISPLAY'")
           assert disp == "", disp
 
+      with subtest("a stale profile lock and root's stamps do not stop the browser (I-727)"):
+          # What a fork, or a restore under another name, finds after the
+          # browser was killed, beside stamps root made before dev did.
+          prof = "/home/dev/.local/share/repose/browser"
+          guest.succeed(f"sudo -u dev ln -sfn other-machine-4242 {prof}/SingletonLock")
+          guest.succeed(f"sudo -u dev ln -sfn /tmp/org.chromium.Chromium.gone/SingletonSocket {prof}/SingletonSocket")
+          guest.succeed(f"sudo -u dev ln -sfn 1234 {prof}/SingletonCookie")
+          guest.succeed("rm -f /run/repose/desktop/last-cdp /run/repose/desktop/last-client")
+          guest.succeed("touch /run/repose/desktop/last-cdp /run/repose/desktop/last-client")
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl is-active repose-browser.service repose-xvnc.service")
+          host = guest.succeed("cat /proc/sys/kernel/hostname").strip()
+          lock = guest.succeed(f"readlink {prof}/SingletonLock").strip()
+          assert lock.startswith(host + "-"), lock
+          guest.succeed("journalctl -u repose-browser.service | grep -q 'removed a stale profile lock (other-machine-4242)'")
+          owners = guest.succeed("stat -c %U /run/repose/desktop/last-cdp /run/repose/desktop/last-client").split()
+          assert owners == ["dev", "dev"], owners
+          # The idle check makes a missing stamp dev's too.
+          guest.succeed("rm /run/repose/desktop/last-cdp && systemctl start repose-desktop-idle-check.service")
+          assert guest.succeed("stat -c %U /run/repose/desktop/last-cdp").strip() == "dev"
+          guest.succeed("systemctl stop repose-browser.service")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
+
       with subtest("desktop start starts the browser with the boot's password; the viewer's idle stop leaves a used browser"):
           pw2 = guest.succeed("sudo -u dev repose-guest-profile desktop start").strip().splitlines()[-1]
           assert pw2 == pw, (pw, pw2)

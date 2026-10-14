@@ -515,6 +515,110 @@
           done
           touch $out
         '';
+        # The agents' browser starts after a kill left its profile locked,
+        # and no desktop stamp can end up root's (DECISIONS I-727): the
+        # unlock helper against stale and live locks, and the unit texts
+        # that run it and write every stamp through repose-desktop-stamp.
+        # Reads the unit texts, so it builds no part of the guest system.
+        guest-browser-starts-after-a-kill =
+          let
+            cfg = self.guestSystem.config;
+            unit = name: pkgs.writeText name (builtins.unsafeDiscardStringContext cfg.systemd.units.${name}.text);
+          in
+          pkgs.runCommand "guest-browser-starts-after-a-kill" {
+            browserUnit = unit "repose-browser.service";
+            xvncUnit = unit "repose-xvnc.service";
+            novncUnit = unit "repose-novnc.service";
+            # The idle check's script itself (coreutils, iproute2, systemd).
+            idleScript = cfg.systemd.services.repose-desktop-idle-check.serviceConfig.ExecStart;
+            unlock = "${pkgs.callPackage ./guest/base/browser-unlock.nix { }}/bin/repose-browser-unlock";
+            stamp = "${pkgs.callPackage ./guest/base/desktop-stamp.nix { }}/bin/repose-desktop-stamp";
+          } ''
+            fail() { echo "$*" >&2; exit 1; }
+            p=$TMPDIR/profile
+            mkdir -p $p
+            locks() { ln -sfn "$1" $p/SingletonLock; ln -sfn /tmp/org.chromium.Chromium.x/SingletonSocket $p/SingletonSocket; ln -sfn 1234 $p/SingletonCookie; }
+            gone() { for f in SingletonLock SingletonSocket SingletonCookie; do [ ! -L $p/$f ] || fail "$1: $f is still there"; done; }
+            kept() { [ "$(readlink $p/SingletonLock)" = "$2" ] || fail "$1: the lock was removed"; }
+
+            $unlock $p || fail "no lock: exit $?"
+
+            # A fork or a restore under a new name: another host's lock.
+            locks other-machine-4242
+            $unlock $p | grep -q 'removed a stale profile lock (other-machine-4242)' || fail "another host's lock: no message"
+            gone "another host's lock"
+
+            # The same host, a PID that is now some other process.
+            locks "$(cat /proc/sys/kernel/hostname)-$$"
+            $unlock $p >/dev/null
+            gone "a reused PID"
+
+            # A process using a different profile does not hold this one.
+            sh -c 'sleep 300; :' x --user-data-dir=$p-other &
+            other=$!
+            locks "host-$other"
+            $unlock $p >/dev/null
+            gone "a PID with another profile"
+            kill $other
+
+            # A live browser on this profile keeps its lock.
+            sh -c 'sleep 300; :' x --user-data-dir=$p &
+            live=$!
+            locks "host-$live"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock: printed '$said'"
+            kept "a live lock" "host-$live"
+            kill $live
+
+            # Chromium rewrites its title: the arguments in one string.
+            sh -c 'sleep 300; :' "chromium --headless=new --user-data-dir=$p --remote-debugging-port=0" &
+            live=$!
+            locks "host-$live"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock in a rewritten title: printed '$said'"
+            kept "a live lock in a rewritten title" "host-$live"
+            kill $live
+
+            # A real Chromium on this profile keeps its lock.
+            rm -f $p/Singleton*
+            HOME=$TMPDIR/home ${pkgs.chromium}/bin/chromium --headless=new --no-sandbox --disable-gpu \
+              --no-first-run --user-data-dir=$p --remote-debugging-port=0 about:blank >$TMPDIR/chromium.log 2>&1 &
+            chrome=$!
+            for _ in $(seq 300); do [ -L $p/SingletonLock ] && break; sleep 0.1; done
+            real=$(readlink $p/SingletonLock) || { cat $TMPDIR/chromium.log >&2; fail "Chromium made no lock"; }
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a running Chromium: printed '$said'"
+            kept "a running Chromium" "$real"
+            kill $chrome
+            wait $chrome 2>/dev/null || true
+
+            # A dead PID.
+            locks "host-999999999"
+            $unlock $p >/dev/null
+            gone "a dead PID"
+
+            # The stamp helper makes and touches stamps with the owner given.
+            d=$TMPDIR/desktop
+            mkdir -p $d
+            REPOSE_DESKTOP_DIR=$d REPOSE_DESKTOP_OWNER="$(id -u):$(id -g)" $stamp last-cdp last-client
+            [ -e $d/last-cdp ] && [ -e $d/last-client ] || fail "the stamp helper made no stamps"
+
+            # The browser runs the unlock helper on its profile before
+            # Chromium, and writes its stamp as root through the helper.
+            grep -q '^ExecStartPre=.*/bin/repose-browser-unlock /home/dev/.local/share/repose/browser$' $browserUnit || fail "repose-browser does not unlock its profile before it starts"
+            grep -q '^ExecStartPost=+.*/bin/repose-desktop-stamp last-cdp$' $browserUnit || fail "repose-browser does not write last-cdp through repose-desktop-stamp as root"
+            for u in $xvncUnit $novncUnit; do
+              grep -q '^ExecStartPost=+.*/bin/repose-desktop-stamp last-client$' $u || fail "$u does not write last-client through repose-desktop-stamp as root"
+            done
+            for u in $browserUnit $xvncUnit $novncUnit; do
+              if grep -q '^ExecStartPost=.*/bin/touch ' $u; then fail "$u still touches a stamp itself"; fi
+            done
+            idle=$idleScript
+            if grep -q 'touch ' "$idle"; then fail "the idle check still touches a stamp itself"; fi
+            grep -q 'repose-desktop-stamp' "$idle" || fail "the idle check does not use repose-desktop-stamp"
+            echo "stale locks removed, a live one kept, every stamp through repose-desktop-stamp"
+            touch $out
+          '';
         # A switch that adds, changes or removes a tmux config reaches the
         # running server, and removing one leaves tmux's defaults: the
         # option, the binding and the array option the file touched
