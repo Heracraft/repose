@@ -315,15 +315,20 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   (laptopBases), and its logins travel in the apply as on any sync. The
   first attempt is anonymous: a public superproject is fetched with
   `--filter=blob:none` through a promisor remote named `repose-backfill`
-  (I-714), the checkout fetches the blobs it needs, and the end of the
-  apply starts `git backfill --all` (niced, detached, once by flock),
-  which removes `repose-backfill` when the history is whole. A
+  (I-714), the checkout fetches the blobs it needs, and the fetch marks
+  the checkout with `.git/repose-backfill` as soon as it lands. The end
+  of the apply, and the probe of every later sync, start `git backfill
+  --all` (niced, detached, once by flock) while that marker or the
+  remote exists, so a first sync stopped after its fetch still ends
+  whole; the backfill removes both when the history is whole. A
   repository the anonymous attempt cannot read waits for the apply to
   copy the logins and is fetched in full with gh's helper. After the
   fetches, the apply checks every bundle's prerequisites and the commits
   it checks out; if any is missing it stops before the checkout is
-  touched, prints what the guest has, and the laptop sends a second
-  payload bundled against that. A fetched submodule's repository moves
+  touched, keeps the payload in `.git/repose-prefetch/payload`, prints
+  what the guest has, and the laptop sends a second payload of only the
+  bundles, made against that (a third, whole, if the kept one is gone).
+  A fetched submodule's repository moves
   into its directory before its bundle is unbundled. The summary line
   ends `, history cloned from github.com`; a superproject fetch that
   failed says `The machine could not clone from GitHub (<git's reason>),

@@ -20693,21 +20693,57 @@ the probe:
   overlap check, in this case only), then `.git/repose-prefetch/creds`
   is touched, then the apply waits for the jobs.
 - Each fetch tries anonymously first (`-c credential.helper=`). One that
-  fails waits for `creds`, up to 120 s, and tries once more with gh's
-  helper, so a private repository uses the login this same apply copied.
+  fails waits for `creds` and tries once more with gh's helper, so a
+  private repository uses the login this same apply copied. The wait has
+  no limit of its own: it ends when `creds` appears or the apply's shell
+  is gone. A limit counted from the script's start (120 s at first)
+  expired during a long upload, about 37 MB at 2.5 Mbit/s, and turned a
+  private repository's fetch into a failure and a whole second payload.
+- Each job runs its git as a child it waits for and kills on TERM, so the
+  apply's EXIT trap ends the git too. Killing only the job's subshell
+  left the git running as an orphan, still writing refs into the
+  checkout after the apply had gone.
 - The apply then checks each bundle's prerequisites (`git bundle
   verify`) and that every commit it checks out is either fetched or in a
   bundle. If one is missing (a fetch failed, GitHub lacks a commit the
   laptop thinks it has), it prints `#needfull` and the commits the guest
-  now has, and exits before the checkout is touched. The laptop then
-  sends a second payload bundled against those, without the carry, which
-  already ran.
+  now has, and exits before the checkout is touched. The payload stays
+  on the guest (`.git/repose-prefetch/payload`, without its bundles and
+  carry), and the laptop's second payload carries only the bundles, made
+  against those commits, unpacked over it. A second payload of
+  everything would send the untracked files (up to 500 MB) and the diffs
+  again, which on a weak uplink made a failed fetch slower than main's
+  order, where the history went once. If the kept payload is gone, the
+  apply says `#needpayload` and the laptop sends a third payload whole,
+  with the submodules fetched beside it bundled in full.
+- An apply with fetches holds `.git/repose-prefetch.lock` (`flock`,
+  waiting at most 30 s, then going on without it) while it uses
+  `.git/repose-prefetch`. The probe of every sync clears a
+  `.git/repose-prefetch` a stopped first sync left, unless it can't
+  take that lock. The carry and the backfill start without the lock's
+  descriptor, so nothing long-lived holds it.
 The carry running before the overlap check means a sync refused for an
 overlap (I-573) has copied the logins: only on a first sync, whose
 checkout has no commits, so only a guest with untracked files at paths
-the laptop sends. *Rejected:* a second ssh for the fetch joined by a lock
-file (two round trips and a race on who takes the lock first); streaming
-the fetch's progress back (nothing reads it).
+the laptop sends. A private repository loses less than the overlap: its
+anonymous attempt fails in under a second, and the fetch with the login
+runs after the upload. That is still one ssh fewer than main's order
+(logins ssh, fetch ssh, apply), and when the fetch fails the second
+payload is only the bundles. Measured at 5 Mbit/s from kanali to a
+local guest over OpenSSH, fetching from GitHub: a private 5.7 MiB
+repository with one laptop-only commit took 5.2 and 11.2 s against
+main's 11.9 and 11.6 s (main bundles all 48 commits under its 20 MB
+threshold). With a submodule whose fetch fails and a 4 MB untracked
+file, both send the same 12.1 MB (4.0 MB, then 8.1 MB of bundles,
+against main's one payload); the branch took 33.8 s against main's 29.9
+s on a quiet kanali, and 50.0 and 95.4 s against 71.3 s under load. The
+few seconds it can lose there are the failed fetch's retry with the
+login after the upload and the second round trip.
+*Rejected:* a second ssh for the fetch joined by a lock file (two round
+trips and a race on who takes the lock first); streaming the fetch's
+progress back (nothing reads it); skipping the overlap when the carry
+has no gh login (the guest may already have one, and the anonymous
+attempt costs under a second).
 
 **I-714. A public repository's first fetch is blobless, then backfilled;
 amends I-203.** (sync-fast, 2026-10-13) I-203 rejected
@@ -20722,11 +20758,14 @@ superproject's anonymous attempt is blobless, through a promisor remote
 named `repose-backfill` with no fetch refspec, not origin: guestd sets
 origin to the SSH form, which has no key without gh's login, and resets
 it at every start. The checkout fetches the blobs it needs in one batch.
-The apply leaves `.git/repose-backfill`, and the end of every apply,
-while that file exists, starts `git backfill --all` (niced, detached,
-`flock -n` so once), which on success removes the `repose-backfill`
-remote and the file; a backfill that fails is started again by the next
-apply. Until then `git remote` on the machine lists `repose-backfill`, and
+The fetch job writes `.git/repose-backfill` as soon as the blobless
+fetch lands, not at the apply's end: an apply that stops after the fetch
+(an overlap refusal, Ctrl-C, a dropped upload) would otherwise leave the
+checkout partial for good, since the next probe sees origin's refs and
+plans no fetch. The end of every apply, and the probe of every sync,
+start `git backfill --all` (niced, detached, `flock -n` so once) while
+that file or the `repose-backfill` remote exists; on success it removes
+both. A backfill that fails is started again by the next sync. Until then `git remote` on the machine lists `repose-backfill`, and
 a command that needs an old blob fetches it from the public URL. A
 private repository is fetched in full, as before. *Rejected:* origin as
 the promisor (above); `--depth=1` (later syncs need real bases, and the

@@ -400,7 +400,7 @@ func probeScript(slug, want, extra string) string {
 	return fmt.Sprintf(`set -e
 %s%s%scd "$repose_co"
 [ -d .git ] || git init -q
-%s%s
+%s%s%s
 %s
 st=$(repose_dirty)
 echo '#status'
@@ -419,7 +419,7 @@ git rev-parse -q --verify HEAD || true
 [ -f "$repose_synced-key" ] && tail -n +2 "$repose_synced-key" | { repose_n=0; while IFS=' ' read -r c p; do repose_n=1; if [ -n "$p" ]; then git -C "$p" cat-file -e "$c^{commit}" 2>/dev/null || exit 1; else git cat-file -e "$c^{commit}" 2>/dev/null || exit 1; fi; done; [ "$repose_n" = 1 ]; } && echo '#synchas'
 echo '#origin'
 git remote get-url origin >/dev/null 2>&1 && echo yes || true
-%s%s`, checkoutVar(slug, extra), checkoutCreate(slug, want, extra), checkoutReport, syncedFP, syncGuardFns, envPathsCheck, credsMissingScript(), markerScript())
+%s%s`, checkoutVar(slug, extra), checkoutCreate(slug, want, extra), checkoutReport, prefetchProbeScript, syncedFP, syncGuardFns, envPathsCheck, credsMissingScript(), markerScript())
 }
 
 // credsMissingScript prints `#credsmissing` when a login file the last
@@ -763,8 +763,13 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 	if opts.EnvLater != nil {
 		opts.Env, opts.EnvLater = opts.EnvLater(), nil
 	}
-	// At most twice: a second payload when the fetches did not bring
-	// every commit the first was bundled against.
+	// At most three payloads: a second when the fetches did not bring
+	// every commit the first was bundled against, and a third, whole,
+	// when the guest no longer has the first to lay the second over.
+	var summaryPlan *prefetchPlan
+	if plan.active() {
+		summaryPlan = &prefetchPlan{repos: append([]prefetchRepo(nil), plan.repos...)}
+	}
 	for {
 		revs, err := revsToSend(localRepoDir, wantRefs, probe.tips)
 		if err != nil {
@@ -773,7 +778,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 		cloned := ""
 		summary := &SyncSummary{Branch: branch, Head: head, Copied: copied, Carried: carried, Checkout: probe.checkout, Created: probe.created}
 		if plan.active() && plan.resume {
-			cloned = pfSummarize(summary, plan, pfResult, subs, opts.RemoteURL)
+			cloned = pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
 		}
 		if summary.Commits, err = countRevs(localRepoDir, revs); err != nil {
 			return nil, err
@@ -908,6 +913,22 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 		if err := tw.Close(); err != nil {
 			return nil, err
 		}
+		if plan.active() && plan.resume && !plan.full {
+			// The guest kept the first payload: only the bundles go again.
+			kept, err := filterTar(payload, resendKeeps)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = kept.Close(); _ = os.Remove(kept.Name()) }()
+			payload = kept
+		}
+		if observeSyncPayload != nil {
+			names, err := tarNames(payload)
+			if err != nil {
+				return nil, err
+			}
+			observeSyncPayload(names)
+		}
 		if _, err := payload.Seek(0, io.SeekStart); err != nil {
 			return nil, err
 		}
@@ -978,7 +999,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				for i, sb := range subs {
 					subBundles[i] = !sb.Shallow && sb.commits > 0
 				}
-				script = strings.Replace(script, applyUnpack, prefetchStartScript(plan)+prefetchUnpack+prefetchJoinScript(plan, carryScript, len(bundleRefs) > 0, subBundles), 1)
+				script = strings.Replace(script, applyUnpack, prefetchStartScript(plan)+prefetchUnpackScript(plan)+prefetchJoinScript(plan, carryScript, len(bundleRefs) > 0, subBundles), 1)
 				script = strings.Replace(script, applyCarryHere, ": > \"$repose_synced-key\"\n", 1)
 			} else {
 				script = strings.Replace(script, applyCarryHere, carryScript+": > \"$repose_synced-key\"\n", 1)
@@ -1010,7 +1031,8 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				timingf("sync fetch %s %s %sms", r.key, word, pfResult.ms[r.key])
 			}
 		} else if plan.active() {
-			pfResult.need = parsePrefetch(string(res)).need
+			again := parsePrefetch(string(res))
+			pfResult.need, pfResult.needPayload = again.need, again.needPayload
 		}
 		var carryOut strings.Builder
 		for _, l := range strings.Split(string(res), "\n") {
@@ -1054,6 +1076,29 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 		if carry != nil {
 			summary.Copied, summary.Carried = carry.finish(carryOut.String())
 		}
+		if plan.active() && pfResult.needPayload {
+			if plan.full {
+				return nil, stepFailed("sync your checkout to the machine", errors.New("the machine did not take the payload"), "")
+			}
+			// Another sync cleared what this one's first apply left: the
+			// payload, and the submodules fetched beside it. Everything
+			// goes again, the submodules bundled whole.
+			timingf("sync: the machine no longer has the first payload, sending it whole")
+			var top []prefetchRepo
+			for _, r := range plan.repos {
+				if r.sub < 0 {
+					top = append(top, r)
+				} else {
+					probe.subTips[subs[r.sub].Path] = nil
+				}
+			}
+			plan.repos, plan.full = top, true
+			if subCommits, err = planSubCommits(localRepoDir, subs, probe.subTips); err != nil {
+				return nil, err
+			}
+			pfResult.needPayload = false
+			continue
+		}
 		if plan.active() && pfResult.need {
 			if plan.resume {
 				return nil, stepFailed("sync your checkout to the machine", errors.New("the commits to check out are not on the machine"), "")
@@ -1077,7 +1122,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			continue
 		}
 		if plan.active() && !plan.resume {
-			pfSummarize(summary, plan, pfResult, subs, opts.RemoteURL)
+			pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
 		}
 		return summary, nil
 	}

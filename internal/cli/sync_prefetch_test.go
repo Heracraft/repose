@@ -273,3 +273,151 @@ func TestSyncResultLineHasItsTime(t *testing.T) {
 		t.Fatalf("nothing-new line has a time: %q", got)
 	}
 }
+
+// waitBackfilled waits for the guest checkout g to be whole: no promisor
+// remote, no marker, no prefetch directory, no missing object.
+func waitBackfilled(t *testing.T, g string) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		remotes, _ := gitCmd(g, "config", "--get-regexp", "^remote\\.")
+		_, merr := os.Stat(filepath.Join(g, backfillMarker))
+		_, perr := os.Stat(filepath.Join(g, prefetchDir))
+		missing, _ := gitCmd(g, "rev-list", "--all", "--objects", "--missing=print")
+		hasMissing := strings.HasPrefix(missing, "?") || strings.Contains(missing, "\n?")
+		if !strings.Contains(remotes, backfillRemote) && os.IsNotExist(merr) && os.IsNotExist(perr) && !hasMissing {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the checkout is still partial: remotes:\n%s\nmarker: %v, %s: %v, objects missing: %v", remotes, merr == nil, prefetchDir, perr == nil, hasMissing)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// oldBlobHistory pushes commits to f.bare whose blobs no checkout of its
+// tip needs, and pulls them into the laptop.
+func oldBlobHistory(t *testing.T, f *syncFixture) {
+	t.Helper()
+	other := t.TempDir()
+	mustRun(t, other, "git", "clone", "-q", f.bare, ".")
+	for i := 0; i < 4; i++ {
+		writeFile(t, filepath.Join(other, "old.txt"), strings.Repeat("o", i+1)+"\n")
+		mustRun(t, other, "git", "add", "old.txt")
+		mustRun(t, other, "git", "-c", "user.email=o@x", "-c", "user.name=o", "commit", "-q", "-m", "old")
+	}
+	mustRun(t, other, "git", "rm", "-q", "old.txt")
+	mustRun(t, other, "git", "-c", "user.email=o@x", "-c", "user.name=o", "commit", "-q", "-m", "gone")
+	mustRun(t, other, "git", "push", "-q", "origin", "main")
+	mustRun(t, f.local, "git", "pull", "-q", "--ff-only")
+}
+
+// I-714: a first sync refused after its blobless fetch finished (here by
+// the overlap check; Ctrl-C or a dropped upload stop it at the same
+// point) does not leave the checkout partial: the next sync, which
+// fetches nothing, still backfills it and removes the promisor remote.
+func TestPrefetchRefusedFirstSyncStillBackfills(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	oldBlobHistory(t, f)
+	g := f.guestRepo()
+	if err := os.MkdirAll(g, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, g, "git", "init", "-q", "-b", "main")
+	writeFile(t, filepath.Join(g, "notes.txt"), "the machine's\n")
+	writeFile(t, filepath.Join(f.local, "notes.txt"), "the laptop's\n")
+
+	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"}); err == nil {
+		t.Fatal("the first sync was not refused over notes.txt")
+	}
+	if out, _ := gitCmd(g, "config", "--get-regexp", "^remote\\."); !strings.Contains(out, backfillRemote) {
+		t.Fatalf("no promisor remote after the refused sync, so nothing partial to test:\n%s", out)
+	}
+	if err := os.Remove(filepath.Join(g, "notes.txt")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"})
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	if got := readFile(t, filepath.Join(g, "notes.txt")); got != "the laptop's\n" || s.Untracked != 1 {
+		t.Fatalf("second sync = %+v, notes.txt %q", s, got)
+	}
+	waitBackfilled(t, g)
+}
+
+// I-713: when a fetch falls short, the second payload carries only the
+// bundles; the untracked files, the diffs and the .env files of the
+// first, already on the guest, are not sent again.
+func TestPrefetchResendCarriesOnlyBundles(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	writeFile(t, filepath.Join(f.local, "README.md"), "pushed, then force-pushed away\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "gone from GitHub")
+	gone := mustRun(t, f.local, "git", "rev-parse", "HEAD")
+	mustRun(t, f.local, "git", "update-ref", "refs/remotes/origin/main", gone)
+	writeFile(t, filepath.Join(f.local, "README.md"), "unpushed\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "unpushed")
+	writeFile(t, filepath.Join(f.local, "README.md"), "unstaged\n")
+	writeFile(t, filepath.Join(f.local, "big.bin"), strings.Repeat("u", 1<<20))
+
+	var sent [][]string
+	observeSyncPayload = func(names []string) { sent = append(sent, names) }
+	t.Cleanup(func() { observeSyncPayload = nil })
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if len(sent) != 2 {
+		t.Fatalf("%d payloads, want 2: %v", len(sent), sent)
+	}
+	if got := strings.Join(sent[1], " "); got != "bundle" {
+		t.Errorf("second payload = %q, want only the bundle", got)
+	}
+	if !strings.Contains(strings.Join(sent[0], " "), "untracked.tar") {
+		t.Errorf("first payload = %v, want the untracked files in it", sent[0])
+	}
+	g := f.guestRepo()
+	if got := readFile(t, filepath.Join(g, "README.md")); got != "unstaged\n" {
+		t.Errorf("README.md on the guest = %q", got)
+	}
+	if got := readFile(t, filepath.Join(g, "big.bin")); len(got) != 1<<20 {
+		t.Errorf("big.bin on the guest is %d bytes", len(got))
+	}
+	if got, want := mustRun(t, g, "git", "rev-parse", "HEAD"), mustRun(t, f.local, "git", "rev-parse", "HEAD"); got != want || s.Commits != 2 {
+		t.Fatalf("guest HEAD %s, laptop %s, summary %+v", got, want, s)
+	}
+	if _, err := os.Stat(filepath.Join(g, prefetchDir)); !os.IsNotExist(err) {
+		t.Errorf("%s left behind: %v", prefetchDir, err)
+	}
+}
+
+// I-713: the second apply finds the first payload gone (another sync's
+// probe cleared it), says so, and the laptop sends it whole.
+func TestPrefetchResendWithoutTheKeptPayload(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	writeFile(t, filepath.Join(f.local, "README.md"), "pushed, then force-pushed away\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "gone from GitHub")
+	gone := mustRun(t, f.local, "git", "rev-parse", "HEAD")
+	mustRun(t, f.local, "git", "update-ref", "refs/remotes/origin/main", gone)
+	writeFile(t, filepath.Join(f.local, "new.txt"), "untracked\n")
+
+	var sent [][]string
+	observeSyncPayload = func(names []string) {
+		if sent = append(sent, names); len(sent) == 2 {
+			// The probe made the checkout; guestRepo finds it now.
+			if err := os.RemoveAll(filepath.Join(f.guestRepo(), prefetchDir, "payload")); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	t.Cleanup(func() { observeSyncPayload = nil })
+	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"}); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if len(sent) != 3 || !strings.Contains(strings.Join(sent[2], " "), "untracked.tar") {
+		t.Fatalf("payloads = %v, want a third, whole one", sent)
+	}
+	if got := readFile(t, filepath.Join(f.guestRepo(), "new.txt")); got != "untracked\n" {
+		t.Errorf("new.txt on the guest = %q", got)
+	}
+}
