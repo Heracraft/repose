@@ -32,6 +32,9 @@ type Guest struct {
 	CID       uint32
 	Closure   string
 	Secrets   map[string][]byte
+	// ClonedFrom is the guest a Restore's clone copied (I-701), "" for a
+	// restore from the store.
+	ClonedFrom string
 	// GuestdDead models a guest whose unit runs but whose guestd does not
 	// answer (I-143's strand): every command that needs guestd on a
 	// running guest fails with guest_unresponsive, as the real hostd does,
@@ -66,6 +69,9 @@ type Options struct {
 	Fail map[string]string
 	// KernelChanged is what Build reports.
 	KernelChanged bool
+	// NoClone leaves local_clone out of Hello's features, as a hostd
+	// before I-701 does.
+	NoClone bool
 }
 
 // Fake is one fake host.
@@ -301,6 +307,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID}
+	if !f.opts.NoClone {
+		h.Features = []string{"local_clone"}
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -735,8 +744,22 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			f.mu.Unlock()
 			return errResult(id, "insufficient_capacity", "host draining")
 		}
+		from := ""
+		if cl := c.Restore.Clone; cl != nil {
+			// A clone copies a guest of this host (I-701); a hostd older
+			// than it refuses the Restore for its empty blob_path.
+			if f.opts.NoClone {
+				f.mu.Unlock()
+				return errResult(id, "invalid_argument", "guest_id, project_id and blob_path required")
+			}
+			if _, ok := f.guests[cl.SourceGuestId]; !ok {
+				f.mu.Unlock()
+				return errResult(id, "not_found", "the guest a clone copies is not on this host")
+			}
+			from = cl.SourceGuestId
+		}
 		f.nextIP++
-		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson}
+		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson, ClonedFrom: from}
 		f.guests[g.GuestID] = g
 		f.mu.Unlock()
 		f.setState(g, "restoring", "")

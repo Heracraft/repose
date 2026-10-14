@@ -147,6 +147,40 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 	return p, nil
 }
 
+// FitsOn reports whether host can take count more projects of class,
+// each starting (needMem) or not, under PickHost's conditions, with the
+// placement lock taken: a fork's copies cloned on their source's host
+// (DECISIONS I-701). A clone holds nothing new at first, so the pool is
+// asked only to be under PlacementPoolPct. A host whose hostd does not
+// say local_clone in its Hello never fits.
+func FitsOn(ctx context.Context, tx pgx.Tx, host uuid.UUID, class string, count int, needMem bool, now time.Time) (bool, error) {
+	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", LockPlacement); err != nil {
+		return false, err
+	}
+	need := int64(0)
+	if needMem {
+		need = ClassRAM(class) * int64(count)
+	}
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		select exists (
+		select 1
+		  from hosts h
+		  left join host_reservations r on r.host_id = h.id
+		 where h.id = $6
+		   and h.state = 'ready'
+		   and not h.draining
+		   and not h.pool_unavailable
+		   and 'local_clone' = any(h.features)
+		   and h.last_heartbeat_at is not null
+		   and h.last_heartbeat_at > $1
+		   and `+poolRoomSQL+`
+		   and (select count(*) from projects p where p.host_id = h.id and p.destroyed_at is null) + $7 <= $5
+		   and least(h.free_mem_bytes, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0)) >= $3)`,
+		now.Add(-HeartbeatWindow), int64(0), need, int64(0), HostGuestSlots, host, count).Scan(&ok)
+	return ok, err
+}
+
 // Freeing reports whether some host that PickHost could choose would fit
 // class once the guests being stopped on it are down: their memory is
 // still in the host's free_mem_bytes (hostd counts a stopping guest) and,

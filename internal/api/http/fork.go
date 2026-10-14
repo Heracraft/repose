@@ -34,10 +34,11 @@ type forkedProject struct {
 	OpID      uuid.UUID `json:"op_id"`
 }
 
-// forkProject is POST /v1/projects/{id}/fork: `{snapshot_id, count?,
+// forkProject is POST /v1/projects/{id}/fork: `{snapshot_id?, count?,
 // name?, class?, start?, request_id?}` → 202 `{snapshot_id,
 // snapshot_created_at, from_project_id, projects: [{project_id, name,
-// slug, class, op_id}]}`.
+// slug, class, op_id}]}`. Without snapshot_id the copies are clones of
+// the project's volume on its host (I-701), or 409 snapshot_needed.
 func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	u := userFrom(ctx)
@@ -56,9 +57,6 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 	if err := decode(r, &body); err != nil {
 		return err
 	}
-	if body.SnapshotID == nil {
-		return errf("invalid", "snapshot_id is required: take a snapshot of %s first (POST /projects/:id/snapshots)", src.Slug)
-	}
 	count := 1
 	if body.Count != nil {
 		count = *body.Count
@@ -66,9 +64,18 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 	if count < 1 || count > MaxForks {
 		return errf("invalid", "count must be 1 to %d", MaxForks)
 	}
-	snap, err := store.GetSnapshot(ctx, s.d.Pool, *body.SnapshotID)
-	if err != nil || snap.ProjectID != src.ID || snap.DeletedAt != nil || (snap.ExpiresAt != nil && snap.ExpiresAt.Before(time.Now())) {
-		return errf("not_found", "that snapshot is not one of %s's, or it has expired", src.Slug)
+	// Without a snapshot_id the copies are of the project as it is now:
+	// thin clones of its volume on its own host (DECISIONS I-701), when
+	// that host can take them; otherwise the caller is told to take a
+	// snapshot and send it (409 snapshot_needed).
+	var snap *store.Snapshot
+	if body.SnapshotID != nil {
+		snap, err = store.GetSnapshot(ctx, s.d.Pool, *body.SnapshotID)
+		if err != nil || snap.ProjectID != src.ID || snap.DeletedAt != nil || (snap.ExpiresAt != nil && snap.ExpiresAt.Before(time.Now())) {
+			return errf("not_found", "that snapshot is not one of %s's, or it has expired", src.Slug)
+		}
+	} else if src.GuestID == nil || src.HostID == nil || (src.State != "running" && src.State != "stopped") {
+		return errf("conflict", "%s is %s; a fork needs it running or stopped", src.Slug, src.State)
 	}
 	class := src.Class
 	if body.Class != "" {
@@ -130,6 +137,15 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 		if n+count > limits.Projects {
 			return projectLimitError(n, limits.Projects, count)
 		}
+		if snap == nil {
+			fits, err := scheduler.FitsOn(ctx, tx, *src.HostID, class, count, start, time.Now())
+			if err != nil {
+				return err
+			}
+			if !fits {
+				return withDetail(errf("conflict", "%s's server cannot hold the copies; fork from a snapshot of it", src.Slug), map[string]any{"reason": "snapshot_needed"})
+			}
+		}
 		names, err := forkNames(ctx, tx, u.ID, Slug(base), count)
 		if err != nil {
 			return err
@@ -138,11 +154,33 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 		if body.RequestID != nil {
 			params["fork_request_id"] = body.RequestID.String()
 		}
-		for _, name := range names {
-			id := store.NewID()
+		ids := make([]uuid.UUID, len(names))
+		var siblings []any
+		for i := range names {
+			ids[i] = store.NewID()
+			siblings = append(siblings, store.NewID().String())
+		}
+		if snap == nil {
+			// One fork point for all the copies: hostd freezes the source
+			// once, for the first copy's restore, and each copy clones it.
+			point := store.NewID()
+			params["clone_of_guest"] = src.GuestID.String()
+			params["clone_host_id"] = src.HostID.String()
+			params["fork_point"] = strings.ReplaceAll(point.String(), "-", "")
+			params["fork_siblings"] = siblings
+		}
+		for i, name := range names {
+			id := ids[i]
+			p := params
+			if snap == nil {
+				p = map[string]any{"new_guest_id": siblings[i]}
+				for k, v := range params {
+					p[k] = v
+				}
+			}
 			// No remote: the source is live and keeps it, so `repose run`
 			// in the checkout still means the source (I-254).
-			opID, err := s.insertRestored(ctx, tx, u, src, snap, id, name, class, nil, start, params)
+			opID, err := s.insertRestored(ctx, tx, u, src, snap, id, name, class, nil, start, p)
 			if err != nil {
 				return err
 			}
@@ -162,11 +200,19 @@ func (s *Server) forkProject(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !resent {
 		s.d.Engine.Kick()
-		obs.Logger(ctx, s.d.Log).Info("fork accepted", "event", "forked", "project_id", src.ID.String(), "snapshot_id", snap.ID.String(), "count", len(out), "class", class)
+		snapID := "clone"
+		if snap != nil {
+			snapID = snap.ID.String()
+		}
+		obs.Logger(ctx, s.d.Log).Info("fork accepted", "event", "forked", "project_id", src.ID.String(), "snapshot_id", snapID, "count", len(out), "class", class)
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"snapshot_id": snap.ID, "snapshot_created_at": snap.TakenAt, "from_project_id": src.ID, "projects": out,
-	})
+	// A fork of the project as it is now has no snapshot: snapshot_id is
+	// null and snapshot_created_at the moment of the request.
+	resp := map[string]any{"snapshot_id": nil, "snapshot_created_at": time.Now().UTC(), "from_project_id": src.ID, "projects": out}
+	if snap != nil {
+		resp["snapshot_id"], resp["snapshot_created_at"] = snap.ID, snap.TakenAt
+	}
+	writeJSON(w, http.StatusAccepted, resp)
 	return nil
 }
 

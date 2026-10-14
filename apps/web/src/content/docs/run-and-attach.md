@@ -49,12 +49,12 @@ Two agents in one working tree edit the same files. Give each its own tree on th
 |                       | `repose run -d --worktree -p "..."`      | `repose fork -n 3 --prompt "..."`                                  |
 | --------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
 | Runs on               | this project's machine                   | a new machine each, `todo-app-fork-1` and on                       |
-| Starts from           | the checkout's last commit               | a snapshot of the disk: uncommitted work and dependencies included |
+| Starts from           | the checkout's last commit               | a copy of the disk as it is now: uncommitted work and dependencies included |
 | Memory                | the machine's own                        | each copy's size, toward your plan                                 |
 | Work comes back with  | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`           |
 | Clean up              | `repose stop -w claude-2`                | `repose rm todo-app-fork-1`                                        |
 
-`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
+`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a copy of the disk, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
 
 `--worktree` starts the agent in its own git worktree:
 

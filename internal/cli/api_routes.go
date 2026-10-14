@@ -365,6 +365,17 @@ func (c *Client) CreateSnapshot(ctx context.Context, id string) (string, error) 
 	return r.OpID, nil
 }
 
+// CreateForkSnapshot takes the snapshot a fork restores its copies from
+// when they cannot be cloned (reason fork, expiring a day later, I-703).
+// An api before I-703 ignores the body and takes a manual one.
+func (c *Client) CreateForkSnapshot(ctx context.Context, id string) (string, error) {
+	var r opIDResponse
+	if err := c.post(ctx, "/projects/"+url.PathEscape(id)+"/snapshots", map[string]string{"reason": "fork"}, &r); err != nil {
+		return "", err
+	}
+	return r.OpID, nil
+}
+
 // RestoreSnapshot starts the restore and returns its op and the project
 // that owns the op: the new one with asNew (api.md's project_id), else id.
 func (c *Client) RestoreSnapshot(ctx context.Context, id, snapshotID, asNew string) (opID, projectID string, err error) {

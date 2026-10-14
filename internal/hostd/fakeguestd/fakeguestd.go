@@ -47,6 +47,9 @@ type Options struct {
 	// Version and BootID for Ping.
 	Version string
 	BootID  string
+	// OnFreeze and OnThaw run when Freeze and Thaw arrive (a host check
+	// freezes a real filesystem with them); an error fails the request.
+	OnFreeze, OnThaw func() error
 }
 
 // Server is one fake guest listening on a unix socket.
@@ -266,6 +269,11 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 	case *guestdv1.Request_Ping:
 		ok.Result = &guestdv1.Response_Ping{Ping: &guestdv1.PingResult{Version: s.opts.Version, UptimeS: 1, BootId: s.opts.BootID}}
 	case *guestdv1.Request_Freeze:
+		if s.opts.OnFreeze != nil {
+			if err := s.opts.OnFreeze(); err != nil {
+				return fail("internal", err.Error())
+			}
+		}
 		s.mu.Lock()
 		s.frozen = true
 		s.mu.Unlock()
@@ -281,6 +289,11 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 			}
 		}()
 	case *guestdv1.Request_Thaw:
+		if s.opts.OnThaw != nil {
+			if err := s.opts.OnThaw(); err != nil {
+				return fail("internal", err.Error())
+			}
+		}
 		s.mu.Lock()
 		s.frozen = false
 		s.mu.Unlock()

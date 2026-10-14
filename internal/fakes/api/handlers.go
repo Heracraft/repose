@@ -802,6 +802,15 @@ func (f *Fake) opView(p *project, o *op) Op {
 	v.ProjectState = p.State
 	v.Phase = o.phase
 	v.Version = o.State + "." + o.phase + "." + p.State
+	created := o.created
+	v.CreatedAt = &created
+	if o.State == "done" || o.State == "error" {
+		end := created
+		if o.finished != nil {
+			end = *o.finished
+		}
+		v.FinishedAt = &end
+	}
 	return v
 }
 
@@ -1406,8 +1415,22 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
+	reason := "manual"
+	if body.Reason == "fork" && !f.oldFork {
+		reason = "fork" // a fork's own, gone a day later (I-703)
+	}
 	o := f.newOp(p, "snapshot")
-	s := f.snapshot(p, "manual")
+	s := f.snapshot(p, reason)
+	if reason == "fork" {
+		exp := s.CreatedAt.Add(24 * time.Hour)
+		s.ExpiresAt = &exp
+	}
 	o.Result = map[string]any{"snapshot_id": s.ID}
 	return opResult(w, o)
 }
@@ -1433,8 +1456,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	if body.SnapshotID == "" {
+	if body.SnapshotID == "" && f.oldFork {
 		return invalid("snapshot_id is required: take a snapshot of %s first (POST /projects/:id/snapshots)", p.Slug)
+	}
+	if body.SnapshotID == "" && f.forkNoClone {
+		return errf("conflict", "%s's server cannot hold the copies; fork from a snapshot of it", p.Slug).withDetail(map[string]any{"reason": "snapshot_needed"})
 	}
 	count := 1
 	if body.Count != nil {
@@ -1443,13 +1469,14 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if count < 1 || count > 10 {
 		return invalid("count must be 1 to 10")
 	}
+	// Without snapshot_id the copies are clones of p as it is now (I-701).
 	var snap *Snapshot
 	for _, s := range p.snapshots {
-		if s.ID == body.SnapshotID {
+		if body.SnapshotID != "" && s.ID == body.SnapshotID {
 			snap = s
 		}
 	}
-	if snap == nil {
+	if snap == nil && body.SnapshotID != "" {
 		return errf("not_found", "that snapshot is not one of %s's, or it has expired", p.Slug)
 	}
 	class := p.Class
@@ -1474,7 +1501,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		OpID      string `json:"op_id"`
 	}
 	answer := func(list []forked) *apiError {
-		writeJSON(w, http.StatusAccepted, map[string]any{"snapshot_id": snap.ID, "snapshot_created_at": snap.CreatedAt, "from_project_id": p.ID, "projects": list})
+		resp := map[string]any{"snapshot_id": nil, "snapshot_created_at": f.now(), "from_project_id": p.ID, "projects": list}
+		if snap != nil {
+			resp["snapshot_id"], resp["snapshot_created_at"] = snap.ID, snap.CreatedAt
+		}
+		writeJSON(w, http.StatusAccepted, resp)
 		return nil
 	}
 	if body.RequestID != "" {
@@ -1526,8 +1557,15 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		if body.Start != nil && !*body.Start {
 			f.stop(np, false)
 		}
-		f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
+		if snap != nil {
+			f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
+		} else {
+			f.event(np, "volume.restored", "", "cloned from "+p.Name)
+		}
 		o := f.newOp(np, "restore")
+		if d := f.opts.ForkStepDelay; d > 0 {
+			f.stepFork(np, o, body.Start == nil || *body.Start, d, time.Duration(len(list)+1)*d)
+		}
 		list = append(list, forked{ProjectID: np.ID, Name: np.Name, Slug: np.Slug, Class: np.Class, OpID: o.id})
 		rec = append(rec, forkRec{projectID: np.ID, name: np.Slug, class: np.Class, opID: o.id})
 	}
@@ -1535,6 +1573,37 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		f.forks[u.ID+"/"+body.RequestID] = rec
 	}
 	return answer(list)
+}
+
+// stepFork runs a fork copy's restore op through its phases (Options.
+// ForkStepDelay). Callers hold mu; only the goroutine takes it.
+func (f *Fake) stepFork(np *project, o *op, start bool, restore, starting time.Duration) {
+	final := np.State
+	// The op's own times to the nanosecond: the CLI prints them for a
+	// copy it did not watch.
+	now := func() time.Time {
+		if f.opts.Now != nil {
+			return f.now()
+		}
+		return time.Now().UTC()
+	}
+	o.created = now()
+	o.State, o.phase, o.LogURL = "running", "restore", ""
+	np.State, np.OpID = "restoring", o.id
+	go func() {
+		time.Sleep(restore)
+		if start {
+			f.mu.Lock()
+			o.phase, np.State = "start_guest", "starting"
+			f.mu.Unlock()
+			time.Sleep(starting)
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		end := now()
+		np.State, np.OpID = final, ""
+		o.State, o.phase, o.finished = "done", "", &end
+	}()
 }
 
 func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError {

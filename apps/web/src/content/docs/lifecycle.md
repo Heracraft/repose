@@ -107,7 +107,7 @@ repose snapshots create
 repose snapshots list
 ```
 
-Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which are kept in memory and never on the machine's disk, [other than while its server restarts](#when-a-machines-server-restarts), or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
+Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot `repose fork` took for itself (reason `fork`) is deleted a day after it was taken and never counts as the newest. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which are kept in memory and never on the machine's disk, [other than while its server restarts](#when-a-machines-server-restarts), or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
 
 To put a project back to a snapshot, stop it first. Stopping takes its own snapshot, so this can be undone; the question names both snapshots, and says so when no snapshot holds the disk as it is now (after `repose stop --no-snapshot` or `repose resize --size`):
 
@@ -126,9 +126,9 @@ The new project starts with its `shell` window; the agent windows the snapshot r
 
 The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…** too. It shows the newest 8; **Show all** lists the rest. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
 
-Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it before writing anything, and stops with `snapshot checksum mismatch` if they differ. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
+Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it as it writes the new disk, and if they differ it stops with `snapshot checksum mismatch` and deletes what it wrote, so the machine never starts on it. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
 
-If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`.
+If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`. A [fork](#fork-a-project)'s copy whose disk copy failed has no snapshot of its own, so `start` says to remove it and fork the source again.
 
 ## Destroy and restore
 
@@ -250,8 +250,11 @@ To have several agents try different approaches from the same starting point, ea
 
 ```
 $ repose fork todo-app -n 3
-Forked todo-app into 3 projects from its snapshot of 2026-09-25 14:02
-in 48s:
+✓ Copied todo-app's disk into todo-app-fork-1  0.4s
+✓ Started todo-app-fork-1  14s
+✓ Started todo-app-fork-2  15s
+✓ Started todo-app-fork-3  15s
+Forked todo-app into 3 projects in 16s:
   todo-app-fork-1  running (large)
   todo-app-fork-2  running (large)
   todo-app-fork-3  running (large)
@@ -259,7 +262,7 @@ Added the git remotes todo-app-fork-1, todo-app-fork-2 and
 todo-app-fork-3.
 ```
 
-`repose fork` snapshots the project and restores the snapshot into new projects. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and the source's agent windows don't reopen: each copy boots fresh with its `shell` window. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
+`repose fork` copies the project's disk as it is at that moment into new projects. The copies are made on the project's own server and take seconds whatever the disk holds. When that server has no room for them, `fork` snapshots the project first (`✓ Snapshot of todo-app taken`) and restores the copies from the snapshot on whichever servers have room, which takes longer the more the disk holds. That snapshot is listed with reason `fork` and deleted a day later. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and the source's agent windows don't reopen: each copy boots fresh with its `shell` window. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
 
@@ -272,7 +275,7 @@ git merge todo-app-fork-2/main
 
 Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`, which removes that copy's remote; branches you fetched from it stay.
 
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before taking the snapshot and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one; `--size small` makes copies that take less of it; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before copying anything and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one; `--size small` makes copies that take less of it; `--name` changes their names.
 
 ## Logs and events
 

@@ -110,6 +110,10 @@ message Hello {
   // I-645, which the api reads as "no resume information".
   string host_boot_id = 7;
   int64 host_boot_at = 8;
+  // What this hostd can do that an older one cannot, so the api sends a
+  // command shape only to a host that takes it. "local_clone": a Restore
+  // may carry `clone` (DECISIONS I-701). Absent from an older hostd.
+  repeated string features = 9;
 }
 
 message Heartbeat {
@@ -211,7 +215,23 @@ message Restore {
   string remote_url = 15;
   bytes project_json = 16;
   string system_closure = 17;  // I-26: the closure to root; empty means the api rebuilds before StartGuest
-  string sha256 = 18;  // I-462: hex SHA-256 of the stored blob; when set, hostd checks the whole blob against it before writing the volume
+  string sha256 = 18;  // I-462, I-700: hex SHA-256 of the stored blob; when set, hostd hashes the blob as it writes the volume and fails the restore, removing the volume, on a mismatch
+  // I-701: set instead of blob_path, the new volume is a thin clone of
+  // another guest's volume on this host, taken at one point in time
+  // shared by every sibling of one fork. Only to a host whose Hello names
+  // "local_clone".
+  RestoreClone clone = 19;
+}
+// RestoreClone names the volume a Restore copies on the host itself.
+// point_id (32 hex digits) names the moment: the first Restore of a fork
+// to arrive freezes source_guest_id and takes it, the others clone the
+// same one. sibling_guest_ids are every guest of the fork, this one
+// included; the point is removed once each of them has finished its
+// restore, or after 30 minutes.
+message RestoreClone {
+  string source_guest_id = 1;
+  string point_id = 2;
+  repeated string sibling_guest_ids = 3;
 }
 message UpdateSecrets { string guest_id = 1; repeated Secret secrets = 2; }
 message SetPrincipals { string guest_id = 1; repeated string principals = 2; }

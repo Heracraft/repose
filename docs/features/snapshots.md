@@ -93,11 +93,12 @@ Restoring:
   DECISIONS I-569).
 - Restore works onto any host, not only the one the snapshot came from. The
   release checklist rehearses exactly that.
-- A restore checks the whole blob against the recorded SHA-256 before it
-  creates the new volume or any guest state, then writes from the same
-  blob version and checks it again (I-462). A mismatch fails the restore
-  with "snapshot checksum mismatch". A snapshot taken before I-462 has no
-  digest and restores unchecked.
+- A restore downloads the blob once and checks it against the recorded
+  SHA-256 as it writes the new volume, with the decompressor sandboxed
+  (I-700, amending I-462's check before the write). A mismatch fails the
+  restore with "snapshot checksum mismatch", removes the volume and leaves
+  the guest in error, so nothing boots it. A snapshot taken before I-462
+  has no digest and restores unchecked.
 - A failed restore leaves no volume behind: hostd removes the new one. An
   in-place restore has already destroyed the old guest, so the project
   lets go of the old guest and its address when that destroy finishes,
@@ -109,12 +110,20 @@ Restoring:
 Forking (DECISIONS I-254, I-255):
 
 - `repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID]
-  [--prompt TEXT [--agent A]] [--no-start]` takes a manual snapshot of a live project
-  (running or stopped; the source keeps running) unless `--snapshot`
-  names one of its own, then `POST /projects/:id/fork` restores it into N
-  new projects called `<slug>-fork-<k>` (or `NAME-<k>`), `k` the lowest
-  numbers no live project uses, each started on the host with the most
-  free memory.
+  [--prompt TEXT [--agent A]] [--no-start]` copies a live project
+  (running or stopped; the source keeps running) into N new projects
+  called `<slug>-fork-<k>` (or `NAME-<k>`), `k` the lowest numbers no live
+  project uses. Without `--snapshot`, `POST /projects/:id/fork` has no
+  `snapshot_id` and the copies are thin clones of one fork point of the
+  source's volume, on the source's host, with nothing sent through Blob
+  (I-701): the source is frozen once for all N, as for a snapshot. When
+  that host cannot take them (409 `snapshot_needed`), the CLI takes a
+  snapshot with reason `fork`, which expires a day later and never counts
+  as the project's newest (I-703), and forks from it: each copy is then
+  restored on the host with the most free memory. `--snapshot` names one
+  of the project's own snapshots to restore instead.
+- Each step of each copy (`Copying`/`Restoring`, `Starting`) ends in a
+  `✓` line with its time (I-702).
 - The N projects are created in one transaction under the user's row
   lock: the account's project cap is checked for all N first, and past it
   nothing is created (`invalid` with `detail.reason = project_limit`, as
@@ -135,7 +144,7 @@ Forking (DECISIONS I-254, I-255):
   An in-place restore keeps the project id and reopens them.
 - With `--prompt`, the CLI starts the agent with that prompt in each
   running copy, without syncing the laptop into it, and does not attach.
-- Before the snapshot the CLI asks the plan's memory for all N copies
+- Before anything is copied the CLI asks the plan's memory for all N copies
   beside what runs now, the source included, from `/me` and the project
   list, and refuses with exit 7 naming `--no-start` when they don't fit
   (I-610). `--no-start` sends `start: false`: the copies are restored

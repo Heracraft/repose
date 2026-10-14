@@ -196,6 +196,19 @@ func (p *progress) End() {
 	p.label, p.done = "", ""
 }
 
+// Done ends the current phase and prints a ✓ line for a step that ran
+// without one on screen (a fork's copy that had finished before the
+// command read it): done and the step's own time.
+func (p *progress) Done(done string, took time.Duration) {
+	if p == nil || done == "" {
+		return
+	}
+	p.End()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, _ = fmt.Fprintf(p.w, "✓ %s  %s\n", done, fmtElapsed(took))
+}
+
 // Fail ends the current phase without a ✓, before an error is printed.
 func (p *progress) Fail() {
 	if p == nil {
