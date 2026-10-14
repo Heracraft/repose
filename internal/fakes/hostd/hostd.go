@@ -554,6 +554,11 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			if c.StartGuest.Class != "" {
 				g.Class = c.StartGuest.Class // I-260, as hostd
 			}
+			// A start delivers the current set, as CreateGuest does.
+			g.Secrets = make(map[string][]byte, len(c.StartGuest.Secrets))
+			for _, s := range c.StartGuest.Secrets {
+				g.Secrets[s.Name] = s.Value
+			}
 			console, bad := f.bad[g.Closure]
 			f.mu.Unlock()
 			f.setState(g, "starting", "")
@@ -721,6 +726,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		g, e := get(c.UpdateSecrets.GuestId)
 		if e == nil {
+			// The whole set, as hostd caches and guestd writes it: a
+			// name left out is removed.
+			g.Secrets = make(map[string][]byte, len(c.UpdateSecrets.Secrets))
 			for _, s := range c.UpdateSecrets.Secrets {
 				g.Secrets[s.Name] = s.Value
 			}

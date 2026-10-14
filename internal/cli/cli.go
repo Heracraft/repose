@@ -1041,28 +1041,43 @@ repose browser bridge goes the other way: the agents use your Chrome.`,
 }
 
 func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's secrets",
+	root := &cobra.Command{Use: "secrets", Short: "Set, list or remove a project's or your account's secrets",
 		Long: "Set, list or remove a project's secrets. Agents on the machine see each one\n" +
 			"as an environment variable and as a file under /run/repose/secrets. Alone,\n" +
-			"list them.",
+			"list them.\n\n" +
+			"With --global, set, list, rm and import act on your account's secrets instead,\n" +
+			"which every project gets. A project's own secret of the same name wins.",
+		Example:    "  repose secrets set STRIPE_KEY\n  repose secrets set --global COOLIFY_BASE_URL",
 		SuggestFor: []string{"env", "secret"}}
+	// globalFlag is --global on one subcommand: the account's secrets,
+	// for every project (I-697), as config --global is machine.nix.
+	globalFlag := func(c *cobra.Command, global *bool) {
+		c.Flags().BoolVar(global, "global", false, "act on your account's secrets, which every project gets")
+	}
 	var fromFile string
-	var fromEnv bool
+	var fromEnv, setGlobal bool
 	set := &cobra.Command{
 		Use:   "set NAME",
 		Short: "Set a secret from a prompt, a pipe, a file or a variable",
-		Long: "Set NAME on the project, the folder's or --project's. The value is asked for,\n" +
-			"or read from a pipe (one trailing newline dropped), --from-file or --from-env;\n" +
-			"it is never an argument, so it stays out of your shell history. A running\n" +
-			"machine has it within seconds.",
+		Long: "Set NAME on the project, the folder's or --project's, or with --global on your\n" +
+			"account, for every project. The value is asked for, or read from a pipe (one\n" +
+			"trailing newline dropped), --from-file or --from-env; it is never an argument,\n" +
+			"so it stays out of your shell history. A running machine has it within\n" +
+			"seconds.",
 		Example: "  repose secrets set STRIPE_KEY\n" +
 			"  op read op://dev/stripe/key | repose secrets set STRIPE_KEY\n" +
-			"  repose secrets set DATABASE_URL --from-env --project todo-app",
+			"  repose secrets set DATABASE_URL --from-env --project todo-app\n" +
+			"  repose secrets set --global COOLIFY_BASE_URL",
 		Args: argsN(1, 1, "one NAME"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The name is checked before any value is asked for.
 			if err := checkSecretName(args[0]); err != nil {
 				return err
+			}
+			if setGlobal {
+				if err := globalProjectConflict(g.project); err != nil {
+					return err
+				}
 			}
 			e, err := env()
 			if err != nil {
@@ -1072,16 +1087,22 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if setGlobal {
+				return SecretsSetGlobalCmd(cmd.Context(), e, args[0], value)
+			}
 			return SecretsSetCmd(cmd.Context(), e, g.project, args[0], value)
 		},
 	}
 	set.Flags().StringVar(&fromFile, "from-file", "", "read the value from the file at `PATH`")
 	set.Flags().BoolVar(&fromEnv, "from-env", false, "read the value from $NAME")
+	globalFlag(set, &setGlobal)
 
+	var listGlobal bool
 	list := &cobra.Command{
 		Use:               "list [PROJECT]",
 		Aliases:           []string{"ls"},
-		Short:             "List a project's secret names",
+		Short:             "List a project's or your account's secret names",
+		Long:              "List the project's secret names and dates, never values. On a terminal the\naccount's secrets, which the project gets too, follow. With --global, list the\naccount's alone.",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -1089,34 +1110,57 @@ func newSecretsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if listGlobal {
+				if err := globalProjectConflict(project); err != nil {
+					return err
+				}
+			}
 			e, err := env()
 			if err != nil {
 				return err
+			}
+			if listGlobal {
+				return SecretsListGlobalCmd(cmd.Context(), e)
 			}
 			return SecretsListCmd(cmd.Context(), e, project)
 		},
 	}
 	list.Flags().BoolVar(&g.json, "json", false, "print the names and dates as JSON")
+	globalFlag(list, &listGlobal)
+	var rmGlobal bool
 	rm := &cobra.Command{
 		Use:        "rm NAME",
 		Aliases:    []string{"remove"},
 		SuggestFor: []string{"delete", "unset"},
-		Short:      "Remove a secret from a project",
+		Short:      "Remove a secret from a project or your account",
+		Long:       "Remove NAME from the project, or with --global from your account. A running\nmachine loses it within seconds.",
 		Args:       argsN(1, 1, "one NAME"),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			if len(args) > 0 {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
+			if rmGlobal {
+				return accountSecretNamesForCompletion(env), cobra.ShellCompDirectiveNoFileComp
+			}
 			return secretNamesForCompletion(env, g.project), cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if rmGlobal {
+				if err := globalProjectConflict(g.project); err != nil {
+					return err
+				}
+			}
 			e, err := env()
 			if err != nil {
 				return err
 			}
+			if rmGlobal {
+				return SecretsRmGlobalCmd(cmd.Context(), e, args[0])
+			}
 			return SecretsRmCmd(cmd.Context(), e, g.project, args[0])
 		},
 	}
+	globalFlag(rm, &rmGlobal)
 	var chooseOn, chooseOff, chooseReset bool
 	choose := &cobra.Command{
 		Use:   "choose [NAME...]",

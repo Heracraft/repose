@@ -594,6 +594,9 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/secrets", f.listSecrets)
 	f.handle("PUT /v1/projects/{id}/secrets/{name}", f.putSecret)
 	f.handle("DELETE /v1/projects/{id}/secrets/{name}", f.deleteSecret)
+	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
+	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
+	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)
 	// Snapshots.
 	f.handle("GET /v1/projects/{id}/snapshots", f.listSnapshots)
 	f.handle("POST /v1/projects/{id}/snapshots", f.createSnapshot)

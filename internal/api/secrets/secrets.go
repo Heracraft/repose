@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 
@@ -147,11 +148,15 @@ func (s *Store) unwrap(ctx context.Context, wrapped []byte, version string) ([]b
 	return dek, nil
 }
 
-// userDEK returns the user's wrapped DEK from any existing row, or wraps
-// a fresh one. Two first-time PUTs racing can create two DEKs for a user;
+// userDEK returns the user's wrapped DEK from any existing row, a
+// project's or the account's (I-697), or wraps a fresh one. Two first-time PUTs racing can create two DEKs for a user;
 // every row carries its own wrapped key, so both stay decryptable.
 func (s *Store) userDEK(ctx context.Context, tx pgx.Tx, userID string) (dek, wrapped []byte, version string, err error) {
-	err = tx.QueryRow(ctx, `select s.dek_wrapped, s.kv_key_version from secrets s join projects p on p.id = s.project_id where p.user_id = $1 order by s.created_at limit 1`, userID).Scan(&wrapped, &version)
+	err = tx.QueryRow(ctx, `select dek_wrapped, kv_key_version from (
+		select s.dek_wrapped, s.kv_key_version, s.created_at from secrets s join projects p on p.id = s.project_id where p.user_id = $1
+		union all
+		select a.dek_wrapped, a.kv_key_version, a.created_at from account_secrets a where a.user_id = $1
+	) k order by created_at limit 1`, userID).Scan(&wrapped, &version)
 	if err == nil {
 		dek, err = s.unwrap(ctx, wrapped, version)
 		return dek, wrapped, version, err
@@ -315,7 +320,8 @@ func (s *Store) List(ctx context.Context, projectID string) ([]Meta, error) {
 	return out, rows.Err()
 }
 
-// DecryptForGuest returns every secret of a project in plaintext. It
+// DecryptForGuest returns every secret of a project in plaintext, with
+// the account's secrets the project has no secret of its own for. It
 // exists for the hostd command builders (CreateGuest, StartGuest,
 // Restore, UpdateSecrets) and for the platform's own CA material; nothing
 // else may call it.
@@ -352,6 +358,16 @@ func (s *Store) DecryptForGuest(ctx context.Context, projectID string) ([]NamedV
 			return nil, fmt.Errorf("secret %s: %w", r.name, err)
 		}
 		out = append(out, NamedValue{Name: r.name, Value: v})
+	}
+	// The account's secrets the project has none of its own for (I-697),
+	// in one name order with the project's.
+	acct, err := s.accountForGuest(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if len(acct) > 0 {
+		out = append(out, acct...)
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	}
 	return out, nil
 }
@@ -648,18 +664,21 @@ func (s *Store) CopyNamed(ctx context.Context, tx pgx.Tx, fromProjectID, toProje
 	return nil
 }
 
-// Rewrap re-wraps every row's DEK under the Key Vault key's current
+// Rewrap re-wraps every row's DEK, a project's and an account's, under the Key Vault key's current
 // version without touching ciphertext, and returns how many rows changed.
 func (s *Store) Rewrap(ctx context.Context) (int, error) {
 	current, err := s.kv.CurrentVersion(ctx)
 	if err != nil {
 		return 0, kvErr(err)
 	}
-	rows, err := s.pool.Query(ctx, "select id, dek_wrapped, kv_key_version from secrets where kv_key_version <> $1", current)
+	// Both tables hold wrapped keys: a project's rows and the account's
+	// (I-697). The table name comes from this list, never from input.
+	rows, err := s.pool.Query(ctx, "select 'secrets', id, dek_wrapped, kv_key_version from secrets where kv_key_version <> $1 union all select 'account_secrets', id, dek_wrapped, kv_key_version from account_secrets where kv_key_version <> $1", current)
 	if err != nil {
 		return 0, err
 	}
 	type row struct {
+		table   string
 		id      uuid.UUID
 		wrapped []byte
 		version string
@@ -667,13 +686,16 @@ func (s *Store) Rewrap(ctx context.Context) (int, error) {
 	var rs []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.wrapped, &r.version); err != nil {
+		if err := rows.Scan(&r.table, &r.id, &r.wrapped, &r.version); err != nil {
 			rows.Close()
 			return 0, err
 		}
 		rs = append(rs, r)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
 	n := 0
 	rewrapped := map[string][]byte{}
 	for _, r := range rs {
@@ -693,7 +715,11 @@ func (s *Store) Rewrap(ctx context.Context) (int, error) {
 			s.cache[cacheKey(nw, current)] = cachedDEK{dek: dek, expires: time.Now().Add(s.ttl)}
 			s.mu.Unlock()
 		}
-		if _, err := s.pool.Exec(ctx, "update secrets set dek_wrapped = $1, kv_key_version = $2 where id = $3 and kv_key_version = $4", nw, current, r.id, r.version); err != nil {
+		q := "update secrets set dek_wrapped = $1, kv_key_version = $2 where id = $3 and kv_key_version = $4"
+		if r.table == "account_secrets" {
+			q = "update account_secrets set dek_wrapped = $1, kv_key_version = $2 where id = $3 and kv_key_version = $4"
+		}
+		if _, err := s.pool.Exec(ctx, q, nw, current, r.id, r.version); err != nil {
 			return n, err
 		}
 		n++

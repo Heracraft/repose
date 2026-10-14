@@ -351,6 +351,14 @@ export interface SecretMeta {
 	updated_at: string;
 }
 
+/** PUT /me/secrets/:name: the running machines that got it now, and the
+ * projects whose own secret of that name wins (I-697). */
+export interface AccountSecretPut {
+	name: string;
+	pushed: number;
+	overridden_by: string[];
+}
+
 /** One bucket of GET /projects/:id/samples (api.md, I-492, I-493). */
 export interface SamplePoint {
 	ts: string;

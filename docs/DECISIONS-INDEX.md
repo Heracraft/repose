@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-713 entries.
+715 entries.
 
 ## Scope
 
@@ -745,3 +745,5 @@ pointer, not a summary.
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
+- **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L20770
+- **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L20846

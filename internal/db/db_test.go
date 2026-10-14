@@ -30,14 +30,14 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0023 (Google Chat, I-692) is the newest: its two users columns go,
-	// and nothing older does.
+	// 0024 (account secrets, I-697) is the newest: its table goes, and
+	// nothing older does.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'users' and column_name in ('gchat_url', 'gchat_broken_at')").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name = 'account_secrets'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("0023's columns are still there after down 1")
+		t.Fatal("0024's table is still there after down 1")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -45,15 +45,25 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if n != 2 {
 		t.Fatal("down 1 reverted 0022 too")
 	}
-	if _, err := db.MigrateDown(ctx, pool, 1); err != nil {
-		t.Fatal(err)
+	// Down to and including 0022, one at a time, whatever numbers land
+	// between them: its two tables go.
+	for {
+		cur, err := db.MigrateStatus(ctx, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cur.Applied[len(cur.Applied)-1] < 22 {
+			break
+		}
+		if _, err := db.MigrateDown(ctx, pool, 1); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// 0022 (resume after a host reboot, I-645): its two tables go.
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("0022's tables are still there after down 1")
+		t.Fatal("0022's tables are still there after its down")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name = 'provider'").Scan(&n); err != nil {
 		t.Fatal(err)

@@ -20767,3 +20767,98 @@ The owner, after `repose stop obsidian` asked about "shell (working)" when only 
 - ntfy notifications are not updated or withdrawn when a question closes (`X-Sequence-ID` needs a recent ntfy server; not verified against ntfy.sh).
 - The Chat webhook's answers to `requestId`, and the status a deleted webhook returns, are taken from Google's docs and not from a live deleted webhook.
 - No message was sent to a real Chat webhook (I-692 *Built*): that a `cardsV2` card with `openLink` buttons and `fallbackText` renders, that `requestId` dedupes, and what an invalid token returns all wait for a first send from prod with the owner's space, then `repose notify test`.
+**I-697. Account secrets: a named secret set once for every project, with
+the project's own winning (account-secrets, 2026-10-13).** Amends
+features/secrets.md "Secrets are per project" and its Deferred list.
+*Made during implementation* (the owner's backlog: "account wide, global
+vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
+- *Still the Postgres home, not a fourth place.* CLAUDE.md's "three homes"
+  rule counts where a value lives, not how many tables hold it. An
+  account secret is a row in Postgres (`account_secrets`, migration 0024,
+  one per user and name), sealed with AES-256-GCM under the same per-user
+  data key wrapped by Key Vault, and reaches a machine only as the tmpfs
+  files and environment a project secret does. The rows cascade on a hard
+  delete of the user row, which no code does today: a cancel sets
+  `users.cancelled_at` and leaves project secret rows and these alike, so
+  the purge 30 days after a cancel that billing.md promises, when it is
+  built, deletes both tables' rows (not built here; it predates this
+  entry).
+  `userDEK` reads both tables, so a user keeps one data key; `Rewrap`
+  covers both. The ciphertext is bound to the user and the name under its
+  own prefix (`repose-account-secret-v1`), so a row moved to another user,
+  or copied between the two tables, does not open.
+- *Precedence: the project's own wins.* The specific value beats the
+  general one, as a repository secret beats an organization secret in
+  GitHub Actions and a project variable beats a team one in Vercel. The
+  other order would make a project unable to differ from the account
+  without renaming the variable its code reads. The merge is in
+  `DecryptForGuest`, the one place values are decrypted, so create,
+  start, restore, `UpdateSecrets`, the fragment refusal ("fragment
+  contains the value of secret NAME") and build-log redaction all see the
+  same set without a second code path.
+- *Delivery.* A set or rm queues `UpdateSecrets` for every running project
+  of the account that has no secret of its own by that name (a project
+  that has one would receive the same set again); stopped ones get it at
+  their next start. That is the project path's "within seconds", per
+  machine. The PUT answers `{name, pushed, overridden_by}`: `pushed` is a
+  count, not the project route's bool, since one account write reaches
+  many machines, and `overridden_by` names the projects whose own value
+  wins, because that is the case a user would otherwise misread.
+- *API.* `GET /v1/me/secrets`, `PUT /v1/me/secrets/:name` and `DELETE
+  /v1/me/secrets/:name`, beside `/me/config` (the account's machine.nix,
+  I-490). The project routes keep their shape: `GET
+  /projects/:id/secrets` lists the project's rows alone, so no old client
+  reads an account row as the project's. Audit actions
+  `account_secret_put` and `account_secret_delete` carry the name; the
+  metric `repose_api_secrets_ops_total{op}` gains `account_put` and
+  `account_delete`.
+- *CLI placement: `--global` on `secrets set`, `list`, `rm` and
+  `import`.* `repose config --global` already means "every machine of
+  your account" (machine.nix), so the same flag on the same noun reads
+  the same way, and no new command or noun is added (cli-surface-taste).
+  The flag sits on those four subcommands, not on `secrets` itself:
+  `secrets choose` already means "every project" without `--project`,
+  and a persistent `--global` there would be a second spelling of that.
+  `--global` with a project exits 2. `secrets list` on a terminal shows
+  the account's secrets under the project's and marks a name the project
+  overrides with "(PROJECT's own is used)"; piped and `--json`, it stays
+  the project's rows, so scripts that read it see what they saw before.
+  `import --global --mcp` reads the user scope of the laptop's Claude Code
+  MCP servers alone: a local-scope server is one repository's, and its
+  tokens belong to that project. `run`'s Claude login check counts an
+  account `CLAUDE_CODE_OAUTH_TOKEN`. A CLI talking to an api from before
+  this entry treats a 404 from `/me/secrets` as no account secrets. A
+  project's `secrets rm NAME` checks the account when it matters: a name
+  only the account has exits 1 with "PROJECT has no secret NAME of its
+  own; it gets your account's." and the `rm --global` line, and removing
+  a project's own that the account also has says the machine gets the
+  account's now. Both cases start from `secrets list` showing the name,
+  and without the line the user cannot see that the variable stays.
+- *Fork* copies the source's project rows (I-254) and nothing else: the
+  copy belongs to the same account and gets its secrets as every project
+  does.
+- *Not built.* Keeping one account secret off one project without giving
+  that project a value of its own. machine.nix has `config --global off
+  PROJECT`, but a secret has a simpler answer (set the project's own) and
+  nobody has asked; it stays in features/secrets.md's Deferred list.
+- *Evidence* is in the branch's commit message.
+
+**I-698. The dashboard shows account secrets on Settings and on each
+project's Secrets page (account-secrets, 2026-10-13).** *Made during
+implementation*, with I-697.
+- *Settings, a "Secrets" section after machine.nix* (`#secrets`): the
+  account's names and dates, Add (name and value, typed or from Load from
+  file, the same checks and 64 KB as a project's), and the project page's
+  two-step Delete. Settings
+  is where the account's machine.nix already lives, and a top-level
+  "Secrets" in the dashboard's header would be a fourth place to look
+  beside Projects, Billing and Settings. A save toasts the projects whose
+  own secret wins.
+- *A project's Secrets page lists "From your account"* under its own: the
+  names that reach this machine, with a name the project has itself
+  struck through and "This project's own is used". Without it, a user
+  looking at a project with no secrets would read "No secrets yet" while
+  the machine has five. The dashed empty box shows only when neither
+  list has a row. The account list failing to load leaves the project's
+  page as it was.
+- I-699 was reserved with these and is not used.

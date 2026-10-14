@@ -212,6 +212,8 @@ type userRec struct {
 	Cancelling    bool
 	// personal is the account's machine.nix saves, oldest first (I-490).
 	personal []*personalRev
+	// secrets is the account's secrets, for every project (I-697).
+	secrets map[string]*SecretMeta
 }
 
 type project struct {

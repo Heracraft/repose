@@ -34,7 +34,7 @@ DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 
 Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
-The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in. A server that starts with a command reads its secrets each time an agent starts it. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
+The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in, or with `--global` for [every project](#secrets-for-every-project). A server that starts with a command reads its secrets each time an agent starts it. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
 
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 
@@ -49,9 +49,27 @@ repose secrets list
 repose secrets rm STRIPE_SECRET_KEY
 ```
 
-`list` shows names and dates, never values, and on a terminal it also lists the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. Secrets belong to one project; [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
+`list` shows names and dates, never values, and on a terminal it also lists your [account's secrets](#secrets-for-every-project) and the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
 The dashboard's project **Secrets** page does the same: type the value, or take it from a file with **Load from file**.
+
+## Secrets for every project
+
+```
+$ repose secrets set --global COOLIFY_BASE_URL
+Value for COOLIFY_BASE_URL: ****************************
+Set COOLIFY_BASE_URL for every project; 1 running machine has it now.
+```
+
+With `--global`, a secret is your account's: every project gets it, including the ones you create later, the same way it gets its own. A project's own secret of the same name wins on that machine, and `set --global` names the projects that keep theirs. Removing the project's own gives it the account's.
+
+```
+repose secrets list --global
+repose secrets rm --global COOLIFY_BASE_URL
+repose secrets import --global ~/.config/shared.env
+```
+
+`import --global --mcp` sets the tokens of the MCP servers in your Claude Code user scope, which every project's agents get; a local-scope server belongs to one repository, so its tokens stay with that project. The dashboard's **Settings** page lists your account's secrets and adds and deletes them, and each project's **Secrets** page shows the ones that reach it.
 
 ## Logins copied from your laptop
 
