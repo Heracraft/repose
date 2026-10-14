@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-729 entries.
+730 entries.
 
 ## Scope
 
@@ -652,9 +652,9 @@ pointer, not a summary.
 - **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16508
 - **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16544
 - **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16586
-- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16624
+- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16624
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16669
-- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16696
+- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; L16696
 - **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; L16757
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16824
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16874
@@ -680,7 +680,7 @@ pointer, not a summary.
 - **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17592
 - **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17651
 - **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17684
-- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; L17783
+- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; L17783
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
 - **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; L18017
@@ -691,7 +691,7 @@ pointer, not a summary.
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18198
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
-- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
+- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18398
 - **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18417
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18461
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
@@ -761,3 +761,4 @@ pointer, not a summary.
 - **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21443
 - **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21536
 - **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21597
+- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21644

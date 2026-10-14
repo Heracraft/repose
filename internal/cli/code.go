@@ -133,7 +133,9 @@ func connectProject(ctx context.Context, e *Env, projectArg string, start bool) 
 		return nil, sshTarget{}, err
 	}
 	project := res.Project
-	if project.State != "running" {
+	// A running machine on a restarting server is frozen (I-652): ssh and
+	// code wait for the server as attach does (I-709).
+	if project.State != "running" || (start && project.HostUnreachable) {
 		if !start {
 			return nil, sshTarget{}, notRunningError(project)
 		}

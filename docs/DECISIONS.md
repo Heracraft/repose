@@ -21641,3 +21641,96 @@ nixpkgs' and Debian's long-standing default, it is what makes
 `PATH`, and a guest's bash must stay the one the base's closure already
 has. machine.md gains the sentence that a login file of the user's own
 takes `~/.bashrc` back.
+**I-709. From the home folder, `attach NAME` and `run NAME` bring
+NAME up in one step, and `attach` comes up from every state a start
+can leave, a server restart included (attach-run-home, 2026-10-13).**
+Amends I-601, I-603, I-631, I-641. *Made during implementation* (the
+owner's backlog of 2026-10-13, item 2: `repose attach unwrap` in `~`
+answered "unwrap is stopped. Start it with `repose start unwrap`" and
+`repose run unwrap` "'unwrap' is one of your projects, but `repose
+run`'s argument is a prompt"; "having to do 2 steps simply because the
+machine was stopped is criminal"). Both lines came from a CLI before
+v0.1.34: I-603 made `run`'s word the project and I-631 made `attach`
+start a stopped machine, and neither line is in v0.1.34. What the owner
+asked for is the rule, so this entry pins it and closes what was left.
+- *`repose run NAME` in the home folder* is the machine NAME as if run
+  from its checkout without a sync: created if there is none (I-601's
+  `--name`), started if stopped, attached to its session on its current
+  window, `-p` typed into an agent window that opens in the machine's
+  checkout (the carry's answer, as `--no-sync` gives). Nothing in `~`
+  is synced, linked (`by_dir`), given a `repose` remote or read for a
+  git carry; a plain `repose run` there still exits 2. The owner's
+  "no run on ~, no project linking" stays as I-601 wrote it. Rejected:
+  syncing NAME's laptop checkout from `~` (the CLI would have to pick a
+  folder the user did not name, and `repose sync` in that folder does
+  it).
+- *`attach`, `ssh`, `code`, `run` and `start` bring the machine up as
+  `run` always did:* a stopped one starts, one in `error` restarts (as
+  `run` and `start` did; I-631 had kept `attach` at exit 5 there),
+  one creating or starting is waited for, one stopping is waited for
+  and then started, and one being restored is now waited for too and
+  then started (the
+  restore op, then the state; it exited 5 before, a second step for
+  nothing). Destroying and destroyed still exit 5, and so does a machine
+  stopped for a miner (I-239, I-631: after an abuse stop, `repose start`
+  is a step the user takes knowing why).
+- *A server that is restarting* (the api's `host_unreachable`, set after
+  90 s of silence): its running machines are frozen and come back as
+  they were (I-652), and a stopped machine's start is refused while it
+  is away (`lifecycle.UnreachableMessage`). These commands now wait with
+  `Waiting for api's server to come back`, polling the project each
+  second, for up to 10 minutes (`hostWaitTimeout`, the api's own
+  `HostUnreachableGrace`), then go on from whatever state the machine is
+  in: a frozen one is attached as it is (no op is sent), a stopped one is
+  started, one the restore could not bring back is started cold by the
+  api and waited for. Past 10 minutes they exit 5 with ``api's server
+  has not answered for 10m. `repose status api` shows when it is
+  back.``; Ctrl-C ends the wait. Rejected: a restart of a frozen machine
+  (it would throw away the image the freeze kept), and a shorter wait (a
+  host-01 restart with frozen guests is about 2 minutes, I-686).
+  `ssh` and `code` wait on a frozen running machine too (their
+  connect gate checks `host_unreachable`, not only the state), and so
+  does `repose start`, which then says the machine is running: the
+  public docs promised the wait for all five, and an "already running"
+  at once, before a connection that cannot answer, is the two-step
+  answer this entry removes. Not covered: the first 90 s of a restart,
+  before the api marks the server. A connection to a machine that was
+  running reaches the ssh wait as before and `start` says it is
+  running; lifecycle.md says so. A start of a stopped machine is
+  accepted then (the api refuses only a host already marked
+  unreachable) and waits on its op until the host answers or the
+  op's grace ends. Rejected for now: re-reading the project when
+  that ssh wait fails, since the 15 s wait ends long before the api's
+  90 s mark.
+- A wait that leaves the machine running (a restore op that booted it,
+  or a start with no op named) sends the early boot probe once the
+  re-read says running (I-237); before, only a create or start op did.
+- The idle "frozen" look of I-683 is a mock with no api field, so there
+  is nothing for the CLI to wake yet; when `resting` lands, attach is
+  the command that wakes it.
+- `exec`, `ps`, `open` and `cp` still start nothing (I-631); their line
+  for a machine on its way up now names ``repose attach NAME`` (it said
+  "`repose run` in its checkout", wrong from `~`).
+- `waitForSSH` returns the context's error when Ctrl-C killed its ssh;
+  it said "Could not run ssh: signal: killed. repose needs the OpenSSH
+  client".
+`TestAttachStartsAStoppedMachine`, `TestAttachGivesUpOnAServerThatStaysAway`,
+`TestAttachToAnErroredGuestRestartsIt` (was `TestAttachToAnErroredGuestSaysError`),
+`TestSSHStartsAStoppedMachineAndExecDoesNot` (frozen running too),
+`TestStartWaitsForARestartingServer`, `TestWaitThatEndsRunningCallsGuestUp`,
+`TestAttachAndRunByNameFromTheHomeFolder`. Specs: features/run-and-attach.md,
+features/stop-start-destroy.md. Docs: cli.md (attach, ssh,
+code, start), run-and-attach.md, lifecycle.md (home folder, server
+restart).
+*Evidence (2026-10-13, prod, this branch's CLI, from `/home/dev`, a
+throwaway `s2-attach-run-home-b`):* `attach NAME` on the stopped
+machine printed `Starting`, `Booting` for 9 s and `Connected to
+s2-attach-run-home-b (large)` and landed in its tmux session; `run NAME`
+on it stopped did the same with `Ready in 17s.` and no sync line;
+`projects.json` had no `by_dir` entry for `/home/dev`; `run NAME -d -p
+"say hi"` opened `1:claude` with tree `checkout` in `repose ps`; an
+attach while a `repose start` ran waited (`Booted ... 8s`, `Connected`);
+an attach while a stop ran printed `Stopping`, `Stopped`, `Starting`,
+`Booting`, `Connected`; a plain `run -d` there still exits 2. Not run
+live: `error`, `restoring` and a server restart (prod has no way to
+cause them safely and staging has no host); the fake api covers them.

@@ -52,7 +52,7 @@ On your laptop, `run` changes one thing in the checkout: it adds a git remote na
 
 ### `repose attach [PROJECT[:CHECKOUT]] [WINDOW]`
 
-Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A stopped machine starts first; a machine in another state that isn't running exits 5. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2. A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows ([Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine)). `--bridge` also [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist.
+Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A machine that isn't running comes up first, as with `run`: a stopped one starts, one in `error` restarts, one starting is waited for, and one stopping or being restored is waited for and then started. While its server restarts, it waits up to 10 minutes for the server to come back ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). A machine being removed, or one stopped for running a miner, exits 5. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2. A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows ([Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine)). `--bridge` also [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist.
 
 `run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
 
@@ -110,11 +110,11 @@ $ repose exec --workdir worktree-1 npm test
 
 ### `repose ssh [PROJECT[:CHECKOUT]]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A stopped machine starts first, without a sync, as with `attach`. A command after PROJECT exits 2 and names `repose exec`, which runs one.
+Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A machine that isn't running comes up first, without a sync, as with `attach`. A command after PROJECT exits 2 and names `repose exec`, which runs one.
 
 ### `repose code [PROJECT[:CHECKOUT]]`
 
-Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over [SSH](/docs/ssh-and-editors) to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. A stopped machine starts first, as with `attach`. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
+Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over [SSH](/docs/ssh-and-editors) to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. A machine that isn't running comes up first, as with `attach`. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
 
 ```
 $ repose code todo-app
@@ -272,7 +272,7 @@ todo-app  running 2h14m  large
 
 ### `repose start [PROJECT]`
 
-Start a stopped machine, or restart one in `error`. Doesn't sync. `--json` prints the project as JSON when done.
+Start a stopped machine, or restart one in `error`. Doesn't sync. One starting is waited for, and one stopping or being restored is waited for and then started. While its server restarts, it waits up to 10 minutes for the server to come back, as `attach` does, and then says the machine is running or starts it. `--json` prints the project as JSON when done.
 
 ### `repose stop [PROJECT...]`
 

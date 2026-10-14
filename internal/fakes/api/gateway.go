@@ -179,3 +179,62 @@ func (f *Fake) SetAgents(projectID string, agents []AgentSignal) {
 		p.Signals.Agents = agents
 	}
 }
+
+// SetHostUnreachable sets a project's host_unreachable flag, as the api's
+// sweep does for a host silent for 90 s (a host restart, its guests
+// frozen across it, I-652) and its next heartbeat clears.
+func (f *Fake) SetHostUnreachable(projectID string, on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.projects[projectID]; ok {
+		p.HostUnreachable = on
+	}
+}
+
+// SetLastError sets a project's last_error ("code: message"), or clears
+// it with "".
+func (f *Fake) SetLastError(projectID, lastError string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.projects[projectID]
+	if !ok {
+		return
+	}
+	if lastError == "" {
+		p.LastError = nil
+		return
+	}
+	p.LastError = &lastError
+}
+
+// OpKinds lists the kinds of the ops sent for a project, in no order.
+func (f *Fake) OpKinds(projectID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var kinds []string
+	for _, o := range f.ops {
+		if o.projectID == projectID {
+			kinds = append(kinds, o.kind)
+		}
+	}
+	return kinds
+}
+
+// OnGet runs fn after each GET of the project is answered, so a test
+// changes the fake once a command has read a state (or printed a line)
+// rather than on a timer it can lose to under load. fn runs under the
+// fake's lock with the project itself: it changes fields directly and
+// calls no other method of f. fn returning true removes it, as does a
+// nil fn.
+func (f *Fake) OnGet(projectID string, fn func(p *Project) (done bool)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if fn == nil {
+		delete(f.onGet, projectID)
+		return
+	}
+	if f.onGet == nil {
+		f.onGet = map[string]func(*Project) bool{}
+	}
+	f.onGet[projectID] = fn
+}

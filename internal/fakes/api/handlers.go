@@ -511,6 +511,11 @@ func (f *Fake) getProject(w http.ResponseWriter, r *http.Request) *apiError {
 		return e
 	}
 	writeJSON(w, http.StatusOK, p.Project)
+	if fn := f.onGet[p.ID]; fn != nil && fn(&p.Project) {
+		// Under f.mu (ServeHTTP), after the answer is written: what fn
+		// changed is what the next read sees.
+		delete(f.onGet, p.ID)
+	}
 	return nil
 }
 
@@ -714,6 +719,11 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if p.State == "creating" || p.State == "starting" {
 		// What the api answers while the create op is still running.
 		return errf("conflict", "%s is already starting", p.Slug)
+	}
+	if p.HostUnreachable {
+		// lifecycle.UnreachableMessage: the machine's disk is on that
+		// server.
+		return errf("conflict", "%s's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start %s` works then", p.Slug, p.Slug)
 	}
 	if p.State != "running" {
 		if e := f.gate(userFrom(r), p.Class, nil, p); e != nil {

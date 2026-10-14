@@ -119,7 +119,7 @@ repose attach
 repose attach todo-app
 ```
 
-`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. A stopped machine starts first, as with `run`. In the checkout, one word that names none of your projects is a window: `repose attach claude-2`.
+`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. A stopped machine starts first, as with `run`, and one starting or stopping is waited for; from your home folder too, by name: `repose attach todo-app`. In the checkout, one word that names none of your projects is a window: `repose attach claude-2`.
 
 Several terminals can be attached at once, from one computer or several. They see the same windows.
 
