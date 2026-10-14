@@ -597,7 +597,7 @@ pointer, not a summary.
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14431
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14442
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14458
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-697; L14506
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-732; L14506
 - **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14573
 - **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14635
 - **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14654
@@ -623,7 +623,7 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L15131
 - **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; L15149
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15161
-- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-697; L15211
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-732; L15211
 - **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15319
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15343
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15370
@@ -758,24 +758,24 @@ pointer, not a summary.
 - **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L21109
 - **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L21212
 - **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L21237
-- **I-697** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13) — L21258
-- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21350
-- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21468
-- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21561
-- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21622
-- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21669
-- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L21763
-- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L21836
-- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L21878
-- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L21914
-- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L21940
-- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L21970
-- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L22018
-- **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22055
-- **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22090
-- **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22116
-- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L22141
-- **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22212
-- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22256
-- **I-716** The fetch does not start during boot — 2026-10-13; L22303
-- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22314
+- **I-732** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-14) — L21258
+- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21356
+- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21474
+- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21567
+- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21628
+- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21675
+- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L21769
+- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L21842
+- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L21884
+- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L21920
+- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L21946
+- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L21976
+- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L22024
+- **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22061
+- **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22096
+- **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22122
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L22147
+- **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22218
+- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22262
+- **I-716** The fetch does not start during boot — 2026-10-13; L22309
+- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22320
