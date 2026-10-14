@@ -15,6 +15,10 @@
 //
 // NOVNC_DIR is any directory holding noVNC's core/ and vendor/, such as
 // /run/repose/desktop/web on a machine whose viewer has run once.
+// VIEWER_DIR runs another checkout's viewer. On NixOS, Playwright's own
+// Firefox lacks its libraries; point PLAYWRIGHT_BROWSERS_PATH at
+// nixpkgs' `playwright-driver.browsers` of the same Playwright version,
+// and PLAYWRIGHT_CHROMIUM_PATH at a chromium.
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
