@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-728 entries.
+729 entries.
 
 ## Scope
 
@@ -760,3 +760,4 @@ pointer, not a summary.
 - **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21325
 - **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21443
 - **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21536
+- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21597
