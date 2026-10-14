@@ -13,11 +13,13 @@
 #
 # The lock is stale unless the process it names is running with this
 # profile on its command line; then the links are removed. A lock a live
-# browser holds is left alone.
-{ writeShellApplication, coreutils, gnugrep }:
+# browser holds is left alone. Chromium rewrites its process title, so
+# /proc/PID/cmdline holds its arguments joined by spaces in one string;
+# the argument is looked for between spaces as well as NULs.
+{ writeShellApplication, coreutils }:
 writeShellApplication {
   name = "repose-browser-unlock";
-  runtimeInputs = [ coreutils gnugrep ];
+  runtimeInputs = [ coreutils ];
   text = ''
     if [ "$#" -ne 1 ]; then
       echo "usage: repose-browser-unlock PROFILE" >&2
@@ -31,9 +33,11 @@ writeShellApplication {
     case "$pid" in
       "" | *[!0-9]*) ;;
       *)
-        if [ -r "/proc/$pid/cmdline" ] \
-           && tr '\0' '\n' < "/proc/$pid/cmdline" | grep -qxF -- "--user-data-dir=$dir"; then
-          exit 0
+        if [ -r "/proc/$pid/cmdline" ]; then
+          cmdline=" $(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true) "
+          case "$cmdline" in
+            *" --user-data-dir=$dir "*) exit 0 ;;
+          esac
         fi
         ;;
     esac

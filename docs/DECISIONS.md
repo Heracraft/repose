@@ -20668,8 +20668,16 @@ and pasted nothing.
   extended clipboard, so the text is UTF-8) and then presses Ctrl+V on the
   machine over the same RFB connection, which carries both in order. On a
   Mac it first releases what noVNC sent for Cmd, so the machine sees
-  Ctrl+V, not Ctrl+Alt+V. With Ctrl held on the laptop, noVNC has already
-  sent Ctrl down, and the page sends only the V.
+  Ctrl+V, not Ctrl+Alt+V. With Ctrl held on the laptop, noVNC has
+  normally sent Ctrl down, and the page sends only the V. On Windows noVNC
+  holds a left Ctrl back for up to 100 ms to tell AltGr apart and sends it
+  only with the next key it sees, which the held V never is; the page
+  flushes that Ctrl first, and presses Ctrl itself whenever noVNC's list
+  of keys down has none (a Ctrl released before the 300 ms below).
+- *Which key is V.* On a Latin layout the key's letter (`key`) decides,
+  so Dvorak's Ctrl+K on the physical V key reaches the machine as Ctrl+K.
+  On a non-Latin layout (Cyrillic, Greek) browsers take the shortcut by
+  position, and the physical key (`code`) decides.
 - *A browser with no paste event.* If none arrives within 300 ms, the page
   presses Ctrl+V on the machine anyway, which is what happened before.
 - *The paste button.* For a pointer, a phone, or a browser whose shortcut
@@ -20703,6 +20711,9 @@ root-owned /run/repose/desktop/last-cdp".
   answers. `repose-browser-unlock`, the unit's ExecStartPre, removes the
   three links unless the process the lock names is running with this
   profile on its command line, and says so in the unit's journal.
+  Chromium rewrites its process title, so its `/proc/PID/cmdline` is one
+  string of arguments joined by spaces; the helper looks for
+  `--user-data-dir=PROFILE` between spaces, NULs read as spaces.
 - *The stamps.* `last-client` and `last-cdp` were written with `touch` by
   the per-minute idle check, as root, and by the display's, the viewer's
   and the browser's units, as dev. When the idle check made a stamp first
@@ -20714,7 +20725,8 @@ root-owned /run/repose/desktop/last-cdp".
   base on a running machine is given back at the next write.
 - *Evidence.* The flake check `guest-browser-starts-after-a-kill` runs the
   unlock helper against another host's lock, a reused PID, a PID with
-  another profile, a dead PID and a live browser's lock, and reads the
+  another profile, a dead PID, a live lock whose holder's title is one
+  space-joined string, and a running headless Chromium, and reads the
   unit texts for the helper and the stamp writes. A guest-desktop subtest
   starts the browser over another host's lock and root's stamps (the VM
   tests need the dev box). The commit message has the reproduction on a

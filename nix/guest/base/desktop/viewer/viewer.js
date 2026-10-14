@@ -200,22 +200,41 @@ const mac = isMac();
 let heldPaste = null; // the modifier of a paste key held back, until its paste event
 let heldTimer = null;
 
+// The key that types v. A Latin layout names it in e.key (on Dvorak the
+// physical V key is a K, and Ctrl+K must reach the machine as it is); a
+// non-Latin one (Cyrillic, Greek) names another letter there, and the
+// browser takes the shortcut by position, so e.code is what counts.
 function isPasteKey(e) {
-  if (e.altKey || !(e.code === 'KeyV' || (e.key || '').toLowerCase() === 'v')) return false;
+  if (e.altKey) return false;
+  const key = e.key || '';
+  const v = /^[a-z]$/i.test(key) ? key.toLowerCase() === 'v' : e.code === 'KeyV';
+  if (!v) return false;
   return mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 
-// Ctrl+V on the machine. `held` is what the laptop holds down, which
-// noVNC already sent: 'ctrl', 'meta' (a Mac's Cmd) or nothing.
+// Whether noVNC has sent a Ctrl press to the machine. On Windows it holds
+// a left Ctrl back for up to 100 ms to tell AltGr apart, and only the next
+// key it sees sends it; the held paste key is one it never sees.
+function machineHasCtrl() {
+  const kb = rfb && rfb._keyboard;
+  if (!kb || !kb._keyDownList) return true;
+  if (typeof kb._interruptAltGrSequence === 'function') kb._interruptAltGrSequence();
+  return 'ControlLeft' in kb._keyDownList || 'ControlRight' in kb._keyDownList;
+}
+
+// Ctrl+V on the machine. `held` is what the laptop holds down: 'ctrl',
+// 'meta' (a Mac's Cmd, which noVNC sent as Alt) or nothing. A Ctrl the
+// machine has not got yet (Windows, or released already) is pressed here.
 function pressPaste(held) {
   if (!connected()) return;
   if (held === 'meta') {
     rfb.sendKey(KeyTable.XK_Alt_L, 'MetaLeft', false);
     rfb.sendKey(KeyTable.XK_Super_L, 'MetaRight', false);
   }
-  if (held !== 'ctrl') rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', true);
+  const ctrl = !(held === 'ctrl' && machineHasCtrl());
+  if (ctrl) rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', true);
   rfb.sendKey(KeyTable.XK_v, 'KeyV');
-  if (held !== 'ctrl') rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', false);
+  if (ctrl) rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', false);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -288,8 +307,8 @@ $('copy').addEventListener('click', async () => {
   }
 });
 
-// The same paste for a pointer: the browser asks once (Chromium) or shows
-// its own Paste button (Firefox) before the page may read the clipboard.
+// The same paste for a pointer: Chromium asks once, Firefox shows its own
+// Paste button at each click, before the page may read the clipboard.
 $('paste').addEventListener('click', async () => {
   const b = $('paste');
   if (!connected()) return;

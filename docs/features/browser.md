@@ -135,9 +135,10 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   machine over the same connection; Cmd becomes Ctrl there. A browser
   that fires no paste event within 300 ms gets its key through as before.
   The "paste" button does the same through `navigator.clipboard.readText`
-  (Chromium asks once; Firefox shows its own Paste button). When the tab
-  comes to the front, Chromium with that permission also sends the
-  clipboard. Text copied on the machine lands in the laptop's clipboard.
+  (Chromium asks once; Firefox shows its own Paste button at each click).
+  When the tab comes to the front, Chromium with that permission also
+  sends the clipboard. Text copied on the machine lands in the laptop's
+  clipboard.
 - Reconnects with backoff (1, 2, 4, 8, 16 s, then every 15 s) when the
   connection drops: the guest's socket activation brings the chain back
   when the viewer idled out, so a tab left open comes back by itself.
