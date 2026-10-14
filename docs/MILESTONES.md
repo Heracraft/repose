@@ -108,6 +108,14 @@ schedule, restore onto a different host and host loss (both need a second
 host), and the Polar sandbox gate (M4). The b1a5915 row is settled by I-193
 (key rotated, history kept) but not yet ticked.*
 
+*Added 2026-10-12 after the host-restart work (DECISIONS I-696): five rows
+in `CHECKLIST.md` "Release (M5)" are the owner's own, and none can be closed
+by an agent: paging that reaches a human (nothing paged anyone during the
+2026-10-10 outage), the Azure alert path, a console login on host-01 and the
+edge (root is locked, so a host that will not boot cannot be rescued), a
+planned host-01 restart (the only proof of pool activation, the restart of
+running machines and the guest freeze on prod), and the herdr laptop checks.*
+
 ## Later, in order of likely demand
 
 Preview URLs. Idle auto-stop (needs M1 signals for a month). `repose mcp

@@ -20648,3 +20648,31 @@ commit they describe.
   The freeze itself was proved on staging at host-01's shape (I-652,
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
+
+**I-696. The launch gates only the owner can close live in
+`CHECKLIST.md`, not in a handoff file.** (conductor, 2026-10-12) The
+host-restart run left five things that need the owner's own hands, and
+wrote them only in `~/repose-ws/HANDOFF.md` on the dev box. Nothing in the
+repository said them, so an agent on another machine, or a later session
+here, would not have known: `~/repose-ws` is not in git and kanali cannot
+read it. Each is now a row in `CHECKLIST.md` "Release (M5)" with the
+evidence that closes it, and `MILESTONES.md` M5 points at them, because
+CLAUDE.md sends every agent to those two files and M5's gate is
+"`CHECKLIST.md` closed".
+- *The five.* Paging that reaches a human (the 2026-10-10 outage paged
+  nobody: `ntfy.herakraft.co` answered 503 on every path, I-648); the Azure
+  alert path proven through the portal's Test, since the CLI refuses it;
+  a console login on host-01 and the edge, which are built with root
+  locked, so the serial console shows output but cannot rescue a host that
+  will not boot (I-649, I-654); a planned host-01 restart, the only proof
+  of the stage-2 pool activation (I-643), the restart of machines that were
+  running (I-645) and the guest freeze on prod (I-652, I-685, I-686), none
+  of which a switch exercises; and the herdr laptop checks from
+  r20261008-1.
+- *Why the restart cannot be rehearsed on one guest.* `hostd freeze` is
+  `FreezeAll` with no per-guest flag, so proving the freeze on host-01
+  would freeze every guest on it, including the owner's working machine.
+  That is why it is the owner's window and not an agent's live check.
+- *Rejected.* Leaving them in the handoff file (invisible to the next
+  agent); a new `docs/ops/PRE-LAUNCH.md` (a second list to drift from the
+  gate it duplicates).
