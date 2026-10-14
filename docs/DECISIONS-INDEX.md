@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-746 entries.
+747 entries.
 
 ## Scope
 
@@ -741,7 +741,7 @@ pointer, not a summary.
 - **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20692
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L20702
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20718
-- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20732
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L20732
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
@@ -778,3 +778,4 @@ pointer, not a summary.
 - **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22212
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22256
 - **I-716** The fetch does not start during boot — 2026-10-13; L22303
+- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22314
