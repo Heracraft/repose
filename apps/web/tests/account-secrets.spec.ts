@@ -8,11 +8,25 @@ test.beforeEach(async ({ page }) => {
 	await signIn(page);
 });
 
+// The fixture's one account is shared by every spec after this one, and
+// billing.spec counts the memory its machines use: a project this spec
+// started and left running made it read 8 GB, not 0 (CI on b2524af4).
+const created: string[] = [];
+test.afterAll(async () => {
+	for (const id of created) {
+		await fetch(`${apiURLFromEnv()}/projects/${id}`, {
+			method: 'DELETE',
+			headers: { Authorization: 'Bearer playwright' }
+		});
+	}
+});
+
 test('Settings adds and deletes an account secret; a project page shows it', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'acct-secrets-app',
 		remote_url: 'github.com/heracraft/acct-secrets-app'
 	});
+	created.push(p.id);
 	// The project has its own STRIPE_KEY.
 	const res = await fetch(`${apiURLFromEnv()}/projects/${p.id}/secrets/STRIPE_KEY`, {
 		method: 'PUT',

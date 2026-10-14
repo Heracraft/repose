@@ -91,11 +91,13 @@
 		try {
 			// The first load asks for the questions with the list, so the
 			// card above the strip is in the first paint and nothing lands
-			// above the table later (DESIGN-LANGUAGE "The pages").
+			// above the table later (DESIGN-LANGUAGE "The pages"). It is a
+			// side read, so passive: its answer must not clear the outage bar
+			// a failing list raises at the same time (I-393).
 			if (first) {
 				const [list, qs] = await Promise.all([
 					listProjects(),
-					listQuestions('pending').catch(() => undefined)
+					listQuestions('pending', { passive: true }).catch(() => undefined)
 				]);
 				if (qs) {
 					questions = qs;

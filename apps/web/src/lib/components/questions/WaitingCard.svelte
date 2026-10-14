@@ -76,9 +76,11 @@
 
 	async function refresh() {
 		try {
+			// The page's own read (the list, the project) says whether the
+			// api is up; the card's poll must not clear its outage bar.
 			questions = projectId
-				? await listProjectQuestions(projectId)
-				: await listQuestions('pending');
+				? await listProjectQuestions(projectId, true, { passive: true })
+				: await listQuestions('pending', { passive: true });
 			pollFailure.ok();
 		} catch (err) {
 			pollFailure.fail(err);
