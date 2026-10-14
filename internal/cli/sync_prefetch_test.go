@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -419,5 +422,150 @@ func TestPrefetchResendWithoutTheKeptPayload(t *testing.T) {
 	}
 	if got := readFile(t, filepath.Join(f.guestRepo(), "new.txt")); got != "untracked\n" {
 		t.Errorf("new.txt on the guest = %q", got)
+	}
+}
+
+// Review round 2: in a blobless checkout, the apply's check for the
+// laptop-only commit it checks out must not ask GitHub for it, and the
+// laptop's bundle is unbundled, not fetched. A
+// missing object there makes git lazy-fetch from the promisor remote,
+// a round trip that fails (GitHub lacks the commit) on the apply's
+// critical path, once per such commit: 7 s on a prod guest.
+func TestPrefetchWantCheckDoesNotLazyFetch(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	oldBlobHistory(t, f)
+	writeFile(t, filepath.Join(f.local, "README.md"), "unpushed\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "unpushed")
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	t.Setenv("GIT_TRACE2_EVENT", trace)
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if s.ClonedFrom == "" || s.Commits != 1 {
+		t.Fatalf("summary = %+v, want the history from GitHub and 1 commit sent", s)
+	}
+	waitBackfilled(t, f.guestRepo())
+	// A lazy fetch is a child `git fetch repose-backfill ... --stdin`; one
+	// for an object GitHub lacks exits non-zero.
+	type ev struct {
+		Event string   `json:"event"`
+		SID   string   `json:"sid"`
+		Child int      `json:"child_id"`
+		Argv  []string `json:"argv"`
+		Code  int      `json:"code"`
+	}
+	lazy := map[string][]string{}
+	var failed, walks []string
+	for _, l := range strings.Split(readFile(t, trace), "\n") {
+		var e ev
+		if json.Unmarshal([]byte(l), &e) != nil {
+			continue
+		}
+		k := e.SID + "/" + strconv.Itoa(e.Child)
+		switch e.Event {
+		case "child_start":
+			a := strings.Join(e.Argv, " ")
+			if strings.Contains(a, "fetch "+backfillRemote) && strings.Contains(a, "--stdin") {
+				lazy[k] = e.Argv
+			}
+			// A fetch's connectivity check: in a blobless checkout it
+			// enumerates every promisor object, 17 s for cpython's
+			// history on a prod guest, where unbundling the same bundle
+			// took 0.03 s.
+			if strings.Contains(a, "rev-list --objects --stdin --exclude-promisor-objects") {
+				walks = append(walks, a)
+			}
+		case "child_exit":
+			if argv, ok := lazy[k]; ok && e.Code != 0 {
+				failed = append(failed, strings.Join(argv, " "))
+			}
+		}
+	}
+	if len(walks) > 0 {
+		t.Errorf("the apply walked the promisor objects %d times (a fetch's connectivity check):\n%s", len(walks), strings.Join(walks, "\n"))
+	}
+	if len(failed) > 0 {
+		t.Fatalf("%d lazy fetches failed during the sync (an object GitHub lacks was asked for):\n%s", len(failed), strings.Join(failed, "\n"))
+	}
+}
+
+// Review round 2: `git backfill --all` needs revision arguments (git
+// 2.54). A guest whose git has backfill without them is fetched in full,
+// since its backfill would fail on every sync and leave the checkout
+// partial for good.
+func TestPrefetchBloblessNeedsBackfillRevisions(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeFile(t, filepath.Join(bin, "git"), "#!/bin/sh\n"+
+		"if [ \"$1\" = -C ] && [ \"$3\" = backfill ] && [ \"$4\" = -h ]; then\n"+
+		"  echo 'usage: git backfill [--min-batch-size=<n>] [--[no-]sparse]'; exit 129\nfi\n"+
+		"exec "+real+" \"$@\"\n")
+	if err := os.Chmod(filepath.Join(bin, "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if s.ClonedFrom == "" || s.CloneFailed != "" {
+		t.Fatalf("summary = %+v, want the history from GitHub", s)
+	}
+	g := f.guestRepo()
+	if out, _ := gitCmd(g, "config", "--get-regexp", "^remote\\."); strings.Contains(out, "promisor") {
+		t.Fatalf("fetched blobless on a git whose backfill takes no revisions:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(g, backfillMarker)); !os.IsNotExist(err) {
+		t.Fatalf("a backfill was marked for a full fetch")
+	}
+}
+
+// Review round 2: REPOSE_TIMING's `sync payload build` of a second
+// payload times that payload's build alone, not the first apply too.
+func TestPrefetchResendTimesItsOwnBuild(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	writeFile(t, filepath.Join(f.local, "README.md"), "pushed, then force-pushed away\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "gone from GitHub")
+	mustRun(t, f.local, "git", "update-ref", "refs/remotes/origin/main", mustRun(t, f.local, "git", "rev-parse", "HEAD"))
+	writeFile(t, filepath.Join(f.local, "README.md"), "unpushed\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "unpushed")
+	var buf strings.Builder
+	prev := timingOut
+	timingOut = &buf
+	t.Cleanup(func() { timingOut = prev })
+	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"}); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	timingOut = prev
+	at := func(l string) int64 {
+		f := strings.Fields(l)
+		n, _ := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(f[1], "+"), "ms"), 10, 64)
+		return n
+	}
+	var again int64 = -1
+	builds := 0
+	for _, l := range strings.Split(buf.String(), "\n") {
+		switch {
+		case strings.Contains(l, "sync: the fetches lack a base, sending again"):
+			again = at(l)
+		case strings.Contains(l, " sync payload build "):
+			builds++
+			if again < 0 {
+				continue
+			}
+			f := strings.Fields(l)
+			ms, _ := strconv.ParseInt(strings.TrimSuffix(f[len(f)-1], "ms"), 10, 64)
+			if ms > at(l)-again+2 {
+				t.Fatalf("the second payload's build took %d ms by its line, but it started %d ms before:\n%s", ms, at(l)-again, buf.String())
+			}
+		}
+	}
+	if again < 0 || builds != 2 {
+		t.Fatalf("want a resend and two build lines:\n%s", buf.String())
 	}
 }

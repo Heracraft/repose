@@ -168,9 +168,9 @@ func planPrefetch(localRepoDir, topURL string, subs []laptopSub) *prefetchPlan {
 
 // prefetchFns is the shell function each background fetch runs: fetch dir
 // (".", or a fresh repository under prefetchDir) from url, anonymous
-// first (blobless when partial is "yes" and the guest's git has
-// backfill), then, if that failed, with the logins once the apply has
-// copied them. It writes <key>.res: "partial", "full" or "failed <why>",
+// first (blobless when partial is "yes" and the guest's git has a
+// backfill that takes revisions, git 2.54, for its --all), then, if
+// that failed, with the logins once the apply has copied them. It writes <key>.res: "partial", "full" or "failed <why>",
 // then the milliseconds it took.
 //
 // Each git runs as a child the function waits for, so the apply's EXIT
@@ -191,8 +191,7 @@ const prefetchFns = `repose_pf_fetch() {
   export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS= SSH_ASKPASS=
   ok=
   if [ "$part" = yes ]; then
-    git -C "$d" backfill -h >/dev/null 2>&1
-    [ $? -eq 129 ] || part=
+    git -C "$d" backfill -h 2>&1 | grep -q 'revision-range' || part=
   fi
   if [ "$part" = yes ]; then
     if git -C "$d" config remote.` + backfillRemote + `.url "$u" && git -C "$d" config remote.` + backfillRemote + `.promisor true && git -C "$d" config remote.` + backfillRemote + `.partialclonefilter blob:none &&
@@ -327,15 +326,18 @@ func prefetchJoinScript(plan *prefetchPlan, carryScript string, topBundle bool, 
 			has = subBundles[r.sub]
 		}
 		if has {
-			_, _ = fmt.Fprintf(&b, "git -C \"%s\" bundle verify -q \"%s\" >/dev/null 2>&1 || repose_need=yes\n", dir, bundle)
+			_, _ = fmt.Fprintf(&b, "GIT_NO_LAZY_FETCH=1 git -C \"%s\" bundle verify -q \"%s\" >/dev/null 2>&1 || repose_need=yes\n", dir, bundle)
 		}
 		for _, c := range r.want {
-			// There, or in the bundle.
+			// In the bundle, or there. The bundle first, and the
+			// checkout's own objects without a lazy fetch: in a blobless
+			// checkout a missing commit (the laptop's own) would be asked
+			// of GitHub, which lacks it, on the apply's critical path.
 			inBundle := ""
 			if has {
-				inBundle = fmt.Sprintf(" || git -C \"%s\" bundle list-heads \"%s\" 2>/dev/null | grep -q '^%s '", dir, bundle, c)
+				inBundle = fmt.Sprintf("git -C \"%s\" bundle list-heads \"%s\" 2>/dev/null | grep -q '^%s ' || ", dir, bundle, c)
 			}
-			_, _ = fmt.Fprintf(&b, "{ git -C \"%s\" cat-file -e %s 2>/dev/null%s; } || repose_need=yes\n", dir, shQuote(c+"^{commit}"), inBundle)
+			_, _ = fmt.Fprintf(&b, "{ %sGIT_NO_LAZY_FETCH=1 git -C \"%s\" cat-file -e %s 2>/dev/null; } || repose_need=yes\n", inBundle, dir, shQuote(c+"^{commit}"))
 		}
 	}
 	b.WriteString("if [ -n \"$repose_need\" ]; then\n  echo '#needfull'\n")
@@ -348,7 +350,7 @@ func prefetchJoinScript(plan *prefetchPlan, carryScript string, topBundle bool, 
 		if r.sub < 0 {
 			// The laptop's bases the fetch brought, though no ref names
 			// them (a laptop behind GitHub).
-			b.WriteString("  if [ -f \"$t/bases\" ]; then git cat-file --batch-check='%(objectname) %(objecttype)' < \"$t/bases\" | while read -r o ty; do case $ty in commit|tag) echo \"$o\" ;; esac; done; fi\n")
+			b.WriteString("  if [ -f \"$t/bases\" ]; then GIT_NO_LAZY_FETCH=1 git cat-file --batch-check='%(objectname) %(objecttype)' < \"$t/bases\" | while read -r o ty; do case $ty in commit|tag) echo \"$o\" ;; esac; done; fi\n")
 		}
 	}
 	// The rest of this payload stays for the second, which carries the

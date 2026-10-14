@@ -15,7 +15,7 @@ The first run, into a new machine:
 ```
 $ repose run
 Connected to todo-app (large)
-Synced: 3 modified, 1 untracked
+Synced: 3 modified, 1 untracked  1.2s
 ```
 
 A later run, with work on the laptop the machine never took (I-367); the
@@ -33,7 +33,7 @@ and nothing is pushed:
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 0 modified, 0 untracked (2 new commits)
+Synced: 0 modified, 0 untracked (2 new commits)  0.9s
 ```
 
 An agent committed on the guest's branch, left two files uncommitted,
@@ -42,7 +42,7 @@ and the laptop has not pulled (DECISIONS I-573, I-574):
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 1 modified, 0 untracked (1 new commit), merged with the machine's main; kept the machine's changes to 2 files
+Synced: 1 modified, 0 untracked (1 new commit), merged with the machine's main; kept the machine's changes to 2 files  1.4s
 ```
 
 The same, when the two sides' commits conflict:
@@ -50,7 +50,7 @@ The same, when the two sides' commits conflict:
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 1 modified, 0 untracked (1 new commit)
+Synced: 1 modified, 0 untracked (1 new commit)  0.8s
 The machine's main has commits that could not be merged with yours, so it was left as it is and the machine is on 4f2a9c1, detached. `git fetch repose` brings that branch here.
 ```
 
@@ -295,7 +295,9 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   a log line.
 - The summary line prints whenever the apply ran (I-303),
   `Synced: <n> modified, <m> untracked`, even when both are zero, followed by `, <e> env files` when .env files
-  were written and `(<k> new commits)` when commits travelled.
+  were written and `(<k> new commits)` when commits travelled. A line
+  for a sync that changed something ends with the sync's own time, two
+  spaces after the rest (`  1.4s`, I-715).
 - The guest's checkout is found by the rule in guest-conventions.md "The
   checkout". A machine with none gets it from the sync's probe, at
   `/home/dev/<laptop folder>` (made safe; the slug when that name is
@@ -315,7 +317,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   (laptopBases), and its logins travel in the apply as on any sync. The
   first attempt is anonymous: a public superproject is fetched with
   `--filter=blob:none` through a promisor remote named `repose-backfill`
-  (I-714), the checkout fetches the blobs it needs, and the fetch marks
+  (I-714) when the guest's `git backfill` takes revisions (git 2.54 and
+  later; an older git fetches in full), the checkout fetches the blobs it needs, and the fetch marks
   the checkout with `.git/repose-backfill` as soon as it lands. The end
   of the apply, and the probe of every later sync, start `git backfill
   --all` (niced, detached, once by flock) while that marker or the
@@ -330,7 +333,7 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   bundles, made against that (a third, whole, if the kept one is gone).
   A fetched submodule's repository moves
   into its directory before its bundle is unbundled. The summary line
-  ends `, history cloned from github.com`; a superproject fetch that
+  carries `, history cloned from github.com` before its time; a superproject fetch that
   failed says `The machine could not clone from GitHub (<git's reason>),
   so the history was sent from your laptop instead.`, and a submodule's
   `The machine could not fetch submodule <path> from GitHub (...)`. The

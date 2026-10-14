@@ -19,7 +19,7 @@ nix › building '/nix/store/…-repose-guest.drv'...
 ✓ Built the configuration  41s
 ✓ Booted todo-app  6.2s
 Connected to todo-app (large)
-Synced: 3 modified, 1 untracked (12 new commits)
+Synced: 3 modified, 1 untracked (12 new commits)  2.1s
 Logins copied: gh, git
 Ready in 49s.
 dev@todo-app:~/todo-app$

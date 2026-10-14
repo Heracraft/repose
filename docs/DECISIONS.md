@@ -20753,8 +20753,9 @@ anonymous attempt (I-713) could read, and the full fetch is most of the
 first sync's time once the upload overlaps it: from a host-01 guest,
 tmux's 26 MB history takes 2.2 s whole and 0.66 s blobless, and the
 owner's 41.6 MiB took 6.6 to 11.4 s against 0.9 to 1.4 s, more on a busy
-guest. So when the guest's git has `git backfill` (exit 129 on `-h`), the
-superproject's anonymous attempt is blobless, through a promisor remote
+guest. So when the guest's git has a `git backfill` that takes revisions
+(its `-h` names `<revision-range>`, git 2.54 and later; current bases
+ship 2.55), the superproject's anonymous attempt is blobless, through a promisor remote
 named `repose-backfill` with no fetch refspec, not origin: guestd sets
 origin to the SSH form, which has no key without gh's login, and resets
 it at every start. The checkout fetches the blobs it needs in one batch.
@@ -20765,8 +20766,24 @@ checkout partial for good, since the next probe sees origin's refs and
 plans no fetch. The end of every apply, and the probe of every sync,
 start `git backfill --all` (niced, detached, `flock -n` so once) while
 that file or the `repose-backfill` remote exists; on success it removes
-both. A backfill that fails is started again by the next sync. Until then `git remote` on the machine lists `repose-backfill`, and
-a command that needs an old blob fetches it from the public URL. A
+both. A backfill that fails is started again by the next sync. Until
+then `git remote` on the machine lists `repose-backfill`, and a command
+that needs an old blob fetches it from the public URL. An older git,
+whose `backfill` exists but takes no revisions, is fetched in full:
+`--all` would fail on it at every sync and leave the checkout partial
+for good. The apply's checks before the checkout (the commits it checks
+out, a bundle's prerequisites, the laptop's bases) look in the bundle
+first and run with `GIT_NO_LAZY_FETCH=1`, because in a blobless checkout
+a missing commit is asked of the promisor remote, and GitHub lacks the
+laptop's own commits: on a prod guest one such check took 7.2 s in two
+failed fetches, on the apply's critical path (review round 2). The
+checkout itself keeps lazy fetches, which bring its blobs. The apply
+of every sync unbundles the laptop's bundle (`git bundle unbundle`)
+where it used to fetch it: a fetch's connectivity check enumerates
+every promisor object of a blobless checkout, which took 17.5 s for
+cpython's history on a prod guest where unbundling the same bundle took
+0.03 s. The bundle's prerequisites are checked either way, and
+submodules were already unbundled (I-263). A
 private repository is fetched in full, as before. *Rejected:* origin as
 the promisor (above); `--depth=1` (later syncs need real bases, and the
 agent loses history); leaving the repository partial (later blame and
@@ -20784,7 +20801,9 @@ anyway. The same threshold applies to each submodule (I-712). The
 `✓` line ends with its phase's (`Synced: 3 modified, 1 untracked (2 new
 commits)  1.4s`); "Nothing new to sync" lines do not. `REPOSE_TIMING=1`
 gains `sync fetch <top|s<i>> <partial|full|failed> <ms>` per fetch and
-`sync: the fetches lack a base, sending again`; no path or URL. *Not
+`sync: the fetches lack a base, sending again` and `sync: the machine
+no longer has the first payload, sending it whole`; each payload's
+`sync payload build` times that payload alone. No path or URL. *Not
 done:* the fix C of the analysis (I-716). I-717 was reserved and is
 unused.
 - *Evidence.* tmux (26 MB, public) with jq (9 MB, 1966 commits) added as
@@ -20805,6 +20824,17 @@ unused.
   fetches lack a base, sending again`, the second payload carried its
   1966 commits, and the run printed the I-712 line and ended with the
   same HEADs.
+- *Evidence, review round 2* (2026-10-14, throwaway s2-sync-fast-r2 on
+  host-01). tmux plus jq at 5 Mbit/s: main 40.8 s, sync-fast 22.9 s;
+  unthrottled 19.0 against 15.6 s. The want check took 10 ms on the
+  guest where it had taken 7.2 s. A first sync interrupted mid-upload
+  after its fetch left `repose-backfill` and no HEAD; the next sync
+  (12.1 s) left the right HEADs, origin alone and no missing objects.
+  The failing-submodule run sent 4.3 MB then 8.1 MB (bundles only, the
+  second build 3.6 s); with the kept payload removed between the
+  applies, a third payload went whole and the sync still ended right.
+  This repo and cpython, bundle against clone: 15-dev-ergonomics,
+  "Hybrid".
 
 **I-716. The fetch does not start during boot.** (sync-fast, 2026-10-13)
 The analysis's fix C would have guestd fetch a public github.com remote

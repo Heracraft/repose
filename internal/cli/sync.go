@@ -1097,6 +1097,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				return nil, err
 			}
 			pfResult.needPayload = false
+			endPrep = timeSpan("sync payload build")
 			continue
 		}
 		if plan.active() && pfResult.need {
@@ -1119,6 +1120,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				return nil, err
 			}
 			plan.resume = true
+			endPrep = timeSpan("sync payload build")
 			continue
 		}
 		if plan.active() && !plan.resume {
@@ -1266,7 +1268,7 @@ while IFS= read -r l || [ -n "$l" ]; do printf '%s%%s
 `, shQuote(carryFailed), carryLinePrefix), nil
 }
 
-// applyScript is the second round trip: unpack the payload, fetch the
+// applyScript is the second round trip: unpack the payload, unbundle the
 // bundle, decide between a fast-forward, a merge and a detached checkout,
 // refuse if the guest changed a path the sync writes, set the last
 // sync's own changes (or, if asked, all of the guest's) aside, move the
@@ -1281,7 +1283,11 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 	if hasBundle {
 		// Objects only: no ref moves and the tree is untouched, so the
 		// overlap check below can read the commit it would check out.
-		_, _ = fmt.Fprintf(&b, "git fetch -q \"$t/bundle\" %s\n", strings.Join(bundleRefs, " "))
+		// Unbundled, not fetched: a fetch's connectivity check enumerates
+		// every promisor object of a blobless checkout (I-714), 17 s for
+		// cpython's history, and the bundle's prerequisites are checked
+		// either way.
+		_, _ = fmt.Fprintf(&b, "git bundle unbundle \"$t/bundle\" %s >/dev/null\n", strings.Join(bundleRefs, " "))
 	}
 	// A merge, rebase, cherry-pick, revert, am or bisect of the guest's
 	// own in progress: nothing the sync does can keep it (a stash cannot
