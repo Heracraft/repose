@@ -35,11 +35,11 @@ repose run -p "write tests for src/billing.ts and commit them"
 
 ```text
 ✓ Created your-project (large)  0.3s
-✓ Booted your-project  38s
+✓ Booted your-project  5.2s
 Connected to your-project (large)
 Synced: 3 modified, 1 untracked (2 new commits)
 Logins copied: gh
-Ready in 43s.
+Ready in 16s.
 ```
 
 The first run creates the machine and copies your checkout to `/home/dev/your-project` on it (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. Then the CLI starts Claude Code in a tmux window there, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
