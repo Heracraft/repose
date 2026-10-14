@@ -22026,3 +22026,38 @@ root-owned /run/repose/desktop/last-cdp".
   starts the browser over another host's lock and root's stamps (the VM
   tests need the dev box). The commit message has the reproduction on a
   real machine.
+
+**I-729. The agent process-name predicate lives in a leaf package, so
+`repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends
+I-690).** *Made during implementation.* The guest closure check failed on
+the batch: `guest system closure: 6443547552 bytes (limit 6442450944)`,
+over by 1.05 MB, where main had 4.7 MB of headroom. The whole crossing was
+one binary: **`repose-hook` went from 7.29 MB to 13.03 MB**, +5.74 MB, which
+is the entire 5.81 MB the batch added to the closure. `guestd` grew 45 KB
+and the new scripts of this batch are 4.8 KB, 1.3 KB and 864 bytes.
+- *The cause.* I-690 exported `IsAgentCommand` from `internal/guestd/sample`
+  for the hook socket, and `internal/guestd/hooks` imports it — one
+  predicate, used twice. `sample` imports `internal/gen/guestd/v1`, so the
+  hook's dependency list grew by **126 packages**: the generated protobuf,
+  `google.golang.org/grpc`, `golang.org/x/net/http2`, `x/text/unicode`,
+  `internal/psi`, `internal/abuse`. A binary that posts to a unix socket
+  was linking the guest's whole RPC stack to ask whether a process name is
+  an agent's.
+- *The fix.* `internal/agentproc` holds the table and the predicate and
+  imports nothing but `strings`; `sample` keeps `binaries`,
+  `matchesBinary`, `isAgentCommand` and `IsAgentCommand` as delegates, so
+  its callers and tests are untouched, and `hooks` imports `agentproc`.
+  The package comment says it must stay a leaf and why.
+- *Evidence.* `go list -deps ./cmd/repose-hook | grep -c 'gen/guestd\|grpc'`
+  is **0** (it was 2 and 124); `go build ./...` and `go vet` clean;
+  `internal/guestd/sample`, `internal/guestd/hooks` and `internal/guestd`
+  pass; the closure check passes again.
+- *Why this is the fix and not a bigger limit.* The guard says what it is
+  for — "every host's store grows by it, and every first boot registers its
+  metadata" — and it caught a real regression on its first crossing. Raising
+  it would have shipped a 13 MB hook binary into every guest and hidden the
+  next 5 MB too. The limit stays at 6 GB, which the batch is now 4.6 MB
+  under.
+- The check itself prints "closure over 6 GB; largest paths:" and then
+  exits without printing any, which cost time here; worth fixing when
+  someone next touches `nix/flake.nix`.
