@@ -34,21 +34,16 @@ test('an experimental page says so under its title', async ({ page }) => {
 });
 
 // A block with prompts copies its commands only, without the `$ ` or the
-// output under them. lifecycle.md used to show the stop and the start in
-// one block; I-710 split them, because a stop returns while it is still
-// running and the start comes later, so each block now holds one command
-// and both are checked here.
+// output under them.
 test('a code block copies its commands', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/docs/lifecycle');
-	const stop = page.locator('.doc .code').filter({ hasText: '$ repose stop todo-app' });
-	await stop.getByRole('button', { name: 'Copy' }).click();
-	await expect(stop.getByRole('button', { name: 'Copied' })).toBeVisible();
-	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('repose stop todo-app');
-	const start = page.locator('.doc .code').filter({ hasText: '$ repose start todo-app' });
-	await start.getByRole('button', { name: 'Copy' }).click();
-	await expect(start.getByRole('button', { name: 'Copied' })).toBeVisible();
-	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('repose start todo-app');
+	const block = page.locator('.doc .code').filter({ hasText: '$ repose stop todo-app' });
+	await block.getByRole('button', { name: 'Copy' }).click();
+	await expect(block.getByRole('button', { name: 'Copied' })).toBeVisible();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+		'repose stop todo-app\nrepose start todo-app'
+	);
 });
 
 // The sidebar lists pages only, and from xl up the page's sections are in a
