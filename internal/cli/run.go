@@ -189,6 +189,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 	}
 	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+		if err := waitOutStop(ctx, e, res.Project, pr); err != nil {
+			return err
+		}
 		if err := sizeExisting(ctx, e, res.Project, opts.Size); err != nil {
 			return err
 		}
@@ -1383,12 +1386,16 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	switch project.State {
 	case "creating", "building", "starting", "stopping", "restoring":
 		probed := false
+		// A stop under way (in the background since I-710) that fails
+		// is the stop's failure: it is said once below and the machine,
+		// in error, is started as any machine in error is (I-157).
+		stopping := project.State == "stopping"
 		if project.OpID != "" {
 			op, err := waitOpPhased(ctx, e, project, project.OpID, pr, true)
 			if err != nil {
 				return err
 			}
-			if op.State == "error" {
+			if op.State == "error" && !stopping {
 				return failedStart(e, project, op, pr)
 			}
 			if w := opWarning(op); w != "" {
@@ -1409,6 +1416,24 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return err
 		}
 		*project = *p
+		if stopping && project.State == "error" {
+			pr.Fail()
+			reason := "the api did not say why"
+			if project.LastError != nil && *project.LastError != "" {
+				// The api's reason, `stopping job failed: WHY. `repose
+				// stop job` tries again`, without what this command is
+				// doing instead.
+				_, msg := splitLastError(*project.LastError)
+				msg = strings.TrimPrefix(msg, "stopping "+project.Slug+" failed: ")
+				if i := strings.Index(msg, ". `repose stop "); i >= 0 {
+					msg = msg[:i]
+				}
+				if msg = humaneMessage(msg); msg != "" {
+					reason = msg
+				}
+			}
+			e.warn("Stopping %s failed: %s.", project.Slug, strings.TrimSuffix(reason, "."))
+		}
 		if project.State == "running" {
 			// A restore that booted the machine, or a start with no op
 			// named, gets the probe once it is known to be running.

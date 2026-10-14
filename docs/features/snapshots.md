@@ -21,9 +21,10 @@ $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
 todo-app must be stopped before restoring over it: `repose stop todo-app` first, or restore into a new project with --as NAME.
 
 $ repose stop && repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90
-...
+Stopping todo-app.
+✓ Stopped todo-app  12s                  # the restore waits for the stop (I-710)
 Replace todo-app's disk with its snapshot of 2026-09-16 03:00? The stop snapshot of 2026-09-16 17:49 keeps the disk as it is now. [y/N] y
-Restored todo-app; it is stopped.
+Restored todo-app; it is running (large).
 
 $ repose snapshots restore 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 --as todo-app-yesterday
 Restored into a new project, todo-app-yesterday.

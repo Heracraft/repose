@@ -957,6 +957,23 @@ func TestConfigMenuPackages(t *testing.T) {
 	}
 }
 
+// A config change while a stop is under way is refused with the reason,
+// not as a build in progress (DECISIONS I-710).
+func TestConfigWhileStopping(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-stopcfg", "stopcfg")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "stopcfg", "class": "small"})
+	pid := r.body["id"].(string)
+	e.waitOp(t, r)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update projects set state = 'stopping' where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"menu": []map[string]any{{"package": "jq"}}})
+	if r.status != 409 || errCode(r) != "conflict" || !strings.Contains(string(r.raw), "stopcfg is stopping") {
+		t.Fatalf("config put while stopping: %d %s", r.status, r.raw)
+	}
+}
+
 func TestConfigRoutes(t *testing.T) {
 	e := newEnv(t)
 	tok := e.signIn(t, "sub-carol", "carol")

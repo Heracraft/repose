@@ -178,8 +178,16 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 			return err
 		}
 		snapID = id
-	} else if src.State != "running" && src.State != "stopped" {
-		return notRunningError(src)
+	} else {
+		// A background stop under way holds the project's disk: a clone
+		// or a fork snapshot taken now would be refused, so the fork
+		// waits it out first (I-710).
+		if err := waitOutStop(ctx, e, src, pr); err != nil {
+			return err
+		}
+		if src.State != "running" && src.State != "stopped" {
+			return notRunningError(src)
+		}
 	}
 
 	req := ForkRequest{SnapshotID: snapID, Count: opts.Count, Name: opts.Name, Class: opts.Size, RequestID: newRequestID()}

@@ -29,7 +29,9 @@ import (
 var notifyKinds = map[string]bool{
 	"needs_input": true, "error": true,
 	"billing_stopped": true, "base_updated": true, "base_update_failed": true, "snapshot_failed": true, "host_moved": true,
-	"destroy_failed":       true,
+	"destroy_failed": true,
+	// A stop that failed; the CLI returned when it began (I-710).
+	"stop_failed":          true,
 	"notifications_paused": true,
 	// A guest stopped because a miner was running (DECISIONS I-239).
 	"abuse_stopped": true,

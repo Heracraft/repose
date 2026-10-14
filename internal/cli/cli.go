@@ -718,7 +718,7 @@ func newStartCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 }
 
 func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	var noSnapshot, idle, yes bool
+	var noSnapshot, idle, yes, wait bool
 	var window string
 	cmd := &cobra.Command{
 		Use:   "stop [PROJECT...]",
@@ -727,11 +727,14 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			"several at once. Every process on it ends. It asks first when an agent is\n" +
 			"mid-turn or waiting for an answer; -y skips the question and is required\n" +
 			"without a terminal. It runs git fetch repose first in each checkout of the\n" +
-			"machine on this laptop.\n\n" +
+			"machine on this laptop and names what the machine keeps that the laptop\n" +
+			"lacks: commits not fetched, files not committed. Then it returns while the\n" +
+			"snapshot and the shutdown go on; a stop that fails shows in repose ls and\n" +
+			"notifies you. --wait waits for the stop instead.\n\n" +
 			"With -w it closes that one agent window and the machine keeps running. The\n" +
 			"window's worktree is removed too when it has no uncommitted file, no other\n" +
 			"window works in it, and this laptop has its branch after the fetch.",
-		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused\n  repose stop -w claude-2",
+		Example:           "  repose stop\n  repose stop api web\n  repose stop --unused\n  repose stop --wait\n  repose stop -w claude-2",
 		SuggestFor:        []string{"down", "halt"},
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completeProjects(env),
@@ -743,8 +746,8 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				if idle || len(args) > 1 {
 					return cobraUsageError{fmt.Errorf("-w closes a window on one machine; pass one PROJECT")}
 				}
-				if noSnapshot {
-					return cobraUsageError{fmt.Errorf("-w closes a window and the machine keeps running; --no-snapshot is for a stop")}
+				if noSnapshot || wait {
+					return cobraUsageError{fmt.Errorf("-w closes a window and the machine keeps running; --no-snapshot and --wait are for a stop")}
 				}
 				project, err := projectFrom(args, g)
 				if err != nil {
@@ -771,7 +774,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			o := StopOptions{Projects: projects, Idle: idle, Snapshot: !noSnapshot, Yes: yes}
+			o := StopOptions{Projects: projects, Idle: idle, Snapshot: !noSnapshot, Yes: yes, Wait: wait}
 			if !yes && canPrompt(os.Stdin) {
 				o.Confirm = func(prompt string) (bool, error) { return askYesNo(cmd.Context(), prompt, false, "stopping") }
 			}
@@ -779,10 +782,11 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&noSnapshot, "no-snapshot", false, "stop without taking a snapshot")
+	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the snapshot and the shutdown, say how long they took, and exit 1 when the stop failed")
 	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
 	cmd.Flags().StringVarP(&window, "window", "w", "", "close this agent `WINDOW` (a name or number from repose ps), and its worktree when nothing in it is lost; the machine keeps running")
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON when done (an array for several)")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON as the command leaves it: stopping, or stopped with --wait (an array for several)")
 	return cmd
 }
 

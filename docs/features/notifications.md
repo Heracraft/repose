@@ -59,7 +59,9 @@ Events (see agents.md for how each agent produces them):
 - Kinds: `needs_input`, `error`, `agent_done`, plus the platform-originated
   `billing_stopped`, `base_updated`, `base_update_failed`, `snapshot_failed`,
   `destroy_failed` (DECISIONS I-165: the CLI no longer waits for a
-  destroy, so its failure is announced), `personal_failed` (I-490: the
+  destroy, so its failure is announced), `stop_failed` (I-710, for the
+  same reason: `repose stop` returns once the stop is under way; title
+  `<project>: stop failed`), `personal_failed` (I-490: the
   account's machine.nix did not build or switch on that project, which
   keeps its revision), `boot_failed` (I-590: a start or forced reboot
   gave the machine a new system that never reached Ready, and it runs its

@@ -20767,6 +20767,31 @@ The owner, after `repose stop obsidian` asked about "shell (working)" when only 
 - ntfy notifications are not updated or withdrawn when a question closes (`X-Sequence-ID` needs a recent ntfy server; not verified against ntfy.sh).
 - The Chat webhook's answers to `requestId`, and the status a deleted webhook returns, are taken from Google's docs and not from a live deleted webhook.
 - No message was sent to a real Chat webhook (I-692 *Built*): that a `cardsV2` card with `openLink` buttons and `fallbackText` renders, that `requestId` dedupes, and what an invalid token returns all wait for a first send from prod with the owner's space, then `repose notify test`.
+
+**I-710. `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634.**
+
+The owner, on `Stopped parth-event in 20s with a 2.7 GB snapshot.` and `Stopped job in 23s with a 3.8 GB snapshot; 1 file not committed.`: "should we make stopping background??" and "should we just tell them 1 file not committed then do the rest in the background?" The 20 s are the snapshot's upload and the shutdown (I-404), which run on the host whether the laptop waits or not; nothing the user can act on comes out of them.
+
+- What the command waits for: the busy-agent question (I-614), the fetch (I-615), the read of what the machine keeps (I-634), the api's `202`, and then the engine's pickup: it holds on the op's long-poll (I-236) until the op is `running` and the project reads `stopping`, at most 10 s. The api answers the stop before its engine claims the op, so a `repose start` or `attach` sent in that gap found the machine `running` and said "already running"; after the pickup every reader sees `stopping`. On a production `large` with a 480 MB snapshot the stop returned in 1.6 s, where `--wait` took 8.3 s; the owner's 2.7 GB stop took 20 s.
+- What it prints: `Stopping job.`, with I-634's clause (`Stopping job; 1 file not committed.`), and after `-y` past a busy agent `Ending claude (working).` A stop that ended inside the pickup (no guest, or a fast `--no-snapshot`) prints `Stopped job in 0.8s.`, `Ended ...` and I-158's note when its snapshot failed. A stop that failed inside the pickup exits 1 with the reason and `repose stop job` tries again, as `--wait` does. A project already `stopping` prints `job is already stopping.` and sends nothing (the api refuses a second stop). The snapshot's size is no longer in the default line: it is what the time went on (I-570), and with no time to explain it says nothing the user acts on; `repose snapshots` lists it.
+- `--wait` keeps I-570's whole wait and line, `Ended` after it, the I-158 note, and exit 1 on a failed stop; on a project already stopping it waits for that stop. The commands that stop to do something else wait as before: `resize --size` needs the stopped volume, `fork` its snapshot, and run's plan question (I-637) the freed memory.
+- How a failure reaches the user: the op's failure path gives a stop the treatment I-165 gave a destroy. The project goes to `error` with `last_error` `<code>: stopping job failed: <why>. ` + "`repose stop job` tries again" (the retry is left out when the reason already names a command), which `repose ls`, `status` and the dashboard show, and a `stop_failed` event notifies (ntfy priority 4, title `job: stop failed`). A stop's snapshot that fails after the guest is down keeps `snapshot_failed` (I-158). The retry is a stop like the first: hostd stops a guest that is already down without a snapshot, and a guest a failed freeze left on is frozen again (with a dead guestd, I-158's fallback stops it first).
+- A start, attach, run, ssh or code on a `stopping` machine waits for the stop and starts it: `ensureRunningFrom` already waited on the state, so the only change is the message of commands that do not start a machine (`exec`, `cp`): `job is stopping. \`repose start job\` waits for the stop and starts it again.`
+- `repose ls` and the dashboard show `stopping` (the dashboard's busy dot, I-373) until `stopped`. Plan memory stops counting the machine once it reads `stopping`: `stopping` is not in `billing.memoryStates` nor the CLI's, and stays out, since the guest is going away and a start the user sends next should not be refused for it. (The first draft of this entry said the opposite; review round 1 caught it.)
+- The commands that act on a settled project wait out a stop under way and then do their work: `rm`, `fork` (its snapshot), `resize` (disk and `--size`), `run --size` on an existing project, `snapshots create`, an in-place `snapshots restore`, and the config commands that send a change (`config add`, `remove`, `edit`, `apply` with a file; a second review found `repose stop X; repose config add jq` on prod answered `A build is in progress (conflict).`). Before this entry the stop had ended by the time they ran; now the api would answer them `409 conflict` (Engine.Enqueue's op in progress) for the whole stop, past the CLI's 10 s retry on a conflict (a review's `repose stop X; repose rm X` on prod failed with `An operation is in progress (conflict).` after 11.5 s), and a restore would be refused with advice to run the stop just run. `waitOutStop` in `lifecycle.go` waits on the state as `ensureRunningFrom` does, showing `Stopping job` and `✓ Stopped job` on the way. The fake api answers those routes `409` while `stopping`, as the api does. `PUT /projects/:id/config` now refuses a `stopping` project with `409 conflict` "<slug> is stopping" before it opens a transaction, as it refuses `creating` and `destroying`; it had answered "a build is in progress", which was false. `repose stop --no-snapshot` on a project already stopping says the flag does not change the stop under way: the api refuses a second stop, and the one running keeps what it was asked for.
+- `--json` prints the project as the command left it: `stopping`, or with `--wait` stopped.
+- Ctrl-C after the api took the stop says `Interrupted. The stop of job goes on.` as before.
+- *Rejected:* returning at the `202` without the pickup wait (the start-after-stop race above); a laptop process that waits and notifies (the laptop closes; the api already notifies, as I-166 found); the api setting `stopping` in the stop's transaction, as a destroy's DELETE does (I-165): a stop of a project with no guest skips its phase and would be left `stopping`, and a CLI-side wait works against the api already deployed.
+- *Built:* `stopBegin`/`waitStopTaken` in `internal/cli/lifecycle.go`, `--wait` in `newStopCmd`; `StopCmd` (tests, and callers that need the stop done) waits. The fake api gains `StopDelay` and `StopPickup` (op `pending` and the project `running` for the pickup, then `stopping`) and refuses a stop or start while `stopping`, as the api does. The api: `KindStop` gets its own case in `onFail`, `EventStopFailed` in `ops`, `stop_failed` in `events.notifyKinds` and ntfy's priority 4, the dashboard's Errors filter. Branch built on notify-revamp, whose `notify.go` and `events.go` it edits.
+
+**I-711. New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13).**
+
+The owner asked: "should the default machine size for solo be small?" Solo's 8 GB runs one `large` or two `small` at once, so a `small` default would let a Solo user run two machines without a question.
+
+- No. Production's samples for the last 14 days (`meter_samples.mem_used`, memory in use without the page cache, I-493): of 24 `large` projects, 4 went past 3.5 GiB (what a `small` leaves its processes) and one sat there at its p99; the `xl` projects reached 12 GiB. Each of those 4 would have had its agent session OOM-killed on a `small`, which is the failure I-362 priced the plans around (`PRICING.md`: "a harness with its language servers, builds and browser fills 8 GB"). The 11 `small` projects, all opened with `--size small`, peaked at 1.8 GiB: users who know their work is small already pick it.
+- What a second machine costs a Solo user today is one question: `repose run` in another repository asks to stop the one using the memory (I-637), and `default_size = "small"` in `config.toml` or `--size small` makes small the default for those who want two.
+- Nothing is built: `defaultConfig().DefaultClass` stays `large`, and `billing.md` and `machine.md` already say so and why.
+- Revisit when the samples change: a guest image that idles much smaller, or most Solo projects peaking under 3 GiB over a month.
 **I-697. Account secrets: a named secret set once for every project, with
 the project's own winning (account-secrets, 2026-10-13).** Amends
 features/secrets.md "Secrets are per project" and its Deferred list.
@@ -22061,3 +22086,30 @@ and the new scripts of this batch are 4.8 KB, 1.3 KB and 864 bytes.
 - The check itself prints "closure over 6 GB; largest paths:" and then
   exits without printing any, which cost time here; worth fixing when
   someone next touches `nix/flake.nix`.
+
+**I-730. A fork or a start that waits out a background stop, after
+fork-fast and attach-run-home (stop-background, 2026-10-14).** Amends
+I-710. *Made during implementation*, merging main (I-700..I-703, I-709,
+I-722) into stop-background.
+- *Fork.* I-710 put the wait for a stop under way before `repose fork`'s
+  own snapshot. Fork-fast replaced that snapshot with a clone of the
+  source's volume on its host, falling back to a fork snapshot on `409
+  snapshot_needed` or an api before clones. The api refuses both while
+  the source is `stopping` (`a fork needs it running or stopped`, and the
+  busy refusal on a snapshot), so the wait now comes before the first
+  fork request and covers all three ways. A fork from `--snapshot ID`
+  does not wait: the copies come from a stored snapshot, which a stop
+  does not touch. The fake api refuses a clone of a `stopping` project as
+  the api does, which the test needed to fail without the fix.
+- *Start, attach, run, ssh, code.* `ensureRunningFrom` waits on the op
+  the project read names (I-722), which on a `stopping` machine is the
+  stop. A stop that failed then read `Could not start job: stopping job
+  failed: ...`, a start's failure for an op that was not a start; and
+  through the state wait, `✓ Stopped job` before the restart. Now the
+  command prints `Stopping job failed: WHY.` once (the api's reason
+  without its "`repose stop job` tries again", since the command is
+  starting the machine instead) and starts the machine from `error`,
+  which the api turns into a restart (I-157): the user asked for a
+  running machine, and the failure is also notified (`stop_failed`).
+- *Rejected:* exiting on the stop's failure. The user's command was a
+  start; a machine in `error` is one a start restarts everywhere else.

@@ -287,7 +287,7 @@ func TestGuestCannotSendPlatformKinds(t *testing.T) {
 	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	pid, gid, host := seedOn(t, pool)
 	now := time.Now()
-	for _, kind := range []string{"billing_stopped", "abuse_stopped", "notifications_paused", "destroy_failed", "temp_destroyed", "agent_question", "welcome", "guest_state_changed"} {
+	for _, kind := range []string{"billing_stopped", "abuse_stopped", "notifications_paused", "destroy_failed", "stop_failed", "temp_destroyed", "agent_question", "welcome", "guest_state_changed"} {
 		if _, err := ing.FromEdge(ctx, "10.64.4.9", "claude", kind, "x"); !errors.Is(err, events.ErrNotGuestKind) {
 			t.Errorf("edge %s: %v, want ErrNotGuestKind", kind, err)
 		}

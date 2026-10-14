@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-const opConflictRetryWindow = 10 * time.Second
+var opConflictRetryWindow = 10 * time.Second
+
 const opConflictRetryInterval = 250 * time.Millisecond
 
 // retryOnOpConflict retries fn while it fails with a 409 conflict:
@@ -78,10 +79,10 @@ func guestdDead(p *Project) bool {
 	return p.StartedAt == nil || p.Signals.SampledAt == nil || !p.Signals.SampledAt.Before(*p.StartedAt)
 }
 
-// StopCmd stops one project without a question, as `repose stop
-// PROJECT --yes` does.
+// StopCmd stops one project without a question and waits for the stop,
+// as `repose stop PROJECT --yes --wait` does.
 func StopCmd(ctx context.Context, e *Env, projectArg string, snapshot bool) error {
-	return StopProjectsCmd(ctx, e, StopOptions{Projects: []string{projectArg}, Snapshot: snapshot, Yes: true})
+	return StopProjectsCmd(ctx, e, StopOptions{Projects: []string{projectArg}, Snapshot: snapshot, Yes: true, Wait: true})
 }
 
 // StopOptions is `repose stop [PROJECT...] [--unused] [--no-snapshot] [--yes]`.
@@ -90,6 +91,9 @@ type StopOptions struct {
 	Idle     bool     // every running project the api reports idle (I-262)
 	Snapshot bool
 	Yes      bool
+	// Wait waits for the snapshot and the shutdown (--wait); without it
+	// the command returns once the stop is under way (DECISIONS I-710).
+	Wait bool
 	// Confirm asks the question; nil when there is no terminal to ask on.
 	Confirm func(prompt string) (bool, error)
 	// Acted, when set, gets the projects the command resolved.
@@ -104,7 +108,17 @@ type stopResult struct {
 	line     string // the stop line, on success
 	note     string // what went wrong with a stop that stopped it (I-158)
 	accepted bool   // the api took the stop, so it goes on without the CLI
+	done     bool   // the stop has finished, so the busy agents have ended
 	err      error
+}
+
+// endedWord is the verb of the line naming the busy agents a stop ends:
+// Ended once the stop is done, Ending while it goes on (I-710).
+func (r stopResult) endedWord() string {
+	if r.done {
+		return "Ended"
+	}
+	return "Ending"
 }
 
 // StopProjectsCmd implements `repose stop`. A stop ends every process on
@@ -135,8 +149,20 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	}
 	var running []*Project
 	for _, p := range projects {
-		if p.State == "stopped" {
+		switch {
+		case p.State == "stopped":
 			_, _ = fmt.Fprintf(e.Out, "%s is already stopped.\n", p.Slug)
+			continue
+		case p.State == "stopping" && !o.Snapshot:
+			// The api refuses a second stop, so the one under way keeps
+			// whatever snapshot it was asked for.
+			_, _ = fmt.Fprintf(e.Out, "%s is already stopping; --no-snapshot does not change the stop under way.\n", p.Slug)
+			if !o.Wait {
+				continue
+			}
+		case p.State == "stopping" && !o.Wait:
+			// The api refuses a second stop; --wait waits for this one.
+			_, _ = fmt.Fprintf(e.Out, "%s is already stopping.\n", p.Slug)
 			continue
 		}
 		running = append(running, p)
@@ -171,14 +197,25 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 		}
 		asked = true
 	}
-	if err := fetchBeforeStop(ctx, e, running); err != nil {
+	var up []*Project // a stopping machine has no checkout to fetch from
+	for _, p := range running {
+		if p.State != "stopping" {
+			up = append(up, p)
+		}
+	}
+	if err := fetchBeforeStop(ctx, e, up); err != nil {
 		return err
 	}
 	if len(running) == 1 {
 		p := running[0]
 		pr := e.newProgress()
 		defer pr.Fail()
-		r := stopOne(ctx, e, p, o.Snapshot, pr, started)
+		var r stopResult
+		if o.Wait {
+			r = stopOne(ctx, e, p, o.Snapshot, pr, started)
+		} else {
+			r = stopBegin(ctx, e, p, o.Snapshot)
+		}
 		pr.Fail()
 		if r.err != nil {
 			if r.accepted && interrupted(ctx, r.err) {
@@ -188,7 +225,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 		}
 		_, _ = fmt.Fprintln(e.Out, r.line)
 		if busy[0] != "" && !asked {
-			_, _ = fmt.Fprintf(e.Out, "Ended %s.\n", busy[0])
+			_, _ = fmt.Fprintf(e.Out, "%s %s.\n", r.endedWord(), busy[0])
 		}
 		if r.note != "" {
 			_, _ = fmt.Fprintln(e.ErrOut, r.note)
@@ -197,14 +234,20 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
-	pr.Phase("Stopping "+joinNames(slugsOf(running)), "")
+	if o.Wait {
+		pr.Phase("Stopping "+joinNames(slugsOf(running)), "")
+	}
 	results := make([]stopResult, len(running))
 	var wg sync.WaitGroup
 	for i, p := range running {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = stopOne(ctx, e, p, o.Snapshot, nil, time.Now())
+			if o.Wait {
+				results[i] = stopOne(ctx, e, p, o.Snapshot, nil, time.Now())
+			} else {
+				results[i] = stopBegin(ctx, e, p, o.Snapshot)
+			}
 		}()
 	}
 	wg.Wait()
@@ -217,7 +260,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 		case r.err == nil:
 			_, _ = fmt.Fprintln(e.Out, r.line)
 			if busy[i] != "" && !asked {
-				_, _ = fmt.Fprintf(e.Out, "Ended %s on %s.\n", busy[i], p.Slug)
+				_, _ = fmt.Fprintf(e.Out, "%s %s on %s.\n", r.endedWord(), busy[i], p.Slug)
 			}
 			if r.note != "" {
 				_, _ = fmt.Fprintln(e.ErrOut, r.note)
@@ -249,9 +292,130 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	return nil
 }
 
-// stopOne stops project and says how it went; pr nil draws nothing.
+// stopPickupWait bounds how long a stop without --wait waits for the
+// project to read stopping after the api took it (I-710).
+const stopPickupWait = 10 * time.Second
+
+// stopBegin is a stop without --wait (DECISIONS I-710): it reads what the
+// stop leaves on the machine (I-634), has the api take the stop, and
+// returns once the engine has it and the project reads stopping, so the
+// next command (start, attach, ls) sees the stop. The snapshot and the
+// shutdown go on without the CLI; a stop that fails leaves the project in
+// error with the reason, and the api notifies (stop_failed).
+func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) stopResult {
+	var r stopResult
+	started := time.Now()
+	left := probeBeforeStop(ctx, e, project)
+	var opID string
+	r.err = retryOnOpConflict(ctx, func() error {
+		var err error
+		opID, err = e.Client.StopProject(ctx, project.ID, snapshot)
+		return err
+	})
+	if r.err != nil {
+		return r
+	}
+	r.accepted = true
+	closeMaster(ctx, e, project.Slug)
+	saveStopLeft(e.Dir, project.ID, left, time.Now())
+	op, err := waitStopTaken(ctx, e, project.ID, opID)
+	if err != nil {
+		r.err = err
+		return r
+	}
+	switch {
+	case op != nil && op.State == "error":
+		r.err = e.opFailed("stop", project.Slug, op.Error, fmt.Sprintf("`repose status %s` shows its state; `repose stop %s` tries again.", project.Slug, project.Slug))
+	case op != nil && op.State == "done":
+		r.done = true
+		r.line = withLeft(fmt.Sprintf("Stopped %s in %s.", project.Slug, fmtElapsed(time.Since(started))), leftClause(left))
+		// I-158, as stopOne says it: a stop whose snapshot failed is not
+		// a clean stop.
+		if p, err := e.Client.GetProject(ctx, project.ID); err == nil && p.LastError != nil {
+			if reason := projectReason(p); reason != "" {
+				r.note = fmt.Sprintf("Note: %s.", reason)
+			}
+		}
+	default:
+		r.line = stoppingLine(project.Slug, left)
+	}
+	return r
+}
+
+// waitOutStop waits for a stop under way to end before a command acts on
+// the project: `repose stop` returns while the project reads stopping
+// (DECISIONS I-710), and until the stop ends the api refuses any other op
+// on it (409 conflict) and a restore over it (it must be stopped). The
+// project is re-read in place, so the caller's checks see what the stop
+// left; any state but stopping returns at once.
+func waitOutStop(ctx context.Context, e *Env, project *Project, pr *progress) error {
+	if project.State != "stopping" {
+		return nil
+	}
+	if err := waitState(ctx, e, project, pr); err != nil {
+		return err
+	}
+	if project.State == "stopped" {
+		pr.End()
+	} else {
+		pr.Fail()
+	}
+	return nil
+}
+
+// stoppingLine is stopBegin's line: `Stopping job; 1 file not committed.`
+func stoppingLine(slug string, left []gitRow) string {
+	return withLeft("Stopping "+slug+".", leftClause(left))
+}
+
+// waitStopTaken waits until the stop op has ended or the engine has it
+// and the project reads stopping: the api answers the stop before its
+// engine picks the op up, and a start or an attach sent in between would
+// find the machine still running. It holds on the op's long-poll (I-236)
+// and gives up quietly after stopPickupWait or on a failed read, with the
+// op as last read (nil when none was): the stop is the api's either way.
+func waitStopTaken(ctx context.Context, e *Env, projectID, opID string) (*Op, error) {
+	deadline := time.Now().Add(stopPickupWait)
+	var last *Op
+	seen, wait := "", time.Millisecond // the first read answers at once
+	for {
+		op, held, err := e.Client.GetOpWait(ctx, projectID, opID, wait, seen)
+		if err != nil {
+			return last, ctx.Err()
+		}
+		last = op
+		if op.State == "done" || op.State == "error" {
+			return op, nil
+		}
+		state := op.ProjectState
+		if state == "" { // an api before I-236
+			if p, err := e.Client.GetProject(ctx, projectID); err == nil {
+				state = p.State
+			}
+		}
+		if op.State == "running" && state == "stopping" {
+			return op, nil
+		}
+		left := time.Until(deadline)
+		if left <= 0 {
+			return op, nil
+		}
+		seen, wait = op.Version, left
+		if !held {
+			if err := sleepOrDone(ctx, 200*time.Millisecond); err != nil {
+				return op, err
+			}
+		}
+	}
+}
+
+// stopOne stops project and waits for the stop (--wait), and says how it
+// went; pr nil draws nothing. A project already stopping is waited for.
 func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *progress, started time.Time) stopResult {
 	var r stopResult
+	if project.State == "stopping" {
+		return stopWaitUnderWay(ctx, e, project, pr, started)
+	}
 	var opID string
 	// What the stop leaves on the machine, read while it still answers
 	// (I-634).
@@ -312,12 +476,35 @@ func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *p
 		r.line = fmt.Sprintf("Stopped %s in %s.", p.Slug, took)
 	}
 	r.line = withLeft(r.line, leftClause(left))
+	r.done = true
 	saveStopLeft(e.Dir, p.ID, left, time.Now())
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
 		// with last_error set; say so rather than implying a snapshot.
 		r.note = fmt.Sprintf("Note: %s.", reason)
 	}
+	return r
+}
+
+// stopWaitUnderWay is --wait on a project another command is stopping:
+// the api names no op on a project read, so it waits on the state.
+func stopWaitUnderWay(ctx context.Context, e *Env, project *Project, pr *progress, started time.Time) stopResult {
+	r := stopResult{accepted: true}
+	p := *project
+	if r.err = waitState(ctx, e, &p, pr); r.err != nil {
+		return r
+	}
+	pr.Fail()
+	if p.State != "stopped" {
+		reason := projectReason(&p)
+		if reason == "" {
+			reason = "it is " + p.State
+		}
+		r.err = exitf(ExitGeneric, "Could not stop %s: %s", p.Slug, withNext(reason, fmt.Sprintf("`repose stop %s` tries again.", p.Slug)))
+		return r
+	}
+	r.line = fmt.Sprintf("Stopped %s in %s.", p.Slug, fmtElapsed(time.Since(started)))
+	r.done = true
 	return r
 }
 
@@ -613,6 +800,9 @@ func printLines(e *Env, r destroyResult) {
 func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool, pr *progress, started time.Time) destroyResult {
 	var r destroyResult
 	var opID string
+	if r.err = waitOutStop(ctx, e, project, pr); r.err != nil {
+		return r
+	}
 	if r.err = retryOnOpConflict(ctx, func() error {
 		var err error
 		opID, err = e.Client.DestroyProject(ctx, project.ID)
@@ -779,6 +969,9 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
+	if err := waitOutStop(ctx, e, project, pr); err != nil {
+		return err
+	}
 	var opID string
 	err = retryOnOpConflict(ctx, func() error {
 		var err error

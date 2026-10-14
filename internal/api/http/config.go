@@ -79,7 +79,7 @@ func (s *Server) putConfig(w http.ResponseWriter, r *http.Request) error {
 	if (body.Fragment == nil) == (body.Menu == nil) {
 		return errf("invalid", "send exactly one of fragment or menu")
 	}
-	if p.State == "creating" || p.State == "building" || p.State == "destroying" || p.State == "destroyed" {
+	if p.State == "creating" || p.State == "building" || p.State == "stopping" || p.State == "destroying" || p.State == "destroyed" {
 		return errf("conflict", "%s is %s", p.Slug, p.State)
 	}
 	cur, err := s.currentRevision(r, p)

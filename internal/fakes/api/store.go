@@ -22,7 +22,7 @@ type Project struct {
 	RemoteURL        string     `json:"remote_url"`
 	Class            string     `json:"class"`
 	State            string     `json:"state"`
-	OpID             string     `json:"op_id,omitempty"` // the create op, while one is in flight
+	OpID             string     `json:"op_id,omitempty"` // the op pending or running (I-722)
 	HostID           string     `json:"host_id,omitempty"`
 	GuestIP          string     `json:"guest_ip,omitempty"`
 	AgentDefault     string     `json:"agent_default"`

@@ -342,8 +342,9 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 	if p.State == "running" && snapshot {
 		s = f.snapshot(p, "stop")
 	}
+	// started_at stays: the api's store sets it on the way to running
+	// and keeps it through a stop.
 	p.State = "stopped"
-	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
 	f.event(p, "guest_state_changed", "", "stopped")
@@ -510,7 +511,11 @@ func (f *Fake) getProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	writeJSON(w, http.StatusOK, p.Project)
+	out := p.Project
+	if f.opts.NoProjectOpID {
+		out.OpID = ""
+	}
+	writeJSON(w, http.StatusOK, out)
 	if fn := f.onGet[p.ID]; fn != nil && fn(&p.Project) {
 		// Under f.mu (ServeHTTP), after the answer is written: what fn
 		// changed is what the next read sees.
@@ -620,6 +625,9 @@ func (f *Fake) destroyProject(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
 	o := f.newOp(p, "destroy")
 	if f.opts.DestroyDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
@@ -725,6 +733,10 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 		// server.
 		return errf("conflict", "%s's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start %s` works then", p.Slug, p.Slug)
 	}
+	if p.State == "stopping" {
+		// lifecycle.Start's refusal while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	if p.State != "running" {
 		if e := f.gate(userFrom(r), p.Class, nil, p); e != nil {
 			return e
@@ -768,13 +780,48 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	if p.State == "stopping" {
+		// What the api answers while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	o := f.newOp(p, "stop")
-	if p.State != "stopped" {
-		// The api's stop op carries the snapshot it recorded, as a
-		// snapshot op does.
-		if s := f.stop(p, body.Snapshot == nil || *body.Snapshot); s != nil {
-			o.Result = map[string]any{"snapshot_id": s.ID}
+	snapshot := body.Snapshot == nil || *body.Snapshot
+	if p.State == "running" && f.opts.StopDelay > 0 {
+		// Under f.mu already (ServeHTTP); only the goroutines take it.
+		o.State = "running"
+		o.phase = "stop_guest"
+		o.LogURL = ""
+		// The api's project read names the op pending or running (I-722).
+		p.OpID = o.id
+		if f.opts.StopPickup <= 0 {
+			p.State = "stopping"
+		} else {
+			o.State, o.phase = "pending", ""
+			go func() {
+				time.Sleep(f.opts.StopPickup)
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				o.State, o.phase = "running", "stop_guest"
+				if p.State == "running" {
+					p.State = "stopping"
+				}
+			}()
 		}
+		go func() {
+			time.Sleep(f.opts.StopPickup + f.opts.StopDelay)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			p.State = "running" // what stop snapshots from
+			f.endStop(p, o, snapshot)
+			o.phase = ""
+			if p.OpID == o.id {
+				p.OpID = ""
+			}
+		}()
+		return opResult(w, o)
+	}
+	if p.State != "stopped" {
+		f.endStop(p, o, snapshot)
 	}
 	return opResult(w, o)
 }
@@ -934,6 +981,9 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
 	if body.VolumeBytes <= p.VolumeBytes {
 		return invalid("volume_bytes: volumes only grow").withDetail(map[string]any{"volume_bytes": p.VolumeBytes})
 	}
@@ -1081,6 +1131,10 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
 		return e
+	}
+	if p.State == "stopping" {
+		// The api's refusal while a stop op is open.
+		return errf("conflict", "%s is %s", p.Slug, p.State)
 	}
 	var fragment string
 	var menuRaw json.RawMessage
@@ -1425,6 +1479,9 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
 	var body struct {
 		Reason string `json:"reason"`
 	}
@@ -1468,6 +1525,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.SnapshotID == "" && f.oldFork {
 		return invalid("snapshot_id is required: take a snapshot of %s first (POST /projects/:id/snapshots)", p.Slug)
+	}
+	if body.SnapshotID == "" && p.State != "running" && p.State != "stopped" {
+		// The api's refusal: copies of the project as it is now need it
+		// settled (internal/api/http/fork.go).
+		return errf("conflict", "%s is %s; a fork needs it running or stopped", p.Slug, p.State)
 	}
 	if body.SnapshotID == "" && f.forkNoClone {
 		return errf("conflict", "%s's server cannot hold the copies; fork from a snapshot of it", p.Slug).withDetail(map[string]any{"reason": "snapshot_needed"})

@@ -71,6 +71,9 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
+	if err := waitOutStop(ctx, e, project, pr); err != nil {
+		return err
+	}
 	opID, err := e.Client.CreateSnapshot(ctx, project.ID)
 	if err != nil {
 		return err
@@ -171,8 +174,22 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	if err != nil {
 		return err
 	}
+	if asNew == "" {
+		if project.State == "stopping" {
+			pr := e.newProgress()
+			err := waitOutStop(ctx, e, project, pr)
+			pr.Fail()
+			if err != nil {
+				return err
+			}
+		}
+		if project.State != "stopped" {
+			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
+		}
+	}
 	// The snapshot's time names it in the question and the progress line;
-	// an api that does not list it leaves the id.
+	// an api that does not list it leaves the id. Listed after a stop
+	// under way has ended, so the question sees the stop's snapshot.
 	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
 	from := snapshotID
 	for i := range snaps {
@@ -180,14 +197,9 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 			from = project.Slug + "'s snapshot of " + snapshotTime(&snaps[i])
 		}
 	}
-	if asNew == "" {
-		if project.State != "stopped" {
-			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
-		}
-		if confirm != nil {
-			if err := confirmOr(confirm, restoreInPlacePrompt(project, snaps, snapshotID), "Not restored."); err != nil {
-				return err
-			}
+	if asNew == "" && confirm != nil {
+		if err := confirmOr(confirm, restoreInPlacePrompt(project, snaps, snapshotID), "Not restored."); err != nil {
+			return err
 		}
 	}
 	pr := e.newProgress()
@@ -224,7 +236,17 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		_, _ = fmt.Fprintln(e.Out, restoredAsLine(ctx, e, project, owner, asNew, snapshotID, pr.Total()))
 		return nil
 	}
-	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is stopped.\n", project.Slug)
+	// The api starts the machine after a restore in place unless asked
+	// not to, so the line says the state the restore left.
+	p := project
+	if q, err := e.Client.GetProject(ctx, project.ID); err == nil {
+		p = q
+	}
+	if p.State == "running" {
+		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is running (%s).\n", p.Slug, p.Class)
+		return nil
+	}
+	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is %s.\n", p.Slug, stateWords(p.State))
 	return nil
 }
 

@@ -233,6 +233,9 @@ func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []stri
 // fragment's own "nixpkgs has no package" line) without the generated
 // fragment's line number, which names nothing the user wrote.
 func putMenuAndRender(ctx context.Context, e *Env, project *Project, sel []MenuItem, done string) error {
+	if err := settleStop(ctx, e, project); err != nil {
+		return err
+	}
 	revisionID, opID, err := e.Client.PutConfigMenu(ctx, project.ID, sel)
 	if err != nil {
 		var apiErr *APIError
