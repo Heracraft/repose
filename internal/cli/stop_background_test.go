@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -136,5 +137,139 @@ func TestStoppingLineSaysWhatItLeaves(t *testing.T) {
 	}
 	if l := stoppingLine("job", nil); l != "Stopping job." {
 		t.Fatalf("clean %q", l)
+	}
+}
+
+// A command that needs the project settled, run straight after a stop
+// that returned early, waits for the stop and then does its work: the
+// api refuses another op while the stop runs (409) and a restore over a
+// machine that is not stopped. Before I-710 the stop had already ended
+// by then; `repose stop X; repose rm X` must still work.
+func TestCommandsAfterABackgroundStopWaitForIt(t *testing.T) {
+	ctx := context.Background()
+	// A real stop outlasts the retry on a 409 (8 to 23 s on prod); the
+	// stop here is 2 s, so the retry gets less.
+	window := opConflictRetryWindow
+	opConflictRetryWindow = 300 * time.Millisecond
+	defer func() { opConflictRetryWindow = window }()
+	cases := []struct {
+		name string
+		run  func(e *Env, p *Project) error
+		want string // the state the project ends in
+	}{
+		{"rm", func(e *Env, p *Project) error {
+			return DestroyProjectsCmd(ctx, e, []string{p.ID}, true, true, nil)
+		}, "gone"},
+		{"rm without --wait", func(e *Env, p *Project) error {
+			return DestroyProjectsCmd(ctx, e, []string{p.ID}, true, false, nil)
+		}, "gone"},
+		{"fork", func(e *Env, p *Project) error {
+			return ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1, NoStart: true})
+		}, "stopped"},
+		{"resize --size", func(e *Env, p *Project) error {
+			return ResizeClassCmd(ctx, e, p.ID, "large", nil)
+		}, "stopped"},
+		{"resize disk", func(e *Env, p *Project) error {
+			return ResizeCmd(ctx, e, p.ID, p.VolumeBytes*2)
+		}, "stopped"},
+		{"snapshots create", func(e *Env, p *Project) error {
+			return SnapshotsCreateCmd(ctx, e, p.ID)
+		}, "stopped"},
+		{"snapshots restore", func(e *Env, p *Project) error {
+			snaps, err := e.Client.ListSnapshots(ctx, p.ID)
+			if err != nil || len(snaps) == 0 {
+				t.Fatalf("snapshots: %v %v", snaps, err)
+			}
+			return SnapshotsRestoreCmd(ctx, e, p.ID, snaps[0].ID, "", nil)
+		}, "stopped"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fake := fakeapi.New(fakeapi.Options{StopDelay: 2 * time.Second})
+			defer fake.Close()
+			e := newLifecycleEnv(t, fake)
+			p := runningProject(t, fake, e, "job")
+			if c.name == "snapshots restore" {
+				if err := SnapshotsCreateCmd(ctx, e, p.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+				t.Fatal(err)
+			}
+			if s := stateOf(t, e, p.ID); s != "stopping" {
+				t.Fatalf("state after the stop: %s", s)
+			}
+			fresh, err := e.Client.GetProject(ctx, p.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := c.run(e, fresh); err != nil {
+				t.Fatalf("%s right after a background stop: %v", c.name, err)
+			}
+			got, err := e.Client.GetProject(ctx, p.ID)
+			switch {
+			case c.want == "gone":
+				if err == nil && got.State != "destroyed" && got.State != "destroying" {
+					t.Fatalf("after rm: %s", got.State)
+				}
+			case err != nil:
+				t.Fatal(err)
+			case got.State != c.want:
+				t.Fatalf("after %s: %s", c.name, got.State)
+			}
+		})
+	}
+}
+
+// A stop that fails inside the pickup wait says so and exits 1 with the
+// command that tries again, as --wait does.
+func TestBackgroundStopThatFails(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	p := runningProject(t, fake, e, "job")
+	fake.SetStopFailure(p.ID, "the host did not answer")
+	err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true})
+	if err == nil || exitCode(err) != ExitGeneric || !strings.Contains(err.Error(), "the host did not answer") || !strings.Contains(err.Error(), "`repose stop job` tries again") {
+		t.Fatalf("err %v (exit %d)", err, exitCode(err))
+	}
+}
+
+// A stop that ended inside the pickup wait with its snapshot failed says
+// so (I-158), as the --wait line does.
+func TestBackgroundStopNotesAFailedSnapshot(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	p := runningProject(t, fake, e, "job")
+	fake.SetStopSnapshotFailure(p.ID, "the snapshot upload failed")
+	var out, errOut bytes.Buffer
+	e.Out, e.ErrOut = &out, &errOut
+	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "Stopped job in ") || !strings.Contains(errOut.String(), "Note: ") || !strings.Contains(errOut.String(), "snapshot upload failed") {
+		t.Fatalf("out %q, err %q", out.String(), errOut.String())
+	}
+}
+
+// --json prints the project as the stop left it: stopping (cli.md).
+func TestBackgroundStopJSON(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{StopDelay: 2 * time.Second})
+	defer fake.Close()
+	ctx := context.Background()
+	e := newLifecycleEnv(t, fake)
+	runningProject(t, fake, e, "job")
+	var out bytes.Buffer
+	e.Out, e.JSON = &out, true
+	if err := stopWithJSON(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	var got Project
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Slug != "job" || got.State != "stopping" {
+		t.Fatalf("json %q (%v)", out.String(), err)
 	}
 }

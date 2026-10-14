@@ -189,6 +189,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 	}
 	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+		if err := waitOutStop(ctx, e, res.Project, pr); err != nil {
+			return err
+		}
 		if err := sizeExisting(ctx, e, res.Project, opts.Size); err != nil {
 			return err
 		}

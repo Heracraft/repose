@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-const opConflictRetryWindow = 10 * time.Second
+var opConflictRetryWindow = 10 * time.Second
+
 const opConflictRetryInterval = 250 * time.Millisecond
 
 // retryOnOpConflict retries fn while it fails with a 409 conflict:
@@ -319,10 +320,38 @@ func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) sto
 	case op != nil && op.State == "done":
 		r.done = true
 		r.line = withLeft(fmt.Sprintf("Stopped %s in %s.", project.Slug, fmtElapsed(time.Since(started))), leftClause(left))
+		// I-158, as stopOne says it: a stop whose snapshot failed is not
+		// a clean stop.
+		if p, err := e.Client.GetProject(ctx, project.ID); err == nil && p.LastError != nil {
+			if reason := projectReason(p); reason != "" {
+				r.note = fmt.Sprintf("Note: %s.", reason)
+			}
+		}
 	default:
 		r.line = stoppingLine(project.Slug, left)
 	}
 	return r
+}
+
+// waitOutStop waits for a stop under way to end before a command acts on
+// the project: `repose stop` returns while the project reads stopping
+// (DECISIONS I-710), and until the stop ends the api refuses any other op
+// on it (409 conflict) and a restore over it (it must be stopped). The
+// project is re-read in place, so the caller's checks see what the stop
+// left; any state but stopping returns at once.
+func waitOutStop(ctx context.Context, e *Env, project *Project, pr *progress) error {
+	if project.State != "stopping" {
+		return nil
+	}
+	if err := waitState(ctx, e, project, pr); err != nil {
+		return err
+	}
+	if project.State == "stopped" {
+		pr.End()
+	} else {
+		pr.Fail()
+	}
+	return nil
 }
 
 // stoppingLine is stopBegin's line: `Stopping job; 1 file not committed.`
@@ -762,6 +791,9 @@ func printLines(e *Env, r destroyResult) {
 func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool, pr *progress, started time.Time) destroyResult {
 	var r destroyResult
 	var opID string
+	if r.err = waitOutStop(ctx, e, project, pr); r.err != nil {
+		return r
+	}
 	if r.err = retryOnOpConflict(ctx, func() error {
 		var err error
 		opID, err = e.Client.DestroyProject(ctx, project.ID)
@@ -928,6 +960,9 @@ func ResizeCmd(ctx context.Context, e *Env, projectArg string, bytes int64) erro
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
+	if err := waitOutStop(ctx, e, project, pr); err != nil {
+		return err
+	}
 	var opID string
 	err = retryOnOpConflict(ctx, func() error {
 		var err error

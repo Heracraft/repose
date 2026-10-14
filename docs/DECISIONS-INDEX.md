@@ -745,4 +745,4 @@ pointer, not a summary.
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20729
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20738
 - **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — L20744
-- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20759
+- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20760

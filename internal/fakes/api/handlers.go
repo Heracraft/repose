@@ -615,6 +615,9 @@ func (f *Fake) destroyProject(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
 	o := f.newOp(p, "destroy")
 	if f.opts.DestroyDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
@@ -792,20 +795,13 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			p.State = "running" // what stop snapshots from
-			if s := f.stop(p, snapshot); s != nil {
-				o.Result = map[string]any{"snapshot_id": s.ID}
-			}
-			o.State = "done"
+			f.endStop(p, o, snapshot)
 			o.phase = ""
 		}()
 		return opResult(w, o)
 	}
 	if p.State != "stopped" {
-		// The api's stop op carries the snapshot it recorded, as a
-		// snapshot op does.
-		if s := f.stop(p, snapshot); s != nil {
-			o.Result = map[string]any{"snapshot_id": s.ID}
-		}
+		f.endStop(p, o, snapshot)
 	}
 	return opResult(w, o)
 }
@@ -954,6 +950,9 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
+		return e
+	}
+	if e := busyStopping(p); e != nil {
 		return e
 	}
 	if body.VolumeBytes <= p.VolumeBytes {
@@ -1382,6 +1381,9 @@ func (f *Fake) listSnapshots(w http.ResponseWriter, r *http.Request) *apiError {
 func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
+		return e
+	}
+	if e := busyStopping(p); e != nil {
 		return e
 	}
 	o := f.newOp(p, "snapshot")

@@ -111,6 +111,8 @@ type Fake struct {
 	// the op fails with an error, or ends done with a warning the way a
 	// start whose new system did not boot does (DECISIONS I-590).
 	startOutcome map[string]startOutcome
+	// stopOutcome is how the next stop of a project ends, when set.
+	stopOutcome map[string]stopOutcome
 	// console is each project's console lines from failed boots, what
 	// GET /logs?kind=console serves (I-592).
 	console map[string][]string
@@ -638,6 +640,69 @@ func (f *Fake) register() {
 	f.handle("GET /v1/internal/hosts", f.internalHosts)
 	f.handle("POST /v1/internal/gateway-certs", f.internalGatewayCerts)
 	f.handle("POST /v1/internal/events", f.internalEvents)
+}
+
+type stopOutcome struct {
+	failMsg, snapshotFailMsg string
+}
+
+// SetStopFailure makes the next stop op of the project end in error with
+// message, leaving the project in error with the reason the api writes
+// (DECISIONS I-710).
+func (f *Fake) SetStopFailure(projectID, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopOutcome == nil {
+		f.stopOutcome = map[string]stopOutcome{}
+	}
+	f.stopOutcome[projectID] = stopOutcome{failMsg: message}
+}
+
+// SetStopSnapshotFailure makes the next stop of the project take no
+// snapshot and leave it stopped with last_error "snapshot_failed:
+// message", as a stop whose upload failed does (I-158).
+func (f *Fake) SetStopSnapshotFailure(projectID, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopOutcome == nil {
+		f.stopOutcome = map[string]stopOutcome{}
+	}
+	f.stopOutcome[projectID] = stopOutcome{snapshotFailMsg: message}
+}
+
+// endStop stops p for op o, applying a stop outcome set for it. Under
+// f.mu.
+func (f *Fake) endStop(p *project, o *op, snapshot bool) {
+	out, ok := f.stopOutcome[p.ID]
+	delete(f.stopOutcome, p.ID)
+	switch {
+	case ok && out.failMsg != "":
+		o.State, o.Error = "error", out.failMsg
+		p.State = "error"
+		le := "stop_failed: stopping " + p.Slug + " failed: " + out.failMsg + ". `repose stop " + p.Slug + "` tries again"
+		p.LastError = &le
+		return
+	case ok && out.snapshotFailMsg != "":
+		f.stop(p, false)
+		le := "snapshot_failed: " + out.snapshotFailMsg
+		p.LastError = &le
+	default:
+		// The api's stop op carries the snapshot it recorded, as a
+		// snapshot op does.
+		if s := f.stop(p, snapshot); s != nil {
+			o.Result = map[string]any{"snapshot_id": s.ID}
+		}
+	}
+	o.State = "done"
+}
+
+// busyStopping is the api's 409 for an op sent while a stop op is open on
+// the project: Engine.Enqueue's ErrOpInProgress.
+func busyStopping(p *project) *apiError {
+	if p.State != "stopping" {
+		return nil
+	}
+	return errf("conflict", "An operation is in progress")
 }
 
 type startOutcome struct {

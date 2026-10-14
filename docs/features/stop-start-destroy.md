@@ -144,8 +144,11 @@ Stop:
   `stopping <slug> failed: <why>`, then "`repose stop <slug>` tries again", and
   records `stop_failed`, which notifies. `start`, `attach`, `run`, `ssh`
   and `code` on a `stopping` project wait for the stop, then start it.
-  `resize --size`, `fork` and run's plan question still wait for their
-  stops: they need the stopped volume or the freed memory.
+  `rm`, `fork`, `resize` (disk and `--size`), `run --size`, `snapshots
+  create` and an in-place `snapshots restore` wait for it, then do their
+  work: the api answers any other op `409` until the stop ends. The
+  stops `resize --size`, `fork` and run's plan question make themselves
+  still wait: they need the stopped volume or the freed memory.
 - `--wait` waits for the whole stop. Its line is `Stopped <slug> in
   <time> with a <size> snapshot.`, or `Stopped <slug> in <time>.` without
   one, then `Ended claude (working).`; a stop whose snapshot failed says

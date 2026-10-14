@@ -71,6 +71,9 @@ func SnapshotsCreateCmd(ctx context.Context, e *Env, projectArg string) error {
 	}
 	pr := e.newProgress()
 	defer pr.Fail()
+	if err := waitOutStop(ctx, e, project, pr); err != nil {
+		return err
+	}
 	opID, err := e.Client.CreateSnapshot(ctx, project.ID)
 	if err != nil {
 		return err
@@ -181,6 +184,14 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		}
 	}
 	if asNew == "" {
+		if project.State == "stopping" {
+			pr := e.newProgress()
+			err := waitOutStop(ctx, e, project, pr)
+			pr.Fail()
+			if err != nil {
+				return err
+			}
+		}
 		if project.State != "stopped" {
 			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
 		}
@@ -224,7 +235,17 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		_, _ = fmt.Fprintln(e.Out, restoredAsLine(ctx, e, project, owner, asNew, snapshotID, pr.Total()))
 		return nil
 	}
-	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is stopped.\n", project.Slug)
+	// The api starts the machine after a restore in place unless asked
+	// not to, so the line says the state the restore left.
+	p := project
+	if q, err := e.Client.GetProject(ctx, project.ID); err == nil {
+		p = q
+	}
+	if p.State == "running" {
+		_, _ = fmt.Fprintf(e.Out, "Restored %s; it is running (%s).\n", p.Slug, p.Class)
+		return nil
+	}
+	_, _ = fmt.Fprintf(e.Out, "Restored %s; it is %s.\n", p.Slug, stateWords(p.State))
 	return nil
 }
 

@@ -163,6 +163,9 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 		snapID = id
 	}
 	if snapID == "" {
+		if err := waitOutStop(ctx, e, src, pr); err != nil {
+			return err
+		}
 		if src.State != "running" && src.State != "stopped" {
 			return notRunningError(src)
 		}
