@@ -138,3 +138,50 @@ func TestRunDoesNotStartACreateThatFailedOnAProjectItFound(t *testing.T) {
 	}
 	t.Logf("run says: %s", err)
 }
+
+// TestRunReportsAFailedCreateEvenWithAnotherOpOpen is the hole I-722 left
+// (DECISIONS I-728). I-356's guard only fired when the project read back
+// with no op id at all, and since I-722 a read names whatever op is in
+// flight — a personal build queued behind the create is enough (I-490).
+// With the state `error` and that unrelated op named, the guard was
+// skipped, `error` matches no case of the switch below it, and the fall
+// through started the machine: the 0.69 s restart of 2026-10-13 again,
+// one op later. The guard now asks only whether a create of ours ended in
+// error.
+func TestRunReportsAFailedCreateEvenWithAnotherOpOpen(t *testing.T) {
+	var starts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p1":
+			// The create has settled in error; a personal build queued
+			// behind it is the op in flight the read names (I-722).
+			_, _ = w.Write([]byte(`{"id":"p1","slug":"teksafari-org","state":"error","class":"large","op_id":"op-build"}`))
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p1/ops/op1":
+			_, _ = w.Write([]byte(`{"op_id":"op1","kind":"create","state":"error","project_state":"error",` +
+				`"error":{"code":"guest_unresponsive","message":"the machine did not answer within a minute of starting"}}`))
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/start"):
+			starts.Add(1)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"op_id":"op9","restart":true,"create":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	e := &Env{Client: newClient(srv.URL+"/v1", staticToken("tok")), Out: &bytes.Buffer{}, ErrOut: &bytes.Buffer{}}
+	// What a create in this run hands on: the project and its op id, which
+	// ensureRunningFrom keeps across the re-read (fresh = false).
+	p := &Project{ID: "p1", Slug: "teksafari-org", State: "creating", Class: "large", OpID: "op1"}
+	err := ensureRunningFrom(context.Background(), e, p, e.newProgress(), false)
+	if err == nil {
+		t.Fatal("no error for a create that failed")
+	}
+	if n := starts.Load(); n != 0 {
+		t.Fatalf("sent %d start(s) after a failed create", n)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "did not answer within a minute") {
+		t.Fatalf("error = %q, want the create's own words", msg)
+	}
+	t.Logf("run says: %s", err)
+}

@@ -20994,3 +20994,34 @@ row is refused the address, the same row takes it once destroyed, and the
 live row's address is unchanged), with `TestMigrateUpDownUp` covering
 0026's down. Red before: "two live projects took one guest address".
 `docs/interfaces/db-schema.md` in this commit.
+
+**I-728. A create of this run that ended in error is reported, whatever
+else is open (run-failed-create, 2026-10-14; amends I-356 and I-722).**
+*Made during implementation.* I-356 gave `repose run` a guard: when the
+project it created reads back in `error`, fetch the create op and report
+what it said, rather than falling through and starting the machine. The
+guard asked two questions — is the state `error`, and does the project
+carry no op id — because until I-722 a project read carried no op id at
+all, so the second was always true once a create had settled. I-722
+makes a read name the op in flight, and a project can have one while its
+create sits in error: a `machine.nix` change queues personal builds
+behind a create (I-490), and `OpenOpsForProject` returns the oldest open
+one. With an op id named, the guard was skipped, `error` matches no case
+of the state switch under it, and the fall-through called
+`StartProject` — the 0.69 s restart of a failed create that made one
+user action look like three on teksafari-org (2026-10-13), one op later
+and with the create's error still unread. The guard now asks only
+whether a create of this run ended in error, and reads that op by the id
+it was given, not whatever is open. `ensureRunningFrom`'s comment about
+a project read carrying no op id went with it, since I-722 made it
+false.
+- This is the hole I-722 left, found by reading its own guard rather than
+  by hitting it: the condition tested "is any op open" where it needed to
+  test "is the op that failed this create still open". It is one line,
+  and it keeps I-356 true for every project state rather than only for
+  the states that happen to leave no op behind.
+- Test: `TestRunReportsAFailedCreateEvenWithAnotherOpOpen`
+  (internal/cli), the read naming an unrelated open build with the state
+  `error`: the create's own message, and zero starts.
+  `TestRunDoesNotStartACreateThatFailedOnAProjectItFound` (I-722) still
+  passes beside it.
