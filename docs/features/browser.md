@@ -121,16 +121,23 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   better spent by the machine's browser than its encoder).
 - A slim bar: the project's name (from the guest's `project.json`, else
   its hostname), "the agent's browser", the connection state, the remote
-  size, a full-screen button and a "copy link" button that copies the
-  page's address with the fragment. Full screen hides the bar and the
-  screen takes the whole display.
+  size, a "paste" button, a "copy link" button that copies the page's
+  address with the fragment, and a full-screen button. Full screen hides
+  the bar and the screen takes the whole display.
 - Keyboard goes to the machine (Meta and Alt combinations included, as far
   as the browser lets them through); the page focuses the screen on load
   and on click.
-- Clipboard both ways where the browser allows: when the tab comes to the
-  front, the laptop's clipboard is sent to the machine (Chromium asks the
-  user once; Firefox has no such read); text copied on the machine lands
-  in the laptop's clipboard.
+- Clipboard both ways (DECISIONS I-726). Ctrl+V on the screen (Cmd+V on
+  a Mac, Ctrl+Shift+V too) pastes the laptop's clipboard on the machine:
+  the page holds the key back from noVNC, takes the text from the
+  browser's paste event (no permission needed, Chromium and Firefox
+  alike), sends it as the VNC clipboard and then presses Ctrl+V on the
+  machine over the same connection; Cmd becomes Ctrl there. A browser
+  that fires no paste event within 300 ms gets its key through as before.
+  The "paste" button does the same through `navigator.clipboard.readText`
+  (Chromium asks once; Firefox shows its own Paste button). When the tab
+  comes to the front, Chromium with that permission also sends the
+  clipboard. Text copied on the machine lands in the laptop's clipboard.
 - Reconnects with backoff (1, 2, 4, 8, 16 s, then every 15 s) when the
   connection drops: the guest's socket activation brings the chain back
   when the viewer idled out, so a tab left open comes back by itself.

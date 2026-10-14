@@ -4,6 +4,8 @@
 // both ways where the browser allows it. Plain ES modules; the Nix
 // derivation copies this directory as it is.
 import RFB from './core/rfb.js';
+import KeyTable from './core/input/keysym.js';
+import { isMac } from './core/util/browser.js';
 
 const $ = (id) => document.getElementById(id);
 const screen = $('screen');
@@ -161,18 +163,22 @@ function connect() {
   });
 }
 
-// This clipboard to the machine's, when the tab comes back to the front:
-// the browser lets a page read the clipboard only with the user's leave,
-// so the first time asks. Firefox has no readText for pages; nothing to do.
+const connected = () => rfb && stateEl.dataset.state === 'connected';
+
+function sendClipboard(text) {
+  lastClipboard = text;
+  rfb.clipboardPasteFrom(text);
+}
+
+// This clipboard to the machine's, when the tab comes back to the front,
+// where Chromium lets the page read it once the user has allowed it.
+// Firefox reads it only for a click or a key, which the paste below covers.
 async function pushClipboard() {
-  if (!rfb || stateEl.dataset.state !== 'connected') return;
+  if (!connected()) return;
   if (!navigator.clipboard || !navigator.clipboard.readText) return;
   try {
     const text = await navigator.clipboard.readText();
-    if (text && text !== lastClipboard) {
-      lastClipboard = text;
-      rfb.clipboardPasteFrom(text);
-    }
+    if (text && text !== lastClipboard) sendClipboard(text);
   } catch {
     // no permission, or nothing readable: the machine keeps its own
   }
@@ -180,6 +186,62 @@ async function pushClipboard() {
 window.addEventListener('focus', pushClipboard);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') pushClipboard();
+});
+
+// Paste from this computer (DECISIONS I-726). noVNC turns Ctrl+V into
+// key events for the machine and cancels the key here, so the machine
+// pasted its own clipboard and this one never left the laptop. The paste
+// key is held back from noVNC instead; the browser then fires its paste
+// event with this clipboard's text, needing no permission in Chromium or
+// Firefox, and the text goes to the machine's clipboard ahead of a Ctrl+V
+// on the RFB connection, which carries both in order. On a Mac, Cmd+V
+// becomes Ctrl+V on the machine (noVNC sends Cmd as Alt, released first).
+const mac = isMac();
+let heldPaste = null; // the modifier of a paste key held back, until its paste event
+let heldTimer = null;
+
+function isPasteKey(e) {
+  if (e.altKey || !(e.code === 'KeyV' || (e.key || '').toLowerCase() === 'v')) return false;
+  return mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+}
+
+// Ctrl+V on the machine. `held` is what the laptop holds down, which
+// noVNC already sent: 'ctrl', 'meta' (a Mac's Cmd) or nothing.
+function pressPaste(held) {
+  if (!connected()) return;
+  if (held === 'meta') {
+    rfb.sendKey(KeyTable.XK_Alt_L, 'MetaLeft', false);
+    rfb.sendKey(KeyTable.XK_Super_L, 'MetaRight', false);
+  }
+  if (held !== 'ctrl') rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', true);
+  rfb.sendKey(KeyTable.XK_v, 'KeyV');
+  if (held !== 'ctrl') rfb.sendKey(KeyTable.XK_Control_L, 'ControlLeft', false);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!connected() || !screen.contains(e.target) || !isPasteKey(e)) return;
+  // Before noVNC's own listener on the canvas, which would cancel it.
+  e.stopPropagation();
+  heldPaste = mac ? 'meta' : 'ctrl';
+  clearTimeout(heldTimer);
+  // A browser that fires no paste event still gets its key through,
+  // and the machine pastes what it has.
+  heldTimer = setTimeout(() => {
+    const held = heldPaste;
+    heldPaste = null;
+    if (held) pressPaste(held);
+  }, 300);
+}, true);
+
+document.addEventListener('paste', (e) => {
+  if (!connected() || (!heldPaste && !screen.contains(e.target))) return;
+  e.preventDefault();
+  clearTimeout(heldTimer);
+  const held = heldPaste;
+  heldPaste = null;
+  const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (text) sendClipboard(text);
+  pressPaste(held);
 });
 
 form.addEventListener('submit', (e) => {
@@ -204,20 +266,45 @@ setInterval(() => {
   sizeEl.textContent = `${canvas.width} × ${canvas.height}` + (dpr > 1 ? ` at 1x` : '');
 }, 500);
 
+// A button's answer for a moment, then its own label again.
+function flash(b, label, ok) {
+  const rest = b.dataset.label || (b.dataset.label = b.textContent);
+  b.textContent = label;
+  b.classList.toggle('done', ok);
+  clearTimeout(b.flashTimer);
+  b.flashTimer = setTimeout(() => {
+    b.textContent = rest;
+    b.classList.remove('done');
+  }, 1500);
+}
+
 $('copy').addEventListener('click', async () => {
-  const b = $('copy');
   try {
     // location.href keeps the fragment, so the link carries the password.
     await navigator.clipboard.writeText(location.href);
-    b.textContent = 'copied';
-    b.classList.add('done');
+    flash($('copy'), 'copied', true);
   } catch {
-    b.textContent = 'copy failed';
+    flash($('copy'), 'copy failed', false);
   }
-  setTimeout(() => {
-    b.textContent = 'copy link';
-    b.classList.remove('done');
-  }, 1500);
+});
+
+// The same paste for a pointer: the browser asks once (Chromium) or shows
+// its own Paste button (Firefox) before the page may read the clipboard.
+$('paste').addEventListener('click', async () => {
+  const b = $('paste');
+  if (!connected()) return;
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    flash(b, 'not allowed', false);
+    rfb.focus();
+    return;
+  }
+  if (text) sendClipboard(text);
+  pressPaste(null);
+  rfb.focus();
+  flash(b, text ? 'pasted' : 'clipboard empty', !!text);
 });
 
 $('full').addEventListener('click', () => {

@@ -98,10 +98,10 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/var/lib/repose/paths-loaded` | sha256 of the last registration `nix-store --load-db` took, on the volume; a `RegisterPaths` with the same bytes and `/nix/var/nix/db/db.sqlite` present only writes the stamp above (DECISIONS I-225) |
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
-| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it |
-| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it |
+| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
+| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
 | `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends, and `NAME.alive` (0600 dev), touched at each keepalive from the laptop; a missing socket, or a keepalive file more than 30 s old, is how `status` says `laptop not connected` (DECISIONS I-557). A CLI that sends no keepalive leaves no `NAME.alive`, and the socket alone decides |
-| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246) |
+| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246). Before each start, `repose-browser-unlock` removes its `SingletonLock`, `SingletonSocket` and `SingletonCookie` unless the process the lock names runs with this profile (I-727) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
 | `/nix/.rw-store` | the guest's writable store overlay (upper dir `store/`, work dir `work/`), on the thin volume |
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |

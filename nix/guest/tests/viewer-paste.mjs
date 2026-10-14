@@ -25,7 +25,7 @@ const pw = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { chromium, firefox } = pw.default || pw;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const viewerSrc = join(here, '..', 'base', 'desktop', 'viewer');
+const viewerSrc = process.env.VIEWER_DIR || join(here, '..', 'base', 'desktop', 'viewer');
 const novnc = process.env.NOVNC_DIR || '/run/repose/desktop/web';
 const display = process.env.PASTE_DISPLAY || ':97';
 const n = Number(display.slice(1));
@@ -149,7 +149,7 @@ for (const name of which) {
     await canvas.click({ position: { x: 300, y: 300 } });
     await viewer.keyboard.press('Control+V');
   });
-  await check('a second Ctrl+V pastes a new clipboard', `again ${name} ${Date.now()} é ü`, async () => {
+  await check('a second Ctrl+V pastes a new clipboard', `again ${name} ${Date.now()} é ü 日本 ✓`, async () => {
     await canvas.click({ position: { x: 300, y: 300 } });
     await viewer.keyboard.press('Control+V');
   });

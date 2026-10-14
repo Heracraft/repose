@@ -170,6 +170,11 @@ let
       about:blank
   '';
 
+  # A kill leaves Chromium's profile lock behind, which stops the next
+  # start on a machine with a new name (DECISIONS I-727).
+  unlock = pkgs.callPackage ./browser-unlock.nix { };
+  stamp = pkgs.callPackage ./desktop-stamp.nix { };
+
   # The unit counts as started only once the proxy can connect.
   waitBackend = pkgs.writeShellScript "repose-wait-${toString backendPort}" ''
     for _ in $(seq 1 200); do
@@ -302,9 +307,11 @@ in
       Slice = "repose-browser.slice";
       # TZ, so pages see the project's time zone.
       EnvironmentFile = "-/etc/repose/env";
+      ExecStartPre = "${unlock}/bin/repose-browser-unlock ${profileDir}";
       ExecStart = browserStart;
-      # last-cdp starts the idle clock (desktop.nix).
-      ExecStartPost = [ waitBackend "${pkgs.coreutils}/bin/touch /run/repose/desktop/last-cdp" ];
+      # last-cdp starts the idle clock (desktop.nix); written as root and
+      # left dev's, whoever made it first (I-727).
+      ExecStartPost = [ waitBackend "+${stamp}/bin/repose-desktop-stamp last-cdp" ];
       # A renderer the slice limit kills is one crashed tab, not the end of
       # the browser.
       OOMPolicy = "continue";

@@ -54,6 +54,8 @@ let
     cp -r ${pkgs.novnc}/share/webapps/novnc/vendor $out/vendor
   '';
   idleSeconds = 1800;
+  # Every write of an idle stamp, as root, leaving it dev's (I-727).
+  stamp = pkgs.callPackage ./desktop-stamp.nix { };
 
   # Every window maximised: the browser fills the screen the user watches,
   # and follows it when the viewer resizes the screen (openbox reapplies
@@ -112,7 +114,7 @@ let
 
   idleCheck = pkgs.writeShellApplication {
     name = "repose-desktop-idle-check";
-    runtimeInputs = [ pkgs.coreutils pkgs.iproute2 pkgs.systemd ];
+    runtimeInputs = [ pkgs.coreutils pkgs.iproute2 pkgs.systemd stamp ];
     text = ''
       # A bridge whose tunnel is gone (the laptop's ssh ended without its
       # hold script running, or sshd gave up on a sleeping laptop) goes
@@ -128,16 +130,18 @@ let
       [ "$viewer" = true ] || [ "$browser" = true ] || exit 0
       now=$(date +%s)
       # age <stamp>: seconds since the stamp, created now when missing.
+      # This check runs as root and the units that write the stamps run
+      # as dev, so a stamp made here stays dev's (I-727).
       age() {
-        [ -e "$1" ] || touch "$1"
-        echo $((now - $(stat -c %Y "$1")))
+        [ -e "${dir}/$1" ] || repose-desktop-stamp "$1"
+        echo $((now - $(stat -c %Y "${dir}/$1")))
       }
       viewers=$(ss -Htn state established '( sport = :6081 or sport = :5900 )' | wc -l)
       devtools=$(ss -Htn state established '( sport = :9225 )' | wc -l)
-      [ "$viewers" -eq 0 ] || touch ${dir}/last-client
-      [ "$devtools" -eq 0 ] || touch ${dir}/last-cdp
-      viewer_idle=$(age ${dir}/last-client)
-      cdp_idle=$(age ${dir}/last-cdp)
+      [ "$viewers" -eq 0 ] || repose-desktop-stamp last-client
+      [ "$devtools" -eq 0 ] || repose-desktop-stamp last-cdp
+      viewer_idle=$(age last-client)
+      cdp_idle=$(age last-cdp)
       if [ "$viewer" = true ] && [ "$viewer_idle" -ge ${toString idleSeconds} ]; then
         systemctl start repose-desktop-idle.service
       fi
@@ -202,7 +206,7 @@ in
       ];
       # A display started for the browser alone starts the viewer's idle
       # clock, so the stamp is never older than the display.
-      ExecStartPost = [ waitDisplay (waitPort 5900) "${pkgs.coreutils}/bin/touch ${dir}/last-client" ];
+      ExecStartPost = [ waitDisplay (waitPort 5900) "+${stamp}/bin/repose-desktop-stamp last-client" ];
     };
   };
 
@@ -240,7 +244,7 @@ in
       ExecStart = "${websockify}/bin/websockify --file-only --web ${webDir} 127.0.0.1:6081 127.0.0.1:5900";
       # A viewer started while the browser had the display up for hours
       # starts its own idle clock.
-      ExecStartPost = [ (waitPort 6081) "${pkgs.coreutils}/bin/touch ${dir}/last-client" ];
+      ExecStartPost = [ (waitPort 6081) "+${stamp}/bin/repose-desktop-stamp last-client" ];
     };
   };
 
