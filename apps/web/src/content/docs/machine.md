@@ -217,6 +217,8 @@ Once a week the machine deletes the nix store paths it downloaded or built itsel
 
 `nix-collect-garbage` and `nix store gc` are safe to run too: they keep the store paths repose shares with the machine, its system included. If an earlier garbage collection hid any of them, the machine's next start puts them back.
 
+A program you compile on the machine names its libraries by their exact path in the store repose shares. A platform update that moves one of those paths leaves an old binary naming a path the server no longer keeps, and it then stops with `error while loading shared libraries`. Compiling the program again is the usual fix; to keep the old build, `repose-store-repair ./your-program` downloads the libraries it names, well under a second each, as long as the machine can reach the internet.
+
 `repose status`, `repose ls` and the project's page in the dashboard say when the disk is 90 percent full or more. They count the machine's filesystem, as `df /` does. Grow it with `repose resize 80G`, or from the project's page in the dashboard (**Resize…** under Disk, 20 to 320 GB). Disks can't shrink. A larger disk adds nothing to your [plan's disk total](/docs/billing#what-a-plan-means), which counts what your projects hold. A disk can grow only as far as the server it runs on has room for, within the [disk limits](/docs/limits#disk-and-console).
 
 ## Seeing what the machine is doing

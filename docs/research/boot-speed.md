@@ -91,7 +91,36 @@ busier. RegisterPaths finishes before the copy-up can start, so its
 - Free page reporting stays on (I-704).
 - RegisterPaths and SetupProject get 3 minutes in guestd and hostd
   (I-705).
-- repose-pin-profile waits for `/run/repose/project-set-up` (I-706).
+- repose-pin-profile waited for `/run/repose/project-set-up` (I-706);
+  the copy it was waiting out is gone instead (I-718, below).
 - hostd logs `"boot timings"` and the api keeps them in `ops.result.boot`;
   `BootSlow` warns when most of a host's boots in 30 minutes take over
   2 minutes (I-707).
+
+## Then the copy itself went (I-718, 2026-10-13)
+
+Deferring the copy-up left its cost where the user works. It was removed
+instead. What it was, measured on prod and on host-stg-01 the same day:
+
+| | |
+|---|---|
+| the work | 26 store paths, 1554 inodes, 75.5 MB, per fresh guest |
+| on a fresh small prod guest (`e2e-pin3`, base 2026.10.12) | 86.5 s wall, 18.2 s CPU, 74.1 MB written |
+| the same unit, earlier runs | 31.2 s (small), 55.9 s (large, idle host), 96.7 s (teksafari-org) |
+| of that, overlayfs copy-up | about 47 s, 14.8 ms per inode |
+| why | first write to a thin-pool region 18.2 ms, already-allocated 3.3 to 4.4 ms |
+| the guest's whole writable store afterwards | 76 MB, all of it the copy |
+| what a real host GC can take of the eleven | 2: libpq-18.6, mariadb-connector-c-3.3.5 |
+| fetching all eleven closures from cache.nixos.org, in a guest | 3 s and 6 s |
+| fetching one back with `nix-store --repair-path`, as root | 315 ms cold, 230 ms warm, with the bytes really deleted by a host GC (1.70 s in the first probe, where a whiteout only hid the path) |
+| the same with egress blackholed | fails in 8.3 s, no hang |
+| 11 `nix-store -qR` calls against one | 8.50 s against 1.78 s |
+| the same 1554-inode pass with the overlay mounted `volatile` | 0.725 s against 5.885 s |
+
+Thin-pool allocation is the only serial resource in the storage stack:
+on host-stg-01, 4 KB `O_DSYNC` writes to already-allocated blocks scale
+linearly to 8 writers (7170 IOPS, flat latency), while writes that
+allocate ceiling at about 900/s and double in latency by 8 writers, and 7
+competing allocating writers inflate the identical copy-up pass 1.58x.
+The per-class IOPS caps (small 2000, large 3000, xl 4000) are never
+approached: 1554 serial fsyncs over 31 to 97 s is 16 to 50 a second.

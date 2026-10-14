@@ -633,7 +633,7 @@ in
           for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
               guest.succeed(f"test -x /run/current-system/sw/bin/{cmd}")
               guest.succeed(f"grep -q repose-agent-setup /run/current-system/sw/bin/{cmd}")
-          for tool in ["node", "pnpm", "python3", "uv", "go", "rustup", "just", "rg", "jq", "gh", "git", "direnv", "starship", "zoxide", "eza", "nvim", "docker", "docker-compose", "chromium", "playwright-mcp", "chrome-devtools-mcp", "repose-hook", "repose-guest-profile", "repose-pin-profile"]:
+          for tool in ["node", "pnpm", "python3", "uv", "go", "rustup", "just", "rg", "jq", "gh", "git", "direnv", "starship", "zoxide", "eza", "nvim", "docker", "docker-compose", "chromium", "playwright-mcp", "chrome-devtools-mcp", "repose-hook", "repose-guest-profile", "repose-pin-profile", "repose-store-repair"]:
               guest.succeed(f"test -x /run/current-system/sw/bin/{tool}")
 
       with subtest("claude hooks merged without clobbering a user hook"):
@@ -1007,9 +1007,6 @@ in
           # and assert the pin copies its closure into the upper dir.
           hello = "${pkgs.hello}"
           guest.succeed(f"sudo -u dev nix profile install --offline {hello}")
-          # The copy-up waits for SetupProject's stamp, or 3 minutes of
-          # uptime (I-706); this test sends no SetupProject.
-          guest.succeed("touch /run/repose/project-set-up")
           guest.succeed("systemctl start repose-pin-profile.service")
           upper = guest.succeed("awk '$2 == \"/nix/store\" { print $4 }' /proc/mounts | tr , '\\n' | grep '^upperdir=' | cut -d= -f2").strip()
           # the overlay appears twice (initrd and stage 2 views); one line is enough.
@@ -1021,7 +1018,7 @@ in
           guest.succeed(f"diff -r {upper}/{name} {hello}")
           guest.succeed("sudo -u dev bash -lc 'hello' | grep -q Hello")
 
-      with subtest("I-533: what a guest-built binary links is copied up and rooted"):
+      with subtest("I-718: what a guest-built binary links is not copied up"):
           guest.succeed("install -d -o dev -g dev /tmp/link")
           guest.succeed("""cat > /tmp/link/t.c <<'EOF'
       #include <stdio.h>
@@ -1030,24 +1027,97 @@ in
       EOF
       chown dev:dev /tmp/link/t.c""")
           guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc t.c -o t $(pkg-config --cflags --libs openssl)'")
-          interp = guest.succeed("readelf -l /tmp/link/t | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
-          runpath = guest.succeed("readelf -d /tmp/link/t | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
-          # The store paths the binary names: the interpreter's glibc and
-          # every RUNPATH entry (openssl, glibc, gcc-lib).
-          linked = sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+
+          def store_paths(prog):
+              """The store paths a program names: its ELF interpreter and its RUNPATH."""
+              interp = guest.succeed(f"readelf -l {prog} | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
+              runpath = guest.succeed(f"readelf -d {prog} | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
+              return sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+
+          linked = store_paths("/tmp/link/t")
           assert any("-glibc-" in p for p in linked) and any("-openssl-" in p for p in linked), linked
-          guest.succeed("systemctl start repose-pin-profile.service")
+          glibc = [p for p in linked if "-glibc-" in p][0]
+          # The pin copies dev's profile and nothing else: what the binary
+          # links against is not in the upper dir (DECISIONS I-718, amends
+          # I-533). The binary runs from the lower layer, which is where
+          # those libraries stay. glibc is exempt from the no-copy check:
+          # it is in hello's closure, so dev's own profile brought it up.
+          guest.succeed("systemctl restart repose-pin-profile.service")
+          for p in linked:
+              if "-glibc-" in p:
+                  continue
+              guest.fail(f"test -e {upper}/{os.path.basename(p)}")
+          # A gc root per library stays, which is how the guest knows which
+          # paths a checkout's binaries may name, and costs 11 symlinks.
+          roots = guest.succeed("ls /nix/var/nix/gcroots/repose-link-targets").split()
+          assert len(roots) == 11, roots
           for p in linked:
               base = os.path.basename(p)
-              guest.succeed(f"diff -r {upper}/{base} {p}")
-              guest.succeed(f"test \"$(readlink /nix/var/nix/gcroots/repose-link-targets/{base})\" = {p}")
-          # The lower layer is the host's read-only store and cannot lose a
-          # path here, so run the binary from the upper copies alone: what
-          # it would load once the host collected the base's paths.
-          glibc = [p for p in linked if "-glibc-" in p][0]
-          libpath = ":".join(f"{upper}/{os.path.basename(p)}/lib" for p in linked)
-          out = guest.succeed(f"{upper}/{os.path.basename(glibc)}/lib/ld-linux-x86-64.so.2 --library-path {libpath} /tmp/link/t")
-          assert out.startswith("OpenSSL "), out
+              assert guest.succeed(f"readlink /nix/var/nix/gcroots/repose-link-targets/{base}").strip() == p
+          assert guest.succeed("/tmp/link/t").startswith("OpenSSL "), "the binary runs"
+
+      with subtest("I-719: repose-store-repair fetches back a library the machine has lost"):
+          guest.succeed("""cat > /tmp/link/tpq.c <<'EOF'
+      #include <stdio.h>
+      #include <libpq-fe.h>
+      int main(void) { printf("ok libpq=%d\\n", PQlibVersion()); return 0; }
+      EOF
+      chown dev:dev /tmp/link/tpq.c""")
+          guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc tpq.c -o tpq $(pkg-config --cflags --libs libpq)'")
+          libpq = [p for p in store_paths("/tmp/link/tpq") if "-libpq-" in p][0]
+          # With everything in place there is nothing to do.
+          out = guest.succeed("sudo -H -u dev bash -lc 'repose-store-repair /tmp/link/tpq'")
+          assert "nothing to repair" in out, out
+          # libpq is one of the two of I-533's eleven libraries a real host
+          # garbage collection can take (I-718). Removing it through the
+          # overlay leaves the whiteout a guest whose host lost the path
+          # sees: the program fails at ld.so, and nix still calls the path
+          # valid.
+          guest.succeed(f"unshare -m --propagation private sh -c 'mount -o remount,bind,rw /nix/store && rm -rf {libpq}'")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
+          err = guest.fail("sudo -H -u dev bash -lc '/tmp/link/tpq' 2>&1")
+          assert "libpq.so.5" in err and "cannot open shared object file" in err, err
+          guest.succeed(f"nix-store --check-validity {libpq}")
+          # The repair names the path and, with no cache to reach (this VM
+          # has no route to the internet), says so in one line. `nix-store
+          # -r` is not the answer: it exits 0 and fetches nothing.
+          guest.succeed(f"sudo -H -u dev bash -lc 'nix-store -r {libpq}'")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
+          err = guest.fail("sudo -H -u dev bash -lc 'repose-store-repair /tmp/link/tpq' 2>&1")
+          print(err)
+          assert libpq in err, err
+          assert "cannot reach https://cache.nixos.org" in err, err
+          assert "not supported by store 'daemon'" not in err, err
+          # A boot never pays for that: a timer runs the check four
+          # minutes in, past the 3 min 15 s hostd allows SetupProject, and
+          # the unit tolerates its own failure (I-719). A wait inside the
+          # unit would instead hold multi-user.target for its whole
+          # timeout on every start, since the set-up stamp only arrives on
+          # a create.
+          guest.succeed("systemctl cat repose-store-repair.service | grep -q '^ExecStart=-'")
+          guest.succeed("systemctl cat repose-store-repair.timer | grep -qx 'OnBootSec=4min'")
+          guest.succeed("systemctl list-timers --all repose-store-repair.timer | grep -q repose-store-repair")
+          guest.fail("systemctl cat repose-store-repair.service | grep -q ExecStartPre")
+          guest.succeed("systemctl start repose-store-repair.service")
+          assert "failed" not in guest.succeed("systemctl is-active repose-store-repair.service || true")
+          unitlog = guest.succeed("journalctl -u repose-store-repair.service --no-pager")
+          assert libpq in unitlog and "cannot reach https://cache.nixos.org" in unitlog, unitlog
+          # There but empty is what a collection on the host leaves under a
+          # running machine's mount, and nix refuses to repair a path that
+          # exists, so the repair asks for a restart instead of trying.
+          empty = "/nix/store/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-collected-under-us-1.0"
+          guest.succeed(f"unshare -m --propagation private sh -c 'mount -o remount,bind,rw /nix/store && mkdir -p {empty}'")
+          err = guest.fail(f"sudo -H -u dev bash -lc 'repose-store-repair {empty}' 2>&1")
+          host = guest.succeed("hostname").strip()
+          assert "is empty" in err and f"repose stop {host} then repose start {host}" in err, err
+          assert "already exists" not in err, err
+          # Taking the whiteout out of the upper dir is what gives the
+          # host's copy back, and it only counts at the next boot: this
+          # mount keeps the view it has, which is why I-587 removes
+          # whiteouts in stage 1 and not from a running system.
+          guest.succeed(f"rm -rf {upper}/{os.path.basename(libpq)} {upper}/{os.path.basename(empty)}")
+          guest.fail(f"test -e {upper}/{os.path.basename(libpq)}")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
 
       with subtest("I-529: repose-store-gc deletes dead paths only the upper dir holds"):
           lower_probe = "${gcLowerProbe}"
