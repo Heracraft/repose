@@ -780,7 +780,7 @@ func newStopCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&idle, "unused", false, "stop every machine running a day with nobody on it and no agent working")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "stop without asking when an agent is working or waiting for an answer")
 	cmd.Flags().StringVarP(&window, "window", "w", "", "close this agent `WINDOW` (a name or number from repose ps), and its worktree when nothing in it is lost; the machine keeps running")
-	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON when done (an array for several)")
+	cmd.Flags().BoolVar(&g.json, "json", false, "print the project as JSON as the command leaves it: stopping, or stopped with --wait (an array for several)")
 	return cmd
 }
 

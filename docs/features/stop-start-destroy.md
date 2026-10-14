@@ -140,13 +140,16 @@ Stop:
   `Stopping <slug>.`, with the I-634 clause (`Stopping job; 1 file not
   committed.`), and `-y` past busy agents adds `Ending claude (working).`
   A project already `stopping` prints `<slug> is already stopping.` and
-  sends nothing. A stop op that fails leaves the project in `error` with
+  sends nothing; with `--no-snapshot` the line adds that the flag does
+  not change the stop under way. A stop op that fails leaves the project in `error` with
   `stopping <slug> failed: <why>`, then "`repose stop <slug>` tries again", and
   records `stop_failed`, which notifies. `start`, `attach`, `run`, `ssh`
   and `code` on a `stopping` project wait for the stop, then start it.
   `rm`, `fork`, `resize` (disk and `--size`), `run --size`, `snapshots
-  create` and an in-place `snapshots restore` wait for it, then do their
-  work: the api answers any other op `409` until the stop ends. The
+  create`, an in-place `snapshots restore` and the config commands that
+  send a change (`config add`, `remove`, `edit`, `apply`) wait for it,
+  then do their work: the api answers any other op `409` until the stop
+  ends, and a config change `409` "<slug> is stopping". The
   stops `resize --size`, `fork` and run's plan question make themselves
   still wait: they need the stopped volume or the freed memory.
 - `--wait` waits for the whole stop. Its line is `Stopped <slug> in

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +46,15 @@ func TestStopReturnsOnceTheStopIsUnderWay(t *testing.T) {
 	}
 	if out.String() != "job is already stopping.\n" {
 		t.Fatalf("second stop: %q", out.String())
+	}
+
+	// --no-snapshot cannot change the stop under way, and says so.
+	out.Reset()
+	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "job is already stopping; --no-snapshot does not change the stop under way.\n" {
+		t.Fatalf("--no-snapshot on a stopping project: %q", out.String())
 	}
 
 	// --wait on a stop under way waits for it.
@@ -174,6 +185,16 @@ func TestCommandsAfterABackgroundStopWaitForIt(t *testing.T) {
 		}, "stopped"},
 		{"snapshots create", func(e *Env, p *Project) error {
 			return SnapshotsCreateCmd(ctx, e, p.ID)
+		}, "stopped"},
+		{"config add", func(e *Env, p *Project) error {
+			return ConfigAddCmd(ctx, e, p.ID, []string{"jq"})
+		}, "stopped"},
+		{"config apply", func(e *Env, p *Project) error {
+			path := filepath.Join(t.TempDir(), "repose.nix")
+			if err := os.WriteFile(path, []byte("{ pkgs, ... }: { home.packages = [ pkgs.jq ]; }\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return ConfigApplyCmd(ctx, e, p.ID, path)
 		}, "stopped"},
 		{"snapshots restore", func(e *Env, p *Project) error {
 			snaps, err := e.Client.ListSnapshots(ctx, p.ID)

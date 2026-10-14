@@ -1103,6 +1103,10 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	if p.State == "stopping" {
+		// The api's refusal while a stop op is open.
+		return errf("conflict", "%s is %s", p.Slug, p.State)
+	}
 	var fragment string
 	var menuRaw json.RawMessage
 	if body.Fragment != nil {

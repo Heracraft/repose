@@ -151,6 +151,13 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 		case p.State == "stopped":
 			_, _ = fmt.Fprintf(e.Out, "%s is already stopped.\n", p.Slug)
 			continue
+		case p.State == "stopping" && !o.Snapshot:
+			// The api refuses a second stop, so the one under way keeps
+			// whatever snapshot it was asked for.
+			_, _ = fmt.Fprintf(e.Out, "%s is already stopping; --no-snapshot does not change the stop under way.\n", p.Slug)
+			if !o.Wait {
+				continue
+			}
 		case p.State == "stopping" && !o.Wait:
 			// The api refuses a second stop; --wait waits for this one.
 			_, _ = fmt.Fprintf(e.Out, "%s is already stopping.\n", p.Slug)
