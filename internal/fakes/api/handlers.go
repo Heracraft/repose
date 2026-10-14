@@ -342,8 +342,9 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 	if p.State == "running" && snapshot {
 		s = f.snapshot(p, "stop")
 	}
+	// started_at stays: the api's store sets it on the way to running
+	// and keeps it through a stop.
 	p.State = "stopped"
-	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
 	f.event(p, "guest_state_changed", "", "stopped")
@@ -510,7 +511,11 @@ func (f *Fake) getProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	writeJSON(w, http.StatusOK, p.Project)
+	out := p.Project
+	if f.opts.NoProjectOpID {
+		out.OpID = ""
+	}
+	writeJSON(w, http.StatusOK, out)
 	if fn := f.onGet[p.ID]; fn != nil && fn(&p.Project) {
 		// Under f.mu (ServeHTTP), after the answer is written: what fn
 		// changed is what the next read sees.
@@ -786,6 +791,8 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 		o.State = "running"
 		o.phase = "stop_guest"
 		o.LogURL = ""
+		// The api's project read names the op pending or running (I-722).
+		p.OpID = o.id
 		if f.opts.StopPickup <= 0 {
 			p.State = "stopping"
 		} else {
@@ -807,6 +814,9 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 			p.State = "running" // what stop snapshots from
 			f.endStop(p, o, snapshot)
 			o.phase = ""
+			if p.OpID == o.id {
+				p.OpID = ""
+			}
 		}()
 		return opResult(w, o)
 	}

@@ -122,6 +122,8 @@ repose stop todo-app
 repose snapshots restore todo-app SNAPSHOT_ID
 ```
 
+The restore starts the machine on the restored disk and ends with `Restored todo-app; it is running (large).`
+
 Or restore into a new project and leave the original alone:
 
 ```

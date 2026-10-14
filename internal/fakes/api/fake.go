@@ -79,6 +79,9 @@ type Options struct {
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
 	NoLongPoll bool
+	// NoProjectOpID makes GET /projects/:id leave out op_id, as the api
+	// before I-722 did.
+	NoProjectOpID bool
 }
 
 // OpWaitMax caps ?wait on the op read, as the api does (I-236).

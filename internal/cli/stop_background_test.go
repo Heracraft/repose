@@ -411,31 +411,83 @@ func TestAttachAfterABackgroundStopStartsIt(t *testing.T) {
 // starts the machine from error, as it does any machine in error (the
 // api restarts it, I-157). It used to read "Could not start job".
 func TestStartAfterABackgroundStopThatFails(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// noOpID stands in for an api before I-722, whose project read
+		// does not name the stop op: the wait follows the state instead.
+		noOpID bool
+	}{{"op named", false}, {"api before I-722", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond, NoProjectOpID: tc.noOpID})
+			defer fake.Close()
+			e := newLifecycleEnv(t, fake)
+			p := runningProject(t, fake, e, "job")
+			fake.SetStopFailure(p.ID, "the host did not answer")
+			if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+				t.Fatal(err)
+			}
+			read, err := e.Client.GetProject(ctx, p.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if read.State != "stopping" {
+				t.Fatalf("state after the stop: %s", read.State)
+			}
+			if named := read.OpID != ""; named == tc.noOpID {
+				t.Fatalf("project read op_id %q", read.OpID)
+			}
+			var out bytes.Buffer
+			errOut := &syncWriter{}
+			e.Out, e.ErrOut = &out, errOut
+			if err := StartCmd(ctx, e, p.ID); err != nil {
+				t.Fatalf("start after a stop that failed: %v; stderr %q", err, errOut.String())
+			}
+			if s := stateOf(t, e, p.ID); s != "running" {
+				t.Fatalf("state %s; stderr %q", s, errOut.String())
+			}
+			if !strings.Contains(errOut.String(), "Stopping job failed: ") || !strings.Contains(errOut.String(), "the host did not answer") {
+				t.Fatalf("stderr %q", errOut.String())
+			}
+			if !strings.HasPrefix(out.String(), "job is running (") {
+				t.Fatalf("out %q", out.String())
+			}
+		})
+	}
+}
+
+// An in-place restore right after a background stop asks its question
+// from the snapshots listed once the stop has ended, so it names the
+// stop's snapshot as keeping the disk. Listed before, while the stop
+// still ran, the question said the disk would be lost for good (review
+// of the I-730 merge, run on prod 2026-10-14). The fake keeps
+// started_at through the stop, as the api does.
+func TestRestoreAfterABackgroundStopNamesTheStopSnapshot(t *testing.T) {
 	ctx := context.Background()
 	fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond})
 	defer fake.Close()
 	e := newLifecycleEnv(t, fake)
 	p := runningProject(t, fake, e, "job")
-	fake.SetStopFailure(p.ID, "the host did not answer")
+	if err := SnapshotsCreateCmd(ctx, e, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := e.Client.ListSnapshots(ctx, p.ID)
+	if err != nil || len(snaps) != 1 {
+		t.Fatalf("snapshots: %v %v", snaps, err)
+	}
+	manual := snaps[0].ID
 	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
 		t.Fatal(err)
 	}
 	if s := stateOf(t, e, p.ID); s != "stopping" {
 		t.Fatalf("state after the stop: %s", s)
 	}
-	var out bytes.Buffer
-	errOut := &syncWriter{}
-	e.Out, e.ErrOut = &out, errOut
-	if err := StartCmd(ctx, e, p.ID); err != nil {
-		t.Fatalf("start after a stop that failed: %v; stderr %q", err, errOut.String())
+	var asked string
+	err = SnapshotsRestoreCmd(ctx, e, p.ID, manual, "", func(q string) (bool, error) { asked = q; return false, nil })
+	if exitCode(err) != ExitGeneric || err.Error() != "Not restored." {
+		t.Fatalf("declined: %v", err)
 	}
-	if s := stateOf(t, e, p.ID); s != "running" {
-		t.Fatalf("state %s; stderr %q", s, errOut.String())
-	}
-	if !strings.Contains(errOut.String(), "Stopping job failed: ") || !strings.Contains(errOut.String(), "the host did not answer") {
-		t.Fatalf("stderr %q", errOut.String())
-	}
-	if !strings.HasPrefix(out.String(), "job is running (") {
-		t.Fatalf("out %q", out.String())
+	if !strings.Contains(asked, "The stop snapshot of ") || !strings.Contains(asked, " keeps the disk as it is now.") {
+		t.Fatalf("asked %q", asked)
 	}
 }

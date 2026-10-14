@@ -174,15 +174,6 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 	if err != nil {
 		return err
 	}
-	// The snapshot's time names it in the question and the progress line;
-	// an api that does not list it leaves the id.
-	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
-	from := snapshotID
-	for i := range snaps {
-		if snaps[i].ID == snapshotID {
-			from = project.Slug + "'s snapshot of " + snapshotTime(&snaps[i])
-		}
-	}
 	if asNew == "" {
 		if project.State == "stopping" {
 			pr := e.newProgress()
@@ -195,10 +186,20 @@ func SnapshotsRestoreCmd(ctx context.Context, e *Env, projectArg, snapshotID, as
 		if project.State != "stopped" {
 			return exitf(ExitGuestNotRunning, "%s must be stopped before restoring over it: `repose stop %s` first, or restore into a new project with --as NAME.", project.Slug, project.Slug)
 		}
-		if confirm != nil {
-			if err := confirmOr(confirm, restoreInPlacePrompt(project, snaps, snapshotID), "Not restored."); err != nil {
-				return err
-			}
+	}
+	// The snapshot's time names it in the question and the progress line;
+	// an api that does not list it leaves the id. Listed after a stop
+	// under way has ended, so the question sees the stop's snapshot.
+	snaps, _ := e.Client.ListSnapshots(ctx, project.ID)
+	from := snapshotID
+	for i := range snaps {
+		if snaps[i].ID == snapshotID {
+			from = project.Slug + "'s snapshot of " + snapshotTime(&snaps[i])
+		}
+	}
+	if asNew == "" && confirm != nil {
+		if err := confirmOr(confirm, restoreInPlacePrompt(project, snaps, snapshotID), "Not restored."); err != nil {
+			return err
 		}
 	}
 	pr := e.newProgress()

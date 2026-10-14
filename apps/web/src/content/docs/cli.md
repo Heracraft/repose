@@ -346,7 +346,7 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | ------------------------------------------------ | ------------ |
 | `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the Snapshot object. |
-| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk, after a question that says whether a snapshot keeps the disk as it is now. `--as NAME` restores into a new project instead, which starts; `-y`/`--yes` skips the question. |
+| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after a question that says whether a snapshot keeps the disk as it is now. It ends with `Restored todo-app; it is running (large).` `--as NAME` restores into a new project instead, which starts too; `-y`/`--yes` skips the question. |
 
 SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
 
