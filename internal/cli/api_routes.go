@@ -318,6 +318,37 @@ func (c *Client) DeleteSecret(ctx context.Context, id, name string) error {
 	return c.delete(ctx, fmt.Sprintf("/projects/%s/secrets/%s", url.PathEscape(id), url.PathEscape(name)), nil)
 }
 
+// ListAccountSecrets lists the account's secrets, for every project
+// (I-697).
+func (c *Client) ListAccountSecrets(ctx context.Context) ([]SecretMeta, error) {
+	s := []SecretMeta{}
+	if err := c.get(ctx, "/me/secrets", &s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// PutAccountSecretResult is how far an account secret reached: the running
+// machines that got it now, and the projects whose own secret of the same
+// name wins.
+type PutAccountSecretResult struct {
+	Pushed       int      `json:"pushed"`
+	OverriddenBy []string `json:"overridden_by"`
+}
+
+func (c *Client) PutAccountSecret(ctx context.Context, name string, value []byte) (*PutAccountSecretResult, error) {
+	var r PutAccountSecretResult
+	body := map[string]string{"value": b64(value)}
+	if err := c.put(ctx, "/me/secrets/"+url.PathEscape(name), body, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (c *Client) DeleteAccountSecret(ctx context.Context, name string) error {
+	return c.delete(ctx, "/me/secrets/"+url.PathEscape(name), nil)
+}
+
 func (c *Client) ListSnapshots(ctx context.Context, id string) ([]Snapshot, error) {
 	var s []Snapshot
 	if err := c.get(ctx, "/projects/"+url.PathEscape(id)+"/snapshots", &s); err != nil {
@@ -329,6 +360,17 @@ func (c *Client) ListSnapshots(ctx context.Context, id string) ([]Snapshot, erro
 func (c *Client) CreateSnapshot(ctx context.Context, id string) (string, error) {
 	var r opIDResponse
 	if err := c.post(ctx, "/projects/"+url.PathEscape(id)+"/snapshots", nil, &r); err != nil {
+		return "", err
+	}
+	return r.OpID, nil
+}
+
+// CreateForkSnapshot takes the snapshot a fork restores its copies from
+// when they cannot be cloned (reason fork, expiring a day later, I-703).
+// An api before I-703 ignores the body and takes a manual one.
+func (c *Client) CreateForkSnapshot(ctx context.Context, id string) (string, error) {
+	var r opIDResponse
+	if err := c.post(ctx, "/projects/"+url.PathEscape(id)+"/snapshots", map[string]string{"reason": "fork"}, &r); err != nil {
 		return "", err
 	}
 	return r.OpID, nil

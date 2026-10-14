@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heracraft/repose/internal/agentproc"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
@@ -14,48 +15,20 @@ import (
 // recognises.
 var Agents = []string{"claude", "opencode", "codex", "gemini", "pi"}
 
-// binaries maps an agent to the process name to look for in the pane's
-// process tree (features/agents.md's "Binary" column).
-var binaries = map[string][]string{
-	"claude":   {"claude"},
-	"opencode": {"opencode"},
-	"codex":    {"codex"},
-	// Gemini CLI is a bundle the guest's node runs (DECISIONS I-46), so
-	// its process is `node`, never `gemini`; without that name here the
-	// window was never an agent window and the heuristic never fired on
-	// host-01 (I-122).
-	"gemini": {"gemini", "node"},
-	"pi":     {"pi"},
-}
+// binaries and matchesBinary live in internal/agentproc, which is a leaf:
+// the hook socket needs IsAgentCommand and must not link this package's
+// generated protobuf to get it (DECISIONS I-729).
+var binaries = agentproc.Binaries
 
 // isAgentCommand reports whether comm is one of the process names the
 // agent runs as.
-func isAgentCommand(agent, comm string) bool {
-	return matchesBinary(binaries[agent], comm)
-}
+func isAgentCommand(agent, comm string) bool { return agentproc.IsAgentCommand(agent, comm) }
 
-// IsAgentCommand is isAgentCommand for the hook socket, which finds a
-// caller's agent process by its comm (DECISIONS I-690).
-func IsAgentCommand(agent, comm string) bool { return isAgentCommand(agent, comm) }
+// IsAgentCommand is isAgentCommand for callers outside this package.
+// internal/agentproc is the one to import in a new caller.
+func IsAgentCommand(agent, comm string) bool { return agentproc.IsAgentCommand(agent, comm) }
 
-// matchesBinary reports whether a process name (comm, or the exe link's
-// basename) is one of wants, directly or as nixpkgs' wrapper renames it:
-// makeWrapper moves the real program to `.X-wrapped`, so the nix claude
-// runs as `.claude-wrapped` (comm and exe alike), and comm is cut to 15
-// bytes (`.opencode-wrapp`). Without this the guest's claude was never
-// found and never OOM-protected (DECISIONS I-213).
-func matchesBinary(wants []string, name string) bool {
-	for _, w := range wants {
-		if name == w {
-			return true
-		}
-		wrapped := "." + w + "-wrapped"
-		if name == wrapped || (len(name) == 15 && len(name) > len(w)+1 && strings.HasPrefix(wrapped, name)) {
-			return true
-		}
-	}
-	return false
-}
+func matchesBinary(wants []string, name string) bool { return agentproc.Matches(wants, name) }
 
 // HookedAgents are the agents whose turns are always reported by a real
 // hook. gemini and pi report through the platform extensions (I-690),

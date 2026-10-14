@@ -477,6 +477,31 @@ in
           guest.succeed("sudo -u dev tmux has-session -t =todo-app")
           guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal)\\)'")
           guest.execute("sudo -u dev tmux kill-window -t todo-app:hog")
+
+          # I-697: the hog as a child of the pane's own process, which is
+          # where an agent's test run or dev server is. The kernel kills
+          # the hog; the pane's process, the window and the scope that
+          # holds the agent stay. Before I-697 systemd stopped the scope
+          # and the pane went with the hog (kanali, 2026-10-13).
+          assert guest.succeed("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p DefaultOOMPolicy --value").strip() == "continue"
+          # The kill is reported against every unit above the scope, this
+          # one included, and its stop would end every pane.
+          assert guest.succeed("systemctl show -p OOMPolicy --value user@1000.service").strip() == "continue"
+          guest.succeed("dmesg -C")
+          # `;` so tmux runs the string through a shell: the shell is the
+          # pane's process and the hog its child. The shell outlives it
+          # and holds the window open. The first sleep leaves time to read
+          # the pane and its scope before the kernel acts.
+          guest.succeed("""sudo -u dev tmux new-window -d -t todo-app -n child 'sleep 2; python3 /tmp/hog.py; sleep 600'""")
+          child = guest.succeed("sudo -u dev tmux display -p -t todo-app:child '#{pane_pid}'").strip()
+          scope = guest.succeed(f"awk -F/ '{{ print $NF }}' /proc/{child}/cgroup").strip()
+          assert scope.startswith("tmux-spawn-") and scope.endswith(".scope"), scope
+          assert guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p OOMPolicy --value {scope}").strip() == "continue"
+          guest.wait_until_succeeds("dmesg | grep -q 'Killed process [0-9]* (python3'", timeout=180)
+          print(guest.succeed("dmesg | grep -E 'Killed process|invoked oom-killer'"))
+          assert guest.succeed("sudo -u dev tmux display -p -t todo-app:child '#{pane_pid}'").strip() == child
+          guest.succeed(f"sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active {scope}")
+          guest.succeed("sudo -u dev tmux kill-window -t todo-app:child")
           guest.succeed("sysctl -w vm.panic_on_oom=2")
 
       with subtest("I-368: the session starts in the checkout the first sync recorded"):
@@ -563,6 +588,21 @@ in
           main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
           environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
           assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
+          # I-697: herdr's panes run in the unit's cgroup, so the unit's
+          # OOMPolicy is what keeps the server and the agents in the other
+          # panes when the kernel kills a test run in one of them. The
+          # tmux half of this is the I-576 subtest's pane scope.
+          assert user("systemctl --user show -p OOMPolicy --value repose-herdr-server.service").strip() == "continue"
+          hog_pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
+          guest.succeed("dmesg -C")
+          guest.succeed("sysctl -w vm.panic_on_oom=0")
+          user(f"herdr pane run {hog_pane} 'python3 /tmp/hog.py'")
+          guest.wait_until_succeeds("dmesg | grep -q 'Killed process [0-9]* (python3'", timeout=180)
+          print(guest.succeed("dmesg | grep -E 'Killed process|invoked oom-killer'"))
+          guest.succeed("sysctl -w vm.panic_on_oom=2")
+          assert unit_state("repose-herdr-server.service") == "active"
+          assert user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip() == main
+          json.loads(user("herdr pane list"))
           # I-560: a live handoff keeps the unit and every pane; a server
           # that stops comes back with its workspaces.
           pane = json.loads(user("herdr pane list"))["result"]["panes"][0]["pane_id"]
@@ -593,7 +633,7 @@ in
           for cmd in ["claude", "opencode", "codex", "gemini", "pi"]:
               guest.succeed(f"test -x /run/current-system/sw/bin/{cmd}")
               guest.succeed(f"grep -q repose-agent-setup /run/current-system/sw/bin/{cmd}")
-          for tool in ["node", "pnpm", "python3", "uv", "go", "rustup", "just", "rg", "jq", "gh", "git", "direnv", "starship", "zoxide", "eza", "nvim", "docker", "docker-compose", "chromium", "playwright-mcp", "chrome-devtools-mcp", "repose-hook", "repose-guest-profile", "repose-pin-profile"]:
+          for tool in ["node", "pnpm", "python3", "uv", "go", "rustup", "just", "rg", "jq", "gh", "git", "direnv", "starship", "zoxide", "eza", "nvim", "docker", "docker-compose", "chromium", "playwright-mcp", "chrome-devtools-mcp", "repose-hook", "repose-guest-profile", "repose-pin-profile", "repose-store-repair"]:
               guest.succeed(f"test -x /run/current-system/sw/bin/{tool}")
 
       with subtest("claude hooks merged without clobbering a user hook"):
@@ -946,19 +986,36 @@ in
           pane = guest.succeed("sudo -H -u dev tmux capture-pane -p -t todo-app:rcprobe")
           assert "mark=read" in pane, pane
           guest.succeed("sudo -H -u dev tmux kill-window -t todo-app:rcprobe")
-          # An SSH shell.
+          # An SSH shell. sshd runs a command through a non-interactive
+          # `bash -c`, and nixpkgs builds bash with -DSSH_SOURCE_BASHRC, so
+          # that wrapper reads ~/.bashrc itself whenever SSH_CLIENT is in its
+          # environment, login files or not. `env -u` drops what the wrapper
+          # exported, so a marker here is the login shell's own work
+          # (DECISIONS I-725); an alias never crosses a process either way.
           guest.succeed("ssh-keygen -q -s /root/ca -I 'user:heracraft' -n 0192e4b0-0000-7000-8000-000000000001 -V -1m:+12h /root/user.pub")
           ssh = "ssh -n -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o CertificateFile=/root/user-cert.pub -i /root/user dev@127.0.0.1"
-          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
+          out = guest.succeed(ssh + " \"env -u REPOSE_RC_MARK bash -lic 'echo mark=\\$REPOSE_RC_MARK; rcprobe; ll; alias ls; echo hist=\\$HISTSIZE; shopt -q histappend && echo histappend; type -t __fzf_history__; command -v vi vim'\" 2>/dev/null")
           print(out)
           for want in ["mark=read", "alias-ok", "user-ll", "alias ls='ls --color=tty'", "hist=100000", "histappend", "function"]:
               assert want in out, out
           assert "/bin/vi" in out and "/bin/vim" in out, out
-          # A user's ~/.bash_profile decides for itself.
-          guest.succeed("install -o dev -g dev /dev/null /home/dev/.bash_profile")
-          out = guest.succeed(ssh + " \"bash -lic 'echo mark=\\$REPOSE_RC_MARK'\" 2>/dev/null")
-          assert "mark=read" not in out, out
-          guest.succeed("rm /home/dev/.bash_profile /home/dev/.bashrc")
+
+          # A login file of the user's own decides for itself: the base
+          # leaves ~/.bashrc alone for any of ~/.bash_profile,
+          # ~/.bash_login and a ~/.profile that names bashrc (I-513).
+          def rc_left_alone(name):
+              out = guest.succeed(ssh + " \"env -u REPOSE_RC_MARK bash -lic 'echo mark=\\$REPOSE_RC_MARK; type -t rcprobe || echo no-rcprobe; alias ll'\" 2>/dev/null")
+              assert "mark=read" not in out, (name, out)
+              assert "no-rcprobe" in out, (name, out)
+              assert "alias ll='eza -al --group-directories-first'" in out, (name, out)
+
+          for name in [".bash_profile", ".bash_login"]:
+              guest.succeed(f"install -o dev -g dev /dev/null /home/dev/{name}")
+              rc_left_alone(name)
+              guest.succeed(f"rm /home/dev/{name}")
+          guest.succeed("echo '# nvm appended to ~/.bashrc' > /home/dev/.profile; chown dev:dev /home/dev/.profile")
+          rc_left_alone(".profile")
+          guest.succeed("rm /home/dev/.profile /home/dev/.bashrc")
 
       with subtest("store overlay and profile pinning"):
           mounts = guest.succeed("mount | grep -E 'ro-store|rw-store|/nix/store'")
@@ -978,7 +1035,7 @@ in
           guest.succeed(f"diff -r {upper}/{name} {hello}")
           guest.succeed("sudo -u dev bash -lc 'hello' | grep -q Hello")
 
-      with subtest("I-533: what a guest-built binary links is copied up and rooted"):
+      with subtest("I-718: what a guest-built binary links is not copied up"):
           guest.succeed("install -d -o dev -g dev /tmp/link")
           guest.succeed("""cat > /tmp/link/t.c <<'EOF'
       #include <stdio.h>
@@ -987,24 +1044,97 @@ in
       EOF
       chown dev:dev /tmp/link/t.c""")
           guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc t.c -o t $(pkg-config --cflags --libs openssl)'")
-          interp = guest.succeed("readelf -l /tmp/link/t | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
-          runpath = guest.succeed("readelf -d /tmp/link/t | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
-          # The store paths the binary names: the interpreter's glibc and
-          # every RUNPATH entry (openssl, glibc, gcc-lib).
-          linked = sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+
+          def store_paths(prog):
+              """The store paths a program names: its ELF interpreter and its RUNPATH."""
+              interp = guest.succeed(f"readelf -l {prog} | sed -n 's/.*interpreter: \\(.*\\)]/\\1/p'").strip()
+              runpath = guest.succeed(f"readelf -d {prog} | sed -n 's/.*runpath: \\[\\(.*\\)\\]/\\1/p'").strip()
+              return sorted({"/".join(p.split("/")[:4]) for p in [interp] + runpath.split(":") if p.startswith("/nix/store/")})
+
+          linked = store_paths("/tmp/link/t")
           assert any("-glibc-" in p for p in linked) and any("-openssl-" in p for p in linked), linked
-          guest.succeed("systemctl start repose-pin-profile.service")
+          glibc = [p for p in linked if "-glibc-" in p][0]
+          # The pin copies dev's profile and nothing else: what the binary
+          # links against is not in the upper dir (DECISIONS I-718, amends
+          # I-533). The binary runs from the lower layer, which is where
+          # those libraries stay. glibc is exempt from the no-copy check:
+          # it is in hello's closure, so dev's own profile brought it up.
+          guest.succeed("systemctl restart repose-pin-profile.service")
+          for p in linked:
+              if "-glibc-" in p:
+                  continue
+              guest.fail(f"test -e {upper}/{os.path.basename(p)}")
+          # A gc root per library stays, which is how the guest knows which
+          # paths a checkout's binaries may name, and costs 11 symlinks.
+          roots = guest.succeed("ls /nix/var/nix/gcroots/repose-link-targets").split()
+          assert len(roots) == 11, roots
           for p in linked:
               base = os.path.basename(p)
-              guest.succeed(f"diff -r {upper}/{base} {p}")
-              guest.succeed(f"test \"$(readlink /nix/var/nix/gcroots/repose-link-targets/{base})\" = {p}")
-          # The lower layer is the host's read-only store and cannot lose a
-          # path here, so run the binary from the upper copies alone: what
-          # it would load once the host collected the base's paths.
-          glibc = [p for p in linked if "-glibc-" in p][0]
-          libpath = ":".join(f"{upper}/{os.path.basename(p)}/lib" for p in linked)
-          out = guest.succeed(f"{upper}/{os.path.basename(glibc)}/lib/ld-linux-x86-64.so.2 --library-path {libpath} /tmp/link/t")
-          assert out.startswith("OpenSSL "), out
+              assert guest.succeed(f"readlink /nix/var/nix/gcroots/repose-link-targets/{base}").strip() == p
+          assert guest.succeed("/tmp/link/t").startswith("OpenSSL "), "the binary runs"
+
+      with subtest("I-719: repose-store-repair fetches back a library the machine has lost"):
+          guest.succeed("""cat > /tmp/link/tpq.c <<'EOF'
+      #include <stdio.h>
+      #include <libpq-fe.h>
+      int main(void) { printf("ok libpq=%d\\n", PQlibVersion()); return 0; }
+      EOF
+      chown dev:dev /tmp/link/tpq.c""")
+          guest.succeed("sudo -H -u dev bash -lc 'cd /tmp/link && cc tpq.c -o tpq $(pkg-config --cflags --libs libpq)'")
+          libpq = [p for p in store_paths("/tmp/link/tpq") if "-libpq-" in p][0]
+          # With everything in place there is nothing to do.
+          out = guest.succeed("sudo -H -u dev bash -lc 'repose-store-repair /tmp/link/tpq'")
+          assert "nothing to repair" in out, out
+          # libpq is one of the two of I-533's eleven libraries a real host
+          # garbage collection can take (I-718). Removing it through the
+          # overlay leaves the whiteout a guest whose host lost the path
+          # sees: the program fails at ld.so, and nix still calls the path
+          # valid.
+          guest.succeed(f"unshare -m --propagation private sh -c 'mount -o remount,bind,rw /nix/store && rm -rf {libpq}'")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
+          err = guest.fail("sudo -H -u dev bash -lc '/tmp/link/tpq' 2>&1")
+          assert "libpq.so.5" in err and "cannot open shared object file" in err, err
+          guest.succeed(f"nix-store --check-validity {libpq}")
+          # The repair names the path and, with no cache to reach (this VM
+          # has no route to the internet), says so in one line. `nix-store
+          # -r` is not the answer: it exits 0 and fetches nothing.
+          guest.succeed(f"sudo -H -u dev bash -lc 'nix-store -r {libpq}'")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
+          err = guest.fail("sudo -H -u dev bash -lc 'repose-store-repair /tmp/link/tpq' 2>&1")
+          print(err)
+          assert libpq in err, err
+          assert "cannot reach https://cache.nixos.org" in err, err
+          assert "not supported by store 'daemon'" not in err, err
+          # A boot never pays for that: a timer runs the check four
+          # minutes in, past the 3 min 15 s hostd allows SetupProject, and
+          # the unit tolerates its own failure (I-719). A wait inside the
+          # unit would instead hold multi-user.target for its whole
+          # timeout on every start, since the set-up stamp only arrives on
+          # a create.
+          guest.succeed("systemctl cat repose-store-repair.service | grep -q '^ExecStart=-'")
+          guest.succeed("systemctl cat repose-store-repair.timer | grep -qx 'OnBootSec=4min'")
+          guest.succeed("systemctl list-timers --all repose-store-repair.timer | grep -q repose-store-repair")
+          guest.fail("systemctl cat repose-store-repair.service | grep -q ExecStartPre")
+          guest.succeed("systemctl start repose-store-repair.service")
+          assert "failed" not in guest.succeed("systemctl is-active repose-store-repair.service || true")
+          unitlog = guest.succeed("journalctl -u repose-store-repair.service --no-pager")
+          assert libpq in unitlog and "cannot reach https://cache.nixos.org" in unitlog, unitlog
+          # There but empty is what a collection on the host leaves under a
+          # running machine's mount, and nix refuses to repair a path that
+          # exists, so the repair asks for a restart instead of trying.
+          empty = "/nix/store/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-collected-under-us-1.0"
+          guest.succeed(f"unshare -m --propagation private sh -c 'mount -o remount,bind,rw /nix/store && mkdir -p {empty}'")
+          err = guest.fail(f"sudo -H -u dev bash -lc 'repose-store-repair {empty}' 2>&1")
+          host = guest.succeed("hostname").strip()
+          assert "is empty" in err and f"repose stop {host} then repose start {host}" in err, err
+          assert "already exists" not in err, err
+          # Taking the whiteout out of the upper dir is what gives the
+          # host's copy back, and it only counts at the next boot: this
+          # mount keeps the view it has, which is why I-587 removes
+          # whiteouts in stage 1 and not from a running system.
+          guest.succeed(f"rm -rf {upper}/{os.path.basename(libpq)} {upper}/{os.path.basename(empty)}")
+          guest.fail(f"test -e {upper}/{os.path.basename(libpq)}")
+          guest.fail(f"test -e {libpq}/lib/libpq.so.5")
 
       with subtest("I-529: repose-store-gc deletes dead paths only the upper dir holds"):
           lower_probe = "${gcLowerProbe}"
@@ -2427,6 +2557,29 @@ in
           guest.succeed("systemctl is-active repose-browser.socket repose-novnc.socket")
           disp = guest.succeed("sudo -u dev bash -lc 'echo -n $DISPLAY'")
           assert disp == "", disp
+
+      with subtest("a stale profile lock and root's stamps do not stop the browser (I-727)"):
+          # What a fork, or a restore under another name, finds after the
+          # browser was killed, beside stamps root made before dev did.
+          prof = "/home/dev/.local/share/repose/browser"
+          guest.succeed(f"sudo -u dev ln -sfn other-machine-4242 {prof}/SingletonLock")
+          guest.succeed(f"sudo -u dev ln -sfn /tmp/org.chromium.Chromium.gone/SingletonSocket {prof}/SingletonSocket")
+          guest.succeed(f"sudo -u dev ln -sfn 1234 {prof}/SingletonCookie")
+          guest.succeed("rm -f /run/repose/desktop/last-cdp /run/repose/desktop/last-client")
+          guest.succeed("touch /run/repose/desktop/last-cdp /run/repose/desktop/last-client")
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl is-active repose-browser.service repose-xvnc.service")
+          host = guest.succeed("cat /proc/sys/kernel/hostname").strip()
+          lock = guest.succeed(f"readlink {prof}/SingletonLock").strip()
+          assert lock.startswith(host + "-"), lock
+          guest.succeed("journalctl -u repose-browser.service | grep -q 'removed a stale profile lock (other-machine-4242)'")
+          owners = guest.succeed("stat -c %U /run/repose/desktop/last-cdp /run/repose/desktop/last-client").split()
+          assert owners == ["dev", "dev"], owners
+          # The idle check makes a missing stamp dev's too.
+          guest.succeed("rm /run/repose/desktop/last-cdp && systemctl start repose-desktop-idle-check.service")
+          assert guest.succeed("stat -c %U /run/repose/desktop/last-cdp").strip() == "dev"
+          guest.succeed("systemctl stop repose-browser.service")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
 
       with subtest("desktop start starts the browser with the boot's password; the viewer's idle stop leaves a used browser"):
           pw2 = guest.succeed("sudo -u dev repose-guest-profile desktop start").strip().splitlines()[-1]

@@ -10,23 +10,28 @@ leaves it running whether or not you stay attached. Everything above
 ## What the user sees
 
 First run on a new project (stderr shows a spinner with the elapsed time
-on a terminal; this is what stays on screen, DECISIONS I-154):
+on a terminal; this is what stays on screen, DECISIONS I-154). A create
+that needs a build shows the build's steps, as `repose config` does
+(I-320), and then the boot (I-708); a create whose build is reused shows
+`Created` and `Booted` alone:
 
 ```
 $ repose run
 ✓ Created todo-app (large)  0.3s
-nix › building '/nix/store/…-repose-guest.drv'...
-✓ Built the configuration  41s
-✓ Booted todo-app  6.2s
+✓ Evaluated your config  4.1s
+✓ Fetched 212 paths (310 MiB)  19s
+✓ Built 2 derivations  12s
+✓ Booted todo-app  38s
 Connected to todo-app (large)
 Synced: 3 modified, 1 untracked (12 new commits)
 Logins copied: gh, git
-Ready in 49s.
+Ready in 1m15s.
 dev@todo-app:~/todo-app$
 ```
 
 Without a terminal on stderr (CI, a pipe) the phases are plain lines,
-`Creating todo-app...`, `Building the configuration...`, `Booting
+`Creating todo-app...`, the build's steps (`Evaluating your config...`
+and the rest, with Nix's own lines after `nix ›`), `Booting
 todo-app...`, `Connecting to todo-app...`, `Syncing...`. One `repose run`
 makes one SSH connection and asks for nothing: the CLI's own key has no
 passphrase (I-149).
@@ -97,12 +102,18 @@ repose/claude-2`, documented in /docs/run-and-attach).
 Running against a stopped project starts it first (the `Starting
 todo-app` phase on stderr) before the usual `Connected to todo-app
 (large)` line; `run` prints no separate "stopped" message.
-`attach` starts a stopped machine the same way, without a sync, and waits
-for one already starting (I-631, review G7); a machine in `error`,
-`restoring` or `destroying`, or stopped for abuse, still exits 5 for
-attach. `open`, `ps`, `exec`, `ssh`, `code` and `cp` refuse a machine that
-is not running, exit 5: a read or a command does not start a machine and
-take the plan's memory unasked. With one operand that names no project,
+`attach`, `ssh` and `code` bring the machine up the same way, without a
+sync (I-631, review G7, I-641, I-709): a stopped one starts, one in
+`error` restarts, one starting is waited for, and one stopping or being
+restored is waited for and then started. While the api marks its server
+unreachable (`host_unreachable`, after 90 s of silence) they wait up to
+10 minutes (`hostWaitTimeout`) with `Waiting for NAME's server to come
+back`, sending no op, then go on from the state the machine is in; a
+frozen machine is attached as it was (I-652). Past that they exit 5. A
+machine `destroying` or `destroyed`, or stopped for abuse, still exits 5.
+`open`, `ps`, `exec` and `cp` refuse a machine that is not running, exit
+5: a read or a command does not start a machine and take the plan's
+memory unasked. With one operand that names no project,
 `attach` and `ps` resolve this folder's project and take the operand as
 WINDOW (I-631), as `exec` reads its first word. A project in `error` is restarted by the
 api on the same start (`Restarting todo-app (its agent stopped

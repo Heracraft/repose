@@ -177,8 +177,10 @@ Start:
   (`ops.PendingRevision`).
 - Start is refused with `payment_required` when billing is `past_due` for
   more than 3 days or `suspended`, with the dashboard billing link.
-- `run` on a stopped project starts it; `attach` does not, and
-  says to `start` or `run`. Every command that needs a running guest names
+- `run`, `attach`, `ssh` and `code` on a stopped project start it, and
+  restart one in `error` (I-631, I-641, I-709); `start` on a running
+  project whose server the api marks unreachable waits for the server
+  and sends no op (I-709). Every command that needs a running guest names
   the real state (stopped, still building, stopping, in `error` with the
   reason the api recorded) and the command that fits it (I-153).
 - `start` is also the recovery path (I-157). On a project in `error`, or a

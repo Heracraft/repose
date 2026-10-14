@@ -337,6 +337,16 @@ func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, sr
 	for k, v := range params {
 		opParams[k] = v
 	}
-	sid := snap.ID
-	return s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindRestore, ProjectID: &newID, SnapshotID: &sid, Params: opParams, Phases: ops.PlanRestore(target, hasClosure, start)}, false)
+	// A copy cloned on its source's host (snap nil, I-701) is placed
+	// there now, so a build it needs runs where its volume will be.
+	var sid *uuid.UUID
+	if snap != nil {
+		id := snap.ID
+		sid = &id
+	} else if host, _ := params["clone_host_id"].(string); host != "" {
+		if _, err := tx.Exec(ctx, "update projects set host_id = $2 where id = $1", newID, host); err != nil {
+			return uuid.Nil, err
+		}
+	}
+	return s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindRestore, ProjectID: &newID, SnapshotID: sid, Params: opParams, Phases: ops.PlanRestore(target, hasClosure, start)}, false)
 }

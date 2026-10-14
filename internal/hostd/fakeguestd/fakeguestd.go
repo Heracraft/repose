@@ -39,11 +39,17 @@ type Options struct {
 	// of that kind (the shape of guestd restarted by an activation, I-148);
 	// the next connection answers normally.
 	DropOnce map[string]bool
+	// Delay holds a request kind's answer back for that long (a guest
+	// whose SetupProject waits on a slow home-manager activation).
+	Delay map[string]time.Duration
 	// Sample is the canned Sample reply; nil gives a small default.
 	Sample *guestdv1.SampleResult
 	// Version and BootID for Ping.
 	Version string
 	BootID  string
+	// OnFreeze and OnThaw run when Freeze and Thaw arrive (a host check
+	// freezes a real filesystem with them); an error fails the request.
+	OnFreeze, OnThaw func() error
 }
 
 // Server is one fake guest listening on a unix socket.
@@ -253,12 +259,21 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		}
 		return fail("dropped", "connection closed by the fake")
 	}
+	d := s.opts.Delay[kind]
 	s.mu.Unlock()
+	if d > 0 {
+		time.Sleep(d)
+	}
 	ok := &guestdv1.Response{Ok: true}
 	switch r := req.Req.(type) {
 	case *guestdv1.Request_Ping:
 		ok.Result = &guestdv1.Response_Ping{Ping: &guestdv1.PingResult{Version: s.opts.Version, UptimeS: 1, BootId: s.opts.BootID}}
 	case *guestdv1.Request_Freeze:
+		if s.opts.OnFreeze != nil {
+			if err := s.opts.OnFreeze(); err != nil {
+				return fail("internal", err.Error())
+			}
+		}
 		s.mu.Lock()
 		s.frozen = true
 		s.mu.Unlock()
@@ -274,6 +289,11 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 			}
 		}()
 	case *guestdv1.Request_Thaw:
+		if s.opts.OnThaw != nil {
+			if err := s.opts.OnThaw(); err != nil {
+				return fail("internal", err.Error())
+			}
+		}
 		s.mu.Lock()
 		s.frozen = false
 		s.mu.Unlock()

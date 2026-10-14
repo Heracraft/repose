@@ -1,0 +1,14 @@
+-- One live project per guest address (DECISIONS I-723).
+--
+-- Guest addresses are unique across the fleet by construction: each host
+-- is handed a disjoint /22 when it registers
+-- (internal/api/hostmgr.allocate, 10.64.0.0/22, 10.64.4.0/22, …) and
+-- allocates inside it. Two live rows holding one address would relay two
+-- users' logins to one guest, so the api is made unable to write that:
+-- the Hello reconcile and the create/restore result both fail loudly and
+-- leave the row as it was.
+--
+-- Destroyed rows are excluded. They keep their history, and prod already
+-- has one destroyed row repeating a live row's address, from before a
+-- destroy released it.
+create unique index projects_guest_ip_live on projects (guest_ip) where destroyed_at is null and guest_ip is not null;

@@ -303,10 +303,17 @@ func (c Config) Defaults() Config {
 		c.UnitPoll = 5 * time.Second
 	}
 	if c.HostReserveBytes == 0 {
-		if c.TotalMemBytes > 128<<30 {
+		// An eighth of the host's memory, never below 2 GiB and never
+		// above 16 GiB, the same rule the api's scheduler and
+		// guests.slice use (DESIGN.md §4, DECISIONS I-724). The flat
+		// 8 GiB this replaces was the whole of an 8 GB host, which
+		// could then start no guest at all.
+		c.HostReserveBytes = c.TotalMemBytes / 8
+		if c.HostReserveBytes < 2<<30 {
+			c.HostReserveBytes = 2 << 30
+		}
+		if c.HostReserveBytes > 16<<30 {
 			c.HostReserveBytes = 16 << 30
-		} else {
-			c.HostReserveBytes = 8 << 30
 		}
 	}
 	return c
@@ -372,6 +379,12 @@ type Deps struct {
 type job struct {
 	cmd      *hostdv1.Command
 	internal func(ctx context.Context)
+	// noSlot runs an internal job without taking one of the MaxOps
+	// slots: one a running command waits for (a fork's restore waiting
+	// on its source's fork point, I-701), which would otherwise deadlock
+	// once every slot is held by a command doing that wait. Only for a
+	// job of milliseconds.
+	noSlot bool
 }
 
 type worker struct {
@@ -402,6 +415,9 @@ type Manager struct {
 	inflight map[string]bool
 	secrets  map[string][]*guestdv1.Secret
 	monitors map[string]*monitor
+	// boots is each guest's last boot that reached running, step by step
+	// (DECISIONS I-707), for the create or start result that made it.
+	boots    map[string]*hostdv1.BootTimings
 	blocked  *blockedTracker
 	ops      chan struct{}
 	buildCh  chan job
@@ -423,6 +439,10 @@ type Manager struct {
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// forkLocks serialises the work on one fork point: taking it, each
+	// sibling's clone of it, and its removal (clone.go, I-701).
+	forkLocks sync.Map // point id -> *sync.Mutex
 
 	// shuttingDown is set once hostd or the host is going down (I-650):
 	// from then on a guest that exits, or a boot that fails, leaves its
@@ -457,7 +477,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	m := &Manager{
 		cfg: cfg, d: d,
 		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
-		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{},
+		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
 		last:     map[string]sampleCursor{},
 		buildSeq: map[string]uint64{},
 		ops:      make(chan struct{}, cfg.MaxOps),
@@ -774,7 +794,7 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable()}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features()}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
@@ -1092,18 +1112,44 @@ func (m *Manager) setQueueDepth() {
 	}
 }
 
+// slotHeld marks the context of a job that holds one of the MaxOps slots.
+type slotHeld struct{}
+
+// withoutSlot runs wait with the caller's op slot given back, and takes a
+// slot again before returning. A fork's copy waits this way for its fork
+// point: the point's job queues behind any command for the source, and
+// that command needs a slot, which a waiting copy would otherwise hold
+// (DECISIONS I-701). A caller outside a slotted job (Execute in tests)
+// just waits.
+func (m *Manager) withoutSlot(ctx context.Context, wait func()) {
+	if held, _ := ctx.Value(slotHeld{}).(bool); !held {
+		wait()
+		return
+	}
+	<-m.ops
+	// Taken again whatever the context says: runJob's deferred release
+	// expects a slot held.
+	defer func() { m.ops <- struct{}{} }()
+	wait()
+}
+
 func (m *Manager) runJob(j job) {
+	if j.noSlot && j.internal != nil {
+		j.internal(m.ctx)
+		return
+	}
 	select {
 	case m.ops <- struct{}{}:
 	case <-m.ctx.Done():
 		return
 	}
 	defer func() { <-m.ops }()
+	ctx := context.WithValue(m.ctx, slotHeld{}, true)
 	if j.internal != nil {
-		j.internal(m.ctx)
+		j.internal(ctx)
 		return
 	}
-	if res := m.run(m.ctx, j.cmd); res != nil {
+	if res := m.run(ctx, j.cmd); res != nil {
 		m.d.Emit.Result(res)
 	}
 }

@@ -516,6 +516,42 @@ project in `error` with a `destroy_failed` event; `repose-admin projects
 show <id>` has the op error, and `repose rm` (or the admin's
 destroy) resumes it.
 
+
+## BootSlow
+
+More than half of a host's creates and starts in 30 minutes, two at
+least, took over 2 minutes to reach running. A busy host boots in 30 to
+70 s (creates on host-01 had a p50 of 42 s and starts 58 s on
+2026-10-13), and past 2 minutes a boot is close to the 3-minute setup
+bound (I-705). On the host, `journalctl -t hostd | grep '"boot
+timings"'`: one line per boot that reached running, with `op` (`create`
+or `start`), `volume_ms` (the create's thin volume and mkfs), `prepare_ms` (the argv, the tap and
+virtiofsd), `ready_ms` (the hypervisor started to guestd's Ready),
+`paths_ms` (RegisterPaths, its wait for `nix-store --dump-db`
+included), `setup_ms` (secrets, principals and SetupProject) and
+`total_ms`. The api keeps the same numbers in the op's `result.boot`
+(`select result->'boot' from ops where id = '<op id>'`); the op a user
+reads leaves them out (DECISIONS I-707).
+
+- `ready_ms` and `setup_ms` both high, with the guest's own steps slower
+  across the board: the host is busy. 2026-10-13's A/B on host-01 booted
+  the same closure at 34 to 42 s with host load 8 to 10 and at 45 to
+  59 s with load 12 to 17, with or without free page reporting (I-704).
+  `uptime` and the guests' `cloud-hypervisor` CPU in `ps` on the host
+  say how busy.
+- `setup_ms` alone: home-manager's first activation and the user
+  manager, which SetupProject waits for. A boot that fails with
+  `SetupProject: context deadline exceeded` ran past the 3 minutes
+  guestd and hostd give it (I-705); before I-705 that was 30 s.
+- `/var/lib/repose/guests/<id>/console.log` shows which unit the guest
+  waited on.
+- To measure a boot without a tenant, `ops/dev/freeze-bench.sh hup`
+  boots a host closure on a `bench-*` volume the way hostd's create does
+  and prints the same steps (memory note benchmarking-on-host-01). Each
+  bench boot is one more busy guest on the host: on 2026-10-13, three
+  tenant boots on host-01 ran past the old 30 s SetupProject bound while
+  the bench ran.
+
 ## BuildQueueStuck
 
 Two builds running on a host with no completion for 45 minutes.
@@ -544,7 +580,9 @@ More than one auth failure per second at the gateway.
    address is behind a source that failed 20 times without a certificate
    of theirs. Nothing to do unless it persists for hours; then add the
    source to the edge NSG deny list. `route_error` in volume means the
-   gateway cannot reach the api (see "Gateway relay failures").
+   gateway cannot reach the api, or hosts are unreachable (see "Gateway
+   relay failures"); `no_address` means the api holds no address for a
+   running machine (I-721), which since I-720 should be zero.
 2. `expired` in volume means the CLI's silent refresh is broken for many
    users: check whether `repose_api_certs_issued_total` dropped sharply, and the
    Logto token endpoint.
@@ -568,6 +606,8 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `permission denied (certificate revoked)` | logout or a revoked serial | expected; takes effect within 30 s of `repose logout` |
 | `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
+| `<slug> is on a host the control plane cannot reach right now; try again shortly` | the api has not heard from the project's host within the heartbeat deadline | "HostHeartbeatMissing"; the machine itself may be fine, and the banner clears with the next heartbeat |
+| `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
 | `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
@@ -2268,11 +2308,12 @@ its timer; `SnapshotStale` fires if a running project stays without one.
 
 ## hostd: snapshot checksum mismatch
 
-Restore result `internal: snapshot checksum mismatch` (DECISIONS I-462):
-the blob in the store is not the one hostd uploaded, by the SHA-256 the
-api recorded in `snapshots.sha256`. Nothing was written: the check runs
-before any volume or guest state exists ("changed during the restore"
-means the second check failed and the new volume was removed). Treat it
+Restore result `internal: snapshot checksum mismatch` (DECISIONS I-462,
+I-700): the blob in the store is not the one hostd uploaded, by the
+SHA-256 the api recorded in `snapshots.sha256`. hostd downloads the blob
+once and hashes it while writing it into the new volume, so the bytes
+were written by the time the digest was known: the new volume was then
+removed, no guest booted from it, and the project is in `error`. Treat it
 as a possible tampering incident, not a retry: do not restore that
 snapshot, keep the blob, read the storage account's access logs for
 writes to its path after `taken_at`, and record what you find in
@@ -2280,6 +2321,48 @@ writes to its path after `taken_at`, and record what you find in
 digest matches. A restore that fails this way leaves the project in
 `error` with `start` refused (`restore_unfinished`, I-461) until a
 restore succeeds.
+
+## hostd: fork point volume left over
+
+`lvs` on a host shows an `fp-<32 hex>` volume more than 30 minutes old.
+A fork point is the one snapshot of a source that a same-host fork's
+copies clone (DECISIONS I-701); hostd removes it when every copy named in
+the fork has restored, after `ForkPointTTL` (30 min) whatever happened,
+and at its next start (`reconcile_snapshots` "removed stale snapshot
+volume"). Grep `journalctl -u hostd` for `"event":"fork_point"`: "fork
+point not removed" carries lvremove's error, usually the pool's metadata
+being full or the volume still open. No guest boots from a fork point,
+so `lvremove repose/fp-...` is safe once no restore with that point is in
+flight (no `restore` op `running` on that host in the api).
+
+## hostd: clone restore refused
+
+Restore result `not_found: the guest a clone copies, <id>, is not on this
+host`: the api sent a clone (I-701) for a source that this host no longer
+holds, because the source moved, was destroyed, or the host's state lost
+it between the api's `FitsOn` and the restore. The copy is in `error`;
+`start` on it says to remove it and fork the source again, which the api
+then sends as a clone to the source's current host or answers
+`snapshot_needed`. `internal: fork point: context deadline exceeded`
+means the restore's deadline ran out before the fork point was taken:
+the point waits behind every command queued for the source (a stop and
+its snapshot upload, a build), or the freeze hung (see "Freeze
+timeout"). Each copy's `restore_done`
+log line carries `"source":"clone"`, `point_ms` and `clone_ms`; a blob
+restore carries `verify_ms` 0, `write_ms` and `fsck_ms`.
+
+## api: every fork takes a snapshot
+
+Forks print `✓ Snapshot of X taken` and restore from Blob although the
+source's host has room: the api answered `409 snapshot_needed`. It sends
+clones only to a host whose `Hello` named `local_clone` (DECISIONS
+I-701). On `repose-control`, `select name, features from hosts`: an empty
+array means that host's hostd predates I-701, so switch the host to the
+current generation (docs/ops/RELEASE.md); hostd sends `Hello` again on
+reconnect and the api stores the features then. A host that lists
+`local_clone` and still refuses has no room for the copies by
+`scheduler.FitsOn` (memory of every copy that starts, disk for every
+copy's volume), which is correct.
 
 ## api: project in error after a failed restore
 

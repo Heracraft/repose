@@ -32,6 +32,9 @@ type Guest struct {
 	CID       uint32
 	Closure   string
 	Secrets   map[string][]byte
+	// ClonedFrom is the guest a Restore's clone copied (I-701), "" for a
+	// restore from the store.
+	ClonedFrom string
 	// GuestdDead models a guest whose unit runs but whose guestd does not
 	// answer (I-143's strand): every command that needs guestd on a
 	// running guest fails with guest_unresponsive, as the real hostd does,
@@ -57,12 +60,18 @@ type Options struct {
 	SampleInterval time.Duration
 	Heartbeat      time.Duration
 	BuildDelay     time.Duration
-	FakeClosure    string
+	// BootDelay is how long a CreateGuest or StartGuest spends in
+	// "starting" before the guest runs, as a real boot does.
+	BootDelay   time.Duration
+	FakeClosure string
 	// Fail maps a command kind ("CreateGuest", "Build", ...) to the error
 	// code every command of that kind returns.
 	Fail map[string]string
 	// KernelChanged is what Build reports.
 	KernelChanged bool
+	// NoClone leaves local_clone out of Hello's features, as a hostd
+	// before I-701 does.
+	NoClone bool
 }
 
 // Fake is one fake host.
@@ -298,6 +307,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID}
+	if !f.opts.NoClone {
+		h.Features = []string{"local_clone"}
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -527,6 +539,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "creating", "")
 		f.setState(g, "starting", "")
+		time.Sleep(f.opts.BootDelay)
 		if bad {
 			f.setState(g, "error", BadBootMessage)
 			return bootFailed(id, console)
@@ -536,7 +549,7 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Unlock()
 		f.setState(g, "running", "")
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID}}
+			r.Payload = &hostdv1.Result_Create{Create: &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID, Boot: fakeBoot(true)}}
 		})
 	case *hostdv1.Command_StartGuest:
 		f.mu.Lock()
@@ -554,9 +567,15 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			if c.StartGuest.Class != "" {
 				g.Class = c.StartGuest.Class // I-260, as hostd
 			}
+			// A start delivers the current set, as CreateGuest does.
+			g.Secrets = make(map[string][]byte, len(c.StartGuest.Secrets))
+			for _, s := range c.StartGuest.Secrets {
+				g.Secrets[s.Name] = s.Value
+			}
 			console, bad := f.bad[g.Closure]
 			f.mu.Unlock()
 			f.setState(g, "starting", "")
+			time.Sleep(f.opts.BootDelay)
 			if bad {
 				// As hostd: fall back to the last good closure once, or
 				// fail with the boot's reason when there is none.
@@ -573,7 +592,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 				f.setState(g, "running", "")
 				return ok(func(r *hostdv1.Result) {
 					r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: good, FailedClosure: failed,
-						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}}}
+						BootError: &hostdv1.Error{Code: "boot_failed", Message: BadBootMessage, ConsoleTail: console}, Boot: fakeBoot(false),
+						GuestIp: g.IP, VsockCid: g.CID}}
 				})
 			}
 			f.mu.Lock()
@@ -585,7 +605,8 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		booted := g.Closure
 		f.mu.Unlock()
 		return ok(func(r *hostdv1.Result) {
-			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted}}
+			// As hostd since I-720: every start reports the guest's address.
+			r.Payload = &hostdv1.Result_Start{Start: &hostdv1.StartResult{BootedClosure: booted, Boot: fakeBoot(false), GuestIp: g.IP, VsockCid: g.CID}}
 		})
 	case *hostdv1.Command_StopGuest:
 		f.mu.Lock()
@@ -634,22 +655,39 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		send := f.send
 		f.mu.Unlock()
-		for i, line := range []string{"evaluating configuration", "building fake system", "built"} {
+		closure := f.opts.FakeClosure
+		if c.Build.RevisionId != "" {
+			closure = f.opts.FakeClosure + "-" + c.Build.RevisionId
+		}
+		// nixbuild's own lines (internal/hostd/nixbuild) with Nix's lists
+		// between them: the CLI reads them to show the build's steps
+		// (I-320, I-708). BuildDelay is spent across the build, none of it
+		// after "built", which is when the real build answers.
+		lines := []string{
+			"evaluating configuration",
+			"building nixos-system-repose-guest",
+			"these 2 derivations will be built:",
+			"  /nix/store/aaaa-home-manager-files.drv",
+			"  /nix/store/bbbb-nixos-system-repose-guest.drv",
+			"these 2 paths will be fetched (1.5 MiB download, 5.9 MiB unpacked):",
+			"copying path '/nix/store/cccc-cloudflared' from 'https://cache.nixos.org'...",
+			"copying path '/nix/store/dddd-ripgrep' from 'https://cache.nixos.org'...",
+			"building '/nix/store/aaaa-home-manager-files.drv'...",
+			"building '/nix/store/bbbb-nixos-system-repose-guest.drv'...",
+			"built " + closure,
+		}
+		for i, line := range lines {
+			if i > 0 && f.opts.BuildDelay > 0 {
+				time.Sleep(f.opts.BuildDelay / time.Duration(len(lines)-1))
+			}
 			if send != nil {
 				_ = send(&hostdv1.HostMessage{Msg: &hostdv1.HostMessage_Log{Log: &hostdv1.BuildLog{CommandId: id, Seq: uint64(i + 1), Line: line}}}) // dead stream ends Recv
-			}
-			if f.opts.BuildDelay > 0 {
-				time.Sleep(f.opts.BuildDelay / 3)
 			}
 		}
 		// A personal layer carrying "fake-eval-error" fails the way a
 		// broken machine.nix does on a real host (DECISIONS I-490).
 		if strings.Contains(string(c.Build.Personal), "fake-eval-error") {
 			return &hostdv1.Result{CommandId: id, Ok: false, Error: &hostdv1.Error{Code: "eval_failed", Message: "attribute 'fake-eval-error' missing at machine.nix:1:3\n\nerror: attribute 'fake-eval-error' missing", PersonalLine: 1}}
-		}
-		closure := f.opts.FakeClosure
-		if c.Build.RevisionId != "" {
-			closure = f.opts.FakeClosure + "-" + c.Build.RevisionId
 		}
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Build{Build: &hostdv1.BuildResult{SystemClosure: closure, ClosureBytes: 3 << 30, KernelChanged: f.opts.KernelChanged}}
@@ -708,8 +746,22 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 			f.mu.Unlock()
 			return errResult(id, "insufficient_capacity", "host draining")
 		}
+		from := ""
+		if cl := c.Restore.Clone; cl != nil {
+			// A clone copies a guest of this host (I-701); a hostd older
+			// than it refuses the Restore for its empty blob_path.
+			if f.opts.NoClone {
+				f.mu.Unlock()
+				return errResult(id, "invalid_argument", "guest_id, project_id and blob_path required")
+			}
+			if _, ok := f.guests[cl.SourceGuestId]; !ok {
+				f.mu.Unlock()
+				return errResult(id, "not_found", "the guest a clone copies is not on this host")
+			}
+			from = cl.SourceGuestId
+		}
 		f.nextIP++
-		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson}
+		g := &Guest{GuestID: c.Restore.GuestId, ProjectID: c.Restore.ProjectId, Class: c.Restore.Class, State: "restoring", IP: fmt.Sprintf("10.64.4.%d", 1+f.nextIP), CID: uint32(1000 + f.nextIP), Closure: c.Restore.SystemClosure, ProjectJSON: c.Restore.ProjectJson, ClonedFrom: from}
 		f.guests[g.GuestID] = g
 		f.mu.Unlock()
 		f.setState(g, "restoring", "")
@@ -721,6 +773,9 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		f.mu.Lock()
 		g, e := get(c.UpdateSecrets.GuestId)
 		if e == nil {
+			// The whole set, as hostd caches and guestd writes it: a
+			// name left out is removed.
+			g.Secrets = make(map[string][]byte, len(c.UpdateSecrets.Secrets))
 			for _, s := range c.UpdateSecrets.Secrets {
 				g.Secrets[s.Name] = s.Value
 			}
@@ -777,4 +832,14 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(nil)
 	}
 	return errResult(id, "invalid_argument", "unknown command")
+}
+
+// fakeBoot is the BootTimings a real hostd reports with a create or start
+// (DECISIONS I-707); only a create has a volume step.
+func fakeBoot(create bool) *hostdv1.BootTimings {
+	b := &hostdv1.BootTimings{PrepareMs: 300, ReadyMs: 8000, PathsMs: 2000, SetupMs: 5000, TotalMs: 15300}
+	if create {
+		b.VolumeMs, b.TotalMs = 200, 15500
+	}
+	return b
 }

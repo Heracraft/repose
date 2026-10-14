@@ -294,3 +294,148 @@ func TestBackgroundStopJSON(t *testing.T) {
 		t.Fatalf("json %q (%v)", out.String(), err)
 	}
 }
+
+// A fork right after a background stop waits the stop out and then
+// forks, whichever way the copies are made: cloned on the project's
+// server (I-701), restored from a fork snapshot when the server cannot
+// hold them, or from a snapshot an api before clones needs (I-703). The
+// api refuses both a clone and a snapshot while the stop is open.
+func TestForkWaitsOutABackgroundStop(t *testing.T) {
+	ctx := context.Background()
+	window := opConflictRetryWindow
+	opConflictRetryWindow = 300 * time.Millisecond
+	defer func() { opConflictRetryWindow = window }()
+	for _, c := range []struct {
+		name         string
+		noClone, old bool
+	}{
+		{name: "clone"},
+		{name: "snapshot fallback", noClone: true},
+		{name: "api before clones", old: true},
+	} {
+		for _, noStart := range []bool{true, false} {
+			name := c.name
+			if noStart {
+				name += " --no-start"
+			}
+			t.Run(name, func(t *testing.T) {
+				fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond})
+				defer fake.Close()
+				fake.SetForkClone(c.noClone, c.old)
+				e := newLifecycleEnv(t, fake)
+				p := runningProject(t, fake, e, "job")
+				if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+					t.Fatal(err)
+				}
+				if s := stateOf(t, e, p.ID); s != "stopping" {
+					t.Fatalf("state after the stop: %s", s)
+				}
+				errOut := &syncWriter{}
+				e.ErrOut = errOut
+				if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "job", Count: 1, NoStart: noStart}); err != nil {
+					t.Fatalf("fork right after a background stop: %v; stderr %q", err, errOut.String())
+				}
+				if s := stateOf(t, e, p.ID); s != "stopped" {
+					t.Fatalf("source after the fork: %s", s)
+				}
+				projects, err := e.Client.ListProjects(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "running"
+				if noStart {
+					want = "stopped"
+				}
+				forks := 0
+				for _, q := range projects {
+					if q.ID == p.ID {
+						continue
+					}
+					forks++
+					if q.State != want {
+						t.Fatalf("fork %s is %s, want %s", q.Slug, q.State, want)
+					}
+				}
+				if forks != 1 {
+					t.Fatalf("%d forks; stderr %q", forks, errOut.String())
+				}
+			})
+		}
+	}
+}
+
+// `repose attach` on a machine whose background stop is under way waits
+// for the stop and then starts it (I-709 on I-710): one step, no
+// "wait for it to settle".
+func TestAttachAfterABackgroundStopStartsIt(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	p := runningProject(t, fake, e, "job")
+	e.Cache.ByDir[e.Cwd] = p.ID
+	defer func(l, s time.Duration) { sshWaitTimeout, sshWaitShort = l, s }(sshWaitTimeout, sshWaitShort)
+	sshWaitTimeout, sshWaitShort = 300*time.Millisecond, 300*time.Millisecond
+	startsBefore := 0
+	for _, k := range fake.OpKinds(p.ID) {
+		if k == "start" {
+			startsBefore++
+		}
+	}
+	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s := stateOf(t, e, p.ID); s != "stopping" {
+		t.Fatalf("state after the stop: %s", s)
+	}
+	errOut := &syncWriter{}
+	e.ErrOut = errOut
+	_ = runRun(ctx, e, RunOptions{}, true) // the attach itself needs ssh
+	if s := stateOf(t, e, p.ID); s != "running" {
+		t.Fatalf("attach during a background stop left it %s; stderr %q", s, errOut.String())
+	}
+	if strings.Contains(errOut.String(), "settle") {
+		t.Fatalf("attach passed the api's refusal on: %q", errOut.String())
+	}
+	count := map[string]int{}
+	for _, k := range fake.OpKinds(p.ID) {
+		count[k]++
+	}
+	if count["stop"] != 1 || count["start"] != startsBefore+1 {
+		t.Fatalf("ops %v after %d starts, want one stop and one start after it", count, startsBefore)
+	}
+}
+
+// A background stop that fails while attach or start waits for it is
+// the stop's failure, not theirs: the command says so in one line and
+// starts the machine from error, as it does any machine in error (the
+// api restarts it, I-157). It used to read "Could not start job".
+func TestStartAfterABackgroundStopThatFails(t *testing.T) {
+	ctx := context.Background()
+	fake := fakeapi.New(fakeapi.Options{StopDelay: 1500 * time.Millisecond, StopPickup: 200 * time.Millisecond})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	p := runningProject(t, fake, e, "job")
+	fake.SetStopFailure(p.ID, "the host did not answer")
+	if err := StopProjectsCmd(ctx, e, StopOptions{Projects: []string{"job"}, Snapshot: true, Yes: true}); err != nil {
+		t.Fatal(err)
+	}
+	if s := stateOf(t, e, p.ID); s != "stopping" {
+		t.Fatalf("state after the stop: %s", s)
+	}
+	var out bytes.Buffer
+	errOut := &syncWriter{}
+	e.Out, e.ErrOut = &out, errOut
+	if err := StartCmd(ctx, e, p.ID); err != nil {
+		t.Fatalf("start after a stop that failed: %v; stderr %q", err, errOut.String())
+	}
+	if s := stateOf(t, e, p.ID); s != "running" {
+		t.Fatalf("state %s; stderr %q", s, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "Stopping job failed: ") || !strings.Contains(errOut.String(), "the host did not answer") {
+		t.Fatalf("stderr %q", errOut.String())
+	}
+	if !strings.HasPrefix(out.String(), "job is running (") {
+		t.Fatalf("out %q", out.String())
+	}
+}

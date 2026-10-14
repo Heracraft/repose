@@ -35,3 +35,24 @@ func TestSandboxedConfinesTheParser(t *testing.T) {
 		t.Fatalf("argv tail %v", got)
 	}
 }
+
+// A filter (zstd -d of a blob not yet checked, I-700) gets the same
+// confinement and no device at all.
+func TestSandboxedFilterHasNoDevice(t *testing.T) {
+	argv := SandboxedFilter("zstd", "-d", "-q", "-c")
+	if !slices.Equal(argv[:5], []string{"systemd-run", "--quiet", "--pipe", "--wait", "--collect"}) {
+		t.Fatalf("not a waited, piped transient unit: %v", argv)
+	}
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"DynamicUser=yes", "DevicePolicy=closed", "PrivateNetwork=yes", "CapabilityBoundingSet=", "InaccessiblePaths=-/var/lib/repose", "NoNewPrivileges=yes"} {
+		if !slices.Contains(argv, want) {
+			t.Fatalf("sandbox lacks %s: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "DeviceAllow=") || strings.Contains(joined, "SupplementaryGroups=") {
+		t.Fatalf("a filter was given a device: %s", joined)
+	}
+	if got := argv[len(argv)-5:]; !slices.Equal(got, []string{"--", "zstd", "-d", "-q", "-c"}) {
+		t.Fatalf("argv tail %v", got)
+	}
+}

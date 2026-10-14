@@ -148,6 +148,18 @@ type Op struct {
 	RebootRequired bool `json:"reboot_required,omitempty"`
 	// Result is a finished op's result; a snapshot's is {snapshot_id}.
 	Result map[string]any `json:"result,omitempty"`
+	// CreatedAt and FinishedAt are when the op was queued and ended (nil
+	// while it runs, or from an api that leaves them out).
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// took is how long a finished op ran, 0 when its times are unknown.
+func (o *Op) took() time.Duration {
+	if o.CreatedAt == nil || o.FinishedAt == nil || o.FinishedAt.Before(*o.CreatedAt) {
+		return 0
+	}
+	return o.FinishedAt.Sub(*o.CreatedAt)
 }
 
 // OpError is an op's error as the api stores it: `{code, message}` (the

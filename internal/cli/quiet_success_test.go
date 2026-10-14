@@ -28,6 +28,7 @@ var quietAllowed = map[string]string{
 	"buildprogress.go:printApplied:Built revision %s. It changes the kernel":      "the change does nothing until a restart the user times",
 	"restore.go:writeDestroyedTable:A live project is called %s; this one co":     "the plain `repose restore NAME` is wrong for this row",
 	"status.go:writeStatus:  repose's service on the machine is not":              "a failure that status reports",
+	"run.go:ensureRunningFrom:. `repose stop ":                                    "cut from a failed stop's reason, never printed (I-730)",
 	"status.go:diskFullLine:%s; `repose resize %s %dG` grows it":                  "a full disk fails writes, a loss the user cannot undo (I-567)",
 	"lifecycle.go:destroyOne:`repose rm %s` tries again.":                         "the failed destroy's next step, passed to opFailed",
 	"inputproxy.go:files:%s is %s; dropped files are copied up to":                "a refusal: the dropped file is too large",

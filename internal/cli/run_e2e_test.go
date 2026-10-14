@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,9 +46,22 @@ func newRunFixture(t *testing.T, fake *fakeapi.Fake) *runFixture {
 	return &runFixture{syncFixture: sf, env: env}
 }
 
-type discardWriter struct{ buf strings.Builder }
+// discardWriter collects what a command printed. A fixture's writers are
+// shared by every invocation it runs, and an interrupted command's progress
+// heartbeat can still be writing when the next one starts, so the mutex is
+// load-bearing: without it `go test -race ./...` reports a data race here
+// in TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist, intermittently
+// and only under the full parallel suite.
+type discardWriter struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
 
-func (w *discardWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
+func (w *discardWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
 
 func TestRunCreatesStartsAndAttachesNewProject(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})

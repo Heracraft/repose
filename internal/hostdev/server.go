@@ -246,8 +246,22 @@ func (s *Server) onHello(h *hostdv1.Hello) {
 	_ = s.st.Update(func(st *State) { // see above
 		st.Host.LastHello = rawProto(h)
 		st.Host.Guests = map[string]string{}
+		byGuest := map[string]*Project{}
+		for _, p := range st.Projects {
+			if p.GuestID != "" {
+				byGuest[p.GuestID] = p
+			}
+		}
 		for _, g := range h.Guests {
 			st.Host.Guests[g.GuestId] = g.State
+			// As the api's Hello reconcile since I-720: the host's word
+			// on its own guests' addresses.
+			if p := byGuest[g.GuestId]; p != nil && g.Ip != "" {
+				p.GuestIP = g.Ip
+				if g.VsockCid != 0 {
+					p.VsockCID = g.VsockCid
+				}
+			}
 		}
 		for _, c := range st.Commands {
 			if c.Result == nil {
@@ -283,6 +297,16 @@ func (s *Server) onResult(r *hostdv1.Result) {
 		switch pl := r.Payload.(type) {
 		case *hostdv1.Result_Create:
 			p.GuestIP, p.VsockCID = pl.Create.GuestIp, pl.Create.VsockCid
+		case *hostdv1.Result_Start:
+			// As the api since I-720: a start reports the guest's
+			// address, so a start after a create that failed past the
+			// guest's own boot fills in what the create never reported.
+			if pl.Start.GuestIp != "" {
+				p.GuestIP = pl.Start.GuestIp
+			}
+			if pl.Start.VsockCid != 0 {
+				p.VsockCID = pl.Start.VsockCid
+			}
 		case *hostdv1.Result_Build:
 			p.Closure = pl.Build.SystemClosure
 		case *hostdv1.Result_Snapshot:

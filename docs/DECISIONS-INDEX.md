@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-714 entries.
+741 entries.
 
 ## Scope
 
@@ -226,7 +226,7 @@ pointer, not a summary.
 - **I-139** `RegisterResponse` carries the SSH Host CA's public key; hostd writes it to `host.json` and re-renders the host's network files after a rotate that changes it — 2026-09-21; L3045
 - **I-140** Operator SSH logins reach `audit_log` as an `operator_login` host event carrying the certificate's key id and serial, never its body — 2026-09-21; L3080
 - **I-141** A security sweep is due while the release is newer than this process's last sweep — 2026-09-21; L3110
-- **I-142** `host_moved` is raised only when a restore leaves the project's host — 2026-09-21; L3129
+- **I-142** `host_moved` is raised only when a restore leaves the project's host — 2026-09-21; amended by I-701; L3129
 - **I-143** The system activation leaves guestd running; guestd restarts itself after a switch — 2026-09-21; L3145
 - **I-144** One clone per base ref — 2026-09-21; L3171
 - **I-145** A bump that built but could not switch says so — 2026-09-21; L3181
@@ -316,7 +316,7 @@ pointer, not a summary.
 - **I-231** A guest boot's path to Ready and to its first login carries only what they need: a scripted stage 1, no mount-rate-limit stall, zram and the setuid wrappers off the chain, and no home-manager run for an unchanged generation — 2026-09-24; L5415
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5502
 - **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; amended by I-652; L5516
-- **I-234** Two regressions of the faster boot, found live — 2026-09-24; L5539
+- **I-234** Two regressions of the faster boot, found live — 2026-09-24; amended by I-718; L5539
 - **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; L5554
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5596
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5643
@@ -338,7 +338,7 @@ pointer, not a summary.
 - **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; amended by I-546; L6321
 - **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; L6373
 - **I-253** Any number of agent windows in one guest, and `repose run --worktree` puts one in its own git worktree beside the checkout — 2026-09-25; partly superseded by I-342; amended by I-509; L6388
-- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; L6438
+- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; amended by I-701; L6438
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6530
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6561
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6582
@@ -421,7 +421,7 @@ pointer, not a summary.
 - **I-353** Every sync refusal of the checkout comes before the create — 2026-09-29; L9056
 - **I-354** What agents on a temporary machine are told: nothing yet — 2026-09-29; L9070
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9079
-- **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; L9094
+- **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; amended by I-728; L9094
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9110
 - **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9129
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9152
@@ -521,7 +521,7 @@ pointer, not a summary.
 - **I-453** A guest holds at most 16,384 tracked connections, and the host's table holds 1,048,576 — 2026-10-03; L11688
 - **I-460** An abuse hold covers every copy of the held project — 2026-10-03; L11714
 - **I-461** A failed restore leaves no stale guest address and no volume to boot — 2026-10-03; L11731
-- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; L11769
+- **I-462** Snapshots carry a SHA-256 recorded in Postgres, and a restore checks it before writing — 2026-10-03; amended by I-700; L11769
 - **I-463** Each guest's store is a view of its own closure — 2026-10-03; L11804
 - **I-464** Each user's Claude login share is its own 16 MiB volume — 2026-10-03; L11867
 - **I-465** dumpe2fs, e2fsck and blkid run in a sandboxed transient unit — 2026-10-03; L11893
@@ -597,7 +597,7 @@ pointer, not a summary.
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14431
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14442
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14458
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; L14506
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-697; L14506
 - **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14573
 - **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14635
 - **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14654
@@ -613,7 +613,7 @@ pointer, not a summary.
 - **I-530** dev is a trusted nix user — 2026-10-06; L14930
 - **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14944
 - **I-532** The guest has no nix channels — 2026-10-06; L14965
-- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14976
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; amended by I-718; L14976
 - **I-534** The guest has man pages — 2026-10-06; L15012
 - **I-550** A guest's hostname is its project's slug — 2026-10-06; L15027
 - **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15048
@@ -623,7 +623,7 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L15131
 - **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; L15149
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15161
-- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; L15211
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-697; L15211
 - **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15319
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15343
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15370
@@ -652,9 +652,9 @@ pointer, not a summary.
 - **I-597** In herdr the machine's own checkout is the workspace `checkout` — 2026-10-07; L16508
 - **I-598** A herdr attach stops at Ctrl-C, waits once for the sidebar's add, and says what keeps it running — 2026-10-07; L16544
 - **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16586
-- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; L16624
+- **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16624
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16669
-- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; L16696
+- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; L16696
 - **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16757
 - **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16824
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16874
@@ -680,7 +680,7 @@ pointer, not a summary.
 - **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17592
 - **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17651
 - **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17684
-- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; L17783
+- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; L17783
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
 - **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; L18017
@@ -691,7 +691,7 @@ pointer, not a summary.
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18198
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18227
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18374
-- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — L18398
+- **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18398
 - **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18417
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18461
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18482
@@ -736,13 +736,40 @@ pointer, not a summary.
 - **I-647** Bring your own host starts as shape A: the hosted control plane with hosts the user owns (byo-host-shape-a, 2026-10-10) — L20457
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
-- **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L20652
-- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20665
-- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — L20675
-- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20691
-- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20705
-- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20718
-- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20729
-- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20738
-- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — L20744
-- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20760
+- **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L20652
+- **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L20679
+- **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20692
+- **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L20702
+- **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20718
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20732
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
+- **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
+- **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
+- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; L20771
+- **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20787
+- **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L20795
+- **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L20871
+- **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L20890
+- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L20927
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — amended by I-718; L20965
+- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20992
+- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L21028
+- **I-700** A restore downloads its snapshot once and checks the digest as it writes (fork-fast, 2026-10-13) — L21058
+- **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L21109
+- **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L21212
+- **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L21237
+- **I-697** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13) — L21258
+- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21350
+- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21468
+- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21561
+- **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21622
+- **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21669
+- **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L21763
+- **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L21836
+- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L21878
+- **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L21914
+- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L21940
+- **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L21970
+- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L22018
+- **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22055
+- **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22090

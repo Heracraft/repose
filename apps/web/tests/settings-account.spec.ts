@@ -157,6 +157,7 @@ test('settings carries the account section first and no heading twice', async ({
 		'Notifications',
 		'Install',
 		'machine.nix',
+		'Secrets',
 		'Delete account'
 	]);
 });

@@ -94,19 +94,21 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475); in a `bash -c` string (`BASH_EXECUTION_STRING` set) it also defines `command_not_found_handle` (`repose-command-not-found`, exit 127) unless one is defined, which runs a program only when a command is missing (I-219, I-516) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
+| `/run/repose/project-set-up` | written by guestd once `SetupProject` has started the session unit; the mark, in a boot record, that the project was set up (DECISIONS I-706) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
 | `/var/lib/repose/paths-loaded` | sha256 of the last registration `nix-store --load-db` took, on the volume; a `RegisterPaths` with the same bytes and `/nix/var/nix/db/db.sqlite` present only writes the stamp above (DECISIONS I-225) |
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
-| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it |
-| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it |
+| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
+| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
 | `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends, and `NAME.alive` (0600 dev), touched at each keepalive from the laptop; a missing socket, or a keepalive file more than 30 s old, is how `status` says `laptop not connected` (DECISIONS I-557). A CLI that sends no keepalive leaves no `NAME.alive`, and the socket alone decides |
-| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246) |
+| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246). Before each start, `repose-browser-unlock` removes its `SingletonLock`, `SingletonSocket` and `SingletonCookie` unless the process the lock names runs with this profile (I-727) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
 | `/nix/.rw-store` | the guest's writable store overlay (upper dir `store/`, work dir `work/`), on the thin volume |
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
-| `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
+| `/nix/var/nix/gcroots/repose-link-targets/` | one symlink per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`: eleven), written by `repose-pin-profile` at every boot and switch, for every base the guest has run. Nothing is copied into the overlay for them since base 2026.10.14 (DECISIONS I-718, amends I-533); the roots keep the guest's own collection off the libraries and are the record of which paths an older binary may name, which `repose-store-repair --link-targets` reads. Copies an earlier base made stay in the upper dir |
+| `repose-store-repair` | `repose-store-repair PROGRAM \| /nix/store/PATH ... \| --link-targets`, in the system path: fetches again, as root, the store paths a program's ELF interpreter and RUNPATH name and the machine no longer really has (an existing but empty path asks for a `repose stop` and `repose start` instead). `repose-store-repair.timer` runs `--link-targets` once a boot, `OnBootSec=4min`, and the unit tolerates its own failure (DECISIONS I-719) |
 | `/nix/var/nix/gcroots/repose-view/` | guestd: one root per store path the lower layer (`/nix/.ro-store`) serves and the guest's database lists, named by its basename; updated at every `RegisterPaths` and at guestd's start (DECISIONS I-588) |
 | stage 1 | removes every whiteout (0:0 character device) at the top of the overlay's upper store dir before stage 2 and prints `repose: store overlay: N whiteouts removed, M of them over shared store paths` on the console and in the kernel log (DECISIONS I-587) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
@@ -286,7 +288,11 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   (I-512).
 - Shell: a login bash sources `~/.bashrc` last in `/etc/bashrc` when
   there is no `~/.bash_profile` or `~/.bash_login` and `~/.profile` does
-  not mention bashrc (I-513). `ls` is GNU ls; `ll`, `la`, `lt` run eza;
+  not mention bashrc (I-513). Not the base's doing, and not suppressed by
+  a login file: nixpkgs' bash has `-DSSH_SOURCE_BASHRC`, so the
+  non-interactive `bash -c` sshd runs a command in reads `~/.bashrc`
+  itself and exports what it sets to the shells it starts (I-725). `ls`
+  is GNU ls; `ll`, `la`, `lt` run eza;
   `histappend`, `HISTSIZE=100000`, `HISTFILESIZE=200000`,
   `HISTCONTROL=ignoredups` when unset; fzf key bindings and completion;
   `vi` and `vim` are neovim (I-514). A fragment's `home.shellAliases` are
@@ -1005,7 +1011,18 @@ The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `DefaultOOMScoreAdjust=0` (upstream gives its units the manager's value
 plus 100), `sshd.service` `OOMScoreAdjust=-800` (sshd hands it to each
 session it forks), guestd -900 and journald upstream's -250.
-`repose-tmux-session.service` has `OOMPolicy=continue`. MGLRU's
+
+The ranking only holds if the cgroup the kill happened in is left alone,
+so `dev`'s user manager runs with `DefaultOOMPolicy=continue` (I-697):
+systemd's default is to stop that unit, which takes the agent beside the
+kill with it. Every cgroup of `dev`'s holds one: a tmux pane is a
+`tmux-spawn-*.scope` with the agent and everything it started, herdr's
+panes share `repose-herdr-server.service`, a `chromium` runs in a
+transient scope of `repose-browser.slice` with its renderers. Both
+session units set `OOMPolicy=continue` on themselves as well, and each
+logind `session-N.scope` has it by prefix drop-in (`repose exec` and
+`repose code` run what they start in the session's own scope; the system
+manager's default stays `stop`). MGLRU's
 `/sys/kernel/mm/lru_gen/min_ttl_ms` is 1000: the kernel runs its OOM
 killer when it cannot keep the pages touched in the last second.
 

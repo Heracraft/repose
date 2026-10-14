@@ -174,6 +174,10 @@ type Op struct {
 	ProjectState string `json:"project_state,omitempty"`
 	// Result is a finished op's result: `{snapshot_id}` for a snapshot.
 	Result map[string]any `json:"result,omitempty"`
+	// CreatedAt and FinishedAt are when the op was queued and ended, as
+	// the api answers them (nil FinishedAt while it runs).
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // forkRec is one project a fork request made, kept to answer its resend.
@@ -212,6 +216,8 @@ type userRec struct {
 	Cancelling    bool
 	// personal is the account's machine.nix saves, oldest first (I-490).
 	personal []*personalRev
+	// secrets is the account's secrets, for every project (I-697).
+	secrets map[string]*SecretMeta
 }
 
 type project struct {
@@ -234,6 +240,9 @@ type op struct {
 	kind      string
 	phase     string // while running
 	created   time.Time
+	// finished is when a delayed op ended; an op that ended when it was
+	// made reads as finished at created.
+	finished *time.Time
 }
 
 type cert struct {

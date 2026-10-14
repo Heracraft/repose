@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/agentproc"
 	"github.com/heracraft/repose/internal/guestd/questions"
-	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/multiplexer"
 	"golang.org/x/sys/unix"
@@ -296,7 +296,7 @@ func agentProc(root string, pid int, agent string) string {
 		if len(f) < 20 {
 			return ""
 		}
-		if sample.IsAgentCommand(agent, comm) || sample.IsAgentCommand(agent, exeName(root, pid)) {
+		if agentproc.IsAgentCommand(agent, comm) || agentproc.IsAgentCommand(agent, exeName(root, pid)) {
 			return strconv.Itoa(pid) + ":" + f[19]
 		}
 		pid, _ = strconv.Atoi(f[1])

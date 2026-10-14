@@ -20649,6 +20649,33 @@ commit they describe.
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
 
+**I-696. The launch gates only the owner can close live in
+`CHECKLIST.md`, not in a handoff file.** (conductor, 2026-10-12) The
+host-restart run left five things that need the owner's own hands, and
+wrote them only in `~/repose-ws/HANDOFF.md` on the dev box. Nothing in the
+repository said them, so an agent on another machine, or a later session
+here, would not have known: `~/repose-ws` is not in git and kanali cannot
+read it. Each is now a row in `CHECKLIST.md` "Release (M5)" with the
+evidence that closes it, and `MILESTONES.md` M5 points at them, because
+CLAUDE.md sends every agent to those two files and M5's gate is
+"`CHECKLIST.md` closed".
+- *The five.* Paging that reaches a human (the 2026-10-10 outage paged
+  nobody: `ntfy.herakraft.co` answered 503 on every path, I-648); the Azure
+  alert path proven through the portal's Test, since the CLI refuses it;
+  a console login on host-01 and the edge, which are built with root
+  locked, so the serial console shows output but cannot rescue a host that
+  will not boot (I-649, I-654); a planned host-01 restart, the only proof
+  of the stage-2 pool activation (I-643), the restart of machines that were
+  running (I-645) and the guest freeze on prod (I-652, I-685, I-686), none
+  of which a switch exercises; and the herdr laptop checks from
+  r20261008-1.
+- *Why the restart cannot be rehearsed on one guest.* `hostd freeze` is
+  `FreezeAll` with no per-guest flag, so proving the freeze on host-01
+  would freeze every guest on it, including the owner's working machine.
+  That is why it is the owner's window and not an agent's live check.
+- *Rejected.* Leaving them in the handoff file (invisible to the next
+  agent); a new `docs/ops/PRE-LAUNCH.md` (a second list to drift from the
+  gate it duplicates).
 **I-688. A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504.**
 
 The owner: "Everytime claude finishes its turn even when its not done done ... repose reports it and pings me as if it is done done." Prod, 7 days to 2026-10-12: 326 of 399 notifying events (81.7%) were Claude turn ends, and 856 of 958 Claude `completed` summaries in 30 days were the fallback "claude finished".
@@ -20765,3 +20792,1324 @@ The owner asked: "should the default machine size for solo be small?" Solo's 8 G
 - What a second machine costs a Solo user today is one question: `repose run` in another repository asks to stop the one using the memory (I-637), and `default_size = "small"` in `config.toml` or `--size small` makes small the default for those who want two.
 - Nothing is built: `defaultConfig().DefaultClass` stays `large`, and `billing.md` and `machine.md` already say so and why.
 - Revisit when the samples change: a guest image that idles much smaller, or most Solo projects peaking under 3 GiB over a month.
+**I-697. Account secrets: a named secret set once for every project, with
+the project's own winning (account-secrets, 2026-10-13).** Amends
+features/secrets.md "Secrets are per project" and its Deferred list.
+*Made during implementation* (the owner's backlog: "account wide, global
+vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
+- *Still the Postgres home, not a fourth place.* CLAUDE.md's "three homes"
+  rule counts where a value lives, not how many tables hold it. An
+  account secret is a row in Postgres (`account_secrets`, migration 0024,
+  one per user and name), sealed with AES-256-GCM under the same per-user
+  data key wrapped by Key Vault, and reaches a machine only as the tmpfs
+  files and environment a project secret does. The rows cascade on a hard
+  delete of the user row, which no code does today: a cancel sets
+  `users.cancelled_at` and leaves project secret rows and these alike, so
+  the purge 30 days after a cancel that billing.md promises, when it is
+  built, deletes both tables' rows (not built here; it predates this
+  entry).
+  `userDEK` reads both tables, so a user keeps one data key; `Rewrap`
+  covers both. The ciphertext is bound to the user and the name under its
+  own prefix (`repose-account-secret-v1`), so a row moved to another user,
+  or copied between the two tables, does not open.
+- *Precedence: the project's own wins.* The specific value beats the
+  general one, as a repository secret beats an organization secret in
+  GitHub Actions and a project variable beats a team one in Vercel. The
+  other order would make a project unable to differ from the account
+  without renaming the variable its code reads. The merge is in
+  `DecryptForGuest`, the one place values are decrypted, so create,
+  start, restore, `UpdateSecrets`, the fragment refusal ("fragment
+  contains the value of secret NAME") and build-log redaction all see the
+  same set without a second code path.
+- *Delivery.* A set or rm queues `UpdateSecrets` for every running project
+  of the account that has no secret of its own by that name (a project
+  that has one would receive the same set again); stopped ones get it at
+  their next start. That is the project path's "within seconds", per
+  machine. The PUT answers `{name, pushed, overridden_by}`: `pushed` is a
+  count, not the project route's bool, since one account write reaches
+  many machines, and `overridden_by` names the projects whose own value
+  wins, because that is the case a user would otherwise misread.
+- *API.* `GET /v1/me/secrets`, `PUT /v1/me/secrets/:name` and `DELETE
+  /v1/me/secrets/:name`, beside `/me/config` (the account's machine.nix,
+  I-490). The project routes keep their shape: `GET
+  /projects/:id/secrets` lists the project's rows alone, so no old client
+  reads an account row as the project's. Audit actions
+  `account_secret_put` and `account_secret_delete` carry the name; the
+  metric `repose_api_secrets_ops_total{op}` gains `account_put` and
+  `account_delete`.
+- *CLI placement: `--global` on `secrets set`, `list`, `rm` and
+  `import`.* `repose config --global` already means "every machine of
+  your account" (machine.nix), so the same flag on the same noun reads
+  the same way, and no new command or noun is added (cli-surface-taste).
+  The flag sits on those four subcommands, not on `secrets` itself:
+  `secrets choose` already means "every project" without `--project`,
+  and a persistent `--global` there would be a second spelling of that.
+  `--global` with a project exits 2. `secrets list` on a terminal shows
+  the account's secrets under the project's and marks a name the project
+  overrides with "(PROJECT's own is used)"; piped and `--json`, it stays
+  the project's rows, so scripts that read it see what they saw before.
+  `import --global --mcp` reads the user scope of the laptop's Claude Code
+  MCP servers alone: a local-scope server is one repository's, and its
+  tokens belong to that project. `run`'s Claude login check counts an
+  account `CLAUDE_CODE_OAUTH_TOKEN`. A CLI talking to an api from before
+  this entry treats a 404 from `/me/secrets` as no account secrets. A
+  project's `secrets rm NAME` checks the account when it matters: a name
+  only the account has exits 1 with "PROJECT has no secret NAME of its
+  own; it gets your account's." and the `rm --global` line, and removing
+  a project's own that the account also has says the machine gets the
+  account's now. Both cases start from `secrets list` showing the name,
+  and without the line the user cannot see that the variable stays.
+- *Fork* copies the source's project rows (I-254) and nothing else: the
+  copy belongs to the same account and gets its secrets as every project
+  does.
+- *Not built.* Keeping one account secret off one project without giving
+  that project a value of its own. machine.nix has `config --global off
+  PROJECT`, but a secret has a simpler answer (set the project's own) and
+  nobody has asked; it stays in features/secrets.md's Deferred list.
+- *Evidence* is in the branch's commit message.
+
+**I-698. The dashboard shows account secrets on Settings and on each
+project's Secrets page (account-secrets, 2026-10-13).** *Made during
+implementation*, with I-697.
+- *Settings, a "Secrets" section after machine.nix* (`#secrets`): the
+  account's names and dates, Add (name and value, typed or from Load from
+  file, the same checks and 64 KB as a project's), and the project page's
+  two-step Delete. Settings
+  is where the account's machine.nix already lives, and a top-level
+  "Secrets" in the dashboard's header would be a fourth place to look
+  beside Projects, Billing and Settings. A save toasts the projects whose
+  own secret wins.
+- *A project's Secrets page lists "From your account"* under its own: the
+  names that reach this machine, with a name the project has itself
+  struck through and "This project's own is used". Without it, a user
+  looking at a project with no secrets would read "No secrets yet" while
+  the machine has five. The dashed empty box shows only when neither
+  list has a row. The account list failing to load leaves the project's
+  page as it was.
+- I-699 was reserved with these and is not used.
+**I-704. Free page reporting stays on: it is not what made the 55 s boot
+(boot-fast, 2026-10-13).** *Made during implementation.* The 55.2 s create
+of nuru-playground on host-01 (2026-10-12 22:26Z) came 13 minutes after
+I-686 started guests with `--balloon size=0,free_page_reporting=on`, and
+its ch.args differed from a healthy 18.4 s create only by that flag
+(`/home/dev/.kanali-coord/boot-sync.md`). The brief named three fixes for
+it: load `virtio_balloon` after the boot, raise
+`page_reporting.page_reporting_order`, or turn the balloon off. None ships,
+because an A/B on host-01 found no boot cost to remove.
+- *How it ran.* `ops/dev/freeze-bench.sh hup` (new) boots a closure the
+  host already holds on a `bench-*` thin volume the way hostd's create
+  does: fresh ext4, hostd's argv and disk limits, the unit's
+  `MemoryMax`, `MemoryHigh` and `CPUQuota`, then RegisterPaths and
+  SetupProject through `ops/dev/freezebench`. The closure was base
+  2026.10.12 (`iswjhprp`), the one nuru booted, at class large.
+- *Result.* Three interleaved pairs, host load 8 to 10: balloon on 34.6,
+  35.9 and 33.6 s from start to set up; off 42.4, 39.2 and 35.9 s. At host
+  load 12 to 16: off 58.8 s, on 50.5 s, late-loaded 53.8 s, order 10
+  45.0 s. Minor faults to set up were about 200,000 in every arm. The
+  boot got slower with the host's load, by up to 24 s, whatever the
+  balloon did. Raw rows: docs/research/boot-speed-data/ab-host-01.txt.
+- *Caveat.* These boots shared the whole host store over virtio-fs,
+  where hostd shares a view of the closure (I-463), so RegisterPaths and
+  guestd's directory reads were heavier than a tenant's. The comparison
+  holds across arms; the absolute times are not a tenant's.
+- *What the slow boots have in common* is a busy host. In the guest the
+  boot is mostly kernel time (in one 46 s boot: user 19 s, system 63 s,
+  irq 43 s, softirq 22 s and steal 31 s of vCPU time), so it stretches
+  with contention. Prod's slow boots predate I-686 too (starts of 50.4 s
+  and 37.4 s on 2026-10-12 at 14:54 and 18:45). I-705 and I-706 are what
+  boot-fast changes for it.
+- *A cost found doing it.* Each bench boot is one more busy large guest on
+  a tenant host. Three tenant boots on host-01 failed with `SetupProject:
+  context deadline exceeded` while the bench ran (15:35, 15:56, 15:58Z),
+  and one create was refused for memory (15:57). RUNBOOK "BootSlow" now
+  says so beside the tool.
+
+**I-705. RegisterPaths and SetupProject get 3 minutes, not 30 s
+(boot-fast, 2026-10-13).** *Made during implementation.* guestd bounds
+every request it has no special deadline for at 30 s
+(`DefaultDeadline`), and hostd's client gave SetupProject the same 30 s.
+SetupProject starts the session unit, which waits for
+systemd-user-sessions, which waits for home-manager's first activation;
+on a busy host that took past 30 s and the boot failed with `SetupProject:
+context deadline exceeded`, a machine that was about to work torn down.
+Three creates and starts on host-01 failed that way on 2026-10-13, and the
+bench boots of I-704 failed the same way in RegisterPaths (`nix-store
+--load-db` past 30 s).
+- guestd's `BootDeadline` (3 minutes) bounds RegisterPaths and
+  SetupProject; project.Setup's own bound goes from 60 s to the same 3
+  minutes. hostd's `vsockclient.SetupTimeout` is 3 minutes 15 s, so the
+  guest's error, which names the step that ran out, is what arrives.
+  RegisterPaths already had hostd's 10-minute switch bound.
+- Why 3 minutes: the slowest boots seen took about 60 s in setup, and 3
+  minutes stays well under the api's 10-minute bound on the create_guest
+  and start_guest phases, so a guest that cannot set up in that time is
+  still reported as unresponsive, not as a timed-out op.
+- Either half alone changes nothing (the other still cuts at 30 s); each
+  is safe with the other's old version. The guest half ships with a base,
+  the host half with a host switch. docs/workstreams/04-guestd.md's
+  deadline sentence names it.
+- A boot that answered and then ran out in RegisterPaths or SetupProject
+  now reads "the environment started but did not finish setting up in
+  time", where it read "did not answer within a minute of starting",
+  which stays for a guest that never sent Ready (humanError,
+  internal/api/ops/recover.go). It names no bound: the api ships apart
+  from the host switch, and a hostd before this entry cuts SetupProject
+  at 30 s, so "within 3 minutes" would be false until every host runs
+  the new one. troubleshooting.md already says the message names how a
+  boot failed, so the page is unchanged.
+- The hostd half is tested by behaviour, not by the constant: a session's
+  bounds are scaled down in TestSetupProjectOutlivesTheDefaultTimeout,
+  the fake guestd holds SetupProject past the default bound, and the call
+  succeeds; pointed at the default bound, it fails.
+
+**I-706. repose-pin-profile waits until the project is set up (boot-fast,
+2026-10-13).** *Made during implementation.* The copy-up of dev's
+profile closure (repose-pin-profile, I-533) runs after repose-paths, which
+puts it beside home-manager's first activation on the way to the user's
+session, and its `.path` unit starts it again when that activation
+changes the profile. It reads the closure over virtio-fs and writes it to
+the volume: 14.6 s of CPU in a 46 s bench boot, the second-largest unit
+after PID 1, and on mailflare it ran for 3 min 59 s. Masked on the kernel
+line, the same boot reached set up in 34.4 s against 46.0 s beside it, at
+the same host load (n=1; later pairs were cut off by the host's load).
+The branch's own guest, booted with hostd's closure view right after the
+2026.10.12 base, reached set up in 26.4 s against 40.0 s, with
+home-manager 5.4 s against 11.2 s, while host load rose from 4.3 to 9.2
+(docs/research/boot-speed.md, run 5; one pair).
+- guestd writes `/run/repose/project-set-up` once SetupProject has started
+  the session unit. The service's `ExecStartPre` waits for that stamp, or
+  for 3 minutes of uptime when no hostd sends SetupProject (a NixOS test,
+  a guest whose hostd never came), then the copy-up runs as before. A
+  start once the stamp is there waits for nothing, so a profile change
+  later pins at once.
+- Why a stamp and not a timer: it ends the wait when the user's session is
+  up, however long the boot took, and the uptime bound covers the guest
+  that never gets one. A Nice=10 and idle IO class already applied and
+  were not enough: the work is the kernel's (virtio-fs reads, overlay
+  copy-up), which nice does not slow.
+- The guest-base VM test touches the stamp before it starts the unit.
+
+**I-707. A boot logs "boot timings", and the ops row keeps them
+(boot-fast, 2026-10-13).** *Made during implementation.* A slow create
+had to be pieced together from journal timestamps and the guest's
+console. hostd now logs one `"boot timings"` line (`event` guest_start,
+`op` create, start, or apply for an apply's forced reboot) per boot that reached running, with `volume_ms`,
+`prepare_ms`, `ready_ms`, `paths_ms`, `setup_ms` and `total_ms`, the shape
+of I-571's "stop timings". The same numbers ride back as `BootTimings
+boot` on CreateResult (field 3) and StartResult (field 4), and the api
+merges them into `ops.result.boot`. The op a user reads leaves `boot` out,
+as it leaves out `console` (I-592): the numbers are for operators, and
+`repose status` has nothing to say with them.
+- The contract: docs/interfaces/grpc-hostd.md names the field on both
+  results. An api that ignores it reads the result as before, and a hostd
+  before it sends none, which the api stores as no `boot` key.
+- A StartGuest for a guest that is already running boots nothing, so it
+  carries no timings, as create's running case does not; the api then
+  stores no `boot` on that op.
+- The alert `BootSlow` (warn) fires when more than half of a host's
+  CreateGuest and StartGuest commands in 30 minutes, two at least, took
+  over 2 minutes, held for 5 minutes, from
+  `repose_host_command_duration_seconds` (its 120 s bucket was already
+  there). Why not 30 s: a busy host boots in 30 to 70 s (on 2026-10-13
+  host-01's creates had a p50 of 42 s and its starts 58 s, I-704), so a
+  30 s line would page all day for a host that has no fix but capacity.
+  Past 2 minutes a boot is close to the 3-minute setup bound of I-705 and
+  about to fail. Two boots at least, so one stuck tenant does not read as
+  a host problem. promtool cases in ops/alerts_test.yaml cover a busy
+  host's 30 to 70 s boots (quiet), one slow boot (quiet) and most boots
+  past 2 minutes (fires); the RUNBOOK heading reads the line.
+- `ops/dev/freeze-bench.sh hup`, which the RUNBOOK names, wipes and
+  formats its VOL as root on a tenant host, so it refuses any VOL that is
+  not `/dev/VG/bench-*` and an LVM volume named `bench-*` by `lvs`.
+- What was not done: the ops table still has no per-phase times for the
+  build phase; the build's own time is in `build_phase_duration_seconds`
+  and in its log lines.
+
+**I-708. A create shows its build's steps, then "Booting" (boot-fast,
+2026-10-13).** *Made during implementation.* A create's progress came
+from the project's states: `run` reads the project again after the
+create, and a project read carries no op id (only the create's 201
+does), so the wait fell back to polling states and printed `✓ Built the
+configuration  9.2s` and `✓ Booted <slug>  6.2s` with nothing of the
+build in between (main's CLI against the real api in-process, with a
+fake hostd that builds for 9 s and boots for 6 s). Where the op id was
+kept (the fake api's project read carries one), the create's log, which
+stays open until the whole op ends, made the first state's label cover
+build and boot together. `run` now keeps the create's op id across that
+read while the project is creating, building or starting, and follows
+the create's log with the configuration ops' build view (I-320): the
+build's steps (`Got a build slot`, `Evaluated your config`, `Fetched N
+paths`, `Built N derivations`), Nix's lines only with `-v` or off a
+terminal, and the build's `built` line starts `Booting <slug>`. The
+`building` state no longer starts a phase of its own. A create whose
+build is reused shows `Created` and `Booted` as before. The change is in
+run.go and buildprogress.go; progress.go is untouched, so a step whose
+done text is empty ("Working out what to fetch" with nothing to fetch)
+prints no line, as in `repose config`; in a create, a build that
+printed none of Nix's lists (everything was in the host's store) ends on
+`Built the configuration`, so `Booted` does not carry the build's time.
+The fake hostd's build sends Nix's lists between nixbuild's lines and
+spends none of its delay after `built`. Against the real api in-process
+(fake hostd, 9 s build, 6 s boot) the branch's CLI printed `✓ Evaluated
+your config 1.0s`, `✓ Fetched 2 paths (1.5 MiB) 2.6s`, `✓ Built 2
+derivations 1.8s`, `✓ Booted e2e-tty 6.5s`. The quickstart's example output,
+config.md's build steps paragraph and docs/features/run-and-attach.md
+say what a first run prints.
+**I-700. A restore downloads its snapshot once and checks the digest as
+it writes (fork-fast, 2026-10-13).** Amends I-462 (the check before the
+write). *Made during implementation* (the owner's backlog: "repose fork
+is slow"; the brief left this one to decide).
+- *Why.* I-462 downloaded the whole blob to hash it, then downloaded it
+  again to write it. The owner's fork of kanali on 2026-10-11 spent
+  17.9 s of its 116 s restore in that first download (host-01's
+  `restore_done`: `verify_ms` 17877, `write_ms` 87547, `fsck_ms` 11028,
+  11.5 GB of blob for 51.8 GB used). Every restore paid it: a fork from a
+  snapshot, `snapshots restore`, `repose restore`, a project moved to
+  another host.
+- *What changes.* hostd hashes the bytes as they stream into the new
+  volume (the write already did) and drops the pass before it. A digest
+  that differs fails the restore with "snapshot checksum mismatch",
+  removes the volume and leaves the guest `error`. When the write fails
+  first, the download runs on into the hash alone, so a changed blob is
+  reported as one and not as whatever its bytes made zstd or the extent
+  reader fail with. The restore's `zstd -d` now runs in
+  `shell.SandboxedFilter`: I-465's parser sandbox (a dynamic user, no
+  capabilities, no network, none of hostd's state or sockets) with no
+  device at all.
+- *Why that is as safe as the check before.* What I-462 protects is that
+  bytes the host did not upload never reach a tenant's running machine.
+  That holds: the bytes land in a volume made for this restore, which no
+  guest reads; the guest stays `restoring` until the digest matches, and
+  a mismatch removes the volume (I-461) and fails the op, after which the
+  api refuses a start (`restore_unfinished`). A hostd that dies mid-write
+  leaves the guest `restoring`, which reconcile makes `error`, and the
+  resent Restore starts again on a fresh volume. What the pre-pass also
+  kept from altered bytes was the decompressor and the extent reader:
+  the extent reader is hostd's own Go, bounded to the new device, and
+  zstd is now sandboxed with nothing but its pipes. I-462's rejection of
+  "hashing only during the write" was about writing bytes before they
+  are known good; the volume they are written to is the only thing they
+  touch.
+- *Measured* on host-01 through hostd's own `snapshot.Pipeline` and
+  `AzureBlob`, on a `bench-*` volume holding 7.8 GB (2.28 GB of blob):
+  old restore 15.5 s (verify 3.7, write 10.2, fsck 1.6), new 12.6 s
+  (write 11.0 with zstd sandboxed, fsck 1.6). Scaled to the owner's
+  11.5 GB blob that is the 17.9 s the log shows.
+- *Kept for one release.* `restore_done` still logs `verify_ms` (0) and
+  `verified`, for whatever reads them.
+- *Evidence.* `TestSnapshotRestoreRoundTrip` fails with the pre-pass put
+  back ("a checked restore downloaded the blob 2 times, want once"), and
+  checks the mismatch, the volume removed and the guest in `error`;
+  `TestRestoreDecompressorSandboxed`, `TestSandboxedFilterHasNoDevice`.
+- *Rejected:* keeping the pre-pass only for snapshots from other hosts
+  (the threat, a writer to the store, does not depend on where the
+  restore runs); hashing per range so a bad range stops early (Azure
+  gives no per-range digest of the bytes the host uploaded).
+
+**I-701. A fork whose copies stay on their source's host clones its
+volume there (fork-fast, 2026-10-13).** Amends I-254 and I-142: the
+fork's snapshot, and `host_moved`. *Made during implementation.*
+- *Why.* A fork snapshotted the source to Blob and restored each copy
+  from Blob, although every copy on production lands on host-01, where
+  the source's volume already is: the owner's fork of kanali took 3m57s,
+  82 s of it uploading 11.5 GB and 116 s downloading and writing it back.
+- *What.* `POST /projects/:id/fork` without `snapshot_id` copies the
+  project as it is now. In one transaction the api checks that the
+  source's host can take all the copies (`scheduler.FitsOn`: ready, not
+  draining, pool under 70 percent, slots, memory for the started copies,
+  and `local_clone` in the host's last Hello, `hosts.features`), places
+  each copy on that host and gives every copy's restore op the same fork
+  point id and the list of copies. buildRestore sends `Restore.clone`
+  instead of a blob path. In hostd the first copy to arrive runs the fork
+  point on the source's own worker (after any command queued for it, as
+  a snapshot would be): freeze, `lvcreate -s` into `fp-<point>`, thaw;
+  each copy is then `lvcreate -s -kn` of the point, active at once and
+  activated with the group at boot, grown when it is asked for more than
+  the source has. One freeze for all the copies, so they hold the same
+  moment, with one limit: a copy whose Restore first arrives after the
+  point is gone (its 30 minutes passed, or hostd restarted between the
+  copies' restores) takes a new point and holds a later moment than its
+  siblings. Each copy is still a whole copy of the project at one frozen
+  moment, which is what a fork promises; failing it instead would leave
+  an errored project for a case that needs a hostd restart mid-fork.
+- *No e2fsck on a clone.* Its blocks are the source's own at a frozen
+  moment, never bytes from a store; the guest's mount replays the journal
+  as the source's would. The check stays on every blob restore.
+- *The fork point* is removed when every copy has finished its restore,
+  well or not, after 30 minutes when one never arrives, and at hostd's
+  start with the `snap-*` sweep. It pins the source's old blocks, so the
+  pool pays for what the source writes while it lives.
+- *Idempotent.* A Restore sent again for a copy already `stopped` answers
+  as the first did, even with the source gone; one that finds a partial
+  copy removes it and clones again (a new point if the old one went).
+- *No deadlock on the op slots.* Ten copies of one fork can hold every
+  slot while they wait for the point, and the point's job queues behind
+  any command for the source, which needs a slot too. So the point is
+  taken on a job that holds no slot, and a copy gives its own slot back
+  while it waits for the point or for a sibling taking it, and takes one
+  again after. `TestForkOfTenDoesNotDeadlockTheSlots` deadlocks without
+  the first; `TestForkOfTenWithASourceCommandDoesNotDeadlock` (an
+  `UpdateSecrets` for the source dispatched among the copies, MaxOps 2)
+  deadlocks without the second, found in review.
+- *Otherwise a snapshot.* When the source's host cannot take the copies
+  the api answers `409 snapshot_needed` and creates nothing; the CLI then
+  takes a fork snapshot (I-703) and forks from it as before, each copy
+  placed by the scheduler. The CLI does the same against an api older
+  than this entry, which answers `400` "snapshot_id is required". An old
+  hostd never gets a clone: it sends no `local_clone`.
+- *host_moved.* A new project (a fork's copy, `snapshots restore --as`)
+  had no host, and buildRestore counted that as moved, so every copy
+  sent its owner "kanali-fork-1 was restored onto a new host"
+  (production's events: kanali-fork-1 on 2026-10-11, and four e2e forks
+  before it, all on the one host). A project moves only from a host it
+  had.
+- *Measured* on host-01 with `lvm.Real` on a `bench-*` volume holding
+  7.8 GB: the fork point 175 ms, the clone 159 ms, the clone's files the
+  same as the source's (`sha256sum -c`). The same volume through Blob:
+  12.7 s to snapshot and upload, 12.6 to 15.5 s to restore. The owner's
+  fork would have spent well under a second where it spent 198 s; what
+  is left is the copies' boot.
+- *On a host, through hostd.* `TestHostClone` (build tag `hostbench`,
+  `clone_host_test.go`) runs hostd's Manager with `lvm.Real` on host-01's
+  pool, every volume it names mapped to `bench-ff-*`: a source created by
+  hostd and mounted with a writer running, three copies restored with
+  `clone` and an `UpdateSecrets` for the source among them, the guest's
+  Freeze and Thaw done by `fsfreeze` on the source. Each copy came up
+  active with no activation skip, started and stopped through hostd,
+  mounted read-write with its journal replayed, held every file as it
+  was at the freeze (502 files, `sha256sum`), and was `e2fsck -fn`
+  clean; the point was removed. 3 copies in 3.2 s, `clone_ms` 386 to 450.
+  A VM booted on a clone on host-01 (review round 2, 2026-10-13 20:33Z,
+  load 3): a small guest of base 2026.10.12 booted the way hostd's create
+  does on a `bench-ff-src` volume and wrote 256 MB of random data and an
+  uncommitted file; hostd's own `vsockclient` Freeze, `lvm.Real.Snapshot`
+  and Thaw made the point (`point_ms` 2990, the freeze flushing those
+  256 MB), `lvm.Real.Clone` made the copy (`clone_ms` 185, attr
+  `Vwi-a-tz--`), and a second guest booted on the copy with no mkfs and
+  no fsck by hostd: set up in 9.4 s, `systemctl is-system-running`
+  running, both files matched by `sha256sum -c`, a file the source wrote
+  after the point absent. Every bench volume removed, pool back to 34.88%.
+  The api, a real hostd over its stream and the CLI together have not run
+  a clone: that is the post-release live check, since prod runs main and
+  there is no staging host (staging.tfvars `hosts = []`).
+- *Evidence.* `TestForkClonesOnePointOnTheHost` (one freeze, the point in
+  time held, no blob written or read, no fsck, the point removed),
+  `TestForkCloneResentAfterSourceGone`, `TestForkCloneRefusals`,
+  `TestForkCloneGrowsToTheVolumeAsked`, `TestForkCloneFailureLeavesNoVolume`,
+  `TestForkPointExpiresAndIsSweptAtStart`, `TestHelloNamesLocalClone`,
+  `TestRealCloneIsAnActiveVolume`; the api's
+  `TestForkClonesOnTheSourcesHost` (placement, the shared point, no
+  snapshot row, no host_moved, 409 snapshot_needed without the feature;
+  no host_moved for a copy forked from a snapshot or a restore as a new
+  project, which fails with the old `p.HostID == nil ||` rule put back).
+- *Rejected:* cloning on the source's host and copying to another host
+  over the network (a second transfer path beside Blob for a case
+  production does not have yet); one Clone command on the source's host
+  making all the copies (each copy's restore is its own op with its own
+  failure, I-254); deciding clone or blob in buildRestore (by then the
+  snapshot the blob path needs would not exist).
+
+**I-702. Each step of a fork's copies prints a timed line (fork-fast,
+2026-10-13).** *Made during implementation.*
+- `repose fork` showed `Forking` and `Starting` with no done text, so
+  minutes passed and ended in silence. Each copy's wait now follows its
+  op's phase: `Copying SRC's disk into COPY` (or `Restoring COPY from the
+  snapshot`), `Building COPY's system`, `Starting COPY`. The CLI waits
+  on the copies in turn while the api runs them side by side, so only
+  the first copy is watched from its start: each of its steps ends in a
+  `✓` line with that step's time. Every other copy shows the step it is
+  on and ends in one `✓ Started COPY` line (`Restored`/`Copied` with
+  `--no-start`) with its whole op's time, from the op's `created_at` and
+  `finished_at`. Timing a later copy's step from when the CLI reached it
+  would print a few seconds for a step that ran for a minute (review
+  round 2).
+- A cloned copy whose restore failed has no snapshot of its own, so
+  `start` on it says to remove it and fork the source again instead of
+  "restore a snapshot into it again" (same `restore_unfinished` reason).
+- The summary line drops "from its snapshot of ..." for a cloned fork,
+  which has none, and a failed copy's message names `repose fork SRC`
+  instead of `--snapshot ID`.
+- *Evidence.* `TestFork` ("✓ Started izma-fork-1"),
+  `TestForkFallsBackToAForkSnapshot`, `TestForkTimesEachStep` (the fake
+  api's `ForkStepDelay`; fails with every copy timed per step),
+  `TestStartOfAFailedCloneSaysForkAgain`.
+
+**I-703. A fork's own snapshot is reason `fork` and expires in a day
+(fork-fast, 2026-10-13).** *Made during implementation.*
+- *Why.* Each fork left a manual snapshot of the source in Blob, 11.5 GB
+  for the owner's kanali, kept like any snapshot for seven days and, as
+  the newest of a project that then stops, for good. Nobody asked for it.
+- *What.* A cloned fork (I-701) takes no snapshot at all. A fork that has
+  to restore from Blob asks `POST /projects/:id/snapshots` with `{"reason":
+  "fork"}`: the row is reason `fork` (migration 0025 adds it to the
+  check), `expires_at` a day after it is taken, deleted then by the
+  expiry job even on a live project, and never the project's "newest"
+  that retention keeps, so a project's last real snapshot is not
+  displaced by it. hostd is sent `manual`, the reason it already takes,
+  since there the reason only labels its log line.
+- *A day*, not at once, because a copy that failed is retried with
+  `repose fork SRC --snapshot ID`, which the failure message names.
+- *Evidence.* `TestForkSnapshotExpires` (the expired fork snapshot goes,
+  the old manual one is kept although it is 30 days old),
+  `TestForkClonesOnTheSourcesHost` (reason, a day, hostd sent `manual`).
+- *Rejected:* deleting the snapshot once the copies are restored (the
+  retry above), and a hidden snapshot outside the list (it holds a
+  tenant's disk; the list is where they see what repose keeps).
+**I-697. An OOM kill in a pane no longer stops the pane: dev's user
+manager, its units and each session scope run with `OOMPolicy=continue`
+(pane-oom, 2026-10-13).** Amends I-576 and I-560. *Made during implementation*: an
+agent left running overnight on kanali was gone in the morning, and the
+journal said why.
+- *What happened.* At 02:10:46 the kernel's OOM killer picked one
+  process, a headless Chromium a Playwright test had launched from code,
+  holding 1.4 GB on a machine with 7.8 GB of RAM and 2 GB of zram, both
+  full. That part is I-200 and I-576 working: the agent was at -800,
+  Chromium at Chrome's own +300, and the kernel took the right one. Two
+  seconds later systemd stopped the pane: `tmux-spawn-04e95bda….scope:
+  The kernel OOM killer killed some processes in this unit`, then
+  `Failed with result 'oom-kill'` at a 6.5 GB memory peak. `OOMPolicy`
+  defaults to `stop`, and in a scope there is nothing else to stop: the
+  agent and everything it had started were in that one cgroup.
+  systemd-oomd was running and watching nothing, as I-576 left it, and
+  played no part.
+- *Why it was not caught.* I-560 reasoned that the tmux unit needed no
+  `OOMPolicy` because each pane is a scope of its own. That is
+  backwards: a scope of its own is what exposes a pane, since the
+  scope's own policy is `stop`. I-576's test ran its memory hog as the
+  pane's own command, where the stop costs nothing because the window
+  ends with the process anyway. The case that fails is a hog that is a
+  child of the pane's process, which is where every test run, build and
+  dev server an agent starts is.
+- *The fix.* `DefaultOOMPolicy=continue` on dev's user manager
+  (keystroke-path.nix), rather than a drop-in per scope name: three
+  families of cgroup of dev's hold an agent beside the work it started
+  (a tmux pane's `tmux-spawn-*.scope`; `repose-herdr-server.service`,
+  whose panes share its cgroup; and the transient scope
+  `repose-browser-scope` puts a `chromium` and its renderers in, where
+  the slice's 37.5 percent ceiling is what kills), and naming them one
+  at a time leaves the next one. Both session units keep the policy on
+  themselves, where their own reasons are. Each logind `session-N.scope`
+  takes it through the prefix drop-in it already has for I-494's CPU
+  weight, since a `repose exec` command or a test run under `repose
+  code` shares the session's scope; a session whose own sshd is the
+  victim still ends, since logind tracks the session leader rather than
+  the scope's policy. The system manager's default stays `stop`: a
+  system service left half dead should be restarted, and nothing of a
+  tenant's runs there. `user@.service` carries the policy as well: the
+  kernel's kill is reported against every unit above the cgroup it
+  happened in, that one included (`systemd[1]: user@1000.service: The
+  kernel OOM killer killed some processes in this unit`, in the test
+  below), upstream's unit sets no policy of its own, and its stop is
+  what I-576 calls the last thing that may go. Current systemd does not
+  act on an ancestor's event; the unit says it so that no change in
+  that has to be noticed. Slices have no such property at all, so the
+  same notice against `app.slice` and `user.slice` acts on nothing.
+- *What it makes true.* machine.md's "Memory and disk" says the agents,
+  the tmux or herdr server and the SSH connection are kept to the last,
+  "so the largest of the rest goes first, usually a runaway test or dev
+  server", and that a tab past the browser's ceiling crashes. Both were
+  false whenever the kernel's victim shared a cgroup with the agent, so
+  no public page changes here: the fix is what they already promise.
+  guest-conventions.md "Memory pressure" carries the policy beside the
+  `oom_score_adj` values.
+- *Rejected.* A `MemoryHigh` or `MemoryMax` on pane scopes, the memory
+  version of the `CPUQuota` on panes I-494 rejected: it would slow a
+  build on an idle machine, and it throttles the agent along with its
+  build. Wrapping the browsers in `$PLAYWRIGHT_BROWSERS_PATH` so a
+  Playwright launch lands in `repose-browser.slice`: that cache is
+  writable and `playwright install` replaces what is in it, and
+  Playwright drives the browser over inherited pipes. machine.md
+  already says those browsers have no limit of their own, and with this
+  change the kernel killing one is a failed test run the agent sees
+  rather than a lost agent.
+- *A live switch reaches the panes already open.* The policy is a
+  manager default, and systemd resolves it late: on the dev box
+  (systemd 255), with a transient scope already running, writing the
+  default and a `daemon-reload` moved that scope's `OOMPolicy` from
+  `stop` to `continue`. NixOS's switch reexecutes and reloads `dev`'s
+  manager in its per-user pass, so a machine that switches base with
+  agents running is covered by the switch, not only at its next start.
+- *Evidence.* Flake check `guest-keystroke-path`:
+  `DefaultOOMPolicy=continue` in user.conf and `OOMPolicy=continue` on
+  `session-.scope`, `user@.service` and both session units. guest-base,
+  23 subtests to the known I-513 failure (`mark=read`, which fails on
+  main too): its I-576 subtest (16.78 s) starts a hog as a child of a
+  pane's shell, and after `Out of memory: Killed process 5993
+  (python3.12)` the pane's shell pid, its window and
+  `systemctl --user is-active tmux-spawn-09ef4bc3-….scope` are all as
+  they were; its I-501/I-503 subtest (24.21 s) runs one in a herdr pane
+  (`herdr pane run w1:p1`), and after the kill the server's MainPID,
+  the unit's state and `herdr pane list` are untouched and the pane
+  took its next command. Each kill prints "The kernel OOM killer killed
+  some processes in this unit" for the scope and for
+  `user@1000.service`, and no `Failed with result 'oom-kill'` follows
+  either, which is the line that ended the agent on kanali.
+- *Revisit when:* a user unit of dev's needs a restart after an OOM kill
+  (then: `OOMPolicy=stop` on that unit, beside its `Restart=`).
+
+**I-718. What a guest-built binary links is not copied into every guest
+(boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706).** *Made
+during implementation.* I-533 had `repose-pin-profile` copy the closures
+of eleven libraries — the gcc wrapper's glibc and `cc.lib`, and openssl,
+zlib, sqlite, libffi, libyaml, libpq, libxml2, libxslt and the MariaDB
+client — into every guest's store overlay, so a binary compiled in the
+guest, whose ELF interpreter and RUNPATH name those paths in the host's
+shared store, would keep running after the host collected an old base.
+That copy is removed: `targets` is dev's profile again, and a fresh guest
+has no profile, so the unit finishes at once, as it did before I-533.
+- *What it cost.* 26 store paths, 1554 inodes, 75.5 MB, per guest, on the
+  first boot. On a fresh prod guest today (`e2e-pin3`, small, base
+  2026.10.12): `repose-pin-profile.service: Consumed 18.216s CPU time over
+  1min 26.523s wall clock time, 115M memory peak, 74.1M written to disk`.
+  Earlier runs of the same unit: 31.2 s (small), 55.9 s (large, idle host),
+  96.7 s (the teksafari-org incident). It is a fresh guest's entire
+  writable store (76 MB / 26 paths). About 47 s of it is overlayfs
+  copy-up, 14.8 ms per inode, because the first write to a region of an
+  LVM thin volume costs 18.2 ms (64 KB chunks, `Zero=zero`, metadata
+  commit) against 3.3 to 4.4 ms to blocks already allocated. On `e2e-pin3`
+  the unit was still running 33 s after the CLI printed "Ready in 1m46s",
+  and it spans SetupProject's window every time. Thin-pool allocation is
+  also the only serial resource in the storage stack (measured on
+  host-stg-01: already-allocated fsyncs scale linearly to 8 writers, 7170
+  IOPS; allocating ones ceiling at about 900/s and double in latency by
+  N=8, and 7 competing allocating writers inflate the identical copy-up
+  1.58x), so this unit is the heaviest competitor every other first-boot
+  unit has.
+- *What it bought: two libraries, in a case that has never occurred.* A
+  stop does not drop the host's GC root — `Roots.Remove(g.GuestID)` and
+  `Remove(goodRoot(...))` are in `destroy`, not `stopGuest`
+  (internal/hostd/guest/stop.go:175, there since 709607bb), so I-533's
+  stated premise is wrong; prod host-01 holds 14 `guest` roots for its 14
+  live projects while 3 guests run. Nine of the eleven are in the host's
+  own NixOS system closure (host and guest base come from one flake with
+  one nixpkgs input, so they are the same store paths), and no host GC can
+  take them. Run as a sequence on host-stg-01 with a guest on a no-copy
+  base, each step a real `nix-collect-garbage --delete-older-than 14d`
+  with gc.nix's own options: with the guest stopped, its `guest`, `good-`
+  and `rev-` roots all stay (`stopGuest` drops none) and are exactly what
+  holds libpq, and the GC freed 312 paths / 1.3 GiB with **all eleven
+  surviving**; then a closure that does not name libpq was applied, which
+  moves the `guest` and `good-` roots on and leaves the one old `rev-`
+  root; removing that single root — what `PruneRevisions(project, 3)` does
+  after three more config builds — and running the GC again freed 152
+  paths / 35.8 MiB and took **libpq-18.6 and mariadb-connector-c-3.3.5,
+  keeping the other nine**, which are every other path a `cc` build names
+  in its interpreter and RUNPATH. So the reachable loss is two libraries
+  behind five conditions. Every base that
+  has carried I-533 (2026.10.07, .08, .09, .12) names the identical eleven
+  paths, so no guest has ever had an old path to lose. And the eleven stay
+  in the system closure the host roots per guest: compat.nix's
+  `PKG_CONFIG_PATH`, `pg_config` and `mysql_config` name them, so all
+  eleven are in this branch's guest closure (1217 paths) with the copy
+  gone.
+- *When a path really is gone*, the program fails at ld.so
+  (`error while loading shared libraries: libpq.so.5: cannot open shared
+  object file`, exit 127) and fetching it back from cache.nixos.org costs
+  315 ms cold and 230 ms warm for one library, measured on the guest above
+  with libpq's bytes really gone, and 3 to 6 s for all eleven closures —
+  against 86.5 s to copy the same 76 MB up through the overlay.
+  I-719 is the command that does it. Recompiling also fixes it.
+- *The owner's two rulings.* Deferring the copy was rejected ("lets not do
+  the cheap fix, lets explore the real fix"), so the pin no longer waits
+  for anything: with no link targets there is nothing to defer, and dev's
+  own profile is empty on a fresh guest. I-706's wait for
+  `/run/repose/project-set-up` is not thrown away as a reason — I-719's
+  check keeps its purpose, because the one thing that must never sit on
+  the create path is a network call — but it keeps it as a 4-minute timer
+  rather than a wait, for the reason I-719 gives. Having the host hold the
+  roots instead was rejected on storage grounds ("we allow users to have
+  many stopped machines so our storage will def suffer"). Removal needs
+  neither, so neither ruling is reopened here. What the owner may want to
+  know is that the storage argument points the other way: a host-side root
+  for a base's eleven targets is about 76 MB once, in the shared store
+  that auto-optimise dedupes, against 75.5 MB *per guest* today — on
+  host-01's 14 live projects, 76 MB against about 1.06 GB of thin-pool
+  bytes — and a stop drops no root, so the host already keeps every
+  stopped guest's whole closure. That is a decision to take with the
+  numbers, not a gap in this one.
+- *What stays.* The profile pin (I-234, I-529), which costs nothing on a
+  fresh guest. Its eleven `nix-store -qR` calls, measured at 8.50 s of a
+  first boot against 1.78 s for one combined call, are one call now.
+  guestd still writes `/run/repose/project-set-up` (the boot record and
+  docs/research/boot-speed.md read it); the pin no longer waits on it,
+  I-719's check does. `/nix/var/nix/gcroots/repose-link-targets/` stays,
+  and is the one part of I-533 worth keeping: eleven symlinks, no bytes.
+  They keep the guest's own collection off the libraries, and because
+  roots an earlier base left stay, the directory is the exact record of
+  which paths a checkout's older binaries may still name — which is what
+  I-719 checks at boot, reading a dangling symlink as "this one is gone".
+  The 75 MB such a
+  guest already copied up stays too — deleting an upper copy of a path the
+  lower layer also has leaves a whiteout that hides the host's copy, which
+  is the 2026-10-07 "stage 2 init not found" incident.
+- *Measured here, as the cheaper fallback if this is ever reverted:*
+  mounting the guest's store overlay `volatile` skips overlayfs's
+  per-copy-up fsync and makes the identical 1554-inode pass 8.1x faster
+  (0.725 s against 5.885 s on host-stg-01), with the usual volatile-overlay
+  durability caveat.
+- VM test: guest-base's "I-533" subtest is now "I-718" — the same `cc`
+  build against openssl, asserting that nothing the binary links against
+  is in the upper dir (glibc excepted: hello's closure, which dev's
+  profile really does pin, contains it), that all eleven
+  `repose-link-targets` roots are there and name those paths, and that the
+  binary runs from the lower layer — and "I-719" covers the recovery.
+  Those subtests sit after the known I-513 `~/.bash_profile` failure in
+  the same file, which aborts the script before reaching them, so a green
+  guest-base has never been evidence about this code; they were run here
+  with that one assertion skipped, and the output is in the commit
+  message. Branch `rc-decides` (I-725) has since fixed the I-513
+  assertion — it was the test, not the base: sshd wraps a command in a
+  non-login `bash -c`, which nixpkgs builds with `SSH_SOURCE_BASHRC`, so
+  that wrapper reads `~/.bashrc` whatever login file the user has and
+  exports the marker into the `bash -lic` under it. With that corrected,
+  guest-base is 28 of 28 green on `main`, which is the first time these
+  five store subtests have ever run.
+
+**I-719. repose-store-repair fetches back a library the machine has lost
+(boot-real-copy, 2026-10-13).** *Made during implementation.* With I-718
+there is one case left where a guest's own binary can lose a library: a
+path from a base nothing on the host roots any more, which for the eleven
+of I-533 means libpq or the MariaDB client, after that library's nixpkgs
+path has moved. The program then fails at ld.so with `cannot open shared
+object file`, and nothing in the guest fixes it by itself. Measured in a
+prod guest, the obvious commands are traps: nix reports the path **valid**
+(`nix-store --check-validity` succeeds), `nix-store -r <path>` exits 0 in
+1.3 s having fetched nothing, and `nix-store --repair-path`, the one
+command that does fetch it, is refused through the daemon (`operation
+'repairPath' is not supported by store 'daemon'`, as dev, 1.0 s) and works
+as root with `NIX_REMOTE` unset and `/nix/store` remounted writable in a
+private mount namespace — the dance the pin's own copy-up already does —
+in 315 ms from cache.nixos.org, into the guest's own overlay; the binary
+then runs.
+- `repose-store-repair PROGRAM | /nix/store/PATH ...` takes a program and
+  reads the store paths it names from its ELF interpreter and RUNPATH
+  (`readelf`, not `ldd`: ldd needs the libraries it is reporting on), or
+  store paths directly; it re-execs itself under `sudo -n` because the
+  repair needs root, skips the paths that are really there, and repairs
+  the rest. With nothing missing it says so and exits 0.
+- *"Really there" is not `test -e`.* A collection on the host empties the
+  directory under a running guest's virtiofs mount, so the path still
+  exists and holds nothing — the class of problem I-652 found with
+  `nix.optimise.automatic` — and nix refuses to repair a path that exists
+  (`error: path … already exists`). The check looks for a file or symlink
+  inside the path, and when it finds an empty one it says the library was
+  collected while the machine was running and asks for a `repose stop` and
+  `repose start` (repose has no restart verb), naming the machine, since
+  those are commands the user types from their laptop and hostd sets the
+  guest's hostname to the project slug — bare when the hostname is the
+  base's own `repose-guest`, which names nothing. After that stop and
+  start the path is cleanly absent and the repair works first time.
+  A bare `test -e` would skip exactly the machine that needs it and then
+  refuse the path it did try.
+- `--link-targets` repairs the libraries a binary built here can name,
+  read from the `repose-link-targets` roots (I-718), which includes the
+  ones earlier bases left. `repose-store-repair.timer` runs that once a
+  boot, `OnBootSec=4min`, with `ExecStart=-` so a failure is logged and
+  ignored: eleven
+  stats and no work in the normal case, never anything on the create path,
+  and no egress must never cost a boot.
+- *What the boot check deliberately does not know* is whether a binary in
+  the checkout still names the path it fetches back. It repairs any root
+  that is dangling, which on a guest that has run several bases means the
+  old ones — and those are the only interesting case, because the current
+  base's eleven are in the closure the host roots and a guest whose
+  current closure lost a path would not have booted. So it can write a
+  library back that nothing needs any more, a few MB into the guest's own
+  volume, kept by the root that named it. That is the trade I took against
+  the alternative of repairing only when a program actually fails, which
+  is what the command itself is for: bounded by paths a real collection
+  took (2 of 11 in the measurement above, and only after a base moved
+  them and 14 days passed), it is a few MB occasionally against the 75.5 MB
+  every guest paid unconditionally. It is a **timer** rather than a
+  wait inside the unit, which is a correction to the shape I-706 used: a
+  unit that waits for guestd's stamp runs to its 180 s fallback on every
+  ordinary start, because hostd sends `SetupProject` only on a create
+  (`create.go` is its one caller), and these oneshots are in
+  `multi-user.target`'s path rather than beside it — in the guest-base run
+  the target was reached 2 ms after the last of them finished. So the wait
+  would have cost about 170 s of every start, which is worse than the
+  thing it was deferring. The 195.99 s that run took to reach the target
+  is **not** evidence of that: the test VM has no hostd, so
+  `repose-paths.service` spends its own 180 s (I-67) and everything after
+  it lands there; the run cannot separate the two waits, and the reason
+  for the timer is the code above, not that figure.
+- With no route to a cache nix fails in 8.3 s with curl's error (measured
+  with egress blackholed on host-stg-01; it does not hang). The command adds one line naming the path and
+  saying the machine cannot reach https://cache.nixos.org right now, and
+  exits non-zero; any other failure says that building the program again
+  gives it the libraries this base has. A guest's egress can drop out by
+  itself (one of three 76 MB fetches in `e2e-pin3` failed that way for a
+  couple of minutes), so this is not a rare path.
+- It is in the system path, so `repose config` needs nothing and a user
+  types it in any shell. apps/web/src/content/docs/troubleshooting.md
+  carries it against the ld.so message a user actually sees, which is
+  where they will look for it, and machine.md's "Memory and disk" says why
+  it can happen at all, beside the store's own garbage collection;
+  docs/interfaces/guest-conventions.md names the command and the roots it
+  reads.
+- VM test: guest-base "I-719" builds a binary against libpq, removes
+  libpq through the overlay (the whiteout a guest whose host lost the path
+  sees), and asserts the ld.so failure, that nix still calls the path
+  valid, that `nix-store -r` fixes nothing, that the repair names the path
+  and the unreachable cache rather than the daemon's error, that the unit
+  still succeeds when the repair fails, that an empty path asks for a
+  restart instead of being refused by nix, and that removing the whiteout
+  brings the host's copy and the binary back. The test VM has no route to
+  the internet, so the fetch itself is the staging measurement above, not
+  the test's — which also means the no-egress path is the one the test
+  exercises for real.
+**I-724. The host memory reserve is an eighth of the host, and a full host
+says so instead of saying "try again" (host-capacity, 2026-10-14; amends
+DESIGN §4).** *Made during implementation.* Two separate things were wrong
+about a host with no room.
+- *The reserve was a cliff, in four places.* `scheduler.HostReserve` gave
+  16 GiB above 128 GB of RAM and 8 GiB below it, and the same two steps
+  were written out again as inline SQL in `PickHost` and `Freeing` (the
+  api takes `min(free_mem_bytes, mem_bytes − reserve − reservations)` and
+  recomputes the reserve itself, so changing Go alone would have changed
+  nothing), in hostd's `HostReserveBytes` default
+  (internal/hostd/guest/manager.go), and in shell in nix/hosts/hostd.nix,
+  which sets `guests.slice MemoryMax=total − reserve` as the runtime
+  ceiling. On an 8 GB host the flat 8 GiB was the whole machine:
+  `FreeMemBytes()` returned 0 and every create was refused with
+  `insufficient_capacity`, which is what host-stg-01 did at `D2s_v7` until
+  a lane resized it to `D8s_v7` ($12.70 a day) to run one small guest.
+  Shrinking the Go reserve without the nix half would have been worse than
+  the bug: guests would be OOM-killed by the slice ceiling instead of
+  refused at placement.
+- *The rule now is `total/8`, floor 2 GiB, ceiling 16 GiB*, in all four
+  places, with nix/hosts/tests/default.nix asserting
+  `guests.slice MemoryMax == total − reserve` against the same arithmetic
+  — the one place the three languages are checked against each other, and
+  it passes on a 2.84 GiB test host, where the floor is what applies:
+  `guests.slice MemoryMax=904200192 (total=3051683840
+  reserve=2147483648)`. The floor stays at 2 GiB rather than 1 GiB
+  because the host builds guest configurations itself, and the slice
+  ceiling is a hard line: 8 GB is the smallest host that can run a guest
+  (6 GB left, one small), which is the realistic floor for a BYO host. An
+  eighth is not a new number: it is exactly 8 GiB at 64 GB and exactly
+  16 GiB at 128 GB, the two points the steps named, so no size repose runs
+  today moves by more than a rounding of its own memory (host-01, 62.8 GiB
+  usable, goes from 8 GiB to 7.85 GiB, 160 MiB more for guests). The small
+  end is what changes: 2 GiB on an 8 GB host leaves 6 GB, which fits a
+  small guest (4 GiB + 512 MiB), so a small host and the BYO-host shapes
+  can run something. R3-2 still holds — memory is never oversubscribed;
+  the reserve is the host's own share, taken off the top before any guest
+  is placed.
+- *The refusal told users to wait for something that does not happen.*
+  "the host had no room for it right now … Try again in a few minutes"
+  (internal/cli/humanize.go, run.go, env.go, helptopics_data.go, cli.md's
+  exit-8 row, troubleshooting.md). Memory is never oversubscribed and a
+  running machine holds its own until it stops, so minutes change nothing;
+  the one case where waiting works is the three minutes after a `stop` or
+  `rm`, which the api already waits out itself (I-408) before any refusal
+  reaches a user. It now says a machine holds its memory while it runs, so
+  stopping one frees room — the only lever the user has. Measured on
+  host-01 while writing this: 4 running guests reserve 48.0 GB of 62.8 GB,
+  leaving 4.8 GB bookable, which an xl or large create cannot fit; the
+  host was not idle behind that figure either (MemAvailable about 28 GiB,
+  with 31 GiB of the used memory being the guests' own `shared=on`
+  backing), so the reservation is honest and the fix does not pretend
+  otherwise.
+- *The operator side already existed and should have spoken first.*
+  `HostMemory80` warns at 80 percent of reserved memory for 10 minutes,
+  and host-01 was at 91 percent (48 / (48 + 4.8)) when its owner hit the
+  refusal. The rule is in ops/alerts.yaml and fires; what is missing is
+  the last hop, which is still the owner's open item — Prometheus pages
+  reach nobody until calert and the Uptime Kuma push monitor are set up on
+  the personal server (ops/README.md step 3, docs/CHECKLIST.md "Release
+  (M5)"). No code change here; the gap is in the checklist, where it is.
+**I-725. The guest-base check for "a user's login file decides" measures
+the login shell, not the shell sshd wraps it in.** (rc-decides,
+2026-10-13; corrects guest-base's I-513 subtest, which has failed on
+main since 2026-10-08) *Made during implementation*: I-513's promise is
+about `/etc/bashrc` ("The last lines of `/etc/bashrc`'s interactive part
+... now source `~/.bashrc` in a login shell when it is readable, there
+is no `~/.bash_profile` or `~/.bash_login`, and `~/.profile` does not
+mention bashrc. A user who has one of those decides for themselves"),
+and the base keeps it: the guard in `nix/guest/base/shell.nix` is
+exactly those four conditions, and I-513 verified it by evaluating
+`/etc/bashrc` in a temp HOME. The VM subtest checked the same promise
+through `ssh dev@127.0.0.1 "bash -lic 'echo mark=$REPOSE_RC_MARK'"` with
+an empty `~/.bash_profile` in place, and read `mark=read` anyway, so the
+assertion fired and the six subtests after it (the store overlay, I-533,
+I-529, I-585 and the guest profile script) never ran at all.
+Nothing in the base reads `~/.bashrc` there. sshd runs a command as
+`bash -c '<command>'` — not a login shell, so no login file of the
+user's is consulted by bash in the first place — and nixpkgs builds bash
+with `-DSSH_SOURCE_BASHRC` (pkgs/shells/bash/5.nix), which makes a
+non-interactive `bash -c` read `~/.bashrc` itself whenever `SSH_CLIENT`
+or `SSH2_CLIENT` is in its environment. That wrapper exports
+`REPOSE_RC_MARK`, and the `bash -lic` it runs inherits it. Reproduced
+with the pinned nixpkgs bash: `env -i HOME=$t SSH_CLIENT='1.2.3.4 1 2'
+bash -c 'echo mark=$REPOSE_RC_MARK'` prints `mark=read` with an empty
+`$t/.bash_profile` present, and prints nothing without `SSH_CLIENT`.
+So the probe could not tell "the base sourced my `~/.bashrc`" from
+"bash's own ssh rule sourced it one process earlier", in either
+direction: the subtest's *positive* `mark=read` proved nothing about the
+base either.
+The test is corrected, not weakened. Both ssh probes now run the login
+shell under `env -u REPOSE_RC_MARK`, so a marker in it is that shell's
+own work, and the negative case also asserts what cannot cross a process
+at all: `rcprobe` undefined and `ll` still the base's
+`eza -al --group-directories-first`. The negative case now covers all
+three of I-513's guards — `~/.bash_profile`, `~/.bash_login` and a
+`~/.profile` that names bashrc — where it covered only the first.
+*Rejected:* dropping the base's `~/.bashrc` read to somewhere bash reads
+after a user's login file, which is what the assertion looked like it
+asked for. There is no such place for the shell sshd wraps a command in:
+it is not a login shell, so bash never looks at `~/.bash_profile` there,
+and the read is bash's own, inside a process the base does not start.
+Patching bash to drop `SSH_SOURCE_BASHRC` was rejected too: it is
+nixpkgs' and Debian's long-standing default, it is what makes
+`ssh <machine> <command>` find the tools a user's `~/.bashrc` puts on
+`PATH`, and a guest's bash must stay the one the base's closure already
+has. machine.md gains the sentence that a login file of the user's own
+takes `~/.bashrc` back.
+**I-709. From the home folder, `attach NAME` and `run NAME` bring
+NAME up in one step, and `attach` comes up from every state a start
+can leave, a server restart included (attach-run-home, 2026-10-13).**
+Amends I-601, I-603, I-631, I-641. *Made during implementation* (the
+owner's backlog of 2026-10-13, item 2: `repose attach unwrap` in `~`
+answered "unwrap is stopped. Start it with `repose start unwrap`" and
+`repose run unwrap` "'unwrap' is one of your projects, but `repose
+run`'s argument is a prompt"; "having to do 2 steps simply because the
+machine was stopped is criminal"). Both lines came from a CLI before
+v0.1.34: I-603 made `run`'s word the project and I-631 made `attach`
+start a stopped machine, and neither line is in v0.1.34. What the owner
+asked for is the rule, so this entry pins it and closes what was left.
+- *`repose run NAME` in the home folder* is the machine NAME as if run
+  from its checkout without a sync: created if there is none (I-601's
+  `--name`), started if stopped, attached to its session on its current
+  window, `-p` typed into an agent window that opens in the machine's
+  checkout (the carry's answer, as `--no-sync` gives). Nothing in `~`
+  is synced, linked (`by_dir`), given a `repose` remote or read for a
+  git carry; a plain `repose run` there still exits 2. The owner's
+  "no run on ~, no project linking" stays as I-601 wrote it. Rejected:
+  syncing NAME's laptop checkout from `~` (the CLI would have to pick a
+  folder the user did not name, and `repose sync` in that folder does
+  it).
+- *`attach`, `ssh`, `code`, `run` and `start` bring the machine up as
+  `run` always did:* a stopped one starts, one in `error` restarts (as
+  `run` and `start` did; I-631 had kept `attach` at exit 5 there),
+  one creating or starting is waited for, one stopping is waited for
+  and then started, and one being restored is now waited for too and
+  then started (the
+  restore op, then the state; it exited 5 before, a second step for
+  nothing). Destroying and destroyed still exit 5, and so does a machine
+  stopped for a miner (I-239, I-631: after an abuse stop, `repose start`
+  is a step the user takes knowing why).
+- *A server that is restarting* (the api's `host_unreachable`, set after
+  90 s of silence): its running machines are frozen and come back as
+  they were (I-652), and a stopped machine's start is refused while it
+  is away (`lifecycle.UnreachableMessage`). These commands now wait with
+  `Waiting for api's server to come back`, polling the project each
+  second, for up to 10 minutes (`hostWaitTimeout`, the api's own
+  `HostUnreachableGrace`), then go on from whatever state the machine is
+  in: a frozen one is attached as it is (no op is sent), a stopped one is
+  started, one the restore could not bring back is started cold by the
+  api and waited for. Past 10 minutes they exit 5 with ``api's server
+  has not answered for 10m. `repose status api` shows when it is
+  back.``; Ctrl-C ends the wait. Rejected: a restart of a frozen machine
+  (it would throw away the image the freeze kept), and a shorter wait (a
+  host-01 restart with frozen guests is about 2 minutes, I-686).
+  `ssh` and `code` wait on a frozen running machine too (their
+  connect gate checks `host_unreachable`, not only the state), and so
+  does `repose start`, which then says the machine is running: the
+  public docs promised the wait for all five, and an "already running"
+  at once, before a connection that cannot answer, is the two-step
+  answer this entry removes. Not covered: the first 90 s of a restart,
+  before the api marks the server. A connection to a machine that was
+  running reaches the ssh wait as before and `start` says it is
+  running; lifecycle.md says so. A start of a stopped machine is
+  accepted then (the api refuses only a host already marked
+  unreachable) and waits on its op until the host answers or the
+  op's grace ends. Rejected for now: re-reading the project when
+  that ssh wait fails, since the 15 s wait ends long before the api's
+  90 s mark.
+- A wait that leaves the machine running (a restore op that booted it,
+  or a start with no op named) sends the early boot probe once the
+  re-read says running (I-237); before, only a create or start op did.
+- The idle "frozen" look of I-683 is a mock with no api field, so there
+  is nothing for the CLI to wake yet; when `resting` lands, attach is
+  the command that wakes it.
+- `exec`, `ps`, `open` and `cp` still start nothing (I-631); their line
+  for a machine on its way up now names ``repose attach NAME`` (it said
+  "`repose run` in its checkout", wrong from `~`).
+- `waitForSSH` returns the context's error when Ctrl-C killed its ssh;
+  it said "Could not run ssh: signal: killed. repose needs the OpenSSH
+  client".
+`TestAttachStartsAStoppedMachine`, `TestAttachGivesUpOnAServerThatStaysAway`,
+`TestAttachToAnErroredGuestRestartsIt` (was `TestAttachToAnErroredGuestSaysError`),
+`TestSSHStartsAStoppedMachineAndExecDoesNot` (frozen running too),
+`TestStartWaitsForARestartingServer`, `TestWaitThatEndsRunningCallsGuestUp`,
+`TestAttachAndRunByNameFromTheHomeFolder`. Specs: features/run-and-attach.md,
+features/stop-start-destroy.md. Docs: cli.md (attach, ssh,
+code, start), run-and-attach.md, lifecycle.md (home folder, server
+restart).
+*Evidence (2026-10-13, prod, this branch's CLI, from `/home/dev`, a
+throwaway `s2-attach-run-home-b`):* `attach NAME` on the stopped
+machine printed `Starting`, `Booting` for 9 s and `Connected to
+s2-attach-run-home-b (large)` and landed in its tmux session; `run NAME`
+on it stopped did the same with `Ready in 17s.` and no sync line;
+`projects.json` had no `by_dir` entry for `/home/dev`; `run NAME -d -p
+"say hi"` opened `1:claude` with tree `checkout` in `repose ps`; an
+attach while a `repose start` ran waited (`Booted ... 8s`, `Connected`);
+an attach while a stop ran printed `Stopping`, `Stopped`, `Starting`,
+`Booting`, `Connected`; a plain `run -d` there still exits 2. Not run
+live: `error`, `restoring` and a server restart (prod has no way to
+cause them safely and staging has no host); the fake api covers them.
+
+**I-720. The api learns a guest's address from the host, not only from a
+create's result (boot-real-addr, 05/03, 2026-10-13).** *Made during
+implementation.* `projects.guest_ip` had exactly one writer,
+`internal/api/ops/phases.go`'s `CreateResult`/`RestoreResult` phase, and
+four paths that null it. `StartResult` carried no address at all, and the
+api never read `Hello.GuestStatus.ip` or `vsock_cid` (`GetIp()` had no
+caller under `internal/api`). So a create that failed after the guest had
+booted left the row NULL under a guest the gateway could have reached,
+and no later message corrected it.
+
+teksafari-org, 2026-10-13, from the ops rows: `create` opened
+15:35:47.829Z and errored 15:37:07.848Z with `guest_unresponsive`
+(SetupProject, I-705); a `start` was accepted 15:37:08.537Z, 0.69 s
+later, and finished `done` at 15:38:11.092Z. **That start succeeded and
+still left `guest_ip` NULL**, which is the whole case for the proto
+change: nothing a start reported could fill the row. The project stayed
+unroutable until the conductor wrote an UPDATE by hand, and the gateway
+told the user, falsely, that the host could not be reached (I-721).
+
+Blast radius, from the read-only prod db: of 18 failed create/restore ops
+ever, 10 died before placement with no guest and 8 past it (5
+`guest_unresponsive`, 3 `internal`); 6 distinct projects have had a
+`start` finish `done` after such a failure.
+
+Two writers are added, both idempotent and both taking the host's word.
+The host is the authority: it allocates inside the disjoint /22 the api
+handed it at registration (`hostmgr.allocate`: 10.64.0.0/22,
+10.64.4.0/22, …) and keeps the allocation in bbolt across a stop, so a
+row that disagrees is a stale row and is overwritten, not warned about.
+
+- The `Hello` reconcile (`Engine.OnHello`) records the `ip` and
+  `vsock_cid` the host reports for a guest it owns, when the row holds
+  neither or holds another one, and only when the project has no open op
+  (an open op's result settles the address as it settles the state). A
+  host that reports an address for a project the api thinks is stopped
+  gets it written too: `guest_ip` is the allocation, not a liveness
+  signal, and the gateway routes on the project's state. A destroyed
+  project is never written — the write names the guest and carries `and
+  destroyed_at is null`.
+- `StartResult` gains `guest_ip` (field 5) and `vsock_cid` (field 6), and
+  the start phase records them. This is the half that closes the outage
+  in seconds rather than days. `internal/hostd/stream/stream.go:326`
+  sends `Hello` exactly once per stream session, right after `Dial`, so
+  Hello frequency *is* reconnect frequency: host-01's journal has 24
+  `stream_connect` events in 7 days with gaps up to 2 days, the last at
+  2026-10-12T22:13:07Z — about 17 hours before the failed create, and
+  none since. A Hello-only reconcile would never have touched
+  teksafari-org. Empty and 0 from a hostd before this, which the api
+  reads as "unchanged"; an api before it ignores both.
+
+`hostdev`, the api stand-in staging runs, learns an address the same two
+ways, so the staging bench models the api rather than the bug.
+
+Not done, deliberately: the Hello path does not re-sign the guest's host
+certificate with the address as a second principal the way the create
+result does (`resignHostCert`). The gateway verifies a guest's host key
+against `<slug>.<handle>`, never the address, so nothing depends on that
+principal for reachability, and decrypting a project's secrets and
+signing inside a reconcile that runs for every guest on every host
+connection is not worth it; the project's next create or restore adds it.
+
+Evidence, `go test` on woker-1 against the real Postgres
+`internal/db/testdb` boots: `TestHelloRecordsAGuestAddressTheApiLost`,
+`TestHelloCorrectsAnAddressThatDisagrees`,
+`TestStartRecordsTheGuestAddress`,
+`TestHelloLeavesAProjectWithAnOpenOpAlone`,
+`TestHelloRecordsTheAddressOfAStoppedGuestButNotADestroyedProject`, and
+`TestStartReportsTheGuestAddress` in `internal/hostd/guest`. Red before
+the change, with both writers removed: "timed out waiting for the address
+back from Hello", "timed out waiting for the stale address corrected",
+"guest_ip <nil> after a start, want 10.64.4.2".
+`docs/interfaces/grpc-hostd.md` in this commit.
+
+**I-721. "No address" is not "unreachable host" (boot-real-addr, 06,
+2026-10-13).** *Made during implementation.*
+`internal/gateway/server.go` collapsed `route.GuestIP == ""` and
+`route.HostUnreachable` into one banner, `<slug> is on a host the control
+plane cannot reach right now; try again shortly`. In the teksafari-org
+incident the host was answering and the machine was running; only the
+api's record of the address was missing, so the user was told something
+false, blamed the host, and was sent to wait for something that was never
+going to change. The two states now read differently:
+
+- `host_unreachable` keeps the existing banner, reason `route_error`.
+- No address: `<slug> is running but repose has no address for it; run
+  \`repose stop <slug>\` then \`repose start <slug>\``, reason
+  `no_address` (a new value of `repose_gateway_auth_fail_total{reason}`
+  and of the `auth_fail` event, so the api's own record being wrong can
+  be alerted on separately). It names the two commands because, since
+  I-720, a start writes the address — there is no third thing to try and
+  nothing to wait for. Should be zero in a healthy fleet; the RUNBOOK
+  says what a run of them means.
+
+Both are also added to the CLI's `otherRefusals`. Neither is a
+certificate refusal, and before this both fell through to the bare
+`permission denied` test and spent `connect`'s one forced re-issue
+(I-175) on a machine whose address the api did not hold.
+
+Found on the way: the fake api's `GET /internal/route` never returned
+`host_unreachable` although the real api always has
+(`internal/api/http/internal.go`), so no gateway test could tell the two
+states apart.
+
+Evidence: `TestRunningWithNoAddressIsNotAnUnreachableHost` (no address:
+"todo-app is running but repose has no address for it; run `repose stop
+todo-app` then `repose start todo-app`"; unreachable host: "todo-app is
+on a host the control plane cannot reach right now; try again shortly"),
+`TestNoAddressCountsAsItsOwnAuthFailReason`, with I-189's
+`TestStoppedAndOtherStates` and `TestOneBannerPerRefusal` still green.
+Red before, with the collapsed condition restored: the no-address case
+answered the unreachable-host banner and `no_address` counted 0.
+`docs/interfaces/ssh-gateway.md`,
+`docs/workstreams/06-gateway-edge.md`, `docs/ops/RUNBOOK.md` and
+`apps/web/src/content/docs/troubleshooting.md` in this commit.
+
+**I-722. A project read names the op in flight, so `repose run` never
+restarts a create it failed to read (boot-real-addr, 05/07,
+2026-10-13).** *Made during implementation.* One user action produced two
+ops on teksafari-org: the create errored at 15:37:07.848Z and a start was
+accepted 0.69 s later, from `repose run` itself, and nobody read the
+create's error (the api log shows about two `GET /v1/projects/{id}` a
+second in that window and zero reads of the create op).
+
+I-708's round-1 fix carries the create's op id across the re-read
+(`internal/cli/run.go:1281`) and closes the path the incident took, but
+only the `!fresh` path. When `resolveProject` has already found the
+project, `run.go:251` sets `fresh := res.Project != nil` to true and the
+whole `!fresh` block — the carry *and* I-356's guard — is skipped;
+`project.OpID` is empty because `projectJSON` emits no `op_id` (only
+`createProject`'s 201 did); `waitState` returns the moment the state goes
+to `error`; and the next statement calls `StartProject`. The same
+restart, from a different entry point.
+
+`GET /v1/projects/:id` now carries `op_id` when the project has an op
+pending or running, from `store.OpenOpsForProject` (ops are serialised
+per project, so the oldest open one is the one running). The wait then
+follows the op and reports what it said. The **list** route does not
+carry it: one query per project is an N+1, and no caller needs it there.
+The round-1 carry stays as the fallback against an api older than this.
+
+Evidence: `TestProjectReadCarriesTheOpInFlight` (the read names the same
+op the create's 201 named, the list names none, and the field is gone
+once nothing is open) and, on the CLI's side,
+`TestRunDoesNotStartACreateThatFailedOnAProjectItFound` — zero starts and
+"Could not start teksafari-org: the machine did not answer within a
+minute of starting (guest_unresponsive)", with
+`TestCreateThatFailedAtOnceReportsItsOwnError` and
+`TestStartOfAProjectWithNoGuestShowsTheCreate` still green. Red before:
+`read op_id "", want the create's "01a1379f-…"`.
+`docs/interfaces/api.md` in this commit.
+
+**I-723. One live project per guest address (boot-real-addr, 05,
+2026-10-13).** *Made during implementation.* Migration 0026 adds `unique
+(guest_ip) where destroyed_at is null and guest_ip is not null`. Guest
+addresses are unique across the fleet by construction — each host
+allocates inside the disjoint /22 it was handed at registration — so two
+live rows holding one address would relay two users' logins to one guest.
+Now that the api writes `guest_ip` from three places (I-720), the
+database is what refuses it rather than a code path that has to remember
+to check; a refused write leaves the row as it was and is retried on the
+next Hello rather than failing an op.
+
+**The predicate is keyed on `destroyed_at`, not on `state`, and that is
+load-bearing.** Prod today: 14 live projects, 13 holding an address, no
+two live rows sharing one, and one *destroyed* row repeating a live row's
+address from before a destroy released it — so keyed on `destroyed_at`
+the index creates cleanly, and keyed on `state` it would fail to create
+on production. (There are 0 rows with `state = 'destroyed'` while
+`destroyed_at` is NULL, so the two agree in the other direction; the
+difference is the destroyed rows that keep an address.)
+
+Evidence: `TestTwoLiveProjectsCannotHoldOneGuestAddress` (a second live
+row is refused the address, the same row takes it once destroyed, and the
+live row's address is unchanged), with `TestMigrateUpDownUp` covering
+0026's down. Red before: "two live projects took one guest address".
+`docs/interfaces/db-schema.md` in this commit.
+
+**I-728. A create of this run that ended in error is reported, whatever
+else is open (run-failed-create, 2026-10-14; amends I-356 and I-722).**
+*Made during implementation.* I-356 gave `repose run` a guard: when the
+project it created reads back in `error`, fetch the create op and report
+what it said, rather than falling through and starting the machine. The
+guard asked two questions — is the state `error`, and does the project
+carry no op id — because until I-722 a project read carried no op id at
+all, so the second was always true once a create had settled. I-722
+makes a read name the op in flight, and a project can have one while its
+create sits in error: a `machine.nix` change queues personal builds
+behind a create (I-490), and `OpenOpsForProject` returns the oldest open
+one. With an op id named, the guard was skipped, `error` matches no case
+of the state switch under it, and the fall-through called
+`StartProject` — the 0.69 s restart of a failed create that made one
+user action look like three on teksafari-org (2026-10-13), one op later
+and with the create's error still unread. The guard now asks only
+whether a create of this run ended in error, and reads that op by the id
+it was given, not whatever is open. `ensureRunningFrom`'s comment about
+a project read carrying no op id went with it, since I-722 made it
+false.
+- This is the hole I-722 left, found by reading its own guard rather than
+  by hitting it: the condition tested "is any op open" where it needed to
+  test "is the op that failed this create still open". It is one line,
+  and it keeps I-356 true for every project state rather than only for
+  the states that happen to leave no op behind.
+- Test: `TestRunReportsAFailedCreateEvenWithAnotherOpOpen`
+  (internal/cli), the read naming an unrelated open build with the state
+  `error`: the create's own message, and zero starts.
+  `TestRunDoesNotStartACreateThatFailedOnAProjectItFound` (I-722) still
+  passes beside it.
+**I-726. The viewer pastes the laptop's clipboard on the machine with
+Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13).**
+*Made during implementation*, from the owner's report that the page
+`repose browser` opens "doesnt have a way to paste the clipboard from your
+end". The page sent the laptop's clipboard only when the tab came to the
+front, through `navigator.clipboard.readText`, which Chromium allows after
+a permission prompt and Firefox refuses without a click. Ctrl+V itself
+went to noVNC, which cancels the key in the browser and sends it to the
+machine, so the machine pasted its own clipboard. On a Mac it was worse:
+noVNC sends Cmd as Alt, so Cmd+V reached the machine's browser as Alt+V
+and pasted nothing.
+- *Keyboard paste.* A capture listener on the document holds the paste key
+  (Ctrl+V, Ctrl+Shift+V; Cmd+V and Cmd+Shift+V on a Mac) back from noVNC
+  without cancelling it. The browser then fires its own paste event with
+  the clipboard's text, which needs no permission in Chromium or Firefox.
+  The page sends that text as the VNC clipboard (noVNC uses TigerVNC's
+  extended clipboard, so the text is UTF-8) and then presses Ctrl+V on the
+  machine over the same RFB connection, which carries both in order. On a
+  Mac it first releases what noVNC sent for Cmd, so the machine sees
+  Ctrl+V, not Ctrl+Alt+V. With Ctrl held on the laptop, noVNC has
+  normally sent Ctrl down, and the page sends only the V. On Windows noVNC
+  holds a left Ctrl back for up to 100 ms to tell AltGr apart and sends it
+  only with the next key it sees, which the held V never is; the page
+  flushes that Ctrl first, and presses Ctrl itself whenever noVNC's list
+  of keys down has none (a Ctrl released before the 300 ms below).
+- *Which key is V.* On a Latin layout the key's letter (`key`) decides,
+  so Dvorak's Ctrl+K on the physical V key reaches the machine as Ctrl+K.
+  On a non-Latin layout (Cyrillic, Greek) browsers take the shortcut by
+  position, and the physical key (`code`) decides.
+- *A browser with no paste event.* If none arrives within 300 ms, the page
+  presses Ctrl+V on the machine anyway, which is what happened before.
+- *The paste button.* For a pointer, a phone, or a browser whose shortcut
+  something else takes: `readText`, then the same send and Ctrl+V.
+  Chromium asks once; Firefox 125 and later shows its own Paste button.
+  The button says "not allowed" when the browser refuses, and "clipboard
+  empty", pressing nothing, when the laptop's clipboard holds no text: a
+  Ctrl+V then would paste the machine's own clipboard. The focus-time
+  push stays for Chromium with the permission granted.
+- *Rejected.* Typing the clipboard as key events (xdotool-style) would
+  bypass the clipboard altogether, but it breaks on any character outside
+  the machine's keymap and is slow for long text. Pasting through a text
+  box in the page is an extra step for every paste.
+- *Evidence.* nix/guest/tests/viewer-paste.mjs runs a real Xvnc with
+  vncconfig, a Chromium with a textarea on that display, websockify
+  serving this viewer, and Playwright's Chromium (with and without the
+  clipboard permission) and Firefox as the laptop; the commit message has
+  its output against main's viewer and this one.
+
+**I-727. The agents' browser clears a stale profile lock before it starts,
+and the desktop's idle stamps are always dev's (browser-fixes,
+2026-10-13).** *Made during implementation*, from an agent's report that a
+machine's browser "wouldn't start, because of a stale profile lock and a
+root-owned /run/repose/desktop/last-cdp".
+- *The lock.* Chromium marks its profile in use with `SingletonLock` (a
+  link to `HOSTNAME-PID`), `SingletonSocket` and `SingletonCookie`. A
+  browser that is killed, which a stop, a freeze or an OOM kill does,
+  leaves them behind in `~/.local/share/repose/browser`. Chromium clears
+  its own stale lock only when the host name matches and the PID is not a
+  Chromium. A fork or a restore under another name has another host name,
+  and Chromium then refuses the profile as in use on another computer; a
+  PID that another Chromium reuses makes it wait on a socket nobody
+  answers. `repose-browser-unlock`, the unit's ExecStartPre, removes the
+  three links unless the process the lock names is running with this
+  profile on its command line, and says so in the unit's journal.
+  Chromium rewrites its process title, so its `/proc/PID/cmdline` is one
+  string of arguments joined by spaces; the helper looks for
+  `--user-data-dir=PROFILE` between spaces, NULs read as spaces.
+- *The stamps.* `last-client` and `last-cdp` were written with `touch` by
+  the per-minute idle check, as root, and by the display's, the viewer's
+  and the browser's units, as dev. When the idle check made a stamp first
+  (it creates a missing one, and a viewer can start before the browser's
+  start has finished), dev could not touch it any more: the browser's
+  ExecStartPost failed and the unit stopped. Every writer now runs
+  `repose-desktop-stamp`, as root (the units with the `+` prefix), which
+  touches the stamp and gives it to dev. A root stamp left by an older
+  base on a running machine is given back at the next write.
+- *Evidence.* The flake check `guest-browser-starts-after-a-kill` runs the
+  unlock helper against another host's lock, a reused PID, a PID with
+  another profile, a dead PID, a live lock whose holder's title is one
+  space-joined string, and a running headless Chromium, and reads the
+  unit texts for the helper and the stamp writes. A guest-desktop subtest
+  starts the browser over another host's lock and root's stamps (the VM
+  tests need the dev box). The commit message has the reproduction on a
+  real machine.
+
+**I-729. The agent process-name predicate lives in a leaf package, so
+`repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends
+I-690).** *Made during implementation.* The guest closure check failed on
+the batch: `guest system closure: 6443547552 bytes (limit 6442450944)`,
+over by 1.05 MB, where main had 4.7 MB of headroom. The whole crossing was
+one binary: **`repose-hook` went from 7.29 MB to 13.03 MB**, +5.74 MB, which
+is the entire 5.81 MB the batch added to the closure. `guestd` grew 45 KB
+and the new scripts of this batch are 4.8 KB, 1.3 KB and 864 bytes.
+- *The cause.* I-690 exported `IsAgentCommand` from `internal/guestd/sample`
+  for the hook socket, and `internal/guestd/hooks` imports it — one
+  predicate, used twice. `sample` imports `internal/gen/guestd/v1`, so the
+  hook's dependency list grew by **126 packages**: the generated protobuf,
+  `google.golang.org/grpc`, `golang.org/x/net/http2`, `x/text/unicode`,
+  `internal/psi`, `internal/abuse`. A binary that posts to a unix socket
+  was linking the guest's whole RPC stack to ask whether a process name is
+  an agent's.
+- *The fix.* `internal/agentproc` holds the table and the predicate and
+  imports nothing but `strings`; `sample` keeps `binaries`,
+  `matchesBinary`, `isAgentCommand` and `IsAgentCommand` as delegates, so
+  its callers and tests are untouched, and `hooks` imports `agentproc`.
+  The package comment says it must stay a leaf and why.
+- *Evidence.* `go list -deps ./cmd/repose-hook | grep -c 'gen/guestd\|grpc'`
+  is **0** (it was 2 and 124); `go build ./...` and `go vet` clean;
+  `internal/guestd/sample`, `internal/guestd/hooks` and `internal/guestd`
+  pass; the closure check passes again.
+- *Why this is the fix and not a bigger limit.* The guard says what it is
+  for — "every host's store grows by it, and every first boot registers its
+  metadata" — and it caught a real regression on its first crossing. Raising
+  it would have shipped a 13 MB hook binary into every guest and hidden the
+  next 5 MB too. The limit stays at 6 GB, which the batch is now 4.6 MB
+  under.
+- The check itself prints "closure over 6 GB; largest paths:" and then
+  exits without printing any, which cost time here; worth fixing when
+  someone next touches `nix/flake.nix`.
+
+**I-730. A fork or a start that waits out a background stop, after
+fork-fast and attach-run-home (stop-background, 2026-10-14).** Amends
+I-710. *Made during implementation*, merging main (I-700..I-703, I-709,
+I-722) into stop-background.
+- *Fork.* I-710 put the wait for a stop under way before `repose fork`'s
+  own snapshot. Fork-fast replaced that snapshot with a clone of the
+  source's volume on its host, falling back to a fork snapshot on `409
+  snapshot_needed` or an api before clones. The api refuses both while
+  the source is `stopping` (`a fork needs it running or stopped`, and the
+  busy refusal on a snapshot), so the wait now comes before the first
+  fork request and covers all three ways. A fork from `--snapshot ID`
+  does not wait: the copies come from a stored snapshot, which a stop
+  does not touch. The fake api refuses a clone of a `stopping` project as
+  the api does, which the test needed to fail without the fix.
+- *Start, attach, run, ssh, code.* `ensureRunningFrom` waits on the op
+  the project read names (I-722), which on a `stopping` machine is the
+  stop. A stop that failed then read `Could not start job: stopping job
+  failed: ...`, a start's failure for an op that was not a start; and
+  through the state wait, `✓ Stopped job` before the restart. Now the
+  command prints `Stopping job failed: WHY.` once (the api's reason
+  without its "`repose stop job` tries again", since the command is
+  starting the machine instead) and starts the machine from `error`,
+  which the api turns into a restart (I-157): the user asked for a
+  running machine, and the failure is also notified (`stop_failed`).
+- *Rejected:* exiting on the stop's failure. The user's command was a
+  start; a machine in `error` is one a start restarts everywhere else.

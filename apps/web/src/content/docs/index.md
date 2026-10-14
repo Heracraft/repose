@@ -35,7 +35,6 @@ repose run -p "write tests for src/billing.ts and commit them"
 
 ```text
 ✓ Created your-project (large)  0.3s
-✓ Built the configuration  6.1s
 ✓ Booted your-project  5.2s
 Connected to your-project (large)
 Synced: 3 modified, 1 untracked (2 new commits)

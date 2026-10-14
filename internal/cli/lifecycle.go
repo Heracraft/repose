@@ -43,13 +43,15 @@ func retryOnOpConflict(ctx context.Context, fn func() error) error {
 // StartCmd implements `repose start [PROJECT]` (07-cli.md §5.6): start,
 // wait, say it is running. Does not sync. A project in `error`, or
 // running with a guestd that stopped answering, is restarted by the api
-// (I-157) and the progress line says so.
+// (I-157) and the progress line says so. A running machine on a
+// restarting server is frozen: start waits for the server and then says
+// it is running (I-709).
 func StartCmd(ctx context.Context, e *Env, projectArg string) error {
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
 	}
-	if project.State == "running" && !guestdDead(project) {
+	if project.State == "running" && !guestdDead(project) && !project.HostUnreachable {
 		_, _ = fmt.Fprintf(e.Out, "%s is already running.\n", project.Slug)
 		return nil
 	}

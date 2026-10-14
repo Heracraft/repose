@@ -606,11 +606,20 @@ func TestInterruptedResizeAndForkSayWhatIsLeft(t *testing.T) {
 		t.Fatalf("resize: %v, want %q", err, want)
 	}
 
+	// A cloned fork (I-701) is interrupted while its copy starts.
+	ctx, cancel = context.WithCancel(context.Background())
+	go func() { <-waiting; cancel() }()
+	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1})
+	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. demo-fork-1 exists, and its start goes on." {
+		t.Fatalf("fork: %v", err)
+	}
+	// One that needs a snapshot first is interrupted while it is taken.
+	fake.SetForkClone(true, false)
 	ctx, cancel = context.WithCancel(context.Background())
 	go func() { <-waiting; cancel() }()
 	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1})
 	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. The snapshot of demo goes on; nothing was forked." {
-		t.Fatalf("fork: %v", err)
+		t.Fatalf("fork from a snapshot: %v", err)
 	}
 
 	res := &ForkResult{Projects: []ForkedProject{{Slug: "demo-fork-1"}, {Slug: "demo-fork-2"}}}
