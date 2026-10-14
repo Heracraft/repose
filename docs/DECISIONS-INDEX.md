@@ -737,4 +737,4 @@ pointer, not a summary.
 - **I-685** A frozen image is compressed, and restores run four at a time (freeze-fast-restore, 2026-10-12) — L20474
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L20652
-- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L20698
+- **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L20700
