@@ -554,8 +554,8 @@
             sh -c 'sleep 300; :' x --user-data-dir=$p &
             live=$!
             locks "host-$live"
-            out=$($unlock $p)
-            [ -z "$out" ] || fail "a live lock: printed '$out'"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock: printed '$said'"
             kept "a live lock" "host-$live"
             kill $live
 
