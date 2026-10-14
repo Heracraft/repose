@@ -739,5 +739,5 @@ pointer, not a summary.
 - **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L20652
 - **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L20677
 - **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L20748
-- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L20775
-- **I-716** The fetch does not start during boot — 2026-10-13; L20809
+- **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L20792
+- **I-716** The fetch does not start during boot — 2026-10-13; L20839
