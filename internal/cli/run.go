@@ -1335,17 +1335,24 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		// time it is read back; starting it then fails with "project has
 		// no guest", which hid the capacity error (dogfood, I-356). Say
 		// what the create said.
-		// A project read carries no op id, only the create's answer
-		// does: keep it, so the wait follows the create op and its
-		// build log (the build's steps, then "Booting", I-708) instead
-		// of the states alone.
+		// A project read names only the op in flight (I-722), so once
+		// the create has settled there is none: keep the create's own
+		// id, so the wait follows that op and its build log (the
+		// build's steps, then "Booting", I-708) instead of the states
+		// alone.
 		if project.OpID == "" && created != "" {
 			switch project.State {
 			case "creating", "building", "starting":
 				project.OpID = created
 			}
 		}
-		if project.State == "error" && project.OpID == "" && created != "" {
+		// Whatever else is open, a create of ours that ended in error is
+		// what the user must be told about, and this run must not start
+		// the machine behind it (DECISIONS I-728). The condition used to
+		// be `project.OpID == ""`, which a personal build queued behind
+		// the create is enough to make false (I-490), and then nothing
+		// stopped the fall-through to StartProject.
+		if project.State == "error" && created != "" {
 			if op, err := e.Client.GetOp(ctx, project.ID, created); err == nil && op.State == "error" {
 				pr.Fail()
 				return e.opFailed("create", project.Slug, op.Error, nextAfterFailedStart(project.Slug, op.Error.Code))

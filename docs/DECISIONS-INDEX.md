@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-734 entries.
+735 entries.
 
 ## Scope
 
@@ -421,7 +421,7 @@ pointer, not a summary.
 - **I-353** Every sync refusal of the checkout comes before the create — 2026-09-29; L9056
 - **I-354** What agents on a temporary machine are told: nothing yet — 2026-09-29; L9070
 - **I-355** Tests and evidence for temporary machines — 2026-09-29; L9079
-- **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; L9094
+- **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; amended by I-728; L9094
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9110
 - **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9129
 - **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9152
@@ -764,5 +764,6 @@ pointer, not a summary.
 - **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21644
 - **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L21738
 - **I-721** "No address" is not "unreachable host" (boot-real-addr, 06, 2026-10-13) — L21811
-- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — L21853
+- **I-722** A project read names the op in flight, so `repose run` never restarts a create it failed to read (boot-real-addr, 05/07, 2026-10-13) — amended by I-728; L21853
 - **I-723** One live project per guest address (boot-real-addr, 05, 2026-10-13) — L21889
+- **I-728** A create of this run that ended in error is reported, whatever else is open (run-failed-create, 2026-10-14; amends I-356 and I-722) — L21915
