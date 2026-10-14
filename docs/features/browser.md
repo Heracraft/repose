@@ -135,7 +135,8 @@ User docs: `apps/web/src/content/docs/your-chrome.md`.
   machine over the same connection; Cmd becomes Ctrl there. A browser
   that fires no paste event within 300 ms gets its key through as before.
   The "paste" button does the same through `navigator.clipboard.readText`
-  (Chromium asks once; Firefox shows its own Paste button at each click).
+  (Chromium asks once; Firefox shows its own Paste button at each click),
+  and presses nothing when the laptop's clipboard holds no text.
   When the tab comes to the front, Chromium with that permission also
   sends the clipboard. Text copied on the machine lands in the laptop's
   clipboard.

@@ -20683,7 +20683,9 @@ and pasted nothing.
 - *The paste button.* For a pointer, a phone, or a browser whose shortcut
   something else takes: `readText`, then the same send and Ctrl+V.
   Chromium asks once; Firefox 125 and later shows its own Paste button.
-  The button says "not allowed" when the browser refuses. The focus-time
+  The button says "not allowed" when the browser refuses, and "clipboard
+  empty", pressing nothing, when the laptop's clipboard holds no text: a
+  Ctrl+V then would paste the machine's own clipboard. The focus-time
   push stays for Chromium with the permission granted.
 - *Rejected.* Typing the clipboard as key events (xdotool-style) would
   bypass the clipboard altogether, but it breaks on any character outside

@@ -175,6 +175,18 @@ for (const name of which) {
     await check('the paste control pastes the laptop clipboard', `from ${name} button ${Date.now()}`, async () => {
       await viewer.click('#paste');
     });
+    // The machine's clipboard now holds the text above. With nothing on the
+    // laptop's clipboard, the control must not paste the machine's own.
+    await clearTarget();
+    await viewer.evaluate(() => navigator.clipboard.writeText(''));
+    await viewer.click('#paste');
+    await sleep(700);
+    {
+      const got = await typed();
+      const label = await viewer.textContent('#paste');
+      if (got === '' && label === 'clipboard empty') console.log(`ok   ${name}: the paste control with an empty clipboard pastes nothing`);
+      else { failed += 1; console.log(`FAIL ${name}: the paste control with an empty clipboard: the machine got ${JSON.stringify(got)}, the control says ${JSON.stringify(label)}`); }
+    }
   }
   // Typing still reaches the machine, and Ctrl+A on the machine is untouched.
   await clearTarget();

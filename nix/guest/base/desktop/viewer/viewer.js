@@ -320,10 +320,16 @@ $('paste').addEventListener('click', async () => {
     rfb.focus();
     return;
   }
-  if (text) sendClipboard(text);
-  pressPaste(null);
   rfb.focus();
-  flash(b, text ? 'pasted' : 'clipboard empty', !!text);
+  // Without text from the laptop, Ctrl+V would paste the machine's own
+  // clipboard under a label saying nothing was pasted.
+  if (!text) {
+    flash(b, 'clipboard empty', false);
+    return;
+  }
+  sendClipboard(text);
+  pressPaste(null);
+  flash(b, 'pasted', true);
 });
 
 $('full').addEventListener('click', () => {
