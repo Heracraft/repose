@@ -22380,9 +22380,11 @@ secret too.
 - *Not changed.* guestd's Write already treated an empty list as the whole
   set (files, `secrets.env`, `secrets.refresh`, tmux); a test now holds it.
   The api already sent UpdateSecrets on each removal path (project rm,
-  `rm --global` via `accountReach`; `import` only sets); a test holds the
-  empty set on the wire. hostd keeps the cache in memory only
-  (`state.Guest` stores no secret), so a hostd restart cannot bring an old
-  value back. The fake guestd in `internal/hostd/fakeguestd` merged writes,
+  `rm --global` via `accountReach`; `import` only sets); tests in
+  `api/http` (both DELETE routes) and `api/ops` hold the empty set on the
+  wire. hostd keeps the cache in memory only (`state.Guest` stores no
+  secret), so a hostd restart cannot bring an old value back; a hostd test
+  restarts the manager and checks that, and the `no_secrets` warning, both
+  ways. The fake guestd in `internal/hostd/fakeguestd` merged writes,
   which would have hidden this; it now replaces the named set, as guestd
   does.

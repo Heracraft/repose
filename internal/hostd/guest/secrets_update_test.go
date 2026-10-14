@@ -1,6 +1,7 @@
 package guest
 
 import (
+	"strings"
 	"testing"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -86,6 +87,43 @@ func TestStartWithoutDeliveryKeepsCachedSecrets(t *testing.T) {
 	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
 	if sec := h.guestd(gid1).Secrets(); string(sec["API_KEY"]) != "s3cret" || string(sec[SecretHostKey]) != "hostkey" {
 		t.Fatalf("delivered at start: %v", keys(toStrings(sec)))
+	}
+}
+
+// The start's no_secrets warning says the api has sent no delivery since
+// hostd restarted. An UpdateSecrets in that time brings the named set but
+// no host key, so the warning still fires; and the update's value, never
+// one from before the restart, is what the guest gets.
+func TestStartAfterHostdRestartWarnsDespiteAnUpdate(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	b := withBoot(t, h, "boot-1")
+	hostRestart(t, h, b, "boot-1")
+	h.mustOK(cmd(&hostdv1.UpdateSecrets{GuestId: gid1, Secrets: []*hostdv1.Secret{{Name: "TOKEN", Value: []byte("t")}}}))
+	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	if !strings.Contains(h.logs.String(), `"reason":"no_secrets"`) {
+		t.Fatal("start after a hostd restart and an UpdateSecrets logged no no_secrets warning")
+	}
+	sec := h.guestd(gid1).Secrets()
+	if _, ok := sec["API_KEY"]; ok {
+		t.Fatal("API_KEY from before the hostd restart came back")
+	}
+	if string(sec["TOKEN"]) != "t" {
+		t.Fatalf("delivered at start: %v", keys(toStrings(sec)))
+	}
+}
+
+// After create, an empty UpdateSecrets stores an empty named set; the host
+// key is still cached, so a start without delivery does not warn.
+func TestStartAfterEmptyUpdateDoesNotWarn(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.mustOK(cmd(&hostdv1.UpdateSecrets{GuestId: gid1}))
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	if strings.Contains(h.logs.String(), `"reason":"no_secrets"`) {
+		t.Fatal("start with the sshd material cached logged no_secrets")
 	}
 }
 
