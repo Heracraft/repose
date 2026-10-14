@@ -135,17 +135,17 @@ func (g *GChat) Send(ctx context.Context, m Message) error {
 	if err != nil {
 		return Permanent{err}
 	}
-	id := m.EventID
-	if id == uuid.Nil {
-		id = uuid.New()
-	}
+	// No requestId: Google refuses it on an incoming webhook with
+	// `400 Request Id is not supported for webhooks.`, which made every
+	// Chat message fail (DECISIONS I-731, amends I-692). I-692 took that
+	// parameter from the REST API's docs and said in as many words that
+	// it had never been sent to a real webhook. threadKey still groups a
+	// project's messages, so a retry after a lost answer can post a
+	// second message into the same thread; that is the cost of the
+	// parameter being unavailable here.
 	target := canonical + "&" + url.Values{
 		"threadKey":          {GChatThread(m)},
 		"messageReplyOption": {"REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"},
-		// Google answers a repeated requestId with the message it
-		// created the first time, so a retry after a lost answer posts
-		// nothing new.
-		"requestId": {id.String()},
 	}.Encode()
 	pace := g.Pace
 	if pace == 0 {

@@ -22061,3 +22061,38 @@ and the new scripts of this batch are 4.8 KB, 1.3 KB and 864 bytes.
 - The check itself prints "closure over 6 GB; largest paths:" and then
   exits without printing any, which cost time here; worth fixing when
   someone next touches `nix/flake.nix`.
+
+**I-731. No `requestId` on a Chat webhook: Google refuses it and every
+Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends
+I-692).** *Made during implementation.* I-692 appended
+`requestId=<event id>` to the webhook URL so that a retry after a lost
+answer would not post twice, and said in as many words that "the Chat
+webhook's answers to `requestId` ... are taken from Google's docs and not
+from a live webhook". They are wrong for a webhook. Google answers
+**`400 Request Id is not supported for webhooks.`**, so from the moment
+I-692 shipped, every Chat message failed — the owner added a webhook to
+their account minutes after the release, pressed Send test in the
+dashboard, and got an error.
+- *Isolated against the owner's live webhook*, one parameter at a time,
+  plain `{"text":...}` body: the URL alone **200**; `+threadKey` **200**;
+  `+messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD` **200**;
+  `+requestId=<uuid>` **400**, with Google's sentence above. The api's own
+  log says only `notify_fail channel=gchat` — the URL is a credential and
+  nothing about it is logged — so the reason came from the response the
+  api returns, which `repose notify test` prints: `gchat: failed: the
+  server answered 400`.
+- *What was not wrong*, each checked before the code was touched: the
+  stored URL is byte-identical to the one that works (same md5, length
+  152) and `gchat_broken_at` is null, so the channel was not marked
+  broken; `CanonicalGChatURL` accepts it; the control host and the api's
+  network reach `chat.googleapis.com` (200 from both).
+- *The cost of the fix.* `threadKey` still groups a project's messages, so
+  a retry after a lost answer can post a second message into the same
+  thread. That is unavoidable: the parameter that would prevent it does
+  not exist for webhooks. A webhook has no idempotency key.
+- *This also closes I-692's other untested claim.* The api's exact
+  rendered card — `fallbackText`, `cardsV2` with a header, a
+  `textParagraph` and an `openLink` button — posts **200** to the live
+  webhook once `requestId` is gone, so the card shape itself was right.
+- `internal/api/notify/gchat_test.go` now asserts the query has **no**
+  `requestId`, where it asserted its value before.

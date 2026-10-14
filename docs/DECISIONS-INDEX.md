@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-738 entries.
+739 entries.
 
 ## Scope
 
@@ -741,7 +741,7 @@ pointer, not a summary.
 - **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L20692
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L20702
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L20718
-- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — L20732
+- **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L20732
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
@@ -770,3 +770,4 @@ pointer, not a summary.
 - **I-726** The viewer pastes the laptop's clipboard on the machine with Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13) — L21945
 - **I-727** The agents' browser clears a stale profile lock before it starts, and the desktop's idle stamps are always dev's (browser-fixes, 2026-10-13) — L21993
 - **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22030
+- **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22065

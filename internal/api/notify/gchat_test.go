@@ -159,7 +159,7 @@ func TestGChatSendStatuses(t *testing.T) {
 		if tr.seen[0].Host != "chat.googleapis.com" || tr.seen[0].Path != "/v1/spaces/"+hookSpace+"/messages" || q.Get("key") != hookKey || q.Get("token") != "s3cr3tT0k3n-xyz_123=" {
 			t.Errorf("target %v", tr.seen[0].Redacted())
 		}
-		if q.Get("threadKey") != "e-01a0c14a-0000-7000-8000-000000000001" || q.Get("messageReplyOption") != "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" || q.Get("requestId") != "01a0c14a-0000-7000-8000-000000000001" {
+		if q.Get("threadKey") != "e-01a0c14a-0000-7000-8000-000000000001" || q.Get("messageReplyOption") != "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" || q.Has("requestId") {
 			t.Errorf("query %v", q)
 		}
 		if ctype != "application/json; charset=UTF-8" || !json.Valid(body) || !strings.Contains(string(body), `"cardsV2"`) || !strings.Contains(string(body), `"fallbackText":"todo-app: claude says: Deploy to staging is green."`) {
