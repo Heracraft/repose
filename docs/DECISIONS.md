@@ -22345,3 +22345,44 @@ dashboard, and got an error.
   webhook once `requestId` is gone, so the card shape itself was right.
 - `internal/api/notify/gchat_test.go` now asserts the query has **no**
   `requestId`, where it asserted its value before.
+
+**I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
+sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
+implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`
+of the only secret two running guests had made the api push UpdateSecrets
+with zero secrets; hostd logged `secrets updated count=0`, and the guests
+kept `/run/repose/secrets/<NAME>` and the variable. hostd's cache took a
+delivery only when it held something (`if len(out) > 0`, there since
+709607bb, 2026-09-19), so an empty set never replaced the old one, and
+`updateSecrets` then wrote the cached, old set to guestd. Any removal that
+left a running guest with no named secret did this, a project's own last
+secret too.
+- *Why the guard was there.* `cacheSecrets` serves create, restore and a
+  start; a start the api sent without delivery fields (a host that
+  restarted, I-26) has nothing in hand, and must not wipe the cache. The
+  start already skips `cacheSecrets` then; the guard is kept for those
+  callers.
+- *What changed.* UpdateSecrets is always the guest's whole named set (the
+  api builds it from `DecryptForGuest`, project and account secrets
+  together; proto3 has no "omitted" list to tell apart from an empty one),
+  so it goes through its own path: it replaces the named secrets in the
+  cache, an empty set included, and sends guestd the named set alone.
+- *A second bug the same line hid.* UpdateSecrets carries no sshd material,
+  and the old path replaced the whole cache with it, so after any secret
+  change the cache had no host key, host certificate or user CA. A boot
+  with no delivery of its own (a forced apply reboot, I-590) then started
+  sshd on the tmpfs with none of them. The new path keeps the cached
+  material. guestd is not sent it on an update, so a secret change does not
+  reload sshd, as before.
+- The start's `no_secrets` warning now asks whether the cache has a host
+  key: after a hostd restart an UpdateSecrets fills the named set but
+  brings no sshd material.
+- *Not changed.* guestd's Write already treated an empty list as the whole
+  set (files, `secrets.env`, `secrets.refresh`, tmux); a test now holds it.
+  The api already sent UpdateSecrets on each removal path (project rm,
+  `rm --global` via `accountReach`; `import` only sets); a test holds the
+  empty set on the wire. hostd keeps the cache in memory only
+  (`state.Guest` stores no secret), so a hostd restart cannot bring an old
+  value back. The fake guestd in `internal/hostd/fakeguestd` merged writes,
+  which would have hidden this; it now replaces the named set, as guestd
+  does.

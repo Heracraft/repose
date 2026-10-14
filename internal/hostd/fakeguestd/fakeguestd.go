@@ -166,6 +166,10 @@ func (s *Server) Kinds() []string {
 	return out
 }
 
+// reservedName is guestd's sshd material (internal/guestd/secrets), which a
+// WriteSecrets without it does not remove.
+var reservedName = map[string]bool{"ssh_host_ed25519_key": true, "ssh_host_ed25519_key-cert.pub": true, "user_ca.pub": true}
+
 // Secrets returns what WriteSecrets delivered.
 func (s *Server) Secrets() map[string][]byte {
 	s.mu.Lock()
@@ -308,7 +312,14 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 	case *guestdv1.Request_GrowFs:
 		ok.Result = &guestdv1.Response_GrowFs{GrowFs: &guestdv1.GrowFsResult{NewBytes: 1 << 30}}
 	case *guestdv1.Request_WriteSecrets:
+		// The list is the whole named set, as in guestd: a name not in it
+		// goes, the sshd material stays until replaced.
 		s.mu.Lock()
+		for name := range s.secrets {
+			if !reservedName[name] {
+				delete(s.secrets, name)
+			}
+		}
 		for _, sec := range r.WriteSecrets.Secrets {
 			s.secrets[sec.Name] = sec.Value
 		}

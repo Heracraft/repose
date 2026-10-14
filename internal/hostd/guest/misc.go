@@ -13,7 +13,10 @@ func (m *Manager) updateSecrets(ctx context.Context, c *hostdv1.UpdateSecrets) *
 	if gerr != nil {
 		return gerr
 	}
-	if err := m.cacheSecrets(g.GuestID, c.Secrets, "", nil, nil); err != nil {
+	// The whole named set, possibly empty: an empty one removes the
+	// guest's last secret (I-732).
+	named, err := m.replaceNamedSecrets(g.GuestID, c.Secrets)
+	if err != nil {
 		return err
 	}
 	if g.State != StateRunning {
@@ -23,7 +26,7 @@ func (m *Manager) updateSecrets(ctx context.Context, c *hostdv1.UpdateSecrets) *
 	if serr != nil {
 		return serr
 	}
-	if err := sess.WriteSecrets(ctx, m.cachedSecrets(g.GuestID)); err != nil {
+	if err := sess.WriteSecrets(ctx, named); err != nil {
 		return errf(CodeInternal, "guestd WriteSecrets: %v", err)
 	}
 	m.log(g).Info("secrets updated", "event", "guest_secrets", "count", len(c.Secrets))

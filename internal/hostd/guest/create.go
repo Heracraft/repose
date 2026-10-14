@@ -663,7 +663,9 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	if len(c.ProjectJson) > 0 {
 		g.ProjectJSON = c.ProjectJson
 	}
-	if m.cachedSecrets(g.GuestID) == nil {
+	// An UpdateSecrets since hostd restarted brings the named set but no
+	// sshd material, so the host key is what says the api sent a delivery.
+	if !m.cachedHostKey(g.GuestID) {
 		m.log(g).Warn("starting without secrets; api sent none since hostd restarted", "event", "guest_start", "reason", "no_secrets")
 	}
 	if resent != nil {

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-747 entries.
+748 entries.
 
 ## Scope
 
@@ -112,7 +112,7 @@ pointer, not a summary.
 - **I-23** The edge VM is `Standard_D2s_v5` and its NSG opens 22, 443, 51820/udp and 2222 — L506
 - **I-24** The control-plane VM is not created until wave 3 — 2026-09-19; L518
 - **I-25** The installer reaches a host through the edge, never through a temporary public IP — L531
-- **I-26** Commands carry what hostd cannot keep: StartGuest repeats the delivery fields, CreateGuest and Restore name the user, slug and remote, Restore names the closure, Exec carries an audit id, StopResult carries the snapshot's blob path — L547
+- **I-26** Commands carry what hostd cannot keep: StartGuest repeats the delivery fields, CreateGuest and Restore name the user, slug and remote, Restore names the closure, Exec carries an audit id, StopResult carries the snapshot's blob path — amended by I-732; L547
 - **I-27** hostd launches Cloud Hypervisor directly from the guest's system closure; no per-guest microvm.nix runner is built — L569
 - **I-28** The platform flake takes the user fragment as a non-flake input named `fragment` and exposes `guestSystem`; hostd fetches base checkouts with git — L586
 - **I-29** Two more guestd warning kinds: `oom` and `tmux_down` — amended by I-507; amended by I-562; L600
@@ -779,3 +779,4 @@ pointer, not a summary.
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22256
 - **I-716** The fetch does not start during boot — 2026-10-13; L22303
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22314
+- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22349
