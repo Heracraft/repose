@@ -70,6 +70,16 @@ func (f *Fake) SetState(projectID, state string) {
 	}
 }
 
+// SetHostUnreachable marks a project's host as one the api has not heard
+// from, as the api does after the heartbeat deadline.
+func (f *Fake) SetHostUnreachable(projectID string, v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.projects[projectID]; ok {
+		p.HostUnreachable = v
+	}
+}
+
 // SetIdle marks a project idle since the given time at the given hourly
 // rate, or clears it with a nil since (DECISIONS I-262).
 func (f *Fake) SetIdle(projectID string, since *time.Time, hourlyCents int64) {

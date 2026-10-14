@@ -914,6 +914,11 @@ var (
 	otherRefusals = []string{
 		"gateway busy", "too many open connections", "too many authentication attempts", "cannot reach control plane",
 		"not accepting connections yet", "is stopped", "no such project", "login name must be",
+		// The two route refusals (I-721). Neither is about the
+		// certificate, and before this both fell through to the bare
+		// "permission denied" below and spent connect's one forced
+		// re-issue on a machine whose address the api did not hold.
+		"the control plane cannot reach", "repose has no address for it",
 	}
 )
 

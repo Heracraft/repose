@@ -1122,6 +1122,15 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		if _, err := e.pool.Exec(ctx, "update projects set host_unreachable = false, last_error = $2 where id = $1", p.ID, lastErr); err != nil {
 			return err
 		}
+		// StartResult is the only result of a start, and until I-720 it
+		// carried no address: a start after a create that failed past the
+		// guest's own boot left the project running and unroutable, which
+		// no later message corrected (prod host-01 sent two Hellos in the
+		// 72 h to 2026-10-13, so the Hello reconcile alone would have
+		// taken days).
+		if st := res.GetStart(); st != nil {
+			e.recordGuestAddress(ctx, p, st.GetGuestIp(), st.GetVsockCid(), "start")
+		}
 		return e.setState(ctx, p, "running")
 	case PhaseStopGuest:
 		if s := res.GetStop(); s != nil && s.BlobPath != "" {

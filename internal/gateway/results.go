@@ -14,10 +14,15 @@ const (
 	ResultWrongPrincipal = "wrong_principal"
 	ResultStopped        = "stopped"
 	ResultRouteError     = "route_error"
-	ResultRateLimited    = "rate_limited"
-	ResultNotFound       = "not_found"
-	ResultBadLogin       = "bad_login"
-	ResultBusy           = "busy"
+	// ResultNoAddress: the project runs and its host is reachable, but
+	// the api holds no address for the guest (DECISIONS I-721). Separate
+	// from route_error because it is the api's record that is wrong, not
+	// the host or the route lookup.
+	ResultNoAddress   = "no_address"
+	ResultRateLimited = "rate_limited"
+	ResultNotFound    = "not_found"
+	ResultBadLogin    = "bad_login"
+	ResultBusy        = "busy"
 )
 
 // Hook ingest results (the `result` label of repose_gateway_hook_events_total).

@@ -580,7 +580,9 @@ More than one auth failure per second at the gateway.
    address is behind a source that failed 20 times without a certificate
    of theirs. Nothing to do unless it persists for hours; then add the
    source to the edge NSG deny list. `route_error` in volume means the
-   gateway cannot reach the api (see "Gateway relay failures").
+   gateway cannot reach the api, or hosts are unreachable (see "Gateway
+   relay failures"); `no_address` means the api holds no address for a
+   running machine (I-721), which since I-720 should be zero.
 2. `expired` in volume means the CLI's silent refresh is broken for many
    users: check whether `repose_api_certs_issued_total` dropped sharply, and the
    Logto token endpoint.
@@ -604,6 +606,8 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `permission denied (certificate revoked)` | logout or a revoked serial | expected; takes effect within 30 s of `repose logout` |
 | `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
+| `<slug> is on a host the control plane cannot reach right now; try again shortly` | the api has not heard from the project's host within the heartbeat deadline | "HostHeartbeatMissing"; the machine itself may be fine, and the banner clears with the next heartbeat |
+| `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
 | `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |

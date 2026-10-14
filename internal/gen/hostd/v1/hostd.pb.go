@@ -3136,12 +3136,18 @@ func (x *ApplyResult) GetRebootRequired() bool {
 // set when the boot of the guest's recorded closure never reached Ready
 // and hostd booted booted_closure, the last one that did, instead
 // (DECISIONS I-590); boot_error is then why that boot failed.
+// guest_ip and vsock_cid are the started guest's address, so a start
+// after a create that failed past the guest's own boot gives the api the
+// address that create never reported (DECISIONS I-720); empty and 0 from
+// a hostd that predates them, which the api reads as "unchanged".
 type StartResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BootedClosure string                 `protobuf:"bytes,1,opt,name=booted_closure,json=bootedClosure,proto3" json:"booted_closure,omitempty"`
 	FailedClosure string                 `protobuf:"bytes,2,opt,name=failed_closure,json=failedClosure,proto3" json:"failed_closure,omitempty"`
 	BootError     *Error                 `protobuf:"bytes,3,opt,name=boot_error,json=bootError,proto3" json:"boot_error,omitempty"`
-	Boot          *BootTimings           `protobuf:"bytes,4,opt,name=boot,proto3" json:"boot,omitempty"`
+	Boot          *BootTimings           `protobuf:"bytes,4,opt,name=boot,proto3" json:"boot,omitempty"` // the boot that reached running (I-707)
+	GuestIp       string                 `protobuf:"bytes,5,opt,name=guest_ip,json=guestIp,proto3" json:"guest_ip,omitempty"`
+	VsockCid      uint32                 `protobuf:"varint,6,opt,name=vsock_cid,json=vsockCid,proto3" json:"vsock_cid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3202,6 +3208,20 @@ func (x *StartResult) GetBoot() *BootTimings {
 		return x.Boot
 	}
 	return nil
+}
+
+func (x *StartResult) GetGuestIp() string {
+	if x != nil {
+		return x.GuestIp
+	}
+	return ""
+}
+
+func (x *StartResult) GetVsockCid() uint32 {
+	if x != nil {
+		return x.VsockCid
+	}
+	return 0
 }
 
 type SnapshotResult struct {
@@ -4806,13 +4826,15 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x0ekernel_changed\x18\x03 \x01(\bR\rkernelChanged\"R\n" +
 	"\vApplyResult\x12\x1a\n" +
 	"\brebooted\x18\x01 \x01(\bR\brebooted\x12'\n" +
-	"\x0freboot_required\x18\x02 \x01(\bR\x0erebootRequired\"\xc4\x01\n" +
+	"\x0freboot_required\x18\x02 \x01(\bR\x0erebootRequired\"\xfc\x01\n" +
 	"\vStartResult\x12%\n" +
 	"\x0ebooted_closure\x18\x01 \x01(\tR\rbootedClosure\x12%\n" +
 	"\x0efailed_closure\x18\x02 \x01(\tR\rfailedClosure\x125\n" +
 	"\n" +
 	"boot_error\x18\x03 \x01(\v2\x16.repose.hostd.v1.ErrorR\tbootError\x120\n" +
-	"\x04boot\x18\x04 \x01(\v2\x1c.repose.hostd.v1.BootTimingsR\x04boot\"|\n" +
+	"\x04boot\x18\x04 \x01(\v2\x1c.repose.hostd.v1.BootTimingsR\x04boot\x12\x19\n" +
+	"\bguest_ip\x18\x05 \x01(\tR\aguestIp\x12\x1b\n" +
+	"\tvsock_cid\x18\x06 \x01(\rR\bvsockCid\"|\n" +
 	"\x0eSnapshotResult\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +

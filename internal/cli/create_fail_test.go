@@ -89,3 +89,52 @@ func TestStartOfAProjectWithNoGuestShowsTheCreate(t *testing.T) {
 		t.Fatalf("state %s", p.State)
 	}
 }
+
+// TestRunDoesNotStartACreateThatFailedOnAProjectItFound is the `fresh`
+// half of the same bug (DECISIONS I-722). The incident's own path —
+// `repose run` creating the project, then re-reading it — was closed by
+// I-708's carry of the create's op id. This one was not: when
+// `resolveProject` already found the project, `fresh` is true, the whole
+// `!fresh` block is skipped (the carry and I-356's guard with it), and
+// with no op id the wait fell back to `waitState`, which returns the
+// moment the state goes to `error`; the next statement started the
+// machine. One user action, two ops, and the create's error never read.
+//
+// The api now names the op in flight on the single-project read, so the
+// project `run` holds carries it and the wait follows the op.
+func TestRunDoesNotStartACreateThatFailedOnAProjectItFound(t *testing.T) {
+	var starts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p1":
+			_, _ = w.Write([]byte(`{"id":"p1","slug":"teksafari-org","state":"error","class":"large"}`))
+		case r.Method == "GET" && r.URL.Path == "/v1/projects/p1/ops/op1":
+			_, _ = w.Write([]byte(`{"op_id":"op1","kind":"create","state":"error","project_state":"error",` +
+				`"error":{"code":"guest_unresponsive","message":"the machine did not answer within a minute of starting"}}`))
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/start"):
+			starts.Add(1)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"op_id":"op9","restart":true,"create":false}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	errOut := &bytes.Buffer{}
+	e := &Env{Client: newClient(srv.URL+"/v1", staticToken("tok")), Out: &bytes.Buffer{}, ErrOut: errOut}
+	// What resolveProject hands on: GET /v1/projects/:id, which since
+	// I-722 names the op in flight.
+	p := &Project{ID: "p1", Slug: "teksafari-org", State: "creating", Class: "large", OpID: "op1"}
+	err := ensureRunningFrom(context.Background(), e, p, e.newProgress(), true)
+	if err == nil {
+		t.Fatal("no error for a create that failed")
+	}
+	if n := starts.Load(); n != 0 {
+		t.Fatalf("sent %d start(s) after a failed create, the 0.69 s restart of 2026-10-13", n)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "did not answer within a minute") {
+		t.Fatalf("error = %q, want the create's own words", msg)
+	}
+	t.Logf("run says: %s", err)
+}

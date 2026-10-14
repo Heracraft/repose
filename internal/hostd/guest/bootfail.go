@@ -207,10 +207,11 @@ func (m *Manager) bootOrFallBack(ctx context.Context, g *state.Guest, commandID,
 	return fb, err.ConsoleTail, nil
 }
 
-// startResult is a StartGuest's payload: the closure the guest runs and,
-// after a fallback, which one failed and why.
+// startResult is a StartGuest's payload: the closure the guest runs,
+// the guest's address (I-720) and, after a fallback, which closure
+// failed and why.
 func startResult(g *state.Guest, fb *state.BootFallback, consoleTail string, boot *hostdv1.BootTimings) *hostdv1.StartResult {
-	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure, Boot: boot}
+	r := &hostdv1.StartResult{BootedClosure: g.SystemClosure, Boot: boot, GuestIp: g.IP, VsockCid: g.CID}
 	if fb != nil {
 		r.FailedClosure = fb.Failed
 		r.BootError = &hostdv1.Error{Code: fb.Code, Message: fb.Message, ConsoleTail: consoleTail}

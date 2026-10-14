@@ -54,7 +54,13 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- (1 GB; a restore's or fork's source figure); both null
                 -- counts volume_bytes
               unique (user_id, slug) where destroyed_at is null,
-              unique (user_id, remote_url) where destroyed_at is null)
+              unique (user_id, remote_url) where destroyed_at is null,
+              unique (guest_ip) where destroyed_at is null and guest_ip is not null)
+                -- one live project per guest address (0026, I-723): each host
+                -- allocates inside the disjoint /22 it was handed at
+                -- registration, so two live rows holding one address would
+                -- relay two users' logins to one guest. Destroyed rows keep
+                -- their history and are outside it.
 
 host_reservations (view: host_id, reserved_bytes, guests)  -- class RAM summed over projects placed on the host in a state that holds memory
 
@@ -238,7 +244,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0023_notify_gchat`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0026_project_guest_ip_unique`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

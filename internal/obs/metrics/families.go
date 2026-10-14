@@ -35,7 +35,7 @@ var gatewaySessionBuckets = []float64{1, 10, 60, 300, 1800, 3600, 4 * 3600, 12 *
 // docs/interfaces/ssh-gateway.md).
 var AuthFailReasons = []string{
 	"no_cert", "bad_ca", "expired", "revoked", "wrong_principal",
-	"stopped", "route_error", "rate_limited", "not_found", "bad_login", "busy",
+	"stopped", "route_error", "no_address", "rate_limited", "not_found", "bad_login", "busy",
 }
 
 // GatewayMetrics is the gateway's family.
