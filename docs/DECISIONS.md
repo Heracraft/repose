@@ -20817,3 +20817,215 @@ your config 1.0s`, `✓ Fetched 2 paths (1.5 MiB) 2.6s`, `✓ Built 2
 derivations 1.8s`, `✓ Booted e2e-tty 6.5s`. The quickstart's example output,
 config.md's build steps paragraph and docs/features/run-and-attach.md
 say what a first run prints.
+
+**I-718. What a guest-built binary links is not copied into every guest
+(boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706).** *Made
+during implementation.* I-533 had `repose-pin-profile` copy the closures
+of eleven libraries — the gcc wrapper's glibc and `cc.lib`, and openssl,
+zlib, sqlite, libffi, libyaml, libpq, libxml2, libxslt and the MariaDB
+client — into every guest's store overlay, so a binary compiled in the
+guest, whose ELF interpreter and RUNPATH name those paths in the host's
+shared store, would keep running after the host collected an old base.
+That copy is removed: `targets` is dev's profile again, and a fresh guest
+has no profile, so the unit finishes at once, as it did before I-533.
+- *What it cost.* 26 store paths, 1554 inodes, 75.5 MB, per guest, on the
+  first boot. On a fresh prod guest today (`e2e-pin3`, small, base
+  2026.10.12): `repose-pin-profile.service: Consumed 18.216s CPU time over
+  1min 26.523s wall clock time, 115M memory peak, 74.1M written to disk`.
+  Earlier runs of the same unit: 31.2 s (small), 55.9 s (large, idle host),
+  96.7 s (the teksafari-org incident). It is a fresh guest's entire
+  writable store (76 MB / 26 paths). About 47 s of it is overlayfs
+  copy-up, 14.8 ms per inode, because the first write to a region of an
+  LVM thin volume costs 18.2 ms (64 KB chunks, `Zero=zero`, metadata
+  commit) against 3.3 to 4.4 ms to blocks already allocated. On `e2e-pin3`
+  the unit was still running 33 s after the CLI printed "Ready in 1m46s",
+  and it spans SetupProject's window every time. Thin-pool allocation is
+  also the only serial resource in the storage stack (measured on
+  host-stg-01: already-allocated fsyncs scale linearly to 8 writers, 7170
+  IOPS; allocating ones ceiling at about 900/s and double in latency by
+  N=8, and 7 competing allocating writers inflate the identical copy-up
+  1.58x), so this unit is the heaviest competitor every other first-boot
+  unit has.
+- *What it bought: two libraries, in a case that has never occurred.* A
+  stop does not drop the host's GC root — `Roots.Remove(g.GuestID)` and
+  `Remove(goodRoot(...))` are in `destroy`, not `stopGuest`
+  (internal/hostd/guest/stop.go:175, there since 709607bb), so I-533's
+  stated premise is wrong; prod host-01 holds 14 `guest` roots for its 14
+  live projects while 3 guests run. Nine of the eleven are in the host's
+  own NixOS system closure (host and guest base come from one flake with
+  one nixpkgs input, so they are the same store paths), and no host GC can
+  take them. Run as a sequence on host-stg-01 with a guest on a no-copy
+  base, each step a real `nix-collect-garbage --delete-older-than 14d`
+  with gc.nix's own options: with the guest stopped, its `guest`, `good-`
+  and `rev-` roots all stay (`stopGuest` drops none) and are exactly what
+  holds libpq, and the GC freed 312 paths / 1.3 GiB with **all eleven
+  surviving**; then a closure that does not name libpq was applied, which
+  moves the `guest` and `good-` roots on and leaves the one old `rev-`
+  root; removing that single root — what `PruneRevisions(project, 3)` does
+  after three more config builds — and running the GC again freed 152
+  paths / 35.8 MiB and took **libpq-18.6 and mariadb-connector-c-3.3.5,
+  keeping the other nine**, which are every other path a `cc` build names
+  in its interpreter and RUNPATH. So the reachable loss is two libraries
+  behind five conditions. Every base that
+  has carried I-533 (2026.10.07, .08, .09, .12) names the identical eleven
+  paths, so no guest has ever had an old path to lose. And the eleven stay
+  in the system closure the host roots per guest: compat.nix's
+  `PKG_CONFIG_PATH`, `pg_config` and `mysql_config` name them, so all
+  eleven are in this branch's guest closure (1217 paths) with the copy
+  gone.
+- *When a path really is gone*, the program fails at ld.so
+  (`error while loading shared libraries: libpq.so.5: cannot open shared
+  object file`, exit 127) and fetching it back from cache.nixos.org costs
+  315 ms cold and 230 ms warm for one library, measured on the guest above
+  with libpq's bytes really gone, and 3 to 6 s for all eleven closures —
+  against 86.5 s to copy the same 76 MB up through the overlay.
+  I-719 is the command that does it. Recompiling also fixes it.
+- *The owner's two rulings.* Deferring the copy was rejected ("lets not do
+  the cheap fix, lets explore the real fix"), so the pin no longer waits
+  for anything: with no link targets there is nothing to defer, and dev's
+  own profile is empty on a fresh guest. I-706's wait for
+  `/run/repose/project-set-up` is not thrown away as a reason — I-719's
+  check keeps its purpose, because the one thing that must never sit on
+  the create path is a network call — but it keeps it as a 4-minute timer
+  rather than a wait, for the reason I-719 gives. Having the host hold the
+  roots instead was rejected on storage grounds ("we allow users to have
+  many stopped machines so our storage will def suffer"). Removal needs
+  neither, so neither ruling is reopened here. What the owner may want to
+  know is that the storage argument points the other way: a host-side root
+  for a base's eleven targets is about 76 MB once, in the shared store
+  that auto-optimise dedupes, against 75.5 MB *per guest* today — on
+  host-01's 14 live projects, 76 MB against about 1.06 GB of thin-pool
+  bytes — and a stop drops no root, so the host already keeps every
+  stopped guest's whole closure. That is a decision to take with the
+  numbers, not a gap in this one.
+- *What stays.* The profile pin (I-234, I-529), which costs nothing on a
+  fresh guest. Its eleven `nix-store -qR` calls, measured at 8.50 s of a
+  first boot against 1.78 s for one combined call, are one call now.
+  guestd still writes `/run/repose/project-set-up` (the boot record and
+  docs/research/boot-speed.md read it); the pin no longer waits on it,
+  I-719's check does. `/nix/var/nix/gcroots/repose-link-targets/` stays,
+  and is the one part of I-533 worth keeping: eleven symlinks, no bytes.
+  They keep the guest's own collection off the libraries, and because
+  roots an earlier base left stay, the directory is the exact record of
+  which paths a checkout's older binaries may still name — which is what
+  I-719 checks at boot, reading a dangling symlink as "this one is gone".
+  The 75 MB such a
+  guest already copied up stays too — deleting an upper copy of a path the
+  lower layer also has leaves a whiteout that hides the host's copy, which
+  is the 2026-10-07 "stage 2 init not found" incident.
+- *Measured here, as the cheaper fallback if this is ever reverted:*
+  mounting the guest's store overlay `volatile` skips overlayfs's
+  per-copy-up fsync and makes the identical 1554-inode pass 8.1x faster
+  (0.725 s against 5.885 s on host-stg-01), with the usual volatile-overlay
+  durability caveat.
+- VM test: guest-base's "I-533" subtest is now "I-718" — the same `cc`
+  build against openssl, asserting that nothing the binary links against
+  is in the upper dir (glibc excepted: hello's closure, which dev's
+  profile really does pin, contains it), that all eleven
+  `repose-link-targets` roots are there and name those paths, and that the
+  binary runs from the lower layer — and "I-719" covers the recovery.
+  Those subtests sit after the known I-513 `~/.bash_profile` failure in
+  the same file, which aborts the script before reaching them, so a green
+  guest-base has never been evidence about this code; they were run here
+  with that one assertion skipped, and the output is in the commit
+  message. Branch `rc-decides` (I-725) has since fixed the I-513
+  assertion — it was the test, not the base: sshd wraps a command in a
+  non-login `bash -c`, which nixpkgs builds with `SSH_SOURCE_BASHRC`, so
+  that wrapper reads `~/.bashrc` whatever login file the user has and
+  exports the marker into the `bash -lic` under it. With that corrected,
+  guest-base is 28 of 28 green on `main`, which is the first time these
+  five store subtests have ever run.
+
+**I-719. repose-store-repair fetches back a library the machine has lost
+(boot-real-copy, 2026-10-13).** *Made during implementation.* With I-718
+there is one case left where a guest's own binary can lose a library: a
+path from a base nothing on the host roots any more, which for the eleven
+of I-533 means libpq or the MariaDB client, after that library's nixpkgs
+path has moved. The program then fails at ld.so with `cannot open shared
+object file`, and nothing in the guest fixes it by itself. Measured in a
+prod guest, the obvious commands are traps: nix reports the path **valid**
+(`nix-store --check-validity` succeeds), `nix-store -r <path>` exits 0 in
+1.3 s having fetched nothing, and `nix-store --repair-path`, the one
+command that does fetch it, is refused through the daemon (`operation
+'repairPath' is not supported by store 'daemon'`, as dev, 1.0 s) and works
+as root with `NIX_REMOTE` unset and `/nix/store` remounted writable in a
+private mount namespace — the dance the pin's own copy-up already does —
+in 315 ms from cache.nixos.org, into the guest's own overlay; the binary
+then runs.
+- `repose-store-repair PROGRAM | /nix/store/PATH ...` takes a program and
+  reads the store paths it names from its ELF interpreter and RUNPATH
+  (`readelf`, not `ldd`: ldd needs the libraries it is reporting on), or
+  store paths directly; it re-execs itself under `sudo -n` because the
+  repair needs root, skips the paths that are really there, and repairs
+  the rest. With nothing missing it says so and exits 0.
+- *"Really there" is not `test -e`.* A collection on the host empties the
+  directory under a running guest's virtiofs mount, so the path still
+  exists and holds nothing — the class of problem I-652 found with
+  `nix.optimise.automatic` — and nix refuses to repair a path that exists
+  (`error: path … already exists`). The check looks for a file or symlink
+  inside the path, and when it finds an empty one it says the library was
+  collected while the machine was running and asks for a `repose stop` and
+  `repose start` (repose has no restart verb), naming the machine, since
+  those are commands the user types from their laptop and hostd sets the
+  guest's hostname to the project slug — bare when the hostname is the
+  base's own `repose-guest`, which names nothing. After that stop and
+  start the path is cleanly absent and the repair works first time.
+  A bare `test -e` would skip exactly the machine that needs it and then
+  refuse the path it did try.
+- `--link-targets` repairs the libraries a binary built here can name,
+  read from the `repose-link-targets` roots (I-718), which includes the
+  ones earlier bases left. `repose-store-repair.timer` runs that once a
+  boot, `OnBootSec=4min`, with `ExecStart=-` so a failure is logged and
+  ignored: eleven
+  stats and no work in the normal case, never anything on the create path,
+  and no egress must never cost a boot.
+- *What the boot check deliberately does not know* is whether a binary in
+  the checkout still names the path it fetches back. It repairs any root
+  that is dangling, which on a guest that has run several bases means the
+  old ones — and those are the only interesting case, because the current
+  base's eleven are in the closure the host roots and a guest whose
+  current closure lost a path would not have booted. So it can write a
+  library back that nothing needs any more, a few MB into the guest's own
+  volume, kept by the root that named it. That is the trade I took against
+  the alternative of repairing only when a program actually fails, which
+  is what the command itself is for: bounded by paths a real collection
+  took (2 of 11 in the measurement above, and only after a base moved
+  them and 14 days passed), it is a few MB occasionally against the 75.5 MB
+  every guest paid unconditionally. It is a **timer** rather than a
+  wait inside the unit, which is a correction to the shape I-706 used: a
+  unit that waits for guestd's stamp runs to its 180 s fallback on every
+  ordinary start, because hostd sends `SetupProject` only on a create
+  (`create.go` is its one caller), and these oneshots are in
+  `multi-user.target`'s path rather than beside it — in the guest-base run
+  the target was reached 2 ms after the last of them finished. So the wait
+  would have cost about 170 s of every start, which is worse than the
+  thing it was deferring. The 195.99 s that run took to reach the target
+  is **not** evidence of that: the test VM has no hostd, so
+  `repose-paths.service` spends its own 180 s (I-67) and everything after
+  it lands there; the run cannot separate the two waits, and the reason
+  for the timer is the code above, not that figure.
+- With no route to a cache nix fails in 8.3 s with curl's error (measured
+  with egress blackholed on host-stg-01; it does not hang). The command adds one line naming the path and
+  saying the machine cannot reach https://cache.nixos.org right now, and
+  exits non-zero; any other failure says that building the program again
+  gives it the libraries this base has. A guest's egress can drop out by
+  itself (one of three 76 MB fetches in `e2e-pin3` failed that way for a
+  couple of minutes), so this is not a rare path.
+- It is in the system path, so `repose config` needs nothing and a user
+  types it in any shell. apps/web/src/content/docs/troubleshooting.md
+  carries it against the ld.so message a user actually sees, which is
+  where they will look for it, and machine.md's "Memory and disk" says why
+  it can happen at all, beside the store's own garbage collection;
+  docs/interfaces/guest-conventions.md names the command and the roots it
+  reads.
+- VM test: guest-base "I-719" builds a binary against libpq, removes
+  libpq through the overlay (the whiteout a guest whose host lost the path
+  sees), and asserts the ld.so failure, that nix still calls the path
+  valid, that `nix-store -r` fixes nothing, that the repair names the path
+  and the unreachable cache rather than the daemon's error, that the unit
+  still succeeds when the repair fails, that an empty path asks for a
+  restart instead of being refused by nix, and that removing the whiteout
+  brings the host's copy and the binary back. The test VM has no route to
+  the internet, so the fetch itself is the staging measurement above, not
+  the test's — which also means the no-egress path is the one the test
+  exercises for real.

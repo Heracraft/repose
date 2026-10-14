@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-709 entries.
+711 entries.
 
 ## Scope
 
@@ -316,7 +316,7 @@ pointer, not a summary.
 - **I-231** A guest boot's path to Ready and to its first login carries only what they need: a scripted stage 1, no mount-rate-limit stall, zram and the setuid wrappers off the chain, and no home-manager run for an unchanged generation — 2026-09-24; L5415
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5502
 - **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; amended by I-652; L5516
-- **I-234** Two regressions of the faster boot, found live — 2026-09-24; L5539
+- **I-234** Two regressions of the faster boot, found live — 2026-09-24; amended by I-718; L5539
 - **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; L5554
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5596
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5643
@@ -613,7 +613,7 @@ pointer, not a summary.
 - **I-530** dev is a trusted nix user — 2026-10-06; L14930
 - **I-531** `nixpkgs` in the guest's global flake registry is the base's nixpkgs, locked — 2026-10-06; L14944
 - **I-532** The guest has no nix channels — 2026-10-06; L14965
-- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; L14976
+- **I-533** The libraries a guest-built binary links are pinned in the overlay — 2026-10-06; amended by I-718; L14976
 - **I-534** The guest has man pages — 2026-10-06; L15012
 - **I-550** A guest's hostname is its project's slug — 2026-10-06; L15027
 - **I-536** A base switch never restarts dockerd, the desktop or the agents' browser; containers outlive dockerd — 2026-10-05; L15048
@@ -738,6 +738,8 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20583
 - **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L20652
 - **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L20689
-- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20727
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — amended by I-718; L20727
 - **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20754
 - **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L20790
+- **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L20821
+- **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L20939
