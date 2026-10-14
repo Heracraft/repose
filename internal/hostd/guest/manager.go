@@ -303,10 +303,17 @@ func (c Config) Defaults() Config {
 		c.UnitPoll = 5 * time.Second
 	}
 	if c.HostReserveBytes == 0 {
-		if c.TotalMemBytes > 128<<30 {
+		// An eighth of the host's memory, never below 2 GiB and never
+		// above 16 GiB, the same rule the api's scheduler and
+		// guests.slice use (DESIGN.md §4, DECISIONS I-724). The flat
+		// 8 GiB this replaces was the whole of an 8 GB host, which
+		// could then start no guest at all.
+		c.HostReserveBytes = c.TotalMemBytes / 8
+		if c.HostReserveBytes < 2<<30 {
+			c.HostReserveBytes = 2 << 30
+		}
+		if c.HostReserveBytes > 16<<30 {
 			c.HostReserveBytes = 16 << 30
-		} else {
-			c.HostReserveBytes = 8 << 30
 		}
 	}
 	return c

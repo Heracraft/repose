@@ -78,7 +78,7 @@ func TestAPIErrorSentences(t *testing.T) {
 	}{
 		{"proxy 502", &APIError{Code: "internal", Message: "<html>Bad Gateway</html>", Status: 502, Raw: true, RequestID: "r1"}, ExitGeneric, "The repose api answered 502, request r1. Try again in a minute.", "html"},
 		{"api 500", &APIError{Code: "internal", Message: "internal error", Status: 500, RequestID: "r2"}, ExitGeneric, "The repose api failed (internal, request r2). Try again in a minute.", ""},
-		{"capacity", &APIError{Code: "capacity", Status: 503}, ExitCapacity, "repose has no room for this machine right now. Try again in a few minutes.", "alerted"},
+		{"capacity", &APIError{Code: "capacity", Status: 503}, ExitCapacity, "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.", "alerted"},
 		{"rate limit", &APIError{Code: "rate_limited", Status: 429}, ExitGeneric, "Too many requests from this account in the last minute. Try again in a minute.", "repose status"},
 		{"project cap", &APIError{Code: "invalid", Status: 400, Detail: map[string]any{"reason": "project_limit", "limit": float64(100), "projects": float64(100)}}, ExitPaymentRequired, "You have 100 of the 100 projects an account can have, running or stopped. Destroy one first with `repose rm PROJECT`.", ""},
 		{"refusal", &APIError{Code: "invalid", Message: "kind must be console, build or ops", Status: 400}, ExitGeneric, "Kind must be console, build or ops (invalid).", "invalid:"},
@@ -165,7 +165,7 @@ func TestOpFailedExitCodes(t *testing.T) {
 		{OpError{Code: "insufficient_capacity", Message: "the host has no room for this project right now; try again in a few minutes"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
 			"Could not start todo-app: the host has no room for this project right now; try again in a few minutes (insufficient_capacity)."},
 		{OpError{Code: "insufficient_capacity"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
-			"Could not start todo-app: the host had no room for it right now (insufficient_capacity). Try again in a few minutes."},
+			"Could not start todo-app: no server had room for it (insufficient_capacity). A machine holds its memory while it runs, so stopping one frees room for this."},
 		{OpError{Code: "payment_required", Message: "the account needs a plan"}, "", ExitPaymentRequired, "Could not start todo-app: the account needs a plan (payment_required)."},
 		{OpError{Code: "boot_failed"}, "", ExitGeneric, "Could not start todo-app"},
 		// A host whose pool is down (DECISIONS I-644): exit 1, and the

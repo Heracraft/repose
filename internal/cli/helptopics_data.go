@@ -44,7 +44,7 @@ var exitTopic = []topicRow{
 	{[]string{"5"}, "The machine isn't running."},
 	{[]string{"6"}, "The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped."},
 	{[]string{"7"}, "A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it."},
-	{[]string{"8"}, "No capacity right now, before or during a start; try again in a few minutes. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too."},
+	{[]string{"8"}, "No capacity, before or during a start: running machines hold the memory, so stopping one frees room. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too."},
 	{[]string{"10"}, "The configuration build failed."},
 	{[]string{"130"}, "Interrupted with `Ctrl-C`, at a question too."},
 }

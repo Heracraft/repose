@@ -1101,6 +1101,14 @@ in
           mm = host.succeed("systemctl show guests.slice -p MemoryMax --value").strip()
           print(f"guests.slice MemoryMax={mm}")
           assert mm not in ("infinity", ""), "guests.slice has no memory cap"
+          # The ceiling is the host's memory less the reserve, and the
+          # reserve is an eighth of it with a 2 GiB floor and a 16 GiB
+          # ceiling — the same arithmetic as scheduler.HostReserve and
+          # hostd's HostReserveBytes. Three languages hold this rule and
+          # this is where they are checked against each other (I-724).
+          total = int(host.succeed("awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo").strip())
+          reserve = min(max(total // 8, 2 * 1024**3), 16 * 1024**3)
+          assert int(mm) == total - reserve, (mm, total, reserve)
           host.succeed("systemctl stop guest@test.service")
 
       with subtest("guest@ units run as hostd inside the I-51 sandbox"):
