@@ -559,6 +559,28 @@
             kept "a live lock" "host-$live"
             kill $live
 
+            # Chromium rewrites its title: the arguments in one string.
+            sh -c 'sleep 300; :' "chromium --headless=new --user-data-dir=$p --remote-debugging-port=0" &
+            live=$!
+            locks "host-$live"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock in a rewritten title: printed '$said'"
+            kept "a live lock in a rewritten title" "host-$live"
+            kill $live
+
+            # A real Chromium on this profile keeps its lock.
+            rm -f $p/Singleton*
+            HOME=$TMPDIR/home ${pkgs.chromium}/bin/chromium --headless=new --no-sandbox --disable-gpu \
+              --no-first-run --user-data-dir=$p --remote-debugging-port=0 about:blank >$TMPDIR/chromium.log 2>&1 &
+            chrome=$!
+            for _ in $(seq 300); do [ -L $p/SingletonLock ] && break; sleep 0.1; done
+            real=$(readlink $p/SingletonLock) || { cat $TMPDIR/chromium.log >&2; fail "Chromium made no lock"; }
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a running Chromium: printed '$said'"
+            kept "a running Chromium" "$real"
+            kill $chrome
+            wait $chrome 2>/dev/null || true
+
             # A dead PID.
             locks "host-999999999"
             $unlock $p >/dev/null

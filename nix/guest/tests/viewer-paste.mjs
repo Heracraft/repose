@@ -38,7 +38,9 @@ const webPort = 6000 + n;
 const cdpPort = 9300 + n;
 // chromium-denied: a Chromium that never granted the page clipboard
 // access, as on a first visit; keyboard paste must not need it.
-const which = process.argv.slice(2).length ? process.argv.slice(2) : ['chromium', 'chromium-denied', 'firefox'];
+// chromium-win: a Chromium that says it runs on Windows, where noVNC
+// holds a left Ctrl back for its AltGr detection.
+const which = process.argv.slice(2).length ? process.argv.slice(2) : ['chromium', 'chromium-denied', 'chromium-win', 'firefox'];
 
 const tmp = mkdtempSync(join(tmpdir(), 'viewer-paste-'));
 const procs = [];
@@ -116,7 +118,10 @@ for (const name of which) {
     : { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined };
   const browser = await type.launch(opts);
   const context = await browser.newContext({ viewport: { width: 1280, height: 832 } });
-  if (name === 'chromium') {
+  if (name === 'chromium-win') {
+    await context.addInitScript(() => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Win32' }));
+  }
+  if (name === 'chromium' || name === 'chromium-win') {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${webPort}` });
   }
   const viewer = await context.newPage();
@@ -157,6 +162,15 @@ for (const name of which) {
     await canvas.click({ position: { x: 300, y: 300 } });
     await viewer.keyboard.press('Control+V');
   });
+  if (name === 'chromium-win') {
+    await check('Ctrl then V 60 ms later pastes the laptop clipboard', `slow ${name} ${Date.now()}`, async () => {
+      await canvas.click({ position: { x: 300, y: 300 } });
+      await viewer.keyboard.down('Control');
+      await sleep(60);
+      await viewer.keyboard.press('KeyV');
+      await viewer.keyboard.up('Control');
+    });
+  }
   if (name !== 'chromium-denied') {
     await check('the paste control pastes the laptop clipboard', `from ${name} button ${Date.now()}`, async () => {
       await viewer.click('#paste');
@@ -172,6 +186,23 @@ for (const name of which) {
   } catch {
     failed += 1;
     console.log(`FAIL ${name}: typing: the machine got ${JSON.stringify(await typed())}`);
+  }
+  // Dvorak: Ctrl and the physical V key type Ctrl+K, which must reach the
+  // machine as a K (Ctrl is not down on the machine here: the events are
+  // made by the page) and paste nothing.
+  await clearTarget();
+  await canvas.click({ position: { x: 300, y: 300 } });
+  await viewer.evaluate(() => {
+    const c = document.querySelector('#screen canvas');
+    for (const type of ['keydown', 'keyup']) {
+      c.dispatchEvent(new KeyboardEvent(type, { key: 'k', code: 'KeyV', ctrlKey: true, bubbles: true, cancelable: true }));
+    }
+  });
+  await sleep(700);
+  {
+    const got = await typed();
+    if (got === 'k') console.log(`ok   ${name}: Ctrl+K on Dvorak's V key is a K, not a paste`);
+    else { failed += 1; console.log(`FAIL ${name}: Ctrl+K on Dvorak's V key: the machine got ${JSON.stringify(got)}`); }
   }
   await browser.close();
 }
