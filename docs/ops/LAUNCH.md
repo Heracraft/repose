@@ -86,6 +86,18 @@ months, limited to 20 redemptions) can go in the tweet.
 
 ## 3. Seats and the host (money)
 
+**Before you size the host, read
+[../proposals/2026-10-14-host-cpu-capacity.md](../proposals/2026-10-14-host-cpu-capacity.md).**
+Measurement on prod on 2026-10-14 says a `D64s_v7` delivers about 11
+seats, not 30: its 64 Azure vCPUs are 32 physical cores, placement has no
+CPU term, and past roughly one busy guest vCPU per core typing in every
+guest on the host goes from 3 ms to 17-45 ms. Two consequences for the
+steps below: `Total Regional vCPUs` in East US is 65 with 40 used, so the
+`D64s_v7` of step 1 **cannot be created** until that quota is raised; and
+`SEATS_TOTAL` must be set by hand in step 2, because deriving it from
+memory oversells by about 2x. Nothing in that proposal is decided, but
+the quota and the seat count both bite on launch day.
+
 0. Before the launch host registers, give it a free WireGuard address.
    The api numbers hosts on the edge's WireGuard network by themselves:
    the nth host registered gets 10.255.0.(n+1) (`hostmgr.allocate`), so
@@ -106,6 +118,7 @@ months, limited to 20 redemptions) can go in the tweet.
 
    Check after the host registers: `wg show wg0 allowed-ips` on the edge
    lists no address twice, and Grafana still shows host-01 `up`.
+
 1. The launch host: `infra/azure/prod/prod.tfvars` `host_size =
    "Standard_D64s_v7"` and the 2048 GB data disk (I-14, I-39), then
    `make -C infra apply ENV=prod`. About $3,000 a month while it runs
@@ -113,7 +126,10 @@ months, limited to 20 redemptions) can go in the tweet.
    move`.
 2. Until the host is up, or if you want to sell fewer seats than the fleet
    has, set `SEATS_TOTAL` on both api apps (30 for one `D64s_v7`; `0`
-   derives it from the ready hosts, which is 6 on the `D16s_v7` today: its usable memory is a little under 64 GB minus the reserve). Check:
+   derives it from the ready hosts, which is 6 on the `D16s_v7` today: its usable memory is a little under 64 GB minus the reserve).
+   Both figures are the memory ceiling, not what the host's CPU can
+   serve: set the value by hand (11 for a `D64s_v7`, 2 for the
+   `D16s_v7`) until a decision changes the derivation. Check:
    `repose-admin seats` prints total, held, free and the source; the
    landing page's pricing section shows "N seats left".
 3. Your own account and any tester's: `repose-admin users exempt <handle>`

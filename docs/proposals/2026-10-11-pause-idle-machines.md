@@ -374,6 +374,17 @@ CPU oversubscription does not grow, because resident guests are still
 bounded by RAM: 30 resident `large` guests are 120 vCPU, 1.9:1 on a
 D64s_v7 and 1.25:1 on an AX162's 96 threads.
 
+**Correction, 2026-10-14.** Both ratios in the paragraph above count host
+SMT *threads*, not physical cores. A `D64s_v7`'s 64 Azure vCPUs are 32
+cores, so 120 guest vCPUs is **3.75:1**; an AX162-2's 96 threads are 48
+EPYC 9454P cores, so **2.5:1**. Measurement on prod that day put the
+boundary at roughly one busy guest vCPU per physical core, which makes
+the no-pause seat counts in this section about twice what a host can
+serve smoothly, and makes resting idle machines more valuable than this
+proposal claimed rather than less. The measurement, the corrected
+capacity model and the seats each Azure SKU can really deliver are in
+[2026-10-14-host-cpu-capacity.md](2026-10-14-host-cpu-capacity.md).
+
 **Cost per seat at each subscription count** (host rent only):
 
 | Subscriptions per 30-seat host | f | AX162-2, $992.10/mo | EX131-2 (Intel), $1,297.10 | EX131-2-LTD (Intel), $602.10 | D64s_v7, about $3,000/mo |
