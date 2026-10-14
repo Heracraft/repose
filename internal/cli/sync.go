@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const maxSyncFileBytes = 100 << 20 // 100 MB, 07-cli.md §5.5d "skip files over 100 MB with a warning"
@@ -118,6 +120,12 @@ type SyncSummary struct {
 	// (I-203); CloneFailed is why it could not, when it tried.
 	ClonedFrom  string
 	CloneFailed string
+	// SubCloneFailed is "<path>\t<why>" for each submodule the guest
+	// tried to fetch from GitHub and could not (I-712).
+	SubCloneFailed []string
+	// Took is how long the sync took, probe to apply; the summary line
+	// ends with it (I-715).
+	Took time.Duration
 	// Unchanged: the guest already had exactly this sync's result, and
 	// only the carry (if anything) was sent (I-224).
 	Unchanged bool
@@ -392,7 +400,7 @@ func probeScript(slug, want, extra string) string {
 	return fmt.Sprintf(`set -e
 %s%s%scd "$repose_co"
 [ -d .git ] || git init -q
-%s%s
+%s%s%s
 %s
 st=$(repose_dirty)
 echo '#status'
@@ -411,7 +419,7 @@ git rev-parse -q --verify HEAD || true
 [ -f "$repose_synced-key" ] && tail -n +2 "$repose_synced-key" | { repose_n=0; while IFS=' ' read -r c p; do repose_n=1; if [ -n "$p" ]; then git -C "$p" cat-file -e "$c^{commit}" 2>/dev/null || exit 1; else git cat-file -e "$c^{commit}" 2>/dev/null || exit 1; fi; done; [ "$repose_n" = 1 ]; } && echo '#synchas'
 echo '#origin'
 git remote get-url origin >/dev/null 2>&1 && echo yes || true
-%s%s`, checkoutVar(slug, extra), checkoutCreate(slug, want, extra), checkoutReport, syncedFP, syncGuardFns, envPathsCheck, credsMissingScript(), markerScript())
+%s%s`, checkoutVar(slug, extra), checkoutCreate(slug, want, extra), checkoutReport, prefetchProbeScript, syncedFP, syncGuardFns, envPathsCheck, credsMissingScript(), markerScript())
 }
 
 // credsMissingScript prints `#credsmissing` when a login file the last
@@ -559,6 +567,15 @@ func errNoCommits(offerNoSync bool) error {
 // ssh round trips: a probe, then one payload (bundle, diff, untracked
 // tar) and one script that applies it.
 func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts SyncOptions) (*SyncSummary, error) {
+	started := time.Now()
+	s, err := syncGuestSteps(ctx, t, localRepoDir, slug, opts)
+	if s != nil {
+		s.Took = time.Since(started)
+	}
+	return s, err
+}
+
+func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string, opts SyncOptions) (*SyncSummary, error) {
 	if err := syncPrecheck(localRepoDir, false); err != nil {
 		return nil, err
 	}
@@ -696,13 +713,16 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		}
 	}
 	endPrep := timeSpan("sync payload build")
-	// The first sync of a large GitHub repository clones in the guest,
-	// after the credentials (gh's helper) are in place (I-203).
-	cloneURL := ""
-	if len(probe.tips) == 0 && !opts.NoRemote {
-		if url := hybridCloneURL(opts.RemoteURL); url != "" && gitPackKiB(localRepoDir) >= hybridThresholdKiB {
-			cloneURL = url
+	// The first sync of a large GitHub repository, and of each large
+	// submodule from GitHub, is fetched by the guest itself, in the
+	// background of the apply (I-203, I-712, I-713).
+	var plan *prefetchPlan
+	if len(probe.tips) == 0 {
+		topURL := ""
+		if !opts.NoRemote {
+			topURL = hybridCloneURL(opts.RemoteURL)
 		}
+		plan = planPrefetch(localRepoDir, topURL, subs)
 	}
 	var carry *credCarry
 	var carried *carryOutcome
@@ -713,290 +733,419 @@ func syncGuest(ctx context.Context, t sshTarget, localRepoDir, slug string, opts
 		}
 		if carry.p.empty() {
 			copied, carried, carry = carry.copied, &carryOutcome{}, nil
-		} else if cloneURL != "" {
-			out, err := carry.p.run(ctx, t)
-			if err != nil {
-				return nil, stepFailed("copy your tool logins to the machine", err, "")
-			}
-			copied, carried = carry.finish(string(out))
-			carry = nil
 		}
 	}
-	var cloned, cloneFailed string
-	if cloneURL != "" {
-		{
-			url := cloneURL
-			tips, ok, why, err := hybridFetch(ctx, t, probe.checkout, url, laptopBases(localRepoDir))
+	// The first payload is bundled against what the laptop last saw of
+	// origin, which the fetches most likely bring; the apply checks.
+	var pfResult prefetchResult
+	if plan.active() {
+		if top := plan.top(); top != nil {
+			probe.tips = laptopBases(localRepoDir)
+		}
+		for _, r := range plan.repos {
+			if r.sub < 0 {
+				continue
+			}
+			if probe.subTips == nil {
+				probe.subTips = map[string][]string{}
+			}
+			probe.subTips[subs[r.sub].Path] = subLaptopBases(filepath.Join(localRepoDir, filepath.FromSlash(subs[r.sub].Path)))
+		}
+		if subCommits, err = planSubCommits(localRepoDir, subs, probe.subTips); err != nil {
+			return nil, err
+		}
+		if top := plan.top(); top != nil {
+			top.want = append([]string{head}, nonEmptyLines(track)...)
+		}
+	}
+	// The laptop's .env files are read once (EnvLater is a channel read
+	// in run), whichever payload carries them.
+	if opts.EnvLater != nil {
+		opts.Env, opts.EnvLater = opts.EnvLater(), nil
+	}
+	// At most three payloads: a second when the fetches did not bring
+	// every commit the first was bundled against, and a third, whole,
+	// when the guest no longer has the first to lay the second over.
+	var summaryPlan *prefetchPlan
+	if plan.active() {
+		summaryPlan = &prefetchPlan{repos: append([]prefetchRepo(nil), plan.repos...)}
+	}
+	for {
+		revs, err := revsToSend(localRepoDir, wantRefs, probe.tips)
+		if err != nil {
+			return nil, err
+		}
+		cloned := ""
+		summary := &SyncSummary{Branch: branch, Head: head, Copied: copied, Carried: carried, Checkout: probe.checkout, Created: probe.created}
+		if plan.active() && plan.resume {
+			cloned = pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
+		}
+		if summary.Commits, err = countRevs(localRepoDir, revs); err != nil {
+			return nil, err
+		}
+		superCommits := summary.Commits
+		summary.Commits += subCommits
+
+		payload, err := os.CreateTemp("", "repose-sync-*.tar")
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = payload.Close(); _ = os.Remove(payload.Name()) }()
+		tw := tar.NewWriter(payload)
+
+		var bundleRefs []string
+		if superCommits > 0 {
+			bundle, err := os.CreateTemp("", "repose-bundle-*")
 			if err != nil {
 				return nil, err
 			}
-			if ok {
-				probe.tips = tips
-				cloned = remoteHost(opts.RemoteURL)
+			bundlePath := bundle.Name()
+			_ = bundle.Close()
+			defer func() { _ = os.Remove(bundlePath) }()
+			if _, err := gitCmdStdin(localRepoDir, strings.Join(revs, "\n")+"\n", "bundle", "create", "-q", bundlePath, "--stdin"); err != nil {
+				return nil, stepFailed("pack your commits for the machine (git bundle)", err, "")
+			}
+			// A ref whose commit the guest already has is left out of the
+			// bundle; fetch exactly the ones it carries.
+			heads, err := gitCmd(localRepoDir, "bundle", "list-heads", bundlePath)
+			if err != nil {
+				return nil, stepFailed("read the bundle back", err, "")
+			}
+			bundleRefs = nil
+			for _, l := range nonEmptyLines(heads) {
+				if _, ref, ok := strings.Cut(l, " "); ok {
+					bundleRefs = append(bundleRefs, ref)
+				}
+			}
+			if err := tarAddFile(tw, "bundle", bundlePath); err != nil {
+				return nil, err
+			}
+		}
+
+		summary.Modified = len(localDirty)
+		for _, s := range subs {
+			summary.Modified += s.Dirty
+			if s.Shallow && s.Dirty > 0 {
+				summary.SubNotSent = append(summary.SubNotSent, s.Path)
+			}
+		}
+		subScript, err := addSubsToApply(tw, localRepoDir, subs, plan)
+		if err != nil {
+			return nil, err
+		}
+		if top := plan.top(); top != nil && !plan.resume {
+			if err := tarAddBytes(tw, "bases", []byte(strings.Join(laptopBases(localRepoDir), "\n")+"\n")); err != nil {
+				return nil, err
+			}
+		}
+		if strings.TrimSpace(stagedDiff) != "" {
+			if err := tarAddBytes(tw, "staged.diff", []byte(stagedDiff)); err != nil {
+				return nil, err
+			}
+		}
+		if strings.TrimSpace(unstagedDiff) != "" {
+			if err := tarAddBytes(tw, "unstaged.diff", []byte(unstagedDiff)); err != nil {
+				return nil, err
+			}
+		}
+		// Every path the laptop's own work writes in the guest, for the
+		// apply's overlap check and its record of what this sync left (I-573):
+		// both sides of the diffs, the untracked files, and each bundled
+		// submodule (checked out and patched as a whole).
+		diffNames, err := gitDiffNames(localRepoDir)
+		if err != nil {
+			return nil, stepFailed("diff your working tree", err, "")
+		}
+		var pathsZ bytes.Buffer
+		for _, group := range [][]string{diffNames, untracked} {
+			for _, n := range group {
+				pathsZ.WriteString(filepath.ToSlash(n) + "\x00")
+			}
+		}
+		for _, sb := range subs {
+			if !sb.Shallow {
+				pathsZ.WriteString(sb.Path + "\x00")
+			}
+		}
+		if pathsZ.Len() > 0 {
+			if err := tarAddBytes(tw, "paths", pathsZ.Bytes()); err != nil {
+				return nil, err
+			}
+		}
+		// The identity the carry gives the guest's git (the checkout's own
+		// user.name and user.email, as creds.go reads them), for the merge of
+		// a diverged branch, which runs before the carry could matter
+		// (I-574). In the payload, never on a command line.
+		if name, email := gitIdentity(localRepoDir); name != "" || email != "" {
+			if err := tarAddBytes(tw, "ident", []byte(name+"\n"+email+"\n")); err != nil {
+				return nil, err
+			}
+		}
+		summary.SkippedBig = skipped
+		summary.SkippedDirs = skippedDirs
+		summary.SkippedCap = skippedCap
+		if len(untracked) > 0 {
+			if err := tarAddBytes(tw, "untracked.tar", untrackedTar); err != nil {
+				return nil, err
+			}
+			summary.Untracked = len(untracked)
+		}
+		carryScript := ""
+		if carry != nil {
+			if carryScript, err = addCarryToApply(tw, carry.p); err != nil {
+				return nil, err
+			}
+		}
+		var envScript string
+		if opts.EnvOff {
+			envScript, err = addEnvRemoveToApply(tw, opts.envFiles(), probe.markers["env"] != "" || probe.envCarried)
+		} else {
+			envScript, err = addEnvToApply(tw, opts.envFiles(), probe.markers)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if envScript == "" && !opts.EnvOff {
+			// Not sent, so the apply will not say which guest copies it kept:
+			// the probe's report of the ones edited since is that line.
+			summary.EnvKept = append(summary.EnvKept, probe.envNewer...)
+		}
+		if err := tw.Close(); err != nil {
+			return nil, err
+		}
+		if plan.active() && plan.resume && !plan.full {
+			// The guest kept the first payload: only the bundles go again.
+			kept, err := filterTar(payload, resendKeeps)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = kept.Close(); _ = os.Remove(kept.Name()) }()
+			payload = kept
+		}
+		if observeSyncPayload != nil {
+			names, err := tarNames(payload)
+			if err != nil {
+				return nil, err
+			}
+			observeSyncPayload(names)
+		}
+		if _, err := payload.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+
+		endPrep()
+		if st, err := payload.Stat(); err == nil {
+			timingf("sync payload %dB commits=%d", st.Size(), summary.Commits)
+		}
+		subsClean := superOps == ""
+		for _, s := range subs {
+			subsClean = subsClean && !s.changed()
+		}
+		asLeft := guestAsLastSyncLeft(probe, syncKey, head, branch, summary.Commits, noDiff && len(untracked) == 0 && subsClean)
+		summary.Unchanged = !opts.StashRemote && !opts.DiscardRemote && cloned == "" && envScript == "" && asLeft &&
+			(probe.hasOrigin || opts.NoRemote || originURLFor(opts.RemoteURL) == "")
+		if nothingNew && !asLeft && cloned == "" {
+			// The guest moved on from the last sync (an agent's edits,
+			// commits or branch) and the laptop has nothing new: leave the
+			// guest's work where it is (I-248).
+			summary.GuestAhead = true
+			if guestChanged {
+				// The guest's own changes, not the last sync's still in the
+				// tree beside them (I-573).
+				summary.GuestFiles = len(probe.dirty)
+				if probe.hasGuestFiles {
+					summary.GuestFiles = probe.guestFiles
+				}
+			}
+			summary.GuestCommits = probe.head != head || probe.headRef != wantHeadRef(head, branch)
+			summary.GuestCommitCount = -1
+			if summary.GuestCommits {
+				summary.GuestBranch = strings.TrimPrefix(probe.headRef, "ref: refs/heads/")
+				if summary.GuestBranch == probe.headRef {
+					summary.GuestBranch = "" // detached
+				}
+				if known, err := commitsKnownLocally(localRepoDir, []string{probe.head}); err == nil && len(known) == 1 {
+					// The laptop fetched the guest's HEAD already.
+					summary.GuestCommitCount = 0
+				} else if probe.hasAhead {
+					summary.GuestCommitCount = probe.ahead
+				}
+			}
+		}
+		var script string
+		if summary.Unchanged || summary.GuestAhead {
+			// Nothing the apply would change: the guest's tree is what the
+			// last sync left, and the laptop sends exactly what it sent then
+			// (I-224). Only the carry, when it has something, still goes.
+			timingf("sync: unchanged since the last sync")
+			if carryScript == "" {
+				return summary, nil
+			}
+			script = "set -e\n" + applyUnpack + carryScript
+		} else {
+			// The key is cleared before the checkout is touched and written
+			// once the apply has finished, so a sync that stopped half way
+			// never matches.
+			script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + freshShellScript(slug, probe) +
+				fmt.Sprintf("printf '%%s\\n' %s > \"$repose_synced-key\"\n", syncedKeyLines(syncKey, head, track, subs))
+			// After the overlap check, before anything touches the checkout:
+			// the stash and the merge below need the identity the git part
+			// carries, and a refused sync copies nothing.
+			if plan.active() {
+				// The fetches start before the payload is unpacked, and the
+				// carry runs right after it, since a private repository's
+				// fetch waits for its logins (I-713).
+				subBundles := map[int]bool{}
+				for i, sb := range subs {
+					subBundles[i] = !sb.Shallow && sb.commits > 0
+				}
+				script = strings.Replace(script, applyUnpack, prefetchStartScript(plan)+prefetchUnpackScript(plan)+prefetchJoinScript(plan, carryScript, len(bundleRefs) > 0, subBundles), 1)
+				script = strings.Replace(script, applyCarryHere, ": > \"$repose_synced-key\"\n", 1)
 			} else {
-				cloneFailed = why
+				script = strings.Replace(script, applyCarryHere, carryScript+": > \"$repose_synced-key\"\n", 1)
 			}
+			script += prefetchEndScript(plan)
 		}
-	}
-
-	revs, err := revsToSend(localRepoDir, wantRefs, probe.tips)
-	if err != nil {
-		return nil, err
-	}
-	summary := &SyncSummary{Branch: branch, Head: head, ClonedFrom: cloned, CloneFailed: cloneFailed, Copied: copied, Carried: carried, Checkout: probe.checkout, Created: probe.created}
-	if summary.Commits, err = countRevs(localRepoDir, revs); err != nil {
-		return nil, err
-	}
-	superCommits := summary.Commits
-	summary.Commits += subCommits
-
-	payload, err := os.CreateTemp("", "repose-sync-*.tar")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = payload.Close(); _ = os.Remove(payload.Name()) }()
-	tw := tar.NewWriter(payload)
-
-	var bundleRefs []string
-	if superCommits > 0 {
-		bundle, err := os.CreateTemp("", "repose-bundle-*")
+		res, err := runSSH(ctx, t, script, payload)
 		if err != nil {
-			return nil, err
+			if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, carryFailed) {
+				return nil, stepFailed("copy your tool logins to the machine", err, "")
+			}
+			if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncBusy) {
+				return nil, busyError(se.Stderr, opts)
+			}
+			if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncOverlap) {
+				// The guest changed paths this sync writes: nothing was
+				// touched, and the refusal names only those (I-573).
+				return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: overlapFiles(se.Stderr)}).Error()}
+			}
+			if se, ok := err.(*sshError); ok && (strings.Contains(se.Stderr, "patch does not apply") || strings.Contains(se.Stderr, "patch failed")) {
+				return nil, stepFailed("apply your uncommitted changes on the machine", err, "Commit or stash them on the laptop and run again.")
+			}
+			return nil, stepFailed("sync your checkout to the machine", err, "")
 		}
-		bundlePath := bundle.Name()
-		_ = bundle.Close()
-		defer func() { _ = os.Remove(bundlePath) }()
-		if _, err := gitCmdStdin(localRepoDir, strings.Join(revs, "\n")+"\n", "bundle", "create", "-q", bundlePath, "--stdin"); err != nil {
-			return nil, stepFailed("pack your commits for the machine (git bundle)", err, "")
+		if plan.active() && !plan.resume {
+			pfResult = parsePrefetch(string(res))
+			for _, r := range plan.repos {
+				word, _, _ := strings.Cut(pfResult.status[r.key], " ")
+				timingf("sync fetch %s %s %sms", r.key, word, pfResult.ms[r.key])
+			}
+		} else if plan.active() {
+			again := parsePrefetch(string(res))
+			pfResult.need, pfResult.needPayload = again.need, again.needPayload
 		}
-		// A ref whose commit the guest already has is left out of the
-		// bundle; fetch exactly the ones it carries.
-		heads, err := gitCmd(localRepoDir, "bundle", "list-heads", bundlePath)
-		if err != nil {
-			return nil, stepFailed("read the bundle back", err, "")
-		}
-		bundleRefs = nil
-		for _, l := range nonEmptyLines(heads) {
-			if _, ref, ok := strings.Cut(l, " "); ok {
-				bundleRefs = append(bundleRefs, ref)
+		var carryOut strings.Builder
+		for _, l := range strings.Split(string(res), "\n") {
+			l = strings.TrimSpace(l)
+			if rest, ok := strings.CutPrefix(l, carryLinePrefix); ok {
+				carryOut.WriteString(rest + "\n")
+				continue
+			}
+			switch l {
+			case "#detached":
+				summary.Detached = true
+			case "#diverged":
+				summary.Detached, summary.Diverged = true, true
+			case "#merged":
+				summary.Merged = true
+			case "#stashedsync":
+				summary.StashedLastSync = true
+			}
+			if rest, ok := strings.CutPrefix(l, "#stashed "); ok {
+				_, _ = fmt.Sscanf(rest, "%d %s", &summary.StashedFiles, &summary.StashRef)
+			}
+			if rest, ok := strings.CutPrefix(l, "#guestkept "); ok {
+				_, _ = fmt.Sscanf(rest, "%d", &summary.GuestKept)
+			}
+			if rest, ok := strings.CutPrefix(l, "#subfailed "); ok {
+				summary.SubFailed = append(summary.SubFailed, rest)
+			}
+			if rest, ok := strings.CutPrefix(l, "#kept "); ok {
+				summary.EnvKept = append(summary.EnvKept, rest)
+			}
+			if rest, ok := strings.CutPrefix(l, "#envfiles "); ok {
+				_, _ = fmt.Sscanf(rest, "%d", &summary.EnvFiles)
+			}
+			if rest, ok := strings.CutPrefix(l, "#envremoved "); ok {
+				_, _ = fmt.Sscanf(rest, "%d", &summary.EnvRemoved)
+			}
+			if rest, ok := strings.CutPrefix(l, "#envleft "); ok {
+				summary.EnvLeft = append(summary.EnvLeft, rest)
 			}
 		}
-		if err := tarAddFile(tw, "bundle", bundlePath); err != nil {
-			return nil, err
+		if carry != nil {
+			summary.Copied, summary.Carried = carry.finish(carryOut.String())
 		}
-	}
-
-	summary.Modified = len(localDirty)
-	for _, s := range subs {
-		summary.Modified += s.Dirty
-		if s.Shallow && s.Dirty > 0 {
-			summary.SubNotSent = append(summary.SubNotSent, s.Path)
-		}
-	}
-	subScript, err := addSubsToApply(tw, localRepoDir, subs)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(stagedDiff) != "" {
-		if err := tarAddBytes(tw, "staged.diff", []byte(stagedDiff)); err != nil {
-			return nil, err
-		}
-	}
-	if strings.TrimSpace(unstagedDiff) != "" {
-		if err := tarAddBytes(tw, "unstaged.diff", []byte(unstagedDiff)); err != nil {
-			return nil, err
-		}
-	}
-	// Every path the laptop's own work writes in the guest, for the
-	// apply's overlap check and its record of what this sync left (I-573):
-	// both sides of the diffs, the untracked files, and each bundled
-	// submodule (checked out and patched as a whole).
-	diffNames, err := gitDiffNames(localRepoDir)
-	if err != nil {
-		return nil, stepFailed("diff your working tree", err, "")
-	}
-	var pathsZ bytes.Buffer
-	for _, group := range [][]string{diffNames, untracked} {
-		for _, n := range group {
-			pathsZ.WriteString(filepath.ToSlash(n) + "\x00")
-		}
-	}
-	for _, sb := range subs {
-		if !sb.Shallow {
-			pathsZ.WriteString(sb.Path + "\x00")
-		}
-	}
-	if pathsZ.Len() > 0 {
-		if err := tarAddBytes(tw, "paths", pathsZ.Bytes()); err != nil {
-			return nil, err
-		}
-	}
-	// The identity the carry gives the guest's git (the checkout's own
-	// user.name and user.email, as creds.go reads them), for the merge of
-	// a diverged branch, which runs before the carry could matter
-	// (I-574). In the payload, never on a command line.
-	if name, email := gitIdentity(localRepoDir); name != "" || email != "" {
-		if err := tarAddBytes(tw, "ident", []byte(name+"\n"+email+"\n")); err != nil {
-			return nil, err
-		}
-	}
-	summary.SkippedBig = skipped
-	summary.SkippedDirs = skippedDirs
-	summary.SkippedCap = skippedCap
-	if len(untracked) > 0 {
-		if err := tarAddBytes(tw, "untracked.tar", untrackedTar); err != nil {
-			return nil, err
-		}
-		summary.Untracked = len(untracked)
-	}
-	carryScript := ""
-	if carry != nil {
-		if carryScript, err = addCarryToApply(tw, carry.p); err != nil {
-			return nil, err
-		}
-	}
-	var envScript string
-	if opts.EnvOff {
-		envScript, err = addEnvRemoveToApply(tw, opts.envFiles(), probe.markers["env"] != "" || probe.envCarried)
-	} else {
-		envScript, err = addEnvToApply(tw, opts.envFiles(), probe.markers)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if envScript == "" && !opts.EnvOff {
-		// Not sent, so the apply will not say which guest copies it kept:
-		// the probe's report of the ones edited since is that line.
-		summary.EnvKept = append(summary.EnvKept, probe.envNewer...)
-	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	if _, err := payload.Seek(0, io.SeekStart); err != nil {
-		return nil, err
-	}
-
-	endPrep()
-	if st, err := payload.Stat(); err == nil {
-		timingf("sync payload %dB commits=%d", st.Size(), summary.Commits)
-	}
-	subsClean := superOps == ""
-	for _, s := range subs {
-		subsClean = subsClean && !s.changed()
-	}
-	asLeft := guestAsLastSyncLeft(probe, syncKey, head, branch, summary.Commits, noDiff && len(untracked) == 0 && subsClean)
-	summary.Unchanged = !opts.StashRemote && !opts.DiscardRemote && cloned == "" && envScript == "" && asLeft &&
-		(probe.hasOrigin || opts.NoRemote || originURLFor(opts.RemoteURL) == "")
-	if nothingNew && !asLeft && cloned == "" {
-		// The guest moved on from the last sync (an agent's edits,
-		// commits or branch) and the laptop has nothing new: leave the
-		// guest's work where it is (I-248).
-		summary.GuestAhead = true
-		if guestChanged {
-			// The guest's own changes, not the last sync's still in the
-			// tree beside them (I-573).
-			summary.GuestFiles = len(probe.dirty)
-			if probe.hasGuestFiles {
-				summary.GuestFiles = probe.guestFiles
+		if plan.active() && pfResult.needPayload {
+			if plan.full {
+				return nil, stepFailed("sync your checkout to the machine", errors.New("the machine did not take the payload"), "")
 			}
-		}
-		summary.GuestCommits = probe.head != head || probe.headRef != wantHeadRef(head, branch)
-		summary.GuestCommitCount = -1
-		if summary.GuestCommits {
-			summary.GuestBranch = strings.TrimPrefix(probe.headRef, "ref: refs/heads/")
-			if summary.GuestBranch == probe.headRef {
-				summary.GuestBranch = "" // detached
+			// Another sync cleared what this one's first apply left: the
+			// payload, and the submodules fetched beside it. Everything
+			// goes again, the submodules bundled whole.
+			timingf("sync: the machine no longer has the first payload, sending it whole")
+			var top []prefetchRepo
+			for _, r := range plan.repos {
+				if r.sub < 0 {
+					top = append(top, r)
+				} else {
+					probe.subTips[subs[r.sub].Path] = nil
+				}
 			}
-			if known, err := commitsKnownLocally(localRepoDir, []string{probe.head}); err == nil && len(known) == 1 {
-				// The laptop fetched the guest's HEAD already.
-				summary.GuestCommitCount = 0
-			} else if probe.hasAhead {
-				summary.GuestCommitCount = probe.ahead
+			plan.repos, plan.full = top, true
+			if subCommits, err = planSubCommits(localRepoDir, subs, probe.subTips); err != nil {
+				return nil, err
 			}
-		}
-	}
-	var script string
-	if summary.Unchanged || summary.GuestAhead {
-		// Nothing the apply would change: the guest's tree is what the
-		// last sync left, and the laptop sends exactly what it sent then
-		// (I-224). Only the carry, when it has something, still goes.
-		timingf("sync: unchanged since the last sync")
-		if carryScript == "" {
-			return summary, nil
-		}
-		script = "set -e\n" + applyUnpack + carryScript
-	} else {
-		// The key is cleared before the checkout is touched and written
-		// once the apply has finished, so a sync that stopped half way
-		// never matches.
-		script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + freshShellScript(slug, probe) +
-			fmt.Sprintf("printf '%%s\\n' %s > \"$repose_synced-key\"\n", syncedKeyLines(syncKey, head, track, subs))
-		// After the overlap check, before anything touches the checkout:
-		// the stash and the merge below need the identity the git part
-		// carries, and a refused sync copies nothing.
-		script = strings.Replace(script, applyCarryHere, carryScript+": > \"$repose_synced-key\"\n", 1)
-	}
-	res, err := runSSH(ctx, t, script, payload)
-	if err != nil {
-		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, carryFailed) {
-			return nil, stepFailed("copy your tool logins to the machine", err, "")
-		}
-		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncBusy) {
-			return nil, busyError(se.Stderr, opts)
-		}
-		if se, ok := err.(*sshError); ok && strings.Contains(se.Stderr, syncOverlap) {
-			// The guest changed paths this sync writes: nothing was
-			// touched, and the refusal names only those (I-573).
-			return nil, &exitError{code: ExitDirtyRemoteTree, msg: (&dirtyTreeError{files: overlapFiles(se.Stderr)}).Error()}
-		}
-		if se, ok := err.(*sshError); ok && (strings.Contains(se.Stderr, "patch does not apply") || strings.Contains(se.Stderr, "patch failed")) {
-			return nil, stepFailed("apply your uncommitted changes on the machine", err, "Commit or stash them on the laptop and run again.")
-		}
-		return nil, stepFailed("sync your checkout to the machine", err, "")
-	}
-	var carryOut strings.Builder
-	for _, l := range strings.Split(string(res), "\n") {
-		l = strings.TrimSpace(l)
-		if rest, ok := strings.CutPrefix(l, carryLinePrefix); ok {
-			carryOut.WriteString(rest + "\n")
+			pfResult.needPayload = false
+			endPrep = timeSpan("sync payload build")
 			continue
 		}
-		switch l {
-		case "#detached":
-			summary.Detached = true
-		case "#diverged":
-			summary.Detached, summary.Diverged = true, true
-		case "#merged":
-			summary.Merged = true
-		case "#stashedsync":
-			summary.StashedLastSync = true
+		if plan.active() && pfResult.need {
+			if plan.resume {
+				return nil, stepFailed("sync your checkout to the machine", errors.New("the commits to check out are not on the machine"), "")
+			}
+			// Nothing was touched but the carry: send what the guest lacks
+			// now, against what the fetches brought.
+			timingf("sync: the fetches lack a base, sending again")
+			copied, carried, carry = summary.Copied, summary.Carried, nil
+			if plan.top() != nil {
+				probe.tips = pfResult.tips["top"]
+			}
+			for _, r := range plan.repos {
+				if r.sub >= 0 {
+					probe.subTips[subs[r.sub].Path] = pfResult.tips[r.key]
+				}
+			}
+			if subCommits, err = planSubCommits(localRepoDir, subs, probe.subTips); err != nil {
+				return nil, err
+			}
+			plan.resume = true
+			endPrep = timeSpan("sync payload build")
+			continue
 		}
-		if rest, ok := strings.CutPrefix(l, "#stashed "); ok {
-			_, _ = fmt.Sscanf(rest, "%d %s", &summary.StashedFiles, &summary.StashRef)
+		if plan.active() && !plan.resume {
+			pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
 		}
-		if rest, ok := strings.CutPrefix(l, "#guestkept "); ok {
-			_, _ = fmt.Sscanf(rest, "%d", &summary.GuestKept)
-		}
-		if rest, ok := strings.CutPrefix(l, "#subfailed "); ok {
-			summary.SubFailed = append(summary.SubFailed, rest)
-		}
-		if rest, ok := strings.CutPrefix(l, "#kept "); ok {
-			summary.EnvKept = append(summary.EnvKept, rest)
-		}
-		if rest, ok := strings.CutPrefix(l, "#envfiles "); ok {
-			_, _ = fmt.Sscanf(rest, "%d", &summary.EnvFiles)
-		}
-		if rest, ok := strings.CutPrefix(l, "#envremoved "); ok {
-			_, _ = fmt.Sscanf(rest, "%d", &summary.EnvRemoved)
-		}
-		if rest, ok := strings.CutPrefix(l, "#envleft "); ok {
-			summary.EnvLeft = append(summary.EnvLeft, rest)
+		return summary, nil
+	}
+}
+
+// pfSummarize records in the summary what the guest's fetches brought
+// and why the ones that failed did, and returns where it fetched from.
+func pfSummarize(s *SyncSummary, plan *prefetchPlan, res prefetchResult, subs []laptopSub, remote string) string {
+	for _, r := range plan.repos {
+		switch {
+		case res.fetched(r.key) && r.sub < 0:
+			s.ClonedFrom = remoteHost(remote)
+		case res.fetched(r.key) && s.ClonedFrom == "":
+			s.ClonedFrom = "github.com"
+		case r.sub < 0:
+			s.CloneFailed = res.failedWhy(r.key)
+		case !res.fetched(r.key):
+			s.SubCloneFailed = append(s.SubCloneFailed, subs[r.sub].Path+"\t"+res.failedWhy(r.key))
 		}
 	}
-	if carry != nil {
-		summary.Copied, summary.Carried = carry.finish(carryOut.String())
-	}
-	return summary, nil
+	return s.ClonedFrom
 }
 
 // revsToSend is the rev-list input for what the laptop sends: wantRefs,
@@ -1119,7 +1268,7 @@ while IFS= read -r l || [ -n "$l" ]; do printf '%s%%s
 `, shQuote(carryFailed), carryLinePrefix), nil
 }
 
-// applyScript is the second round trip: unpack the payload, fetch the
+// applyScript is the second round trip: unpack the payload, unbundle the
 // bundle, decide between a fast-forward, a merge and a detached checkout,
 // refuse if the guest changed a path the sync writes, set the last
 // sync's own changes (or, if asked, all of the guest's) aside, move the
@@ -1134,7 +1283,11 @@ func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle
 	if hasBundle {
 		// Objects only: no ref moves and the tree is untouched, so the
 		// overlap check below can read the commit it would check out.
-		_, _ = fmt.Fprintf(&b, "git fetch -q \"$t/bundle\" %s\n", strings.Join(bundleRefs, " "))
+		// Unbundled, not fetched: a fetch's connectivity check enumerates
+		// every promisor object of a blobless checkout (I-714), 17 s for
+		// cpython's history, and the bundle's prerequisites are checked
+		// either way.
+		_, _ = fmt.Fprintf(&b, "git bundle unbundle \"$t/bundle\" %s >/dev/null\n", strings.Join(bundleRefs, " "))
 	}
 	// A merge, rebase, cherry-pick, revert, am or bisect of the guest's
 	// own in progress: nothing the sync does can keep it (a stash cannot
@@ -1885,6 +2038,10 @@ func (s *SyncSummary) Warnings() []string {
 	}
 	if s.CloneFailed != "" {
 		w = append(w, fmt.Sprintf("The machine could not clone from GitHub (%s), so the history was sent from your laptop instead.", s.CloneFailed))
+	}
+	for _, f := range s.SubCloneFailed {
+		p, why, _ := strings.Cut(f, "\t")
+		w = append(w, fmt.Sprintf("The machine could not fetch submodule %s from GitHub (%s), so its history was sent from your laptop instead.", p, why))
 	}
 	for _, k := range s.EnvKept {
 		w = append(w, fmt.Sprintf("Kept the machine's %s: it is newer than the laptop's.", k))

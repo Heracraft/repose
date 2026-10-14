@@ -278,11 +278,16 @@ final report. `just done-check` and `just lint` pass.
       alive on a guest with the I-213 base is not pasted.
 - [ ] **cp:** `repose cp :logs/x.log .` and the reverse, transcript pasted.
       Open: the live `repose cp` transcript both ways is not pasted.
-- [ ] **Hybrid:** first-run times for this repo and for a repo over
+- [x] **Hybrid:** first-run times for this repo and for a repo over
       500 MB, bundle vs clone, pasted, and the threshold set from them in
-      the decision. Open: bundle-vs-clone first-run times for this repo and
-      a repo over 500 MB are not pasted, and I-203 still says the 20 MB
-      `size-pack` threshold is "to be set from measurement".
+      the decision. Closed by I-715 (sync-fast, 2026-10-14), first syncs
+      into one prod guest on host-01 from kanali, sync phase. This repo
+      (25 MiB): clone 27.8 and 25.4 s on main, 23.2 and 19.9 s on
+      sync-fast; bundle (25.8 MB payload) 25.3 to 28.1 s at kanali's
+      uplink, 41 s of upload alone at 5 Mbit/s. cpython (900 MiB): clone
+      248.2 and 343.5 s on main, 178.0 and 168.6 s on sync-fast, in an
+      hour when GitHub served it slowly (77.8 against 65.7 s earlier);
+      bundle (657 MB payload) 363.8 s. The threshold is 4 MiB.
 - [ ] **Caches:** a cold `pnpm install` on a large repo in two guests on one
       host, the second measurably faster, with the times pasted; `docker
       pull` twice likewise; the fallback when the cache is stopped, shown.

@@ -252,7 +252,7 @@ func planSubCommits(top string, subs []laptopSub, tips map[string][]string) (int
 // addSubsToApply puts each submodule's bundle and diffs in the apply's tar
 // (under sub/<i>/) and returns the shell that lays them down, run in the
 // superproject after its own diffs and before the untracked tar.
-func addSubsToApply(tw *tar.Writer, top string, subs []laptopSub) (string, error) {
+func addSubsToApply(tw *tar.Writer, top string, subs []laptopSub, plan *prefetchPlan) (string, error) {
 	var b strings.Builder
 	for i, s := range subs {
 		dir := filepath.Join(top, filepath.FromSlash(s.Path))
@@ -275,7 +275,12 @@ fi
 			continue
 		}
 		pre := fmt.Sprintf("sub/%d/", i)
-		_, _ = fmt.Fprintf(&b, "mkdir -p %[1]s\n[ -e %[1]s/.git ] || git init -q %[1]s\n", p)
+		if r := plan.forSub(i); r != nil {
+			// The guest fetched it from GitHub (I-712).
+			b.WriteString(prefetchSubPlace(p, r))
+		} else {
+			_, _ = fmt.Fprintf(&b, "mkdir -p %[1]s\n[ -e %[1]s/.git ] || git init -q %[1]s\n", p)
+		}
 		b.WriteString("(\ncd " + p + "\n")
 		if s.commits > 0 {
 			bundle, err := os.CreateTemp("", "repose-subbundle-*")

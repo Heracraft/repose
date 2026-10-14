@@ -15,7 +15,7 @@ The first run, into a new machine:
 ```
 $ repose run
 Connected to todo-app (large)
-Synced: 3 modified, 1 untracked
+Synced: 3 modified, 1 untracked  1.2s
 ```
 
 A later run, with work on the laptop the machine never took (I-367); the
@@ -33,7 +33,7 @@ and nothing is pushed:
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 0 modified, 0 untracked (2 new commits)
+Synced: 0 modified, 0 untracked (2 new commits)  0.9s
 ```
 
 An agent committed on the guest's branch, left two files uncommitted,
@@ -42,7 +42,7 @@ and the laptop has not pulled (DECISIONS I-573, I-574):
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 1 modified, 0 untracked (1 new commit), merged with the machine's main; kept the machine's changes to 2 files
+Synced: 1 modified, 0 untracked (1 new commit), merged with the machine's main; kept the machine's changes to 2 files  1.4s
 ```
 
 The same, when the two sides' commits conflict:
@@ -50,7 +50,7 @@ The same, when the two sides' commits conflict:
 ```
 $ repose sync
 Connected to todo-app (large)
-Synced: 1 modified, 0 untracked (1 new commit)
+Synced: 1 modified, 0 untracked (1 new commit)  0.8s
 The machine's main has commits that could not be merged with yours, so it was left as it is and the machine is on 4f2a9c1, detached. `git fetch repose` brings that branch here.
 ```
 
@@ -295,7 +295,9 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   a log line.
 - The summary line prints whenever the apply ran (I-303),
   `Synced: <n> modified, <m> untracked`, even when both are zero, followed by `, <e> env files` when .env files
-  were written and `(<k> new commits)` when commits travelled.
+  were written and `(<k> new commits)` when commits travelled. A line
+  for a sync that changed something ends with the sync's own time, two
+  spaces after the rest (`  1.4s`, I-715).
 - The guest's checkout is found by the rule in guest-conventions.md "The
   checkout". A machine with none gets it from the sync's probe, at
   `/home/dev/<laptop folder>` (made safe; the slug when that name is
@@ -303,21 +305,40 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   added by the apply (DECISIONS I-368). The run then prints `Checkout:
   ~/<name> on the machine`. A machine set up before I-368 keeps
   `/home/dev/<slug>`.
-- The first sync of a large GitHub repository clones in the guest
-  (DECISIONS I-203). When the guest has no commits yet, the remote is on
-  github.com and the laptop's `git count-objects -v` reports a
-  `size-pack` of 20 MB or more (the starting threshold, to be set from
-  measurement), the guest fetches every branch and tag from
-  `https://github.com/<owner>/<repo>.git` itself, after the credentials
-  step (so a private repository uses gh's login when it travelled; a
-  public one needs none). The laptop then bundles only the commits GitHub
-  lacks, and the diff, untracked and `.env` files follow as always. The
-  summary line ends `, history cloned from github.com`. A clone that
-  fails for any reason falls back to the full bundle, with `The guest
-  could not clone from GitHub (<git's reason>), so the history was sent
-  from your laptop instead.`; the run never fails for it. A full fetch,
-  never a partial clone: lazily fetched blobs fail later once a token
-  expires. Later syncs never clone.
+- The first sync of a large GitHub repository is fetched by the guest
+  (DECISIONS I-203, amended by I-712..I-715). When the guest has no
+  commits yet, the superproject (remote on github.com) and each
+  checked-out, non-shallow submodule (its own origin on github.com) whose
+  `git count-objects -v` `size-pack` is 4 MiB or more (I-715) are fetched
+  by the guest from `https://github.com/<owner>/<repo>.git`. The fetches
+  start in the background at the top of the apply's script, in the
+  apply's own ssh, while the payload is still uploading (I-713); the
+  laptop bundles each repository against its own `refs/remotes/origin/*`
+  (laptopBases), and its logins travel in the apply as on any sync. The
+  first attempt is anonymous: a public superproject is fetched with
+  `--filter=blob:none` through a promisor remote named `repose-backfill`
+  (I-714) when the guest's `git backfill` takes revisions (git 2.54 and
+  later; an older git fetches in full), the checkout fetches the blobs it needs, and the fetch marks
+  the checkout with `.git/repose-backfill` as soon as it lands. The end
+  of the apply, and the probe of every later sync, start `git backfill
+  --all` (niced, detached, once by flock) while that marker or the
+  remote exists, so a first sync stopped after its fetch still ends
+  whole; the backfill removes both when the history is whole. A
+  repository the anonymous attempt cannot read waits for the apply to
+  copy the logins and is fetched in full with gh's helper. After the
+  fetches, the apply checks every bundle's prerequisites and the commits
+  it checks out; if any is missing it stops before the checkout is
+  touched, keeps the payload in `.git/repose-prefetch/payload`, prints
+  what the guest has, and the laptop sends a second payload of only the
+  bundles, made against that (a third, whole, if the kept one is gone).
+  A fetched submodule's repository moves
+  into its directory before its bundle is unbundled. The summary line
+  carries `, history cloned from github.com` before its time; a superproject fetch that
+  failed says `The machine could not clone from GitHub (<git's reason>),
+  so the history was sent from your laptop instead.`, and a submodule's
+  `The machine could not fetch submodule <path> from GitHub (...)`. The
+  run never fails for it. Later syncs never fetch, and a submodule added
+  after the first sync is bundled.
 - A project made with `repose run NAME` in a directory with no git remote syncs the
   same way, without an `origin` or remote-tracking refs: its real commits
   travel, so a file deleted and committed on the laptop is deleted in the

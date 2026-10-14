@@ -14,7 +14,7 @@ The first `repose run` for a machine copies your checkout to it. After that, `re
 The first sync puts your checkout in the machine's home directory under your laptop folder's name, whatever the project is called. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` but the checkout is `/home/dev/factory`, and the run says so:
 
 ```text
-Synced: 14 modified, 30 untracked, 1 env file
+Synced: 14 modified, 30 untracked, 1 env file  2.4s
 Checkout: ~/factory on the machine
 ```
 
@@ -37,7 +37,7 @@ A second repository can live on the same machine in [a checkout of its own](/doc
 Everything goes over your SSH connection. None of it is stored by repose.
 
 ```text
-Synced: 4 modified, 2 untracked, 2 env files (3 new commits)
+Synced: 4 modified, 2 untracked, 2 env files (3 new commits)  1.9s
 ```
 
 ## Sending later work
@@ -93,7 +93,7 @@ When your laptop has new work, the sync writes only the files that work touches:
 
 ```text
 Synced: 2 modified, 1 untracked (6 new commits); kept the machine's
-changes to 3 files
+changes to 3 files  1.6s
 ```
 
 If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names those files and exits with code 6:
@@ -111,7 +111,7 @@ stash first.
 
 ```text
 Synced: 1 modified, 0 untracked; stashed the machine's changes to 3
-files (git stash 1a2b3c4)
+files (git stash 1a2b3c4)  1.2s
 ```
 
 `git stash apply 1a2b3c4` on the machine brings them back.
@@ -195,4 +195,4 @@ It says so before it creates or starts a machine, so a refused run costs nothing
 
 A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `repose run NAME` picks another name. To sync it into a machine you already have, run `repose sync job` once: from then on a plain `repose sync` there uses `job`. If you press `Ctrl-C` after a sync created a machine and before it connected, that directory doesn't keep the machine, and the CLI names it so you can remove it with `repose rm`.
 
-For a repository on github.com over about 20 MB, the first sync has the machine clone the history from GitHub and sends only what GitHub doesn't have. If that clone fails, the CLI sends everything itself.
+For a repository on github.com with more than 4 MiB of history, the first sync has the machine fetch that history from GitHub while your laptop uploads the rest, and sends only the commits GitHub doesn't have. Submodules on github.com are fetched the same way. A public repository arrives with the files of the commit you're on, and the machine fetches older versions in the background; until it has them, `git remote` on the machine also lists `repose-backfill`. If a fetch fails, the CLI sends that history itself and says so.

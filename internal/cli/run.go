@@ -756,6 +756,9 @@ func syncResultLine(s *SyncSummary, noAttach bool, named string) string {
 		return laptopAheadLine(s, named)
 	case s.Skipped:
 		return ""
+	case !s.Unchanged && !s.GuestAhead && s.Took > 0:
+		// The sync's own time, as a ✓ line ends with its phase's (I-715).
+		return s.String() + "  " + fmtElapsed(s.Took)
 	case !s.Unchanged:
 		return s.String()
 	case noAttach:

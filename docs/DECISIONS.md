@@ -22113,3 +22113,201 @@ I-722) into stop-background.
   running machine, and the failure is also notified (`stop_failed`).
 - *Rejected:* exiting on the stop's failure. The user's command was a
   start; a machine in `error` is one a start restarts everywhere else.
+**I-712. A large submodule's history comes from GitHub on the first sync;
+amends I-263.** (sync-fast, backlog item 8, 2026-10-13) The owner's "503
+new commits" on a 30 s+ sync were one submodule's whole history, which
+I-263 always bundled from the laptop: 13 MB over weak wifi, while the
+superproject itself came from GitHub (I-203) and sent 0 commits. On a
+sync into a checkout with no commits, each checked-out, non-shallow
+submodule whose own `remote.origin.url` on the laptop is on github.com
+and whose `size-pack` is at least the I-715 threshold is fetched by the
+guest into a repository under `.git/repose-prefetch/`, in the background
+of the apply (I-713), with every branch and tag in
+`refs/remotes/origin/*` and `refs/tags/*`. The laptop bundles that
+submodule's `HEAD` minus its own `refs/remotes/origin/*`; the apply moves
+the fetched repository into the submodule's directory (or fetches its
+objects into one already there) where I-263 ran `git init`, then
+unbundles and checks out as before, and `git submodule init`/`sync` set
+its origin. A submodule GitHub cannot serve falls back to the bundle
+with `The machine could not fetch submodule <path> from GitHub (<git's
+reason>), so its history was sent from your laptop instead.` A submodule
+is always fetched in full, never blobless (I-714): `git submodule sync`
+rewrites its origin, and the promisor bookkeeping would have to live in
+every submodule. *Not done:* a submodule added after the first sync is
+still bundled (the guest's superproject has commits then, and the
+overlap check could refuse after the carry ran, I-713); the laptop's
+`origin/<branch>` refs inside submodules are still not sent.
+
+**I-713. The guest's GitHub fetch runs inside the apply's ssh, overlapped
+with the upload; amends I-203 and I-224.** (sync-fast, 2026-10-13) The
+first sync of a large GitHub repository was three steps one after
+another: a logins ssh (I-224 sent the carry first because the clone
+needs gh's login), the full fetch in its own ssh, then the apply with the
+bundle. In the owner's run they cost about 49 s after boot; on a
+reproduction from kanali at a 5 Mbit/s uplink the logins ssh alone was
+10.1 s, the fetch 4.7 s and the apply 16.1 s. Now there is one ssh after
+the probe:
+- The apply's script starts each fetch (I-203's superproject, I-712's
+  submodules) as a background job at its top. The remote script runs as
+  soon as the ssh opens, so the fetches overlap the payload's upload.
+- The laptop bundles against what it last saw of origin
+  (`refs/remotes/origin/*`; no longer its tags, since a tag never pushed
+  would name a base GitHub lacks), before any fetch has run.
+- After the payload is unpacked the carry runs (moved up from after the
+  overlap check, in this case only), then `.git/repose-prefetch/creds`
+  is touched, then the apply waits for the jobs.
+- Each fetch tries anonymously first (`-c credential.helper=`). One that
+  fails waits for `creds` and tries once more with gh's helper, so a
+  private repository uses the login this same apply copied. The wait has
+  no limit of its own: it ends when `creds` appears or the apply's shell
+  is gone. A limit counted from the script's start (120 s at first)
+  expired during a long upload, about 37 MB at 2.5 Mbit/s, and turned a
+  private repository's fetch into a failure and a whole second payload.
+- Each job runs its git as a child it waits for and kills on TERM, so the
+  apply's EXIT trap ends the git too. Killing only the job's subshell
+  left the git running as an orphan, still writing refs into the
+  checkout after the apply had gone.
+- The apply then checks each bundle's prerequisites (`git bundle
+  verify`) and that every commit it checks out is either fetched or in a
+  bundle. If one is missing (a fetch failed, GitHub lacks a commit the
+  laptop thinks it has), it prints `#needfull` and the commits the guest
+  now has, and exits before the checkout is touched. The payload stays
+  on the guest (`.git/repose-prefetch/payload`, without its bundles and
+  carry), and the laptop's second payload carries only the bundles, made
+  against those commits, unpacked over it. A second payload of
+  everything would send the untracked files (up to 500 MB) and the diffs
+  again, which on a weak uplink made a failed fetch slower than main's
+  order, where the history went once. If the kept payload is gone, the
+  apply says `#needpayload` and the laptop sends a third payload whole,
+  with the submodules fetched beside it bundled in full.
+- An apply with fetches holds `.git/repose-prefetch.lock` (`flock`,
+  waiting at most 30 s, then going on without it) while it uses
+  `.git/repose-prefetch`. The probe of every sync clears a
+  `.git/repose-prefetch` a stopped first sync left, unless it can't
+  take that lock. The carry and the backfill start without the lock's
+  descriptor, so nothing long-lived holds it.
+The carry running before the overlap check means a sync refused for an
+overlap (I-573) has copied the logins: only on a first sync, whose
+checkout has no commits, so only a guest with untracked files at paths
+the laptop sends. A private repository loses less than the overlap: its
+anonymous attempt fails in under a second, and the fetch with the login
+runs after the upload. That is still one ssh fewer than main's order
+(logins ssh, fetch ssh, apply), and when the fetch fails the second
+payload is only the bundles. Measured at 5 Mbit/s from kanali to a
+local guest over OpenSSH, fetching from GitHub: a private 5.7 MiB
+repository with one laptop-only commit took 5.2 and 11.2 s against
+main's 11.9 and 11.6 s (main bundles all 48 commits under its 20 MB
+threshold). With a submodule whose fetch fails and a 4 MB untracked
+file, both send the same 12.1 MB (4.0 MB, then 8.1 MB of bundles,
+against main's one payload); the branch took 33.8 s against main's 29.9
+s on a quiet kanali, and 50.0 and 95.4 s against 71.3 s under load. The
+few seconds it can lose there are the failed fetch's retry with the
+login after the upload and the second round trip.
+*Rejected:* a second ssh for the fetch joined by a lock file (two round
+trips and a race on who takes the lock first); streaming the fetch's
+progress back (nothing reads it); skipping the overlap when the carry
+has no gh login (the guest may already have one, and the anonymous
+attempt costs under a second).
+
+**I-714. A public repository's first fetch is blobless, then backfilled;
+amends I-203.** (sync-fast, 2026-10-13) I-203 rejected
+`--filter=blob:none` because lazy blob fetches fail once a token expires
+or the repository goes private. Neither applies to a repository the
+anonymous attempt (I-713) could read, and the full fetch is most of the
+first sync's time once the upload overlaps it: from a host-01 guest,
+tmux's 26 MB history takes 2.2 s whole and 0.66 s blobless, and the
+owner's 41.6 MiB took 6.6 to 11.4 s against 0.9 to 1.4 s, more on a busy
+guest. So when the guest's git has a `git backfill` that takes revisions
+(its `-h` names `<revision-range>`, git 2.54 and later; current bases
+ship 2.55), the superproject's anonymous attempt is blobless, through a promisor remote
+named `repose-backfill` with no fetch refspec, not origin: guestd sets
+origin to the SSH form, which has no key without gh's login, and resets
+it at every start. The checkout fetches the blobs it needs in one batch.
+The fetch job writes `.git/repose-backfill` as soon as the blobless
+fetch lands, not at the apply's end: an apply that stops after the fetch
+(an overlap refusal, Ctrl-C, a dropped upload) would otherwise leave the
+checkout partial for good, since the next probe sees origin's refs and
+plans no fetch. The end of every apply, and the probe of every sync,
+start `git backfill --all` (niced, detached, `flock -n` so once) while
+that file or the `repose-backfill` remote exists; on success it removes
+both. A backfill that fails is started again by the next sync. Until
+then `git remote` on the machine lists `repose-backfill`, and a command
+that needs an old blob fetches it from the public URL. An older git,
+whose `backfill` exists but takes no revisions, is fetched in full:
+`--all` would fail on it at every sync and leave the checkout partial
+for good. The apply's checks before the checkout (the commits it checks
+out, a bundle's prerequisites, the laptop's bases) look in the bundle
+first and run with `GIT_NO_LAZY_FETCH=1`, because in a blobless checkout
+a missing commit is asked of the promisor remote, and GitHub lacks the
+laptop's own commits: on a prod guest one such check took 7.2 s in two
+failed fetches, on the apply's critical path (review round 2). The
+checkout itself keeps lazy fetches, which bring its blobs. The apply
+of every sync unbundles the laptop's bundle (`git bundle unbundle`)
+where it used to fetch it: a fetch's connectivity check enumerates
+every promisor object of a blobless checkout, which took 17.5 s for
+cpython's history on a prod guest where unbundling the same bundle took
+0.03 s. The bundle's prerequisites are checked either way, and
+submodules were already unbundled (I-263). A
+private repository is fetched in full, as before. *Rejected:* origin as
+the promisor (above); `--depth=1` (later syncs need real bases, and the
+agent loses history); leaving the repository partial (later blame and
+log -p fetch one blob at a time).
+
+**I-715. The threshold is 4 MiB, and a sync reports its time.** (sync-fast,
+2026-10-13; closes the hybrid item of 15-dev-ergonomics) I-203's 20 MB
+was "to be set from measurement". Measured from kanali, a guest on
+host-01: blobless fetches of 26, 9 and 7 MB histories take 0.66, 0.45
+and 0.35 s, whole fetches 2.2, 0.8 and 0.9 s; the laptop's bundle is the
+`size-pack` give or take, so 4 MiB is 1.7 s of upload at 20 Mbit/s and
+13 s at 2.5 Mbit/s, and with I-713 the fetch runs during the upload
+anyway. The same threshold applies to each submodule (I-712). The
+`Synced:` line now ends with the sync's own time, probe to apply, as a
+`✓` line ends with its phase's (`Synced: 3 modified, 1 untracked (2 new
+commits)  1.4s`); "Nothing new to sync" lines do not. `REPOSE_TIMING=1`
+gains `sync fetch <top|s<i>> <partial|full|failed> <ms>` per fetch and
+`sync: the fetches lack a base, sending again` and `sync: the machine
+no longer has the first payload, sending it whole`; each payload's
+`sync payload build` times that payload alone. No path or URL. *Not
+done:* the fix C of the analysis (I-716). I-717 was reserved and is
+unused.
+- *Evidence.* tmux (26 MB, public) with jq (9 MB, 1966 commits) added as
+  a submodule at a local commit, synced into one prod guest on host-01
+  from kanali, its checkout removed between runs, uplink held to 5 Mbit/s
+  by a throttle on ssh's stdin. main: `Synced: 0 modified, 0 untracked
+  (1967 new commits), history cloned from github.com`, sync phase 35.6 s
+  and 32.4 s (logins ssh 10.7/9.9 s, fetch 6.1/4.0 s, apply of an 8.1 MB
+  payload 16.5/16.7 s). sync-fast: `Synced: 0 modified, 0 untracked (1 new
+  commit), history cloned from github.com  15s` and `17s`, sync phase
+  15.0 s and 16.8 s, one ssh after the probe (`sync fetch top partial
+  1918ms`, `sync fetch s0 full 1666ms`, apply 13.2/15.1 s for a 4.3 MB
+  payload, which is the logins carry). Unthrottled: 15.7 s against
+  13.1 s. Both left the same HEAD (366cd3d) and submodule HEAD (6b53f80)
+  with a clean tree; 20 s later the guest had no missing objects and no
+  `repose-backfill` remote. With the submodule's origin pointed at a
+  repository that does not exist: `sync fetch s0 failed`, `sync: the
+  fetches lack a base, sending again`, the second payload carried its
+  1966 commits, and the run printed the I-712 line and ended with the
+  same HEADs.
+- *Evidence, review round 2* (2026-10-14, throwaway s2-sync-fast-r2 on
+  host-01). tmux plus jq at 5 Mbit/s: main 40.8 s, sync-fast 22.9 s;
+  unthrottled 19.0 against 15.6 s. The want check took 10 ms on the
+  guest where it had taken 7.2 s. A first sync interrupted mid-upload
+  after its fetch left `repose-backfill` and no HEAD; the next sync
+  (12.1 s) left the right HEADs, origin alone and no missing objects.
+  The failing-submodule run sent 4.3 MB then 8.1 MB (bundles only, the
+  second build 3.6 s); with the kept payload removed between the
+  applies, a third payload went whole and the sync still ended right.
+  This repo and cpython, bundle against clone: 15-dev-ergonomics,
+  "Hybrid".
+
+**I-716. The fetch does not start during boot.** (sync-fast, 2026-10-13)
+The analysis's fix C would have guestd fetch a public github.com remote
+into the checkout while the guest boots, joined by the sync through a
+lock, hiding the fetch behind the boot. Not built: it needs a new
+hostd/guestd contract (the remote handed to SetupProject, idempotent
+across hostd restarts) and a base publish, in the boot path the
+boot-fast branch (I-704..I-708) is changing at the same time, and after
+I-713 and I-714 what it would hide is a blobless fetch of about a second
+that already overlaps the upload. *Revisit when:* a first sync's
+`REPOSE_TIMING` shows `sync fetch top` longer than the apply's upload on
+real runs.

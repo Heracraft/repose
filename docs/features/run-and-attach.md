@@ -23,7 +23,7 @@ $ repose run
 ✓ Built 2 derivations  12s
 ✓ Booted todo-app  38s
 Connected to todo-app (large)
-Synced: 3 modified, 1 untracked (12 new commits)
+Synced: 3 modified, 1 untracked (12 new commits)  2.1s
 Logins copied: gh, git
 Ready in 1m15s.
 dev@todo-app:~/todo-app$

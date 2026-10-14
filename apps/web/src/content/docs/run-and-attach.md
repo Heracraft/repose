@@ -87,7 +87,7 @@ One machine can hold more than one repository. In a second folder, `--on` adds i
 ~/code/api $ repose run --on todo-app
 Connected to todo-app (small)
 Added api to todo-app as ~/api.
-Synced: 3 untracked
+Synced: 0 modified, 3 untracked  0.6s
 ```
 
 The folder gets its own checkout, `~/api`, named after the folder like the first one (`~/api-2` if the machine already has an `api`). It doesn't count as another project, so it uses none of your plan's running memory beyond what the agents in it use. Your laptop remembers the folder: from then on a plain `repose run`, `attach`, `sync`, `exec`, `ssh`, `cp :PATH` or `code` in `~/code/api` works in `~/api`, and `git fetch repose` there brings back that checkout's commits.
