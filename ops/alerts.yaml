@@ -292,6 +292,30 @@ groups:
           description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
           runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
+      - alert: BootSlow
+        # Most creates and starts on a host took over 2 minutes (DECISIONS
+        # I-707). A busy host boots in 30 to 70 s (2026-10-13 on host-01,
+        # I-704), so a 30 s line would fire all day; past 2 minutes a boot
+        # is close to the 3-minute setup bound (I-705) and about to fail.
+        # Two boots at least, so one stuck tenant is not a host problem.
+        expr: |
+          (
+            sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+              - sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_bucket{kind=~"CreateGuest|StartGuest",le="120"}[30m]))
+          )
+            / sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+            > 0.5
+          and
+            sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+            > 1.5
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "most creates and starts on {{ $labels.host_id }} took over 2 minutes"
+          description: "Share of the last 30 minutes' boots over 2 minutes: {{ $value | humanizePercentage }}."
+          runbook: "docs/ops/RUNBOOK.md#bootslow"
+
       - alert: SnapshotStale
         # Nightly at 03:00 plus one on every stop (DESIGN §6), so 36 hours
         # without one means two schedules have been missed.

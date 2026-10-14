@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-715 entries.
+720 entries.
 
 ## Scope
 
@@ -747,3 +747,8 @@ pointer, not a summary.
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
 - **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L20770
 - **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L20846
+- **I-704** Free page reporting stays on: it is not what made the 55 s boot (boot-fast, 2026-10-13) — L20865
+- **I-705** RegisterPaths and SetupProject get 3 minutes, not 30 s (boot-fast, 2026-10-13) — L20902
+- **I-706** repose-pin-profile waits until the project is set up (boot-fast, 2026-10-13) — L20940
+- **I-707** A boot logs "boot timings", and the ops row keeps them (boot-fast, 2026-10-13) — L20967
+- **I-708** A create shows its build's steps, then "Booting" (boot-fast, 2026-10-13) — L21003

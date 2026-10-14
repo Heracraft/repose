@@ -271,7 +271,13 @@ message Result {
     StartResult start = 16;  // DECISIONS I-590; absent from a hostd before it
   }
 }
-message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; }
+// BootTimings is where one boot's time went, in milliseconds (DECISIONS
+// I-707): volume (create only: the thin volume and its filesystem),
+// prepare (the hypervisor's argv, the network and virtiofsd), ready (the
+// hypervisor started to guestd's Ready), paths (RegisterPaths), setup
+// (secrets, principals and SetupProject), total (all of it).
+message BootTimings { uint32 volume_ms = 1; uint32 prepare_ms = 2; uint32 ready_ms = 3; uint32 paths_ms = 4; uint32 setup_ms = 5; uint32 total_ms = 6; }
+message CreateResult { string guest_ip = 1; uint32 vsock_cid = 2; BootTimings boot = 3; }
 message StopResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // blob_path, bytes and sha256 when snapshot_first (I-26, I-462)
 message BuildResult { string system_closure = 1; uint64 closure_bytes = 2; bool kernel_changed = 3; }
 message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
@@ -279,7 +285,7 @@ message ApplyResult { bool rebooted = 1; bool reboot_required = 2; }
 // set when the boot of the guest's recorded closure never reached Ready
 // and hostd booted booted_closure, the last one that did, instead
 // (DECISIONS I-590); boot_error is then why that boot failed.
-message StartResult { string booted_closure = 1; string failed_closure = 2; Error boot_error = 3; }
+message StartResult { string booted_closure = 1; string failed_closure = 2; Error boot_error = 3; BootTimings boot = 4; }  // boot: the boot that reached running (I-707)
 message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 

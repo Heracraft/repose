@@ -31,8 +31,11 @@ const (
 	HerdrUnit = multiplexer.HerdrUnit
 )
 
-// DefaultTimeout bounds the whole setup.
-const DefaultTimeout = 60 * time.Second
+// DefaultTimeout bounds the whole setup. The session unit waits for
+// home-manager's first activation, which a busy host took past a minute;
+// guestd's BootDeadline for the request is the same 3 minutes (DECISIONS
+// I-705).
+const DefaultTimeout = 3 * time.Minute
 
 // slugRe is the shape of a project slug. It becomes a directory name and a
 // tmux session name, so anything that could escape either is rejected.
@@ -182,6 +185,12 @@ func (h *Handler) Setup(ctx context.Context, req *guestdv1.SetupProject) error {
 	h.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	// The boot is done as far as the user is concerned: the deferred
+	// copy-up of repose-pin-profile waits for this (I-706). A stamp that
+	// cannot be written only makes it wait out its own bound.
+	if err := os.MkdirAll(filepath.Dir(h.paths.ProjectSetUp()), 0o755); err == nil {
+		_ = os.WriteFile(h.paths.ProjectSetUp(), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 	}
 
 	// The slug is a name the user chose, so it stays out of the line; the

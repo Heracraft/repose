@@ -24,6 +24,10 @@ const Port = 5000
 const (
 	DefaultTimeout = 30 * time.Second
 	SwitchTimeout  = 10 * time.Minute
+	// SetupTimeout is SetupProject's: guestd gives it 3 minutes, since it
+	// waits for home-manager's first activation (DECISIONS I-705), and
+	// hostd waits a little longer so guestd's own error is what arrives.
+	SetupTimeout = 3*time.Minute + 15*time.Second
 )
 
 // Target names a guest to connect to.
@@ -115,12 +119,21 @@ func (u UnixDialer) Dial(ctx context.Context, t Target) (Session, error) {
 	return newSession(c), nil
 }
 
+// timeouts are a session's per-family bounds; production sessions use the
+// constants above, and a test scales them down to watch a call outlive one.
+type timeouts struct {
+	def, sw, setup time.Duration
+}
+
+var defaultTimeouts = timeouts{def: DefaultTimeout, sw: SwitchTimeout, setup: SetupTimeout}
+
 type session struct {
 	cl *vsockrpc.Client
+	t  timeouts
 }
 
 func newSession(c net.Conn) *session {
-	return &session{cl: vsockrpc.NewClient(c, 256)}
+	return &session{cl: vsockrpc.NewClient(c, 256), t: defaultTimeouts}
 }
 
 func (s *session) call(ctx context.Context, timeout time.Duration, req *guestdv1.Request) (*guestdv1.Response, error) {
@@ -133,7 +146,7 @@ func (s *session) call(ctx context.Context, timeout time.Duration, req *guestdv1
 }
 
 func (s *session) Ping(ctx context.Context) (*guestdv1.PingResult, error) {
-	r, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{}}})
+	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{}}})
 	if err != nil {
 		return nil, err
 	}
@@ -141,22 +154,22 @@ func (s *session) Ping(ctx context.Context) (*guestdv1.PingResult, error) {
 }
 
 func (s *session) Freeze(ctx context.Context) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_Freeze{Freeze: &guestdv1.Freeze{}}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Freeze{Freeze: &guestdv1.Freeze{}}})
 	return err
 }
 
 func (s *session) Thaw(ctx context.Context) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_Thaw{Thaw: &guestdv1.Thaw{}}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Thaw{Thaw: &guestdv1.Thaw{}}})
 	return err
 }
 
 func (s *session) RegisterPaths(ctx context.Context, registration []byte) error {
-	_, err := s.call(ctx, SwitchTimeout, &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{Registration: registration}}})
+	_, err := s.call(ctx, s.t.sw, &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{Registration: registration}}})
 	return err
 }
 
 func (s *session) Switch(ctx context.Context, closure string, force bool, registration []byte) (*guestdv1.SwitchResult, error) {
-	r, err := s.call(ctx, SwitchTimeout, &guestdv1.Request{Req: &guestdv1.Request_Switch{Switch: &guestdv1.Switch{SystemClosure: closure, ForceReboot: force, Registration: registration}}})
+	r, err := s.call(ctx, s.t.sw, &guestdv1.Request{Req: &guestdv1.Request_Switch{Switch: &guestdv1.Switch{SystemClosure: closure, ForceReboot: force, Registration: registration}}})
 	if err != nil {
 		if r != nil && r.GetSwitch() != nil {
 			return r.GetSwitch(), err
@@ -167,7 +180,7 @@ func (s *session) Switch(ctx context.Context, closure string, force bool, regist
 }
 
 func (s *session) GrowFs(ctx context.Context) (uint64, error) {
-	r, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_GrowFs{GrowFs: &guestdv1.GrowFs{}}})
+	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_GrowFs{GrowFs: &guestdv1.GrowFs{}}})
 	if err != nil {
 		return 0, err
 	}
@@ -175,22 +188,22 @@ func (s *session) GrowFs(ctx context.Context) (uint64, error) {
 }
 
 func (s *session) WriteSecrets(ctx context.Context, secrets []*guestdv1.Secret) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_WriteSecrets{WriteSecrets: &guestdv1.WriteSecrets{Secrets: secrets}}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_WriteSecrets{WriteSecrets: &guestdv1.WriteSecrets{Secrets: secrets}}})
 	return err
 }
 
 func (s *session) SetPrincipals(ctx context.Context, principals []string) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_SetPrincipals{SetPrincipals: &guestdv1.SetPrincipals{Principals: principals}}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_SetPrincipals{SetPrincipals: &guestdv1.SetPrincipals{Principals: principals}}})
 	return err
 }
 
 func (s *session) SetupProject(ctx context.Context, p *guestdv1.SetupProject) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_SetupProject{SetupProject: p}})
+	_, err := s.call(ctx, s.t.setup, &guestdv1.Request{Req: &guestdv1.Request_SetupProject{SetupProject: p}})
 	return err
 }
 
 func (s *session) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
-	r, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_Sample{Sample: &guestdv1.Sample{}}})
+	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Sample{Sample: &guestdv1.Sample{}}})
 	if err != nil {
 		return nil, err
 	}
@@ -209,12 +222,12 @@ func (s *session) Exec(ctx context.Context, argv []string, timeoutS uint32, asUs
 }
 
 func (s *session) Shutdown(ctx context.Context, timeoutS uint32) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_Shutdown{Shutdown: &guestdv1.Shutdown{TimeoutS: timeoutS}}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Shutdown{Shutdown: &guestdv1.Shutdown{TimeoutS: timeoutS}}})
 	return err
 }
 
 func (s *session) AnswerQuestion(ctx context.Context, a *guestdv1.AnswerQuestion) error {
-	_, err := s.call(ctx, DefaultTimeout, &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: a}})
+	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: a}})
 	return err
 }
 

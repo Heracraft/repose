@@ -1,0 +1,80 @@
+package guest
+
+import (
+	"testing"
+
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+)
+
+// TestBootLogsItsSteps: a create and a start each log one "boot timings"
+// line and carry the same numbers in their result, so a slow boot can be
+// read from the ops row and the journal without piecing timestamps
+// together (DECISIONS I-707; the 55 s create of 2026-10-12 had to be).
+func TestBootLogsItsSteps(t *testing.T) {
+	h := newHarness(t, nil)
+	res := h.create(gid1)
+	b := res.GetCreate().GetBoot()
+	if b == nil {
+		t.Fatal("CreateResult has no boot timings")
+	}
+	lines := logLines(t, h, "boot timings")
+	if len(lines) != 1 {
+		t.Fatalf("%d \"boot timings\" lines after a create", len(lines))
+	}
+	l := lines[0]
+	if l["event"] != "guest_start" || l["op"] != "create" {
+		t.Fatalf("boot timings: %v", l)
+	}
+	for _, k := range []string{"volume_ms", "prepare_ms", "ready_ms", "paths_ms", "setup_ms", "total_ms"} {
+		if _, ok := l[k].(float64); !ok {
+			t.Fatalf("boot timings has no %s: %v", k, l)
+		}
+	}
+	if uint32(l["total_ms"].(float64)) != b.TotalMs || uint32(l["ready_ms"].(float64)) != b.ReadyMs {
+		t.Fatalf("log %v and result %v disagree", l, b)
+	}
+	if sum := b.VolumeMs + b.PrepareMs + b.ReadyMs + b.PathsMs + b.SetupMs; sum > b.TotalMs {
+		t.Fatalf("steps add up to %d ms, over the total %d: %v", sum, b.TotalMs, b)
+	}
+
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1}))
+	st := h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	if st.GetStart().GetBoot() == nil {
+		t.Fatal("StartResult has no boot timings")
+	}
+	lines = logLines(t, h, "boot timings")
+	if len(lines) != 2 || lines[1]["op"] != "start" {
+		t.Fatalf("after a start: %v", lines)
+	}
+	if lines[1]["volume_ms"].(float64) != 0 {
+		t.Fatalf("a start made no volume: %v", lines[1])
+	}
+
+	// A start on a guest that is already running boots nothing, so it
+	// carries no timings and logs no line.
+	again := h.mustOK(cmd(&hostdv1.StartGuest{GuestId: gid1}))
+	if b := again.GetStart().GetBoot(); b != nil {
+		t.Fatalf("a start of a running guest carries an earlier boot's timings: %v", b)
+	}
+	if n := len(logLines(t, h, "boot timings")); n != 2 {
+		t.Fatalf("%d \"boot timings\" lines after a start of a running guest", n)
+	}
+}
+
+// TestApplyRebootLogsAsApply: an apply's forced reboot is no StartGuest,
+// so its "boot timings" line says op=apply and an operator counting
+// starts in the journal does not count config reboots (I-707).
+func TestApplyRebootLogsAsApply(t *testing.T) {
+	h := newHarness(t, nil)
+	closure := fakeClosure(t, "nixos-system-v2")
+	h.gopts.NeedsReboot = map[string]bool{closure: true}
+	h.create(gid1)
+	res := h.mustOK(cmd(&hostdv1.ApplyConfig{GuestId: gid1, SystemClosure: closure, ForceReboot: true}))
+	if !res.GetApply().Rebooted {
+		t.Fatalf("apply result %v", res.GetApply())
+	}
+	lines := logLines(t, h, "boot timings")
+	if len(lines) != 2 || lines[0]["op"] != "create" || lines[1]["op"] != "apply" {
+		t.Fatalf("boot timings after a forced apply: %v", lines)
+	}
+}

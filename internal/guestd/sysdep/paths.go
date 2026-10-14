@@ -37,6 +37,11 @@ func (p Paths) RunDir() string { return p.join("run", "repose") }
 // before home-manager activates (DECISIONS I-67).
 func (p Paths) PathsRegistered() string { return p.join("run", "repose", "paths-registered") }
 
+// ProjectSetUp is the stamp a SetupProject that started the session unit
+// leaves; repose-pin-profile waits for it so its copy-up runs after the
+// boot (DECISIONS I-706).
+func (p Paths) ProjectSetUp() string { return p.join("run", "repose", "project-set-up") }
+
 // PathsLoaded is /var/lib/repose/paths-loaded, on the guest's volume:
 // the sha256 of the last registration `nix-store --load-db` took. A start
 // that is sent the same registration (the same closure) skips the load,

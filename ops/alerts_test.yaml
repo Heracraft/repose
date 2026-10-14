@@ -365,6 +365,60 @@ tests:
               description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
               runbook: "docs/ops/RUNBOOK.md#hostunreachable"
 
+  # --- BootSlow -----------------------------------------------------------
+  - interval: 1m
+    name: BootSlow fires when most boots take over 2 minutes
+    input_series:
+      # Three creates by minute 8; only the first under 120 s.
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest"}'
+        values: "0 0 0 1 1 1 2 2 3+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest",le="120"}'
+        values: "0 0 0 1+0x35"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BootSlow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BootSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "most creates and starts on host-01 took over 2 minutes"
+              description: "Share of the last 30 minutes' boots over 2 minutes: 66.67%."
+              runbook: "docs/ops/RUNBOOK.md#bootslow"
+
+  - interval: 1m
+    name: BootSlow stays quiet on a busy host's 30 to 70 s boots
+    input_series:
+      # Six starts, every one past 30 s and under 120 s, as on host-01 on
+      # 2026-10-13.
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest"}'
+        values: "0 1 2 3 4 5 6+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest",le="30"}'
+        values: "0+0x36"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest",le="120"}'
+        values: "0 1 2 3 4 5 6+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BootSlow
+        exp_alerts: []
+
+  - interval: 1m
+    name: BootSlow stays quiet on one slow boot
+    input_series:
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest"}'
+        values: "0 0 1+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest",le="120"}'
+        values: "0+0x32"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BootSlow
+        exp_alerts: []
+
   # --- SnapshotStale ------------------------------------------------------
   - interval: 1m
     name: SnapshotStale fires past 36 hours

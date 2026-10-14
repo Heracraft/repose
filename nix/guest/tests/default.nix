@@ -967,6 +967,9 @@ in
           # and assert the pin copies its closure into the upper dir.
           hello = "${pkgs.hello}"
           guest.succeed(f"sudo -u dev nix profile install --offline {hello}")
+          # The copy-up waits for SetupProject's stamp, or 3 minutes of
+          # uptime (I-706); this test sends no SetupProject.
+          guest.succeed("touch /run/repose/project-set-up")
           guest.succeed("systemctl start repose-pin-profile.service")
           upper = guest.succeed("awk '$2 == \"/nix/store\" { print $4 }' /proc/mounts | tr , '\\n' | grep '^upperdir=' | cut -d= -f2").strip()
           # the overlay appears twice (initrd and stage 2 views); one line is enough.

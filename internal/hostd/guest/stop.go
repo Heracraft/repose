@@ -200,6 +200,9 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	if err := m.d.State.DeleteGuest(g.GuestID); err != nil {
 		return errf(CodeInternal, "state delete: %v", err)
 	}
+	m.mu.Lock()
+	delete(m.boots, g.GuestID)
+	m.mu.Unlock()
 	m.refreshGuestGauge()
 	return nil
 }

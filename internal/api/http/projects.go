@@ -685,10 +685,11 @@ func opJSON(r *http.Request, op *store.Op) map[string]any {
 	}
 	if op.Result != nil {
 		// The console tail of a failed boot is served by the logs route
-		// (I-592), not with every read of the op.
+		// (I-592), not with every read of the op; the boot's timings are
+		// the operators' (I-707).
 		res := make(map[string]any, len(op.Result))
 		for k, v := range op.Result {
-			if k != "console" {
+			if k != "console" && k != "boot" {
 				res[k] = v
 			}
 		}

@@ -1279,6 +1279,16 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		// time it is read back; starting it then fails with "project has
 		// no guest", which hid the capacity error (dogfood, I-356). Say
 		// what the create said.
+		// A project read carries no op id, only the create's answer
+		// does: keep it, so the wait follows the create op and its
+		// build log (the build's steps, then "Booting", I-708) instead
+		// of the states alone.
+		if project.OpID == "" && created != "" {
+			switch project.State {
+			case "creating", "building", "starting":
+				project.OpID = created
+			}
+		}
 		if project.State == "error" && project.OpID == "" && created != "" {
 			if op, err := e.Client.GetOp(ctx, project.ID, created); err == nil && op.State == "error" {
 				pr.Fail()
@@ -1486,16 +1496,35 @@ func waitState(ctx context.Context, e *Env, project *Project, pr *progress) erro
 // waitOpPhased waits on an op like waitOp, streaming any build log
 // through pr, and (when byState) relabels the phase from the project's
 // state on every poll: "Building the environment", then "Booting".
+//
+// A create's log stays open until the whole op ends, boot included, so
+// with byState its build is shown as the configuration ops show theirs
+// (the build's steps from its log lines), and its "built" line starts
+// "Booting": the state's one label covered build and boot before
+// (DECISIONS I-708).
 func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr *progress, byState bool) (*Op, error) {
 	var w *opWatch
 	if byState {
 		last := ""
+		v := &buildView{pr: pr}
+		switch {
+		case pr == nil:
+			v.raw = e.ErrOut
+		case e.Verbose || !e.TTY:
+			v.raw = pr
+		}
+		v.built = func() { pr.Phase("Booting "+project.Slug, "Booted "+project.Slug) }
 		w = &opWatch{
+			line: v.Line,
 			show: func(state string) {
 				if state == "" || state == last {
 					return
 				}
 				last = state
+				// The build's own lines label it.
+				if state == "building" {
+					return
+				}
 				if label, done := phaseForState(project.Slug, state); label != "" {
 					pr.Phase(label, done)
 				}

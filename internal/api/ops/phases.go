@@ -1023,8 +1023,17 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 				e.log.Info("project restored", "event", "restored", "project_id", p.ID.String(), "host_id", p.HostID.String())
 			}
 		}
-		return e.setResult(ctx, op, map[string]any{"guest_ip": c.GuestIp})
+		fields := map[string]any{"guest_ip": c.GuestIp}
+		if b := bootTimings(c.Boot); b != nil {
+			fields["boot"] = b
+		}
+		return e.setResult(ctx, op, fields)
 	case PhaseStartGuest:
+		if b := bootTimings(res.GetStart().GetBoot()); b != nil {
+			if err := e.setResult(ctx, op, map[string]any{"boot": b}); err != nil {
+				return err
+			}
+		}
 		if st := res.GetStart(); st != nil && st.FailedClosure != "" {
 			return e.onBootFallback(ctx, op, p, st)
 		}
@@ -1273,4 +1282,15 @@ func (e *Engine) markDestroyed(ctx context.Context, op *store.Op, projectID uuid
 // TempDestroyedSummary is the temp_destroyed notification's body.
 func TempDestroyedSummary(slug string) string {
 	return fmt.Sprintf("%s was temporary and its time ran out, so it was destroyed. No snapshot was kept.", slug)
+}
+
+// bootTimings is hostd's BootTimings as ops.result's "boot" (DECISIONS
+// I-707), or nil from a hostd that sends none. It is for operators: the
+// op read users get leaves it out.
+func bootTimings(b *hostdv1.BootTimings) map[string]any {
+	if b == nil {
+		return nil
+	}
+	return map[string]any{"volume_ms": b.VolumeMs, "prepare_ms": b.PrepareMs, "ready_ms": b.ReadyMs,
+		"paths_ms": b.PathsMs, "setup_ms": b.SetupMs, "total_ms": b.TotalMs}
 }

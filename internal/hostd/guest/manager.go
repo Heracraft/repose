@@ -402,6 +402,9 @@ type Manager struct {
 	inflight map[string]bool
 	secrets  map[string][]*guestdv1.Secret
 	monitors map[string]*monitor
+	// boots is each guest's last boot that reached running, step by step
+	// (DECISIONS I-707), for the create or start result that made it.
+	boots    map[string]*hostdv1.BootTimings
 	blocked  *blockedTracker
 	ops      chan struct{}
 	buildCh  chan job
@@ -457,7 +460,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	m := &Manager{
 		cfg: cfg, d: d,
 		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
-		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{},
+		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
 		last:     map[string]sampleCursor{},
 		buildSeq: map[string]uint64{},
 		ops:      make(chan struct{}, cfg.MaxOps),
