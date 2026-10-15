@@ -630,3 +630,35 @@ func TestTmuxArgumentsAgainstARealTmux(t *testing.T) {
 		}
 	}
 }
+
+// An empty list is the whole set too: removing a guest's last secret takes
+// its file, its export and its tmux variable, and leaves the sshd material
+// (found live 2026-10-14, where hostd never sent the empty set).
+func TestEmptyWriteRemovesTheLastSecret(t *testing.T) {
+	h, p, run := newHandler(t)
+	ctx := context.Background()
+	must(t, h.Write(ctx, []*guestdv1.Secret{secret("A", "1"), secret(ReservedHostKey, "hk")}))
+	run.Reset()
+	must(t, h.Write(ctx, nil))
+	if _, err := os.Stat(filepath.Join(p.SecretsDir(), "A")); !os.IsNotExist(err) {
+		t.Fatal("the last secret's file was left on the tmpfs")
+	}
+	if env := readEnv(t, p); strings.Contains(env, "A=") {
+		t.Fatalf("secrets.env still exports A:\n%s", env)
+	}
+	if r := string(mustRead(t, p.SecretsRefresh())); !strings.Contains(r, "case ${A+s$A} in s'1') unset A ;; esac\n") {
+		t.Fatalf("secrets.refresh does not unset A:\n%s", r)
+	}
+	var stdin string
+	for _, c := range run.Calls() {
+		if c.Argv[0] == "tmux" {
+			stdin = string(c.Stdin)
+		}
+	}
+	if !strings.Contains(stdin, "set-environment -gu A\n") {
+		t.Fatalf("tmux not told to drop A: %q", stdin)
+	}
+	if b := mustRead(t, filepath.Join(p.RunDir(), ReservedHostKey)); string(b) != "hk" {
+		t.Fatal("an empty write removed the host key")
+	}
+}
