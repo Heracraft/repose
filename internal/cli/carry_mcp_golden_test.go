@@ -37,7 +37,16 @@ func TestMCPCarryGoldenPayload(t *testing.T) {
 	if err := p.tw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	got := map[string][]byte{"script.sh": []byte(p.script.String()), "payload.tar": p.buf.Bytes()}
+	z, err := p.gz()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What travels: the script and the tar compressed (I-743). The check
+	// for laptop values reads the plain tar.
+	if bytes.Contains(p.buf.Bytes(), []byte("NEVER-")) {
+		t.Fatal("payload.tar.gz carries a laptop value")
+	}
+	got := map[string][]byte{"script.sh": []byte(p.script.String()), "payload.tar.gz": z}
 	for name, b := range got {
 		if bytes.Contains(b, []byte("NEVER-")) {
 			t.Fatalf("%s carries a laptop value", name)

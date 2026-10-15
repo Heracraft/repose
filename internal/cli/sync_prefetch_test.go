@@ -569,3 +569,39 @@ func TestPrefetchResendTimesItsOwnBuild(t *testing.T) {
 		t.Fatalf("want a resend and two build lines:\n%s", buf.String())
 	}
 }
+
+// I-742: REPOSE_TIMING names each step of the guest's apply with its
+// time, so a slow first sync says where the guest spent it.
+func TestApplyStepsAreTimed(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	writeFile(t, filepath.Join(f.local, "README.md"), "unpushed\n")
+	mustRun(t, f.local, "git", "commit", "-q", "-am", "unpushed")
+	var buf strings.Builder
+	prev := timingOut
+	timingOut = &buf
+	t.Cleanup(func() { timingOut = prev })
+	if _, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{RemoteURL: "github.com/a/b"}); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	timingOut = prev
+	var steps []string
+	for _, l := range strings.Split(buf.String(), "\n") {
+		if _, rest, ok := strings.Cut(l, " sync apply "); ok {
+			fs := strings.Fields(rest)
+			if len(fs) != 2 || !strings.HasSuffix(fs[1], "ms") {
+				t.Fatalf("line %q", l)
+			}
+			steps = append(steps, fs[0])
+		}
+	}
+	if got, want := strings.Join(steps, " "), "upload fetch checks guard checkout diffs submodules record end"; got != want {
+		t.Fatalf("apply steps %q, want %q:\n%s", got, want, buf.String())
+	}
+}
+
+func TestApplyStepsParse(t *testing.T) {
+	got := applySteps("x\n#t start 100.000000\n#carry y\n#t upload 101,250000\n#t bad\n#t end 101.2505\n")
+	if strings.Join(got, ",") != "upload 1250ms,end 1ms" {
+		t.Fatalf("applySteps = %q", got)
+	}
+}
