@@ -11,13 +11,13 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **``Not logged in. Run `repose login`.``** Your login expired or you logged out.
 
-**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`** Your laptop is offline, or the server is down; run the command again once you're connected.
+**`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`.** Your laptop is offline, or the server is down; run the command again once you're connected.
 
-**`The repose api answered 502`** The API is restarting, usually for a release. A read is tried once more by itself; run the command again in a minute.
+**`The repose api answered 502`.** The API is restarting, usually for a release. A read is tried once more by itself; run the command again in a minute.
 
-**`ssh on this laptop failed before it reached todo-app`** Something in your laptop's ssh setup refused before the connection: a line in `~/.ssh/config`, a `ControlPath` too long for a socket, or `~/.ssh/repose/known_hosts`. The message quotes ssh and names the fix.
+**`ssh on this laptop failed before it reached todo-app`.** Something in your laptop's ssh setup refused before the connection: a line in `~/.ssh/config`, a `ControlPath` too long for a socket, or `~/.ssh/repose/known_hosts`. The message quotes ssh and names the fix.
 
-**`No repose project for github.com/you/app`** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
+**`No repose project for github.com/you/app`.** This checkout has no project yet, or its remote changed. `repose run` creates one; `repose attach NAME` reaches an existing one.
 
 **`ssh todo-app.repose` says `Could not resolve hostname`.** If a line before it says ``Not logged in. Run `repose login`.``, log in and connect again. With no other message, ssh isn't reading [the file repose writes](/docs/ssh-and-editors#when-it-doesnt-connect).
 
@@ -109,7 +109,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 ## Agents
 
-**`Claude Code is not logged in on todo-app.`** Log in in the window the CLI opened; your prompt is typed after the login. With `--no-attach` nothing is typed: [log in](/docs/agents#log-in) with `repose attach todo-app -w claude`, then run your prompt again.
+**`Claude Code is not logged in on todo-app.`** Log in from the window the CLI opened; your prompt is typed after the login. With `--no-attach` nothing is typed: [log in](/docs/agents#log-in) with `repose attach todo-app -w claude`, then run your prompt again.
 
 **An [image you dropped or pasted](/docs/run-and-attach#drop-a-file-or-paste-an-image) didn't attach.**
 
@@ -130,7 +130,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`Could not add todo-app to herdr's sidebar`.** herdr's own `machine add` failed, and the rest of the line is its message. Check that `ssh todo-app.repose true` works from a plain terminal; `run` and `attach` try again each time.
 
-**An agent seems stuck.** Attach and look; it's usually waiting on a [permission prompt](/docs/agents#let-it-run-without-asking).
+**An agent seems stuck.** Attach and look; it's usually waiting on a [permission prompt](/docs/agents#permissions).
 
 ## Ports
 

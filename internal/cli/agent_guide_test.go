@@ -36,7 +36,7 @@ var guidePages = []string{"machine", "agents", "limits"}
 // purpose, as "page#anchor" with why. A new heading must be summarised in
 // the guide or added here.
 var guideSkippedSections = map[string]string{
-	"agents#let-it-run-without-asking":              "the user's own permission settings, not something the machine offers",
+	"agents#permissions":                            "the user's own permission settings, not something the machine offers",
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
 	"agents#agent-states":                           "what the user sees of the agent; the guide's turn line covers what the agent does",
 	"agents#opencode-2":                             "a tool the user installs and runs, not one the machine has (I-481)",
