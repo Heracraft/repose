@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-747 entries.
+749 entries.
 
 ## Scope
 
@@ -683,7 +683,7 @@ pointer, not a summary.
 - **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; L17783
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; L18017
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; L18017
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18080
 - **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; L18112
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
@@ -745,7 +745,7 @@ pointer, not a summary.
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
-- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; L20771
+- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L20771
 - **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20787
 - **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L20795
 - **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L20871
@@ -779,3 +779,5 @@ pointer, not a summary.
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22256
 - **I-716** The fetch does not start during boot — 2026-10-13; L22303
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22314
+- **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22349
+- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22415

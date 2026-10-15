@@ -201,14 +201,22 @@ type guestStatus struct {
 // and never leaves a new one behind (ControlMaster=no), so a status does
 // not hold a gateway session for ControlPersist's ten minutes.
 func guestStatusRead(ctx context.Context, t sshTarget, slug string, have []string) guestStatus {
-	ctx, cancel := context.WithTimeout(ctx, statusProcsTimeout)
+	return guestStatusReadIn(ctx, t, slug, have, statusProcsTimeout)
+}
+
+// guestStatusReadIn is guestStatusRead within budget: status's 4 s, or
+// the stop's longer one (stopProbeTimeout, I-740). ssh's ConnectTimeout
+// leaves a second of the budget for the script, and is at most 10 s.
+func guestStatusReadIn(ctx context.Context, t sshTarget, slug string, have []string, budget time.Duration) guestStatus {
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	args := append([]string{"-o", "ControlMaster=no", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes"}, t.Args...)
+	connect := min(max(int((budget-time.Second)/time.Second), 1), 10)
+	args := append([]string{"-o", "ControlMaster=no", "-o", "ConnectTimeout=" + strconv.Itoa(connect), "-o", "BatchMode=yes"}, t.Args...)
 	var stdin io.Reader
 	if len(have) > 0 {
 		stdin = strings.NewReader(strings.Join(have, "\n") + "\n")
 	}
-	raw, err := runSSH(ctx, sshTarget{Args: args}, statusScript(slug), stdin)
+	raw, err := runSSH(ctx, sshTarget{Args: args}, statusScript(slug, stdin != nil), stdin)
 	out := string(raw)
 	if err != nil && !strings.Contains(out, "#mux") {
 		var se *sshError
@@ -232,10 +240,17 @@ func guestStatusRead(ctx context.Context, t sshTarget, slug string, have []strin
 }
 
 // statusScript is statusProcsScript, which reads the laptop's commit
-// ids from stdin first so no later command takes them, then the git
-// section.
-func statusScript(slug string) string {
-	return "repose_have=$(cat)\n" + statusProcsScript + "\necho '#git'\n" + checkoutVar(slug, "") + statusGitScript
+// ids from stdin first when have says it sends them, so no later command
+// takes them, then the git section. With none it reads no stdin: the
+// gateway relays the client's EOF beside its exec request, and an EOF
+// that reaches the guest's sshd before the exec never closes the
+// command's stdin, so `cat` waited out the whole read (I-740).
+func statusScript(slug string, have bool) string {
+	read := "repose_have=\n"
+	if have {
+		read = "repose_have=$(cat)\n"
+	}
+	return read + statusProcsScript + "\necho '#git'\n" + checkoutVar(slug, "") + statusGitScript
 }
 
 // statusGitScript prints, after "#git", one line per worktree of the
@@ -358,6 +373,19 @@ func laptopCommits(e *Env, p *Project) []string {
 	return ids
 }
 
+// checkoutUnknown says why the checkout was not read, for status's row
+// and the stop's line (I-634, I-740): "unknown (no ssh answer in 4 s)",
+// "unknown (ssh failed: Connection refused)". budget is the read's.
+func checkoutUnknown(probeErr, detail string, budget time.Duration) string {
+	switch {
+	case probeErr == "ssh_timeout":
+		return fmt.Sprintf("unknown (no ssh answer in %d s)", int(budget.Seconds()))
+	case detail != "":
+		return "unknown (ssh failed: " + detail + ")"
+	}
+	return "unknown (ssh failed)"
+}
+
 // writeGitRowsOr prints the checkout row, one line per worktree:
 //
 //	checkout   main: 3 commits not on this laptop, 2 files not committed
@@ -366,16 +394,8 @@ func laptopCommits(e *Env, p *Project) []string {
 // or, when the probe failed, one row that says the checkout is unknown
 // and why (I-634): no row would read as a machine with no checkout.
 func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string) {
-	switch probeErr {
-	case "ssh_timeout":
-		statusRow(w, "checkout", fmt.Sprintf("unknown (no ssh answer in %d s)", int(statusProcsTimeout.Seconds())))
-		return
-	case "ssh_failed":
-		if detail != "" {
-			statusRow(w, "checkout", "unknown (ssh failed: "+detail+")")
-		} else {
-			statusRow(w, "checkout", "unknown (ssh failed)")
-		}
+	if probeErr != "" {
+		statusRow(w, "checkout", checkoutUnknown(probeErr, detail, statusProcsTimeout))
 		return
 	}
 	for i, r := range rows {

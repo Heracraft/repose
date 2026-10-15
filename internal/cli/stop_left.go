@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,14 +28,106 @@ type stopLeft struct {
 	Rows []gitRow  `json:"rows"`
 }
 
-// probeBeforeStop reads the machine's checkout before its stop, best
-// effort: nil when it did not answer, has no checkout, or the command
-// stands in for ssh (tests).
-func probeBeforeStop(ctx context.Context, e *Env, p *Project) []gitRow {
-	if e.TargetFor != nil || p.State != "running" {
+// stopProbeTimeout bounds the stop's read of the checkout (I-740).
+// status's 4 s was too short for it: a cold handshake from a laptop took
+// 1.2 to 3.2 s on prod, and 4 of 13 stops lost the clause. A stop is the
+// last moment the read can be made, so it waits longer than status,
+// which can be run again.
+const stopProbeTimeout = 15 * time.Second
+
+// stopEarlyMaxAge is how old an early read may be when the stop uses it:
+// one started before a question the user took a while to answer is read
+// again, since the agent it asked about kept working.
+const stopEarlyMaxAge = 10 * time.Second
+
+// stopProbe is a read of a machine's checkout started before the api
+// answered (startStopProbes). have is the laptop's commits it sent.
+type stopProbe struct {
+	have    []string
+	started time.Time
+	done    chan struct{}
+	g       guestStatus
+}
+
+// startStopProbes starts the read of each machine names gives, beside
+// the api's read of the projects (I-740): the ssh handshake was most of
+// a stop's time, and it needs only the slug. Each read uses the cache's
+// guess for the project's id and remote, for the laptop's commits; the
+// stop checks the read against the project the api returns
+// (probeBeforeStop). A name the api resolves to a machine that is not
+// running wastes one refused connection.
+func startStopProbes(ctx context.Context, e *Env, names []string) map[string]*stopProbe {
+	if e.TargetFor != nil && e.readGuest == nil {
 		return nil
 	}
-	return guestStatusRead(ctx, e.target(p.Slug), p.Slug, laptopCommits(e, p)).git
+	m := map[string]*stopProbe{}
+	for _, name := range names {
+		name = e.resolveArg(name)
+		if name == "" || strings.Contains(name, ":") {
+			continue
+		}
+		guess := cachedGuess(e, name, defaultResolveDeps())
+		if guess == nil {
+			guess = &Project{Slug: name}
+		}
+		if m[guess.Slug] != nil {
+			continue
+		}
+		sp := &stopProbe{have: laptopCommits(e, guess), started: time.Now(), done: make(chan struct{})}
+		m[guess.Slug] = sp
+		go func() {
+			defer close(sp.done)
+			sp.g = e.readGuestFor(ctx, guess.Slug, sp.have, stopProbeTimeout)
+		}()
+	}
+	return m
+}
+
+// readGuestFor reads the guest's status within budget. A master whose
+// connection died (the laptop slept) would hold the read for the whole
+// budget, so masterAlive stops it first; a live one carries the read.
+// Tests that stand in for ssh with TargetFor read nothing.
+func (e *Env) readGuestFor(ctx context.Context, slug string, have []string, budget time.Duration) guestStatus {
+	if e.readGuest != nil {
+		return e.readGuest(ctx, slug, have, budget)
+	}
+	if e.TargetFor != nil {
+		return guestStatus{}
+	}
+	t := e.target(slug)
+	masterAlive(ctx, t)
+	return guestStatusReadIn(ctx, t, slug, have, budget)
+}
+
+// probeBeforeStop reads the machine's checkout before its stop: the
+// early read when it answers the same question (the same laptop commits,
+// not older than stopEarlyMaxAge), else a new one. An empty status for a
+// machine that is not running; probeErr says when it did not answer.
+func probeBeforeStop(ctx context.Context, e *Env, p *Project) guestStatus {
+	if p.State != "running" {
+		return guestStatus{}
+	}
+	have := laptopCommits(e, p)
+	if sp := e.stopEarly[p.Slug]; sp != nil && slices.Equal(sp.have, have) && time.Since(sp.started) <= stopEarlyMaxAge {
+		select {
+		case <-sp.done:
+			timingf("stop: %s read beside the api", p.Slug)
+			return sp.g
+		case <-ctx.Done():
+			return guestStatus{probeErr: "ssh_timeout"}
+		}
+	}
+	return e.readGuestFor(ctx, p.Slug, have, stopProbeTimeout)
+}
+
+// stopClause is the stop line's clause for what the read found: what
+// the machine keeps (leftClause), or that the checkout is unknown and
+// why, in status's words.
+func stopClause(g guestStatus) string {
+	if g.probeErr != "" {
+		return "checkout " + checkoutUnknown(g.probeErr, g.probeDetail, stopProbeTimeout)
+	}
+	return leftClause(g.git)
 }
 
 // leftClause is the stop line's clause for rows: the commits the laptop

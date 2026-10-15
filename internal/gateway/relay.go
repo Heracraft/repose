@@ -473,11 +473,27 @@ func (s *session) pipe(cch ssh.Channel, creqs <-chan *ssh.Request, gch ssh.Chann
 	go copyStream(&g2cData, cch, gch, &s.toClient)
 	go copyStream(&g2cData, cch.Stderr(), gch.Stderr(), &s.toClient)
 
+	// started closes once the guest has answered a session's exec, shell
+	// or subsystem request, or the client's request stream has ended.
+	started := make(chan struct{})
+	var startOnce sync.Once
+	markStarted := func() { startOnce.Do(func() { close(started) }) }
+
 	// The client's inbound data (stdin) is done: let the guest see EOF while
 	// it may still be producing output. A client sends no extended data, so
 	// waiting for both never blocks a normal client.
+	//
+	// For a session, the EOF waits for the guest's answer to the command
+	// request (DECISIONS I-740). An OpenSSH client with stdin from
+	// /dev/null sends EOF right after its exec, without waiting for the
+	// reply; relayed from two goroutines, the EOF could reach the guest's
+	// sshd first, where a session with no command yet has no stdin to
+	// close, and the command's stdin then never ended (`cat` hung).
 	go func() {
 		c2gData.Wait()
+		if isSession {
+			<-started
+		}
 		_ = gch.CloseWrite() // an error means the guest already closed
 	}()
 	// The same half-close towards the client. For a session this is what
@@ -527,11 +543,16 @@ func (s *session) pipe(cch ssh.Channel, creqs <-chan *ssh.Request, gch ssh.Chann
 	go func() {
 		defer wg.Done()
 		defer creqsDone.Done()
+		defer markStarted()
 		for req := range creqs {
 			mu.Lock()
 			inflight++
 			mu.Unlock()
 			s.forwardChannelRequest(req, gch, isSession, true) // reply lands on cch
+			switch req.Type {
+			case "exec", "shell", "subsystem":
+				markStarted()
+			}
 			mu.Lock()
 			inflight--
 			tryClose()

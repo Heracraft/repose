@@ -130,6 +130,14 @@ func (r stopResult) endedWord() string {
 // fetched before the machine stops (I-615).
 func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	started := time.Now()
+	if !o.Idle && len(o.Projects) > 0 {
+		// The machines named are read beside the api's read of them
+		// (I-740); the reads end with the command.
+		pctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		e.stopEarly = startStopProbes(pctx, e, o.Projects)
+		defer func() { e.stopEarly = nil }()
+	}
 	var projects []*Project
 	var err error
 	if o.Idle {
@@ -317,7 +325,7 @@ func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) sto
 	}
 	r.accepted = true
 	closeMaster(ctx, e, project.Slug)
-	saveStopLeft(e.Dir, project.ID, left, time.Now())
+	saveStopLeft(e.Dir, project.ID, left.git, time.Now())
 	op, err := waitStopTaken(ctx, e, project.ID, opID)
 	if err != nil {
 		r.err = err
@@ -328,7 +336,7 @@ func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) sto
 		r.err = e.opFailed("stop", project.Slug, op.Error, fmt.Sprintf("`repose status %s` shows its state; `repose stop %s` tries again.", project.Slug, project.Slug))
 	case op != nil && op.State == "done":
 		r.done = true
-		r.line = withLeft(fmt.Sprintf("Stopped %s in %s.", project.Slug, fmtElapsed(time.Since(started))), leftClause(left))
+		r.line = withLeft(fmt.Sprintf("Stopped %s in %s.", project.Slug, fmtElapsed(time.Since(started))), stopClause(left))
 		// I-158, as stopOne says it: a stop whose snapshot failed is not
 		// a clean stop.
 		if p, err := e.Client.GetProject(ctx, project.ID); err == nil && p.LastError != nil {
@@ -364,8 +372,8 @@ func waitOutStop(ctx context.Context, e *Env, project *Project, pr *progress) er
 }
 
 // stoppingLine is stopBegin's line: `Stopping job; 1 file not committed.`
-func stoppingLine(slug string, left []gitRow) string {
-	return withLeft("Stopping "+slug+".", leftClause(left))
+func stoppingLine(slug string, left guestStatus) string {
+	return withLeft("Stopping "+slug+".", stopClause(left))
 }
 
 // waitStopTaken waits until the stop op has ended or the engine has it
@@ -475,9 +483,9 @@ func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *p
 	} else {
 		r.line = fmt.Sprintf("Stopped %s in %s.", p.Slug, took)
 	}
-	r.line = withLeft(r.line, leftClause(left))
+	r.line = withLeft(r.line, stopClause(left))
 	r.done = true
-	saveStopLeft(e.Dir, p.ID, left, time.Now())
+	saveStopLeft(e.Dir, p.ID, left.git, time.Now())
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
 		// with last_error set; say so rather than implying a snapshot.
