@@ -22603,3 +22603,9 @@ secret too.
   ways. The fake guestd in `internal/hostd/fakeguestd` merged writes,
   which would have hidden this; it now replaces the named set, as guestd
   does.
+
+**I-744. A project with no remote of its own fetches from the checkout's origin; amends I-713.** (temp-prefetch, 2026-10-15) The conductor's live check of r20261014-2 found that `repose run --temp` uploaded the whole history from the laptop. On a tmux clone (25.3 MiB of history) with jq as a submodule, a named create sent 662,528 B and printed `sync fetch top partial`; `--temp` sent 23,229,440 B and had no top fetch. A temporary project records no remote_url (I-351), so the sync passed NoRemote, planPrefetch got an empty top URL, and only the submodules were fetched: their URLs come from the laptop's own config. I-713's measurements used named projects, which is why nobody saw it.
+- The fetch's source is now the project's remote, or, when the project has none, the checkout's own `remote.origin.url`, normalised the way a submodule's is. The same planPrefetch rules apply: github.com, at least 4 MiB of history, blobless first and then backfilled for a public repository.
+- The source feeds only the fetch and the summary's "history cloned from" line. The guest still gets no `origin` for a project without a remote, and the project still records no remote_url (I-351). The laptop's bundle is still made against the checkout's own `refs/remotes/origin/*`, as for a named project.
+- A checkout whose origin is some other repository is safe: the apply checks that every commit it needs arrived and asks for the full payload when one is missing (I-713's #needfull).
+- *Evidence.* TestPrefetchWithoutAProjectRemoteUsesTheCheckoutsOrigin syncs with NoRemote from a checkout whose origin is the fixture's github.com/a/b. Before the fix, the summary was "1 new commit" sent from the laptop. After, it reads cloned from github.com with no commit sent, and the guest has no origin.

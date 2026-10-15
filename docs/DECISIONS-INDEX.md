@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-752 entries.
+753 entries.
 
 ## Scope
 
@@ -774,7 +774,7 @@ pointer, not a summary.
 - **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22061
 - **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22096
 - **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22122
-- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; L22147
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; amended by I-744; L22147
 - **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22218
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22262
 - **I-716** The fetch does not start during boot — 2026-10-13; L22309
@@ -784,3 +784,4 @@ pointer, not a summary.
 - **I-742** The apply reports its own steps' times — 2026-10-14; L22471
 - **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22510
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
+- **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607

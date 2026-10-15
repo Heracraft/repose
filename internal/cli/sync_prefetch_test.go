@@ -605,3 +605,40 @@ func TestApplyStepsParse(t *testing.T) {
 		t.Fatalf("applySteps = %q", got)
 	}
 }
+
+// I-744: a project with no remote of its own (a temporary machine,
+// I-351) is fetched from the checkout's own origin, as its submodules
+// already are, instead of having its whole history sent from the laptop.
+func TestPrefetchWithoutAProjectRemoteUsesTheCheckoutsOrigin(t *testing.T) {
+	f, _ := prefetchFixture(t)
+	// The checkout's origin is on GitHub (the fixture's github.com/a/b).
+	mustRun(t, f.local, "git", "remote", "set-url", "origin", "git@github.com:a/b.git")
+	s, err := syncGuest(context.Background(), f.target, f.local, testSlug, SyncOptions{NoRemote: true})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if s.ClonedFrom != "github.com" || s.Commits != 0 {
+		t.Fatalf("summary = %+v, want the history fetched by the machine and no commit sent", s)
+	}
+	g := f.guestRepo()
+	if got := readFile(t, filepath.Join(g, "README.md")); got != "hello\n" {
+		t.Fatalf("README.md on the guest = %q", got)
+	}
+	// A project without a remote still gets no origin (I-351).
+	if out := mustRun(t, g, "git", "remote"); strings.Contains(out, "origin") {
+		t.Errorf("the guest has an origin: %q", out)
+	}
+	// The backfill ends before the test does, or its writes race the
+	// cleanup of the guest's home.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		_, err := os.Stat(filepath.Join(g, backfillMarker))
+		if os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the backfill did not finish")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
