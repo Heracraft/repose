@@ -38,11 +38,13 @@ test('an experimental page says so under its title', async ({ page }) => {
 test('a code block copies its commands', async ({ page, context }) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/docs/lifecycle');
-	const block = page.locator('.doc .code').filter({ hasText: '$ repose stop todo-app' });
+	// Two commands with output between them; the stop example has one since
+	// stop returns once the stop is under way (I-710).
+	const block = page.locator('.doc .code').filter({ hasText: '$ repose rm -y' });
 	await block.getByRole('button', { name: 'Copy' }).click();
 	await expect(block.getByRole('button', { name: 'Copied' })).toBeVisible();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-		'repose stop todo-app\nrepose start todo-app'
+		'repose rm -y\nrepose run'
 	);
 });
 
