@@ -4,27 +4,33 @@ A proposal, for the owner to read before anything in `ops/dev/release-queue`
 changes. The queue works; the process around it leaks, and one night cost
 six double-taken decision ids, two agents reporting a released branch as
 unqueued, and a queue line telling the conductor that a comment in a test
-script needed two host switches.
+script needed two host switches. It can also lose a branch between `add`
+and the cut while reporting success, which nobody had noticed (problem 10).
 
 Every number below was measured on woker-1 today, from the integrated main
-`293a8dba`. Three of the field reports in problems 3, 4 and 6 came from the
-cpu-weight lane as this was written, and are marked where they are used;
-each was re-measured here before it went in. Nine problems, ordered by what fixing them saves. Each one says
-what it does today, what it should do, what the change costs, and what was
-rejected.
+`293a8dba`. Ten problems: the brief's nine, and one more the cpu-weight
+lane found while queueing. Five of the field reports — in problems 2, 3, 4,
+6 and 10 — came from the cpu-weight and docs lanes as this was written and
+are marked where they are used; each was re-measured here before it went
+in, and one of them corrected a claim in problem 4 that was too strong.
+Each problem says what it does today, what it should do, what the change
+costs, and what was rejected.
 
 The tool had no tests, which is why each of these was argued about rather
 than run. The first thing built was the fixture: `ops/dev/release-queue-test`
-("The fixture" below). Seven of its tests fail today, one for each of the
-brief's problems 1 to 7, and each is listed in the script's `KNOWN_BAD`
-with the problem it belongs to. That list is the acceptance criterion for this work: a fix lands when
-its line comes out of `KNOWN_BAD` and the suite still exits 0.
+("The fixture" below). Ten of its tests fail today — one for each of the
+brief's problems 1 to 7, two for problem 10 and one for the test-file half
+of problem 2 — and each is listed in the script's `KNOWN_BAD` with the
+problem it belongs to. That list is the acceptance criterion for this work:
+a fix lands when its line comes out of `KNOWN_BAD` and the suite still
+exits 0.
 
 ## Summary
 
 Ordered by what fixing it saves, so the numbers here are not the brief's;
 the brief's number is in the second column, and the fixture's `KNOWN_BAD`
-uses the brief's.
+uses the brief's. Problem 10 is not in the brief: it was found by the
+cpu-weight lane while queueing, after this document was first written.
 
 | # | brief | Problem | Fix | Owner's call |
 |---|---|---|---|---|
@@ -37,6 +43,7 @@ uses the brief's.
 | 7 | 7 | live checks and the release record are written by hand | `live`, and `record` prints the STATUS line | no |
 | 8 | 8 | reaching the other lanes | `say` and `inbox` per branch | no |
 | 9 | 9 | the gateway bans the conductor | renew the operator certificate before use; commit the vsock route | partly: the gateway is yours |
+| 10 | — | a newline in `--note` or `--live` corrupts the entry, silently | refuse or flatten it; read the last field, not the first | no, a bug |
 
 Problems 1, 2, 3, 5 are bug fixes and new read-only commands; they can land
 without a decision from you beyond "yes, go". Problem 4 asks for a new ref
@@ -46,11 +53,11 @@ on the public GitHub repository and is the one real question. Problems 7 and
 
 Two of them are not waiting for a release night to bite. Problem 1 misreads
 the targets of **every** `add` run on this box, including a branch with
-nothing in it. And as of this afternoon, **I-747, I-748 and I-749 are
-reserved on woker-1 and visible to nothing on kanali** — the seventh,
-eighth and ninth double-take are set up and need only a lane on the other
-machine to run `id` (§4). The offline band in problem 4 removes that without
-the new ref, and can land on its own.
+nothing in it. And as of this afternoon **I-747, I-748 and I-749 are
+reserved on woker-1 and visible to nothing on kanali**: not a collision yet
+— one lane holds all three — but a three-number-wide window in which a lane
+on kanali that runs `id` is handed one of them (§4). The offline band in
+problem 4 closes that without the new ref, and can land on its own.
 
 ---
 
@@ -169,6 +176,31 @@ alternative is deciding per hunk whether a changed line fell inside the
 block, by line ranges, which is exactly the kind of guess that produced this
 problem.
 
+*A package changed only in its tests reaches no binary.* `needs_of` maps
+changed **files** to packages and then asks which binaries import the
+package; it never asks whether the change can reach a binary at all. Go
+does not compile `_test.go` into one, so a package whose changed files are
+all test files contributes nothing. The discriminator is one condition.
+
+Found by the cpu-weight lane on its own branch, and verified here. That
+branch changes seventeen Go packages; exactly one of them is in
+`cmd/gateway`'s dependencies, and it is changed only in a test file:
+
+```
+$ git diff <merge-base>...cpu-weight --name-only | grep '^internal/obs'
+internal/obs/metrics/families_host_test.go
+$ go list -deps ./cmd/gateway | grep 'obs/metrics$'
+github.com/heracraft/repose/internal/obs/metrics
+(cmd/gateway and nix/edge: untouched)
+```
+
+So `edge` on that entry is a false positive, and `edge` is **a switch of
+the edge, which is the owner's action**, on a gateway that is byte-identical.
+Over history, 38 of the 542 non-merge commits touching Go since 2026-09-15
+changed only `_test.go` files and nothing else that installs anywhere;
+several are a `gofmt` of a test file. Each was charged every target the
+changed packages' importers deploy to.
+
 *Name the paths that install nothing.* `nix/checks.nix`, `nix/guest/tests/`,
 `nix/hosts/tests/` and `nix/guest/checks.nix` are gates. A branch that
 touches only those ships as `none`, and the gate still runs: the conductor's
@@ -178,8 +210,9 @@ check runs it, whatever the batch ships as**. Without that row this change
 would trade a false deploy for a skipped test, which is a worse trade.
 
 **Cost.** A mechanical move of 482 lines, `nix flake check` as its evidence,
-and four lines in `needs_of`. One fixture test
-(`needs_flake_checks_only`), and three more for the test directories.
+and about eight lines in `needs_of`. Two fixture tests
+(`needs_flake_checks_only`, `needs_ignores_a_test_only_change`), and three
+more for the test directories.
 
 **Rejected.** *Resolving the real targets through the flake's own graph* —
 evaluating `nixosConfigurations.host-01.config.system.build.toplevel.drvPath`
@@ -311,11 +344,20 @@ shared refs only (refs/heads + refs/remotes)             746
 
 Everything that can cross to the other machine — every ref this box has,
 local and remote-tracking, and every worktree's uncommitted file — tops out
-at **746**. The reservations file holds **I-747, I-748 and I-749**, reserved
-here today and written into no file yet. A lane on kanali that fetches
-everything there is to fetch and runs `id` is handed I-747. The gap between
-the two ceilings is exactly the one input to the scan that cannot be
-shared, and it is three numbers wide right now.
+at **746**. The reservations file holds **I-747, I-748 and I-749**. The gap
+between the two ceilings is exactly the one input to the scan that cannot be
+shared, and it is three numbers wide: a lane on kanali that fetches
+everything there is to fetch and runs `id` is handed I-747.
+
+Those three are one lane's, reserved from the main checkout at 20:18:52 for
+entries it has not written yet, and the docs lane corrected an earlier draft
+of this section that called them the seventh, eighth and ninth double-take.
+They are not. A double-take is two lanes holding one number; this is one
+lane holding three, and the right reading of it is the **window**, not a
+collision: the reservations are correct, invisible, and will stay invisible
+until the entries are written and integrated. The window is as wide as the
+reservations not yet in anyone's `DECISIONS.md`, and it is open on both
+machines at once.
 
 *And when the scan is right it can be right by accident.* The cpu-weight
 lane's `id` printed I-746, which was correct, but the ceiling it was
@@ -427,6 +469,27 @@ generations, the main checkout among them.
 A lane in any of them runs a version of `id`, `needs_of` and `add` that
 was superseded, and nothing says so. The old `id` is the one that handed out
 a used number six times.
+
+It happened again while this was being written, and the lane could not have
+known. The docs lane, explaining its I-747 reservation, cited `cmd_id`'s
+`git branch --show-current` as "line 192". In `origin/integrated`'s copy
+that line is 220:
+
+```
+origin/integrated   cmd_id at line 218, show-current at 220
+main checkout       cmd_id at line 190, show-current at 192
+```
+
+So the reservation was made with the main checkout's copy, which is the
+**pre-I-745 script**: it scans `refs/heads` only, has no range-header
+support, and does not refuse a number that is already an entry id. It
+happened to be harmless, because nothing above I-746 lived only on
+`refs/remotes` at that moment (`refs/remotes` tops out at I-745). Had an id
+been reserved and committed on kanali and pushed to `origin/integrated`,
+that run would have handed out a used number, which is I-745's measured
+failure mode exactly. A careful lane ran the superseded script, reasoned
+correctly from it, and cited its line numbers with confidence. That is the
+whole problem in one event.
 
 **What it should do.** On every run, compare the running file against
 `origin/integrated:ops/dev/release-queue`. When they differ, print one line
@@ -662,6 +725,70 @@ certificate: the 8-hour TTL is what makes the key on this box low-value.
 
 ---
 
+## 10. A newline in `--note` or `--live` corrupts the entry, silently (not in the brief)
+
+**What happens.** An entry is a flat `key=value` file, written as a block of
+`echo "key=$value"` lines in a fixed order: `branch sha worktree needs live
+note queued seq state`. Nothing escapes the value. So a `--note` or `--live`
+value containing a newline — which the useful ones do; `cpu-weight`'s stored
+`live` text is 1,900 characters of numbered checks — becomes one `key=value`
+line plus orphan lines that parse as nothing, and `add` prints its success
+line over it. Found by the cpu-weight lane doing it: a four-paragraph note
+gave 12 lines, 9 of them `key=value` and 3 orphans, and `field note` returns
+only the first paragraph. The paragraph that was lost asked the conductor to
+drop another lane's branch.
+
+**It is worse than losing the paragraphs.** `field()` is `sed -n
+"s/^$2=//p" | head -n1` — the **first** line matching a key — and `note=` is
+written *before* `state=`, `sha=` and `needs=`. So a line inside a note that
+looks like a key silently overrides the real one. Reproduced end to end in
+the fixture, with a note whose second paragraph is the single word
+`state=released`:
+
+```
+$ release-queue add --note "$note"
+queued forged at 05c69683 (1 commits; ships as: api,host)
+
+entries/forged:
+  note=why this branch exists
+  state=released              <- the note's second line
+  and the rest of the reason
+  ...
+  state=queued                <- the real one, never read
+
+$ release-queue ls
+the queue is empty
+```
+
+`add` reported success and the branch left the queue, because `ls` drops a
+released entry. The same path reaches `sha=`, where `merge_queue` would take
+the forged value and **merge a different commit**, and `needs=`, where the
+cut would record the wrong targets. Nobody here is hostile; a note that
+quotes a command, a diff or an error message is all it takes.
+
+**What it should do.** Three lines of change, and the first alone closes it:
+
+- `add` refuses a `--note` or `--live` value containing a newline, or
+  flattens it to one line and says it did. Flatten is the better default:
+  the lane's four-paragraph note was worth keeping, and it worked around
+  this by hand with `tr '\n' ' '` once it knew.
+- `field()` reads the **last** match rather than the first, so the fields
+  the tool writes after the free text win over anything inside it. Belt and
+  braces, and it costs `tail -n1` instead of `head -n1`.
+- Problem 4's ledger inherits the same guard. Anything that stores a reason
+  string will eventually be handed a paragraph — the voided-id field is
+  exactly that.
+
+**Cost.** Three lines. Two fixture tests
+(`add_rejects_a_multiline_note`, `add_note_cannot_forge_a_field`).
+
+**Rejected.** Making the entry a different format (JSON, a directory of
+one-value files): it would be more correct and it is not worth rewriting
+every reader for, when refusing a newline closes the hole. Quoting the value
+and unquoting on read: two more places to get wrong than refusing the input.
+
+---
+
 ## The fixture
 
 `ops/dev/release-queue-test`, built before any of the above, because the
@@ -683,28 +810,58 @@ the `ops/dev/release-queue` under test copied in.
 
 ```
 $ TMPDIR=/tmp/rt ops/dev/release-queue-test
-release-queue tests (293a8dba)
+release-queue tests (97411806)
   ok      abandon_requeues
+  known   add_note_cannot_forge_a_field      (P10 a note line that looks like a key wins)
   ok      add_records_live_and_note
-  ...
-  known   id_sees_other_machine_reservation  (P1 the reservations file never leaves the machine)
+  ok      add_refuses_dirty_tree
+  ok      add_refuses_main
+  ok      add_refuses_no_commits
+  known   add_rejects_a_multiline_note       (P10 a newline in --note is written raw)
+  ok      add_runs_cli_guards
+  ok      author_script_no_warning
+  ok      cut_merges_in_queue_order
+  ok      cut_regenerates_decisions_index
+  ok      done_requires_main_to_hold_it
+  ok      id_hands_out_several
+  ok      id_refuses_used_number
+  ok      id_sees_local_branch
+  known   id_sees_other_machine_reservation  (P1 reservations never leave the machine)
+  ok      id_sees_range_header
+  ok      id_sees_remote_tracking
+  ok      id_sees_uncommitted_worktree
   known   live_check_is_recorded             (P7 nothing stores whether the check ran)
-  known   needs_against_stale_local_main     (P5 needs and the commit count read refs/heads/main)
-  known   needs_flake_checks_only            (P4 a checks-only flake change ships as base,host,edge)
+  known   needs_against_stale_local_main     (P5 needs and the count read refs/heads/main)
+  ok      needs_cli_only
+  ok      needs_docs_only
+  ok      needs_embedded_file
+  known   needs_flake_checks_only            (P4 a checks-only flake change ships as 3)
+  ok      needs_go_shared_package
+  ok      needs_guest_nix
+  known   needs_ignores_a_test_only_change   (P4 a _test.go change reaches no binary)
+  ok      needs_shared_nix
+  ok      needs_web
   known   stale_script_warns                 (P6 a worktree's old copy says nothing)
   known   where_is_branch_on_the_other_box   (P2 the queue state is per machine)
-  known   where_is_released_branch           (P3 no command answers 'did this branch ship')
+  known   where_is_released_branch           (P3 no answer to 'did this branch ship')
 
-23 passed, 0 failed, 7 known bad, 0 unexpectedly passing
-exit 0, 9.7 s
+23 passed, 0 failed, 10 known bad, 0 unexpectedly passing
+exit 0, 10 s
 ```
 
 Every test asserts the behaviour its name asks for. `KNOWN_BAD` at the top
-of the script names the seven that fail until their fix lands, with the
+of the script names the ten that fail until their fix lands, with the
 problem each belongs to; the suite exits 0 when exactly those fail, and 1
 when any other fails **or when a known-bad one starts passing**, which means
 its line is stale and should come out. The numbering in `KNOWN_BAD` is the
-brief's, which is why it runs P1 to P7 rather than this document's order.
+brief's, which is why it runs P1 to P7 rather than this document's order;
+P10 is this document's problem 10, which the brief does not have.
+
+It has already earned its keep twice. `needs_ignores_a_test_only_change`
+and the two note tests were written from field reports rather than from
+reading the script, and all three were failing within minutes of being
+written — including the one that proves a branch can leave the queue while
+`add` reports success.
 
 It needs `go` and `python3` and nothing else: no network, no nix, no
 Postgres, no host. `ops/check.sh` is where it belongs once this work lands,
@@ -732,6 +889,10 @@ so CI runs it.
    `RELEASE.md` and `ORCHESTRATION.md` move with them in the same commit.
 5. Problem 9 — `--if-stale` and `ops/dev/guest-exec` are small and
    independent; the gateway question is yours whenever you want it.
+
+Problem 10 goes in front of all of it. It is three lines, it needs no
+decision, and it is the only one on this list that can lose a branch
+between `add` and the cut.
 
 Each step ships with its `RELEASE.md` and `ORCHESTRATION.md` update and a
 `DECISIONS.md` entry under "Made during implementation", amending I-416 and

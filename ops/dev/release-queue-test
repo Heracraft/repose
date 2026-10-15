@@ -42,6 +42,9 @@ where_is_released_branch           P3 no command answers 'did this branch ship'
 where_is_branch_on_the_other_box   P2 the queue state is per machine
 stale_script_warns                 P6 a worktree's old copy says nothing
 live_check_is_recorded             P7 nothing stores whether the check ran
+add_rejects_a_multiline_note       P10 a newline in --note is written raw
+add_note_cannot_forge_a_field      P10 a note line that looks like a key wins over the real one
+needs_ignores_a_test_only_change   P4 a _test.go change reaches no binary
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -158,6 +161,19 @@ EOF
     mkdir -p "internal/$p"
     printf 'package %s\n\nconst Name = "%s"\n' "$p" "$p" > "internal/$p/$p.go"
   done
+  # a test file in a package cmd/gateway imports: changing it alone changes
+  # no binary, because go does not compile _test.go into one
+  cat > internal/edge/edge_test.go <<'EOF'
+package edge
+
+import "testing"
+
+func TestName(t *testing.T) {
+	if Name != "edge" {
+		t.Fatal(Name)
+	}
+}
+EOF
   # internal/cli holds the trust-the-reader guards release-queue runs for a
   # branch that ships as cli.
   mkdir -p internal/cli
@@ -271,6 +287,8 @@ branch() { # clone name [from]
 }
 # commit <dir> <message>
 commit() { git -C "$1" add -A && git -C "$1" commit -qm "$2"; }
+# field_of <entry file> <key>: what release-queue's own field() would read
+field_of() { sed -n "s/^$2=//p" "$1" | head -n1; }
 # state <clone>: the clone's queue state directory
 state_of() { git -C "$root/$1" rev-parse --path-format=absolute --git-common-dir; }
 # cut_release <clone>: the release id the one cut in this world made
@@ -321,6 +339,17 @@ t_needs_shared_nix() {
   echo '# the package set' >> "$wt/nix/packages.nix"
   commit "$wt" "packages.nix"
   assert_eq "a change to the shared package set" "$(needs_line "$(q "$wt" add)")" "base,edge,host"
+}
+
+# A package whose changed files are all _test.go reaches no binary: go does
+# not compile a test file into one. internal/edge is in cmd/gateway's deps,
+# so a change to its test alone is charged an edge switch -- the owner's,
+# and on a gateway that is byte-identical (the cpu-weight lane, 2026-10-15).
+t_needs_ignores_a_test_only_change() {
+  local wt; wt=$(branch woker test-only)
+  echo '// another case' >> "$wt/internal/edge/edge_test.go"
+  commit "$wt" "a test"
+  assert_eq "a _test.go-only change" "$(needs_line "$(q "$wt" add)")" "none"
 }
 
 t_needs_docs_only() {
@@ -471,6 +500,42 @@ t_add_records_live_and_note() {
   local f=$s/entries/with-live
   assert_has "the live check is stored" "$(cat "$f")" "live=repose start under 12 s" || return 1
   assert_has "the note is stored" "$(cat "$f")" "note=depends on nothing"
+}
+
+# P10 (not in the brief; found by the cpu-weight lane, 2026-10-15). The
+# entry file is flat key=value, written as a block of `echo "key=$value"`.
+# A --note or --live value with a newline in it becomes one key=value line
+# plus orphan lines, and `add` prints a success line over it.
+t_add_rejects_a_multiline_note() {
+  local wt; wt=$(branch woker multiline-note)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  local note; note=$'paragraph one
+paragraph two
+paragraph three'
+  q "$wt" add --note "$note" >/dev/null 2>&1
+  local s f; s=$(state_of woker)/release-queue; f=$s/entries/multiline-note
+  [ -f "$f" ] || { note "no entry was written"; return 1; }
+  local orphans; orphans=$(grep -cv '^[a-z]*=' "$f")
+  assert_eq "orphan lines in the entry" "$orphans" "0" || return 1
+  # and the note must survive, flattened rather than truncated
+  assert_has "the whole note is readable" "$(field_of "$f" note)" "paragraph three"
+}
+
+# Worse than losing the paragraphs: field() takes the FIRST line matching a
+# key, and note= is written before state=, sha= and needs=, so a note line
+# that looks like a key silently wins over the real one. An entry whose
+# state reads released is dropped from `ls` entirely.
+t_add_note_cannot_forge_a_field() {
+  local wt; wt=$(branch woker forged)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  local note; note=$'why this branch exists
+state=released
+and the rest of the reason'
+  q "$wt" add --note "$note" >/dev/null 2>&1
+  local s f; s=$(state_of woker)/release-queue; f=$s/entries/forged
+  [ -f "$f" ] || { note "no entry was written"; return 1; }
+  assert_eq "the entry's state" "$(field_of "$f" state)" "queued" || return 1
+  assert_has "and it is still in the queue" "$(q "$root/woker" ls)" "forged"
 }
 
 # --------------------------------------------------------------- where is it
