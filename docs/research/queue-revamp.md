@@ -7,7 +7,9 @@ unqueued, and a queue line telling the conductor that a comment in a test
 script needed two host switches.
 
 Every number below was measured on woker-1 today, from the integrated main
-`293a8dba`. Nine problems, ordered by what fixing them saves. Each one says
+`293a8dba`. Three of the field reports in problems 3, 4 and 6 came from the
+cpu-weight lane as this was written, and are marked where they are used;
+each was re-measured here before it went in. Nine problems, ordered by what fixing them saves. Each one says
 what it does today, what it should do, what the change costs, and what was
 rejected.
 
@@ -41,6 +43,14 @@ without a decision from you beyond "yes, go". Problem 4 asks for a new ref
 on the public GitHub repository and is the one real question. Problems 7 and
 8 add state the tool keeps; they change the conductor's procedure, so
 `RELEASE.md` moves with them.
+
+Two of them are not waiting for a release night to bite. Problem 1 misreads
+the targets of **every** `add` run on this box, including a branch with
+nothing in it. And as of this afternoon, **I-747, I-748 and I-749 are
+reserved on woker-1 and visible to nothing on kanali** — the seventh,
+eighth and ninth double-take are set up and need only a lane on the other
+machine to run `id` (§4). The offline band in problem 4 removes that without
+the new ref, and can land on its own.
 
 ---
 
@@ -207,7 +217,16 @@ released
 `boot-real-addr` shipped in r20261014-1 with CLI v0.1.35 and its migration
 0026 is applied on prod. Two agents concluded it was never queued. What
 misled both is still on disk: `~/kanali-boot-real-addr`, a worktree on a
-branch that is wholly on `origin/main`. **33 of the 52 worktrees on this box
+branch that is wholly on `origin/main`.
+
+The cpu-weight lane reported the same reading again while this document was
+being written, independently and for the same two reasons: *"I told my user
+that boot-real-addr was a loose end, because its worktree was still there
+and `release-queue ls` does not list released entries."* That is the shape
+of it — **the two signals a reader reaches for, is there a worktree and is
+it in the listing, both point the wrong way, and the truth is only in the
+state file and the merge commit.** Neither signal is ambiguous; both are
+confidently wrong. **33 of the 52 worktrees on this box
 hold branches fully on `origin/main`** (32 plus the main checkout), among
 them `~/kanali-host-capacity`, `~/kanali-store-whiteouts` and six
 `.claude/worktrees/agent-*`. The brief counts about 120 on kanali.
@@ -280,6 +299,43 @@ conductor integrates. The window is the whole life of a branch. This is the
 mechanism behind all six double-takes (I-718, I-719, I-732, I-740, and
 I-642, I-647 before them); the fixture test
 `id_sees_other_machine_reservation` is it in nine lines.
+
+It is not only history. Measured on woker-1 while writing this, by asking
+each source of the scan for the highest id it can see on its own:
+
+```
+shared refs only (refs/heads + refs/remotes)             746
++ this machine's worktrees (uncommitted DECISIONS.md)    746
++ this machine's reservations file  (the full scan)      749
+```
+
+Everything that can cross to the other machine — every ref this box has,
+local and remote-tracking, and every worktree's uncommitted file — tops out
+at **746**. The reservations file holds **I-747, I-748 and I-749**, reserved
+here today and written into no file yet. A lane on kanali that fetches
+everything there is to fetch and runs `id` is handed I-747. The gap between
+the two ceilings is exactly the one input to the scan that cannot be
+shared, and it is three numbers wide right now.
+
+*And when the scan is right it can be right by accident.* The cpu-weight
+lane's `id` printed I-746, which was correct, but the ceiling it was
+computed from came from contributors that are incidental to this machine:
+a branch and worktree that lane is about to delete, and two release
+worktrees (`kanali-r20261015-4`, `kanali-r20261015-3`) that hold a recent
+`docs/DECISIONS.md` in their working copy while being on no branch at all —
+`done` deletes both the worktree and its branch, so they are a few minutes
+from vanishing. I-745's own measurement is the same shape from the other
+side: on 2026-10-15 the old scan topped out at I-740 and would have handed
+out I-741, which stop-probe already held. A ceiling that moves when a
+worktree is tidied up is not a reservation system.
+
+*The voided reservations work by formatting convention.* Two lines in the
+file are dead reservations kept as comments rather than deleted (I-697,
+renumbered to I-733; I-740, renumbered to I-746), each with the reason. The
+scan does not read them only because `ids_in_use` greps `^I-[0-9]+` and the
+comment lines begin with `#`. That is the right outcome by the right
+reasoning, and it is held up by a leading character; the ledger's format
+should make a voided entry a field rather than a comment.
 
 *A branch cut before I-745 runs the old script.* Problem 5.
 
@@ -429,6 +485,15 @@ For the remaining state, three small things:
 - Each entry records the machine that queued it (`machine=`), and `ls`
   prints which machine's queue it is reading in its heading. An agent
   reading `ls` then knows what it is not seeing.
+- `add` names the queue it just wrote to, and says so when that is not the
+  conductor's. The cpu-weight lane put it exactly: *"I queued cpu-weight in
+  woker-1's queue file and it sat there unread; no conductor reads that
+  file, and nothing told me. It surfaced only because the conductor happened
+  to look."* A branch queued on the wrong machine is not wrong, it is
+  **invisible**, and `add` prints a success line over it. That is the one
+  place in this problem where a line of output would have cost nothing and
+  saved the branch: of the three ways the queue was read wrong that night,
+  this is the only one where the tool was in a position to know.
 - `ls` names a queued branch whose commit is not on this machine, so the
   conductor learns it needs the branch before the cut rather than during it.
 - `RELEASE.md` says, in words, that the queue state is the conductor's
