@@ -20880,7 +20880,7 @@ pages because nothing is down and the remedy is a human apply.
 - *Revisit when* two hosts have run for a week: one host is the whole
   fleet today, so there is no base rate for `for: 15m`.
 
-**I-740. `RegisterPaths` gets its own deadline, and the pass before it
+**I-746. `RegisterPaths` gets its own deadline, and the pass before it
 stops eating the budget (cpu-weight, 2026-10-15).** Two creates on a
 loaded host-01 failed at step 10 with `RegisterPaths: guestd: internal:
 register paths: run /run/current-system/sw/bin/nix-store: context

@@ -250,7 +250,7 @@ func (h *Handler) RegisterPaths(ctx context.Context, registration []byte) error 
 			// on would run the load with a dead context, and it would
 			// fail at once naming --load-db for time this spent — what
 			// hid the real cause of the creates that failed at step 10
-			// (DECISIONS I-740). The wrapped error names the command.
+			// (DECISIONS I-746). The wrapped error names the command.
 			return sysdep.Errf(sysdep.CodeInternal, "register paths: %w", err)
 		}
 		// Any other failure is skipped: what it feeds, the load's skip

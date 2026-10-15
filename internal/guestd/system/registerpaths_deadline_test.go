@@ -10,7 +10,7 @@ import (
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
-// I-740: when the request's budget runs out inside --check-validity,
+// I-746: when the request's budget runs out inside --check-validity,
 // RegisterPaths says so and stops. Going on ran --load-db with a dead
 // context, which failed at once and named --load-db for the time the
 // validity pass had spent — the error the owner saw on the creates that

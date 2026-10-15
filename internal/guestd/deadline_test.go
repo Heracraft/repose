@@ -10,7 +10,7 @@ import (
 // RegisterPaths forks nix-store several times against the guest's database
 // — --check-validity over the shared store's lower, --load-db, the view
 // sync — which the 30 s default did not cover on a loaded host, so creates
-// failed at step 10 (DECISIONS I-740). It has its own deadline, above the
+// failed at step 10 (DECISIONS I-746). It has its own deadline, above the
 // default and under the two 10-minute bounds outside it (hostd's
 // vsockclient cap on the call and the api's create_guest phase), so the
 // error a tenant gets still names the command that was slow.

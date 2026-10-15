@@ -741,5 +741,5 @@ pointer, not a summary.
 - **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — L20748
 - **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — L20799
 - **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20837
-- **I-740** `RegisterPaths` gets its own deadline, and the pass before it stops eating the budget (cpu-weight, 2026-10-15) — L20883
+- **I-746** `RegisterPaths` gets its own deadline, and the pass before it stops eating the budget (cpu-weight, 2026-10-15) — L20883
 - **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — L20922
