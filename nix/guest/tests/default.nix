@@ -848,7 +848,7 @@ in
           # nix/guest/tests/mcp-carry is what the CLI sends for a fixture
           # laptop config (TestMCPCarryGoldenPayload keeps it current): run
           # it the way ssh runs the carry, as dev with the tar on stdin.
-          out = guest.succeed("cd /home/dev && sudo -H -u dev bash -c \"$(cat ${./mcp-carry/script.sh})\" < ${./mcp-carry/payload.tar}")
+          out = guest.succeed("cd /home/dev && sudo -H -u dev bash -c \"$(cat ${./mcp-carry/script.sh})\" < ${./mcp-carry/payload.tar.gz}")
           print(out)
           assert "#failed" not in out, out
           assert "#mcpleft 1 notes (an Apple app)" in out, out

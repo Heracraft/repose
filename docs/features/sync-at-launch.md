@@ -315,6 +315,9 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   apply's own ssh, while the payload is still uploading (I-713); the
   laptop bundles each repository against its own `refs/remotes/origin/*`
   (laptopBases), and its logins travel in the apply as on any sync. The
+  carry runs in the background (I-743): the apply waits only for the
+  logins and the git config, then checks out while the Claude, MCP and
+  tools parts run, and joins them before the fresh shell. The
   first attempt is anonymous: a public superproject is fetched with
   `--filter=blob:none` through a promisor remote named `repose-backfill`
   (I-714) when the guest's `git backfill` takes revisions (git 2.54 and
@@ -343,7 +346,8 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   same way, without an `origin` or remote-tracking refs: its real commits
   travel, so a file deleted and committed on the laptop is deleted in the
   guest too (DECISIONS I-150, replacing I-138's whole-tree commit).
-- Credentials (secrets.md) are copied before the git steps, in one ssh.
+- Credentials (secrets.md) are copied before the git steps, in one ssh,
+  and the carry's tar travels gzipped (I-743).
   When gh's login travelled and the remote is on github.com, the guest's
   git is told to push to github over HTTPS with gh as the credential
   helper (`guest-conventions.md`), so an agent's `git push` works without

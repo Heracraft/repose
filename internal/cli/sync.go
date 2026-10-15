@@ -981,12 +981,12 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			if carryScript == "" {
 				return summary, nil
 			}
-			script = "set -e\n" + applyUnpack + carryScript
+			script = "set -e\n" + applyMarkFn + applyUnpack + carryScript + applyMark("carry")
 		} else {
 			// The key is cleared before the checkout is touched and written
 			// once the apply has finished, so a sync that stopped half way
 			// never matches.
-			script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + freshShellScript(slug, probe) +
+			script = applyScript(probe.checkout, head, branch, track, bundleRefs, len(bundleRefs) > 0, opts, probe, subScript+superOps) + envScript + recordSyncedScript + applyMark("record") + applyCarryJoinHere + freshShellScript(slug, probe) +
 				fmt.Sprintf("printf '%%s\\n' %s > \"$repose_synced-key\"\n", syncedKeyLines(syncKey, head, track, subs))
 			// After the overlap check, before anything touches the checkout:
 			// the stash and the merge below need the identity the git part
@@ -1001,10 +1001,13 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				}
 				script = strings.Replace(script, applyUnpack, prefetchStartScript(plan)+prefetchUnpackScript(plan)+prefetchJoinScript(plan, carryScript, len(bundleRefs) > 0, subBundles), 1)
 				script = strings.Replace(script, applyCarryHere, ": > \"$repose_synced-key\"\n", 1)
+				if carryScript != "" {
+					script = strings.Replace(script, applyCarryJoinHere, prefetchCarryJoin+applyMark("carry"), 1)
+				}
 			} else {
-				script = strings.Replace(script, applyCarryHere, carryScript+": > \"$repose_synced-key\"\n", 1)
+				script = strings.Replace(script, applyCarryHere, carryScript+applyMark("carry")+": > \"$repose_synced-key\"\n", 1)
 			}
-			script += prefetchEndScript(plan)
+			script += prefetchEndScript(plan) + applyMark("end")
 		}
 		res, err := runSSH(ctx, t, script, payload)
 		if err != nil {
@@ -1023,6 +1026,9 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 				return nil, stepFailed("apply your uncommitted changes on the machine", err, "Commit or stash them on the laptop and run again.")
 			}
 			return nil, stepFailed("sync your checkout to the machine", err, "")
+		}
+		for _, l := range applySteps(string(res)) {
+			timingf("sync apply %s", l)
 		}
 		if plan.active() && !plan.resume {
 			pfResult = parsePrefetch(string(res))
@@ -1235,7 +1241,41 @@ func wantHeadRef(head, branch string) string {
 
 // applyUnpack is the apply's unpack of its payload; the carry's script
 // goes right after it.
-const applyUnpack = "t=$(mktemp -d)\ntrap 'rm -rf \"$t\"' EXIT\ntar -x -C \"$t\"\n"
+const applyUnpack = "t=$(mktemp -d)\ntrap 'rm -rf \"$t\"' EXIT\ntar -x -C \"$t\"\n" + applyMarkUpload
+
+// applyMarkFn is the apply's clock (I-742): "#t <step> <seconds>" when a
+// step ends, which the laptop turns into REPOSE_TIMING's "sync apply
+// <step> <ms>" lines. Bash's clock, so a mark costs no process.
+const applyMarkFn = "repose_mark() { printf '#t %s %s\\n' \"$1\" \"${EPOCHREALTIME:-$(date +%s.%N)}\"; }\nrepose_mark start\n"
+
+// applySteps reads the apply's marks: one "<step> <ms>" per step, its
+// time since the mark before it.
+func applySteps(out string) []string {
+	var steps []string
+	prev := -1.0
+	for _, l := range strings.Split(out, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(l), "#t ")
+		if !ok {
+			continue
+		}
+		step, at, ok := strings.Cut(rest, " ")
+		sec, err := strconv.ParseFloat(strings.Replace(at, ",", ".", 1), 64)
+		if !ok || err != nil {
+			continue
+		}
+		if prev >= 0 {
+			steps = append(steps, fmt.Sprintf("%s %dms", step, int64((sec-prev)*1000+0.5)))
+		}
+		prev = sec
+	}
+	return steps
+}
+
+// applyMark is the line that ends the apply's step named step.
+func applyMark(step string) string { return "repose_mark " + step + "\n" }
+
+// applyMarkUpload ends the upload: the payload is unpacked.
+const applyMarkUpload = "repose_mark upload\n"
 
 // carryFailed is the apply's stderr when the logins or the carry's
 // top-level lines failed, the case in which the carry's own ssh used to
@@ -1259,10 +1299,14 @@ func addCarryToApply(tw *tar.Writer, p *guestPayload) (string, error) {
 	if err := tarAddBytes(tw, "carry.sh", []byte(p.script.String())); err != nil {
 		return "", err
 	}
-	if err := tarAddBytes(tw, "carry.tar", p.buf.Bytes()); err != nil {
+	z, err := p.gz()
+	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`bash "$t/carry.sh" < "$t/carry.tar" > "$t/carry.out" || { echo %s >&2; exit 1; }
+	if err := tarAddBytes(tw, "carry.tar.gz", z); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`bash "$t/carry.sh" < "$t/carry.tar.gz" > "$t/carry.out" || { echo %s >&2; exit 1; }
 while IFS= read -r l || [ -n "$l" ]; do printf '%s%%s
 ' "$l"; done < "$t/carry.out"
 `, shQuote(carryFailed), carryLinePrefix), nil
@@ -1276,7 +1320,7 @@ while IFS= read -r l || [ -n "$l" ]; do printf '%s%%s
 // untracked files on top. The guest's other changes stay where they are.
 func applyScript(dir, head, branch, track string, bundleRefs []string, hasBundle bool, opts SyncOptions, probe guestProbe, subScript string) string {
 	var b strings.Builder
-	_, _ = fmt.Fprintf(&b, "set -e\ncd %s\n", homeShell(dir))
+	_, _ = fmt.Fprintf(&b, "set -e\n%scd %s\n", applyMarkFn, homeShell(dir))
 	b.WriteString(syncedFP)
 	b.WriteString(syncGuardFns)
 	b.WriteString(applyUnpack)
@@ -1339,6 +1383,7 @@ fi
 		}
 		b.WriteString("repose_guard \"$repose_target\" \"$repose_via\"\n")
 	}
+	b.WriteString(applyMark("guard"))
 	b.WriteString(applyCarryHere)
 	switch {
 	case opts.DiscardRemote:
@@ -1405,12 +1450,15 @@ fi
 	// Staged work goes into the index and the tree, unstaged work into
 	// the tree only, so `git status` on the guest reads as it does on the
 	// laptop (I-258).
+	b.WriteString(applyMark("checkout"))
 	b.WriteString("if [ -s \"$t/staged.diff\" ]; then git apply --index \"$t/staged.diff\"; fi\n")
 	b.WriteString("if [ -s \"$t/unstaged.diff\" ]; then git apply \"$t/unstaged.diff\"; fi\n")
 	// Submodules after the superproject's diffs (a new one's .gitmodules
 	// entry is among them) and before the untracked tar, which holds
 	// their untracked files too (I-263).
+	b.WriteString(applyMark("diffs"))
 	b.WriteString(subScript)
+	b.WriteString(applyMark("submodules"))
 	b.WriteString("if [ -f \"$t/untracked.tar\" ]; then tar -x -f \"$t/untracked.tar\"; fi\n")
 	return b.String()
 }
@@ -1447,6 +1495,10 @@ func stashAllScript(msg string, report bool) string {
 func mergeMessage(branch string) string {
 	return "Merge the laptop's " + branch + " (repose sync)"
 }
+
+// applyCarryJoinHere marks where an apply that runs the carry in the
+// background waits for it (I-743).
+const applyCarryJoinHere = "# repose: carry joined\n"
 
 // applyCarryHere marks where syncGuest puts the carry and the clearing of
 // the sync key: after the overlap check, before the checkout is touched.

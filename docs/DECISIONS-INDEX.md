@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-750 entries.
+752 entries.
 
 ## Scope
 
@@ -308,7 +308,7 @@ pointer, not a summary.
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L5026
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5063
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5094
-- **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; L5141
+- **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; amended by I-743; L5141
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — amended by I-588; L5175
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5204
 - **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-520; amended by I-563; L5274
@@ -774,11 +774,13 @@ pointer, not a summary.
 - **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22061
 - **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22096
 - **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22122
-- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L22147
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; L22147
 - **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22218
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22262
 - **I-716** The fetch does not start during boot — 2026-10-13; L22309
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22320
 - **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22355
 - **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22439
-- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22471
+- **I-742** The apply reports its own steps' times — 2026-10-14; L22471
+- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22510
+- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564

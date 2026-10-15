@@ -22468,6 +22468,99 @@ to send the api before it: the handshake can overlap the api's
   the project list (`REPOSE_TIMING=1`: `stop: s2-b4-probe-a read beside the
   api`); with the list at 690 ms and the read at 590 ms, the stop returned
   in 1.08 s.
+**I-742. The apply reports its own steps' times.** (sync-idle,
+2026-10-14) A first sync on prod (r20261014-2's live check, CLI and api
+c5e24d2d) took about 47 s, and the guest sat about 20 s between the
+GitHub pack landing and the checkout with nothing on the laptop's side
+to say why: `REPOSE_TIMING` timed the apply's ssh as one span. The apply
+now marks the end of each step on stdout (`#t <step> <seconds>`, bash's
+`$EPOCHREALTIME`, no process per mark), and `REPOSE_TIMING=1` prints
+each as `sync apply <step> <ms>`, its time since the mark before: upload
+(the payload unpacked), logins (a first sync with fetches: the logins
+and the git config, I-743) or carry, fetch (the wait for the fetches),
+checks, guard, checkout, diffs, submodules, record, carry (the rest of a
+first sync's carry), end. No path, no value. `ops/dev` scripts and the
+public docs' "prints how long each step took" cover it unchanged.
+- *What the marks found* (creates of one fixture from kanali,
+  2026-10-14 21:30-22:45Z, host-01: a superproject with origin
+  github.com/heracraft/repose and 3 laptop-only commits, jqlang/jq as an
+  8.6 MiB submodule fetched by the guest, kanali's real logins and
+  Claude files). On c5e24d2d the sync phase took 5.5 to 9.5 s (9 runs,
+  mean 6.8 s) with an apply of 4.4 to 8.2 s. In 4 runs of c5e24d2d with
+  the marks added, of an apply of 4.6 to 5.2 s, 2.2 to 2.8 s was the
+  carry, run whole before the fetch was joined, and the fetch itself
+  (1.1 to 1.4 s) ended inside it; after it guard 0.3 s,
+  checkout 0.04 s, the submodule's steps 0.6 to 0.9 s, record 0.3 to
+  0.7 s, end 0.15 to 0.4 s. The carry is about 700 small processes over
+  ten parts, none over 0.5 s (a set -x trace on the guest). The payload
+  is 4.3 MB, nearly all of it the carry, whose largest files are the
+  Claude carry's skills, XML schemas three times over, sent as a plain
+  tar: 7.0 s of the apply's upload at
+  5 Mbit/s. The 20 s gap did not come back on any of 33 creates; the
+  live check's run had booted in 48 s on a busy host-01, where a carry
+  of 700 processes and an unthrottled tools install would stretch. Only
+  that run stays unexplained; on the next one, the marks name the step.
+- *Rejected:* batching the apply's git calls into one script (the
+  analysis's first idea): on these runs the git steps after the fetch
+  are 1.5 to 2.5 s in all, the checkout of a 900-file tree 0.04 s, and
+  the I-210 script that would be rewritten went through three reviews;
+  a set -x trace by default (1,600 lines per apply, and it would print
+  paths).
+
+**I-743. A first sync checks out beside the rest of the carry, and the
+carry travels compressed.** (sync-idle, 2026-10-14; amends I-713, I-224)
+From I-742's marks, two cuts:
+- *The carry beside the checkout.* On a first sync with fetches (I-713)
+  the apply starts the carry's script in the background. Its first half
+  is the logins' lines and the git part, now the first part of the carry
+  (`addCarry`), and ends with a line that touches the file
+  `REPOSE_CARRY_EARLY` names (nothing when it is unset, as in the
+  carry's own ssh). The apply waits for that file, or for the carry's
+  end when it stops before it, then touches `creds` (a private
+  repository's fetch needs only the logins) and goes on: the checkout
+  needs the git config (the carried `core.*` keys and excludes), and
+  nothing else of the carry. The Claude, MCP and tools parts run beside
+  the checkout and are joined after the record, before the fresh shell,
+  which should start with everything the carry wrote; the reply lines
+  print then. A carry that failed in its first half still fails the
+  apply before the checkout is touched, with the same message. Every
+  other way out joins it too: the `#needfull` exit waits for it and
+  prints its lines (the second payload carries no carry, as before), and
+  the EXIT trap waits for it before removing the payload it reads, so no
+  part is cut off half way. Later syncs keep the carry in line: their
+  stash and merge need the identity the carry writes, and their carry
+  is usually a few markers.
+- *The carry's tar compressed.* `guestPayload` sends its tar gzipped
+  (`tar -xz` in the carry's script), in the apply's payload as
+  `carry.tar.gz` and in the carry's own ssh. ssh sends its stdin as it
+  is given (no `Compression`), and kanali's carry is 4.3 MB of tar and
+  0.66 MB gzipped, 74 ms to compress. The bundles and the untracked tar
+  stay as they are: a bundle is already compressed, and no measurement
+  says the untracked files are worth the CPU.
+- *Evidence* (prod, host-01, from kanali, the fixture of I-742, each run
+  a fresh `repose run --temp --name s2-b4-idle-<x> --no-attach`, removed
+  after). Interleaved, unthrottled: c5e24d2d 6.9, 6.4, 7.3, 6.9 s, the
+  branch 6.2, 6.1, 5.6, 5.8 s (apply 5.2 to 5.5 s against 3.8 to 4.4 s);
+  the rest of the carry ends 15 to 35 ms after the record, so it is
+  hidden. On this build the apply waits 0.76 to 1.24 s for the logins
+  and the git config (7 runs). Uplink held to 5 Mbit/s by a throttle on
+  ssh's stdin: c5e24d2d 13.9 and 14.1 s (a 4.3 MB payload), the branch
+  6.1, 6.0 and 5.9 s (0.67 MB; upload 1.1 to 1.3 s where it was 7.0). An
+  earlier build of the branch with the carry beside the checkout and the
+  tar not yet gzipped took 4.7, 5.3 and 4.9 s unthrottled (not
+  interleaved with c5e24d2d, logins 0.71 to 0.81 s) and 12.0 and 11.8 s
+  at 5 Mbit/s, still sending 4.3 MB: of the throttled gain, about 2 s is
+  the carry beside the checkout and about 6 s the gzip. A submodule
+  whose origin GitHub lacks: `sync fetch s0 failed`, the I-712 line, a
+  second payload of 1964 commits, HEADs 84eec58 and 0404249, clean tree,
+  every login and carry marker written. A private 4.75 MiB submodule
+  (fetched with gh's login after the anonymous attempt fails): 9.7 s
+  against 11.6 s on c5e24d2d, its fetch done 2 s sooner, HEADs right on
+  both. A first sync interrupted 6 s into a 1 Mbit/s upload (SIGINT to
+  the process group): no HEAD; `repose sync` then ended in 5.8 s with
+  the right HEADs, the untracked 3 MB file byte for byte and the logins
+  in. The third whole payload (the kept payload gone) is covered by
+  TestPrefetchResendWithoutTheKeptPayload, not on prod.
 **I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
 sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
 implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`
