@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -88,7 +90,85 @@ func newSyncFixture(t *testing.T) *syncFixture {
 		"guest@" + host,
 	}}
 
+	t.Cleanup(func() { waitOutBackfills(t, guestHome) })
+
 	return &syncFixture{bare: bare, local: local, guestHome: guestHome, guest: guest, target: target}
+}
+
+// waitOutBackfills waits for the `git backfill --all` that a first sync
+// with a blobless fetch leaves running to end. The backfill is detached
+// and outlives the sync on purpose (I-714), and it goes on writing into
+// .git/objects/pack, so the removal of this fixture's TempDir races it:
+// on CI run 38686016518 (main 4be06cbd) that race failed
+// TestFirstSyncChecksOutBesideTheCarry and
+// TestPrefetchResendCarriesOnlyBundles in cleanup, with
+// "TempDir RemoveAll cleanup: unlinkat .../.git/objects/pack: directory
+// not empty" and both test bodies passing. A watch of `ps` during the two
+// tests on woker-1 saw four of these processes alive at once after the
+// tests had returned. This cleanup is registered last, so it runs before
+// any TempDir is removed.
+//
+// It waits on the lock file each backfill holds for as long as its git
+// runs, and on the marker that says one is about to start. A backfill
+// that cannot finish leaves the marker by design, so the wait gives up
+// and says so rather than hanging the suite.
+func waitOutBackfills(t *testing.T, dir string) {
+	t.Helper()
+	const marker, lock = "repose-backfill", "repose-backfill.lock"
+	find := func() (pending, held string) {
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			switch d.Name() {
+			case marker:
+				if pending == "" {
+					pending = p
+				}
+			case lock:
+				if held == "" && lockHeld(p) {
+					held = p
+				}
+			}
+			return nil
+		})
+		return pending, held
+	}
+	// A backfill just started may not have made its lock file yet; the
+	// marker is there until one succeeds, so it is what says to keep
+	// looking for the lock.
+	startWait := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		pending, held := find()
+		switch {
+		case held != "":
+			if time.Now().After(deadline) {
+				t.Logf("a git backfill still holds %s after 30 s; the TempDir removal may race it", held)
+				return
+			}
+		case pending != "" && time.Now().Before(startWait):
+			// Wait for its lock to appear.
+		default:
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// lockHeld says whether another process holds path's flock, which is how
+// backfillScript keeps one backfill per checkout.
+func lockHeld(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return true
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return false
 }
 
 // guestRepo is the guest's checkout, found as the guest finds it
