@@ -55,7 +55,16 @@ Two CAs, both ed25519, private keys in the api's secret store:
    not `running`, reject with a banner: `todo-app is stopped; run \`repose
    start todo-app\``, `todo-app is being destroyed; \`repose restore
    todo-app\` brings it back once that is done`, `todo-app is starting and
-   not accepting connections yet; try again in a few seconds`. If the
+   not accepting connections yet; try again in a few seconds`. A running
+   project whose host the api has not heard from (`host_unreachable`) is
+   refused with `todo-app is on a host the control plane cannot reach
+   right now; try again shortly`, reason `route_error`; one the api holds
+   no address for is a different state and is refused with `todo-app is
+   running but repose has no address for it; run \`repose stop todo-app\`
+   then \`repose start todo-app\``, reason `no_address` (DECISIONS I-721).
+   Before I-721 both were the unreachable-host banner, which told the
+   user something false and unactionable. Neither is a certificate
+   refusal: the CLI keeps waiting and spends no re-issue on either. If the
    certificate's principals do not contain the project id, reject with
    `certificate not valid for this project`. Every banner ends in a newline,
    and a connection shows one: the plain key ssh offers after a refused

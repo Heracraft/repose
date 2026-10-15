@@ -57,7 +57,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 		g := <-guest
 		doc := statusJSON{Project: project, Git: g.git, GitError: g.probeErr}
 		if hasLeft {
-			doc.Git, doc.GitAt = left.Rows, &left.At
+			doc.Git, doc.GitError, doc.GitAt = left.Rows, left.Error, &left.At
 		}
 		return e.printJSON(doc)
 	}
@@ -77,7 +77,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	writeStatus(e.Out, statusView{
 		p: project, route: route, snaps: snaps, events: events, mux: mux,
-		disk: g.disk, procs: g.procs, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, bill: <-bill, now: time.Now(),
+		disk: g.disk, procs: g.procs, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
 		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent,
 	})
 	return nil
@@ -365,6 +365,7 @@ type statusView struct {
 	// probeErr and probeDetail say why git is empty on a running
 	// machine (I-634).
 	probeErr, probeDetail string
+	probeWaited           time.Duration
 	// left is a stopped machine's rows from this laptop's stop of it.
 	left    stopLeft
 	hasLeft bool
@@ -452,7 +453,7 @@ func writeStatus(w io.Writer, v statusView) {
 	if v.hasLeft {
 		writeStoppedRows(w, v.left, v.now)
 	} else {
-		writeGitRowsOr(w, v.git, v.now, v.probeErr, v.probeDetail)
+		writeGitRowsOr(w, v.git, v.now, v.probeErr, v.probeDetail, v.probeWaited)
 	}
 	if running && p.Signals != nil {
 		statusRow(w, "attached", attachedCell(p.Signals, v.mux))
@@ -617,11 +618,12 @@ func uptime(p *Project) string {
 // agentStateWords are guestd's agent states as text prints them
 // (I-617); --json keeps the api's snake_case. `unknown` (an agent quiet
 // for less than the idle time, or a window that just closed) tells the
-// reader nothing, so it is not named.
-var agentStateWords = map[string]string{"needs_input": "needs input", "working": "working", "idle": "idle"}
+// reader nothing, so it is not named. `running` is an agent with no turn
+// hooks whose process is alive (I-694).
+var agentStateWords = map[string]string{"needs_input": "needs input", "working": "working", "running": "running", "idle": "idle"}
 
 // agentStateOrder puts the agent that needs you first.
-var agentStateOrder = []string{"needs_input", "working", "idle"}
+var agentStateOrder = []string{"needs_input", "working", "running", "idle"}
 
 func agentWord(state string) string {
 	if w, ok := agentStateWords[state]; ok {

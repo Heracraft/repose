@@ -515,7 +515,7 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 		t.Fatal("a failed restore left its half-written volume for a start to boot (I-461)")
 	}
 	// I-462: the result carries the SHA-256 of the stored blob, and a
-	// restore given it checks the whole blob before writing anything.
+	// restore given it checks the blob as it writes it (I-700).
 	sum := sha256.Sum256(h.blob.Blobs[sr.BlobPath])
 	if sr.Sha256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("snapshot sha256 %q, blob's %x", sr.Sha256, sum)
@@ -530,36 +530,46 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	restoreReq := func(gid, sum string) *hostdv1.Restore {
 		return &hostdv1.Restore{ProjectId: "proj-0192f0a1", GuestId: gid, BlobPath: sr.BlobPath, Class: "large", VolumeBytes: 40 << 30, SystemClosure: h.closure, Sha256: sum}
 	}
+	// A checked restore downloads the blob once (I-700): before, a
+	// download to hash it and a second to write it.
+	downloads := 0
+	h.blob.BeforeDownload = func(string) { downloads++ }
 	gid4 := "0192f0a3-4444-7000-8000-000000000004"
 	h.mustOK(cmd(restoreReq(gid4, strings.ToUpper(sr.Sha256))))
+	h.blob.BeforeDownload = nil
 	if string(h.lvm.GetData("g-"+gid4)) != "the tenant's filesystem" {
 		t.Fatal("verified restore wrote different bytes")
 	}
+	if downloads != 1 {
+		t.Fatalf("a checked restore downloaded the blob %d times, want once", downloads)
+	}
 	gid5 := "0192f0a3-5555-7000-8000-000000000005"
 	h.mustFail(cmd(restoreReq(gid5, "abc")), CodeInvalidArgument)
-	lvmOps := len(h.lvm.Ops)
+	if _, err := h.st.GetGuest(gid5); err == nil {
+		t.Fatal("a restore refused for its malformed digest recorded a guest")
+	}
+	// A digest the blob does not match fails the restore with the
+	// mismatch, removes the volume it wrote and leaves the guest in error,
+	// so nothing starts it (I-700, I-461).
 	res = h.mustFail(cmd(restoreReq(gid5, strings.Repeat("0", 64))), CodeInternal)
 	if !strings.Contains(res.Error.Message, "checksum mismatch") {
 		t.Fatalf("mismatch message %s", res.Error.Message)
 	}
-	if _, err := h.st.GetGuest(gid5); err == nil {
-		t.Fatal("a restore whose blob failed its checksum recorded a guest")
+	if g, err := h.st.GetGuest(gid5); err != nil || g.State != StateError {
+		t.Fatalf("a restore that failed its checksum left the guest %v (%v), want error", g, err)
 	}
-	if _, ok := h.lvm.Volumes["g-"+gid5]; ok || len(h.lvm.Ops) != lvmOps {
-		t.Fatalf("a restore whose blob failed its checksum touched LVM: %v", h.lvm.Ops[lvmOps:])
+	if _, ok := h.lvm.Volumes["g-"+gid5]; ok {
+		t.Fatal("a restore that failed its checksum left its volume")
 	}
-	// Bytes that change under an unchanged version between the check and
-	// the write (a store breaking its promise) fail the restore after the
-	// write, and its volume goes.
-	downloads := 0
-	h.blob.BeforeDownload = func(path string) {
-		downloads++
-		if downloads == 2 {
-			h.blob.Blobs[path] = []byte("someone else's filesystem")
-		}
-	}
+	// Bytes changed in the store under an unchanged version (a store
+	// breaking its promise, or a holder of its write access) fail the
+	// restore with the mismatch, not with what the bytes made the write
+	// fail with, and its volume goes.
+	h.blob.BeforeDownload = func(path string) { h.blob.Blobs[path] = []byte("someone else's filesystem") }
 	gid6 := "0192f0a3-6666-7000-8000-000000000006"
+	h.stream.Fail = fmt.Errorf("zstd -d: exit status 1")
 	res = h.mustFail(cmd(restoreReq(gid6, sr.Sha256)), CodeInternal)
+	h.stream.Fail = nil
 	h.blob.BeforeDownload = nil
 	if !strings.Contains(res.Error.Message, "checksum mismatch") {
 		t.Fatalf("mismatch during write: %s", res.Error.Message)

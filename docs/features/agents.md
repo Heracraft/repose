@@ -43,11 +43,11 @@ picks another for one prompt.
 
 | Agent | Binary | Window | How it reports | Login in guest |
 |---|---|---|---|---|
-| Claude Code | `claude` | `claude` | `Notification` and `Stop` hooks in `~/.claude/settings.json` run `repose-hook`: finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
-| opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 1 and OpenCode 2, I-481) sends finished (`session.idle`; V2 `session.execution.succeeded`), needs input (`permission.asked`), error (`session.error`; V2 `session.execution.failed`) | `~/.local/share/opencode/auth.json` synced from the laptop |
-| Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished only | `~/.codex/auth.json` synced from the laptop |
-| Gemini CLI | `gemini` | `gemini` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |
-| pi | `pi` | `pi` | no hook; tmux pane-idle heuristic, or herdr's own detection on a herdr project (I-504) | provider API key as a named secret |
+| Claude Code | `claude` | `claude` | `Notification`, `Stop` and `UserPromptSubmit` hooks in `~/.claude/settings.json` run `repose-hook`: prompt, finished, needs input | `claude` prints a paste code over SSH; or `CLAUDE_CODE_OAUTH_TOKEN` named secret |
+| opencode | `opencode` | `opencode` | plugin `~/.config/opencode/plugins/repose.js` (version 1 and OpenCode 2, I-481) sends prompt (V1 `chat.message`, I-690), finished (`session.idle`; V2 `session.execution.succeeded`), needs input (`permission.asked`), error (`session.error`; V2 `session.execution.failed`) | `~/.local/share/opencode/auth.json` synced from the laptop |
+| Codex CLI | `codex` | `codex` | `notify = ["repose-hook"]` in `~/.codex/config.toml`: finished; a `UserPromptSubmit` hook in `/etc/codex/config.toml` (I-690): prompt | `~/.codex/auth.json` synced from the laptop |
+| Gemini CLI | `gemini` | `gemini` | `BeforeAgent` and `AfterAgent` hooks in the platform extension's `hooks/hooks.json` (I-690): prompt, finished; the tmux pane-idle heuristic until the first hook, or herdr's own detection on a herdr project (I-504) | `GEMINI_API_KEY` named secret, or log in on the machine |
+| pi | `pi` | `pi` | the platform pi extension's `input` and `agent_end` handlers (I-690): prompt, finished; the tmux pane-idle heuristic until the first hook, or herdr's own detection on a herdr project (I-504) | provider API key as a named secret |
 
 `repose-agent-setup` (`nix/overlay/agents/agent-setup.nix`) writes these
 entries each time the agent starts. It adds its entry only when none running
@@ -56,9 +56,9 @@ in `bypassPermissions` mode (below, DECISIONS I-250). The
 payload each agent sends is recorded as a fixture under
 `internal/guestd/hooks/testdata/<agent>/`, one file per shape, so a change in
 an agent's payload shows up as a failing test rather than as a notification
-that stops arriving. The two agents with no hook have a README there instead,
-naming the heuristic test that covers them. For an
-agent with no completion hook, guestd watches the pane: an agent window whose
+that stops arriving. gemini and pi have a README there naming how their
+hooks were checked. For an agent that has sent no hook yet (a gemini or
+pi whose extension the user replaced), guestd watches the pane: an agent window whose
 pane has produced no output for 90 seconds and whose foreground process is
 the agent itself is reported `idle`, which becomes a `completed` event once,
 until the pane produces output again. That heuristic is named as such in the
@@ -223,10 +223,25 @@ guest, and never its login or its history:
   (run-and-attach.md).
 - Every agent's completion and needs-input reach the API as events within
   10 seconds of the hook firing, or within 90 seconds for heuristic agents.
+  A finished turn notifies nobody (I-688); the agent says it is done with
+  `repose-notify --done`.
 - A missing login produces the agent's own login prompt in the window plus
   the CLI message above; it never produces a crash loop.
 - `repose status` shows per agent window: `working`, `idle`,
-  `needs_input`, or `unknown`, from guestd's `AgentState` notifications.
+  `needs_input`, `running` or `unknown`, from guestd's `AgentState`
+  notifications. Since I-694 a hooked agent's state comes from its hooks
+  only: `working` from a prompt (or Claude's own turn after a background
+  task, hook kind `resume`) to the end of a turn with no background task
+  running, `needs_input` at a permission prompt, `idle` after and before
+  any hook. A `working` window whose tmux pane printed nothing for 2
+  minutes is `idle` until the next hook: Claude and codex send no turn end
+  for a turn interrupted with Esc, and a pause on a background dev server
+  lasts as long as the server. CPU in the pane says nothing (a dev server
+  the agent started uses it too). Claude and codex are hooked from the
+  start; gemini, pi and opencode once their window sent a prompt hook.
+  OpenCode 2 sends none and, like any agent with no hooks, shows `running`
+  while its process is alive. A shell window with no agent in front is no agent,
+  and `repose stop` asks only about agents `working` or `needs_input`.
   An agent started by hand in another window (the `shell` window) is one
   of them while it is that window's foreground program (I-421).
 - Removing an agent from the overlay is a base bump with a changelog line;

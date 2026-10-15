@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -189,6 +190,9 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 	}
 	if !attachOnly && res.Project != nil && opts.Size != "" && opts.Size != res.Project.Class {
+		if err := waitOutStop(ctx, e, res.Project, pr); err != nil {
+			return err
+		}
 		if err := sizeExisting(ctx, e, res.Project, opts.Size); err != nil {
 			return err
 		}
@@ -279,6 +283,8 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}
 	tz := laptopTZ()
 	tzSaved := saveProjectTZ(ctx, e, project, tz)
+	// Every way out waits for it (or cancels it), a refusal included.
+	defer tzSaved()
 
 	pr.Phase("Connecting to "+project.Slug, "")
 	endConnect := timeSpan("phase connect")
@@ -753,6 +759,9 @@ func syncResultLine(s *SyncSummary, noAttach bool, named string) string {
 		return laptopAheadLine(s, named)
 	case s.Skipped:
 		return ""
+	case !s.Unchanged && !s.GuestAhead && s.Took > 0:
+		// The sync's own time, as a ✓ line ends with its phase's (I-715).
+		return s.String() + "  " + fmtElapsed(s.Took)
 	case !s.Unchanged:
 		return s.String()
 	case noAttach:
@@ -795,16 +804,26 @@ func saveProjectTZ(ctx context.Context, e *Env, project *Project, tz string) (wa
 		return func() {}
 	}
 	done := make(chan struct{})
+	// Cancelled when the wait gives up, so the request does not outlive
+	// the command (the process exit would end it anyway; a test's fake
+	// api would otherwise close with it in flight).
+	pctx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(done)
 		z := tz
-		_, _ = e.Client.PatchProject(ctx, project.ID, PatchProjectRequest{TZ: &z})
+		_, _ = e.Client.PatchProject(pctx, project.ID, PatchProjectRequest{TZ: &z})
 	}()
+	var once sync.Once
 	return func() {
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-		}
+		once.Do(func() {
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				cancel()
+				<-done
+			}
+			cancel()
+		})
 	}
 }
 
@@ -914,6 +933,11 @@ var (
 	otherRefusals = []string{
 		"gateway busy", "too many open connections", "too many authentication attempts", "cannot reach control plane",
 		"not accepting connections yet", "is stopped", "no such project", "login name must be",
+		// The two route refusals (I-721). Neither is about the
+		// certificate, and before this both fell through to the bare
+		// "permission denied" below and spent connect's one forced
+		// re-issue on a machine whose address the api did not hold.
+		"the control plane cannot reach", "repose has no address for it",
 	}
 )
 
@@ -970,12 +994,22 @@ func (e *Env) warn(format string, args ...any) {
 	_, _ = fmt.Fprintf(e.ErrOut, format+"\n", args...)
 }
 
+// hasOAuthSecret reports whether the machine gets CLAUDE_CODE_OAUTH_TOKEN,
+// the project's own or the account's (I-697).
 func hasOAuthSecret(ctx context.Context, c *Client, projectID string) (bool, error) {
 	secrets, err := c.ListSecrets(ctx, projectID)
 	if err != nil {
 		return false, err
 	}
-	for _, s := range secrets {
+	account, err := c.ListAccountSecrets(ctx)
+	if err != nil {
+		// An api from before I-697 has no account secrets.
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != 404 {
+			return false, err
+		}
+	}
+	for _, s := range append(secrets, account...) {
 		if s.Name == "CLAUDE_CODE_OAUTH_TOKEN" {
 			return true, nil
 		}
@@ -1116,6 +1150,10 @@ func waitForSSH(ctx context.Context, t sshTarget, wait time.Duration, slow func(
 		if err == nil {
 			return nil
 		}
+		if ctx.Err() != nil {
+			// Ctrl-C killed this ssh: not a missing ssh client.
+			return ctx.Err()
+		}
 		if first && slow != nil {
 			slow()
 		}
@@ -1233,21 +1271,68 @@ func renewFor(e *Env, project *Project) func(context.Context) error {
 }
 
 // startToWork is what attach, ssh and code do with a project that is not
-// running: a stopped machine starts, as with run, and is not synced; a
-// start in progress is waited for (I-631, review G7; ssh and code since
-// I-641). The other states, and a machine stopped for abuse, cannot.
+// running: whatever run would do to bring it up, without a sync (I-631,
+// review G7; ssh and code since I-641). A stopped machine starts, one in
+// error restarts, a start, stop or restore in progress is waited for and
+// then started, and a machine whose server is restarting is waited for
+// (I-709). A machine stopped for abuse, or being destroyed, cannot.
 func startToWork(ctx context.Context, e *Env, project *Project, pr *progress) error {
-	if project.State == "running" {
+	if project.State == "running" && !project.HostUnreachable {
 		return nil
 	}
 	switch project.State {
-	case "stopped", "creating", "building", "starting", "stopping":
+	case "running", "stopped", "error", "creating", "building", "starting", "stopping", "restoring":
 		if abuseStopReason(project) != "" {
 			return notRunningError(project)
 		}
 		return ensureRunningFrom(ctx, e, project, pr, true)
 	}
 	return notRunningError(project)
+}
+
+// hostWaitTimeout is how long a command waits for a machine's server
+// to answer again: the api's own wait for a silent host
+// (ops.HostUnreachableGrace), well past a restart with its machines
+// frozen (I-652, about 2 minutes on host-01).
+var hostWaitTimeout = 10 * time.Minute
+
+// waitHost waits while the api marks project's server unreachable
+// (I-709). A server restarting freezes its running machines and brings
+// them back as they were (I-652), and a stopped machine's disk is on
+// that server, so nothing is started or restarted meanwhile: the start
+// would be refused (lifecycle.UnreachableMessage), and the frozen machine
+// needs none. It returns once the server answers; the caller then goes
+// on from the state the machine is in by then.
+func waitHost(ctx context.Context, e *Env, project *Project, pr *progress) error {
+	started := time.Now()
+	pr.Phase("Waiting for "+project.Slug+"'s server to come back", "")
+	for project.HostUnreachable {
+		if time.Since(started) > hostWaitTimeout {
+			pr.Fail()
+			return exitf(ExitGuestNotRunning, "%s's server has not answered for %s. `repose status %s` shows when it is back.", project.Slug, fmtWait(hostWaitTimeout), project.Slug)
+		}
+		if err := sleepOrDone(ctx, 2*opPollInterval); err != nil {
+			return err
+		}
+		p, err := e.Client.GetProject(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		*project = *p
+	}
+	// The machine's first ssh after a restore or a cold start may take
+	// the whole minute.
+	e.longSSHWait = true
+	pr.End()
+	return nil
+}
+
+// fmtWait is a whole wait as people say it: "10m", "1s".
+func fmtWait(d time.Duration) string {
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	return fmt.Sprintf("%ds", int(d.Round(time.Second)/time.Second))
 }
 
 // ensureRunningFrom is step 2: wait out a create or start in flight,
@@ -1269,10 +1354,35 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 		// time it is read back; starting it then fails with "project has
 		// no guest", which hid the capacity error (dogfood, I-356). Say
 		// what the create said.
-		if project.State == "error" && project.OpID == "" && created != "" {
+		// A project read names only the op in flight (I-722), so once
+		// the create has settled there is none: keep the create's own
+		// id, so the wait follows that op and its build log (the
+		// build's steps, then "Booting", I-708) instead of the states
+		// alone.
+		if project.OpID == "" && created != "" {
+			switch project.State {
+			case "creating", "building", "starting":
+				project.OpID = created
+			}
+		}
+		// Whatever else is open, a create of ours that ended in error is
+		// what the user must be told about, and this run must not start
+		// the machine behind it (DECISIONS I-728). The condition used to
+		// be `project.OpID == ""`, which a personal build queued behind
+		// the create is enough to make false (I-490), and then nothing
+		// stopped the fall-through to StartProject.
+		if project.State == "error" && created != "" {
 			if op, err := e.Client.GetOp(ctx, project.ID, created); err == nil && op.State == "error" {
 				pr.Fail()
 				return e.opFailed("create", project.Slug, op.Error, nextAfterFailedStart(project.Slug, op.Error.Code))
+			}
+		}
+	}
+	switch project.State {
+	case "running", "stopped", "error":
+		if project.HostUnreachable {
+			if err := waitHost(ctx, e, project, pr); err != nil {
+				return err
 			}
 		}
 	}
@@ -1290,21 +1400,29 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 	// in it a moment after POST /projects answers "creating", which is what
 	// the first M3 run hit (DECISIONS I-114).
 	switch project.State {
-	case "creating", "building", "starting", "stopping":
+	case "creating", "building", "starting", "stopping", "restoring":
+		probed := false
+		// A stop under way (in the background since I-710) that fails
+		// is the stop's failure: it is said once below and the machine,
+		// in error, is started as any machine in error is (I-157).
+		stopping := project.State == "stopping"
 		if project.OpID != "" {
 			op, err := waitOpPhased(ctx, e, project, project.OpID, pr, true)
 			if err != nil {
 				return err
 			}
-			if op.State == "error" {
+			if op.State == "error" && !stopping {
 				return failedStart(e, project, op, pr)
 			}
 			if w := opWarning(op); w != "" {
 				pr.Fail()
 				e.warn("%s: %s.", project.Slug, strings.TrimSuffix(w, "."))
 			}
-			if e.guestUp != nil && project.State != "stopping" {
+			// A create or start ends running: the probe goes out beside
+			// the read below (I-237).
+			if e.guestUp != nil && project.State != "stopping" && project.State != "restoring" {
 				e.guestUp(project)
+				probed = true
 			}
 		} else if err := waitState(ctx, e, project, pr); err != nil {
 			return err
@@ -1314,10 +1432,33 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return err
 		}
 		*project = *p
+		if stopping && project.State == "error" {
+			pr.Fail()
+			reason := "the api did not say why"
+			if project.LastError != nil && *project.LastError != "" {
+				// The api's reason, `stopping job failed: WHY. `repose
+				// stop job` tries again`, without what this command is
+				// doing instead.
+				_, msg := splitLastError(*project.LastError)
+				msg = strings.TrimPrefix(msg, "stopping "+project.Slug+" failed: ")
+				if i := strings.Index(msg, ". `repose stop "); i >= 0 {
+					msg = msg[:i]
+				}
+				if msg = humaneMessage(msg); msg != "" {
+					reason = msg
+				}
+			}
+			e.warn("Stopping %s failed: %s.", project.Slug, strings.TrimSuffix(reason, "."))
+		}
 		if project.State == "running" {
+			// A restore that booted the machine, or a start with no op
+			// named, gets the probe once it is known to be running.
+			if e.guestUp != nil && !probed {
+				e.guestUp(project)
+			}
 			return nil
 		}
-	case "restoring", "destroying", "destroyed":
+	case "destroying", "destroyed":
 		return notRunningError(project)
 	}
 
@@ -1366,7 +1507,7 @@ func ensureRunningFrom(ctx context.Context, e *Env, project *Project, pr *progre
 			return exitf(ExitPaymentRequired, "%s", paymentRequiredMessage(apiErr))
 		}
 		if errors.As(err, &apiErr) && apiErr.Code == "capacity" {
-			return exitf(ExitCapacity, "repose has no room for this machine right now. Try again in a few minutes.")
+			return exitf(ExitCapacity, "repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.")
 		}
 		return err
 	}
@@ -1454,7 +1595,7 @@ func waitState(ctx context.Context, e *Env, project *Project, pr *progress) erro
 		}
 		*project = *p
 		switch p.State {
-		case "creating", "building", "starting", "stopping":
+		case "creating", "building", "starting", "stopping", "restoring":
 		default:
 			return nil
 		}
@@ -1476,16 +1617,35 @@ func waitState(ctx context.Context, e *Env, project *Project, pr *progress) erro
 // waitOpPhased waits on an op like waitOp, streaming any build log
 // through pr, and (when byState) relabels the phase from the project's
 // state on every poll: "Building the environment", then "Booting".
+//
+// A create's log stays open until the whole op ends, boot included, so
+// with byState its build is shown as the configuration ops show theirs
+// (the build's steps from its log lines), and its "built" line starts
+// "Booting": the state's one label covered build and boot before
+// (DECISIONS I-708).
 func waitOpPhased(ctx context.Context, e *Env, project *Project, opID string, pr *progress, byState bool) (*Op, error) {
 	var w *opWatch
 	if byState {
 		last := ""
+		v := &buildView{pr: pr}
+		switch {
+		case pr == nil:
+			v.raw = e.ErrOut
+		case e.Verbose || !e.TTY:
+			v.raw = pr
+		}
+		v.built = func() { pr.Phase("Booting "+project.Slug, "Booted "+project.Slug) }
 		w = &opWatch{
+			line: v.Line,
 			show: func(state string) {
 				if state == "" || state == last {
 					return
 				}
 				last = state
+				// The build's own lines label it.
+				if state == "building" {
+					return
+				}
 				if label, done := phaseForState(project.Slug, state); label != "" {
 					pr.Phase(label, done)
 				}

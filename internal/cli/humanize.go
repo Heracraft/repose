@@ -29,7 +29,7 @@ func reasonFor(code, message string) string {
 	case "boot_failed":
 		return "the machine did not boot"
 	case "insufficient_capacity", "capacity":
-		return "the host had no room for it right now"
+		return "no server had room for it"
 	case "build_failed":
 		return "its Nix configuration failed to build"
 	case "eval_failed":
@@ -177,9 +177,9 @@ func notRunningMessage(p *Project) string {
 		}
 		return fmt.Sprintf("%s is stopped. `repose start %s` starts it.", s, s)
 	case "creating", "building", "starting":
-		return fmt.Sprintf("%s is still %s. `repose run` in its checkout waits for it and attaches; `repose status %s` shows progress.", s, p.State, s)
+		return fmt.Sprintf("%s is still %s. `repose attach %s` waits for it and attaches.", s, p.State, s)
 	case "stopping":
-		return fmt.Sprintf("%s is stopping. Once it has stopped, `repose start %s` brings it back.", s, s)
+		return fmt.Sprintf("%s is stopping. `repose start %s` waits for the stop and starts it again.", s, s)
 	case "restoring":
 		return fmt.Sprintf("%s is being restored from a snapshot. `repose status %s` shows when it is done.", s, s)
 	case "destroying":
@@ -245,7 +245,13 @@ func opExitCode(code string) int {
 func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
-		return "Try again in a few minutes."
+		// Memory is never oversubscribed and a running machine holds
+		// its own until it stops, so waiting is not what frees room
+		// (DECISIONS I-724). The one case where waiting works is the
+		// three minutes after a stop or rm, which the api handles
+		// itself (I-408), so by the time this refusal is printed there
+		// is nothing to wait for.
+		return "A machine holds its memory while it runs, so stopping one frees room for this."
 	case "volume_unavailable":
 		// The api's sentence already says when `repose start` works.
 		return ""

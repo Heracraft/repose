@@ -220,6 +220,25 @@ func TestWalkthrough(t *testing.T) {
 	want(t, call(t, f, "DELETE", "/v1/projects/"+p.ID+"/secrets/OPENAI_API_KEY", tok, nil), 204)
 	wantErr(t, call(t, f, "DELETE", "/v1/projects/"+p.ID+"/secrets/OPENAI_API_KEY", tok, nil), 404, "not_found")
 
+	// Account secrets (I-697): the same names, for every project; a
+	// project's own of the same name is named in the answer.
+	want(t, call(t, f, "PUT", "/v1/projects/"+p.ID+"/secrets/OWN", tok, map[string]any{"value": val}), 200)
+	r = call(t, f, "PUT", "/v1/me/secrets/OWN", tok, map[string]any{"value": val})
+	want(t, r, 200)
+	if !strings.Contains(string(r.body), `"overridden_by":["`+p.Slug+`"]`) || !strings.Contains(string(r.body), `"pushed":0`) {
+		t.Fatalf("account put: %s", r.body)
+	}
+	wantErr(t, call(t, f, "PUT", "/v1/me/secrets/lower", tok, map[string]any{"value": val}), 400, "invalid")
+	wantErr(t, call(t, f, "PUT", "/v1/me/secrets/BASH_ENV", tok, map[string]any{"value": val}), 400, "invalid")
+	r = call(t, f, "GET", "/v1/me/secrets", tok, nil)
+	want(t, r, 200)
+	if !strings.Contains(string(r.body), `"name":"OWN"`) || strings.Contains(string(r.body), "hunter2") || strings.Contains(string(r.body), val) {
+		t.Fatalf("account list: %s", r.body)
+	}
+	want(t, call(t, f, "DELETE", "/v1/me/secrets/OWN", tok, nil), 204)
+	wantErr(t, call(t, f, "DELETE", "/v1/me/secrets/OWN", tok, nil), 404, "not_found")
+	want(t, call(t, f, "DELETE", "/v1/projects/"+p.ID+"/secrets/OWN", tok, nil), 204)
+
 	// Certificates.
 	r = call(t, f, "POST", "/v1/certs", tok, map[string]any{"public_key": "ssh-ed25519 AAAAC3 me@laptop", "project_ids": []string{p.ID}})
 	want(t, r, 200)

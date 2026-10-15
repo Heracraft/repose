@@ -242,6 +242,8 @@ func (m *Manager) flagWholeStore(ctx context.Context) {
 // died between `lvcreate -s` and `lvremove` (DECISIONS I-68). At start no
 // snapshot is in flight, so every `snap-*` volume is an orphan: the api
 // re-sends the interrupted Snapshot command and the re-run makes its own.
+// A fork point (`fp-*`, I-701) is one too: its expiry timer died with the
+// hostd that took it, and a sibling restore sent again takes a new one.
 func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 	vols, err := m.d.LVM.ListVolumes(ctx)
 	if err != nil {
@@ -249,7 +251,7 @@ func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 		return
 	}
 	for _, v := range vols {
-		if !strings.HasPrefix(v, "snap-") {
+		if !strings.HasPrefix(v, "snap-") && !strings.HasPrefix(v, "fp-") {
 			continue
 		}
 		if err := m.d.LVM.RemoveVolume(ctx, v); err != nil {

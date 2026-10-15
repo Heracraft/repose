@@ -40,7 +40,11 @@ let
     text = ''
       total=$(awk '/^MemTotal:/ { print $2 * 1024 }' /proc/meminfo)
       gib=$((1024 * 1024 * 1024))
-      if [ "$total" -lt $((128 * gib)) ]; then reserve=$((8 * gib)); else reserve=$((16 * gib)); fi
+      # An eighth, floor 2 GiB, ceiling 16 GiB: the same rule as the api's
+      # scheduler.HostReserve and hostd's HostReserveBytes (I-724).
+      reserve=$((total / 8))
+      if [ "$reserve" -lt $((2 * gib)) ]; then reserve=$((2 * gib)); fi
+      if [ "$reserve" -gt $((16 * gib)) ]; then reserve=$((16 * gib)); fi
       max=$((total - reserve))
       if [ "$max" -le 0 ]; then max=$((total / 2)); fi
       systemctl set-property --runtime guests.slice MemoryMax="$max"

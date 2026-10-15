@@ -66,6 +66,17 @@ func (c *Client) AnswerQuestion(ctx context.Context, projectID, questionID, answ
 	return &q, nil
 }
 
+// CancelQuestion dismisses a waiting question (POST .../cancel); the
+// waiting repose-ask exits 5.
+func (c *Client) CancelQuestion(ctx context.Context, projectID, questionID string) (*Question, error) {
+	var q Question
+	path := "/projects/" + url.PathEscape(projectID) + "/questions/" + url.PathEscape(questionID) + "/cancel"
+	if err := c.post(ctx, path, map[string]string{"via": "cli"}, &q); err != nil {
+		return nil, err
+	}
+	return &q, nil
+}
+
 // matchesProject reports whether arg names q's project by slug or id.
 func matchesProject(q Question, arg string) bool {
 	arg = strings.ToLower(strings.TrimSpace(arg))
@@ -203,12 +214,49 @@ func ReplyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionF
 	return replyCmd(ctx, e, args, projectFlag, questionFlag, in, interactive, true)
 }
 
+// DismissCmd implements `repose reply --dismiss [PROJECT]` (DECISIONS
+// I-690): the waiting question is cancelled without an answer, by the
+// same rules of choice as a reply, and its repose-ask exits 5.
+func DismissCmd(ctx context.Context, e *Env, args []string, projectFlag, questionFlag string) error {
+	q, rest, err := pickQuestion(ctx, e, args, projectFlag, questionFlag, true)
+	if err != nil {
+		return err
+	}
+	if len(rest) > 0 {
+		return exitf(ExitUsage, "--dismiss takes no answer: repose reply --dismiss [PROJECT].")
+	}
+	got, err := e.Client.CancelQuestion(ctx, q.ProjectID, q.ID)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == "conflict" {
+		return exitf(ExitGeneric, "Not dismissed: %s.", apiErr.Message)
+	}
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, got)
+	}
+	_, _ = fmt.Fprintf(e.Out, "Dismissed the question %s asked in %s.\n", questionAsker(q), q.Project)
+	return nil
+}
+
 // replyCmd is ReplyCmd; mayNameProject is false after `--` (`repose
 // reply -- todo-app is fine`), where every word is the answer.
 func replyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionFlag string, in io.Reader, interactive, mayNameProject bool) error {
-	qs, err := e.Client.ListQuestions(ctx)
+	q, args, err := pickQuestion(ctx, e, args, projectFlag, questionFlag, mayNameProject)
 	if err != nil {
 		return err
+	}
+	return answerQuestion(ctx, e, q, args, in, interactive)
+}
+
+// pickQuestion is the one waiting question a reply or a dismiss acts on,
+// and the words left after the project. With none it says so; with
+// several it lists them and sends nothing.
+func pickQuestion(ctx context.Context, e *Env, args []string, projectFlag, questionFlag string, mayNameProject bool) (Question, []string, error) {
+	qs, err := e.Client.ListQuestions(ctx)
+	if err != nil {
+		return Question{}, nil, err
 	}
 	project := projectFlag
 	if project == "" && mayNameProject && len(args) > 0 {
@@ -243,9 +291,9 @@ func replyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionF
 	}
 	switch {
 	case len(cands) == 0 && project != "":
-		return exitf(ExitGeneric, "No question is waiting in %s. `repose questions` lists the waiting ones.", project)
+		return Question{}, nil, exitf(ExitGeneric, "No question is waiting in %s. `repose questions` lists the waiting ones.", project)
 	case len(cands) == 0:
-		return exitf(ExitGeneric, "No questions are waiting.")
+		return Question{}, nil, exitf(ExitGeneric, "No questions are waiting.")
 	case len(cands) > 1:
 		now := time.Now()
 		_, _ = fmt.Fprintf(e.ErrOut, "%d questions are waiting; say which with the project or --question ID:\n\n", len(cands))
@@ -255,9 +303,14 @@ func replyCmd(ctx context.Context, e *Env, args []string, projectFlag, questionF
 			}
 			printQuestion(e.ErrOut, q, now)
 		}
-		return silent(ExitUsage)
+		return Question{}, nil, silent(ExitUsage)
 	}
-	q := cands[0]
+	return cands[0], args, nil
+}
+
+// answerQuestion sends the answer the words make, asking for one on a
+// terminal when there are none.
+func answerQuestion(ctx context.Context, e *Env, q Question, args []string, in io.Reader, interactive bool) error {
 	answer := strings.TrimSpace(strings.Join(args, " "))
 	if answer == "" {
 		if !interactive {

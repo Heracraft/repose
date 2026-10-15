@@ -13,7 +13,9 @@ import {
 	agentStateLabel,
 	clockTime,
 	dayLabel,
-	classMemoryGB
+	classMemoryGB,
+	ageShort,
+	minutesLeft
 } from './format';
 
 describe('money', () => {
@@ -68,6 +70,38 @@ describe('timeUntil', () => {
 	it('says less than an hour, then nothing once passed', () => {
 		expect(timeUntil(new Date(2026, 8, 27, 12, 20).toISOString(), now)).toBe('less than an hour');
 		expect(timeUntil(new Date(2026, 8, 27, 11, 0).toISOString(), now)).toBe('');
+	});
+});
+
+describe('ageShort', () => {
+	const now = new Date(2026, 9, 12, 12, 0, 0).getTime();
+	const at = (min: number, sec = 0) => new Date(now - min * 60_000 - sec * 1000).toISOString();
+	it('says just now under a minute, so a 30-second clock never shows seconds', () => {
+		expect(ageShort(at(0, 0), now)).toBe('just now');
+		expect(ageShort(at(0, 59), now)).toBe('just now');
+	});
+	it('counts minutes, hours and days', () => {
+		expect(ageShort(at(3), now)).toBe('3m ago');
+		expect(ageShort(at(59, 59), now)).toBe('59m ago');
+		expect(ageShort(at(60), now)).toBe('1h ago');
+		expect(ageShort(at(26 * 60), now)).toBe('1d ago');
+	});
+	it('reads a time in the future (a skewed clock) as just now', () => {
+		expect(ageShort(at(-5), now)).toBe('just now');
+	});
+});
+
+describe('minutesLeft', () => {
+	const now = new Date(2026, 9, 12, 12, 0, 0).getTime();
+	const inMs = (ms: number) => new Date(now + ms).toISOString();
+	it('rounds up, so the last minute reads 1m and not 0m', () => {
+		expect(minutesLeft(inMs(4 * 60_000), now)).toBe(4);
+		expect(minutesLeft(inMs(3 * 60_000 + 1), now)).toBe(4);
+		expect(minutesLeft(inMs(10_000), now)).toBe(1);
+	});
+	it('is 0 once passed', () => {
+		expect(minutesLeft(inMs(0), now)).toBe(0);
+		expect(minutesLeft(inMs(-60_000), now)).toBe(0);
 	});
 });
 

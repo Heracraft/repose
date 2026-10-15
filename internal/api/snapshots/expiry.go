@@ -86,11 +86,14 @@ func (e *Expiry) Once(ctx context.Context) ([]uuid.UUID, error) {
 
 // expiredWhere selects the rows the retention rule retires: a destroyed
 // project's past expires_at, a live project's older than Retention except
-// its newest; never one a restore holds (restoring_op_id).
+// its newest, and a fork's own snapshot past its expires_at, which is
+// never a project's newest (DECISIONS I-703); never one a restore holds
+// (restoring_op_id).
 const expiredWhere = `s.deleted_at is null and s.restoring_op_id is null
 	and (
 	  (p.destroyed_at is not null and s.expires_at is not null and s.expires_at < $1)
-	  or (p.destroyed_at is null and s.taken_at < $2 and s.id <> (select id from snapshots n where n.project_id = s.project_id and n.deleted_at is null order by n.taken_at desc, n.created_at desc limit 1))
+	  or (s.reason = 'fork' and s.expires_at is not null and s.expires_at < $1)
+	  or (p.destroyed_at is null and s.taken_at < $2 and s.id <> (select id from snapshots n where n.project_id = s.project_id and n.deleted_at is null and n.reason <> 'fork' order by n.taken_at desc, n.created_at desc limit 1))
 	)`
 
 // Sweep is one run: the candidates are read once, then each is locked,

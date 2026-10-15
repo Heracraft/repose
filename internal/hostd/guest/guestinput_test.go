@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +266,67 @@ func TestCleanText(t *testing.T) {
 	}
 	if got := cleanToken("open-code_2", 32); got != "open-code_2" {
 		t.Errorf("token %q", got)
+	}
+}
+
+// TestGuestCloseCarriesItsReasonAndPassesAFullBucket (I-690): a close
+// carries a reason from the fixed set (anything else becomes ""), and the
+// close of a question hostd passed as open gets through an empty bucket,
+// once. A close of an id hostd never saw open, or a second close of one,
+// takes a token like any notification, so a guest cannot flood the host's
+// stream with made-up closes.
+func TestGuestCloseCarriesItsReasonAndPassesAFullBucket(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	gd := h.guestd(gid1)
+	const a1, a2, a3 = "0199aaaa-0000-7000-8000-0000000000a1", "0199aaaa-0000-7000-8000-0000000000a2", "0199aaaa-0000-7000-8000-0000000000a3"
+	for _, id := range []string{a1, a2} {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: &guestdv1.Question{QuestionId: id, Agent: "claude", Text: "q?"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 200; i++ {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{AgentEvent: &guestdv1.AgentEvent{Agent: "shell", Kind: "agent_message", Summary: "m"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	closes := []*guestdv1.Question{
+		{QuestionId: a1, State: "cancelled", Reason: "terminal"},
+		{QuestionId: a2, State: "cancelled", Reason: "made-up"},
+		{QuestionId: a3, State: "expired"},                        // never seen open
+		{QuestionId: a1, State: "cancelled", Reason: "withdrawn"}, // closed already
+	}
+	for _, q := range closes {
+		if err := gd.Notify(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: q}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	closed := func(e []*hostdv1.Event) map[string][]string {
+		got := map[string][]string{}
+		for _, ev := range e {
+			if q := ev.GetAgentQuestion(); q != nil && q.State != "" {
+				got[q.QuestionId] = append(got[q.QuestionId], q.State+"/"+q.Reason)
+			}
+		}
+		return got
+	}
+	h.waitEvents(func(e []*hostdv1.Event) bool { return len(closed(e)) >= 2 })
+	time.Sleep(50 * time.Millisecond) // anything else would have arrived by now
+	got := closed(h.waitEvents(func([]*hostdv1.Event) bool { return true }))
+	want := map[string][]string{a1: {"cancelled/terminal"}, a2: {"cancelled/"}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("closes %v, want %v", got, want)
+	}
+}
+
+// TestAgentDoneAndRunningAreAccepted: agent_done (I-688) is a guest kind
+// and running (I-694) a guest agent state.
+func TestAgentDoneAndRunningAreAccepted(t *testing.T) {
+	if _, ok := cleanAgentEvent(gid1, "claude", "agent_done", "PR is up", "claude"); !ok {
+		t.Fatal("agent_done refused")
+	}
+	out := cleanSignals(&hostdv1.GuestSignals{Agents: []*hostdv1.AgentProc{{Agent: "pi", TmuxWindow: "pi", State: "running"}}})
+	if out.Agents[0].State != "running" {
+		t.Fatalf("running became %q", out.Agents[0].State)
 	}
 }

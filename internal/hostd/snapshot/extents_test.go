@@ -273,6 +273,21 @@ func TestLayoutSandboxed(t *testing.T) {
 	}
 }
 
+// With Sandbox set, a restore's zstd -d runs in shell.SandboxedFilter, with
+// no device: the blob's digest is checked only as it is written (I-700).
+func TestRestoreDecompressorSandboxed(t *testing.T) {
+	r := &shell.Fake{Scripts: []shell.Script{{Prefix: []string{"systemd-run"}, Result: shell.Result{ExitCode: 1}}}}
+	p := &Pipeline{R: r, Sandbox: true}
+	if err := p.Write(context.Background(), filepath.Join(t.TempDir(), "dev"), strings.NewReader("not zstd")); err == nil {
+		t.Fatal("a failed zstd -d wrote a volume")
+	}
+	argv := strings.Join(r.Calls[0], " ")
+	if !strings.HasPrefix(argv, "systemd-run ") || !strings.Contains(argv, "DynamicUser=yes") || strings.Contains(argv, "DeviceAllow=") ||
+		!strings.HasSuffix(argv, "-- zstd -d -q -c") {
+		t.Fatalf("zstd -d argv %s", argv)
+	}
+}
+
 // journalWrite leaves img's journal holding one committed transaction
 // that writes data at block blk, and the filesystem flagged
 // needs_recovery: what a guest killed after a commit leaves, without a

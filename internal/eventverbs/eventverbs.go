@@ -16,6 +16,7 @@ var Verbs = map[string]string{
 	"error":                "hit an error",
 	"agent_message":        "says",
 	"agent_question":       "asks",
+	"agent_done":           "is done",
 	"idle_running":         "unused for 24h, holding plan memory",
 	"temp_expiring":        "destroyed in an hour",
 	"temp_destroyed":       "temporary machine destroyed",

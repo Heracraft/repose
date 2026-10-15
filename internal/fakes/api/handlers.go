@@ -15,6 +15,7 @@ import (
 	"time"
 	_ "time/tzdata" // PATCH /me validates tz without depending on the host's zoneinfo
 
+	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/menu"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -95,8 +96,15 @@ type limitsView struct {
 }
 
 type notifyView struct {
-	Email   bool    `json:"email"`
-	NtfyURL *string `json:"ntfy_url"`
+	Email   bool       `json:"email"`
+	NtfyURL *string    `json:"ntfy_url"`
+	GChat   *gchatView `json:"gchat"`
+}
+
+// gchatView is notify.gchat: the space, never the webhook URL (I-692).
+type gchatView struct {
+	Space    string     `json:"space"`
+	BrokenAt *time.Time `json:"broken_at"`
 }
 
 func (f *Fake) meOf(u *userRec) meView {
@@ -108,6 +116,9 @@ func (f *Fake) meOf(u *userRec) meView {
 	if u.NtfyURL != "" {
 		url := u.NtfyURL
 		v.Notify.NtfyURL = &url
+	}
+	if _, space, err := notify.CanonicalGChatURL(u.GChatURL); err == nil {
+		v.Notify.GChat = &gchatView{Space: space, BrokenAt: u.GChatBrokenAt}
 	}
 	return v
 }
@@ -121,8 +132,9 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 	var body struct {
 		TZ     *string `json:"tz"`
 		Notify *struct {
-			Email   *bool           `json:"email"`
-			NtfyURL json.RawMessage `json:"ntfy_url"`
+			Email    *bool           `json:"email"`
+			NtfyURL  json.RawMessage `json:"ntfy_url"`
+			GChatURL json.RawMessage `json:"gchat_url"`
 		} `json:"notify"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
@@ -150,6 +162,22 @@ func (f *Fake) patchMe(w http.ResponseWriter, r *http.Request) *apiError {
 				return invalid("notify.ntfy_url: must be an http(s) URL")
 			} else {
 				u.NtfyURL = *url
+			}
+		}
+		if len(body.Notify.GChatURL) > 0 {
+			var url *string
+			if err := json.Unmarshal(body.Notify.GChatURL, &url); err != nil {
+				return invalid("gchat_url must be a string or null")
+			}
+			if url == nil || strings.TrimSpace(*url) == "" {
+				u.GChatURL, u.GChatBrokenAt = "", nil
+			} else {
+				// The api's own check and canonical form (I-692).
+				canonical, _, err := notify.CanonicalGChatURL(*url)
+				if err != nil {
+					return invalid("%s", notify.ErrGChatURL.Error())
+				}
+				u.GChatURL, u.GChatBrokenAt = canonical, nil
 			}
 		}
 	}
@@ -203,6 +231,20 @@ func (f *Fake) notifyTest(w http.ResponseWriter, r *http.Request) *apiError {
 		res["ntfy"] = "ok"
 		if strings.Contains(u.NtfyURL, "fail") {
 			res["ntfy"], res["ntfy_error"] = "error", "the server answered 403"
+		}
+	}
+	// A webhook whose token starts with "fail" is refused and marked
+	// broken; one that gets through clears the mark (I-692).
+	if u.GChatURL != "" {
+		res["gchat"] = "ok"
+		if strings.Contains(u.GChatURL, "token=fail") {
+			res["gchat"], res["gchat_error"] = "error", "the server answered 403: the webhook was deleted, or its space removed it"
+			if u.GChatBrokenAt == nil {
+				now := time.Now().UTC()
+				u.GChatBrokenAt = &now
+			}
+		} else {
+			u.GChatBrokenAt = nil
 		}
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -300,8 +342,9 @@ func (f *Fake) stop(p *project, snapshot bool) *Snapshot {
 	if p.State == "running" && snapshot {
 		s = f.snapshot(p, "stop")
 	}
+	// started_at stays: the api's store sets it on the way to running
+	// and keeps it through a stop.
 	p.State = "stopped"
-	p.StartedAt = nil
 	p.Signals = nil
 	p.GuestIP = ""
 	f.event(p, "guest_state_changed", "", "stopped")
@@ -468,7 +511,16 @@ func (f *Fake) getProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	writeJSON(w, http.StatusOK, p.Project)
+	out := p.Project
+	if f.opts.NoProjectOpID {
+		out.OpID = ""
+	}
+	writeJSON(w, http.StatusOK, out)
+	if fn := f.onGet[p.ID]; fn != nil && fn(&p.Project) {
+		// Under f.mu (ServeHTTP), after the answer is written: what fn
+		// changed is what the next read sees.
+		delete(f.onGet, p.ID)
+	}
 	return nil
 }
 
@@ -573,6 +625,9 @@ func (f *Fake) destroyProject(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
 	o := f.newOp(p, "destroy")
 	if f.opts.DestroyDelay > 0 {
 		// Under f.mu already (ServeHTTP); only the goroutine takes it.
@@ -673,6 +728,15 @@ func (f *Fake) startProject(w http.ResponseWriter, r *http.Request) *apiError {
 		// What the api answers while the create op is still running.
 		return errf("conflict", "%s is already starting", p.Slug)
 	}
+	if p.HostUnreachable {
+		// lifecycle.UnreachableMessage: the machine's disk is on that
+		// server.
+		return errf("conflict", "%s's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start %s` works then", p.Slug, p.Slug)
+	}
+	if p.State == "stopping" {
+		// lifecycle.Start's refusal while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	if p.State != "running" {
 		if e := f.gate(userFrom(r), p.Class, nil, p); e != nil {
 			return e
@@ -716,13 +780,48 @@ func (f *Fake) stopProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	if p.State == "stopping" {
+		// What the api answers while a stop op is open.
+		return errf("conflict", "%s is %s; wait for it to settle", p.Slug, p.State)
+	}
 	o := f.newOp(p, "stop")
-	if p.State != "stopped" {
-		// The api's stop op carries the snapshot it recorded, as a
-		// snapshot op does.
-		if s := f.stop(p, body.Snapshot == nil || *body.Snapshot); s != nil {
-			o.Result = map[string]any{"snapshot_id": s.ID}
+	snapshot := body.Snapshot == nil || *body.Snapshot
+	if p.State == "running" && f.opts.StopDelay > 0 {
+		// Under f.mu already (ServeHTTP); only the goroutines take it.
+		o.State = "running"
+		o.phase = "stop_guest"
+		o.LogURL = ""
+		// The api's project read names the op pending or running (I-722).
+		p.OpID = o.id
+		if f.opts.StopPickup <= 0 {
+			p.State = "stopping"
+		} else {
+			o.State, o.phase = "pending", ""
+			go func() {
+				time.Sleep(f.opts.StopPickup)
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				o.State, o.phase = "running", "stop_guest"
+				if p.State == "running" {
+					p.State = "stopping"
+				}
+			}()
 		}
+		go func() {
+			time.Sleep(f.opts.StopPickup + f.opts.StopDelay)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			p.State = "running" // what stop snapshots from
+			f.endStop(p, o, snapshot)
+			o.phase = ""
+			if p.OpID == o.id {
+				p.OpID = ""
+			}
+		}()
+		return opResult(w, o)
+	}
+	if p.State != "stopped" {
+		f.endStop(p, o, snapshot)
 	}
 	return opResult(w, o)
 }
@@ -760,6 +859,15 @@ func (f *Fake) opView(p *project, o *op) Op {
 	v.ProjectState = p.State
 	v.Phase = o.phase
 	v.Version = o.State + "." + o.phase + "." + p.State
+	created := o.created
+	v.CreatedAt = &created
+	if o.State == "done" || o.State == "error" {
+		end := created
+		if o.finished != nil {
+			end = *o.finished
+		}
+		v.FinishedAt = &end
+	}
 	return v
 }
 
@@ -871,6 +979,9 @@ func (f *Fake) resizeProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
+		return e
+	}
+	if e := busyStopping(p); e != nil {
 		return e
 	}
 	if body.VolumeBytes <= p.VolumeBytes {
@@ -1020,6 +1131,10 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
 		return e
+	}
+	if p.State == "stopping" {
+		// The api's refusal while a stop op is open.
+		return errf("conflict", "%s is %s", p.Slug, p.State)
 	}
 	var fragment string
 	var menuRaw json.RawMessage
@@ -1227,29 +1342,39 @@ func (f *Fake) listSecrets(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
-func (f *Fake) putSecret(w http.ResponseWriter, r *http.Request) *apiError {
+// secretBody reads and checks a PUT of a secret, a project's or the
+// account's: the same names and the same 64 KB.
+func secretBody(r *http.Request) (string, *apiError) {
 	var body struct {
 		Value string `json:"value"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
-		return e
+		return "", e
 	}
 	name := r.PathValue("name")
 	if reservedSecretNames[name] {
-		return invalid("name: %q is reserved for the guest's sshd material", name)
+		return "", invalid("name: %q is reserved for the guest's sshd material", name)
 	}
 	if !secretNameRe.MatchString(name) {
-		return invalid("name: must match [A-Z][A-Z0-9_]{0,63}")
+		return "", invalid("name: must match [A-Z][A-Z0-9_]{0,63}")
 	}
 	if name == "BASH_ENV" || name == "ENV" || name == "REPOSE_ENV_GEN" {
-		return invalid("name: %q is reserved: the machine uses it to keep each command's secrets current", name)
+		return "", invalid("name: %q is reserved: the machine uses it to keep each command's secrets current", name)
 	}
 	raw, err := base64.StdEncoding.DecodeString(body.Value)
 	if err != nil {
-		return invalid("value: must be base64")
+		return "", invalid("value: must be base64")
 	}
 	if len(raw) > maxSecretBytes {
-		return invalid("value: larger than 64 KB decoded").withDetail(map[string]any{"max_bytes": maxSecretBytes})
+		return "", invalid("value: larger than 64 KB decoded").withDetail(map[string]any{"max_bytes": maxSecretBytes})
+	}
+	return name, nil
+}
+
+func (f *Fake) putSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	name, e := secretBody(r)
+	if e != nil {
+		return e
 	}
 	p, e := f.project(userFrom(r), r.PathValue("id"))
 	if e != nil {
@@ -1281,6 +1406,59 @@ func (f *Fake) deleteSecret(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
+// Account secrets (I-697): for every project of the account; a project's
+// own secret of the same name wins, and the PUT names those projects.
+
+func (f *Fake) listAccountSecrets(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	out := []SecretMeta{}
+	for _, s := range u.secrets {
+		out = append(out, *s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
+func (f *Fake) putAccountSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	name, e := secretBody(r)
+	if e != nil {
+		return e
+	}
+	u := userFrom(r)
+	now := f.now()
+	if u.secrets == nil {
+		u.secrets = map[string]*SecretMeta{}
+	}
+	if s, ok := u.secrets[name]; ok {
+		s.UpdatedAt = now
+	} else {
+		u.secrets[name] = &SecretMeta{Name: name, CreatedAt: now, UpdatedAt: now}
+	}
+	pushed, overridden := 0, []string{}
+	for _, p := range f.ownedProjects(u) {
+		switch {
+		case p.secrets[name] != nil:
+			overridden = append(overridden, p.Slug)
+		case p.State == "running":
+			pushed++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "pushed": pushed, "overridden_by": overridden})
+	return nil
+}
+
+func (f *Fake) deleteAccountSecret(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	name := r.PathValue("name")
+	if _, ok := u.secrets[name]; !ok {
+		return notFound("secret")
+	}
+	delete(u.secrets, name)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 // Snapshots.
 
 func (f *Fake) listSnapshots(w http.ResponseWriter, r *http.Request) *apiError {
@@ -1301,8 +1479,25 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 	if e != nil {
 		return e
 	}
+	if e := busyStopping(p); e != nil {
+		return e
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
+	reason := "manual"
+	if body.Reason == "fork" && !f.oldFork {
+		reason = "fork" // a fork's own, gone a day later (I-703)
+	}
 	o := f.newOp(p, "snapshot")
-	s := f.snapshot(p, "manual")
+	s := f.snapshot(p, reason)
+	if reason == "fork" {
+		exp := s.CreatedAt.Add(24 * time.Hour)
+		s.ExpiresAt = &exp
+	}
 	o.Result = map[string]any{"snapshot_id": s.ID}
 	return opResult(w, o)
 }
@@ -1328,8 +1523,16 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
-	if body.SnapshotID == "" {
+	if body.SnapshotID == "" && f.oldFork {
 		return invalid("snapshot_id is required: take a snapshot of %s first (POST /projects/:id/snapshots)", p.Slug)
+	}
+	if body.SnapshotID == "" && p.State != "running" && p.State != "stopped" {
+		// The api's refusal: copies of the project as it is now need it
+		// settled (internal/api/http/fork.go).
+		return errf("conflict", "%s is %s; a fork needs it running or stopped", p.Slug, p.State)
+	}
+	if body.SnapshotID == "" && f.forkNoClone {
+		return errf("conflict", "%s's server cannot hold the copies; fork from a snapshot of it", p.Slug).withDetail(map[string]any{"reason": "snapshot_needed"})
 	}
 	count := 1
 	if body.Count != nil {
@@ -1338,13 +1541,14 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 	if count < 1 || count > 10 {
 		return invalid("count must be 1 to 10")
 	}
+	// Without snapshot_id the copies are clones of p as it is now (I-701).
 	var snap *Snapshot
 	for _, s := range p.snapshots {
-		if s.ID == body.SnapshotID {
+		if body.SnapshotID != "" && s.ID == body.SnapshotID {
 			snap = s
 		}
 	}
-	if snap == nil {
+	if snap == nil && body.SnapshotID != "" {
 		return errf("not_found", "that snapshot is not one of %s's, or it has expired", p.Slug)
 	}
 	class := p.Class
@@ -1369,7 +1573,11 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		OpID      string `json:"op_id"`
 	}
 	answer := func(list []forked) *apiError {
-		writeJSON(w, http.StatusAccepted, map[string]any{"snapshot_id": snap.ID, "snapshot_created_at": snap.CreatedAt, "from_project_id": p.ID, "projects": list})
+		resp := map[string]any{"snapshot_id": nil, "snapshot_created_at": f.now(), "from_project_id": p.ID, "projects": list}
+		if snap != nil {
+			resp["snapshot_id"], resp["snapshot_created_at"] = snap.ID, snap.CreatedAt
+		}
+		writeJSON(w, http.StatusAccepted, resp)
 		return nil
 	}
 	if body.RequestID != "" {
@@ -1421,8 +1629,15 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		if body.Start != nil && !*body.Start {
 			f.stop(np, false)
 		}
-		f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
+		if snap != nil {
+			f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
+		} else {
+			f.event(np, "volume.restored", "", "cloned from "+p.Name)
+		}
 		o := f.newOp(np, "restore")
+		if d := f.opts.ForkStepDelay; d > 0 {
+			f.stepFork(np, o, body.Start == nil || *body.Start, d, time.Duration(len(list)+1)*d)
+		}
 		list = append(list, forked{ProjectID: np.ID, Name: np.Name, Slug: np.Slug, Class: np.Class, OpID: o.id})
 		rec = append(rec, forkRec{projectID: np.ID, name: np.Slug, class: np.Class, opID: o.id})
 	}
@@ -1430,6 +1645,37 @@ func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
 		f.forks[u.ID+"/"+body.RequestID] = rec
 	}
 	return answer(list)
+}
+
+// stepFork runs a fork copy's restore op through its phases (Options.
+// ForkStepDelay). Callers hold mu; only the goroutine takes it.
+func (f *Fake) stepFork(np *project, o *op, start bool, restore, starting time.Duration) {
+	final := np.State
+	// The op's own times to the nanosecond: the CLI prints them for a
+	// copy it did not watch.
+	now := func() time.Time {
+		if f.opts.Now != nil {
+			return f.now()
+		}
+		return time.Now().UTC()
+	}
+	o.created = now()
+	o.State, o.phase, o.LogURL = "running", "restore", ""
+	np.State, np.OpID = "restoring", o.id
+	go func() {
+		time.Sleep(restore)
+		if start {
+			f.mu.Lock()
+			o.phase, np.State = "start_guest", "starting"
+			f.mu.Unlock()
+			time.Sleep(starting)
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		end := now()
+		np.State, np.OpID = final, ""
+		o.State, o.phase, o.finished = "done", "", &end
+	}()
 }
 
 func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError {
@@ -1858,7 +2104,13 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			continue
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
+			// host_unreachable was missing here while the real api has
+			// always sent it (internal/api/http/internal.go), so no
+			// gateway test could tell an unreachable host from a project
+			// with no address — the two the gateway collapsed into one
+			// banner until I-721.
 			"project_id": p.ID, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
+			"host_unreachable": p.HostUnreachable,
 		})
 		return nil
 	}

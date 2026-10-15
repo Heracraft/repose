@@ -365,6 +365,60 @@ tests:
               description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
               runbook: "docs/ops/RUNBOOK.md#hostunreachable"
 
+  # --- BootSlow -----------------------------------------------------------
+  - interval: 1m
+    name: BootSlow fires when most boots take over 2 minutes
+    input_series:
+      # Three creates by minute 8; only the first under 120 s.
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest"}'
+        values: "0 0 0 1 1 1 2 2 3+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest",le="120"}'
+        values: "0 0 0 1+0x35"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BootSlow
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BootSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "most creates and starts on host-01 took over 2 minutes"
+              description: "Share of the last 30 minutes' boots over 2 minutes: 66.67%."
+              runbook: "docs/ops/RUNBOOK.md#bootslow"
+
+  - interval: 1m
+    name: BootSlow stays quiet on a busy host's 30 to 70 s boots
+    input_series:
+      # Six starts, every one past 30 s and under 120 s, as on host-01 on
+      # 2026-10-13.
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest"}'
+        values: "0 1 2 3 4 5 6+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest",le="30"}'
+        values: "0+0x36"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="StartGuest",le="120"}'
+        values: "0 1 2 3 4 5 6+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BootSlow
+        exp_alerts: []
+
+  - interval: 1m
+    name: BootSlow stays quiet on one slow boot
+    input_series:
+      - series: 'repose_host_command_duration_seconds_count{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest"}'
+        values: "0 0 1+0x30"
+      - series: 'repose_host_command_duration_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",kind="CreateGuest",le="120"}'
+        values: "0+0x32"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BootSlow
+        exp_alerts: []
+
   # --- SnapshotStale ------------------------------------------------------
   - interval: 1m
     name: SnapshotStale fires past 36 hours
@@ -622,6 +676,61 @@ tests:
       - eval_time: 10m
         alertname: EgressBlocked
         exp_alerts: []
+
+  # --- NotifyFailing ------------------------------------------------------
+  - interval: 1m
+    name: NotifyFailing fires on failed sends that keep coming and ignores retries
+    input_series:
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="email",result="failed"}'
+        values: "0 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25"
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="ntfy",result="retry"}'
+        values: "0+5x26"
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x26"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NotifyFailing
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: NotifyFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "notifications are failing or not being sent"
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (10). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+
+  - interval: 1m
+    name: NotifyFailing ignores one user's ntfy server failing
+    input_series:
+      - series: 'repose_api_notify_total{job="api",instance="10.255.0.9:9103",channel="ntfy",result="failed"}'
+        values: "0+1x26"
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0+0x26"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NotifyFailing
+        exp_alerts: []
+
+  - interval: 1m
+    name: NotifyFailing fires on a due row nobody sends
+    input_series:
+      - series: 'repose_api_outbox_lag_seconds{job="api",instance="10.255.0.9:9103"}'
+        values: "0 60 120 180 240 300 360 420 480 540 600 660 720 780 840 900 960 1020"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NotifyFailing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: NotifyFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "notifications are failing or not being sent"
+              description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes (960). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+              runbook: "docs/ops/RUNBOOK.md#notifyfailing"
 
   # --- SamplesFailing -----------------------------------------------------
   - interval: 1m

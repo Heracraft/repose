@@ -7,13 +7,13 @@ order: 15
 
 Every machine has five coding agents installed, unmodified:
 
-| Agent       | `--agent`  | Login                                      | Notifies you          |
-| ----------- | ---------- | ------------------------------------------ | --------------------- |
-| Claude Code | `claude`   | Log in once, or a setup token              | Finished, needs input |
-| Codex CLI   | `codex`    | Copied from your laptop                    | Finished              |
-| opencode    | `opencode` | Copied from your laptop                    | Finished, needs input |
-| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | When it goes idle     |
-| pi          | `pi`       | A provider's API key as a secret           | When it goes idle     |
+| Agent       | `--agent`  | Login                                      | States                       |
+| ----------- | ---------- | ------------------------------------------ | ---------------------------- |
+| Claude Code | `claude`   | Log in once, or a setup token              | working, needs input, idle   |
+| Codex CLI   | `codex`    | Copied from your laptop                    | working, idle                |
+| opencode    | `opencode` | Copied from your laptop                    | working, needs input, idle   |
+| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | working, idle                |
+| pi          | `pi`       | A provider's API key as a secret           | working, idle                |
 
 `repose run -p "prompt"` uses Claude Code. To use another agent for one prompt:
 
@@ -89,14 +89,25 @@ ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
 
 You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode -p "..."` starts. Without it, the installer puts OpenCode 2 first on your `PATH` in `.bashrc`, so a plain `opencode` in a new shell is OpenCode 2, and it starts outside the project's dev environment.
 
-- **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and sends "finished", "needs input" and "error". If you edit the plugin, run `opencode2 service restart`.
+- **Notifications work.** OpenCode 2 loads the same plugin as version 1, `~/.config/opencode/plugins/repose.js`, and reports finished turns, "needs input" and "error"; only "needs input" and "error" notify you ([Notifications](/docs/notifications)). It doesn't report your prompts, so it shows `running` ([Agent states](#agent-states)), and a question it asked stays open when you answer it in its terminal. If you edit the plugin, run `opencode2 service restart`.
 - **Logins.** The first time it runs, OpenCode 2 imports the opencode logins `repose run` copied. After that, run `opencode2 auth login` on the machine, or store the provider's API key as a secret.
 - **Its web app.** OpenCode 2 keeps sessions in a background service on the machine's `localhost:49374`. Run `opencode2 pair` on the machine for a one-time link, then open it on your laptop within 5 minutes. If you're attached, the port is already on your laptop; if not, run `repose open 49374`.
 - **Updates.** `opencode2 upgrade` updates it, platform updates leave it as it is, and a restore takes it back with the rest of your home directory.
 
+## Agent states
+
+`repose ls`, `repose ps` and the dashboard show each agent's state as its hooks report it, within about 10 seconds:
+
+- `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
+- `needs input`: waiting for your permission (Claude Code and opencode).
+- `idle`: at its prompt. A finished turn sends no notification; an agent says its work is done with `repose-notify --done`.
+- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
+
+Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
+
 ## Let it ask you
 
-Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, and `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+Any agent can message you or ask you a question with two commands on the machine: `repose-notify "text"` sends a notification, `repose-notify --done "text"` says the work you asked for is finished, and `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it. If you answer the agent in its own terminal instead, the question closes by itself. The machine's guide for agents says when to use each; a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
 ## Log in
 
@@ -131,7 +142,7 @@ Never copied: your login, conversation history, anything in `~/.claude.json` bes
 
 Every agent on the machine has the [browser tools](/docs/machine#browser) `playwright` and `chrome-devtools`. In place of Claude in Chrome, `repose browser bridge` lends those tools [your laptop's Chrome](/docs/your-chrome), logins included.
 
-`run` and `attach` copy the MCP servers you added with `claude mcp add` on your laptop, at user scope and for this project, to every agent on the machine. Tokens stay on your laptop: each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or set each with `repose secrets set NAME`. Until a secret is set, a server that starts with a command stops at its start with a line naming the secret, and an HTTP server is left out of every agent; [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for both. An HTTP server arrives the next time an agent starts after you set its secret. Secrets belong to one project, so a server you use in three projects needs its secret set in each. A server that signs in with OAuth needs a sign-in with `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it. Servers that need your laptop stay there, and `run` names them once: Apple apps, a program or files on your laptop, a server on `localhost` or your own network. `repose secrets choose --off mcp` stops the copy.
+`run` and `attach` copy the MCP servers you added with `claude mcp add` on your laptop, at user scope and for this project, to every agent on the machine. Tokens stay on your laptop: each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or set each with `repose secrets set NAME`. Until a secret is set, a server that starts with a command stops at its start with a line naming the secret, and an HTTP server is left out of every agent; [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for both. An HTTP server arrives the next time an agent starts after you set its secret. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. A server that signs in with OAuth needs a sign-in with `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it. Servers that need your laptop stay there, and `run` names them once: Apple apps, a program or files on your laptop, a server on `localhost` or your own network. `repose secrets choose --off mcp` stops the copy.
 
 Agents already running see a new server, and a secret you set for one, after you restart them. Codex reads a copied server's secret each time it starts that server.
 

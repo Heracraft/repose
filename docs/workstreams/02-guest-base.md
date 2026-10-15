@@ -215,12 +215,18 @@ test covers this: install a package into the profile, delete it from the
 
 A binary built in the guest (cc, cgo, node-gyp, cargo) names base store
 paths directly: the gcc wrapper's glibc as its interpreter, gcc-lib and the
-`PKG_CONFIG_PATH` libraries in its RUNPATH. `repose-pin-profile` copies
-the closures of those link targets up too, at every boot and switch, and
-roots each under `/nix/var/nix/gcroots/repose-link-targets/`, so a binary
-in a checkout keeps running after a base change and a host GC (DECISIONS
-I-533). An unchanged glibc costs nothing; a new one costs its closure in
-the upper dir (about 36 MiB for glibc, 9 MiB for openssl).
+`PKG_CONFIG_PATH` libraries in its RUNPATH. Those closures are **not**
+copied into the overlay: the copy cost 31 to 87 s of every first boot and
+75 MB of every volume, and a real host garbage collection can take only
+two of its eleven libraries (the other nine are in the host's own system
+closure, and compat.nix keeps all eleven in the closure the host roots per
+guest). `repose-pin-profile` still roots each of the eleven under
+`/nix/var/nix/gcroots/repose-link-targets/` — eleven symlinks, no bytes,
+and the record of which paths an older binary in a checkout may name — and
+`repose-store-repair` fetches one back from cache.nixos.org in about 0.3 s
+when it is really gone, which `repose-store-repair.timer` checks once a
+boot, four minutes in, past the window a create needs (DECISIONS I-718,
+I-719, amend I-533).
 
 Deleting a path the lower layer also has leaves a whiteout in the upper
 dir that hides the host's copy. guestd roots every path the lower layer

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -565,8 +566,12 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		}
 		open, _ := store.OpenOpsForProject(ctx, e.pool, p.ID)
 		if len(open) > 0 {
-			continue // the op's result settles the state
+			continue // the op's result settles the state and the address
 		}
+		// The host's word on its own guest's address (I-720): Hello is
+		// the only message that carries one for a guest the api has no
+		// result for.
+		e.recordGuestAddress(ctx, p, g.GetIp(), g.GetVsockCid(), "hello")
 		if settled(g.State) && settled(p.State) && g.State != p.State {
 			e.log.Info("reconciling project state from Hello", "event", "reconcile", "project_id", p.ID.String(), "from", p.State, "to", g.State)
 			if err := store.SetProjectState(ctx, e.pool, p.ID, g.State); err != nil {
@@ -627,6 +632,66 @@ func (e *Engine) OnHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 		_ = e.send.Send(ctx, hostID, cmd) // a failed send is retried on the next Hello
 	}
 	e.Kick()
+}
+
+// recordGuestAddress writes the address the host reports for a project's
+// guest when the project row does not hold it, or holds another one
+// (DECISIONS I-720).
+//
+// Until this, projects.guest_ip had exactly one writer: the
+// CreateResult/RestoreResult phase. A create or restore that failed after
+// the guest had booted, and every start after it, left the row NULL with
+// a guest the gateway could have reached — teksafari-org, 2026-10-13,
+// which a hand-written UPDATE cleared. The host is the authority for its
+// own guests' addresses: it allocates them inside the disjoint /22 the
+// api handed it at registration (hostmgr.allocate) and keeps the
+// allocation in bbolt across a stop, so a row that disagrees with the
+// host is a stale row. A stopped guest keeps its address here; the
+// gateway routes on state, not on whether an address is recorded.
+//
+// Idempotent, per CLAUDE.md's reconcile rule: it writes only when the row
+// differs, and the write names the guest, so a destroy or a restore that
+// moved the guest in between is not overwritten by it. src is where the
+// address came from, for the log line: "hello" or "start".
+func (e *Engine) recordGuestAddress(ctx context.Context, p *store.Project, ipStr string, cidRaw uint32, src string) {
+	if p.GuestID == nil {
+		return
+	}
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return // no address for this guest, or a hostd too old to send one
+	}
+	var cid *int32
+	if c := int32(cidRaw); c != 0 {
+		cid = &c
+	}
+	haveIP := p.GuestIP != nil && *p.GuestIP == ip
+	haveCID := cid == nil || (p.VsockCID != nil && *p.VsockCID == *cid)
+	if haveIP && haveCID {
+		return
+	}
+	// The addresses themselves stay out of the log line
+	// (docs/ops/OBSERVABILITY.md §5): ids, states and which way it moved.
+	change := "learned"
+	if p.GuestIP != nil {
+		change = "corrected"
+	}
+	e.log.Info("recording the address the host reports for a guest", "event", "guest_address", "change", change, "from", src,
+		"project_id", p.ID.String(), "guest_id", p.GuestID.String(), "state", p.State)
+	if _, err := e.pool.Exec(ctx,
+		"update projects set guest_ip = $3, vsock_cid = coalesce($4, vsock_cid) where id = $1 and guest_id = $2 and destroyed_at is null",
+		p.ID, *p.GuestID, ip.String(), cid); err != nil {
+		// A unique violation is I-723's index catching two live projects
+		// claiming one address: the row stays as it was and the next
+		// Hello tries again, rather than two logins relaying to one
+		// guest.
+		e.log.Warn("the address the host reports was not recorded", "event", "guest_address", "from", src, "project_id", p.ID.String(), "guest_id", p.GuestID.String(), "err", err.Error())
+		return
+	}
+	p.GuestIP = &ip
+	if cid != nil {
+		p.VsockCID = cid // coalesce kept the old one when the host sent none
+	}
 }
 
 func settled(state string) bool {

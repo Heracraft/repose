@@ -3,7 +3,13 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { getProject, listSecrets, putSecret, deleteSecret } from '$lib/api/client';
+	import {
+		getProject,
+		listSecrets,
+		putSecret,
+		deleteSecret,
+		listAccountSecrets
+	} from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
 	import { encodeBase64 } from '$lib/base64';
 	import { dateTime } from '$lib/format';
@@ -25,6 +31,9 @@
 
 	let project = $state<Project | undefined>(undefined);
 	let secrets = $state<SecretMeta[] | undefined>(undefined);
+	// The account's secrets reach this machine too, under its own (I-697).
+	let account = $state<SecretMeta[]>([]);
+	let own = $derived(new Set((secrets ?? []).map((s) => s.name)));
 
 	let name = $state('');
 	let value = $state('');
@@ -44,7 +53,12 @@
 
 	async function load() {
 		try {
-			[project, secrets] = await Promise.all([getProject(id), listSecrets(id)]);
+			[project, secrets, account] = await Promise.all([
+				getProject(id),
+				listSecrets(id),
+				// The project's page works without them.
+				listAccountSecrets().catch(() => account)
+			]);
 			loadFailed = false;
 		} catch (err) {
 			if (secrets === undefined) {
@@ -172,12 +186,12 @@
 		     form's height so the two end level. -->
 		<div
 			class="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12 {secrets?.length ===
-			0
+				0 && account.length === 0
 				? 'lg:items-stretch'
 				: ''}"
 		>
 			<div class="min-w-0">
-				{#if secrets && secrets.length === 0}
+				{#if secrets && secrets.length === 0 && account.length === 0}
 					<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
 					     to add one is beside it, so the sentence is where a secret
 					     lands, not how to add one (I-485). -->
@@ -192,7 +206,7 @@
 							>.
 						</p>
 					</div>
-				{:else if secrets}
+				{:else if secrets && secrets.length > 0}
 					<!-- pt-5 puts this h2 level with the card's. -->
 					<h2 class="text-xl font-semibold lg:pt-5">
 						{secrets.length}
@@ -271,6 +285,42 @@
 							{/each}
 						</tbody>
 					</table>
+				{/if}
+				{#if secrets && account.length > 0}
+					<!-- Set on Settings for every project; a name the project
+					     has itself is its own value here (I-697). -->
+					<section class={secrets.length > 0 ? 'mt-10' : 'lg:pt-5'} data-testid="account-secrets">
+						<h2 class="text-xl font-semibold">From your account</h2>
+						<p class="mt-1 text-sm text-ink-muted">
+							Every project gets these, set in
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
+							<a class="link" href={resolve('/settings') + '#secrets'}>Settings</a>.
+						</p>
+						<table class="table mt-3">
+							<thead>
+								<tr>
+									<th scope="col">Name</th>
+									<th scope="col" class="w-px whitespace-nowrap"
+										><span class="sr-only">On this machine</span></th
+									>
+								</tr>
+							</thead>
+							<tbody>
+								{#each account as s (s.name)}
+									<tr>
+										<td
+											class="font-mono wrap-anywhere align-middle {own.has(s.name)
+												? 'text-ink-muted line-through'
+												: ''}"><span>{@render secretName(s.name)}</span></td
+										>
+										<td class="align-middle text-sm whitespace-nowrap text-ink-muted">
+											{own.has(s.name) ? "This project's own is used" : ''}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</section>
 				{/if}
 			</div>
 

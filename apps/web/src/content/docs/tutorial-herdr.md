@@ -70,7 +70,7 @@ A machine in the sidebar holds an SSH connection open while your laptop's herdr 
 ## What changes on a repose machine
 
 - **Claude Code doesn't ask.** It runs in `bypassPermissions` mode on the machine ([Agents](/docs/agents#let-it-run-without-asking)), so herdr seldom shows it as blocked.
-- **Notifications come from the machine.** `finished` and `needs input` reach your phone and email as on tmux ([Notifications](/docs/notifications)).
+- **Notifications come from the machine.** `needs input` and an agent's `repose-notify --done` reach your phone and email as on tmux ([Notifications](/docs/notifications)).
 - **One herdr per machine.** The base's herdr runs the machine; `herdr update` on the machine installs a second one into `~/.local/bin` that repose doesn't test. Remove it to go back.
 - **A restore takes herdr with it.** Its layout lives in `~/.config/herdr` on the machine, so restoring a snapshot puts the workspaces back as they were then.
 

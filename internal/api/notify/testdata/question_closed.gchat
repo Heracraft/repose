@@ -1,0 +1,22 @@
+{
+  "fallbackText": "Answered yes from the dashboard",
+  "cardsV2": [
+    {
+      "cardId": "repose",
+      "card": {
+        "sections": [
+          {
+            "widgets": [
+              {
+                "textParagraph": {
+                  "text": "Answered yes from the dashboard"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+threadKey: q-01a0c14a-fdb3-78af-9c30-5abd8fce0a84

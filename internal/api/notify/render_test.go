@@ -56,12 +56,20 @@ func fixtures() map[string]notify.Message {
 		"https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=email",
 		"https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=email",
 	}, Expires: fixtureExpires}
+	q.Window, q.At = "main", fixtureExpires.Add(-30*time.Minute)
+	free := agent("agent_question", "Which address should the invoices go to?")
+	free.Window, free.At = "main", fixtureExpires.Add(-30*time.Minute)
+	free.Question = &notify.QuestionLinks{ID: fixtureQ, Options: []string{}, Expires: fixtureExpires}
+	done := agent("agent_done", "Billing export is in place: 14 tests pass, committed on branch export.\nLook at docs/export.md first.")
+	done.Window, done.At = "main", fixtureExpires
 	return map[string]notify.Message{
 		"completed":              agent("completed", "Added the auth flow, 14 tests green, committed 3f9e2a1."),
 		"needs_input":            agent("needs_input", "Allow Bash(rm -rf node_modules)?"),
 		"error":                  agent("error", "npm test exited 1: 3 failures in auth.test.ts"),
 		"agent_message":          agent("agent_message", "Deploy to staging is green."),
 		"agent_question":         q,
+		"agent_question_free":    free,
+		"agent_done":             done,
 		"idle_running":           agent("idle_running", "todo-app (large) has run 24h with no session, no tmux client and no agent working. Stop it with `repose stop todo-app` if you are done."),
 		"base_updated":           platform("base_updated", "Platform base 2026.09.27.1 is running on this machine."),
 		"base_update_failed":     platform("base_update_failed", "Platform base 2026.09.27.1 did not build with your configuration; the machine stays on 2026.09.20.3. See the build log on the dashboard."),
@@ -83,6 +91,8 @@ func fixtures() map[string]notify.Message {
 		"egress_stopped":         account("egress_stopped", map[string]any{"plan": "solo", "egress_gb": 1002.4, "limit_gb": 250, "until": "2026-10-27T14:00:00Z"}),
 		"disk_over_plan":         account("disk_over_plan", map[string]any{"plan": "solo", "held_gb": 112.4, "limit_gb": 100}),
 		"machines_restarted":     machinesRestarted(),
+		"test":                   {Kind: notify.TestKind, Summary: "This is a test from repose.", Email: "u@example.com", Dashboard: dash},
+		"notify_channel_broken":  account("notify_channel_broken", map[string]any{"channel": "gchat", "space": "AAAAx1yZ", "since": "2026-10-12T09:30:00Z"}),
 	}
 }
 
@@ -166,7 +176,9 @@ func TestGoldenEmails(t *testing.T) {
 				t.Errorf("%s%s differs from the golden file (run with -update and read the diff)\n--- got ---\n%s", kind, ext, got)
 			}
 		}
-		transactional := events.AccountKinds[kind]
+		// The test message is sent straight to the user, without the
+		// outbox's unsubscribe link.
+		transactional := events.AccountKinds[kind] || kind == notify.TestKind
 		if strings.Contains(r.Text, "Stop these emails") != !transactional || strings.Contains(r.HTML, "Stop these emails") != !transactional {
 			t.Errorf("%s: unsubscribe line present=%v, transactional=%v", kind, !transactional, transactional)
 		}
@@ -228,5 +240,38 @@ func TestEmailSendsHTMLAndText(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.HTML, "<!doctype html>") || !strings.Contains(got.HTML, "$29.00") || !strings.Contains(got.Text, "$29.00") || !strings.Contains(got.Text, "4 October 2026 at 14:00 UTC") {
 		t.Fatalf("html:\n%s\ntext:\n%s", got.HTML, got.Text)
+	}
+}
+
+// TestMetaInTheUsersZone: the question and done emails print times in the
+// user's zone, as the pause notice does, and in UTC when none is set.
+func TestMetaInTheUsersZone(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	at := time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC)
+	m := notify.Message{Kind: "agent_question", Agent: "claude", Window: "main", Project: "todo-app", Summary: "ok?", Email: "u@example.com", Dashboard: dash, At: at, Loc: berlin,
+		Question: &notify.QuestionLinks{ID: uuid.New(), Expires: at.Add(30 * time.Minute)}}
+	r, err := notify.Render(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "claude · main · asked 28 Sep 20:00 CEST · open until 20:30 CEST"; !strings.Contains(r.Text, want) {
+		t.Fatalf("no %q in\n%s", want, r.Text)
+	}
+}
+
+// TestOutboxPassesTheUsersZone: the outbox hands the user's tz to the
+// message.
+func TestOutboxPassesTheUsersZone(t *testing.T) {
+	h := newHoldEnv(t)
+	if _, err := h.pool.Exec(h.ctx, "update users set tz = 'Europe/Berlin'"); err != nil {
+		t.Fatal(err)
+	}
+	h.insert("agent_done", "main")
+	h.pass(h.now.Add(time.Second))
+	if len(h.sent.sent) != 1 || h.sent.sent[0].Loc == nil || h.sent.sent[0].Loc.String() != "Europe/Berlin" {
+		t.Fatalf("sent %+v", h.sent.sent)
 	}
 }

@@ -32,8 +32,9 @@ type Streamer interface {
 type Pipeline struct {
 	R shell.Runner
 	// Sandbox runs dumpe2fs, which parses metadata the guest wrote, in
-	// shell.Sandboxed rather than as hostd (DECISIONS I-465). hostd sets
-	// it; tests on image files leave it off.
+	// shell.Sandboxed rather than as hostd (DECISIONS I-465), and the
+	// restore's zstd -d in shell.SandboxedFilter (I-700). hostd sets it;
+	// tests on image files leave it off.
 	Sandbox bool
 	// ReplayJournal lets Read replay the journal of an ext4 volume that
 	// needs recovery (a guest that was killed, or crashed) before it reads
@@ -213,7 +214,14 @@ func (p *Pipeline) readRaw(ctx context.Context, dev, why string) (io.ReadCloser,
 // not a clean ext4) is written piece by piece, its zero pieces skipped.
 // Both go around the page cache where the device allows it (direct.go).
 func (p *Pipeline) Write(ctx context.Context, dev string, r io.Reader) error {
-	zs, err := p.R.Start(ctx, r, "zstd", "-d", "-q", "-c")
+	// The bytes come from the store and are checked against the
+	// snapshot's digest only as they are written (DECISIONS I-700), so the
+	// decompressor runs where a bug in it reaches nothing but its pipes.
+	argv := []string{"zstd", "-d", "-q", "-c"}
+	if p.Sandbox {
+		argv = shell.SandboxedFilter(argv...)
+	}
+	zs, err := p.R.Start(ctx, r, argv...)
 	if err != nil {
 		return fmt.Errorf("zstd -d: %w", err)
 	}

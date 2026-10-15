@@ -121,6 +121,29 @@ test('the Errors filter shows only errors', async ({ page }) => {
 	await expect(ev.card.getByTestId('events-total')).toHaveText('10 events');
 });
 
+// A stop that failed reaches the user by itself since `repose stop`
+// returns early (I-710): it is an error, and the Errors filter finds it.
+test('a failed stop is an error', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'stop-app',
+		remote_url: 'github.com/heracraft/stop-app'
+	});
+	await addEvents(p.id, 4, {
+		kinds: ['stop_failed', 'agent_message'],
+		agents: ['', 'claude'],
+		summaries: ['stopping stop-app failed: the host did not answer', 'working']
+	});
+	await page.goto(`/projects/${p.id}`);
+	const ev = eventsCard(page);
+	await ev.card.getByRole('link', { name: 'Errors' }).click();
+	await expect(page).toHaveURL(/events_kind=errors/);
+	await expect(ev.rows).toHaveCount(2);
+	for (const kind of await ev.rows.evaluateAll((els) => els.map((e) => e.dataset.kind))) {
+		expect(kind).toBe('stop_failed');
+	}
+	await expect(ev.rows.first()).toContainText('failed');
+});
+
 test('a project with few events has one page', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'calm-app',
@@ -164,4 +187,25 @@ test('the project page holds still while it loads, at 390', async ({ page }) => 
 	await page.waitForTimeout(1500);
 	const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 	expect(cls).toBeLessThanOrEqual(0.05);
+});
+
+// The same on /projects: the questions come with the list, so "Waiting on
+// you" is in the first paint above the strip, and the strip does not move
+// once drawn (I-693). (The page's skeleton giving way to the list is a
+// shift of its own, which this does not measure.)
+test('the projects list draws Waiting on you with the strip, at 390', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'still-list-app',
+		remote_url: 'github.com/heracraft/still-list-app'
+	});
+	await addQuestion(p.id, { agent: 'claude', text: 'Hold still?', options: ['yes', 'no'] });
+	await page.goto('/projects');
+	const strip = page.getByTestId('plan-strip');
+	await strip.waitFor();
+	const card = page.getByTestId('pending-questions');
+	expect(await card.isVisible()).toBe(true);
+	const first = await strip.boundingBox();
+	await page.waitForTimeout(1500);
+	expect(await strip.boundingBox()).toEqual(first);
 });

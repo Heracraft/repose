@@ -69,3 +69,15 @@ func Sandboxed(dev string, write bool, argv ...string) []string {
 	}
 	return append(append(out, "--"), argv...)
 }
+
+// SandboxedFilter returns argv wrapped as Sandboxed does, with no device
+// at all: a filter that reads stdin and writes stdout, such as the zstd
+// that decompresses a snapshot from the store before a byte of it is
+// known to be the one taken (DECISIONS I-700).
+func SandboxedFilter(argv ...string) []string {
+	out := []string{"systemd-run", "--quiet", "--pipe", "--wait", "--collect"}
+	for _, p := range ParserProps {
+		out = append(out, "--property", p)
+	}
+	return append(append(out, "--"), argv...)
+}

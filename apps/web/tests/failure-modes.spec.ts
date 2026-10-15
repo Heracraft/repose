@@ -213,20 +213,24 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 	page
 }) => {
 	await fail('GET', '/projects', 'internal');
-	await page.goto('/projects');
-	// The api answered, so the bar says it is failing, not that it cannot
-	// be reached (I-390); the page's banner names the failure once, with
-	// no toast repeating it.
+	// The rule is lifted whatever happens here: left on, it fails every
+	// later spec that lists projects (CI on b2524af4).
 	const bar = page.getByText('The API is failing right now. Retrying…');
-	await expect(bar).toBeVisible({ timeout: 15_000 });
-	// Said inside the live region that was on the page before it (I-393).
-	await expect(page.getByRole('status').filter({ has: bar })).toHaveAttribute('id', 'outage');
-	await expect(page.getByText('Cannot reach the API')).toHaveCount(0);
-	await expect(
-		page.getByText('Could not load projects. The API failed on its side; try again shortly.')
-	).toHaveCount(1);
-
-	await unfail('GET', '/projects');
+	try {
+		await page.goto('/projects');
+		// The api answered, so the bar says it is failing, not that it cannot
+		// be reached (I-390); the page's banner names the failure once, with
+		// no toast repeating it.
+		await expect(bar).toBeVisible({ timeout: 15_000 });
+		// Said inside the live region that was on the page before it (I-393).
+		await expect(page.getByRole('status').filter({ has: bar })).toHaveAttribute('id', 'outage');
+		await expect(page.getByText('Cannot reach the API')).toHaveCount(0);
+		await expect(
+			page.getByText('Could not load projects. The API failed on its side; try again shortly.')
+		).toHaveCount(1);
+	} finally {
+		await unfail('GET', '/projects');
+	}
 	// The next poll is scheduled up to 60s out once unreachable (backoff);
 	// reloading forces an immediate re-check rather than waiting it out.
 	await page.reload();
@@ -234,4 +238,26 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 	// The region stays, empty, for the next outage to be announced in.
 	await expect(page.locator('#outage')).toBeAttached();
 	await expect(page.locator('#outage')).toBeEmpty();
+});
+
+test('a questions answer arriving after a failed list leaves the bar up', async ({ page }) => {
+	// The first load asks for the questions beside the list (I-693). Their
+	// answer, held until after the list's 500, is a side read: it must not
+	// clear the bar the list raised (I-393; CI on b2524af4).
+	await page.route(/\/questions\?state=pending$/, async (route) => {
+		await new Promise((r) => setTimeout(r, 1_500));
+		await route.continue();
+	});
+	await fail('GET', '/projects', 'internal');
+	try {
+		const answered = page.waitForResponse(/\/questions\?state=pending$/);
+		await page.goto('/projects');
+		const bar = page.getByText('The API is failing right now. Retrying…');
+		await expect(bar).toBeVisible({ timeout: 15_000 });
+		await answered;
+		await page.waitForTimeout(500);
+		await expect(bar).toBeVisible();
+	} finally {
+		await unfail('GET', '/projects');
+	}
 });

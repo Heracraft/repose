@@ -372,6 +372,19 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The op in flight, on the single-project read only (DECISIONS
+	// I-722). Until this, only the create's own 201 carried an op id, so
+	// `repose run` on a checkout whose project already existed fell back
+	// to polling states: `waitState` returns on any settled state, `error`
+	// included, and the next statement started the machine — one user
+	// action, two ops, and the create's error never read (teksafari-org,
+	// 2026-10-13). With the id here the wait follows the op and reports
+	// what it said. Ops are serialised per project, so the oldest open one
+	// is the one running. The list path does not carry it: a query per
+	// project is an N+1.
+	if open, oerr := store.OpenOpsForProject(r.Context(), s.d.Pool, p.ID); oerr == nil && len(open) > 0 {
+		j["op_id"] = open[0].ID
+	}
 	writeJSON(w, http.StatusOK, j)
 	return nil
 }
@@ -685,10 +698,11 @@ func opJSON(r *http.Request, op *store.Op) map[string]any {
 	}
 	if op.Result != nil {
 		// The console tail of a failed boot is served by the logs route
-		// (I-592), not with every read of the op.
+		// (I-592), not with every read of the op; the boot's timings are
+		// the operators' (I-707).
 		res := make(map[string]any, len(op.Result))
 		for k, v := range op.Result {
-			if k != "console" {
+			if k != "console" && k != "boot" {
 				res[k] = v
 			}
 		}

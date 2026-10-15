@@ -333,3 +333,36 @@ func TestHumanErrorVolumeUnavailable(t *testing.T) {
 		t.Fatalf("human %q %v", got, ok)
 	}
 }
+
+// TestStopReportsItsFailure is I-710: `repose stop` returns once the stop
+// is under way, so a stop that fails has to reach the user by itself. The
+// project reads error with a reason that names the retry, and a
+// stop_failed event notifies.
+func TestStopReportsItsFailure(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("dora")
+	p := h.CreateRunning(u, "job")
+	pid := p.ID
+	h.Fake.SetFail("StopGuest", "internal")
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Params: map[string]any{"snapshot": true}, Phases: ops.PlanStop()}))
+	if op.State != "error" {
+		t.Fatalf("stop with a failing host: %s", op.State)
+	}
+	got := h.Project(pid)
+	if got.State != "error" || got.LastError == nil || !strings.Contains(*got.LastError, "stopping job failed: ") || !strings.Contains(*got.LastError, "`repose stop job` tries again") {
+		t.Fatalf("after a failed stop: state %s last_error %v", got.State, got.LastError)
+	}
+	evs, _ := store.ListEvents(h.Ctx, h.Pool, pid, time.Time{}, 50)
+	n := 0
+	for _, e := range evs {
+		if e.Kind == "stop_failed" {
+			n++
+			if !strings.HasPrefix(e.Summary, "stopping job failed: ") || !strings.HasSuffix(e.Summary, "`repose stop job` tries again.") {
+				t.Fatalf("summary %q", e.Summary)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d stop_failed events: %+v", n, evs)
+	}
+}

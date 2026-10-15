@@ -266,3 +266,30 @@ func TestFreeingSkipsPoolUnavailable(t *testing.T) {
 		t.Fatalf("freeing %v %v on a host whose pool is down, want false", ok, err)
 	}
 }
+
+// The host reserve is an eighth of the host's memory with a 2 GiB floor
+// and a 16 GiB ceiling (DECISIONS I-724). The two sizes repose runs today
+// keep the figures the flat steps gave them, and an 8 GB host — which the
+// flat 8 GiB left unable to start anything — keeps 6 GB for guests, enough
+// for a small one.
+func TestHostReserveIsAnEighthWithAFloorAndACeiling(t *testing.T) {
+	gib := int64(1) << 30
+	for _, c := range []struct{ total, want int64 }{
+		{4 * gib, 2 * gib},
+		{8 * gib, 2 * gib},
+		{16 * gib, 2 * gib},
+		{32 * gib, 4 * gib},
+		{64 * gib, 8 * gib},
+		{128 * gib, 16 * gib},
+		{256 * gib, 16 * gib},
+		{1024 * gib, 16 * gib},
+	} {
+		if got := scheduler.HostReserve(c.total); got != c.want {
+			t.Errorf("HostReserve(%d GiB) = %d GiB, want %d GiB", c.total/gib, got/gib, c.want/gib)
+		}
+	}
+	// A small guest (4 GiB + 512 MiB) fits on an 8 GB host.
+	if 8*gib-scheduler.HostReserve(8*gib) < 4*gib+512<<20 {
+		t.Error("an 8 GB host cannot start a small guest")
+	}
+}

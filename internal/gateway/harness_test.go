@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/heracraft/repose/internal/ca/testca"
@@ -177,6 +178,20 @@ func (h *harness) route(guestIP, target string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.dials[guestIP+":22"] = target
+}
+
+// authFails is the current value of repose_gateway_auth_fail_total for
+// one reason.
+func (h *harness) authFails(reason string) int {
+	var m dto.Metric
+	c, err := h.metrics.AuthFailTotal.GetMetricWithLabelValues(reason)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if err := c.Write(&m); err != nil {
+		h.t.Fatal(err)
+	}
+	return int(m.GetCounter().GetValue())
 }
 
 // userCert signs a user certificate for the project ids.

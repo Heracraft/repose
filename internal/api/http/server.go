@@ -112,6 +112,10 @@ type RateLimits struct {
 // ReplyLinkRate caps tries per question on the public reply links.
 const ReplyLinkRate = 20
 
+// NotifyTestRate caps POST /me/notify-test per user a minute: each one
+// sends a real email and push (DECISIONS I-691).
+const NotifyTestRate = 6
+
 // DefaultRateLimits are 60/min for writes, 600/min for reads, 10/min POST
 // /certs, 5/min PUT /config (api.md "Rate limits", DECISIONS I-187).
 var DefaultRateLimits = RateLimits{General: 60, Reads: 600, Certs: 10, Config: 5}
@@ -127,6 +131,7 @@ type Server struct {
 	certs    *ratelimit.Limiter
 	cfg      *ratelimit.Limiter
 	replies  *ratelimit.Limiter // per question, on the public reply links
+	tests    *ratelimit.Limiter // POST /me/notify-test, per user
 	sessions *sessionTracker
 	seats    seatsCache // GET /public/seats, a minute old at most
 	ready    bool
@@ -151,7 +156,7 @@ func New(d Deps) *Server {
 		lim.Reads = 10 * lim.General
 	}
 	s := &Server{d: d, user: http.NewServeMux(), internal: http.NewServeMux(),
-		general: ratelimit.New(lim.General), reads: ratelimit.New(lim.Reads), certs: ratelimit.New(lim.Certs), cfg: ratelimit.New(lim.Config), replies: ratelimit.New(ReplyLinkRate), sessions: newSessionTracker(d.Pool)}
+		general: ratelimit.New(lim.General), reads: ratelimit.New(lim.Reads), certs: ratelimit.New(lim.Certs), cfg: ratelimit.New(lim.Config), replies: ratelimit.New(ReplyLinkRate), tests: ratelimit.New(NotifyTestRate), sessions: newSessionTracker(d.Pool)}
 	s.registerUserRoutes()
 	s.registerInternalRoutes()
 	s.route(s.user, "GET /v1/notify/unsubscribe", s.unsubscribeGet)
@@ -495,6 +500,7 @@ func (s *Server) SweepLimiters() {
 	s.certs.Sweep(10 * time.Minute)
 	s.cfg.Sweep(10 * time.Minute)
 	s.replies.Sweep(10 * time.Minute)
+	s.tests.Sweep(10 * time.Minute)
 }
 
 // --- health -------------------------------------------------------------

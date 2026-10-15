@@ -32,7 +32,7 @@ func TestStopSaysWhatItLeaves(t *testing.T) {
 
 	dir := t.TempDir()
 	at := time.Now().Add(-9 * time.Hour)
-	saveStopLeft(dir, "id-1", rows[:1], at)
+	saveStopLeft(dir, "id-1", guestStatus{git: rows[:1]}, at)
 	p := &Project{ID: "id-1", Slug: "todo-app", State: "stopped", Class: "large"}
 	l, ok := stoppedRows(dir, p)
 	if !ok {
@@ -49,8 +49,8 @@ func TestStopSaysWhatItLeaves(t *testing.T) {
 	if _, ok := stoppedRows(dir, p); ok {
 		t.Fatal("rows shown for a machine that ran after the stop")
 	}
-	// A stop that could not read the machine forgets the old rows.
-	saveStopLeft(dir, "id-1", nil, time.Now())
+	// A stop of a machine with no checkout forgets the old rows.
+	saveStopLeft(dir, "id-1", guestStatus{}, time.Now())
 	p.StartedAt = nil
 	if _, ok := stoppedRows(dir, p); ok {
 		t.Fatal("rows kept after a stop that read none")

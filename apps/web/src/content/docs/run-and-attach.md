@@ -49,12 +49,12 @@ Two agents in one working tree edit the same files. Give each its own tree on th
 |                       | `repose run -d --worktree -p "..."`      | `repose fork -n 3 --prompt "..."`                                  |
 | --------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
 | Runs on               | this project's machine                   | a new machine each, `todo-app-fork-1` and on                       |
-| Starts from           | the checkout's last commit               | a snapshot of the disk: uncommitted work and dependencies included |
+| Starts from           | the checkout's last commit               | a copy of the disk as it is now: uncommitted work and dependencies included |
 | Memory                | the machine's own                        | each copy's size, toward your plan                                 |
 | Work comes back with  | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`           |
 | Clean up              | `repose stop -w claude-2`                | `repose rm todo-app-fork-1`                                        |
 
-`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a snapshot, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
+`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a copy of the disk, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
 
 `--worktree` starts the agent in its own git worktree:
 
@@ -87,7 +87,7 @@ One machine can hold more than one repository. In a second folder, `--on` adds i
 ~/code/api $ repose run --on todo-app
 Connected to todo-app (small)
 Added api to todo-app as ~/api.
-Synced: 3 untracked
+Synced: 0 modified, 3 untracked  0.6s
 ```
 
 The folder gets its own checkout, `~/api`, named after the folder like the first one (`~/api-2` if the machine already has an `api`). It doesn't count as another project, so it uses none of your plan's running memory beyond what the agents in it use. Your laptop remembers the folder: from then on a plain `repose run`, `attach`, `sync`, `exec`, `ssh`, `cp :PATH` or `code` in `~/code/api` works in `~/api`, and `git fetch repose` there brings back that checkout's commits.
@@ -119,7 +119,7 @@ repose attach
 repose attach todo-app
 ```
 
-`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. A stopped machine starts first, as with `run`. In the checkout, one word that names none of your projects is a window: `repose attach claude-2`.
+`attach` doesn't sync your checkout, so it's safe to use from a second computer whose copy is older. A stopped machine starts first, as with `run`, and one starting or stopping is waited for; from your home folder too, by name: `repose attach todo-app`. In the checkout, one word that names none of your projects is a window: `repose attach claude-2`.
 
 Several terminals can be attached at once, from one computer or several. They see the same windows.
 

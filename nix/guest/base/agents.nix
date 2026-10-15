@@ -22,6 +22,12 @@ let
       Stop = [
         { matcher = ""; hooks = [ { type = "command"; command = "repose-hook"; } ]; }
       ];
+      # The user sent a prompt: guestd closes the questions this Claude
+      # asked and marks it working; the prompt's text is never read
+      # (DECISIONS I-690, I-694).
+      UserPromptSubmit = [
+        { matcher = ""; hooks = [ { type = "command"; command = "repose-hook"; } ]; }
+      ];
     };
   };
 in
@@ -90,17 +96,17 @@ in
     # sources so a command it runs gets what an agent gets (DECISIONS I-275).
     environment.etc."repose/devshell.sh".source = pkgs.reposeDevshell;
 
-    # Every agent that has a hook system is registered here; the rest use
-    # guestd's pane-idle heuristic (docs/features/agents.md).
+    # How each agent reports to repose-hook (docs/features/agents.md);
+    # guestd's pane-idle heuristic covers an agent until its first hook.
     environment.etc."repose/agents.json".text = builtins.toJSON (lib.mapAttrs (name: pkg: {
       binary = pkg.binary;
       version = pkg.version;
       hook = {
-        claude-code = "settings.json hooks Notification+Stop";
-        codex = "config.toml notify";
+        claude-code = "settings.json hooks Notification+Stop+UserPromptSubmit";
+        codex = "config.toml notify, /etc/codex/config.toml hooks UserPromptSubmit";
         opencode = "plugin ~/.config/opencode/plugins/repose.js";
-        gemini-cli = "heuristic";
-        pi-coding-agent = "heuristic";
+        gemini-cli = "extension hooks BeforeAgent+AfterAgent";
+        pi-coding-agent = "extension events input+agent_end";
       }.${name};
     }) pkgs.reposeAgents);
   } ];

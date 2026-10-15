@@ -60,10 +60,28 @@ type Options struct {
 	// done, the way the real destroy op does. Zero keeps the instant
 	// destroy.
 	DestroyDelay time.Duration
+	// StopDelay makes POST /projects/:id/stop on a running project leave
+	// it "stopping" and its op "running" for the delay, then stopped and
+	// done, as the real stop op does while it snapshots and shuts down.
+	// Zero keeps the instant stop.
+	StopDelay time.Duration
+	// StopPickup, with StopDelay, keeps the project "running" for this
+	// long after the stop is accepted: the real api reads "stopping" only
+	// once its engine has picked the op up.
+	StopPickup time.Duration
+	// ForkStepDelay makes each fork copy's restore op run its steps the
+	// way the engine does: phase restore (project "restoring") for the
+	// delay, then, when the copy starts, phase start_guest (project
+	// "starting") for the delay times the copy's number, then done. Zero
+	// keeps the instant fork.
+	ForkStepDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
 	NoLongPoll bool
+	// NoProjectOpID makes GET /projects/:id leave out op_id, as the api
+	// before I-722 did.
+	NoProjectOpID bool
 }
 
 // OpWaitMax caps ?wait on the op read, as the api does (I-236).
@@ -102,6 +120,8 @@ type Fake struct {
 	// the op fails with an error, or ends done with a warning the way a
 	// start whose new system did not boot does (DECISIONS I-590).
 	startOutcome map[string]startOutcome
+	// stopOutcome is how the next stop of a project ends, when set.
+	stopOutcome map[string]stopOutcome
 	// console is each project's console lines from failed boots, what
 	// GET /logs?kind=console serves (I-592).
 	console map[string][]string
@@ -110,31 +130,39 @@ type Fake struct {
 	mux    *http.ServeMux
 	routes []string
 
-	mu           sync.Mutex
-	seq          int64
-	reqSeq       int64
-	ipSeq        int
-	serial       uint64
-	tokens       map[string]string // token -> user id
-	users        map[string]*userRec
-	projects     map[string]*project
-	ops          map[string]*op
-	forks        map[string][]forkRec // by user id and request_id (I-254)
-	certs        map[uint64]*cert
-	revoked      []revocation
-	failOnce     []failRule
-	failAlways   map[string]string
-	hits         map[string][]time.Time
-	hosts        []Host // nil means the one canned host
-	gatewayCerts int    // POST /internal/gateway-certs calls, for cache tests
-	sessions     []SessionReport
-	questions    []*Question // newest last (DECISIONS I-245)
+	mu       sync.Mutex
+	seq      int64
+	reqSeq   int64
+	ipSeq    int
+	serial   uint64
+	tokens   map[string]string // token -> user id
+	users    map[string]*userRec
+	projects map[string]*project
+	ops      map[string]*op
+	forks    map[string][]forkRec // by user id and request_id (I-254)
+	// forkNoClone makes a fork without snapshot_id answer 409
+	// snapshot_needed, as the api does when the source's host cannot hold
+	// the copies (I-701); oldFork answers it, and a snapshot's reason, as
+	// an api before I-701 and I-703 did.
+	forkNoClone, oldFork bool
+	certs                map[uint64]*cert
+	revoked              []revocation
+	failOnce             []failRule
+	failAlways           map[string]string
+	hits                 map[string][]time.Time
+	hosts                []Host // nil means the one canned host
+	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
+	sessions             []SessionReport
+	questions            []*Question // newest last (DECISIONS I-245)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
 	bill billingState
 	// herdrMinBase is the first base with herdr; empty refuses herdr
 	// (SetHerdrMinBase, I-502).
 	herdrMinBase string
+	// onGet runs after each GET /v1/projects/{id} of a project is
+	// answered (OnGet).
+	onGet map[string]func(*Project) bool
 }
 
 type failRule struct {
@@ -594,6 +622,9 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/secrets", f.listSecrets)
 	f.handle("PUT /v1/projects/{id}/secrets/{name}", f.putSecret)
 	f.handle("DELETE /v1/projects/{id}/secrets/{name}", f.deleteSecret)
+	f.handle("GET /v1/me/secrets", f.listAccountSecrets)
+	f.handle("PUT /v1/me/secrets/{name}", f.putAccountSecret)
+	f.handle("DELETE /v1/me/secrets/{name}", f.deleteAccountSecret)
 	// Snapshots.
 	f.handle("GET /v1/projects/{id}/snapshots", f.listSnapshots)
 	f.handle("POST /v1/projects/{id}/snapshots", f.createSnapshot)
@@ -631,9 +662,82 @@ func (f *Fake) register() {
 	f.handle("POST /v1/internal/events", f.internalEvents)
 }
 
+type stopOutcome struct {
+	failMsg, snapshotFailMsg string
+}
+
+// SetStopFailure makes the next stop op of the project end in error with
+// message, leaving the project in error with the reason the api writes
+// (DECISIONS I-710).
+func (f *Fake) SetStopFailure(projectID, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopOutcome == nil {
+		f.stopOutcome = map[string]stopOutcome{}
+	}
+	f.stopOutcome[projectID] = stopOutcome{failMsg: message}
+}
+
+// SetStopSnapshotFailure makes the next stop of the project take no
+// snapshot and leave it stopped with last_error "snapshot_failed:
+// message", as a stop whose upload failed does (I-158).
+func (f *Fake) SetStopSnapshotFailure(projectID, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopOutcome == nil {
+		f.stopOutcome = map[string]stopOutcome{}
+	}
+	f.stopOutcome[projectID] = stopOutcome{snapshotFailMsg: message}
+}
+
+// endStop stops p for op o, applying a stop outcome set for it. Under
+// f.mu.
+func (f *Fake) endStop(p *project, o *op, snapshot bool) {
+	out, ok := f.stopOutcome[p.ID]
+	delete(f.stopOutcome, p.ID)
+	switch {
+	case ok && out.failMsg != "":
+		o.State, o.Error = "error", out.failMsg
+		p.State = "error"
+		le := "stop_failed: stopping " + p.Slug + " failed: " + out.failMsg + ". `repose stop " + p.Slug + "` tries again"
+		p.LastError = &le
+		return
+	case ok && out.snapshotFailMsg != "":
+		f.stop(p, false)
+		le := "snapshot_failed: " + out.snapshotFailMsg
+		p.LastError = &le
+	default:
+		// The api's stop op carries the snapshot it recorded, as a
+		// snapshot op does.
+		if s := f.stop(p, snapshot); s != nil {
+			o.Result = map[string]any{"snapshot_id": s.ID}
+		}
+	}
+	o.State = "done"
+}
+
+// busyStopping is the api's 409 for an op sent while a stop op is open on
+// the project: Engine.Enqueue's ErrOpInProgress.
+func busyStopping(p *project) *apiError {
+	if p.State != "stopping" {
+		return nil
+	}
+	return errf("conflict", "An operation is in progress")
+}
+
 type startOutcome struct {
 	failCode, failMsg string
 	warnCode, warnMsg string
+}
+
+// SetForkClone sets what a fork without snapshot_id gets: clones (the
+// default), 409 snapshot_needed (noClone), or an api before I-701's
+// "snapshot_id is required" (old, which also records every snapshot a
+// user asks for as manual, as an api before I-703 did).
+func (f *Fake) SetForkClone(noClone, old bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forkNoClone, f.oldFork = noClone, old
 }
 
 // SetStartFailure makes the next start op of the project end in error

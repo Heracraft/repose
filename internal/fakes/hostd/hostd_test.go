@@ -121,7 +121,7 @@ func TestFakeHostAgainstApiStub(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		stub.mu.Lock()
-		ok := stub.samples >= 2 && stub.logs == 3 && len(stub.events) >= 5
+		ok := stub.samples >= 2 && stub.logs == 11 && len(stub.events) >= 5
 		stub.mu.Unlock()
 		if ok {
 			return

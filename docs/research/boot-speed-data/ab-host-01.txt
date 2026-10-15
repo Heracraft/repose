@@ -1,0 +1,247 @@
+== run 1, 2026-10-13 15:29-15:39Z: the whole host store shared (before the closure view), ARMS='off' then 'on off on off on off late order10 late order10'
+== off 15:29:30 load=5.50
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=12765 paths_ms=12327 setup_ms=10825 ready_total_ms=35933 home_manager_ms=6054 faults_to_setup=204637 faults_10s_after=9270
+== on 15:30:27 load=8.19
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=12359 paths_ms=12818 setup_ms=9430 ready_total_ms=34618 home_manager_ms=5845 faults_to_setup=208937 faults_10s_after=5958
+== off 15:31:15 load=8.80
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=15249 paths_ms=17160 setup_ms=9933 ready_total_ms=42354 home_manager_ms=6524 faults_to_setup=202837 faults_10s_after=8922
+== on 15:32:12 load=9.07
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=12679 paths_ms=12683 setup_ms=10566 ready_total_ms=35941 home_manager_ms=6462 faults_to_setup=204789 faults_10s_after=8673
+== off 15:33:02 load=10.10
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=12525 paths_ms=15321 setup_ms=11380 ready_total_ms=39237 home_manager_ms=6309 faults_to_setup=197447 faults_10s_after=9198
+== on 15:33:55 load=10.51
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=12035 paths_ms=11916 setup_ms=9592 ready_total_ms=33556 home_manager_ms=5445 faults_to_setup=208252 faults_10s_after=9021
+== off 15:34:42 load=10.49
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=13426 paths_ms=12279 setup_ms=10203 ready_total_ms=35919 home_manager_ms=6128 faults_to_setup=201927 faults_10s_after=9270
+== late 15:35:32 load=10.66
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== order10 15:36:19 load=13.10
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== late 15:37:25 load=15.13
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== order10 15:38:35 load=16.70
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== run 2, 15:40-15:46Z: DIAG=1, whole host store shared, ARMS='diag diagon late order10'
+== diag 15:40:40 load=11.75
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=21875 paths_ms=17783 setup_ms=19098 ready_total_ms=58768 home_manager_ms=6275 faults_to_setup=198528 faults_10s_after=5946
+host cpu.stat: usage_usec 180559059 user_usec 167694476 system_usec 12864582 nr_periods 700 nr_throttled 0 throttled_usec 0
+guest cpu: some avg10=15.28 avg60=13.01 avg300=4.20
+guest io: some avg10=11.21 avg60=7.33 avg300=2.19
+18.027s repose-paths.service / 17.716s docker.service / 7.912s home-manager-dev.service / 6.526s suid-sgid-wrappers.service / 5.659s dev-vda.device
+== diagon 15:42:43 load=15.90
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=17000 paths_ms=17236 setup_ms=16257 ready_total_ms=50513 home_manager_ms=9483 faults_to_setup=202262 faults_10s_after=7973
+host cpu.stat: usage_usec 154245436 user_usec 140546182 system_usec 13699253 nr_periods 609 nr_throttled 0 throttled_usec 0
+17.796s repose-paths.service / 17.024s docker.service / 11.782s home-manager-dev.service / 6.270s suid-sgid-wrappers.service
+== late 15:44:12 load=12.99
+class=large balloon=1 late=1 cmdline_extra='modprobe.blacklist=virtio_balloon' guestd_ms=19413 paths_ms=19531 setup_ms=14795 ready_total_ms=53756 home_manager_ms=9312 faults_to_setup=198732 faults_10s_after=8477
+== order10 15:45:20 load=13.33
+class=large balloon=1 late=0 cmdline_extra='page_reporting.page_reporting_order=10' guestd_ms=19090 paths_ms=17823 setup_ms=8103 ready_total_ms=45030 home_manager_ms=4258 faults_to_setup=208017 faults_10s_after=8467
+== run 3, 15:47Z: DIAG=1 with per-unit guest CPU, whole host store shared
+== diag 15:47:18 load=6.88
+class=large balloon=0 late=0 cmdline_extra='' guestd_ms=15712 paths_ms=18119 setup_ms=12331 ready_total_ms=46176 home_manager_ms=7242 faults_to_setup=204486 faults_10s_after=8900
+guest /proc/stat: cpu  1925 187 6298 11591 2017 4350 2225 3125 0 0   (user nice system idle iowait irq softirq steal, 1/100 s)
+guest unit CPU (ns): init.scope 16155082000, repose-pin-profile.service 14406530000, guestd.service 13437022000, docker.service 9385091000, user@1000.service 7061125000, systemd-udevd.service 4473199000, repose-paths.service 3770270000, home-manager-dev.service 3503618000
+== run 4, 15:49-15:58Z: pin vs nopin (systemd.mask=repose-pin-profile.service), both with the balloon, whole host store shared
+== pin 15:49:24 load=9.61
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=16316 paths_ms=15765 setup_ms=13942 ready_total_ms=46038 home_manager_ms=7931 faults_to_setup=201675 faults_10s_after=5967
+host cpu.stat: usage_usec 141395450 user_usec 128512832 system_usec 12882617 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 565 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      180        0    16256       62     6883        0   425240   484178        0     1971   484253      505        0 42598328       13        0        0
+guest cpu: some avg10=8.65 avg60=9.44 avg300=2.94 total=9975371
+guest io: some avg10=8.95 avg60=5.75 avg300=1.64 total=5682927
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+16.164s repose-paths.service
+15.050s docker.service
+ 8.905s home-manager-dev.service
+ 5.488s suid-sgid-wrappers.service
+ 3.907s dev-vda.device
+ 2.554s repose-zram-swap.service
+ 2.138s repose-tmux-save.service
+ 2.004s repose-desktop-idle-check.service
+ 1.918s systemd-vconsole-setup.service
+ 1.880s user@1000.service
+ 1.326s systemd-udevd.service
+ 1.311s sshd.service
+guest /proc/stat: cpu  1770 185 6443 11608 1868 4497 2295 3233 0 0
+270268 CAL:      85908      86266      34939      63155   Function call interrupts
+208206 LOC:      51170      51506      55921      49609   Local timer interrupts
+170181  30:          0          0     170181          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+53909 TLB:      14517      14820      12759      11813   TLB shootdowns
+15880421000 init.scope
+14620156000 repose-pin-profile.service
+13180589000 guestd.service
+8256828000 docker.service
+6953647000 user@1000.service
+4557261000 systemd-udevd.service
+3877833000 home-manager-dev.service
+3372476000 repose-paths.service
+1926738000 suid-sgid-wrappers.service
+1066416000 nscd.service
+971292000 systemd-journald.service
+765153000 systemd-logind.service
+== nopin 15:50:57 load=11.52
+class=large balloon=1 late=0 cmdline_extra='systemd.mask=repose-pin-profile.service' guestd_ms=12417 paths_ms=11091 setup_ms=10897 ready_total_ms=34418 home_manager_ms=4598 faults_to_setup=202891 faults_10s_after=24
+Startup finished in 4.930s (kernel) + 23.644s (userspace) = 28.575s 
+host cpu.stat: usage_usec 90030587 user_usec 79544446 system_usec 10486140 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 457 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      352        0    31408      138    17525        0   935744  1104377        0     6305  1105228     1010        0 85196552      713        0        0
+guest cpu: some avg10=5.03 avg60=6.24 avg300=1.90 total=6470346
+guest io: some avg10=3.18 avg60=3.63 avg300=1.07 total=3702778
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+11.012s repose-paths.service
+10.971s docker.service
+ 5.481s home-manager-dev.service
+ 4.796s suid-sgid-wrappers.service
+ 4.094s dev-vda.device
+ 2.633s repose-zram-swap.service
+ 2.041s user@1000.service
+ 1.622s systemd-networkd.service
+ 1.318s systemd-vconsole-setup.service
+ 1.267s systemd-udevd.service
+ 1.214s systemd-resolved.service
+  944ms repose-claude-auth.service
+guest /proc/stat: cpu  1213 0 3804 12130 873 2227 1074 1955 0 0
+215690 CAL:      70174      70048      25005      50463   Function call interrupts
+139067  30:          0          0     139067          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+132950 LOC:      32929      31213      37949      30859   Local timer interrupts
+39099 TLB:       9680      10675       9329       9415   TLB shootdowns
+10818369000 guestd.service
+10324539000 init.scope
+7154581000 user@1000.service
+6054008000 docker.service
+3571271000 systemd-udevd.service
+2692025000 home-manager-dev.service
+2007141000 repose-paths.service
+1304508000 suid-sgid-wrappers.service
+968880000 repose-tmux-save.service
+947750000 systemd-journald.service
+811980000 nscd.service
+616659000 nix-daemon.service
+== pin 15:52:18 load=12.52
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== nopin 15:53:24 load=14.95
+class=large balloon=1 late=0 cmdline_extra='systemd.mask=repose-pin-profile.service' guestd_ms=30928 paths_ms=14445 setup_ms=11798 ready_total_ms=57185 home_manager_ms=6821 faults_to_setup=201745 faults_10s_after=30
+Startup finished in 13.012s (kernel) + 40.556s (userspace) = 53.568s 
+host cpu.stat: usage_usec 143443019 user_usec 131949357 system_usec 11493661 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 684 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      688        0    60800      343    25570        0  1565680  1779813        0    11134  1781485     2020        0 170393224     1329        0        0
+guest cpu: some avg10=7.99 avg60=10.53 avg300=3.48 total=12021743
+guest io: some avg10=4.66 avg60=5.25 avg300=1.66 total=5797684
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+15.223s repose-paths.service
+13.795s docker.service
+ 8.868s home-manager-dev.service
+ 7.811s dev-vda.device
+ 7.544s suid-sgid-wrappers.service
+ 4.719s repose-zram-swap.service
+ 3.339s repose-tmux-save.service
+ 2.509s systemd-vconsole-setup.service
+ 2.120s systemd-udevd.service
+ 2.034s systemd-networkd.service
+ 1.780s systemd-udev-trigger.service
+ 1.593s systemd-journalctl.socket
+guest /proc/stat: cpu  1931 12 5939 17398 1257 4497 2071 4471 0 0
+235878 CAL:      77527      70373      30357      57621   Function call interrupts
+201612 LOC:      49227      46370      56979      49036   Local timer interrupts
+147327  30:          0          0     147327          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+45815 TLB:      12044      11120      12049      10602   TLB shootdowns
+17861587000 init.scope
+16076685000 guestd.service
+8046727000 docker.service
+7350116000 user@1000.service
+5975856000 systemd-udevd.service
+4256161000 home-manager-dev.service
+2979414000 repose-paths.service
+2380873000 suid-sgid-wrappers.service
+1565719000 systemd-journald.service
+1280159000 repose-tmux-save.service
+1064992000 nscd.service
+1009063000 systemd-logind.service
+== pin 15:55:24 load=14.51
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== nopin 15:56:29 load=17.02
+freezebench: guestd: internal: register paths: run /run/current-system/sw/bin/nix-store: context deadline exceeded
+== run 5, 18:00-18:02Z: closure view as hostd shares it (I-463), balloon on, DIAG=1; base = 2026.10.12 (iswjhprp), new = boot-fast 47b42a9 (I-705, I-706); after each, the stamp, pin-profile's main process start and exit and home-manager's exit (monotonic us), and the guest's uptime
+ 17:59:50  up 3 days 12:13,  0 users,  load average: 4.31, 4.51, 5.22
+== base 17:59:50 load=4.31
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=15628 paths_ms=9617 setup_ms=14781 ready_total_ms=40037 home_manager_ms=11155 faults_to_setup=201494 faults_10s_after=10621
+host cpu.stat: usage_usec 133702283 user_usec 122701959 system_usec 11000323 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 506 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      176        0    15576       78     8095        0   460944   364639        1     2630   364744      505        0 42598248       27        0        0
+guest cpu: some avg10=12.83 avg60=13.35 avg300=3.95 total=13050842
+guest io: some avg10=11.39 avg60=7.01 avg300=1.94 total=6534261
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=5
+22.079s docker.service
+12.804s home-manager-dev.service
+ 9.197s repose-paths.service
+ 7.706s suid-sgid-wrappers.service
+ 5.863s user@1000.service
+ 4.855s dev-vda.device
+ 3.730s systemd-vconsole-setup.service
+ 2.807s repose-zram-swap.service
+ 2.233s sshd.service
+ 2.077s systemd-networkd.service
+ 2.021s lastlog2-import.service
+ 1.941s systemd-networkd-persistent-storage.service
+guest /proc/stat: cpu  1664 179 5824 8342 1698 3658 1617 1963 0 0
+249990 CAL:      77893      82186      32084      57827   Function call interrupts
+180886 LOC:      45578      44873      47709      42726   Local timer interrupts
+152155  30:          0          0     152155          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+55190 TLB:      14427      13318      12968      14477   TLB shootdowns
+12102507000 repose-pin-profile.service
+11752928000 init.scope
+10533748000 docker.service
+7530911000 guestd.service
+6109536000 systemd-udevd.service
+5980380000 user@1000.service
+4731545000 home-manager-dev.service
+2386710000 suid-sgid-wrappers.service
+1774536000 repose-paths.service
+1284010000 systemd-journald.service
+1014264000 nscd.service
+774281000 dbus-broker.service
+ls: cannot access '/run/repose/project-set-up': No such file or directory
+ActiveState=inactive
+ExecMainStartTimestampMonotonic=24246150
+ExecMainExitTimestampMonotonic=63532955
+ExecMainExitTimestampMonotonic=35196801
+69.92 95.87
+== new 18:01:07 load=9.21
+class=large balloon=1 late=0 cmdline_extra='' guestd_ms=13980 paths_ms=4181 setup_ms=8192 ready_total_ms=26365 home_manager_ms=5397 faults_to_setup=205032 faults_10s_after=8223
+host cpu.stat: usage_usec 85277634 user_usec 74643746 system_usec 10633887 nice_usec 0 core_sched.force_idle_usec 0 nr_periods 366 nr_throttled 0 throttled_usec 0 nr_bursts 0 burst_usec 0 
+host volume stat (dm-20):      344        0    30224      150    19106        0  1009376   708799        0     6593   709405     1010        0 85196480      456        0        0
+guest cpu: some avg10=9.71 avg60=6.80 avg300=1.83 total=6005106
+guest io: some avg10=7.85 avg60=4.09 avg300=1.05 total=3590255
+guest memory: some avg10=0.00 avg60=0.00 avg300=0.00 total=0
+9.910s docker.service
+6.026s home-manager-dev.service
+4.374s repose-paths.service
+4.250s suid-sgid-wrappers.service
+2.522s dev-vda.device
+2.034s user@1000.service
+1.791s repose-zram-swap.service
+1.445s systemd-vconsole-setup.service
+1.045s systemd-networkd.service
+ 847ms sshd.service
+ 720ms systemd-modules-load.service
+ 672ms dbus-broker.service
+guest /proc/stat: cpu  1053 102 4153 8553 1292 2546 1146 1306 0 0
+242885 CAL:      78282      83234      29658      51711   Function call interrupts
+156016  30:          0          0     156016          0 PCI-MSIX-0000:00:04.0   2-edge      virtio3-requests.0
+143904 LOC:      35796      34567      39781      33760   Local timer interrupts
+40686 TLB:       9512      10999      10134      10041   TLB shootdowns
+11210917000 init.scope
+9766932000 repose-pin-profile.service
+5443625000 docker.service
+5337833000 guestd.service
+4417245000 user@1000.service
+3993903000 systemd-udevd.service
+2668330000 home-manager-dev.service
+1331837000 suid-sgid-wrappers.service
+802543000 repose-paths.service
+783857000 nscd.service
+733828000 systemd-journald.service
+392392000 systemd-modules-load.service
+-rw-r--r-- 1 root root 21 1791914496.859776223 /run/repose/project-set-up
+ActiveState=inactive
+ExecMainStartTimestampMonotonic=25989563
+ExecMainExitTimestampMonotonic=56472861
+ExecMainExitTimestampMonotonic=22899116
+61.34 100.82
+ 18:02:15  up 3 days 12:15,  0 users,  load average: 10.46, 7.06, 6.08

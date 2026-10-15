@@ -2,8 +2,9 @@
 # Idempotent, never clobbers user configuration (the VM test asserts a
 # pre-existing hook survives), exits 0 on every path so a wrapper can `|| true`.
 #
-# claude   ~/.claude/settings.json  hooks.Notification / hooks.Stop entries
-#          running `repose-hook` are added unless an entry whose command
+# claude   ~/.claude/settings.json  hooks.Notification / hooks.Stop /
+#          hooks.UserPromptSubmit entries (each event the platform file
+#          has) running `repose-hook` are added unless an entry whose command
 #          contains "repose-hook" already exists under that event;
 #          permissions.defaultMode and skipDangerousModePermissionPrompt
 #          from the platform file are added only when the user's file sets
@@ -54,8 +55,8 @@
 #          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
 #          repose-agent-hooks user unit runs this at login too, so an
 #          OpenCode 2 the user installed reports without the wrapper.
-# gemini, pi: no hooks (guestd's pane-idle heuristic reports for them); the
-#          machine guide (DECISIONS I-243) is linked in as an extension:
+# gemini, pi: the machine guide (DECISIONS I-243), and for both the turn
+#          hooks (I-690), are linked in as an extension:
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
 #          ~/.pi/agent/extensions/repose-machine-guide.js -> /etc/repose/pi-extension.js.
 #          A file or directory the user put at either path is left alone.
@@ -348,7 +349,7 @@ writeShellApplication {
     # sha256 of every repose.js an earlier base installed. A file equal to
     # one of them is the platform's and is replaced; anything else is the
     # user's and stays (DECISIONS I-481).
-    opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49"
+    opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49 f733e9b42b2e25cb2c76f12d040fef1868582ec6e556ae138035795203cad462"
 
     setup_opencode() {
       local dir="$HOME/.config/opencode/plugins" have

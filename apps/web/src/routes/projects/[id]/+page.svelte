@@ -43,7 +43,7 @@
 	import { bootFallbackReason } from '$lib/bootfail';
 	import { withoutBillingURL } from '$lib/refusal';
 	import ConfirmType from '$lib/components/ConfirmType.svelte';
-	import QuestionsCard from '$lib/components/QuestionsCard.svelte';
+	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
 	import EventsCard, {
@@ -695,9 +695,9 @@
 		     their count changes, so they never sit in a column (I-680).
 		     empty:hidden: with no question the card renders nothing, and the
 		     empty cell would add a gap. One wrapper either way, so the card
-		     keeps its "Answered" line when the last question goes. -->
+		     keeps its closing line when the last question goes. -->
 		<div class="mt-6 min-w-0 empty:hidden">
-			<QuestionsCard projectId={id} {pollFailures} bind:questions />
+			<WaitingCard projectId={id} {pollFailures} bind:questions />
 		</div>
 
 		<!-- Each card is as tall as its content; the columns line up by what

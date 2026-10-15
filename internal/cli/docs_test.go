@@ -89,6 +89,7 @@ var internalEnvVars = map[string]string{
 	"REPOSE_TEST_GOOS":       "tests only: pretend to be another OS (goos())",
 	"REPOSE_CLAUDE_PLATFORM": "tests only: the guest's platform settings path in the Claude merge script",
 	"REPOSE_ENV_GEN":         "never read: a guest variable `secrets set` refuses as a name (secrets.go, DECISIONS I-475)",
+	"REPOSE_CARRY_EARLY":     "set in the guest by a first sync's apply for the carry it runs in the background, never read on the laptop (sync_prefetch.go, DECISIONS I-743)",
 	"REPOSE_CHECKOUT":        "never read: part of @@REPOSE_CHECKOUT@@, the placeholder the MCP carry's guest script replaces (carry_mcp.go, DECISIONS I-556)",
 }
 
