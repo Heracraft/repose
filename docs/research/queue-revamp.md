@@ -53,7 +53,9 @@ on the public GitHub repository and is the one real question. Problems 7 and
 
 Two of them are not waiting for a release night to bite. Problem 1 misreads
 the targets of **every** `add` run on this box, including a branch with
-nothing in it. And as of this afternoon **I-747, I-748 and I-749 are
+nothing in it; three of the five branches queued here now carry a note
+correcting their own `ships as` field, which is a field that has stopped
+being one. And as of this afternoon **I-747, I-748 and I-749 are
 reserved on woker-1 and visible to nothing on kanali**: not a collision yet
 — one lane holds all three — but a three-number-wide window in which a lane
 on kanali that runs `id` is handed one of them (§4). The offline band in
@@ -124,12 +126,21 @@ changing `...` to `..` would change nothing, and a fix written against the
 symmetric-difference reading would fix nothing. The base is the bug, which
 is what the integration tip below addresses.
 
-Lanes already work around it by hand. `staging-host`, queued on 2026-10-11,
-carries the workaround in its own note: *"The computed 'needs' is wrong
-because this worktree's local main is 109 behind origin/main."*
-`cpu-weight`'s note says the same of its merge base, and `docs-prose`'s now
-carries its true set beside the wrong line. Three queued branches are
-annotated against this one bug.
+**Lanes have started routing around the field in prose.** `staging-host`,
+queued on 2026-10-11, carries the workaround in its own note: *"The computed
+'needs' is wrong because this worktree's local main is 109 behind
+origin/main."* `cpu-weight`'s note says the same of its merge base, and
+`docs-prose`'s now spells out the whole mechanism and its true target set
+beside the wrong line. **Three of the five branches queued on this box
+carry a note correcting their own `ships as` field.**
+
+That is the argument for fixing this first, and it does not need the reader
+to follow merge-base semantics to feel it: a field that lanes annotate
+rather than trust has stopped being a field. The conductor's own procedure
+reads it — `RELEASE.md` step 4 keys the verification list to what the batch
+ships as, and step 3 keys the owner's release summary to it — so the prose
+in the note is load-bearing and the structured field is decoration. (The
+framing is the docs lane's.)
 
 It is worse than noise in both directions. A branch cut from
 `origin/integrated` is charged for everything integrated since the stale
