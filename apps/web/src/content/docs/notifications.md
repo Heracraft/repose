@@ -84,6 +84,8 @@ Settings apply to every project. The dashboard's **Settings** page has the same 
 | `todo-app: notifications paused`                | The project sent 30 notifications in the last hour; they're paused until the time in the body.                                                                                              |
 | `repose: test`                                  | You ran `repose notify test` or pressed **Send test**.                                                                                                                                        |
 
+A notification goes to every channel you have on.
+
 While you're at the machine (attached in tmux, or connected over SSH, which includes your editor and a herdr bridge), what an agent sends waits until you leave, for at most 10 minutes. That covers a question, a done report, a message, a permission prompt and an error. One that's over by then isn't sent: a question you answered in the terminal or that the agent withdrew, or a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
 On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page.

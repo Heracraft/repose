@@ -90,6 +90,8 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
 
+A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
+
 ## Let it ask you
 
 Any agent can message you or ask you a question from the machine. `repose-notify "text"` sends a notification, and `repose-notify --done "text"` says the work you asked for is finished. `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it; if you answer the agent in its own terminal instead, the question closes by itself. The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.

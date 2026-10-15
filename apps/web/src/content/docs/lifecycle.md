@@ -15,26 +15,22 @@ To act on a project from elsewhere, name it: `repose attach todo-app`, `repose s
 $ repose ls
 PROJECT     SIZE   STATE    UP     AGENTS
 todo-app *  large  running  2h14m  claude: working
-api         xl     running  6h40m  codex: needs input 4h
+api         large  running  6h40m  codex: needs input 4h
 web         small  stopped  -      -
-Solo: 8 of 8 GB running, 41.3 of 100 GB disk, 212 of 250 GB egress
+Plus: 16 of 16 GB running, 41.3 of 250 GB disk, 212 of 500 GB egress
 this month
 ```
 
-`*` marks the project a command run in this folder acts on. AGENTS shows the agent in the machine's tmux session with its state: `working`, `idle` (at its prompt, finished), `needs input` (waiting on a permission prompt or a question) or `running` (its process is alive and repose can't tell more, [Agent states](/docs/agents#agent-states)), with how long it has waited. With several agents, it counts them by state and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A `?` after the states means the machine's last report is over two minutes old. One you started by typing `claude` in the shell window counts while it runs there. Gemini counts only in a window named `gemini`, which is where `repose run` starts it. The last line is your plan: the memory your running machines use, which a start can't go past, the disk your projects hold, and egress ([Pricing](/docs/billing)).
+`*` marks the project a command run in this folder acts on. AGENTS gives each agent its state and how long it has been waiting ([Agent states](/docs/agents#agent-states)). The last line is your plan ([Pricing](/docs/billing)). [`repose ls`](/docs/cli#repose-ls) has the rest: every column, and the lines that show under the table when something needs you.
 
-`repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
-
-The dashboard's **Projects** page shows the same: your plan's memory, disk and egress above the list, the questions agents are waiting on, and each project's state, agents, disk and last snapshot, with **Start** or **Stop** on its row. Under the list, **Recent activity** has the newest events across your running projects. The **Projects** link in the dashboard counts the questions waiting.
-
-For one project in detail, including each agent by its window, the commits on the machine your laptop doesn't have, and which processes are listening on ports:
+[`repose status`](/docs/cli#repose-status-project) shows one project in detail: each agent by its window, the commits sitting on the machine that your laptop hasn't fetched, and what's listening on which port.
 
 ```
 repose status todo-app
-repose status todo-app --watch
+repose status todo-app -f
 ```
 
-The dashboard's project page shows the state, a temporary project's time left, agents, SSH sessions, memory and disk in use, usage charts, snapshots and the project's details. Its events come in pages of 10 with Newer and Older, filtered to agents, errors or the machine. It doesn't list listening ports.
+The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. A project's own page has its agents, its snapshots and its events, which filter to agents, errors or the machine. It lists no listening ports.
 
 ## Stop and start
 
@@ -46,36 +42,38 @@ Fetched 2 commits on repose/main.
 Stopping todo-app; 1 file not committed.
 ```
 
-Later, once `repose ls` shows it `stopped`:
+A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or that the machine stopped answering before any of it could be read. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
+
+The command comes back once the stop is under way, not when it's done. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
+
+Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`.
 
 ```text
 $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-`repose stop` asks first when an agent is in the middle of a turn or waiting for an answer, as the machine's last sample showed it; with no such agent it doesn't ask. `-y`/`--yes` skips the question, and is required without a terminal; the stop then prints `Ending claude (working).` It fetches the agent's commits before the machine stops, as `git fetch repose` would, in each of the project's checkouts on your laptop, from whatever folder you run it in; with nothing new it prints no `Fetched` line. The line ends with what stays on the machine: commits your checkouts haven't fetched and files the agent didn't commit. When the machine can't be read within 15 seconds, it ends `checkout unknown` and the reason instead. `repose status` on the stopped machine shows the same, with when the stop read it.
+Each agent's window opens again with the conversation it was in ([When the machine stops](/docs/run-and-attach#when-the-machine-stops)). `attach`, `run`, `ssh` and `code` start a stopped machine too; during a stop they wait for it to finish, say so if it failed, and start the machine again. `rm`, `fork`, `resize`, `snapshots create`, a restore and a config change wait the stop out and then do their work.
 
-The command returns once the stop is under way; the snapshot and the shutdown finish on the server, and you can close the laptop. `repose ls` shows the machine as `stopping` until it is `stopped`. `repose start`, `attach` or `run` during a stop wait for it and start the machine again (if the stop fails, they print why and restart it); `repose rm`, `fork`, `resize`, `snapshots` and `config` wait for it and then do their work. A stop that fails leaves the machine in `error` with the reason, which `repose ls` and the dashboard show, and sends a `stop failed` [notification](/docs/notifications); `repose stop` tries again. `--wait` waits for the whole stop and says what it did: `Stopped todo-app in 11s with a 2.1 GB snapshot.` Several projects stop at once (`repose stop api web`), and `repose stop --unused` stops every [unused machine](#unused-machines). Stopping ends every process and snapshots the disk (`--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, skips that). Most of a stop's time is the snapshot, which grows with the data on the disk. The machine's memory stops counting toward your plan once it reads `stopping`. The disk stays, with everything in `/home/dev`. A stopped project costs nothing; what its disk holds counts toward your plan's [disk total](/docs/billing#what-a-plan-means) until `repose rm`. `repose run` in the checkout starts a stopped machine too. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux), herdr resumes its agents at the next start after `repose stop`.
-
-`repose start` is also the fix for a project in the `error` state: it restarts the machine on its newest configuration. The dashboard shows **Start** while a project is stopped and **Restart** in the `error` state.
+`repose start` is also the way out of the `error` state: it restarts the machine on its newest configuration. A project in `error` has **Restart** on its own page.
 
 ## When a machine's server restarts
 
-The server your machines run on can restart, for maintenance or after a fault. A machine running on it comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. SSH sessions, forwarded ports and anything else connected to the machine drop and need connecting again. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server, for at most 6 hours, and removed once the machine is back.
+A machine whose server restarts comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. Servers restart for maintenance and after faults. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server and removed once the machine is back.
 
-A machine that can't come back that way stops instead: the disk is kept, but processes and memory are lost, and an agent in the middle of a turn loses that turn. That is what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
+A machine that can't come back that way stops instead. Its disk is kept; processes and memory are lost, the agent's turn with them ([When the machine ends without a stop](/docs/run-and-attach#when-the-machine-ends-without-a-stop)). That's what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
 
-When the server is back, repose starts each machine that stopped and was running or starting when it went down, usually within a few minutes, three at a time per server. It boots the system the machine was running; a configuration built and waiting for the next start is applied at the one after. A machine started again holds your plan's memory like any running machine, and its traffic counts toward the month.
+When the server is back, repose starts each machine that stopped and was running or starting when it went down, three at a time per server, so yours is usually running again within a few minutes. It boots the system the machine was running; a configuration built and waiting for the next start is applied at the one after.
 
 A machine isn't started again when:
 
 - you stopped, removed, restored or resized it while the server was down, or started it yourself since;
-- more than 6 hours passed between the restart and repose being able to start it;
+- more than 6 hours have passed since it stopped;
 - it's [temporary](#temporary-machines) and its time ran out;
-- a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped, as it doesn't stop a running machine ([Billing](/docs/billing));
+- a `repose start` of yours would be refused too: your account is suspended, your plan's memory is taken by the machines already running, or the machine is on hold ([Limits](/docs/limits#what-isnt-allowed)). A failed payment doesn't keep it stopped ([Billing](/docs/billing#if-a-payment-fails));
 - its start fails, after one more try when the machine doesn't answer in time.
 
-If any machine stopped, you get one [notification](/docs/notifications) per server restart, on every channel you have on, with a line for each:
+If any machine stopped, you get one [notification](/docs/notifications) per server restart, with a line for each:
 
 ```text
 The server running your machines restarted; it was back at 05:46 UTC.
@@ -83,26 +81,28 @@ api: running again.
 todo-app: running again; its last agent turn was interrupted.
 ```
 
-A machine that wasn't started gets `not started:`, the reason, and `repose start NAME`. Machines you stopped or removed meanwhile aren't listed. A machine still waiting 10 minutes after the server came back is listed as `waiting to start`, and there is no second notification when it does. `repose events` shows `server restarted` on each machine that stopped.
+A machine that wasn't started gets `not started:`, the reason, and `repose start NAME`. Machines you stopped or removed meanwhile aren't listed. One still waiting 10 minutes after the server came back is listed as `waiting to start`, and there's no second notification when it starts. `repose events` shows `server restarted` on each machine that stopped.
 
-`repose start api` starts one that wasn't started. About 90 seconds after the server stops answering, repose marks it as down. From then on, `repose run`, `attach`, `start`, `ssh` and `code` wait for it with `Waiting for api's server to come back`, then go on: a machine that was running is there as it was, and a stopped one starts. In the first 90 seconds, on a machine that was running, a connection fails with `did not answer ssh` and `start` says it is running; run the command again. After 10 minutes they exit 5 with ``api's server has not answered for 10m. `repose status api` shows when it is back.``
+About 90 seconds after the server stops answering, repose marks it as down. From then on `repose run`, `attach`, `start`, `ssh` and `code` wait for it with `Waiting for api's server to come back`, then go on: a machine that was running is there as it was, and a stopped one starts. After 10 minutes they exit 5 with ``api's server has not answered for 10m. `repose status api` shows when it is back.`` In those first 90 seconds a connection to a machine that was running fails with `did not answer ssh`, and `start` says it is running; run the command again.
 
 ## Unused machines
 
-A machine is unused when it has been running for 24 hours with no SSH session, no tmux client and no agent `working` or `running`. A laptop herdr with the machine in its sidebar holds an SSH session open, so the machine is in use while that herdr runs. An agent sitting at its prompt, finished (`idle`) or waiting for you (`needs input`), doesn't count. One shown as `running` does, since repose can't tell whether it is mid-task. repose doesn't stop an unused machine; it tells you instead:
+A running machine is unused once 24 hours pass with no SSH session, no tmux client and no agent `working` or `running`. The 24 hours run from the last of those, or from the boot if there's been none. An agent finished (`idle`) or waiting on you (`needs input`) doesn't count. The machine people forget is the one whose agent has sat at its prompt since `repose run` started it. An agent `running` counts, since repose can't tell whether it's mid-task. A laptop [herdr](/docs/run-and-attach#herdr-instead-of-tmux) counts too, since it keeps an SSH session open to every machine in its sidebar.
+
+repose never stops an unused machine; it tells you instead, on every `repose ls`:
 
 ```
 $ repose ls
-PROJECT    SIZE   STATE    UP      AGENTS
-todo-app   large  running  31h02m  claude: needs input 3h
+PROJECT   SIZE   STATE    UP      AGENTS
+todo-app  large  running  31h02m  claude: needs input 3h
 todo-app: unused for 26h; claude needs input 3h
 ```
 
-- `repose status` shows the same line, and the dashboard's project list shows `unused 26h` under the state.
-- `repose run` and `repose attach` in another project print one line naming it, once per unused stretch.
-- You get one notification on every channel you have on ([Notifications](/docs/notifications)), titled `todo-app: unused for 24h, holding plan memory`. You get another only after the machine has been used and gone unused again.
+- `repose status` prints the line too, and the dashboard's project list puts `unused` and the time under the state.
+- `repose run` and `repose attach` on another project print `Running and unused: todo-app (26h).`, once per unused stretch.
+- One [notification](/docs/notifications#what-youll-get) per unused stretch. Use the machine and the next stretch gets its own.
 
-An unused machine costs nothing extra on a plan, but its memory counts against what your plan runs at once, so another machine can be refused until it stops ([Billing](/docs/billing)). When the server hasn't reported on the machine for 10 minutes, for example while it's unreachable, repose can't tell and says nothing.
+An unused machine's memory still counts against what your plan runs at once, so a start elsewhere can be refused until you stop it ([Memory](/docs/billing#what-a-plan-means)). When the machine hasn't reported for 10 minutes, or its server isn't answering, repose can't tell and says nothing.
 
 ## Snapshots
 
@@ -113,16 +113,16 @@ repose snapshots create
 repose snapshots list
 ```
 
-Snapshots from the last 7 days are kept, free, and the newest one is always kept. A snapshot `repose fork` took for itself (reason `fork`) is deleted a day after it was taken and never counts as the newest. A snapshot holds the whole disk (checkout, home directory, logins made on the machine, installed tools) but not [secrets](/docs/secrets), which are kept in memory and never on the machine's disk, [other than while its server restarts](#when-a-machines-server-restarts), or your Claude Code login, which is kept outside the machines ([Agents](/docs/agents#log-in)).
+A snapshot holds the whole disk: the checkout, the home directory, logins made on the machine, installed tools. Not [secrets](/docs/secrets), and not your [Claude Code login](/docs/agents#log-in). Snapshots from the last 7 days are kept, and the newest one always.
 
-To put a project back to a snapshot, stop it first. Stopping takes its own snapshot, so this can be undone; the question names both snapshots, and says so when no snapshot holds the disk as it is now (after `repose stop --no-snapshot` or `repose resize --size`):
+To put a project back to a snapshot, stop it first:
 
 ```
 repose stop todo-app
 repose snapshots restore todo-app SNAPSHOT_ID
 ```
 
-The restore starts the machine on the restored disk and ends with `Restored todo-app; it is running (large).`
+The question names the snapshot it would write and whether anything keeps the disk as it is now. The stop's own snapshot usually does, so the restore is itself undoable. After `repose stop --no-snapshot` or `repose resize --size`, whose stop takes none, it says instead that what changed since the newest snapshot is lost for good; a stopped project can still be snapshotted, which is the way back from that. The restore starts the machine on the restored disk and ends with `Restored todo-app; it is running (large).`
 
 Or restore into a new project and leave the original alone:
 
@@ -130,13 +130,13 @@ Or restore into a new project and leave the original alone:
 repose snapshots restore SNAPSHOT_ID --as todo-app-old
 ```
 
-The new project starts with its `shell` window; the agent windows the snapshot recorded reopen only in the project they came from.
+The new project boots with its `shell` window alone; agent windows reopen only in the project they were recorded in.
 
-The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…** too. It shows the newest 8; **Show all** lists the rest. **Restore…** works on a stopped project and asks you to type the project's name first, as **Destroy** does.
+The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…**, and shows the newest 8 with **Show all** for the rest. **Restore…** wants the project stopped and asks you to type its name, as **Destroy** does.
 
-Each snapshot's SHA-256 is recorded when it's taken. A restore checks the stored snapshot against it as it writes the new disk, and if they differ it stops with `snapshot checksum mismatch` and deletes what it wrote, so the machine never starts on it. Snapshots taken before 2026-10-03 have no recorded checksum and restore without the check.
+A restore checks what it reads against the SHA-256 recorded when the snapshot was taken. If they differ it stops with `snapshot checksum mismatch` and deletes the disk it was writing, so nothing boots on it. A snapshot taken before 2026-10-03 has no digest and restores unchecked.
 
-If a restore over a project fails, the old disk is already gone, so the project shows `error` and `repose start` refuses with `the restore into it did not finish`. Run the restore again (any of the project's snapshots will do), or remove the project with `repose rm`. A [fork](#fork-a-project)'s copy whose disk copy failed has no snapshot of its own, so `start` says to remove it and fork the source again.
+A restore over a project destroys the old disk before writing the new one, so one that fails leaves the project in `error` with nothing to boot, and `repose start` refuses with `todo-app has no usable volume because the restore into it did not finish`. `repose stop todo-app` and restore over it again, or restore into a new project with `--as NAME`; `repose rm` removes it. A fork copy whose disk copy failed has no snapshot of its own, so `start` says to remove it and fork the source again.
 
 ## Destroy and restore
 
@@ -146,18 +146,18 @@ Destroy todo-app? A final snapshot is kept for 30 days. [y/N] y
 Destroying todo-app.
 ```
 
-This deletes the machine and its disk and stops all charges for the project. It reads `destroying` while its final snapshot is taken, which takes longer the more the disk holds (about a minute for 40 GB), and stops counting toward your [project cap](/docs/limits#projects) at once. `--yes` skips the question; `--wait` waits until it's done. `repose rm todo-app-fork-1 todo-app-fork-2` destroys both after one question. Answering no exits with code 1. `repose rm` was called `repose destroy`, and `repose ls` was `repose projects`; the old names still work. In the dashboard, **Destroy** asks you to type the project's name.
+`repose rm` deletes the machine and its disk. The command returns once the destroy is under way; the project reads `destroying` until it's gone.
 
-Within 30 days, bring it back, running, with its size, configuration and git remote:
+Within 30 days, bring it back, running, with its size, its configuration and its git remote, so your checkout finds it again:
 
 ```
 repose ls --destroyed
 repose restore todo-app
 ```
 
-`--as NEW-NAME` restores under another name, and `--snapshot ID` picks an older snapshot. A restore started while the destroy is still running waits for it. After 30 days the snapshot is deleted.
+`--as NEW-NAME` restores under another name, and `--snapshot ID` picks an older snapshot. A restore started while the destroy is still running waits for its final snapshot. If a live project holds the name, the restore asks you for another. A live project holding the git remote keeps it, and the restored one is reached by name.
 
-The dashboard's project list has the same under **Recently destroyed**, with the date each can be restored until. It shows the 10 destroyed most recently; **Show more** lists the rest.
+The dashboard's project list has the same under **Recently destroyed**, with the date each can be restored until, and **Show more** for the rest.
 
 ### Start over with a fresh machine
 
@@ -172,19 +172,19 @@ $ repose run
 ...
 ```
 
-The name stays taken until the destroy finishes, so a `repose run` started meanwhile waits for it (`Waiting for the old todo-app to finish destroying`), then creates a new project with the same name and syncs your checkout into it. It waits the same way when the project being destroyed isn't this checkout's (one you restored without a remote, say) but holds the name `repose run` wants, instead of creating `todo-app-2`. `repose rm --wait && repose run` does the same in one line. The old machine's final snapshot is kept, and `repose ls --destroyed` still lists it. If the destroy fails, `repose run` says so and creates nothing.
+The name stays taken until the destroy finishes, so a `repose run` started meanwhile waits for it (`Waiting for the old todo-app to finish destroying`) and then creates a new project with the same name. It waits the same way for a project being destroyed that holds the name it wants but isn't this checkout's, instead of creating `todo-app-2`. `repose rm --wait && repose run` does the same in one line. The old machine's final snapshot is kept, and `repose ls --destroyed` still lists it, as `todo-app (name in use)`. If the destroy fails, the project lands in `error` and `repose run` creates nothing; `repose rm` tries again.
 
 ## A second machine for the same repository
 
-For an experiment that shouldn't touch your main project, create another one by name:
+One repository can have several machines, one per name:
 
 ```
 repose run todo-app-experiment
 ```
 
-It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original; reach the new one by name.
+It gets your checkout, with its whole history and uncommitted work, like any first sync. Commands in the checkout still mean the original.
 
-`repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine: the CLI compares the remotes, or, when either side has none, whether the two share a commit.
+`repose run NAME` always means the project with that name: if it exists, `run` uses it, and if not, `run` creates it. A name that belongs to another repository's project is refused, so one repository is never synced into another's machine.
 
 Your checkout's `repose` remote stays pointed at the original, and the run adds a remote named after the second machine, so its work comes back with:
 
@@ -228,16 +228,15 @@ $ repose run --temp spike
 Not a git repository, so nothing was synced.
 ```
 
-- `--temp` always makes a new machine, named `tmp-` and four letters unless you name it (`repose run --temp spike`). It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
-- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours (`1d` is 24 hours). It's counted from when the machine was made. A word after `--temp` that is a number and a unit is its duration wherever it stands, so `repose run spike --temp 3h` works; a word like `2x` exits 2.
+- `--temp` always makes a new machine, named `tmp-` and four characters unless you name it (`repose run --temp spike`). It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
+- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours (`1d` is 24 hours). It's counted from when the machine was made. A word after `--temp` that is a number and a unit is its duration wherever it stands, so `repose run spike --temp 3h` works.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a `LEFT` column, there only while you have a temporary machine; `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
-- If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it, since herdr on your laptop keeps a connection open to every machine in its sidebar.
+- If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it.
 - You get a [notification](/docs/notifications) an hour before the end (for a machine made with more than an hour), and another when it's destroyed.
 - On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file your laptop does not; it stays until 14:02.` If the check can't run, the machine stays too. With `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
-- On herdr, closing its tabs doesn't destroy it, since herdr opens a new shell when the last tab closes. It goes when its time runs out.
+- On herdr, closing its tabs doesn't destroy it. It goes when its time runs out.
 - `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
-- A temporary machine counts toward your [project cap](/docs/limits#projects) and plan while it exists, like any other.
 
 To keep one after all:
 
@@ -246,7 +245,7 @@ $ repose keep tmp-k3f9
 tmp-k3f9 is no longer temporary.
 ```
 
-It's then a normal project, still reached by name, and gets snapshots like any other from then on. To give it more time and keep it temporary, add a duration, from `10m` to `24h`, counted from now:
+It's then a normal project, and its snapshots stop expiring with it. To give it more time and keep it temporary, add a duration, from `10m` to `24h`, counted from now:
 
 ```
 $ repose keep tmp-k3f9 3h
@@ -255,7 +254,7 @@ tmp-k3f9 is temporary until Sep 29 17:02.
 
 ## Fork a project
 
-To have several agents try different approaches from the same starting point, each with a machine of its own, fork the project:
+`repose fork` copies a project's disk as it is at that moment into new ones, one per agent trying a different approach:
 
 ```
 $ repose fork todo-app -n 3
@@ -271,7 +270,7 @@ Added the git remotes todo-app-fork-1, todo-app-fork-2 and
 todo-app-fork-3.
 ```
 
-`repose fork` copies the project's disk as it is at that moment into new projects. The copies are made on the project's own server and take seconds whatever the disk holds. When that server has no room for them, `fork` snapshots the project first (`✓ Snapshot of todo-app taken`) and restores the copies from the snapshot on whichever servers have room, which takes longer the more the disk holds. That snapshot is listed with reason `fork` and deleted a day later. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and the source's agent windows don't reopen: each copy boots fresh with its `shell` window. The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
+The copies are made on the project's own server and take seconds whatever the disk holds. When that server has no room for them, `fork` snapshots the project first (`✓ Snapshot of todo-app taken`) and restores the copies from the snapshot on whichever servers have room. That snapshot is listed with reason `fork` and deleted a day later. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and no agent window reopens ([Snapshots](#snapshots)). The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
 
 `--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
 
@@ -282,16 +281,14 @@ git fetch todo-app-fork-2
 git merge todo-app-fork-2/main
 ```
 
-Pushing a branch from the copy (`git push origin HEAD:try-2`) works too. Destroy the copies you don't need with `repose rm todo-app-fork-1`, which removes that copy's remote; branches you fetched from it stay.
-
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before copying anything and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one; `--size small` makes copies that take less of it; `--name` changes their names.
+Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before copying anything and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one.
 
 ## Logs and events
 
 ```
 repose logs               # what a boot that failed printed
 repose logs --kind build  # the last configuration build
-repose logs --kind ops    # create, start, stop, snapshot history
+repose logs --kind ops    # every operation, and how it ended
 repose events             # agent and project events, last 24 hours
 ```
 
@@ -299,12 +296,12 @@ Your applications' output isn't collected; it stays on the machine.
 
 ## States
 
-| State                  | Meaning                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `creating`, `building` | A new project's disk and environment are being made.                          |
-| `starting`             | Booting.                                                                      |
-| `running`              | On. Compute is counted by the minute.                                         |
-| `stopping`, `stopped`  | Shutting down, or off with the disk kept.                                     |
-| `restoring`            | A snapshot is being written to the disk.                                      |
-| `destroying`           | Being deleted, final snapshot first.                                          |
-| `error`                | Something failed. `repose status` says what; `repose start` usually fixes it. |
+| State                     | Meaning                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `creating`, `building`    | A new project's configuration and disk are being made.                                      |
+| `starting`                | Booting.                                                                                    |
+| `running`                 | On.                                                                                         |
+| `stopping`, `stopped`     | Shutting down, or off with the disk kept.                                                   |
+| `restoring`               | A snapshot is being written to the disk, or a [fork](#fork-a-project)'s copy is being made. |
+| `destroying`, `destroyed` | Being deleted, or gone ([Destroy and restore](#destroy-and-restore)).                       |
+| `error`                   | Something failed. `repose status` says what ([Stop and start](#stop-and-start)).            |

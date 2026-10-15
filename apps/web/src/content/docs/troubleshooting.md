@@ -45,6 +45,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **``todo-app is stopped. `repose start todo-app` starts it.``** `exec`, `ps`, `open` and `cp` don't start a stopped machine, and neither does a plain `ssh todo-app.repose`; `repose attach`, `repose ssh`, `repose code` and `repose run` do.
 
+**``todo-app is stopping. `repose start todo-app` waits for the stop and starts it again.``** The commands that don't start a stopped machine don't wait out a stop either; `repose start`, `repose attach`, `repose ssh`, `repose code` and `repose run` do.
+
 **A machine that was running is stopped, and you didn't stop it.** Its server restarted. repose starts such machines again by itself, and the notification it sends says which it didn't and why; `repose events todo-app` shows `server restarted`. `repose start todo-app` starts it ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)).
 
 **``todo-app's server is not answering; machines that were running on it start again by themselves when it is back``.** The server under the machine is down or unreachable, and the machine's disk is on it, so nothing can start it elsewhere without losing work since its last snapshot.
@@ -97,6 +99,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **A tool from the project's `flake.nix` is missing.** In an agent's window or `repose exec`, the [dev shell](/docs/machine#projects-with-a-flake-nix) failed to load, and the error is printed above the agent's first screen or the command's output: an untracked `flake.nix`, or a dev shell only for macOS, are the usual causes. In your own shell, the dev shell loads when you `cd` into the checkout; if you pressed Ctrl-C while it loaded, leave the folder and come back. An `.envrc` loads only once it is allowed (`direnv allow`).
 
+**The browser view asks for a password.** A machine on base 2026.09.27.2 or older serves the old viewer page, which ignores the password in the link and asks for it instead; the machine gets the new page at its next base update, and until then `repose ssh` and `repose-guest-profile desktop start` on the machine print the password to type. A CLI at v0.1.20 or older has no `repose browser` at all; [update](/docs/install#update) it.
+
 **A tool from your laptop didn't arrive.** The next `repose run` names it. The log is `~/.repose/tools-install.log` on the machine. `repose scan` shows what the CLI looked for.
 
 **A program you installed isn't on `PATH`.** Installs with npm, pnpm, `go install`, `cargo install`, uv, bun, deno, gem and composer are on `PATH` in new shells. Open a new tmux window. Tools that manage `PATH` from their own shell setup (nvm, pyenv, rbenv) need that setup in `~/.bashrc`.
@@ -118,6 +122,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
 - Ctrl+V did nothing under WSL: it reads the Linux clipboard, which may not hold an image you copied in Windows.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
+
+**The browser view shows nothing the agent is doing.** An agent session started before September 25, 2026 has a headless browser of its own that the view can't show; restart the agent to switch it over.
 
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place. Until then, start it with `codex --no-daemon`.
 
