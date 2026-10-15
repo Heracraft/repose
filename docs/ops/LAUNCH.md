@@ -112,11 +112,30 @@ months, limited to 20 redemptions) can go in the tweet.
    (`AZURE-SETUP.md`). Existing guests move with `repose-admin projects
    move`.
 2. Until the host is up, or if you want to sell fewer seats than the fleet
-   has, set `SEATS_TOTAL` on both api apps (30 for one `D64s_v7`; `0`
-   derives it from the ready hosts, which is 6 on the `D16s_v7` today: its usable memory is a little under 64 GB minus the reserve). Check:
-   `repose-admin seats` prints total, held, free and the source; the
-   landing page's pricing section shows "N seats left".
-3. Your own account and any tester's: `repose-admin users exempt <handle>`
+   has, set `SEATS_TOTAL` on both api apps; `0` derives it from the ready
+   hosts. Read the derived number before you trust it, because it is no
+   longer the memory count this step used to quote. A seat is 8 GB of
+   running memory and, since every class is 2 GB per guest vCPU, also 4
+   guest vCPUs, and the derived count is now the smaller of those two
+   ceilings per host, summed (DECISIONS I-739, which amends I-290's
+   memory-only arithmetic and replaces the oversell this step warned about
+   by hand). So one `D64s_v7` sells **11**, not the 30 its 512 GB
+   suggests, because its 32 physical cores serve 11; and host-01, a
+   `D16s_v7` with 8 cores, sells **1**, not 6. Check: `repose-admin seats`
+   prints total, held, free and the source; the landing page's pricing
+   section shows "N seats left".
+3. Expect host-01 to refuse new projects until the launch host is up.
+   Placement now counts committed guest vCPUs against a host's physical
+   cores and refuses past the ratio (DECISIONS I-736, which found that
+   `PickHost` had no CPU term at all and that hostd's admission never
+   checked CPU either, so the policy in R3-2 was implemented nowhere).
+   host-01's 8 cores are committed past that ratio by the guests already
+   on it, so a create lands there only once its committed guest vCPUs are
+   under 12. Bring the launch host up first, or move guests off with
+   `repose-admin projects move`, or expect creates to be refused for want
+   of a host. `repose-admin hosts list` and the `host_reservations` view
+   show the committed figure.
+4. Your own account and any tester's: `repose-admin users exempt <handle>`
    passes the gate without a plan and holds no seat.
 
 ## 4. Deploy order
