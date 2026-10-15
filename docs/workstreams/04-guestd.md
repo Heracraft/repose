@@ -60,11 +60,11 @@ vsock port 5000 (`AF_VSOCK`, `VMADDR_CID_ANY`), or the dev Unix socket.
 Accepts one hostd connection; a second connection replaces the first (the
 old one gets `EOF`), so a hostd restart reconnects cleanly.
 
-Every request handler has a deadline (default 30 s, `RegisterPaths` 5 min,
-`Switch` 10 min, `Exec` per request) and runs in its own goroutine;
-responses are written under a mutex. `Notify` messages are queued (buffer
-256) and dropped with a counter if hostd is absent for long; samples are
-pull-based so nothing accumulates.
+Every request handler has a deadline (default 30 s, `Switch` 10 min,
+`RegisterPaths` and `SetupProject` 3 min since DECISIONS I-705, `Exec`
+per request) and runs in its own goroutine; responses are written under a
+mutex. `Notify` messages are queued (buffer 256) and dropped with a counter
+if hostd is absent for long; samples are pull-based so nothing accumulates.
 
 ### Freeze and the watchdog
 

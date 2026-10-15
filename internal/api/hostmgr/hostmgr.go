@@ -523,9 +523,15 @@ func (s *Server) onHello(ctx context.Context, hostID uuid.UUID, h *hostdv1.Hello
 	// in the same statement, before it is overwritten: the resume needs
 	// when the host went quiet (I-645).
 	var lastHeard *time.Time
-	if err := s.pool.QueryRow(ctx, `update hosts h set state = case when h.state in ('registering','unreachable') then 'ready' else h.state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else h.pool_bytes end, pool_unavailable = $5, last_heartbeat_at = now()
+	// features (I-701) is what this hostd can do; an older one sends none,
+	// which reads as nothing beyond the commands every hostd takes.
+	features := h.Features
+	if features == nil {
+		features = []string{}
+	}
+	if err := s.pool.QueryRow(ctx, `update hosts h set state = case when h.state in ('registering','unreachable') then 'ready' else h.state end, free_mem_bytes = $2, pool_free_bytes = $3, pool_bytes = case when $4::bigint > 0 then $4::bigint else h.pool_bytes end, pool_unavailable = $5, features = $6, last_heartbeat_at = now()
 		from (select id, last_heartbeat_at from hosts where id = $1 for update) prev where h.id = prev.id returning prev.last_heartbeat_at`,
-		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable).Scan(&lastHeard); err != nil {
+		hostID, int64(h.FreeMemBytes), int64(h.PoolFreeBytes), int64(h.PoolBytes), h.PoolUnavailable, features).Scan(&lastHeard); err != nil {
 		s.log.Error("hello update failed", "event", "hello", "host_id", hostID.String(), "err", err.Error())
 	}
 	s.log.Info("hello", "event", "hello", "host_id", hostID.String(), "guests", len(h.Guests), "pool_unavailable", h.PoolUnavailable, "boot_id", h.HostBootId)

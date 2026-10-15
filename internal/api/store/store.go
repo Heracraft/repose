@@ -34,6 +34,10 @@ type User struct {
 	TZ          *string   `db:"tz"`
 	NotifyEmail bool      `db:"notify_email"`
 	NtfyURL     *string   `db:"ntfy_url"`
+	// GChatURL is the Google Chat webhook, a credential the api never
+	// returns; GChatBrokenAt is when Google first refused it (0023, I-692).
+	GChatURL      *string    `db:"gchat_url"`
+	GChatBrokenAt *time.Time `db:"gchat_broken_at"`
 	// BillingCustomerID is the Polar customer, which Polar creates when
 	// the first checkout completes (0008, 0020, I-289, I-604). BillingAnchor is unused since I-289 (the period is the
 	// subscription's); PastDueSince is when the account first failed a
@@ -55,7 +59,7 @@ type User struct {
 	UpdatedAt         time.Time  `db:"updated_at"`
 }
 
-const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, billing_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
+const userCols = `id, logto_sub, handle, email, github_login, tz, notify_email, ntfy_url, gchat_url, gchat_broken_at, billing_customer_id, billing_anchor, past_due_since, billing_status, has_card, trial_credit_cents, project_limit, xl_limit, suspended_at, suspended_reason, cancelled_at, deleted_at, created_at, updated_at`
 
 // Project is a projects row.
 type Project struct {

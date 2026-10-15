@@ -206,7 +206,16 @@
           limit=$((6 * 1024 * 1024 * 1024))
           echo "guest system closure: $size bytes (limit $limit)"
           if [ "$size" -gt "$limit" ]; then
-            echo "closure over 6 GB; largest paths:" >&2
+            echo "over the limit printed above; largest paths:" >&2
+            # closureInfo's registration is one record per path: the path,
+            # its hash, its NAR size, its deriver, then the number of
+            # references and that many lines. The sizes add up to
+            # total-nar-size, so the largest records are the paths to cut.
+            # It used to print the heading and exit, which named the
+            # problem and nothing to do about it (2026-10-15).
+            awk '{ p = $0; getline h; getline s; getline d; getline n; for (i = 0; i < n; i++) getline r; print s "\t" p }' \
+              "$closureInfo/registration" | sort -rn | head -20 |
+              awk -F'\t' '{ printf "  %8.1f MB  %s\n", $1 / 1048576, $2 }' >&2
             exit 1
           fi
           echo "$size" > $out
@@ -288,6 +297,7 @@
             logind = sys "systemd-logind.service";
             dbus = sys "dbus-broker.service";
             tmux = usr "repose-tmux-session.service";
+            herdr = usr "repose-herdr-server.service";
             appSlice = usr "app.slice";
             userConf = pkgs.writeText "user.conf" (builtins.unsafeDiscardStringContext cfg.environment.etc."systemd/user.conf".text);
             tmpfiles = pkgs.writeText "tmpfiles" (lib.concatStringsSep "\n" cfg.systemd.tmpfiles.rules);
@@ -305,12 +315,19 @@
             fail=0
             need() { grep -qx "$2" "$1" || { echo "$1 lacks $2" >&2; fail=1; }; }
             need "$userManager" 'OOMScoreAdjust=-900'
+            need "$userManager" 'OOMPolicy=continue'
             need "$userManager" 'MemoryLow=64M'
             need "$userConf" 'DefaultOOMScoreAdjust=0'
+            # The kernel's ranking is undone if systemd stops the cgroup
+            # the kill happened in: every unit and scope of dev's, and
+            # each session scope, holds an agent beside the work it
+            # started (I-733).
+            need "$userConf" 'DefaultOOMPolicy=continue'
             need "$sshd" 'OOMScoreAdjust=-800'
             need "$sshd" 'MemoryLow=16M'
             need "$session" 'CPUWeight=1000'
             need "$session" 'MemoryLow=32M'
+            need "$session" 'OOMPolicy=continue'
             need "$systemSlice" 'MemoryLow=176M'
             need "$userSlice" 'MemoryLow=128M'
             need "$userUidSlice" 'MemoryLow=128M'
@@ -322,6 +339,9 @@
             need "$tmux" 'CPUWeight=1000'
             need "$tmux" 'MemoryLow=48M'
             need "$tmux" 'OOMPolicy=continue'
+            # herdr's panes share this unit's cgroup, so the policy is
+            # what keeps its agents (I-560, I-733).
+            need "$herdr" 'OOMPolicy=continue'
             need "$appSlice" 'MemoryLow=48M'
             need "$tmpfiles" 'w- /sys/kernel/mm/lru_gen/min_ttl_ms - - - - 1000'
             # Every not-found handler, with a PATH that lacks the helper and
@@ -364,7 +384,7 @@
               expect fish "$got" "cowsayzz: stub, once, and status=127"
             fi
             [ "$fail" = 0 ] || exit 1
-            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, tmux OOMPolicy=continue, min_ttl_ms 1000; bash-env.sh, bash, zsh and fish not-found handlers answer once with 127"
+            echo "keystroke path: user manager -900, user units 0, sshd -800, MemoryLow on every slice and unit of it, OOMPolicy=continue for dev's units and each session scope, tmux and herdr OOMPolicy=continue, min_ttl_ms 1000; bash-env.sh, bash, zsh and fish not-found handlers answer once with 127"
             touch $out
           '';
         # The session units start their servers outside a login shell and
@@ -504,6 +524,110 @@
           done
           touch $out
         '';
+        # The agents' browser starts after a kill left its profile locked,
+        # and no desktop stamp can end up root's (DECISIONS I-727): the
+        # unlock helper against stale and live locks, and the unit texts
+        # that run it and write every stamp through repose-desktop-stamp.
+        # Reads the unit texts, so it builds no part of the guest system.
+        guest-browser-starts-after-a-kill =
+          let
+            cfg = self.guestSystem.config;
+            unit = name: pkgs.writeText name (builtins.unsafeDiscardStringContext cfg.systemd.units.${name}.text);
+          in
+          pkgs.runCommand "guest-browser-starts-after-a-kill" {
+            browserUnit = unit "repose-browser.service";
+            xvncUnit = unit "repose-xvnc.service";
+            novncUnit = unit "repose-novnc.service";
+            # The idle check's script itself (coreutils, iproute2, systemd).
+            idleScript = cfg.systemd.services.repose-desktop-idle-check.serviceConfig.ExecStart;
+            unlock = "${pkgs.callPackage ./guest/base/browser-unlock.nix { }}/bin/repose-browser-unlock";
+            stamp = "${pkgs.callPackage ./guest/base/desktop-stamp.nix { }}/bin/repose-desktop-stamp";
+          } ''
+            fail() { echo "$*" >&2; exit 1; }
+            p=$TMPDIR/profile
+            mkdir -p $p
+            locks() { ln -sfn "$1" $p/SingletonLock; ln -sfn /tmp/org.chromium.Chromium.x/SingletonSocket $p/SingletonSocket; ln -sfn 1234 $p/SingletonCookie; }
+            gone() { for f in SingletonLock SingletonSocket SingletonCookie; do [ ! -L $p/$f ] || fail "$1: $f is still there"; done; }
+            kept() { [ "$(readlink $p/SingletonLock)" = "$2" ] || fail "$1: the lock was removed"; }
+
+            $unlock $p || fail "no lock: exit $?"
+
+            # A fork or a restore under a new name: another host's lock.
+            locks other-machine-4242
+            $unlock $p | grep -q 'removed a stale profile lock (other-machine-4242)' || fail "another host's lock: no message"
+            gone "another host's lock"
+
+            # The same host, a PID that is now some other process.
+            locks "$(cat /proc/sys/kernel/hostname)-$$"
+            $unlock $p >/dev/null
+            gone "a reused PID"
+
+            # A process using a different profile does not hold this one.
+            sh -c 'sleep 300; :' x --user-data-dir=$p-other &
+            other=$!
+            locks "host-$other"
+            $unlock $p >/dev/null
+            gone "a PID with another profile"
+            kill $other
+
+            # A live browser on this profile keeps its lock.
+            sh -c 'sleep 300; :' x --user-data-dir=$p &
+            live=$!
+            locks "host-$live"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock: printed '$said'"
+            kept "a live lock" "host-$live"
+            kill $live
+
+            # Chromium rewrites its title: the arguments in one string.
+            sh -c 'sleep 300; :' "chromium --headless=new --user-data-dir=$p --remote-debugging-port=0" &
+            live=$!
+            locks "host-$live"
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a live lock in a rewritten title: printed '$said'"
+            kept "a live lock in a rewritten title" "host-$live"
+            kill $live
+
+            # A real Chromium on this profile keeps its lock.
+            rm -f $p/Singleton*
+            HOME=$TMPDIR/home ${pkgs.chromium}/bin/chromium --headless=new --no-sandbox --disable-gpu \
+              --no-first-run --user-data-dir=$p --remote-debugging-port=0 about:blank >$TMPDIR/chromium.log 2>&1 &
+            chrome=$!
+            for _ in $(seq 300); do [ -L $p/SingletonLock ] && break; sleep 0.1; done
+            real=$(readlink $p/SingletonLock) || { cat $TMPDIR/chromium.log >&2; fail "Chromium made no lock"; }
+            said=$($unlock $p)
+            [ -z "$said" ] || fail "a running Chromium: printed '$said'"
+            kept "a running Chromium" "$real"
+            kill $chrome
+            wait $chrome 2>/dev/null || true
+
+            # A dead PID.
+            locks "host-999999999"
+            $unlock $p >/dev/null
+            gone "a dead PID"
+
+            # The stamp helper makes and touches stamps with the owner given.
+            d=$TMPDIR/desktop
+            mkdir -p $d
+            REPOSE_DESKTOP_DIR=$d REPOSE_DESKTOP_OWNER="$(id -u):$(id -g)" $stamp last-cdp last-client
+            [ -e $d/last-cdp ] && [ -e $d/last-client ] || fail "the stamp helper made no stamps"
+
+            # The browser runs the unlock helper on its profile before
+            # Chromium, and writes its stamp as root through the helper.
+            grep -q '^ExecStartPre=.*/bin/repose-browser-unlock /home/dev/.local/share/repose/browser$' $browserUnit || fail "repose-browser does not unlock its profile before it starts"
+            grep -q '^ExecStartPost=+.*/bin/repose-desktop-stamp last-cdp$' $browserUnit || fail "repose-browser does not write last-cdp through repose-desktop-stamp as root"
+            for u in $xvncUnit $novncUnit; do
+              grep -q '^ExecStartPost=+.*/bin/repose-desktop-stamp last-client$' $u || fail "$u does not write last-client through repose-desktop-stamp as root"
+            done
+            for u in $browserUnit $xvncUnit $novncUnit; do
+              if grep -q '^ExecStartPost=.*/bin/touch ' $u; then fail "$u still touches a stamp itself"; fi
+            done
+            idle=$idleScript
+            if grep -q 'touch ' "$idle"; then fail "the idle check still touches a stamp itself"; fi
+            grep -q 'repose-desktop-stamp' "$idle" || fail "the idle check does not use repose-desktop-stamp"
+            echo "stale locks removed, a live one kept, every stamp through repose-desktop-stamp"
+            touch $out
+          '';
         # A switch that adds, changes or removes a tmux config reaches the
         # running server, and removing one leaves tmux's defaults: the
         # option, the binding and the array option the file touched

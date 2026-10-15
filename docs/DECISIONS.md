@@ -20771,6 +20771,14 @@ implementation permitted more than the policy allowed.
   memory but was never counted in the view, so it frees no vCPUs -- the
   test for this is the one that fails if the subtraction is written on the
   wrong half.
+- *Every placement path, not just `PickHost`.* `FitsOn`, which places a
+  fork's copies on their source's host (I-701), landed in the same
+  release and asks the same two terms: copies that start are counted for
+  their memory and for their guest vCPUs, copies created stopped for
+  neither. Found at the merge with I-701, where a fork of five `xl`
+  copies would have committed 40 guest vCPUs against nothing. The
+  "an empty host takes one guest" escape is gated on the batch being a
+  single guest there, or an empty host would wave a whole fork through.
 - *What it does not do, stated plainly.* It is a placement gate. A project
   keeps its host for life, so `repose start` of a stopped machine never
   asks placement again; hostd's admission still checks memory and the pool
@@ -20880,44 +20888,40 @@ pages because nothing is down and the remedy is a human apply.
 - *Revisit when* two hosts have run for a week: one host is the whole
   fleet today, so there is no base rate for `for: 15m`.
 
-**I-746. `RegisterPaths` gets its own deadline, and the pass before it
-stops eating the budget (cpu-weight, 2026-10-15).** Two creates on a
-loaded host-01 failed at step 10 with `RegisterPaths: guestd: internal:
-register paths: run /run/current-system/sw/bin/nix-store: context
-deadline exceeded`, 74 seconds apart; the same create took 14 seconds once
-the host was quiet (`proposals/2026-10-14-host-cpu-capacity.md` §8).
+**I-746. The validity pass stops eating the boot deadline and blaming
+`--load-db` for it (cpu-weight, 2026-10-15).** Extends I-705, which this
+branch set out to duplicate: the proposal's §8 item 2 asked for a
+deadline above the 30 s default on `RegisterPaths`, and I-705 had already
+shipped exactly that as `BootDeadline`, 3 minutes, covering
+`SetupProject` as well. This branch's own `RegisterPathsDeadline` of 5
+minutes was dropped at the merge rather than kept beside it: a second
+constant for one purpose is how a grep misses half the uses, and I-705's
+figure is the one in production with an incident behind it (three creates
+on host-01, 2026-10-13).
 
-`RegisterPaths` fell to guestd's `DefaultDeadline` of 30 s, because
-`deadlineFor` had cases only for `Switch` and `Exec`. Those 30 seconds had
-to cover `nix-store --check-validity` over the shared store's lower in
-chunks of 2,000 paths, then `--load-db` of the whole registration, then
-the view sync -- three or more forks against the guest's nix database, on
-a host whose wakeup latency measured six to ten times its quiet figure.
-It is now `RegisterPathsDeadline`, 5 minutes. Not 60 s and not 10: the
-same code inside a `Switch` already gets about 11 minutes, and the
-bounding chain is guestd 30 s < hostd's `vsockclient.SwitchTimeout` 10 min
-< the api's `create_guest` phase 10 min, so raising hostd's alone does
-nothing (guestd fires first) while 5 minutes leaves room under both outer
-bounds and keeps the error on the guest side, where it names the command
-that was slow.
+What I-705 did not fix, and this does: `RegisterPaths` spends its budget
+on `nix-store --check-validity` over the shared store's lower, in chunks
+of 2,000 paths, before it loads the registration -- and it *swallowed*
+that call's error. So a context expiry inside the validity pass was
+discarded, `--load-db` then ran with a dead context and failed at once,
+and the error named `--load-db` for time the pass before it had spent.
+That is the message the owner saw twice on 2026-10-14: `register paths:
+run /run/current-system/sw/bin/nix-store: context deadline exceeded`,
+pointing at the wrong command.
 
-- *The second half, which is the actual lie in that message.*
-  `RegisterPaths` swallowed `invalidPaths`' error, so a context expiry
-  inside `--check-validity` was discarded and `--load-db` then failed
-  instantly, blaming the wrong command for time the pass before it spent.
-  It now returns early on `context.DeadlineExceeded`, naming
-  `--check-validity`, and keeps the swallow for every other error, which
-  is what makes skipping the validity pass best-effort.
-- *The cost:* a genuinely wedged `nix-store` now holds step 10 for up to
-  5 minutes instead of 30 seconds, inside the api's 10-minute phase.
-  `RegisterPaths` is idempotent (it skips a registration already loaded),
-  so the api's retry is safe, but the failure a user sees gets slower.
-- *This is a symptom of I-734's saturation, not a cure.* A loaded host
-  still forks several `nix-store` processes per create inside a nested VM
-  whose scheduling latency scales with the host's oversubscription. The
-  deadline buys headroom; placement is what stops the overload.
-  `docs/workstreams/04-guestd.md`'s deadline sentence carries the new
-  number. The wire shape does not change, so no `interfaces/` file moves.
+- It now returns early on `context.DeadlineExceeded`, and the wrapped
+  error names `nix-store --check-validity`. Every other error from the
+  pass stays swallowed, which is what makes the skip and the view's roots
+  best-effort.
+- *Rejected:* giving the load its own sub-deadline carved out of the
+  request with `context.WithoutCancel`, which would let a create exceed
+  the deadline its caller set and is a worse shape than failing with the
+  truth.
+- A reviewer should note that this makes no create succeed that failed
+  before: it changes which command a failure names. The deadline that
+  decides whether the create survives is I-705's, and if the 74-second
+  pass measured on a loaded host recurs inside 3 minutes, that is I-705's
+  number to revisit, not this entry's.
 
 **I-739. The seat count is the smaller of a host's memory and its CPU
 ceiling, per host and then summed (cpu-weight, 2026-10-15).** Amends
@@ -20988,3 +20992,2011 @@ its 8 cores serve 1.
   "break-even once 22 Solo seats are sold" needs re-deriving. That is
   proposal §7 item 6 and a pricing call, which is the owner's; this entry
   records that it is owed, and the seat derivation does not wait for it.
+**I-696. The launch gates only the owner can close live in
+`CHECKLIST.md`, not in a handoff file.** (conductor, 2026-10-12) The
+host-restart run left five things that need the owner's own hands, and
+wrote them only in `~/repose-ws/HANDOFF.md` on the dev box. Nothing in the
+repository said them, so an agent on another machine, or a later session
+here, would not have known: `~/repose-ws` is not in git and kanali cannot
+read it. Each is now a row in `CHECKLIST.md` "Release (M5)" with the
+evidence that closes it, and `MILESTONES.md` M5 points at them, because
+CLAUDE.md sends every agent to those two files and M5's gate is
+"`CHECKLIST.md` closed".
+- *The five.* Paging that reaches a human (the 2026-10-10 outage paged
+  nobody: `ntfy.herakraft.co` answered 503 on every path, I-648); the Azure
+  alert path proven through the portal's Test, since the CLI refuses it;
+  a console login on host-01 and the edge, which are built with root
+  locked, so the serial console shows output but cannot rescue a host that
+  will not boot (I-649, I-654); a planned host-01 restart, the only proof
+  of the stage-2 pool activation (I-643), the restart of machines that were
+  running (I-645) and the guest freeze on prod (I-652, I-685, I-686), none
+  of which a switch exercises; and the herdr laptop checks from
+  r20261008-1.
+- *Why the restart cannot be rehearsed on one guest.* `hostd freeze` is
+  `FreezeAll` with no per-guest flag, so proving the freeze on host-01
+  would freeze every guest on it, including the owner's working machine.
+  That is why it is the owner's window and not an agent's live check.
+- *Rejected.* Leaving them in the handoff file (invisible to the next
+  agent); a new `docs/ops/PRE-LAUNCH.md` (a second list to drift from the
+  gate it duplicates).
+**I-688. A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504.**
+
+The owner: "Everytime claude finishes its turn even when its not done done ... repose reports it and pings me as if it is done done." Prod, 7 days to 2026-10-12: 326 of 399 notifying events (81.7%) were Claude turn ends, and 856 of 958 Claude `completed` summaries in 30 days were the fallback "claude finished".
+
+- A hook-reported or heuristic `completed` (Claude `Stop`, codex `agent-turn-complete`, opencode `session.idle`/`execution.succeeded`, herdr completions, the tmux-idle heuristic) is recorded as an event and sets the agent's state, and queues no delivery. `completed` leaves the api's notifying kinds.
+- New guest kind `agent_done`, sent by `repose-notify --done TEXT` (1 KB, like a message). Title `<project>: <agent> is done`, ntfy priority 4, never deduped, counted in the hourly cap like `agent_message`. hostd and the api accept it; an older hostd that refuses the kind makes guestd fall back to sending the same text as `agent_message`, so the report still arrives.
+- Claude's `Stop` payload (Claude Code 2.1.x) carries `last_assistant_message`, `background_tasks`, `session_crons` and `stop_hook_active`. The summary is `last_assistant_message` (the transcript tail stays as the fallback). A `Stop` with `stop_hook_active` true, or with a running or pending background task, is a pause: the agent stays `working` and no event is written.
+- The machine guide (`nix/guest/base/agent-guide.md`) stops promising a notification at every finish. It tells the agent: a finished turn notifies nobody; run `repose-notify --done "WHAT, AND WHERE TO LOOK"` once when work the user asked for is complete and they should look at it, never while background work is still running or while the user is typing to you.
+- `needs_input` (a permission prompt) and `error` keep notifying, under I-689's hold.
+- Rejected: keeping turn-end notifications behind a setting. Nobody wants a ping per turn, and a setting nobody turns on is a second code path to keep correct.
+- *Built:* the pause test reads `background_tasks[].status` (`running`, `pending`, or none); `session_crons` is read by nobody, since between a cron's runs the agent waits at its prompt. `stop_hook_active` is not a pause, against the bullet above: Claude Code sets it on the `Stop` that ends a turn a Stop hook forced on (its hook docs: "true when Claude Code is already continuing as a result of a stop hook"), not on the `Stop` a hook is about to block, and repose's hook cannot tell whether another hook will block. Every `Stop` without a running task is the turn's end; while a user's blocking Stop hook keeps the agent going the state shows `idle`, and the second `Stop` records the real end. Gemini's `AfterAgent` is read the same way. A pause keeps `working` only while the pane prints (I-694 Built): a background dev server never ends, so a pause on it would otherwise stay `working` for the session. The `Stop` fixtures were captured from Claude Code 2.1.283 against a stand-in model API. The fallback to `agent_message` is not built: a hostd before I-688 drops an unknown kind as `invalid` in `handleNotify` and answers guestd nothing, so guestd cannot know. hostd (and the api) ship before the guest base whose `repose-notify` sends `--done`, which makes the fallback moot.
+- *Built (closer):* the default ship order in `docs/ops/RELEASE.md` publishes the base before the host switches, which would put a `repose-notify --done` in front of a hostd that drops `agent_done` while it exits 0. A release that carries this branch switches the hosts before it publishes the base; RELEASE.md step 3 now says so for any guest kind the running hostd refuses.
+
+**I-689. Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12).**
+
+The owner: "We might as well not have questions then, or only have them when the user is not attached."
+
+- Present means the project's latest guest sample, no older than 2 minutes, shows a tmux client or an SSH session (`meter_samples.tmux_clients + ssh_sessions > 0`; a laptop herdr bridge is an SSH session, I-511).
+- Agent kinds (`agent_question`, `agent_done`, `agent_message`, `needs_input`, `error`) queued while the owner is present are held: the outbox worker checks presence at send time and moves `next_at` on by 1 minute without counting an attempt, for at most 10 minutes from the event, then sends. A held row is dropped instead of sent when what it reports is over: a question that is no longer pending, or a `needs_input` followed by a later event from the same agent window. Platform and account kinds are never held.
+- The hold is recorded on the event's `delivered` as `held` while it waits and `dropped: resolved` when dropped, so the "I got nothing" question has an answer.
+- *Built:* the "is it over" check runs on every row of an agent kind at send time, not only on rows already held, so a question withdrawn or answered before its first send is not sent either; for a row that was never held it is the same `dropped: resolved`. A `needs_input` is over when the same project has a later event with the same agent and window (any kind, `completed` included). `repose_api_notify_total` counts `held` once per held row and `dropped` per drop.
+- *Built (closer):* the "is it over" check reads the question's state when the row is sent, not when the pass picked it. A row can wait on its lane behind slow sends (15 s timeout each, Google Chat paced 1.1 s per space), and a question closed meanwhile is dropped (`dropped: resolved`) rather than sent with answer buttons.
+
+**I-690. A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445.**
+
+Cause, verified on kanali: Claude Code's Bash tool moves a command past its timeout (2 minutes by default) into the background and lets it run. `repose-ask` waits 30 minutes, so the agent asks again in the chat, the owner answers there, and the question stays pending with "expires in 11m".
+
+- Claude's `UserPromptSubmit` hook is installed beside `Notification` and `Stop`. It maps to the socket kind `prompt`, which never leaves the guest and never reads the prompt text. On it guestd closes every open question asked from inside the same agent process (the nearest agent ancestor of the hook's and of `repose-ask`'s SO_PEERCRED pid, keyed `pid:starttime`; the window when no ancestor is found), with reason `terminal`, and sets that agent `working`. The other agents get the same hook where their shipped binary is shown to fire one (codex `UserPromptSubmit`, gemini `BeforeAgent`, pi `input`, opencode's user message); one not shown stays on withdrawal and the sweep.
+- `repose-ask --cancel` withdraws the caller's own open questions, `--cancel ID` one, `--cancel --all` every open one in the guest (reason `withdrawn`). It prints how many it closed.
+- guestd records the last poll of each open question and closes one nobody has polled for 90 seconds (reason `asker_gone`), which covers a killed asker.
+- The close travels as the existing guest-side close with a new `reason` (`Question.reason = 8` on vsock, `AgentQuestion.reason = 9` on hostd's channel; values `terminal|withdrawn|interrupted|asker_gone`). An older hostd drops the field and the api sees a plain cancel. hostd's per-guest bucket no longer drops a close, and guestd re-announces closes the api has not acknowledged, alongside open questions.
+- The api stores `terminal` as `answered` with `answer` null and `answered_via='terminal'`, and `withdrawn` as `cancelled` with `answered_via='agent'`. `Describe` says "answered in the terminal" and "withdrawn by the agent". A held delivery of that question is dropped (I-689).
+- `repose-ask` exits 6 on `terminal` ("the user answered in the terminal"), 5 on `withdrawn` as on any cancel.
+- `repose reply --dismiss [PROJECT]` dismisses from the laptop; the api route already existed.
+- Accepted cost: any prompt to that agent closes its open questions, even one unrelated to them. The owner is at the agent, which can ask in the chat.
+- *Built:* every agent got its prompt hook, each seen firing from the shipped binary in a temp HOME against a stand-in model API, and then end to end through a built `repose-hook` into a real hook socket. Claude Code 2.1.283: `UserPromptSubmit`. Codex 0.157.1: `[[hooks.UserPromptSubmit]]` in `/etc/codex/config.toml` with `[features] hooks = true`; Codex runs hooks of that system file as managed, while hooks in `~/.codex` wait for a trust review keyed by a hash. Gemini CLI 0.61.0: `BeforeAgent` and `AfterAgent` in the platform extension's `hooks/hooks.json`, which run in an untrusted folder too (`settings.json` hooks do not). pi 1.0.4: `input` (not from an extension) and `agent_end` in the platform pi extension. opencode 1.18.34: the plugin's `chat.message` hook. OpenCode 2's user-message event is not checked, so OpenCode 2 has none. Gemini and pi thereby gained turn ends too (`AfterAgent`, `agent_end` map to `completed`).
+- *Built:* Claude Code also fires `UserPromptSubmit` for the turn a finished background task starts, with its own `<task-notification>` as the prompt. `repose-hook` compares the prompt's first bytes with that marker and sends the socket kind `resume` instead, which marks the agent `working` and closes nothing, so a finished `npm test` does not close a question as answered in the terminal. That comparison is the only read of the prompt; nothing of it is stored, logged or sent.
+- *Built:* the api sends no acknowledgement of a close. guestd keeps a close it made in `Pending()` for `questions.Keep` (10 minutes) and re-sends it on each new hostd connection; the api's close updates only a `pending` row, so a repeat changes nothing. hostd passes the first close of a question it passed as open without taking a token, and keeps those ids per guest (at most 512, for `MaxTimeout` plus `Keep`); any other close takes a token, since a guest is tenant-controlled and could otherwise send endless made-up closes. `repose-ask` prints `repose-ask: asked ID` on stderr when the question opens, which is where `--cancel ID` gets its ID. A question asked from no window is stored under the agent's name (`shell` for a script), and `--cancel` from the same place matches it the same way. `DELETE /ask/<id>` without a reason is `interrupted` (what an older `repose-ask` sends on a signal); `repose-ask --cancel ID` exits 1 for a question that is not open.
+
+**I-691. Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6.**
+
+- The 30-an-hour cap counted `events_outbox` rows, which are deleted once sent, so it never fired (0 `notifications_paused` in prod). It now counts the project's events of notifying kinds in the last hour that queued a delivery, and the pause message says when it lifts as a time, not "the top of the hour".
+- Sends run on up to 8 workers, each channel's rows in order, so a hanging ntfy server delays its own rows only.
+- Resend gets `Idempotency-Key: <event id>/<channel>`, so a timeout or a failed mark after a send cannot mail twice.
+- `events.delivered` stores the short reason from `sendFailure`, never `err.Error()`, which for a network error contains the full URL (an ntfy topic, a Chat webhook's key and token) and is returned by `GET /projects/:id/events`.
+- Turning a channel off also deletes its queued user notices (`machines_restarted`), not only project events.
+- `POST /me/notify-test` is limited to 6 a minute per user, and its message is its own kind of test, titled `repose: test`.
+- The ntfy click opens the project's page, not `/projects`. No ntfy tag carries an emoji: tags are dropped, and priority says urgency (5 question, 4 done or failure, 3 message).
+- A Prometheus rule `NotifyFailing` pages when `repose_api_notify_total{result="failed"}` rises for 10 minutes or the outbox lag passes 5 minutes.
+- *Built:* `repose_api_outbox_lag_seconds` was the age of the oldest outbox row, which a held row (10 minutes) or a retry waiting out its backoff (up to 12 hours) pushes past 5 minutes with nothing wrong. It is now how long the oldest due row (`next_at` passed) has waited, and `NotifyFailing` is `sum(increase(failed[10m])) > 0 or max(lag) > 300` held for 10 minutes. The lanes are keyed by user and channel; a pass does not wait for a slow lane in `Run`, and rows already on a lane are left out of the next pick, so a row is never sent by two lanes. The cap counts an event that queued a delivery as one with an outbox row or a non-empty `delivered`, which needs no new column. The test message's email subject is `[repose] repose: test`. `sendFailure` gained `not configured on this server` and `the message did not render`. The channel list is `events.Channels`, which Google Chat (I-692) extends in one place.
+- *Built (review):* `NotifyFailing` counts only `channel="email"` failures: an ntfy failure is the user's own server (a reserved topic, a 404, a private address), and two of them in 10 minutes would page on something nobody here can fix. Every replica sets the outbox gauges from the table every 15 s on its own ticker, lock or no lock, so a worker that is stuck, fails every pass or is not running shows as lag; before, only a successful pass on the lock holder set them. The Idempotency-Key alone did not stop a double send: Resend answers 409 to a reused key with a different body, and the unsubscribe link signed an expiry from the clock. The link's expiry now runs from the event (90 days after it), so a retry sends the same bytes, and a 409 on a keyed request is retried rather than marked failed. `machines_restarted` stays at ntfy priority 4, as it was since I-645: a host restart may have left machines stopped; the public docs name it beside failures.
+- *Built (closer):* before each send a lane moves the `next_at` of its own waiting rows a minute on, so rows queued behind one user's hanging server are not due and do not raise `repose_api_outbox_lag_seconds`; a worker that dies leaves them due a minute after its last send.
+
+**I-692. Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444.**
+
+The owner prefers email and Google Chat.
+
+- Channel name `gchat` in the outbox, `delivered`, `answered_via`, the CLI flag (`repose notify set --gchat URL|off`) and JSON; "Google Chat" in prose. Migration 0023 adds `users.gchat_url` and `users.gchat_broken_at`.
+- The URL must be `https://chat.googleapis.com/v1/spaces/<id>/messages?key=..&token=..` and is stored in that canonical form. It is a credential: never logged (the logger's deny list gains `gchat_url` and `webhook`), never echoed. `GET /me` returns `notify.gchat: null | {space, broken_at}`; the CLI and the dashboard show the space id.
+- A message is one `cardsV2` card plus `fallbackText`, no emoji: a header with the project and `<agent> asks|is done|says|...`, the tenant text escaped in a `textParagraph`, and `openLink` buttons: one per option to the signed reply link (a GET shows the confirm page, only the POST answers, so a link preview cannot answer), else "Open project". Each message starts its own thread (`threadKey` per event), since a reply in a thread the owner does not follow may not alert. When a question closes, a reply in its thread says how ("Answered in the terminal", "Answered yes from the dashboard").
+- Sends to one space are at least 1.1 s apart; 429 and 5xx retry. 401, 403 and 404 mark the channel broken once (`gchat_broken_at`) and send one account email of the new kind `notify_channel_broken`; delivery to it stops until a new URL is saved or a test succeeds.
+- Incoming webhooks need a Google Workspace account; the docs say so.
+- *Built:* the live check against the owner's ops space did not run. calert is not on the control host (no container on `repose-control` or `repose-edge` carries `CALERT_PROVIDERS__REPOSE__ENDPOINT`); it runs on the personal server (`docs/ops/OBSERVABILITY.md`), which the build machine cannot reach, so nothing was sent to Google. Idempotency therefore uses `requestId=<event id>`, which Google documents as returning the first message for a repeated id, and not `messageId=client-...`, whose acceptance on a webhook is undocumented; a 409 is a plain failure. Threads are `threadKey=e-<event id>`, or `q-<question id>` for a question and its close reply, with `messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`. The header is the project as title and `<agent> <verb>` as subtitle (a platform event's subject; a user notice's subject as title); `fallbackText` is `<project>: <agent> <verb>: <text>`. `GET /me` gives `notify.gchat.space` as the bare space id (`AAAAx1yZ`), not `spaces/...`. The close reply is a user-only event of kind `question_closed` (summary `{question_id, text}`) with one `gchat` outbox row, queued only when the question's own event shows a delivered `gchat` timestamp and the channel is on; it is written after the close, not in its transaction, so a failure there loses the reply and never the close. Its wording is `questions.CloseLine`: `Answered <option> from the dashboard|by email|from ntfy|from Google Chat|with repose reply`, `Answered from <where>: <text>` for free text, `Answered in the terminal`, `Withdrawn by the agent`, `Dismissed from the dashboard`, `Cancelled by the agent`, `Expired without an answer`, `Closed: the machine stopped`. A refusal marks the channel only while the refused URL is still the saved one, and a `notify test` Google refuses marks it too. The outbox re-reads the user's webhook and mark before each gchat send, so one refusal stops the rest of the batch. Two more buttons than the decision names: "Answer" (to the project) on a question without signed reply links, and "Dashboard" (to `/projects`) on a user notice or an event with no project; every other card, `notifications_paused` included, has "Open project", and a close reply has none. A notice whose text opens with its subject (`machines_restarted`) takes the email's heading as card title, and its `fallbackText` is the text alone; a platform subtitle and its text are joined by a line break. A queued question card whose question has closed is dropped unposted, and one that posts while its question closes calls `questions.ReplyIfClosed` after `delivered.gchat` is written, so the reply still follows it; `InsertQuestionClosed` writes at most one `question_closed` per question (a `not exists` on its summary's `question_id`, which two concurrent inserts can still both pass).
+- *Built (integration):* on merging the four tracks, `events.Channels` is the one list of a user's channels and includes Google Chat (a saved webhook with no `gchat_broken_at`); clearing the webhook drops its queued rows through `events.DropQueued`, like email and ntfy. Google Chat rows take part in the presence hold (I-689 holds by kind on every channel), and a queued question card whose question has closed is dropped by the same "is it over" check as the other channels, recorded `dropped: resolved`, instead of a silent delete. `NotifyFailing` stays on `channel="email"`: a Chat webhook is the user's own, like an ntfy topic, and a deleted one already marks the channel broken and mails the user; a stuck outbox still pages through the lag gauge, whatever the channel. The close reply's words match the dashboard's closing lines (I-693): `Answered yes in Google Chat`, `in ntfy`, `from the CLI`, and a cancel with no source reads `The agent stopped waiting`, not `Cancelled by the agent`, which was wrong for `asker_gone`. Settings' notifications line says "When an agent is done or needs you" (it said "finishes", which I-688 ended), and at phone width the Chat label drops the word "space" so Remove stays on the label line.
+- *Built (closer):* `POST .../questions/:qid/cancel` takes an optional `{via: cli|dashboard}`; `repose reply --dismiss` sends `cli` and the dashboard sends no body, which stays `dashboard`. The Chat close reply for a dismissal from the laptop reads `Dismissed from the CLI`. The question card prints its expiry as the email does, `Open until 18:30 CEST`, with the date when it falls on another day than the ask (a 24-hour `--timeout`).
+
+**I-693. Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680.**
+
+The owner: "absolutely fucking ugly". Captured at 1440 and 390: a blue 3px rule on each row inside a bordered card, 18px unclamped text at about 150 characters a line, mono "claude asks in shell", a red underlined "Cancel question", a 320px input, and two components that print the same expiry differently ("expires in 11m", "expires in less than an hour").
+
+- One `QuestionRow` component on /projects and on the project page. The card is titled "Waiting on you" with a `.badge--warn` count, rows split by hairlines, and one amber square marker per row (amber is "waits on you"; blue stays links, focus and measures). No left rule.
+- A row: a 13px meta line, the agent in mono and the window in muted sans, "asked 3m ago" right-aligned and nowrap; the expiry appears only in its last 10 minutes, in amber. The question at `text-sm`/`text-base`, at most about 80 characters a line, clamped to 3 lines (4 on a phone) with "Show all" only when it is clamped. Options are `.btn-quiet .btn--sm` chips; a free answer is a field that grows to 4 lines, Enter sends, Shift+Enter breaks a line, with a quiet "Send". "Dismiss" is a muted ghost button, not red.
+- /projects answers in place, grouped by project when more than one project waits; 3 rows show before "Show all N". On a project page several questions from one agent window show the newest open and the older ones folded to one line.
+- An answered row collapses for 8 seconds to one line saying the answer and where it came from ("Answered in the terminal", "Answered yes by email"), then leaves.
+- The Events card keeps question rows; the Agents card and the projects table keep their `question` badge.
+- *Built:* `QuestionRow.svelte` and `WaitingCard.svelte` in `apps/web/src/lib/components/questions/`, wording and layout in `lib/question-view.ts`, the clock in `lib/clock.svelte.ts`. The fold of older questions from one agent window applies on /projects too, inside each project's group, so the two pages lay out the same; "Show all N" counts rows after that fold. A question that leaves the open list without the card closing it is looked up once in the project's (or the account's) full list, so its line can say how it closed. /projects fetches the questions with the project list on its first load, so the card is in the first paint. `completed` events read "turn ended" in the Events card and `agent_done` reads "done" (I-688). While that lookup runs the row stays drawn as it was, draft and focus included, so the rows below do not jump; focus then moves on as after an answer here. A cancel says "Dismissed" only with `answered_via` dashboard (what the api's Cancel stores); a cancel with no source (`asker_gone`, `interrupted`, a machine stop, an older hostd) reads "The agent stopped waiting", and `agent` reads "Withdrawn by the agent". The fake api's guest close is the api track's `CloseQuestion(questionID, state, reason)`, taken as is.
+
+**I-694. The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614.**
+
+The owner, after `repose stop obsidian` asked about "shell (working)" when only a dev server was running: "do we have a way to distinguish active work when we can say confidently agent claude working or not."
+
+- An agent with turn hooks (Claude, codex, opencode, and any agent I-690 gives a prompt hook) is `working` from its prompt to the end of a turn with no background task running, `needs input` on a permission prompt, and `idle` after. Those states come from hooks only.
+- CPU use in a pane no longer makes a shell `working`. A plain shell window is not an agent and is left out of the agents list, `repose ls`'s AGENTS column and `stop`'s question. A heuristic-only agent shows `running` (its process is alive) instead of `working` or `idle`.
+- `repose stop` asks before ending a machine only when a hooked agent is `working` or `needs input`.
+- *Built:* the new state is `running`, in `AgentProc.state` and `AgentState` (hostd accepts it; a hostd before this maps it to `unknown`). A hooked agent is `idle` before its first hook. Claude and codex are hooked from the start; gemini, pi and opencode once a `prompt` hook from their window arrives (I-690); before that they are `running`, and gemini and pi's turns come from the heuristic. OpenCode 2 sends turn ends and no prompt, so it stays `running`: its prompt event is not checked (I-690 Built). A `working` record whose tmux pane printed nothing for 2 minutes (`PromptQuietAfter`) becomes `idle` until the next hook: Claude Code sends no `Stop` for a turn interrupted with Esc, codex no `agent-turn-complete`, and a pause on a background dev server lasts as long as the server. An agent's spinner prints through a turn, tool calls included, so a working agent keeps its state; pane output never makes an agent `working` again, only a hook does. A herdr pane has no such bound; herdr's own state is taken. The record file is rewritten when a window's record goes with its window, so a new agent in a window of the same name does not inherit `working` across a guestd restart. The hook states live in `/run/repose/agent-hooks.json`, so a guestd restart mid-turn keeps `working`; records for windows gone at the first refresh are dropped. herdr's reported states are taken as before. A shell window was already left out unless an agent was its foreground program; the "shell (working)" the owner saw was a claude in the shell window whose dev server used CPU, which hook-only states end. The api's unused-machine and temporary-machine checks count any state but `idle` and `needs_input` as use, so `running` keeps a machine from being unused: left as it is, since a hookless agent may be mid-task and `stop --unused` or a temporary machine's destroy would end it.
+
+**I-695. What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12).**
+
+- ntfy notifications are not updated or withdrawn when a question closes (`X-Sequence-ID` needs a recent ntfy server; not verified against ntfy.sh).
+- The Chat webhook's answers to `requestId`, and the status a deleted webhook returns, are taken from Google's docs and not from a live deleted webhook.
+- No message was sent to a real Chat webhook (I-692 *Built*): that a `cardsV2` card with `openLink` buttons and `fallbackText` renders, that `requestId` dedupes, and what an invalid token returns all wait for a first send from prod with the owner's space, then `repose notify test`.
+
+**I-710. `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634.**
+
+The owner, on `Stopped parth-event in 20s with a 2.7 GB snapshot.` and `Stopped job in 23s with a 3.8 GB snapshot; 1 file not committed.`: "should we make stopping background??" and "should we just tell them 1 file not committed then do the rest in the background?" The 20 s are the snapshot's upload and the shutdown (I-404), which run on the host whether the laptop waits or not; nothing the user can act on comes out of them.
+
+- What the command waits for: the busy-agent question (I-614), the fetch (I-615), the read of what the machine keeps (I-634), the api's `202`, and then the engine's pickup: it holds on the op's long-poll (I-236) until the op is `running` and the project reads `stopping`, at most 10 s. The api answers the stop before its engine claims the op, so a `repose start` or `attach` sent in that gap found the machine `running` and said "already running"; after the pickup every reader sees `stopping`. On a production `large` with a 480 MB snapshot the stop returned in 1.6 s, where `--wait` took 8.3 s; the owner's 2.7 GB stop took 20 s.
+- What it prints: `Stopping job.`, with I-634's clause (`Stopping job; 1 file not committed.`), and after `-y` past a busy agent `Ending claude (working).` A stop that ended inside the pickup (no guest, or a fast `--no-snapshot`) prints `Stopped job in 0.8s.`, `Ended ...` and I-158's note when its snapshot failed. A stop that failed inside the pickup exits 1 with the reason and `repose stop job` tries again, as `--wait` does. A project already `stopping` prints `job is already stopping.` and sends nothing (the api refuses a second stop). The snapshot's size is no longer in the default line: it is what the time went on (I-570), and with no time to explain it says nothing the user acts on; `repose snapshots` lists it.
+- `--wait` keeps I-570's whole wait and line, `Ended` after it, the I-158 note, and exit 1 on a failed stop; on a project already stopping it waits for that stop. The commands that stop to do something else wait as before: `resize --size` needs the stopped volume, `fork` its snapshot, and run's plan question (I-637) the freed memory.
+- How a failure reaches the user: the op's failure path gives a stop the treatment I-165 gave a destroy. The project goes to `error` with `last_error` `<code>: stopping job failed: <why>. ` + "`repose stop job` tries again" (the retry is left out when the reason already names a command), which `repose ls`, `status` and the dashboard show, and a `stop_failed` event notifies (ntfy priority 4, title `job: stop failed`). A stop's snapshot that fails after the guest is down keeps `snapshot_failed` (I-158). The retry is a stop like the first: hostd stops a guest that is already down without a snapshot, and a guest a failed freeze left on is frozen again (with a dead guestd, I-158's fallback stops it first).
+- A start, attach, run, ssh or code on a `stopping` machine waits for the stop and starts it: `ensureRunningFrom` already waited on the state, so the only change is the message of commands that do not start a machine (`exec`, `cp`): `job is stopping. \`repose start job\` waits for the stop and starts it again.`
+- `repose ls` and the dashboard show `stopping` (the dashboard's busy dot, I-373) until `stopped`. Plan memory stops counting the machine once it reads `stopping`: `stopping` is not in `billing.memoryStates` nor the CLI's, and stays out, since the guest is going away and a start the user sends next should not be refused for it. (The first draft of this entry said the opposite; review round 1 caught it.)
+- The commands that act on a settled project wait out a stop under way and then do their work: `rm`, `fork` (its snapshot), `resize` (disk and `--size`), `run --size` on an existing project, `snapshots create`, an in-place `snapshots restore`, and the config commands that send a change (`config add`, `remove`, `edit`, `apply` with a file; a second review found `repose stop X; repose config add jq` on prod answered `A build is in progress (conflict).`). Before this entry the stop had ended by the time they ran; now the api would answer them `409 conflict` (Engine.Enqueue's op in progress) for the whole stop, past the CLI's 10 s retry on a conflict (a review's `repose stop X; repose rm X` on prod failed with `An operation is in progress (conflict).` after 11.5 s), and a restore would be refused with advice to run the stop just run. `waitOutStop` in `lifecycle.go` waits on the state as `ensureRunningFrom` does, showing `Stopping job` and `✓ Stopped job` on the way. The fake api answers those routes `409` while `stopping`, as the api does. `PUT /projects/:id/config` now refuses a `stopping` project with `409 conflict` "<slug> is stopping" before it opens a transaction, as it refuses `creating` and `destroying`; it had answered "a build is in progress", which was false. `repose stop --no-snapshot` on a project already stopping says the flag does not change the stop under way: the api refuses a second stop, and the one running keeps what it was asked for.
+- `--json` prints the project as the command left it: `stopping`, or with `--wait` stopped.
+- Ctrl-C after the api took the stop says `Interrupted. The stop of job goes on.` as before.
+- *Rejected:* returning at the `202` without the pickup wait (the start-after-stop race above); a laptop process that waits and notifies (the laptop closes; the api already notifies, as I-166 found); the api setting `stopping` in the stop's transaction, as a destroy's DELETE does (I-165): a stop of a project with no guest skips its phase and would be left `stopping`, and a CLI-side wait works against the api already deployed.
+- *Built:* `stopBegin`/`waitStopTaken` in `internal/cli/lifecycle.go`, `--wait` in `newStopCmd`; `StopCmd` (tests, and callers that need the stop done) waits. The fake api gains `StopDelay` and `StopPickup` (op `pending` and the project `running` for the pickup, then `stopping`) and refuses a stop or start while `stopping`, as the api does. The api: `KindStop` gets its own case in `onFail`, `EventStopFailed` in `ops`, `stop_failed` in `events.notifyKinds` and ntfy's priority 4, the dashboard's Errors filter. Branch built on notify-revamp, whose `notify.go` and `events.go` it edits.
+
+**I-711. New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13).**
+
+The owner asked: "should the default machine size for solo be small?" Solo's 8 GB runs one `large` or two `small` at once, so a `small` default would let a Solo user run two machines without a question.
+
+- No. Production's samples for the last 14 days (`meter_samples.mem_used`, memory in use without the page cache, I-493): of 24 `large` projects, 4 went past 3.5 GiB (what a `small` leaves its processes) and one sat there at its p99; the `xl` projects reached 12 GiB. Each of those 4 would have had its agent session OOM-killed on a `small`, which is the failure I-362 priced the plans around (`PRICING.md`: "a harness with its language servers, builds and browser fills 8 GB"). The 11 `small` projects, all opened with `--size small`, peaked at 1.8 GiB: users who know their work is small already pick it.
+- What a second machine costs a Solo user today is one question: `repose run` in another repository asks to stop the one using the memory (I-637), and `default_size = "small"` in `config.toml` or `--size small` makes small the default for those who want two.
+- Nothing is built: `defaultConfig().DefaultClass` stays `large`, and `billing.md` and `machine.md` already say so and why.
+- Revisit when the samples change: a guest image that idles much smaller, or most Solo projects peaking under 3 GiB over a month.
+**I-697. Account secrets: a named secret set once for every project, with
+the project's own winning (account-secrets, 2026-10-13).** Amends
+features/secrets.md "Secrets are per project" and its Deferred list.
+*Made during implementation* (the owner's backlog: "account wide, global
+vars, like COOLIFY_BASE_URL?"; the owner left the shape to the builder).
+- *Still the Postgres home, not a fourth place.* CLAUDE.md's "three homes"
+  rule counts where a value lives, not how many tables hold it. An
+  account secret is a row in Postgres (`account_secrets`, migration 0024,
+  one per user and name), sealed with AES-256-GCM under the same per-user
+  data key wrapped by Key Vault, and reaches a machine only as the tmpfs
+  files and environment a project secret does. The rows cascade on a hard
+  delete of the user row, which no code does today: a cancel sets
+  `users.cancelled_at` and leaves project secret rows and these alike, so
+  the purge 30 days after a cancel that billing.md promises, when it is
+  built, deletes both tables' rows (not built here; it predates this
+  entry).
+  `userDEK` reads both tables, so a user keeps one data key; `Rewrap`
+  covers both. The ciphertext is bound to the user and the name under its
+  own prefix (`repose-account-secret-v1`), so a row moved to another user,
+  or copied between the two tables, does not open.
+- *Precedence: the project's own wins.* The specific value beats the
+  general one, as a repository secret beats an organization secret in
+  GitHub Actions and a project variable beats a team one in Vercel. The
+  other order would make a project unable to differ from the account
+  without renaming the variable its code reads. The merge is in
+  `DecryptForGuest`, the one place values are decrypted, so create,
+  start, restore, `UpdateSecrets`, the fragment refusal ("fragment
+  contains the value of secret NAME") and build-log redaction all see the
+  same set without a second code path.
+- *Delivery.* A set or rm queues `UpdateSecrets` for every running project
+  of the account that has no secret of its own by that name (a project
+  that has one would receive the same set again); stopped ones get it at
+  their next start. That is the project path's "within seconds", per
+  machine. The PUT answers `{name, pushed, overridden_by}`: `pushed` is a
+  count, not the project route's bool, since one account write reaches
+  many machines, and `overridden_by` names the projects whose own value
+  wins, because that is the case a user would otherwise misread.
+- *API.* `GET /v1/me/secrets`, `PUT /v1/me/secrets/:name` and `DELETE
+  /v1/me/secrets/:name`, beside `/me/config` (the account's machine.nix,
+  I-490). The project routes keep their shape: `GET
+  /projects/:id/secrets` lists the project's rows alone, so no old client
+  reads an account row as the project's. Audit actions
+  `account_secret_put` and `account_secret_delete` carry the name; the
+  metric `repose_api_secrets_ops_total{op}` gains `account_put` and
+  `account_delete`.
+- *CLI placement: `--global` on `secrets set`, `list`, `rm` and
+  `import`.* `repose config --global` already means "every machine of
+  your account" (machine.nix), so the same flag on the same noun reads
+  the same way, and no new command or noun is added (cli-surface-taste).
+  The flag sits on those four subcommands, not on `secrets` itself:
+  `secrets choose` already means "every project" without `--project`,
+  and a persistent `--global` there would be a second spelling of that.
+  `--global` with a project exits 2. `secrets list` on a terminal shows
+  the account's secrets under the project's and marks a name the project
+  overrides with "(PROJECT's own is used)"; piped and `--json`, it stays
+  the project's rows, so scripts that read it see what they saw before.
+  `import --global --mcp` reads the user scope of the laptop's Claude Code
+  MCP servers alone: a local-scope server is one repository's, and its
+  tokens belong to that project. `run`'s Claude login check counts an
+  account `CLAUDE_CODE_OAUTH_TOKEN`. A CLI talking to an api from before
+  this entry treats a 404 from `/me/secrets` as no account secrets. A
+  project's `secrets rm NAME` checks the account when it matters: a name
+  only the account has exits 1 with "PROJECT has no secret NAME of its
+  own; it gets your account's." and the `rm --global` line, and removing
+  a project's own that the account also has says the machine gets the
+  account's now. Both cases start from `secrets list` showing the name,
+  and without the line the user cannot see that the variable stays.
+- *Fork* copies the source's project rows (I-254) and nothing else: the
+  copy belongs to the same account and gets its secrets as every project
+  does.
+- *Not built.* Keeping one account secret off one project without giving
+  that project a value of its own. machine.nix has `config --global off
+  PROJECT`, but a secret has a simpler answer (set the project's own) and
+  nobody has asked; it stays in features/secrets.md's Deferred list.
+- *Evidence* is in the branch's commit message.
+
+**I-698. The dashboard shows account secrets on Settings and on each
+project's Secrets page (account-secrets, 2026-10-13).** *Made during
+implementation*, with I-697.
+- *Settings, a "Secrets" section after machine.nix* (`#secrets`): the
+  account's names and dates, Add (name and value, typed or from Load from
+  file, the same checks and 64 KB as a project's), and the project page's
+  two-step Delete. Settings
+  is where the account's machine.nix already lives, and a top-level
+  "Secrets" in the dashboard's header would be a fourth place to look
+  beside Projects, Billing and Settings. A save toasts the projects whose
+  own secret wins.
+- *A project's Secrets page lists "From your account"* under its own: the
+  names that reach this machine, with a name the project has itself
+  struck through and "This project's own is used". Without it, a user
+  looking at a project with no secrets would read "No secrets yet" while
+  the machine has five. The dashed empty box shows only when neither
+  list has a row. The account list failing to load leaves the project's
+  page as it was.
+- I-699 was reserved with these and is not used.
+**I-704. Free page reporting stays on: it is not what made the 55 s boot
+(boot-fast, 2026-10-13).** *Made during implementation.* The 55.2 s create
+of nuru-playground on host-01 (2026-10-12 22:26Z) came 13 minutes after
+I-686 started guests with `--balloon size=0,free_page_reporting=on`, and
+its ch.args differed from a healthy 18.4 s create only by that flag
+(`/home/dev/.kanali-coord/boot-sync.md`). The brief named three fixes for
+it: load `virtio_balloon` after the boot, raise
+`page_reporting.page_reporting_order`, or turn the balloon off. None ships,
+because an A/B on host-01 found no boot cost to remove.
+- *How it ran.* `ops/dev/freeze-bench.sh hup` (new) boots a closure the
+  host already holds on a `bench-*` thin volume the way hostd's create
+  does: fresh ext4, hostd's argv and disk limits, the unit's
+  `MemoryMax`, `MemoryHigh` and `CPUQuota`, then RegisterPaths and
+  SetupProject through `ops/dev/freezebench`. The closure was base
+  2026.10.12 (`iswjhprp`), the one nuru booted, at class large.
+- *Result.* Three interleaved pairs, host load 8 to 10: balloon on 34.6,
+  35.9 and 33.6 s from start to set up; off 42.4, 39.2 and 35.9 s. At host
+  load 12 to 16: off 58.8 s, on 50.5 s, late-loaded 53.8 s, order 10
+  45.0 s. Minor faults to set up were about 200,000 in every arm. The
+  boot got slower with the host's load, by up to 24 s, whatever the
+  balloon did. Raw rows: docs/research/boot-speed-data/ab-host-01.txt.
+- *Caveat.* These boots shared the whole host store over virtio-fs,
+  where hostd shares a view of the closure (I-463), so RegisterPaths and
+  guestd's directory reads were heavier than a tenant's. The comparison
+  holds across arms; the absolute times are not a tenant's.
+- *What the slow boots have in common* is a busy host. In the guest the
+  boot is mostly kernel time (in one 46 s boot: user 19 s, system 63 s,
+  irq 43 s, softirq 22 s and steal 31 s of vCPU time), so it stretches
+  with contention. Prod's slow boots predate I-686 too (starts of 50.4 s
+  and 37.4 s on 2026-10-12 at 14:54 and 18:45). I-705 and I-706 are what
+  boot-fast changes for it.
+- *A cost found doing it.* Each bench boot is one more busy large guest on
+  a tenant host. Three tenant boots on host-01 failed with `SetupProject:
+  context deadline exceeded` while the bench ran (15:35, 15:56, 15:58Z),
+  and one create was refused for memory (15:57). RUNBOOK "BootSlow" now
+  says so beside the tool.
+
+**I-705. RegisterPaths and SetupProject get 3 minutes, not 30 s
+(boot-fast, 2026-10-13).** *Made during implementation.* guestd bounds
+every request it has no special deadline for at 30 s
+(`DefaultDeadline`), and hostd's client gave SetupProject the same 30 s.
+SetupProject starts the session unit, which waits for
+systemd-user-sessions, which waits for home-manager's first activation;
+on a busy host that took past 30 s and the boot failed with `SetupProject:
+context deadline exceeded`, a machine that was about to work torn down.
+Three creates and starts on host-01 failed that way on 2026-10-13, and the
+bench boots of I-704 failed the same way in RegisterPaths (`nix-store
+--load-db` past 30 s).
+- guestd's `BootDeadline` (3 minutes) bounds RegisterPaths and
+  SetupProject; project.Setup's own bound goes from 60 s to the same 3
+  minutes. hostd's `vsockclient.SetupTimeout` is 3 minutes 15 s, so the
+  guest's error, which names the step that ran out, is what arrives.
+  RegisterPaths already had hostd's 10-minute switch bound.
+- Why 3 minutes: the slowest boots seen took about 60 s in setup, and 3
+  minutes stays well under the api's 10-minute bound on the create_guest
+  and start_guest phases, so a guest that cannot set up in that time is
+  still reported as unresponsive, not as a timed-out op.
+- Either half alone changes nothing (the other still cuts at 30 s); each
+  is safe with the other's old version. The guest half ships with a base,
+  the host half with a host switch. docs/workstreams/04-guestd.md's
+  deadline sentence names it.
+- A boot that answered and then ran out in RegisterPaths or SetupProject
+  now reads "the environment started but did not finish setting up in
+  time", where it read "did not answer within a minute of starting",
+  which stays for a guest that never sent Ready (humanError,
+  internal/api/ops/recover.go). It names no bound: the api ships apart
+  from the host switch, and a hostd before this entry cuts SetupProject
+  at 30 s, so "within 3 minutes" would be false until every host runs
+  the new one. troubleshooting.md already says the message names how a
+  boot failed, so the page is unchanged.
+- The hostd half is tested by behaviour, not by the constant: a session's
+  bounds are scaled down in TestSetupProjectOutlivesTheDefaultTimeout,
+  the fake guestd holds SetupProject past the default bound, and the call
+  succeeds; pointed at the default bound, it fails.
+
+**I-706. repose-pin-profile waits until the project is set up (boot-fast,
+2026-10-13).** *Made during implementation.* The copy-up of dev's
+profile closure (repose-pin-profile, I-533) runs after repose-paths, which
+puts it beside home-manager's first activation on the way to the user's
+session, and its `.path` unit starts it again when that activation
+changes the profile. It reads the closure over virtio-fs and writes it to
+the volume: 14.6 s of CPU in a 46 s bench boot, the second-largest unit
+after PID 1, and on mailflare it ran for 3 min 59 s. Masked on the kernel
+line, the same boot reached set up in 34.4 s against 46.0 s beside it, at
+the same host load (n=1; later pairs were cut off by the host's load).
+The branch's own guest, booted with hostd's closure view right after the
+2026.10.12 base, reached set up in 26.4 s against 40.0 s, with
+home-manager 5.4 s against 11.2 s, while host load rose from 4.3 to 9.2
+(docs/research/boot-speed.md, run 5; one pair).
+- guestd writes `/run/repose/project-set-up` once SetupProject has started
+  the session unit. The service's `ExecStartPre` waits for that stamp, or
+  for 3 minutes of uptime when no hostd sends SetupProject (a NixOS test,
+  a guest whose hostd never came), then the copy-up runs as before. A
+  start once the stamp is there waits for nothing, so a profile change
+  later pins at once.
+- Why a stamp and not a timer: it ends the wait when the user's session is
+  up, however long the boot took, and the uptime bound covers the guest
+  that never gets one. A Nice=10 and idle IO class already applied and
+  were not enough: the work is the kernel's (virtio-fs reads, overlay
+  copy-up), which nice does not slow.
+- The guest-base VM test touches the stamp before it starts the unit.
+
+**I-707. A boot logs "boot timings", and the ops row keeps them
+(boot-fast, 2026-10-13).** *Made during implementation.* A slow create
+had to be pieced together from journal timestamps and the guest's
+console. hostd now logs one `"boot timings"` line (`event` guest_start,
+`op` create, start, or apply for an apply's forced reboot) per boot that reached running, with `volume_ms`,
+`prepare_ms`, `ready_ms`, `paths_ms`, `setup_ms` and `total_ms`, the shape
+of I-571's "stop timings". The same numbers ride back as `BootTimings
+boot` on CreateResult (field 3) and StartResult (field 4), and the api
+merges them into `ops.result.boot`. The op a user reads leaves `boot` out,
+as it leaves out `console` (I-592): the numbers are for operators, and
+`repose status` has nothing to say with them.
+- The contract: docs/interfaces/grpc-hostd.md names the field on both
+  results. An api that ignores it reads the result as before, and a hostd
+  before it sends none, which the api stores as no `boot` key.
+- A StartGuest for a guest that is already running boots nothing, so it
+  carries no timings, as create's running case does not; the api then
+  stores no `boot` on that op.
+- The alert `BootSlow` (warn) fires when more than half of a host's
+  CreateGuest and StartGuest commands in 30 minutes, two at least, took
+  over 2 minutes, held for 5 minutes, from
+  `repose_host_command_duration_seconds` (its 120 s bucket was already
+  there). Why not 30 s: a busy host boots in 30 to 70 s (on 2026-10-13
+  host-01's creates had a p50 of 42 s and its starts 58 s, I-704), so a
+  30 s line would page all day for a host that has no fix but capacity.
+  Past 2 minutes a boot is close to the 3-minute setup bound of I-705 and
+  about to fail. Two boots at least, so one stuck tenant does not read as
+  a host problem. promtool cases in ops/alerts_test.yaml cover a busy
+  host's 30 to 70 s boots (quiet), one slow boot (quiet) and most boots
+  past 2 minutes (fires); the RUNBOOK heading reads the line.
+- `ops/dev/freeze-bench.sh hup`, which the RUNBOOK names, wipes and
+  formats its VOL as root on a tenant host, so it refuses any VOL that is
+  not `/dev/VG/bench-*` and an LVM volume named `bench-*` by `lvs`.
+- What was not done: the ops table still has no per-phase times for the
+  build phase; the build's own time is in `build_phase_duration_seconds`
+  and in its log lines.
+
+**I-708. A create shows its build's steps, then "Booting" (boot-fast,
+2026-10-13).** *Made during implementation.* A create's progress came
+from the project's states: `run` reads the project again after the
+create, and a project read carries no op id (only the create's 201
+does), so the wait fell back to polling states and printed `✓ Built the
+configuration  9.2s` and `✓ Booted <slug>  6.2s` with nothing of the
+build in between (main's CLI against the real api in-process, with a
+fake hostd that builds for 9 s and boots for 6 s). Where the op id was
+kept (the fake api's project read carries one), the create's log, which
+stays open until the whole op ends, made the first state's label cover
+build and boot together. `run` now keeps the create's op id across that
+read while the project is creating, building or starting, and follows
+the create's log with the configuration ops' build view (I-320): the
+build's steps (`Got a build slot`, `Evaluated your config`, `Fetched N
+paths`, `Built N derivations`), Nix's lines only with `-v` or off a
+terminal, and the build's `built` line starts `Booting <slug>`. The
+`building` state no longer starts a phase of its own. A create whose
+build is reused shows `Created` and `Booted` as before. The change is in
+run.go and buildprogress.go; progress.go is untouched, so a step whose
+done text is empty ("Working out what to fetch" with nothing to fetch)
+prints no line, as in `repose config`; in a create, a build that
+printed none of Nix's lists (everything was in the host's store) ends on
+`Built the configuration`, so `Booted` does not carry the build's time.
+The fake hostd's build sends Nix's lists between nixbuild's lines and
+spends none of its delay after `built`. Against the real api in-process
+(fake hostd, 9 s build, 6 s boot) the branch's CLI printed `✓ Evaluated
+your config 1.0s`, `✓ Fetched 2 paths (1.5 MiB) 2.6s`, `✓ Built 2
+derivations 1.8s`, `✓ Booted e2e-tty 6.5s`. The quickstart's example output,
+config.md's build steps paragraph and docs/features/run-and-attach.md
+say what a first run prints.
+**I-700. A restore downloads its snapshot once and checks the digest as
+it writes (fork-fast, 2026-10-13).** Amends I-462 (the check before the
+write). *Made during implementation* (the owner's backlog: "repose fork
+is slow"; the brief left this one to decide).
+- *Why.* I-462 downloaded the whole blob to hash it, then downloaded it
+  again to write it. The owner's fork of kanali on 2026-10-11 spent
+  17.9 s of its 116 s restore in that first download (host-01's
+  `restore_done`: `verify_ms` 17877, `write_ms` 87547, `fsck_ms` 11028,
+  11.5 GB of blob for 51.8 GB used). Every restore paid it: a fork from a
+  snapshot, `snapshots restore`, `repose restore`, a project moved to
+  another host.
+- *What changes.* hostd hashes the bytes as they stream into the new
+  volume (the write already did) and drops the pass before it. A digest
+  that differs fails the restore with "snapshot checksum mismatch",
+  removes the volume and leaves the guest `error`. When the write fails
+  first, the download runs on into the hash alone, so a changed blob is
+  reported as one and not as whatever its bytes made zstd or the extent
+  reader fail with. The restore's `zstd -d` now runs in
+  `shell.SandboxedFilter`: I-465's parser sandbox (a dynamic user, no
+  capabilities, no network, none of hostd's state or sockets) with no
+  device at all.
+- *Why that is as safe as the check before.* What I-462 protects is that
+  bytes the host did not upload never reach a tenant's running machine.
+  That holds: the bytes land in a volume made for this restore, which no
+  guest reads; the guest stays `restoring` until the digest matches, and
+  a mismatch removes the volume (I-461) and fails the op, after which the
+  api refuses a start (`restore_unfinished`). A hostd that dies mid-write
+  leaves the guest `restoring`, which reconcile makes `error`, and the
+  resent Restore starts again on a fresh volume. What the pre-pass also
+  kept from altered bytes was the decompressor and the extent reader:
+  the extent reader is hostd's own Go, bounded to the new device, and
+  zstd is now sandboxed with nothing but its pipes. I-462's rejection of
+  "hashing only during the write" was about writing bytes before they
+  are known good; the volume they are written to is the only thing they
+  touch.
+- *Measured* on host-01 through hostd's own `snapshot.Pipeline` and
+  `AzureBlob`, on a `bench-*` volume holding 7.8 GB (2.28 GB of blob):
+  old restore 15.5 s (verify 3.7, write 10.2, fsck 1.6), new 12.6 s
+  (write 11.0 with zstd sandboxed, fsck 1.6). Scaled to the owner's
+  11.5 GB blob that is the 17.9 s the log shows.
+- *Kept for one release.* `restore_done` still logs `verify_ms` (0) and
+  `verified`, for whatever reads them.
+- *Evidence.* `TestSnapshotRestoreRoundTrip` fails with the pre-pass put
+  back ("a checked restore downloaded the blob 2 times, want once"), and
+  checks the mismatch, the volume removed and the guest in `error`;
+  `TestRestoreDecompressorSandboxed`, `TestSandboxedFilterHasNoDevice`.
+- *Rejected:* keeping the pre-pass only for snapshots from other hosts
+  (the threat, a writer to the store, does not depend on where the
+  restore runs); hashing per range so a bad range stops early (Azure
+  gives no per-range digest of the bytes the host uploaded).
+
+**I-701. A fork whose copies stay on their source's host clones its
+volume there (fork-fast, 2026-10-13).** Amends I-254 and I-142: the
+fork's snapshot, and `host_moved`. *Made during implementation.*
+- *Why.* A fork snapshotted the source to Blob and restored each copy
+  from Blob, although every copy on production lands on host-01, where
+  the source's volume already is: the owner's fork of kanali took 3m57s,
+  82 s of it uploading 11.5 GB and 116 s downloading and writing it back.
+- *What.* `POST /projects/:id/fork` without `snapshot_id` copies the
+  project as it is now. In one transaction the api checks that the
+  source's host can take all the copies (`scheduler.FitsOn`: ready, not
+  draining, pool under 70 percent, slots, memory for the started copies,
+  and `local_clone` in the host's last Hello, `hosts.features`), places
+  each copy on that host and gives every copy's restore op the same fork
+  point id and the list of copies. buildRestore sends `Restore.clone`
+  instead of a blob path. In hostd the first copy to arrive runs the fork
+  point on the source's own worker (after any command queued for it, as
+  a snapshot would be): freeze, `lvcreate -s` into `fp-<point>`, thaw;
+  each copy is then `lvcreate -s -kn` of the point, active at once and
+  activated with the group at boot, grown when it is asked for more than
+  the source has. One freeze for all the copies, so they hold the same
+  moment, with one limit: a copy whose Restore first arrives after the
+  point is gone (its 30 minutes passed, or hostd restarted between the
+  copies' restores) takes a new point and holds a later moment than its
+  siblings. Each copy is still a whole copy of the project at one frozen
+  moment, which is what a fork promises; failing it instead would leave
+  an errored project for a case that needs a hostd restart mid-fork.
+- *No e2fsck on a clone.* Its blocks are the source's own at a frozen
+  moment, never bytes from a store; the guest's mount replays the journal
+  as the source's would. The check stays on every blob restore.
+- *The fork point* is removed when every copy has finished its restore,
+  well or not, after 30 minutes when one never arrives, and at hostd's
+  start with the `snap-*` sweep. It pins the source's old blocks, so the
+  pool pays for what the source writes while it lives.
+- *Idempotent.* A Restore sent again for a copy already `stopped` answers
+  as the first did, even with the source gone; one that finds a partial
+  copy removes it and clones again (a new point if the old one went).
+- *No deadlock on the op slots.* Ten copies of one fork can hold every
+  slot while they wait for the point, and the point's job queues behind
+  any command for the source, which needs a slot too. So the point is
+  taken on a job that holds no slot, and a copy gives its own slot back
+  while it waits for the point or for a sibling taking it, and takes one
+  again after. `TestForkOfTenDoesNotDeadlockTheSlots` deadlocks without
+  the first; `TestForkOfTenWithASourceCommandDoesNotDeadlock` (an
+  `UpdateSecrets` for the source dispatched among the copies, MaxOps 2)
+  deadlocks without the second, found in review.
+- *Otherwise a snapshot.* When the source's host cannot take the copies
+  the api answers `409 snapshot_needed` and creates nothing; the CLI then
+  takes a fork snapshot (I-703) and forks from it as before, each copy
+  placed by the scheduler. The CLI does the same against an api older
+  than this entry, which answers `400` "snapshot_id is required". An old
+  hostd never gets a clone: it sends no `local_clone`.
+- *host_moved.* A new project (a fork's copy, `snapshots restore --as`)
+  had no host, and buildRestore counted that as moved, so every copy
+  sent its owner "kanali-fork-1 was restored onto a new host"
+  (production's events: kanali-fork-1 on 2026-10-11, and four e2e forks
+  before it, all on the one host). A project moves only from a host it
+  had.
+- *Measured* on host-01 with `lvm.Real` on a `bench-*` volume holding
+  7.8 GB: the fork point 175 ms, the clone 159 ms, the clone's files the
+  same as the source's (`sha256sum -c`). The same volume through Blob:
+  12.7 s to snapshot and upload, 12.6 to 15.5 s to restore. The owner's
+  fork would have spent well under a second where it spent 198 s; what
+  is left is the copies' boot.
+- *On a host, through hostd.* `TestHostClone` (build tag `hostbench`,
+  `clone_host_test.go`) runs hostd's Manager with `lvm.Real` on host-01's
+  pool, every volume it names mapped to `bench-ff-*`: a source created by
+  hostd and mounted with a writer running, three copies restored with
+  `clone` and an `UpdateSecrets` for the source among them, the guest's
+  Freeze and Thaw done by `fsfreeze` on the source. Each copy came up
+  active with no activation skip, started and stopped through hostd,
+  mounted read-write with its journal replayed, held every file as it
+  was at the freeze (502 files, `sha256sum`), and was `e2fsck -fn`
+  clean; the point was removed. 3 copies in 3.2 s, `clone_ms` 386 to 450.
+  A VM booted on a clone on host-01 (review round 2, 2026-10-13 20:33Z,
+  load 3): a small guest of base 2026.10.12 booted the way hostd's create
+  does on a `bench-ff-src` volume and wrote 256 MB of random data and an
+  uncommitted file; hostd's own `vsockclient` Freeze, `lvm.Real.Snapshot`
+  and Thaw made the point (`point_ms` 2990, the freeze flushing those
+  256 MB), `lvm.Real.Clone` made the copy (`clone_ms` 185, attr
+  `Vwi-a-tz--`), and a second guest booted on the copy with no mkfs and
+  no fsck by hostd: set up in 9.4 s, `systemctl is-system-running`
+  running, both files matched by `sha256sum -c`, a file the source wrote
+  after the point absent. Every bench volume removed, pool back to 34.88%.
+  The api, a real hostd over its stream and the CLI together have not run
+  a clone: that is the post-release live check, since prod runs main and
+  there is no staging host (staging.tfvars `hosts = []`).
+- *Evidence.* `TestForkClonesOnePointOnTheHost` (one freeze, the point in
+  time held, no blob written or read, no fsck, the point removed),
+  `TestForkCloneResentAfterSourceGone`, `TestForkCloneRefusals`,
+  `TestForkCloneGrowsToTheVolumeAsked`, `TestForkCloneFailureLeavesNoVolume`,
+  `TestForkPointExpiresAndIsSweptAtStart`, `TestHelloNamesLocalClone`,
+  `TestRealCloneIsAnActiveVolume`; the api's
+  `TestForkClonesOnTheSourcesHost` (placement, the shared point, no
+  snapshot row, no host_moved, 409 snapshot_needed without the feature;
+  no host_moved for a copy forked from a snapshot or a restore as a new
+  project, which fails with the old `p.HostID == nil ||` rule put back).
+- *Rejected:* cloning on the source's host and copying to another host
+  over the network (a second transfer path beside Blob for a case
+  production does not have yet); one Clone command on the source's host
+  making all the copies (each copy's restore is its own op with its own
+  failure, I-254); deciding clone or blob in buildRestore (by then the
+  snapshot the blob path needs would not exist).
+
+**I-702. Each step of a fork's copies prints a timed line (fork-fast,
+2026-10-13).** *Made during implementation.*
+- `repose fork` showed `Forking` and `Starting` with no done text, so
+  minutes passed and ended in silence. Each copy's wait now follows its
+  op's phase: `Copying SRC's disk into COPY` (or `Restoring COPY from the
+  snapshot`), `Building COPY's system`, `Starting COPY`. The CLI waits
+  on the copies in turn while the api runs them side by side, so only
+  the first copy is watched from its start: each of its steps ends in a
+  `✓` line with that step's time. Every other copy shows the step it is
+  on and ends in one `✓ Started COPY` line (`Restored`/`Copied` with
+  `--no-start`) with its whole op's time, from the op's `created_at` and
+  `finished_at`. Timing a later copy's step from when the CLI reached it
+  would print a few seconds for a step that ran for a minute (review
+  round 2).
+- A cloned copy whose restore failed has no snapshot of its own, so
+  `start` on it says to remove it and fork the source again instead of
+  "restore a snapshot into it again" (same `restore_unfinished` reason).
+- The summary line drops "from its snapshot of ..." for a cloned fork,
+  which has none, and a failed copy's message names `repose fork SRC`
+  instead of `--snapshot ID`.
+- *Evidence.* `TestFork` ("✓ Started izma-fork-1"),
+  `TestForkFallsBackToAForkSnapshot`, `TestForkTimesEachStep` (the fake
+  api's `ForkStepDelay`; fails with every copy timed per step),
+  `TestStartOfAFailedCloneSaysForkAgain`.
+
+**I-703. A fork's own snapshot is reason `fork` and expires in a day
+(fork-fast, 2026-10-13).** *Made during implementation.*
+- *Why.* Each fork left a manual snapshot of the source in Blob, 11.5 GB
+  for the owner's kanali, kept like any snapshot for seven days and, as
+  the newest of a project that then stops, for good. Nobody asked for it.
+- *What.* A cloned fork (I-701) takes no snapshot at all. A fork that has
+  to restore from Blob asks `POST /projects/:id/snapshots` with `{"reason":
+  "fork"}`: the row is reason `fork` (migration 0025 adds it to the
+  check), `expires_at` a day after it is taken, deleted then by the
+  expiry job even on a live project, and never the project's "newest"
+  that retention keeps, so a project's last real snapshot is not
+  displaced by it. hostd is sent `manual`, the reason it already takes,
+  since there the reason only labels its log line.
+- *A day*, not at once, because a copy that failed is retried with
+  `repose fork SRC --snapshot ID`, which the failure message names.
+- *Evidence.* `TestForkSnapshotExpires` (the expired fork snapshot goes,
+  the old manual one is kept although it is 30 days old),
+  `TestForkClonesOnTheSourcesHost` (reason, a day, hostd sent `manual`).
+- *Rejected:* deleting the snapshot once the copies are restored (the
+  retry above), and a hidden snapshot outside the list (it holds a
+  tenant's disk; the list is where they see what repose keeps).
+**I-733. An OOM kill in a pane no longer stops the pane: dev's user
+manager, its units and each session scope run with `OOMPolicy=continue`
+(pane-oom, 2026-10-13; renumbered 2026-10-15).** Amends I-576 and I-560.
+This shipped in r20261014-1 as a second **I-697**, which account-secrets
+had already taken: the two lanes reserved the number on different
+machines, and `release-queue id` reads only the machine it runs on. Account
+secrets keep I-697 because the api's code and tests cite it; this one
+moved, and `nix/flake.nix`, `browser.nix`, `herdr.nix` and the guest tests
+moved with it. *Made during implementation*: an
+agent left running overnight on kanali was gone in the morning, and the
+journal said why.
+- *What happened.* At 02:10:46 the kernel's OOM killer picked one
+  process, a headless Chromium a Playwright test had launched from code,
+  holding 1.4 GB on a machine with 7.8 GB of RAM and 2 GB of zram, both
+  full. That part is I-200 and I-576 working: the agent was at -800,
+  Chromium at Chrome's own +300, and the kernel took the right one. Two
+  seconds later systemd stopped the pane: `tmux-spawn-04e95bda….scope:
+  The kernel OOM killer killed some processes in this unit`, then
+  `Failed with result 'oom-kill'` at a 6.5 GB memory peak. `OOMPolicy`
+  defaults to `stop`, and in a scope there is nothing else to stop: the
+  agent and everything it had started were in that one cgroup.
+  systemd-oomd was running and watching nothing, as I-576 left it, and
+  played no part.
+- *Why it was not caught.* I-560 reasoned that the tmux unit needed no
+  `OOMPolicy` because each pane is a scope of its own. That is
+  backwards: a scope of its own is what exposes a pane, since the
+  scope's own policy is `stop`. I-576's test ran its memory hog as the
+  pane's own command, where the stop costs nothing because the window
+  ends with the process anyway. The case that fails is a hog that is a
+  child of the pane's process, which is where every test run, build and
+  dev server an agent starts is.
+- *The fix.* `DefaultOOMPolicy=continue` on dev's user manager
+  (keystroke-path.nix), rather than a drop-in per scope name: three
+  families of cgroup of dev's hold an agent beside the work it started
+  (a tmux pane's `tmux-spawn-*.scope`; `repose-herdr-server.service`,
+  whose panes share its cgroup; and the transient scope
+  `repose-browser-scope` puts a `chromium` and its renderers in, where
+  the slice's 37.5 percent ceiling is what kills), and naming them one
+  at a time leaves the next one. Both session units keep the policy on
+  themselves, where their own reasons are. Each logind `session-N.scope`
+  takes it through the prefix drop-in it already has for I-494's CPU
+  weight, since a `repose exec` command or a test run under `repose
+  code` shares the session's scope; a session whose own sshd is the
+  victim still ends, since logind tracks the session leader rather than
+  the scope's policy. The system manager's default stays `stop`: a
+  system service left half dead should be restarted, and nothing of a
+  tenant's runs there. `user@.service` carries the policy as well: the
+  kernel's kill is reported against every unit above the cgroup it
+  happened in, that one included (`systemd[1]: user@1000.service: The
+  kernel OOM killer killed some processes in this unit`, in the test
+  below), upstream's unit sets no policy of its own, and its stop is
+  what I-576 calls the last thing that may go. Current systemd does not
+  act on an ancestor's event; the unit says it so that no change in
+  that has to be noticed. Slices have no such property at all, so the
+  same notice against `app.slice` and `user.slice` acts on nothing.
+- *What it makes true.* machine.md's "Memory and disk" says the agents,
+  the tmux or herdr server and the SSH connection are kept to the last,
+  "so the largest of the rest goes first, usually a runaway test or dev
+  server", and that a tab past the browser's ceiling crashes. Both were
+  false whenever the kernel's victim shared a cgroup with the agent, so
+  no public page changes here: the fix is what they already promise.
+  guest-conventions.md "Memory pressure" carries the policy beside the
+  `oom_score_adj` values.
+- *Rejected.* A `MemoryHigh` or `MemoryMax` on pane scopes, the memory
+  version of the `CPUQuota` on panes I-494 rejected: it would slow a
+  build on an idle machine, and it throttles the agent along with its
+  build. Wrapping the browsers in `$PLAYWRIGHT_BROWSERS_PATH` so a
+  Playwright launch lands in `repose-browser.slice`: that cache is
+  writable and `playwright install` replaces what is in it, and
+  Playwright drives the browser over inherited pipes. machine.md
+  already says those browsers have no limit of their own, and with this
+  change the kernel killing one is a failed test run the agent sees
+  rather than a lost agent.
+- *A live switch reaches the panes already open.* The policy is a
+  manager default, and systemd resolves it late: on the dev box
+  (systemd 255), with a transient scope already running, writing the
+  default and a `daemon-reload` moved that scope's `OOMPolicy` from
+  `stop` to `continue`. NixOS's switch reexecutes and reloads `dev`'s
+  manager in its per-user pass, so a machine that switches base with
+  agents running is covered by the switch, not only at its next start.
+- *Evidence.* Flake check `guest-keystroke-path`:
+  `DefaultOOMPolicy=continue` in user.conf and `OOMPolicy=continue` on
+  `session-.scope`, `user@.service` and both session units. guest-base,
+  23 subtests to the known I-513 failure (`mark=read`, which fails on
+  main too): its I-576 subtest (16.78 s) starts a hog as a child of a
+  pane's shell, and after `Out of memory: Killed process 5993
+  (python3.12)` the pane's shell pid, its window and
+  `systemctl --user is-active tmux-spawn-09ef4bc3-….scope` are all as
+  they were; its I-501/I-503 subtest (24.21 s) runs one in a herdr pane
+  (`herdr pane run w1:p1`), and after the kill the server's MainPID,
+  the unit's state and `herdr pane list` are untouched and the pane
+  took its next command. Each kill prints "The kernel OOM killer killed
+  some processes in this unit" for the scope and for
+  `user@1000.service`, and no `Failed with result 'oom-kill'` follows
+  either, which is the line that ended the agent on kanali.
+- *Revisit when:* a user unit of dev's needs a restart after an OOM kill
+  (then: `OOMPolicy=stop` on that unit, beside its `Restart=`).
+
+**I-718. What a guest-built binary links is not copied into every guest
+(boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706).** *Made
+during implementation.* I-533 had `repose-pin-profile` copy the closures
+of eleven libraries — the gcc wrapper's glibc and `cc.lib`, and openssl,
+zlib, sqlite, libffi, libyaml, libpq, libxml2, libxslt and the MariaDB
+client — into every guest's store overlay, so a binary compiled in the
+guest, whose ELF interpreter and RUNPATH name those paths in the host's
+shared store, would keep running after the host collected an old base.
+That copy is removed: `targets` is dev's profile again, and a fresh guest
+has no profile, so the unit finishes at once, as it did before I-533.
+- *What it cost.* 26 store paths, 1554 inodes, 75.5 MB, per guest, on the
+  first boot. On a fresh prod guest today (`e2e-pin3`, small, base
+  2026.10.12): `repose-pin-profile.service: Consumed 18.216s CPU time over
+  1min 26.523s wall clock time, 115M memory peak, 74.1M written to disk`.
+  Earlier runs of the same unit: 31.2 s (small), 55.9 s (large, idle host),
+  96.7 s (the teksafari-org incident). It is a fresh guest's entire
+  writable store (76 MB / 26 paths). About 47 s of it is overlayfs
+  copy-up, 14.8 ms per inode, because the first write to a region of an
+  LVM thin volume costs 18.2 ms (64 KB chunks, `Zero=zero`, metadata
+  commit) against 3.3 to 4.4 ms to blocks already allocated. On `e2e-pin3`
+  the unit was still running 33 s after the CLI printed "Ready in 1m46s",
+  and it spans SetupProject's window every time. Thin-pool allocation is
+  also the only serial resource in the storage stack (measured on
+  host-stg-01: already-allocated fsyncs scale linearly to 8 writers, 7170
+  IOPS; allocating ones ceiling at about 900/s and double in latency by
+  N=8, and 7 competing allocating writers inflate the identical copy-up
+  1.58x), so this unit is the heaviest competitor every other first-boot
+  unit has.
+- *What it bought: two libraries, in a case that has never occurred.* A
+  stop does not drop the host's GC root — `Roots.Remove(g.GuestID)` and
+  `Remove(goodRoot(...))` are in `destroy`, not `stopGuest`
+  (internal/hostd/guest/stop.go:175, there since 709607bb), so I-533's
+  stated premise is wrong; prod host-01 holds 14 `guest` roots for its 14
+  live projects while 3 guests run. Nine of the eleven are in the host's
+  own NixOS system closure (host and guest base come from one flake with
+  one nixpkgs input, so they are the same store paths), and no host GC can
+  take them. Run as a sequence on host-stg-01 with a guest on a no-copy
+  base, each step a real `nix-collect-garbage --delete-older-than 14d`
+  with gc.nix's own options: with the guest stopped, its `guest`, `good-`
+  and `rev-` roots all stay (`stopGuest` drops none) and are exactly what
+  holds libpq, and the GC freed 312 paths / 1.3 GiB with **all eleven
+  surviving**; then a closure that does not name libpq was applied, which
+  moves the `guest` and `good-` roots on and leaves the one old `rev-`
+  root; removing that single root — what `PruneRevisions(project, 3)` does
+  after three more config builds — and running the GC again freed 152
+  paths / 35.8 MiB and took **libpq-18.6 and mariadb-connector-c-3.3.5,
+  keeping the other nine**, which are every other path a `cc` build names
+  in its interpreter and RUNPATH. So the reachable loss is two libraries
+  behind five conditions. Every base that
+  has carried I-533 (2026.10.07, .08, .09, .12) names the identical eleven
+  paths, so no guest has ever had an old path to lose. And the eleven stay
+  in the system closure the host roots per guest: compat.nix's
+  `PKG_CONFIG_PATH`, `pg_config` and `mysql_config` name them, so all
+  eleven are in this branch's guest closure (1217 paths) with the copy
+  gone.
+- *When a path really is gone*, the program fails at ld.so
+  (`error while loading shared libraries: libpq.so.5: cannot open shared
+  object file`, exit 127) and fetching it back from cache.nixos.org costs
+  315 ms cold and 230 ms warm for one library, measured on the guest above
+  with libpq's bytes really gone, and 3 to 6 s for all eleven closures —
+  against 86.5 s to copy the same 76 MB up through the overlay.
+  I-719 is the command that does it. Recompiling also fixes it.
+- *The owner's two rulings.* Deferring the copy was rejected ("lets not do
+  the cheap fix, lets explore the real fix"), so the pin no longer waits
+  for anything: with no link targets there is nothing to defer, and dev's
+  own profile is empty on a fresh guest. I-706's wait for
+  `/run/repose/project-set-up` is not thrown away as a reason — I-719's
+  check keeps its purpose, because the one thing that must never sit on
+  the create path is a network call — but it keeps it as a 4-minute timer
+  rather than a wait, for the reason I-719 gives. Having the host hold the
+  roots instead was rejected on storage grounds ("we allow users to have
+  many stopped machines so our storage will def suffer"). Removal needs
+  neither, so neither ruling is reopened here. What the owner may want to
+  know is that the storage argument points the other way: a host-side root
+  for a base's eleven targets is about 76 MB once, in the shared store
+  that auto-optimise dedupes, against 75.5 MB *per guest* today — on
+  host-01's 14 live projects, 76 MB against about 1.06 GB of thin-pool
+  bytes — and a stop drops no root, so the host already keeps every
+  stopped guest's whole closure. That is a decision to take with the
+  numbers, not a gap in this one.
+- *What stays.* The profile pin (I-234, I-529), which costs nothing on a
+  fresh guest. Its eleven `nix-store -qR` calls, measured at 8.50 s of a
+  first boot against 1.78 s for one combined call, are one call now.
+  guestd still writes `/run/repose/project-set-up` (the boot record and
+  docs/research/boot-speed.md read it); the pin no longer waits on it,
+  I-719's check does. `/nix/var/nix/gcroots/repose-link-targets/` stays,
+  and is the one part of I-533 worth keeping: eleven symlinks, no bytes.
+  They keep the guest's own collection off the libraries, and because
+  roots an earlier base left stay, the directory is the exact record of
+  which paths a checkout's older binaries may still name — which is what
+  I-719 checks at boot, reading a dangling symlink as "this one is gone".
+  The 75 MB such a
+  guest already copied up stays too — deleting an upper copy of a path the
+  lower layer also has leaves a whiteout that hides the host's copy, which
+  is the 2026-10-07 "stage 2 init not found" incident.
+- *Measured here, as the cheaper fallback if this is ever reverted:*
+  mounting the guest's store overlay `volatile` skips overlayfs's
+  per-copy-up fsync and makes the identical 1554-inode pass 8.1x faster
+  (0.725 s against 5.885 s on host-stg-01), with the usual volatile-overlay
+  durability caveat.
+- VM test: guest-base's "I-533" subtest is now "I-718" — the same `cc`
+  build against openssl, asserting that nothing the binary links against
+  is in the upper dir (glibc excepted: hello's closure, which dev's
+  profile really does pin, contains it), that all eleven
+  `repose-link-targets` roots are there and name those paths, and that the
+  binary runs from the lower layer — and "I-719" covers the recovery.
+  Those subtests sit after the known I-513 `~/.bash_profile` failure in
+  the same file, which aborts the script before reaching them, so a green
+  guest-base has never been evidence about this code; they were run here
+  with that one assertion skipped, and the output is in the commit
+  message. Branch `rc-decides` (I-725) has since fixed the I-513
+  assertion — it was the test, not the base: sshd wraps a command in a
+  non-login `bash -c`, which nixpkgs builds with `SSH_SOURCE_BASHRC`, so
+  that wrapper reads `~/.bashrc` whatever login file the user has and
+  exports the marker into the `bash -lic` under it. With that corrected,
+  guest-base is 28 of 28 green on `main`, which is the first time these
+  five store subtests have ever run.
+
+**I-719. repose-store-repair fetches back a library the machine has lost
+(boot-real-copy, 2026-10-13).** *Made during implementation.* With I-718
+there is one case left where a guest's own binary can lose a library: a
+path from a base nothing on the host roots any more, which for the eleven
+of I-533 means libpq or the MariaDB client, after that library's nixpkgs
+path has moved. The program then fails at ld.so with `cannot open shared
+object file`, and nothing in the guest fixes it by itself. Measured in a
+prod guest, the obvious commands are traps: nix reports the path **valid**
+(`nix-store --check-validity` succeeds), `nix-store -r <path>` exits 0 in
+1.3 s having fetched nothing, and `nix-store --repair-path`, the one
+command that does fetch it, is refused through the daemon (`operation
+'repairPath' is not supported by store 'daemon'`, as dev, 1.0 s) and works
+as root with `NIX_REMOTE` unset and `/nix/store` remounted writable in a
+private mount namespace — the dance the pin's own copy-up already does —
+in 315 ms from cache.nixos.org, into the guest's own overlay; the binary
+then runs.
+- `repose-store-repair PROGRAM | /nix/store/PATH ...` takes a program and
+  reads the store paths it names from its ELF interpreter and RUNPATH
+  (`readelf`, not `ldd`: ldd needs the libraries it is reporting on), or
+  store paths directly; it re-execs itself under `sudo -n` because the
+  repair needs root, skips the paths that are really there, and repairs
+  the rest. With nothing missing it says so and exits 0.
+- *"Really there" is not `test -e`.* A collection on the host empties the
+  directory under a running guest's virtiofs mount, so the path still
+  exists and holds nothing — the class of problem I-652 found with
+  `nix.optimise.automatic` — and nix refuses to repair a path that exists
+  (`error: path … already exists`). The check looks for a file or symlink
+  inside the path, and when it finds an empty one it says the library was
+  collected while the machine was running and asks for a `repose stop` and
+  `repose start` (repose has no restart verb), naming the machine, since
+  those are commands the user types from their laptop and hostd sets the
+  guest's hostname to the project slug — bare when the hostname is the
+  base's own `repose-guest`, which names nothing. After that stop and
+  start the path is cleanly absent and the repair works first time.
+  A bare `test -e` would skip exactly the machine that needs it and then
+  refuse the path it did try.
+- `--link-targets` repairs the libraries a binary built here can name,
+  read from the `repose-link-targets` roots (I-718), which includes the
+  ones earlier bases left. `repose-store-repair.timer` runs that once a
+  boot, `OnBootSec=4min`, with `ExecStart=-` so a failure is logged and
+  ignored: eleven
+  stats and no work in the normal case, never anything on the create path,
+  and no egress must never cost a boot.
+- *What the boot check deliberately does not know* is whether a binary in
+  the checkout still names the path it fetches back. It repairs any root
+  that is dangling, which on a guest that has run several bases means the
+  old ones — and those are the only interesting case, because the current
+  base's eleven are in the closure the host roots and a guest whose
+  current closure lost a path would not have booted. So it can write a
+  library back that nothing needs any more, a few MB into the guest's own
+  volume, kept by the root that named it. That is the trade I took against
+  the alternative of repairing only when a program actually fails, which
+  is what the command itself is for: bounded by paths a real collection
+  took (2 of 11 in the measurement above, and only after a base moved
+  them and 14 days passed), it is a few MB occasionally against the 75.5 MB
+  every guest paid unconditionally. It is a **timer** rather than a
+  wait inside the unit, which is a correction to the shape I-706 used: a
+  unit that waits for guestd's stamp runs to its 180 s fallback on every
+  ordinary start, because hostd sends `SetupProject` only on a create
+  (`create.go` is its one caller), and these oneshots are in
+  `multi-user.target`'s path rather than beside it — in the guest-base run
+  the target was reached 2 ms after the last of them finished. So the wait
+  would have cost about 170 s of every start, which is worse than the
+  thing it was deferring. The 195.99 s that run took to reach the target
+  is **not** evidence of that: the test VM has no hostd, so
+  `repose-paths.service` spends its own 180 s (I-67) and everything after
+  it lands there; the run cannot separate the two waits, and the reason
+  for the timer is the code above, not that figure.
+- With no route to a cache nix fails in 8.3 s with curl's error (measured
+  with egress blackholed on host-stg-01; it does not hang). The command adds one line naming the path and
+  saying the machine cannot reach https://cache.nixos.org right now, and
+  exits non-zero; any other failure says that building the program again
+  gives it the libraries this base has. A guest's egress can drop out by
+  itself (one of three 76 MB fetches in `e2e-pin3` failed that way for a
+  couple of minutes), so this is not a rare path.
+- It is in the system path, so `repose config` needs nothing and a user
+  types it in any shell. apps/web/src/content/docs/troubleshooting.md
+  carries it against the ld.so message a user actually sees, which is
+  where they will look for it, and machine.md's "Memory and disk" says why
+  it can happen at all, beside the store's own garbage collection;
+  docs/interfaces/guest-conventions.md names the command and the roots it
+  reads.
+- VM test: guest-base "I-719" builds a binary against libpq, removes
+  libpq through the overlay (the whiteout a guest whose host lost the path
+  sees), and asserts the ld.so failure, that nix still calls the path
+  valid, that `nix-store -r` fixes nothing, that the repair names the path
+  and the unreachable cache rather than the daemon's error, that the unit
+  still succeeds when the repair fails, that an empty path asks for a
+  restart instead of being refused by nix, and that removing the whiteout
+  brings the host's copy and the binary back. The test VM has no route to
+  the internet, so the fetch itself is the staging measurement above, not
+  the test's — which also means the no-egress path is the one the test
+  exercises for real.
+**I-724. The host memory reserve is an eighth of the host, and a full host
+says so instead of saying "try again" (host-capacity, 2026-10-14; amends
+DESIGN §4).** *Made during implementation.* Two separate things were wrong
+about a host with no room.
+- *The reserve was a cliff, in four places.* `scheduler.HostReserve` gave
+  16 GiB above 128 GB of RAM and 8 GiB below it, and the same two steps
+  were written out again as inline SQL in `PickHost` and `Freeing` (the
+  api takes `min(free_mem_bytes, mem_bytes − reserve − reservations)` and
+  recomputes the reserve itself, so changing Go alone would have changed
+  nothing), in hostd's `HostReserveBytes` default
+  (internal/hostd/guest/manager.go), and in shell in nix/hosts/hostd.nix,
+  which sets `guests.slice MemoryMax=total − reserve` as the runtime
+  ceiling. On an 8 GB host the flat 8 GiB was the whole machine:
+  `FreeMemBytes()` returned 0 and every create was refused with
+  `insufficient_capacity`, which is what host-stg-01 did at `D2s_v7` until
+  a lane resized it to `D8s_v7` ($12.70 a day) to run one small guest.
+  Shrinking the Go reserve without the nix half would have been worse than
+  the bug: guests would be OOM-killed by the slice ceiling instead of
+  refused at placement.
+- *The rule now is `total/8`, floor 2 GiB, ceiling 16 GiB*, in all four
+  places, with nix/hosts/tests/default.nix asserting
+  `guests.slice MemoryMax == total − reserve` against the same arithmetic
+  — the one place the three languages are checked against each other, and
+  it passes on a 2.84 GiB test host, where the floor is what applies:
+  `guests.slice MemoryMax=904200192 (total=3051683840
+  reserve=2147483648)`. The floor stays at 2 GiB rather than 1 GiB
+  because the host builds guest configurations itself, and the slice
+  ceiling is a hard line: 8 GB is the smallest host that can run a guest
+  (6 GB left, one small), which is the realistic floor for a BYO host. An
+  eighth is not a new number: it is exactly 8 GiB at 64 GB and exactly
+  16 GiB at 128 GB, the two points the steps named, so no size repose runs
+  today moves by more than a rounding of its own memory (host-01, 62.8 GiB
+  usable, goes from 8 GiB to 7.85 GiB, 160 MiB more for guests). The small
+  end is what changes: 2 GiB on an 8 GB host leaves 6 GB, which fits a
+  small guest (4 GiB + 512 MiB), so a small host and the BYO-host shapes
+  can run something. R3-2 still holds — memory is never oversubscribed;
+  the reserve is the host's own share, taken off the top before any guest
+  is placed.
+- *The refusal told users to wait for something that does not happen.*
+  "the host had no room for it right now … Try again in a few minutes"
+  (internal/cli/humanize.go, run.go, env.go, helptopics_data.go, cli.md's
+  exit-8 row, troubleshooting.md). Memory is never oversubscribed and a
+  running machine holds its own until it stops, so minutes change nothing;
+  the one case where waiting works is the three minutes after a `stop` or
+  `rm`, which the api already waits out itself (I-408) before any refusal
+  reaches a user. It now says a machine holds its memory while it runs, so
+  stopping one frees room — the only lever the user has. Measured on
+  host-01 while writing this: 4 running guests reserve 48.0 GB of 62.8 GB,
+  leaving 4.8 GB bookable, which an xl or large create cannot fit; the
+  host was not idle behind that figure either (MemAvailable about 28 GiB,
+  with 31 GiB of the used memory being the guests' own `shared=on`
+  backing), so the reservation is honest and the fix does not pretend
+  otherwise.
+- *The operator side already existed and should have spoken first.*
+  `HostMemory80` warns at 80 percent of reserved memory for 10 minutes,
+  and host-01 was at 91 percent (48 / (48 + 4.8)) when its owner hit the
+  refusal. The rule is in ops/alerts.yaml and fires; what is missing is
+  the last hop, which is still the owner's open item — Prometheus pages
+  reach nobody until calert and the Uptime Kuma push monitor are set up on
+  the personal server (ops/README.md step 3, docs/CHECKLIST.md "Release
+  (M5)"). No code change here; the gap is in the checklist, where it is.
+**I-725. The guest-base check for "a user's login file decides" measures
+the login shell, not the shell sshd wraps it in.** (rc-decides,
+2026-10-13; corrects guest-base's I-513 subtest, which has failed on
+main since 2026-10-08) *Made during implementation*: I-513's promise is
+about `/etc/bashrc` ("The last lines of `/etc/bashrc`'s interactive part
+... now source `~/.bashrc` in a login shell when it is readable, there
+is no `~/.bash_profile` or `~/.bash_login`, and `~/.profile` does not
+mention bashrc. A user who has one of those decides for themselves"),
+and the base keeps it: the guard in `nix/guest/base/shell.nix` is
+exactly those four conditions, and I-513 verified it by evaluating
+`/etc/bashrc` in a temp HOME. The VM subtest checked the same promise
+through `ssh dev@127.0.0.1 "bash -lic 'echo mark=$REPOSE_RC_MARK'"` with
+an empty `~/.bash_profile` in place, and read `mark=read` anyway, so the
+assertion fired and the six subtests after it (the store overlay, I-533,
+I-529, I-585 and the guest profile script) never ran at all.
+Nothing in the base reads `~/.bashrc` there. sshd runs a command as
+`bash -c '<command>'` — not a login shell, so no login file of the
+user's is consulted by bash in the first place — and nixpkgs builds bash
+with `-DSSH_SOURCE_BASHRC` (pkgs/shells/bash/5.nix), which makes a
+non-interactive `bash -c` read `~/.bashrc` itself whenever `SSH_CLIENT`
+or `SSH2_CLIENT` is in its environment. That wrapper exports
+`REPOSE_RC_MARK`, and the `bash -lic` it runs inherits it. Reproduced
+with the pinned nixpkgs bash: `env -i HOME=$t SSH_CLIENT='1.2.3.4 1 2'
+bash -c 'echo mark=$REPOSE_RC_MARK'` prints `mark=read` with an empty
+`$t/.bash_profile` present, and prints nothing without `SSH_CLIENT`.
+So the probe could not tell "the base sourced my `~/.bashrc`" from
+"bash's own ssh rule sourced it one process earlier", in either
+direction: the subtest's *positive* `mark=read` proved nothing about the
+base either.
+The test is corrected, not weakened. Both ssh probes now run the login
+shell under `env -u REPOSE_RC_MARK`, so a marker in it is that shell's
+own work, and the negative case also asserts what cannot cross a process
+at all: `rcprobe` undefined and `ll` still the base's
+`eza -al --group-directories-first`. The negative case now covers all
+three of I-513's guards — `~/.bash_profile`, `~/.bash_login` and a
+`~/.profile` that names bashrc — where it covered only the first.
+*Rejected:* dropping the base's `~/.bashrc` read to somewhere bash reads
+after a user's login file, which is what the assertion looked like it
+asked for. There is no such place for the shell sshd wraps a command in:
+it is not a login shell, so bash never looks at `~/.bash_profile` there,
+and the read is bash's own, inside a process the base does not start.
+Patching bash to drop `SSH_SOURCE_BASHRC` was rejected too: it is
+nixpkgs' and Debian's long-standing default, it is what makes
+`ssh <machine> <command>` find the tools a user's `~/.bashrc` puts on
+`PATH`, and a guest's bash must stay the one the base's closure already
+has. machine.md gains the sentence that a login file of the user's own
+takes `~/.bashrc` back.
+**I-709. From the home folder, `attach NAME` and `run NAME` bring
+NAME up in one step, and `attach` comes up from every state a start
+can leave, a server restart included (attach-run-home, 2026-10-13).**
+Amends I-601, I-603, I-631, I-641. *Made during implementation* (the
+owner's backlog of 2026-10-13, item 2: `repose attach unwrap` in `~`
+answered "unwrap is stopped. Start it with `repose start unwrap`" and
+`repose run unwrap` "'unwrap' is one of your projects, but `repose
+run`'s argument is a prompt"; "having to do 2 steps simply because the
+machine was stopped is criminal"). Both lines came from a CLI before
+v0.1.34: I-603 made `run`'s word the project and I-631 made `attach`
+start a stopped machine, and neither line is in v0.1.34. What the owner
+asked for is the rule, so this entry pins it and closes what was left.
+- *`repose run NAME` in the home folder* is the machine NAME as if run
+  from its checkout without a sync: created if there is none (I-601's
+  `--name`), started if stopped, attached to its session on its current
+  window, `-p` typed into an agent window that opens in the machine's
+  checkout (the carry's answer, as `--no-sync` gives). Nothing in `~`
+  is synced, linked (`by_dir`), given a `repose` remote or read for a
+  git carry; a plain `repose run` there still exits 2. The owner's
+  "no run on ~, no project linking" stays as I-601 wrote it. Rejected:
+  syncing NAME's laptop checkout from `~` (the CLI would have to pick a
+  folder the user did not name, and `repose sync` in that folder does
+  it).
+- *`attach`, `ssh`, `code`, `run` and `start` bring the machine up as
+  `run` always did:* a stopped one starts, one in `error` restarts (as
+  `run` and `start` did; I-631 had kept `attach` at exit 5 there),
+  one creating or starting is waited for, one stopping is waited for
+  and then started, and one being restored is now waited for too and
+  then started (the
+  restore op, then the state; it exited 5 before, a second step for
+  nothing). Destroying and destroyed still exit 5, and so does a machine
+  stopped for a miner (I-239, I-631: after an abuse stop, `repose start`
+  is a step the user takes knowing why).
+- *A server that is restarting* (the api's `host_unreachable`, set after
+  90 s of silence): its running machines are frozen and come back as
+  they were (I-652), and a stopped machine's start is refused while it
+  is away (`lifecycle.UnreachableMessage`). These commands now wait with
+  `Waiting for api's server to come back`, polling the project each
+  second, for up to 10 minutes (`hostWaitTimeout`, the api's own
+  `HostUnreachableGrace`), then go on from whatever state the machine is
+  in: a frozen one is attached as it is (no op is sent), a stopped one is
+  started, one the restore could not bring back is started cold by the
+  api and waited for. Past 10 minutes they exit 5 with ``api's server
+  has not answered for 10m. `repose status api` shows when it is
+  back.``; Ctrl-C ends the wait. Rejected: a restart of a frozen machine
+  (it would throw away the image the freeze kept), and a shorter wait (a
+  host-01 restart with frozen guests is about 2 minutes, I-686).
+  `ssh` and `code` wait on a frozen running machine too (their
+  connect gate checks `host_unreachable`, not only the state), and so
+  does `repose start`, which then says the machine is running: the
+  public docs promised the wait for all five, and an "already running"
+  at once, before a connection that cannot answer, is the two-step
+  answer this entry removes. Not covered: the first 90 s of a restart,
+  before the api marks the server. A connection to a machine that was
+  running reaches the ssh wait as before and `start` says it is
+  running; lifecycle.md says so. A start of a stopped machine is
+  accepted then (the api refuses only a host already marked
+  unreachable) and waits on its op until the host answers or the
+  op's grace ends. Rejected for now: re-reading the project when
+  that ssh wait fails, since the 15 s wait ends long before the api's
+  90 s mark.
+- A wait that leaves the machine running (a restore op that booted it,
+  or a start with no op named) sends the early boot probe once the
+  re-read says running (I-237); before, only a create or start op did.
+- The idle "frozen" look of I-683 is a mock with no api field, so there
+  is nothing for the CLI to wake yet; when `resting` lands, attach is
+  the command that wakes it.
+- `exec`, `ps`, `open` and `cp` still start nothing (I-631); their line
+  for a machine on its way up now names ``repose attach NAME`` (it said
+  "`repose run` in its checkout", wrong from `~`).
+- `waitForSSH` returns the context's error when Ctrl-C killed its ssh;
+  it said "Could not run ssh: signal: killed. repose needs the OpenSSH
+  client".
+`TestAttachStartsAStoppedMachine`, `TestAttachGivesUpOnAServerThatStaysAway`,
+`TestAttachToAnErroredGuestRestartsIt` (was `TestAttachToAnErroredGuestSaysError`),
+`TestSSHStartsAStoppedMachineAndExecDoesNot` (frozen running too),
+`TestStartWaitsForARestartingServer`, `TestWaitThatEndsRunningCallsGuestUp`,
+`TestAttachAndRunByNameFromTheHomeFolder`. Specs: features/run-and-attach.md,
+features/stop-start-destroy.md. Docs: cli.md (attach, ssh,
+code, start), run-and-attach.md, lifecycle.md (home folder, server
+restart).
+*Evidence (2026-10-13, prod, this branch's CLI, from `/home/dev`, a
+throwaway `s2-attach-run-home-b`):* `attach NAME` on the stopped
+machine printed `Starting`, `Booting` for 9 s and `Connected to
+s2-attach-run-home-b (large)` and landed in its tmux session; `run NAME`
+on it stopped did the same with `Ready in 17s.` and no sync line;
+`projects.json` had no `by_dir` entry for `/home/dev`; `run NAME -d -p
+"say hi"` opened `1:claude` with tree `checkout` in `repose ps`; an
+attach while a `repose start` ran waited (`Booted ... 8s`, `Connected`);
+an attach while a stop ran printed `Stopping`, `Stopped`, `Starting`,
+`Booting`, `Connected`; a plain `run -d` there still exits 2. Not run
+live: `error`, `restoring` and a server restart (prod has no way to
+cause them safely and staging has no host); the fake api covers them.
+
+**I-720. The api learns a guest's address from the host, not only from a
+create's result (boot-real-addr, 05/03, 2026-10-13).** *Made during
+implementation.* `projects.guest_ip` had exactly one writer,
+`internal/api/ops/phases.go`'s `CreateResult`/`RestoreResult` phase, and
+four paths that null it. `StartResult` carried no address at all, and the
+api never read `Hello.GuestStatus.ip` or `vsock_cid` (`GetIp()` had no
+caller under `internal/api`). So a create that failed after the guest had
+booted left the row NULL under a guest the gateway could have reached,
+and no later message corrected it.
+
+teksafari-org, 2026-10-13, from the ops rows: `create` opened
+15:35:47.829Z and errored 15:37:07.848Z with `guest_unresponsive`
+(SetupProject, I-705); a `start` was accepted 15:37:08.537Z, 0.69 s
+later, and finished `done` at 15:38:11.092Z. **That start succeeded and
+still left `guest_ip` NULL**, which is the whole case for the proto
+change: nothing a start reported could fill the row. The project stayed
+unroutable until the conductor wrote an UPDATE by hand, and the gateway
+told the user, falsely, that the host could not be reached (I-721).
+
+Blast radius, from the read-only prod db: of 18 failed create/restore ops
+ever, 10 died before placement with no guest and 8 past it (5
+`guest_unresponsive`, 3 `internal`); 6 distinct projects have had a
+`start` finish `done` after such a failure.
+
+Two writers are added, both idempotent and both taking the host's word.
+The host is the authority: it allocates inside the disjoint /22 the api
+handed it at registration (`hostmgr.allocate`: 10.64.0.0/22,
+10.64.4.0/22, …) and keeps the allocation in bbolt across a stop, so a
+row that disagrees is a stale row and is overwritten, not warned about.
+
+- The `Hello` reconcile (`Engine.OnHello`) records the `ip` and
+  `vsock_cid` the host reports for a guest it owns, when the row holds
+  neither or holds another one, and only when the project has no open op
+  (an open op's result settles the address as it settles the state). A
+  host that reports an address for a project the api thinks is stopped
+  gets it written too: `guest_ip` is the allocation, not a liveness
+  signal, and the gateway routes on the project's state. A destroyed
+  project is never written — the write names the guest and carries `and
+  destroyed_at is null`.
+- `StartResult` gains `guest_ip` (field 5) and `vsock_cid` (field 6), and
+  the start phase records them. This is the half that closes the outage
+  in seconds rather than days. `internal/hostd/stream/stream.go:326`
+  sends `Hello` exactly once per stream session, right after `Dial`, so
+  Hello frequency *is* reconnect frequency: host-01's journal has 24
+  `stream_connect` events in 7 days with gaps up to 2 days, the last at
+  2026-10-12T22:13:07Z — about 17 hours before the failed create, and
+  none since. A Hello-only reconcile would never have touched
+  teksafari-org. Empty and 0 from a hostd before this, which the api
+  reads as "unchanged"; an api before it ignores both.
+
+`hostdev`, the api stand-in staging runs, learns an address the same two
+ways, so the staging bench models the api rather than the bug.
+
+Not done, deliberately: the Hello path does not re-sign the guest's host
+certificate with the address as a second principal the way the create
+result does (`resignHostCert`). The gateway verifies a guest's host key
+against `<slug>.<handle>`, never the address, so nothing depends on that
+principal for reachability, and decrypting a project's secrets and
+signing inside a reconcile that runs for every guest on every host
+connection is not worth it; the project's next create or restore adds it.
+
+Evidence, `go test` on woker-1 against the real Postgres
+`internal/db/testdb` boots: `TestHelloRecordsAGuestAddressTheApiLost`,
+`TestHelloCorrectsAnAddressThatDisagrees`,
+`TestStartRecordsTheGuestAddress`,
+`TestHelloLeavesAProjectWithAnOpenOpAlone`,
+`TestHelloRecordsTheAddressOfAStoppedGuestButNotADestroyedProject`, and
+`TestStartReportsTheGuestAddress` in `internal/hostd/guest`. Red before
+the change, with both writers removed: "timed out waiting for the address
+back from Hello", "timed out waiting for the stale address corrected",
+"guest_ip <nil> after a start, want 10.64.4.2".
+`docs/interfaces/grpc-hostd.md` in this commit.
+
+**I-721. "No address" is not "unreachable host" (boot-real-addr, 06,
+2026-10-13).** *Made during implementation.*
+`internal/gateway/server.go` collapsed `route.GuestIP == ""` and
+`route.HostUnreachable` into one banner, `<slug> is on a host the control
+plane cannot reach right now; try again shortly`. In the teksafari-org
+incident the host was answering and the machine was running; only the
+api's record of the address was missing, so the user was told something
+false, blamed the host, and was sent to wait for something that was never
+going to change. The two states now read differently:
+
+- `host_unreachable` keeps the existing banner, reason `route_error`.
+- No address: `<slug> is running but repose has no address for it; run
+  \`repose stop <slug>\` then \`repose start <slug>\``, reason
+  `no_address` (a new value of `repose_gateway_auth_fail_total{reason}`
+  and of the `auth_fail` event, so the api's own record being wrong can
+  be alerted on separately). It names the two commands because, since
+  I-720, a start writes the address — there is no third thing to try and
+  nothing to wait for. Should be zero in a healthy fleet; the RUNBOOK
+  says what a run of them means.
+
+Both are also added to the CLI's `otherRefusals`. Neither is a
+certificate refusal, and before this both fell through to the bare
+`permission denied` test and spent `connect`'s one forced re-issue
+(I-175) on a machine whose address the api did not hold.
+
+Found on the way: the fake api's `GET /internal/route` never returned
+`host_unreachable` although the real api always has
+(`internal/api/http/internal.go`), so no gateway test could tell the two
+states apart.
+
+Evidence: `TestRunningWithNoAddressIsNotAnUnreachableHost` (no address:
+"todo-app is running but repose has no address for it; run `repose stop
+todo-app` then `repose start todo-app`"; unreachable host: "todo-app is
+on a host the control plane cannot reach right now; try again shortly"),
+`TestNoAddressCountsAsItsOwnAuthFailReason`, with I-189's
+`TestStoppedAndOtherStates` and `TestOneBannerPerRefusal` still green.
+Red before, with the collapsed condition restored: the no-address case
+answered the unreachable-host banner and `no_address` counted 0.
+`docs/interfaces/ssh-gateway.md`,
+`docs/workstreams/06-gateway-edge.md`, `docs/ops/RUNBOOK.md` and
+`apps/web/src/content/docs/troubleshooting.md` in this commit.
+
+**I-722. A project read names the op in flight, so `repose run` never
+restarts a create it failed to read (boot-real-addr, 05/07,
+2026-10-13).** *Made during implementation.* One user action produced two
+ops on teksafari-org: the create errored at 15:37:07.848Z and a start was
+accepted 0.69 s later, from `repose run` itself, and nobody read the
+create's error (the api log shows about two `GET /v1/projects/{id}` a
+second in that window and zero reads of the create op).
+
+I-708's round-1 fix carries the create's op id across the re-read
+(`internal/cli/run.go:1281`) and closes the path the incident took, but
+only the `!fresh` path. When `resolveProject` has already found the
+project, `run.go:251` sets `fresh := res.Project != nil` to true and the
+whole `!fresh` block — the carry *and* I-356's guard — is skipped;
+`project.OpID` is empty because `projectJSON` emits no `op_id` (only
+`createProject`'s 201 did); `waitState` returns the moment the state goes
+to `error`; and the next statement calls `StartProject`. The same
+restart, from a different entry point.
+
+`GET /v1/projects/:id` now carries `op_id` when the project has an op
+pending or running, from `store.OpenOpsForProject` (ops are serialised
+per project, so the oldest open one is the one running). The wait then
+follows the op and reports what it said. The **list** route does not
+carry it: one query per project is an N+1, and no caller needs it there.
+The round-1 carry stays as the fallback against an api older than this.
+
+Evidence: `TestProjectReadCarriesTheOpInFlight` (the read names the same
+op the create's 201 named, the list names none, and the field is gone
+once nothing is open) and, on the CLI's side,
+`TestRunDoesNotStartACreateThatFailedOnAProjectItFound` — zero starts and
+"Could not start teksafari-org: the machine did not answer within a
+minute of starting (guest_unresponsive)", with
+`TestCreateThatFailedAtOnceReportsItsOwnError` and
+`TestStartOfAProjectWithNoGuestShowsTheCreate` still green. Red before:
+`read op_id "", want the create's "01a1379f-…"`.
+`docs/interfaces/api.md` in this commit.
+
+**I-723. One live project per guest address (boot-real-addr, 05,
+2026-10-13).** *Made during implementation.* Migration 0026 adds `unique
+(guest_ip) where destroyed_at is null and guest_ip is not null`. Guest
+addresses are unique across the fleet by construction — each host
+allocates inside the disjoint /22 it was handed at registration — so two
+live rows holding one address would relay two users' logins to one guest.
+Now that the api writes `guest_ip` from three places (I-720), the
+database is what refuses it rather than a code path that has to remember
+to check; a refused write leaves the row as it was and is retried on the
+next Hello rather than failing an op.
+
+**The predicate is keyed on `destroyed_at`, not on `state`, and that is
+load-bearing.** Prod today: 14 live projects, 13 holding an address, no
+two live rows sharing one, and one *destroyed* row repeating a live row's
+address from before a destroy released it — so keyed on `destroyed_at`
+the index creates cleanly, and keyed on `state` it would fail to create
+on production. (There are 0 rows with `state = 'destroyed'` while
+`destroyed_at` is NULL, so the two agree in the other direction; the
+difference is the destroyed rows that keep an address.)
+
+Evidence: `TestTwoLiveProjectsCannotHoldOneGuestAddress` (a second live
+row is refused the address, the same row takes it once destroyed, and the
+live row's address is unchanged), with `TestMigrateUpDownUp` covering
+0026's down. Red before: "two live projects took one guest address".
+`docs/interfaces/db-schema.md` in this commit.
+
+**I-728. A create of this run that ended in error is reported, whatever
+else is open (run-failed-create, 2026-10-14; amends I-356 and I-722).**
+*Made during implementation.* I-356 gave `repose run` a guard: when the
+project it created reads back in `error`, fetch the create op and report
+what it said, rather than falling through and starting the machine. The
+guard asked two questions — is the state `error`, and does the project
+carry no op id — because until I-722 a project read carried no op id at
+all, so the second was always true once a create had settled. I-722
+makes a read name the op in flight, and a project can have one while its
+create sits in error: a `machine.nix` change queues personal builds
+behind a create (I-490), and `OpenOpsForProject` returns the oldest open
+one. With an op id named, the guard was skipped, `error` matches no case
+of the state switch under it, and the fall-through called
+`StartProject` — the 0.69 s restart of a failed create that made one
+user action look like three on teksafari-org (2026-10-13), one op later
+and with the create's error still unread. The guard now asks only
+whether a create of this run ended in error, and reads that op by the id
+it was given, not whatever is open. `ensureRunningFrom`'s comment about
+a project read carrying no op id went with it, since I-722 made it
+false.
+- This is the hole I-722 left, found by reading its own guard rather than
+  by hitting it: the condition tested "is any op open" where it needed to
+  test "is the op that failed this create still open". It is one line,
+  and it keeps I-356 true for every project state rather than only for
+  the states that happen to leave no op behind.
+- Test: `TestRunReportsAFailedCreateEvenWithAnotherOpOpen`
+  (internal/cli), the read naming an unrelated open build with the state
+  `error`: the create's own message, and zero starts.
+  `TestRunDoesNotStartACreateThatFailedOnAProjectItFound` (I-722) still
+  passes beside it.
+**I-726. The viewer pastes the laptop's clipboard on the machine with
+Ctrl+V or Cmd+V, and from a paste button (browser-fixes, 2026-10-13).**
+*Made during implementation*, from the owner's report that the page
+`repose browser` opens "doesnt have a way to paste the clipboard from your
+end". The page sent the laptop's clipboard only when the tab came to the
+front, through `navigator.clipboard.readText`, which Chromium allows after
+a permission prompt and Firefox refuses without a click. Ctrl+V itself
+went to noVNC, which cancels the key in the browser and sends it to the
+machine, so the machine pasted its own clipboard. On a Mac it was worse:
+noVNC sends Cmd as Alt, so Cmd+V reached the machine's browser as Alt+V
+and pasted nothing.
+- *Keyboard paste.* A capture listener on the document holds the paste key
+  (Ctrl+V, Ctrl+Shift+V; Cmd+V and Cmd+Shift+V on a Mac) back from noVNC
+  without cancelling it. The browser then fires its own paste event with
+  the clipboard's text, which needs no permission in Chromium or Firefox.
+  The page sends that text as the VNC clipboard (noVNC uses TigerVNC's
+  extended clipboard, so the text is UTF-8) and then presses Ctrl+V on the
+  machine over the same RFB connection, which carries both in order. On a
+  Mac it first releases what noVNC sent for Cmd, so the machine sees
+  Ctrl+V, not Ctrl+Alt+V. With Ctrl held on the laptop, noVNC has
+  normally sent Ctrl down, and the page sends only the V. On Windows noVNC
+  holds a left Ctrl back for up to 100 ms to tell AltGr apart and sends it
+  only with the next key it sees, which the held V never is; the page
+  flushes that Ctrl first, and presses Ctrl itself whenever noVNC's list
+  of keys down has none (a Ctrl released before the 300 ms below).
+- *Which key is V.* On a Latin layout the key's letter (`key`) decides,
+  so Dvorak's Ctrl+K on the physical V key reaches the machine as Ctrl+K.
+  On a non-Latin layout (Cyrillic, Greek) browsers take the shortcut by
+  position, and the physical key (`code`) decides.
+- *A browser with no paste event.* If none arrives within 300 ms, the page
+  presses Ctrl+V on the machine anyway, which is what happened before.
+- *The paste button.* For a pointer, a phone, or a browser whose shortcut
+  something else takes: `readText`, then the same send and Ctrl+V.
+  Chromium asks once; Firefox 125 and later shows its own Paste button.
+  The button says "not allowed" when the browser refuses, and "clipboard
+  empty", pressing nothing, when the laptop's clipboard holds no text: a
+  Ctrl+V then would paste the machine's own clipboard. The focus-time
+  push stays for Chromium with the permission granted.
+- *Rejected.* Typing the clipboard as key events (xdotool-style) would
+  bypass the clipboard altogether, but it breaks on any character outside
+  the machine's keymap and is slow for long text. Pasting through a text
+  box in the page is an extra step for every paste.
+- *Evidence.* nix/guest/tests/viewer-paste.mjs runs a real Xvnc with
+  vncconfig, a Chromium with a textarea on that display, websockify
+  serving this viewer, and Playwright's Chromium (with and without the
+  clipboard permission) and Firefox as the laptop; the commit message has
+  its output against main's viewer and this one.
+
+**I-727. The agents' browser clears a stale profile lock before it starts,
+and the desktop's idle stamps are always dev's (browser-fixes,
+2026-10-13).** *Made during implementation*, from an agent's report that a
+machine's browser "wouldn't start, because of a stale profile lock and a
+root-owned /run/repose/desktop/last-cdp".
+- *The lock.* Chromium marks its profile in use with `SingletonLock` (a
+  link to `HOSTNAME-PID`), `SingletonSocket` and `SingletonCookie`. A
+  browser that is killed, which a stop, a freeze or an OOM kill does,
+  leaves them behind in `~/.local/share/repose/browser`. Chromium clears
+  its own stale lock only when the host name matches and the PID is not a
+  Chromium. A fork or a restore under another name has another host name,
+  and Chromium then refuses the profile as in use on another computer; a
+  PID that another Chromium reuses makes it wait on a socket nobody
+  answers. `repose-browser-unlock`, the unit's ExecStartPre, removes the
+  three links unless the process the lock names is running with this
+  profile on its command line, and says so in the unit's journal.
+  Chromium rewrites its process title, so its `/proc/PID/cmdline` is one
+  string of arguments joined by spaces; the helper looks for
+  `--user-data-dir=PROFILE` between spaces, NULs read as spaces.
+- *The stamps.* `last-client` and `last-cdp` were written with `touch` by
+  the per-minute idle check, as root, and by the display's, the viewer's
+  and the browser's units, as dev. When the idle check made a stamp first
+  (it creates a missing one, and a viewer can start before the browser's
+  start has finished), dev could not touch it any more: the browser's
+  ExecStartPost failed and the unit stopped. Every writer now runs
+  `repose-desktop-stamp`, as root (the units with the `+` prefix), which
+  touches the stamp and gives it to dev. A root stamp left by an older
+  base on a running machine is given back at the next write.
+- *Evidence.* The flake check `guest-browser-starts-after-a-kill` runs the
+  unlock helper against another host's lock, a reused PID, a PID with
+  another profile, a dead PID, a live lock whose holder's title is one
+  space-joined string, and a running headless Chromium, and reads the
+  unit texts for the helper and the stamp writes. A guest-desktop subtest
+  starts the browser over another host's lock and root's stamps (the VM
+  tests need the dev box). The commit message has the reproduction on a
+  real machine.
+
+**I-729. The agent process-name predicate lives in a leaf package, so
+`repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends
+I-690).** *Made during implementation.* The guest closure check failed on
+the batch: `guest system closure: 6443547552 bytes (limit 6442450944)`,
+over by 1.05 MB, where main had 4.7 MB of headroom. The whole crossing was
+one binary: **`repose-hook` went from 7.29 MB to 13.03 MB**, +5.74 MB, which
+is the entire 5.81 MB the batch added to the closure. `guestd` grew 45 KB
+and the new scripts of this batch are 4.8 KB, 1.3 KB and 864 bytes.
+- *The cause.* I-690 exported `IsAgentCommand` from `internal/guestd/sample`
+  for the hook socket, and `internal/guestd/hooks` imports it — one
+  predicate, used twice. `sample` imports `internal/gen/guestd/v1`, so the
+  hook's dependency list grew by **126 packages**: the generated protobuf,
+  `google.golang.org/grpc`, `golang.org/x/net/http2`, `x/text/unicode`,
+  `internal/psi`, `internal/abuse`. A binary that posts to a unix socket
+  was linking the guest's whole RPC stack to ask whether a process name is
+  an agent's.
+- *The fix.* `internal/agentproc` holds the table and the predicate and
+  imports nothing but `strings`; `sample` keeps `binaries`,
+  `matchesBinary`, `isAgentCommand` and `IsAgentCommand` as delegates, so
+  its callers and tests are untouched, and `hooks` imports `agentproc`.
+  The package comment says it must stay a leaf and why.
+- *Evidence.* `go list -deps ./cmd/repose-hook | grep -c 'gen/guestd\|grpc'`
+  is **0** (it was 2 and 124); `go build ./...` and `go vet` clean;
+  `internal/guestd/sample`, `internal/guestd/hooks` and `internal/guestd`
+  pass; the closure check passes again.
+- *Why this is the fix and not a bigger limit.* The guard says what it is
+  for — "every host's store grows by it, and every first boot registers its
+  metadata" — and it caught a real regression on its first crossing. Raising
+  it would have shipped a 13 MB hook binary into every guest and hidden the
+  next 5 MB too. The limit stays at 6 GB, which the batch is now 4.6 MB
+  under.
+- The check itself prints "closure over 6 GB; largest paths:" and then
+  exits without printing any, which cost time here; worth fixing when
+  someone next touches `nix/flake.nix`.
+
+**I-730. A fork or a start that waits out a background stop, after
+fork-fast and attach-run-home (stop-background, 2026-10-14).** Amends
+I-710. *Made during implementation*, merging main (I-700..I-703, I-709,
+I-722) into stop-background.
+- *Fork.* I-710 put the wait for a stop under way before `repose fork`'s
+  own snapshot. Fork-fast replaced that snapshot with a clone of the
+  source's volume on its host, falling back to a fork snapshot on `409
+  snapshot_needed` or an api before clones. The api refuses both while
+  the source is `stopping` (`a fork needs it running or stopped`, and the
+  busy refusal on a snapshot), so the wait now comes before the first
+  fork request and covers all three ways. A fork from `--snapshot ID`
+  does not wait: the copies come from a stored snapshot, which a stop
+  does not touch. The fake api refuses a clone of a `stopping` project as
+  the api does, which the test needed to fail without the fix.
+- *Start, attach, run, ssh, code.* `ensureRunningFrom` waits on the op
+  the project read names (I-722), which on a `stopping` machine is the
+  stop. A stop that failed then read `Could not start job: stopping job
+  failed: ...`, a start's failure for an op that was not a start; and
+  through the state wait, `✓ Stopped job` before the restart. Now the
+  command prints `Stopping job failed: WHY.` once (the api's reason
+  without its "`repose stop job` tries again", since the command is
+  starting the machine instead) and starts the machine from `error`,
+  which the api turns into a restart (I-157): the user asked for a
+  running machine, and the failure is also notified (`stop_failed`).
+- *Rejected:* exiting on the stop's failure. The user's command was a
+  start; a machine in `error` is one a start restarts everywhere else.
+**I-712. A large submodule's history comes from GitHub on the first sync;
+amends I-263.** (sync-fast, backlog item 8, 2026-10-13) The owner's "503
+new commits" on a 30 s+ sync were one submodule's whole history, which
+I-263 always bundled from the laptop: 13 MB over weak wifi, while the
+superproject itself came from GitHub (I-203) and sent 0 commits. On a
+sync into a checkout with no commits, each checked-out, non-shallow
+submodule whose own `remote.origin.url` on the laptop is on github.com
+and whose `size-pack` is at least the I-715 threshold is fetched by the
+guest into a repository under `.git/repose-prefetch/`, in the background
+of the apply (I-713), with every branch and tag in
+`refs/remotes/origin/*` and `refs/tags/*`. The laptop bundles that
+submodule's `HEAD` minus its own `refs/remotes/origin/*`; the apply moves
+the fetched repository into the submodule's directory (or fetches its
+objects into one already there) where I-263 ran `git init`, then
+unbundles and checks out as before, and `git submodule init`/`sync` set
+its origin. A submodule GitHub cannot serve falls back to the bundle
+with `The machine could not fetch submodule <path> from GitHub (<git's
+reason>), so its history was sent from your laptop instead.` A submodule
+is always fetched in full, never blobless (I-714): `git submodule sync`
+rewrites its origin, and the promisor bookkeeping would have to live in
+every submodule. *Not done:* a submodule added after the first sync is
+still bundled (the guest's superproject has commits then, and the
+overlap check could refuse after the carry ran, I-713); the laptop's
+`origin/<branch>` refs inside submodules are still not sent.
+
+**I-713. The guest's GitHub fetch runs inside the apply's ssh, overlapped
+with the upload; amends I-203 and I-224.** (sync-fast, 2026-10-13) The
+first sync of a large GitHub repository was three steps one after
+another: a logins ssh (I-224 sent the carry first because the clone
+needs gh's login), the full fetch in its own ssh, then the apply with the
+bundle. In the owner's run they cost about 49 s after boot; on a
+reproduction from kanali at a 5 Mbit/s uplink the logins ssh alone was
+10.1 s, the fetch 4.7 s and the apply 16.1 s. Now there is one ssh after
+the probe:
+- The apply's script starts each fetch (I-203's superproject, I-712's
+  submodules) as a background job at its top. The remote script runs as
+  soon as the ssh opens, so the fetches overlap the payload's upload.
+- The laptop bundles against what it last saw of origin
+  (`refs/remotes/origin/*`; no longer its tags, since a tag never pushed
+  would name a base GitHub lacks), before any fetch has run.
+- After the payload is unpacked the carry runs (moved up from after the
+  overlap check, in this case only), then `.git/repose-prefetch/creds`
+  is touched, then the apply waits for the jobs.
+- Each fetch tries anonymously first (`-c credential.helper=`). One that
+  fails waits for `creds` and tries once more with gh's helper, so a
+  private repository uses the login this same apply copied. The wait has
+  no limit of its own: it ends when `creds` appears or the apply's shell
+  is gone. A limit counted from the script's start (120 s at first)
+  expired during a long upload, about 37 MB at 2.5 Mbit/s, and turned a
+  private repository's fetch into a failure and a whole second payload.
+- Each job runs its git as a child it waits for and kills on TERM, so the
+  apply's EXIT trap ends the git too. Killing only the job's subshell
+  left the git running as an orphan, still writing refs into the
+  checkout after the apply had gone.
+- The apply then checks each bundle's prerequisites (`git bundle
+  verify`) and that every commit it checks out is either fetched or in a
+  bundle. If one is missing (a fetch failed, GitHub lacks a commit the
+  laptop thinks it has), it prints `#needfull` and the commits the guest
+  now has, and exits before the checkout is touched. The payload stays
+  on the guest (`.git/repose-prefetch/payload`, without its bundles and
+  carry), and the laptop's second payload carries only the bundles, made
+  against those commits, unpacked over it. A second payload of
+  everything would send the untracked files (up to 500 MB) and the diffs
+  again, which on a weak uplink made a failed fetch slower than main's
+  order, where the history went once. If the kept payload is gone, the
+  apply says `#needpayload` and the laptop sends a third payload whole,
+  with the submodules fetched beside it bundled in full.
+- An apply with fetches holds `.git/repose-prefetch.lock` (`flock`,
+  waiting at most 30 s, then going on without it) while it uses
+  `.git/repose-prefetch`. The probe of every sync clears a
+  `.git/repose-prefetch` a stopped first sync left, unless it can't
+  take that lock. The carry and the backfill start without the lock's
+  descriptor, so nothing long-lived holds it.
+The carry running before the overlap check means a sync refused for an
+overlap (I-573) has copied the logins: only on a first sync, whose
+checkout has no commits, so only a guest with untracked files at paths
+the laptop sends. A private repository loses less than the overlap: its
+anonymous attempt fails in under a second, and the fetch with the login
+runs after the upload. That is still one ssh fewer than main's order
+(logins ssh, fetch ssh, apply), and when the fetch fails the second
+payload is only the bundles. Measured at 5 Mbit/s from kanali to a
+local guest over OpenSSH, fetching from GitHub: a private 5.7 MiB
+repository with one laptop-only commit took 5.2 and 11.2 s against
+main's 11.9 and 11.6 s (main bundles all 48 commits under its 20 MB
+threshold). With a submodule whose fetch fails and a 4 MB untracked
+file, both send the same 12.1 MB (4.0 MB, then 8.1 MB of bundles,
+against main's one payload); the branch took 33.8 s against main's 29.9
+s on a quiet kanali, and 50.0 and 95.4 s against 71.3 s under load. The
+few seconds it can lose there are the failed fetch's retry with the
+login after the upload and the second round trip.
+*Rejected:* a second ssh for the fetch joined by a lock file (two round
+trips and a race on who takes the lock first); streaming the fetch's
+progress back (nothing reads it); skipping the overlap when the carry
+has no gh login (the guest may already have one, and the anonymous
+attempt costs under a second).
+
+**I-714. A public repository's first fetch is blobless, then backfilled;
+amends I-203.** (sync-fast, 2026-10-13) I-203 rejected
+`--filter=blob:none` because lazy blob fetches fail once a token expires
+or the repository goes private. Neither applies to a repository the
+anonymous attempt (I-713) could read, and the full fetch is most of the
+first sync's time once the upload overlaps it: from a host-01 guest,
+tmux's 26 MB history takes 2.2 s whole and 0.66 s blobless, and the
+owner's 41.6 MiB took 6.6 to 11.4 s against 0.9 to 1.4 s, more on a busy
+guest. So when the guest's git has a `git backfill` that takes revisions
+(its `-h` names `<revision-range>`, git 2.54 and later; current bases
+ship 2.55), the superproject's anonymous attempt is blobless, through a promisor remote
+named `repose-backfill` with no fetch refspec, not origin: guestd sets
+origin to the SSH form, which has no key without gh's login, and resets
+it at every start. The checkout fetches the blobs it needs in one batch.
+The fetch job writes `.git/repose-backfill` as soon as the blobless
+fetch lands, not at the apply's end: an apply that stops after the fetch
+(an overlap refusal, Ctrl-C, a dropped upload) would otherwise leave the
+checkout partial for good, since the next probe sees origin's refs and
+plans no fetch. The end of every apply, and the probe of every sync,
+start `git backfill --all` (niced, detached, `flock -n` so once) while
+that file or the `repose-backfill` remote exists; on success it removes
+both. A backfill that fails is started again by the next sync. Until
+then `git remote` on the machine lists `repose-backfill`, and a command
+that needs an old blob fetches it from the public URL. An older git,
+whose `backfill` exists but takes no revisions, is fetched in full:
+`--all` would fail on it at every sync and leave the checkout partial
+for good. The apply's checks before the checkout (the commits it checks
+out, a bundle's prerequisites, the laptop's bases) look in the bundle
+first and run with `GIT_NO_LAZY_FETCH=1`, because in a blobless checkout
+a missing commit is asked of the promisor remote, and GitHub lacks the
+laptop's own commits: on a prod guest one such check took 7.2 s in two
+failed fetches, on the apply's critical path (review round 2). The
+checkout itself keeps lazy fetches, which bring its blobs. The apply
+of every sync unbundles the laptop's bundle (`git bundle unbundle`)
+where it used to fetch it: a fetch's connectivity check enumerates
+every promisor object of a blobless checkout, which took 17.5 s for
+cpython's history on a prod guest where unbundling the same bundle took
+0.03 s. The bundle's prerequisites are checked either way, and
+submodules were already unbundled (I-263). A
+private repository is fetched in full, as before. *Rejected:* origin as
+the promisor (above); `--depth=1` (later syncs need real bases, and the
+agent loses history); leaving the repository partial (later blame and
+log -p fetch one blob at a time).
+
+**I-715. The threshold is 4 MiB, and a sync reports its time.** (sync-fast,
+2026-10-13; closes the hybrid item of 15-dev-ergonomics) I-203's 20 MB
+was "to be set from measurement". Measured from kanali, a guest on
+host-01: blobless fetches of 26, 9 and 7 MB histories take 0.66, 0.45
+and 0.35 s, whole fetches 2.2, 0.8 and 0.9 s; the laptop's bundle is the
+`size-pack` give or take, so 4 MiB is 1.7 s of upload at 20 Mbit/s and
+13 s at 2.5 Mbit/s, and with I-713 the fetch runs during the upload
+anyway. The same threshold applies to each submodule (I-712). The
+`Synced:` line now ends with the sync's own time, probe to apply, as a
+`✓` line ends with its phase's (`Synced: 3 modified, 1 untracked (2 new
+commits)  1.4s`); "Nothing new to sync" lines do not. `REPOSE_TIMING=1`
+gains `sync fetch <top|s<i>> <partial|full|failed> <ms>` per fetch and
+`sync: the fetches lack a base, sending again` and `sync: the machine
+no longer has the first payload, sending it whole`; each payload's
+`sync payload build` times that payload alone. No path or URL. *Not
+done:* the fix C of the analysis (I-716). I-717 was reserved and is
+unused.
+- *Evidence.* tmux (26 MB, public) with jq (9 MB, 1966 commits) added as
+  a submodule at a local commit, synced into one prod guest on host-01
+  from kanali, its checkout removed between runs, uplink held to 5 Mbit/s
+  by a throttle on ssh's stdin. main: `Synced: 0 modified, 0 untracked
+  (1967 new commits), history cloned from github.com`, sync phase 35.6 s
+  and 32.4 s (logins ssh 10.7/9.9 s, fetch 6.1/4.0 s, apply of an 8.1 MB
+  payload 16.5/16.7 s). sync-fast: `Synced: 0 modified, 0 untracked (1 new
+  commit), history cloned from github.com  15s` and `17s`, sync phase
+  15.0 s and 16.8 s, one ssh after the probe (`sync fetch top partial
+  1918ms`, `sync fetch s0 full 1666ms`, apply 13.2/15.1 s for a 4.3 MB
+  payload, which is the logins carry). Unthrottled: 15.7 s against
+  13.1 s. Both left the same HEAD (366cd3d) and submodule HEAD (6b53f80)
+  with a clean tree; 20 s later the guest had no missing objects and no
+  `repose-backfill` remote. With the submodule's origin pointed at a
+  repository that does not exist: `sync fetch s0 failed`, `sync: the
+  fetches lack a base, sending again`, the second payload carried its
+  1966 commits, and the run printed the I-712 line and ended with the
+  same HEADs.
+- *Evidence, review round 2* (2026-10-14, throwaway s2-sync-fast-r2 on
+  host-01). tmux plus jq at 5 Mbit/s: main 40.8 s, sync-fast 22.9 s;
+  unthrottled 19.0 against 15.6 s. The want check took 10 ms on the
+  guest where it had taken 7.2 s. A first sync interrupted mid-upload
+  after its fetch left `repose-backfill` and no HEAD; the next sync
+  (12.1 s) left the right HEADs, origin alone and no missing objects.
+  The failing-submodule run sent 4.3 MB then 8.1 MB (bundles only, the
+  second build 3.6 s); with the kept payload removed between the
+  applies, a third payload went whole and the sync still ended right.
+  This repo and cpython, bundle against clone: 15-dev-ergonomics,
+  "Hybrid".
+
+**I-716. The fetch does not start during boot.** (sync-fast, 2026-10-13)
+The analysis's fix C would have guestd fetch a public github.com remote
+into the checkout while the guest boots, joined by the sync through a
+lock, hiding the fetch behind the boot. Not built: it needs a new
+hostd/guestd contract (the remote handed to SetupProject, idempotent
+across hostd restarts) and a base publish, in the boot path the
+boot-fast branch (I-704..I-708) is changing at the same time, and after
+I-713 and I-714 what it would hide is a blobless fetch of about a second
+that already overlaps the upload. *Revisit when:* a first sync's
+`REPOSE_TIMING` shows `sync fetch top` longer than the apply's upload on
+real runs.
+**I-731. No `requestId` on a Chat webhook: Google refuses it and every
+Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends
+I-692).** *Made during implementation.* I-692 appended
+`requestId=<event id>` to the webhook URL so that a retry after a lost
+answer would not post twice, and said in as many words that "the Chat
+webhook's answers to `requestId` ... are taken from Google's docs and not
+from a live webhook". They are wrong for a webhook. Google answers
+**`400 Request Id is not supported for webhooks.`**, so from the moment
+I-692 shipped, every Chat message failed — the owner added a webhook to
+their account minutes after the release, pressed Send test in the
+dashboard, and got an error.
+- *Isolated against the owner's live webhook*, one parameter at a time,
+  plain `{"text":...}` body: the URL alone **200**; `+threadKey` **200**;
+  `+messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD` **200**;
+  `+requestId=<uuid>` **400**, with Google's sentence above. The api's own
+  log says only `notify_fail channel=gchat` — the URL is a credential and
+  nothing about it is logged — so the reason came from the response the
+  api returns, which `repose notify test` prints: `gchat: failed: the
+  server answered 400`.
+- *What was not wrong*, each checked before the code was touched: the
+  stored URL is byte-identical to the one that works (same md5, length
+  152) and `gchat_broken_at` is null, so the channel was not marked
+  broken; `CanonicalGChatURL` accepts it; the control host and the api's
+  network reach `chat.googleapis.com` (200 from both).
+- *The cost of the fix.* `threadKey` still groups a project's messages, so
+  a retry after a lost answer can post a second message into the same
+  thread. That is unavoidable: the parameter that would prevent it does
+  not exist for webhooks. A webhook has no idempotency key.
+- *This also closes I-692's other untested claim.* The api's exact
+  rendered card — `fallbackText`, `cardsV2` with a header, a
+  `textParagraph` and an `openLink` button — posts **200** to the live
+  webhook once `requestId` is gone, so the card shape itself was right.
+- `internal/api/notify/gchat_test.go` now asserts the query has **no**
+  `requestId`, where it asserted its value before.
+
+**I-740. The stop reads the checkout within its own 15 s, past a dead
+master and with no stdin to wait on, and says when it could not; the
+gateway holds a session's EOF until the guest accepts its command
+(stop-probe, 2026-10-14). Amends I-634, I-710.** *Made during
+implementation.* The owner asked that `repose stop` "tell them 1 file not
+committed then do the rest in the background" (I-710). Live on prod from
+kanali with CLI c5e24d2d, the clause came in 9 of 13 stops, and in 6 of 8
+in this branch's own baseline (s2-b4-probe-a, one untracked file, each stop
+3 s after a start, from a folder that is not a checkout); the other stops
+printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
+- *Two causes.* (1) `probeBeforeStop` read the machine with status's 4 s
+  budget (`statusProcsTimeout`, ssh `ConnectTimeout=3`) and dropped the
+  clause when the budget ran out. On the guest the script takes about
+  0.5 s (ss, ps, stat, the worktree list and `git status` each under
+  0.1 s); the rest is the handshake through the gateway, 0.3 to 3.2 s from
+  kanali, slowest in the first minutes after a start. (2) The script began
+  `repose_have=$(cat)`, and with no laptop checkout there is nothing on
+  stdin. ssh sends its EOF right after the exec request without waiting
+  for the reply; the gateway relays the exec from one goroutine and the
+  EOF from another (`pipe` in `internal/gateway/relay.go`), and when the
+  EOF reached the guest's sshd first, a session with no command yet had
+  no stdin to close, so `cat` waited out every budget. `ssh -vv` of the
+  script, run 3 s after a start, hung 3 times in 8 with `exec request
+  accepted` and then nothing; `x=$(cat)` from a running guest, 1 in 20;
+  the same command without `cat`, 0 in 20. With data on stdin the EOF
+  follows the data, which sshd buffers until the command has a stdin, so
+  the reads that sent the laptop's commits were not hit. Measured from a
+  checkout through prod's gateway (c5e24d2d, without the gateway change
+  below): s2-b4-probe-c, a temporary machine with a `repose` remote added
+  by hand, one untracked file, each stop 3 s after a start, every read
+  sending the laptop's commit (the 1614-byte script with `$(cat)`): the
+  clause in 8 of 8 stops, 2.4 to 3.9 s with the fetch before each, and
+  3 of 3 status reads of the running machine.
+- *The stop's read.* `stopProbeTimeout` is 15 s, with ssh's
+  `ConnectTimeout` at the budget less a second, at most 10 s. A stop is
+  the last moment the machine can be read, and a slow network makes the
+  handshake slow, not wrong. `repose status` keeps 4 s: it can be run
+  again, and its rows do not wait on the guest. A ControlPersist master
+  that answers `-O check` but whose connection died (the laptop slept)
+  would hold the read for the whole 15 s, so the read calls `masterAlive`
+  first (I-491), which stops a dead master; a live one carries the read.
+  Status's read does the same (`guestStatusWithin`), so after a sleep
+  the two read the machine alike. The budget counts from before
+  `masterAlive`: a dead master's check (up to about 2 s) comes out of it,
+  so the read never waits past the budget the line names. A read that
+  times out says how long it waited, in whole seconds: the budget, or
+  less when ssh's `ConnectTimeout` gave up first (`no ssh answer in
+  10 s`).
+  `--wait` and the commands that stop through `stopOne` (`resize --size`,
+  `fork`, run's plan question) use the same read.
+- *No stdin when there is nothing to send.* `statusScript` sets
+  `repose_have=` and reads no stdin when the laptop has no commits to send,
+  which covers the owner's case of stopping a machine from another folder.
+  `repose status` uses the same script.
+- *The gateway.* A session's EOF to the guest now waits until the guest
+  has answered the client's exec, shell or subsystem request, or the
+  client's requests have ended. Every `ssh <slug>.repose CMD </dev/null`
+  whose command reads stdin had the same race, `repose exec` without `-i`
+  among them. `TestRelayHoldsStdinEOFUntilTheExecIsAccepted`: a fake
+  guest that takes 300 ms to accept, as one just after a boot does, says
+  whether the EOF was already there; it was on every run before the fix.
+- *When the read fails, the line says so*, in the words status's checkout
+  row uses (`checkoutUnknown`, shared): `Stopping job; checkout unknown (no
+  ssh answer in 15 s).` or `... (ssh failed: Connection refused).` A
+  machine that answered with no checkout still adds nothing. stop-left.json
+  keeps the failure (`error`, `detail`, `waited_s`, with `rows` null), and
+  `repose status` on the stopped machine says `checkout   unknown at the
+  stop, 9h ago (no ssh answer in 15 s)` and `--json` `git_error`: no row
+  would read as a machine with no checkout (I-634's reason for the
+  running machine's row). A CLI before this one reads such an entry as no
+  rows. A Ctrl-C while the stop waits for its early read (I-741) is not
+  a timeout: the stop ends, the line is not printed and nothing is kept.
+- *Measured* from kanali on prod, s2-b4-probe-a (large), one untracked
+  file, eight stops per CLI with the two CLIs taking turns, the network
+  faster than in the baseline (the project list answered in 60 to 180 ms,
+  not 530 to 590): main 6 of 8 with the clause, 0.8 to 4.5 s (median
+  1.0 s); this branch 8 of 8, 0.55 to 1.3 s (median 0.85 s), and 8 of 8 more in a row, 0.8 to 2.0 s, while kanali ran the CLI's tests. With an ssh that never answers, the stop printed `Stopping s2-b4-probe-a; checkout unknown (no ssh answer in 15 s).` and the machine stopped. A first build
+  with the 15 s budget but still reading stdin had 6 of 8, two of them
+  `checkout unknown (no ssh answer in 15 s)` after 15.2 s, which is how
+  the second cause was found.
+- *Not done:* the gateway change is live only after a release that ships
+  the gateway; until then the CLI's script change is what keeps the
+  stop's read off the race.
+
+**I-741. `repose stop NAME` reads the machine beside the api's read of the
+project (stop-probe, 2026-10-14).** *Made during implementation.* The read
+needs only the slug, and after resolving the project the stop has nothing
+to send the api before it: the handshake can overlap the api's
+`GET /projects`, as run's early probe does (I-223).
+- `startStopProbes` starts a read for each name given on the command line
+  before `resolveProjects`, with the laptop's commits computed from the
+  cache's guess for the project (`cachedGuess`: id and remote), or from the
+  slug alone. The stop uses that read when the api returns the same slug,
+  `running`, and the laptop's commits computed for the real project after
+  the fetch are the same ones the read sent (a fetch that brought commits
+  changes the count, so the machine is read again), and the read started
+  at most 10 s before (`stopEarlyMaxAge`: an agent that the busy-agent
+  question asked about kept working while the user answered). Otherwise
+  it reads again. The reads end with the command.
+- Not for `repose stop` with no name or `--unused`: in a checkout, the
+  fetch before the stop (I-615) leaves a ControlPersist master that the
+  read rides, and `--unused` learns its machines from the api.
+- A name that resolves to a machine that is not running costs one
+  refused connection. The gateway caches that refusal for 5 s; nothing in
+  the stop connects again.
+- *Rejected:* sending the stop to the api beside the read. hostd's stop
+  freezes the guest's filesystems for the snapshot as its first step and
+  shuts the guest down straight after (I-404), and on prod the engine had
+  the op about 0.1 s after the `202`, so the read would race the shutdown,
+  and its `git status` could wait on a frozen filesystem. An api that held
+  the stop until the CLI's read would gain the api's ~50 ms and needs a
+  contract change.
+- *Measured:* in each of this branch's stops in I-740 the read ran beside
+  the project list (`REPOSE_TIMING=1`: `stop: s2-b4-probe-a read beside the
+  api`); with the list at 690 ms and the read at 590 ms, the stop returned
+  in 1.08 s.
+**I-742. The apply reports its own steps' times.** (sync-idle,
+2026-10-14) A first sync on prod (r20261014-2's live check, CLI and api
+c5e24d2d) took about 47 s, and the guest sat about 20 s between the
+GitHub pack landing and the checkout with nothing on the laptop's side
+to say why: `REPOSE_TIMING` timed the apply's ssh as one span. The apply
+now marks the end of each step on stdout (`#t <step> <seconds>`, bash's
+`$EPOCHREALTIME`, no process per mark), and `REPOSE_TIMING=1` prints
+each as `sync apply <step> <ms>`, its time since the mark before: upload
+(the payload unpacked), logins (a first sync with fetches: the logins
+and the git config, I-743) or carry, fetch (the wait for the fetches),
+checks, guard, checkout, diffs, submodules, record, carry (the rest of a
+first sync's carry), end. No path, no value. `ops/dev` scripts and the
+public docs' "prints how long each step took" cover it unchanged.
+- *What the marks found* (creates of one fixture from kanali,
+  2026-10-14 21:30-22:45Z, host-01: a superproject with origin
+  github.com/heracraft/repose and 3 laptop-only commits, jqlang/jq as an
+  8.6 MiB submodule fetched by the guest, kanali's real logins and
+  Claude files). On c5e24d2d the sync phase took 5.5 to 9.5 s (9 runs,
+  mean 6.8 s) with an apply of 4.4 to 8.2 s. In 4 runs of c5e24d2d with
+  the marks added, of an apply of 4.6 to 5.2 s, 2.2 to 2.8 s was the
+  carry, run whole before the fetch was joined, and the fetch itself
+  (1.1 to 1.4 s) ended inside it; after it guard 0.3 s,
+  checkout 0.04 s, the submodule's steps 0.6 to 0.9 s, record 0.3 to
+  0.7 s, end 0.15 to 0.4 s. The carry is about 700 small processes over
+  ten parts, none over 0.5 s (a set -x trace on the guest). The payload
+  is 4.3 MB, nearly all of it the carry, whose largest files are the
+  Claude carry's skills, XML schemas three times over, sent as a plain
+  tar: 7.0 s of the apply's upload at
+  5 Mbit/s. The 20 s gap did not come back on any of 33 creates; the
+  live check's run had booted in 48 s on a busy host-01, where a carry
+  of 700 processes and an unthrottled tools install would stretch. Only
+  that run stays unexplained; on the next one, the marks name the step.
+- *Rejected:* batching the apply's git calls into one script (the
+  analysis's first idea): on these runs the git steps after the fetch
+  are 1.5 to 2.5 s in all, the checkout of a 900-file tree 0.04 s, and
+  the I-210 script that would be rewritten went through three reviews;
+  a set -x trace by default (1,600 lines per apply, and it would print
+  paths).
+
+**I-743. A first sync checks out beside the rest of the carry, and the
+carry travels compressed.** (sync-idle, 2026-10-14; amends I-713, I-224)
+From I-742's marks, two cuts:
+- *The carry beside the checkout.* On a first sync with fetches (I-713)
+  the apply starts the carry's script in the background. Its first half
+  is the logins' lines and the git part, now the first part of the carry
+  (`addCarry`), and ends with a line that touches the file
+  `REPOSE_CARRY_EARLY` names (nothing when it is unset, as in the
+  carry's own ssh). The apply waits for that file, or for the carry's
+  end when it stops before it, then touches `creds` (a private
+  repository's fetch needs only the logins) and goes on: the checkout
+  needs the git config (the carried `core.*` keys and excludes), and
+  nothing else of the carry. The Claude, MCP and tools parts run beside
+  the checkout and are joined after the record, before the fresh shell,
+  which should start with everything the carry wrote; the reply lines
+  print then. A carry that failed in its first half still fails the
+  apply before the checkout is touched, with the same message. Every
+  other way out joins it too: the `#needfull` exit waits for it and
+  prints its lines (the second payload carries no carry, as before), and
+  the EXIT trap waits for it before removing the payload it reads, so no
+  part is cut off half way. Later syncs keep the carry in line: their
+  stash and merge need the identity the carry writes, and their carry
+  is usually a few markers.
+- *The carry's tar compressed.* `guestPayload` sends its tar gzipped
+  (`tar -xz` in the carry's script), in the apply's payload as
+  `carry.tar.gz` and in the carry's own ssh. ssh sends its stdin as it
+  is given (no `Compression`), and kanali's carry is 4.3 MB of tar and
+  0.66 MB gzipped, 74 ms to compress. The bundles and the untracked tar
+  stay as they are: a bundle is already compressed, and no measurement
+  says the untracked files are worth the CPU.
+- *Evidence* (prod, host-01, from kanali, the fixture of I-742, each run
+  a fresh `repose run --temp --name s2-b4-idle-<x> --no-attach`, removed
+  after). Interleaved, unthrottled: c5e24d2d 6.9, 6.4, 7.3, 6.9 s, the
+  branch 6.2, 6.1, 5.6, 5.8 s (apply 5.2 to 5.5 s against 3.8 to 4.4 s);
+  the rest of the carry ends 15 to 35 ms after the record, so it is
+  hidden. On this build the apply waits 0.76 to 1.24 s for the logins
+  and the git config (7 runs). Uplink held to 5 Mbit/s by a throttle on
+  ssh's stdin: c5e24d2d 13.9 and 14.1 s (a 4.3 MB payload), the branch
+  6.1, 6.0 and 5.9 s (0.67 MB; upload 1.1 to 1.3 s where it was 7.0). An
+  earlier build of the branch with the carry beside the checkout and the
+  tar not yet gzipped took 4.7, 5.3 and 4.9 s unthrottled (not
+  interleaved with c5e24d2d, logins 0.71 to 0.81 s) and 12.0 and 11.8 s
+  at 5 Mbit/s, still sending 4.3 MB: of the throttled gain, about 2 s is
+  the carry beside the checkout and about 6 s the gzip. A submodule
+  whose origin GitHub lacks: `sync fetch s0 failed`, the I-712 line, a
+  second payload of 1964 commits, HEADs 84eec58 and 0404249, clean tree,
+  every login and carry marker written. A private 4.75 MiB submodule
+  (fetched with gh's login after the anonymous attempt fails): 9.7 s
+  against 11.6 s on c5e24d2d, its fetch done 2 s sooner, HEADs right on
+  both. A first sync interrupted 6 s into a 1 Mbit/s upload (SIGINT to
+  the process group): no HEAD; `repose sync` then ended in 5.8 s with
+  the right HEADs, the untracked 3 MB file byte for byte and the logins
+  in. The third whole payload (the kept payload gone) is covered by
+  TestPrefetchResendWithoutTheKeptPayload, not on prod.
+**I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
+sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
+implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`
+of the only secret two running guests had made the api push UpdateSecrets
+with zero secrets; hostd logged `secrets updated count=0`, and the guests
+kept `/run/repose/secrets/<NAME>` and the variable. hostd's cache took a
+delivery only when it held something (`if len(out) > 0`, there since
+709607bb, 2026-09-19), so an empty set never replaced the old one, and
+`updateSecrets` then wrote the cached, old set to guestd. Any removal that
+left a running guest with no named secret did this, a project's own last
+secret too.
+- *Why the guard was there.* `cacheSecrets` serves create, restore and a
+  start; a start the api sent without delivery fields (a host that
+  restarted, I-26) has nothing in hand, and must not wipe the cache. The
+  start already skips `cacheSecrets` then; the guard is kept for those
+  callers.
+- *What changed.* UpdateSecrets is always the guest's whole named set (the
+  api builds it from `DecryptForGuest`, project and account secrets
+  together; proto3 has no "omitted" list to tell apart from an empty one),
+  so it goes through its own path: it replaces the named secrets in the
+  cache, an empty set included, and sends guestd the named set alone.
+- *A second bug the same line hid.* UpdateSecrets carries no sshd material,
+  and the old path replaced the whole cache with it, so after any secret
+  change the cache had no host key, host certificate or user CA. A boot
+  with no delivery of its own (a forced apply reboot, I-590) then started
+  sshd on the tmpfs with none of them. The new path keeps the cached
+  material. guestd is not sent it on an update, so a secret change does not
+  reload sshd, as before.
+- The start's `no_secrets` warning now asks whether the cache has a host
+  key: after a hostd restart an UpdateSecrets fills the named set but
+  brings no sshd material.
+- *Not changed.* guestd's Write already treated an empty list as the whole
+  set (files, `secrets.env`, `secrets.refresh`, tmux); a test now holds it.
+  The api already sent UpdateSecrets on each removal path (project rm,
+  `rm --global` via `accountReach`; `import` only sets); tests in
+  `api/http` (both DELETE routes) and `api/ops` hold the empty set on the
+  wire. hostd keeps the cache in memory only (`state.Guest` stores no
+  secret), so a hostd restart cannot bring an old value back; a hostd test
+  restarts the manager and checks that, and the `no_secrets` warning, both
+  ways. The fake guestd in `internal/hostd/fakeguestd` merged writes,
+  which would have hidden this; it now replaces the named set, as guestd
+  does.
+
+**I-744. A project with no remote of its own fetches from the checkout's origin; amends I-713.** (temp-prefetch, 2026-10-15) The conductor's live check of r20261014-2 found that `repose run --temp` uploaded the whole history from the laptop. On a tmux clone (25.3 MiB of history) with jq as a submodule, a named create sent 662,528 B and printed `sync fetch top partial`; `--temp` sent 23,229,440 B and had no top fetch. A temporary project records no remote_url (I-351), so the sync passed NoRemote, planPrefetch got an empty top URL, and only the submodules were fetched: their URLs come from the laptop's own config. I-713's measurements used named projects, which is why nobody saw it.
+- The fetch's source is now the project's remote, or, when the project has none, the checkout's own `remote.origin.url`, normalised the way a submodule's is. The same planPrefetch rules apply: github.com, at least 4 MiB of history, blobless first and then backfilled for a public repository.
+- The source feeds only the fetch and the summary's "history cloned from" line. The guest still gets no `origin` for a project without a remote, and the project still records no remote_url (I-351). The laptop's bundle is still made against the checkout's own `refs/remotes/origin/*`, as for a named project.
+- A checkout whose origin is some other repository is safe: the apply checks that every commit it needs arrived and asks for the full payload when one is missing (I-713's #needfull).
+- *Evidence.* TestPrefetchWithoutAProjectRemoteUsesTheCheckoutsOrigin syncs with NoRemote from a checkout whose origin is the fixture's github.com/a/b. Before the fix, the summary was "1 new commit" sent from the laptop. After, it reads cloned from github.com with no commit sent, and the guest has no origin.
+
+**I-745. The dev tools catch what let two lanes take one id, and the
+closure check names the paths it refuses (dev-tool-guards, 2026-10-15).**
+*Made during implementation.* Amends I-411's description of
+`release-queue id`. Six ids were taken twice in two days (I-718, I-719,
+I-732, and before them I-642 and I-647), and the closure gate twice said
+a closure was too big without saying what filled it.
+- *Why the ids collided.* `id` read every local branch, every worktree's
+  working copy and its own reservations, which is the whole world on one
+  machine. There are two: the conductor works on woker-1 and the agents on
+  the kanali guest, each with its own clone and its own reservations file,
+  so a number taken on one was invisible to the other until a shared ref
+  carried it. Measured on woker-1 on 2026-10-15: the old scan's highest
+  id was I-740 and it would have handed out I-741, which stop-probe had
+  already written; reading `refs/remotes` as well finds I-744 and hands
+  out I-745. `id` now scans `refs/heads` and `refs/remotes` both, so
+  `origin/integrated` (I-651) and a `kanali` remote close the gap, and it
+  refuses to print a number that is already an entry id rather than
+  trusting its own arithmetic. It also reads both ends of a range header
+  (`**I-195..I-205.`), where it used to read the first and leave the rest
+  to be handed out again.
+- *Why nobody noticed.* `decisions-index.py` kept the first entry for a
+  duplicated id and rendered nothing of the second, so a collision looked
+  like a clean index and a cross-reference landed on the wrong entry.
+  `--check`, and the write, now exit 1 and name each duplicated id with
+  the lines of every entry that declares it. I-642 and I-647, which the
+  staging-host and pricing lanes took at the same time, stay as they are
+  and are named in the script: renumbering them now would move
+  cross-references in several documents, and the check exists for the
+  next collision, not those two.
+- *The closure gate.* `guest-closure-size` printed "largest paths:" and
+  exited without printing any. It now prints the twenty largest, from
+  `closureInfo`'s registration (path, hash, NAR size, deriver, then the
+  references), whose sizes add up to `total-nar-size` exactly. Checked by
+  lowering the limit to 1 MiB: chromium-unwrapped 701.7 MB,
+  playwright-chromium 390.8 MB, codex 349.8 MB, gcc 264.4 MB. The heading
+  no longer says "6 GB", which the line above it already prints and a
+  changed limit would have made false. The guest closure stood at
+  6,437,828,064 bytes of 6,442,450,944 at r20261015-2, which leaves
+  4.6 MB: the next package added to the base trips this gate.
+- *Not in the repository.* `~/repose-ws/decl-collide.sh`, the conductor's
+  scan for two branches adding the same Go declaration (it found
+  attach-run-home and boot-real-addr both adding
+  `Fake.SetHostUnreachable`), compared each branch against a hardcoded
+  branch's merge-base and fell back to main, which charged every branch
+  with the declarations it had merged from main. It now uses each pair's
+  own merge-base and prints it, and a pair it cannot compare because a
+  branch is not fetched says so instead of printing "ok", which it did.

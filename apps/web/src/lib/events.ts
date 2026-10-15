@@ -15,8 +15,15 @@ export interface EventKindInfo {
 	group: EventGroup;
 }
 
-/** The agent hooks' kinds and the two an agent sends itself (I-244). */
-const AGENT_KINDS = ['completed', 'needs_input', 'error', 'agent_message', 'agent_question'];
+/** The agent hooks' kinds and the three an agent sends itself (I-244, I-688). */
+const AGENT_KINDS = [
+	'completed',
+	'needs_input',
+	'error',
+	'agent_message',
+	'agent_question',
+	'agent_done'
+];
 
 /** Kinds that say something failed, beyond the *_failed ones. */
 const FAILED_KINDS = ['abuse_stopped'];
@@ -32,6 +39,7 @@ export const EVENT_FILTERS = {
 		'base_update_failed',
 		'snapshot_failed',
 		'destroy_failed',
+		'stop_failed',
 		'personal_failed',
 		'boot_failed',
 		'abuse_stopped',
@@ -54,7 +62,10 @@ export const EVENT_FILTERS = {
 export type EventFilter = keyof typeof EVENT_FILTERS;
 
 const LABELS: Record<string, { label: string; tone: EventTone }> = {
-	completed: { label: 'done', tone: 'ok' },
+	// A turn's end, which notifies nobody; the agent says it is done with
+	// repose-notify --done (I-688).
+	completed: { label: 'turn ended', tone: 'neutral' },
+	agent_done: { label: 'done', tone: 'ok' },
 	needs_input: { label: 'needs input', tone: 'attention' },
 	error: { label: 'error', tone: 'error' },
 	agent_question: { label: 'question', tone: 'attention' },

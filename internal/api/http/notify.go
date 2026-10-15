@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/heracraft/repose/internal/api/events"
 	"github.com/heracraft/repose/internal/api/notify"
 )
 
@@ -37,8 +38,7 @@ func (s *Server) unsubscribePost(w http.ResponseWriter, r *http.Request) error {
 	// Mirror PATCH /me's behaviour (5.6's failure-mode table): a channel
 	// turned off drops its already-queued rows rather than sending one
 	// last batch to an inbox the user just asked to stop hearing from.
-	if _, err := s.d.Pool.Exec(r.Context(),
-		"delete from events_outbox where channel = 'email' and event_id in (select e.id from events e join projects p on p.id = e.project_id where p.user_id = $1)", userID); err != nil {
+	if err := events.DropQueued(r.Context(), s.d.Pool, userID, "email"); err != nil {
 		return err
 	}
 	return s.writeReplyPage(w, http.StatusOK, replyView{Title: "You have been unsubscribed",

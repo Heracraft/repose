@@ -54,6 +54,15 @@ func TestConsoleLogsServeTheFailedBoot(t *testing.T) {
 	if _, has := res["console"]; has {
 		t.Fatalf("the op read carries the console: %s", got.raw)
 	}
+	// The boot's timings are the operators' (I-707): in ops.result, not
+	// in the op a user reads.
+	if _, has := res["boot"]; has {
+		t.Fatalf("the op read carries the boot timings: %s", got.raw)
+	}
+	var stored bool
+	if err := e.h.Pool.QueryRow(ctx, "select result ? 'boot' from ops where id = $1", opID).Scan(&stored); err != nil || !stored {
+		t.Fatalf("ops.result has no boot timings: %v", err)
+	}
 	if w, _ := res["warning"].(map[string]any); w["code"] != "boot_failed" {
 		t.Fatalf("op result %s", got.raw)
 	}

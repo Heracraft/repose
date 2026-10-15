@@ -152,9 +152,12 @@ in
       RestartSec = "5s";
       # herdr's panes run in this cgroup: the kernel's OOM kill of a test
       # run or dev server in a pane must not stop the unit, which would
-      # take the server and every agent with it (the user manager's
-      # default is stop). The tmux unit needs none: each tmux pane is a
-      # scope of its own (DECISIONS I-560).
+      # take the server and every agent with it. The user manager's
+      # default is `continue` for that reason (keystroke-path.nix); the
+      # unit carries it where the reason is. I-560 read a tmux pane's own
+      # scope as needing none, which was backwards: the scope holds the
+      # agent and everything it started, and systemd stopping it is what
+      # ended an agent on kanali, 2026-10-13 (DECISIONS I-560, I-733).
       OOMPolicy = "continue";
       TasksMax = "infinity";
       # No CPUWeight: herdr's panes live in this unit's cgroup, so a

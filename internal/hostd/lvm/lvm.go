@@ -25,6 +25,12 @@ type LVM interface {
 	RemoveVolume(ctx context.Context, name string) error
 	ExtendVolume(ctx context.Context, name string, bytes uint64) error
 	Snapshot(ctx context.Context, name, snap string) error
+	// Clone makes name a thin snapshot of origin that is a volume like any
+	// other: active, and activated with the group at boot (no activation
+	// skip flag). It shares origin's blocks until either is written, so it
+	// takes no time and no space at first (DECISIONS I-701). A name that
+	// exists already is left as it is.
+	Clone(ctx context.Context, origin, name string) error
 	Activate(ctx context.Context, name string) error
 	// VolumeStats returns the allocated size and the bytes in use.
 	VolumeStats(ctx context.Context, name string) (size, used uint64, err error)
@@ -276,6 +282,26 @@ func (l *Real) Snapshot(ctx context.Context, name, snap string) error {
 	return err
 }
 
+// Clone implements LVM.
+func (l *Real) Clone(ctx context.Context, origin, name string) error {
+	if err := l.guard(ctx); err != nil {
+		return err
+	}
+	ok, err := l.VolumeExists(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// -kn clears the activation skip flag a thin snapshot gets by
+		// default, so the clone comes up with the group after a reboot.
+		if _, err := l.R.Run(ctx, "lvcreate", "-s", "-kn", "-n", name, l.VG+"/"+origin); err != nil {
+			return err
+		}
+	}
+	_, err = l.R.Run(ctx, "lvchange", "-ay", l.VG+"/"+name)
+	return err
+}
+
 // Activate implements LVM: thin snapshots are created inactive and skipped.
 func (l *Real) Activate(ctx context.Context, name string) error {
 	if err := l.guard(ctx); err != nil {
@@ -380,7 +406,7 @@ type FakeVolume struct {
 
 // Fake is an in-memory LVM for the state machine tests. FailOn makes a
 // named operation fail: keys are "create", "mkfs", "remove", "extend",
-// "snapshot", "activate", "fsck".
+// "snapshot", "clone", "activate", "fsck".
 type Fake struct {
 	mu       sync.Mutex
 	Volumes  map[string]*FakeVolume
@@ -556,6 +582,24 @@ func (f *Fake) Snapshot(_ context.Context, name, snap string) error {
 		return fmt.Errorf("lvcreate -s: %s does not exist", name)
 	}
 	f.Volumes[snap] = &FakeVolume{Size: v.Size, Used: v.Used, HasFS: v.HasFS, Data: append([]byte(nil), v.Data...)}
+	return nil
+}
+
+// Clone implements LVM.
+func (f *Fake) Clone(_ context.Context, origin, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.guarded("clone"); err != nil {
+		return err
+	}
+	if _, ok := f.Volumes[name]; ok {
+		return nil
+	}
+	v, ok := f.Volumes[origin]
+	if !ok {
+		return fmt.Errorf("lvcreate -s: %s does not exist", origin)
+	}
+	f.Volumes[name] = &FakeVolume{Size: v.Size, Used: v.Used, HasFS: v.HasFS, Data: append([]byte(nil), v.Data...)}
 	return nil
 }
 

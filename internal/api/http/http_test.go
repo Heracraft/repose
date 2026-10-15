@@ -26,6 +26,7 @@ import (
 	"github.com/heracraft/repose/internal/api/apitest"
 	"github.com/heracraft/repose/internal/api/auth"
 	"github.com/heracraft/repose/internal/api/config"
+	"github.com/heracraft/repose/internal/api/events"
 	httpapi "github.com/heracraft/repose/internal/api/http"
 	"github.com/heracraft/repose/internal/api/notify"
 	"github.com/heracraft/repose/internal/api/store"
@@ -86,7 +87,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 	deps := httpapi.Deps{
 		Pool: h.Pool, Verifier: auth.NewVerifier(lf.Issuer(), aud, nil), Users: auth.NewProvisioner(h.Pool, auth.NewLogtoManagement(lf.Issuer(), "m2m", "s", nil)),
 		CA: h.CA, Secrets: h.Secrets, Engine: h.Engine, Logs: h.Logs, Events: h.Events, Parser: parser, Metrics: h.Metrics, Registry: reg, Log: log,
-		Outbox:    notify.New(h.Pool, map[string]notify.Sender{"email": sender, "ntfy": sender}, h.Metrics, log),
+		Outbox:    notify.New(h.Pool, map[string]notify.Sender{"email": sender, "ntfy": sender, "gchat": sender}, h.Metrics, log),
 		Unsub:     unsub,
 		Questions: h.Questions,
 		Gateway:   httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
@@ -401,6 +402,58 @@ func TestNotifyTestRoute(t *testing.T) {
 	r = e.do(t, tok, "POST", "/me/notify-test", nil)
 	if _, ok := r.body["email"]; ok {
 		t.Fatalf("email attempted after being disabled: %v", r.body)
+	}
+	// Six tests a minute, then 429 in the house error shape (I-691).
+	for i := 3; i < httpapi.NotifyTestRate; i++ {
+		if r := e.do(t, tok, "POST", "/me/notify-test", nil); r.status != 200 {
+			t.Fatalf("test %d: %d %s", i+1, r.status, r.raw)
+		}
+	}
+	r = e.do(t, tok, "POST", "/me/notify-test", nil)
+	errBody, _ := r.body["error"].(map[string]any)
+	if r.status != 429 || errBody["code"] != "rate_limited" || r.hdr.Get("Retry-After") == "" {
+		t.Fatalf("seventh test in a minute: %d %s", r.status, r.raw)
+	}
+}
+
+// TestChannelOffDropsQueuedNotices: turning a channel off deletes its
+// queued user notices as well as project events, and leaves account mail,
+// which ignores the notify settings (DECISIONS I-691).
+func TestChannelOffDropsQueuedNotices(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-ned", "ned")
+	ctx := e.h.Ctx
+	var uid uuid.UUID
+	if err := e.h.Pool.QueryRow(ctx, "select id from users where logto_sub = 'sub-ned'").Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok, "PATCH", "/me", map[string]any{"notify": map[string]any{"ntfy_url": "https://ntfy.example/topic"}}); r.status != 200 {
+		t.Fatalf("set ntfy: %d %s", r.status, r.raw)
+	}
+	notice, err := events.InsertUserNotice(ctx, e.h.Pool, uid, time.Now(), "machines_restarted", "back")
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := events.InsertAccount(ctx, e.h.Pool, uid, time.Now(), "plan_changed", map[string]any{"to_plan": "pro"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func(id uuid.UUID, ch string) int {
+		var n int
+		_ = e.h.Pool.QueryRow(ctx, "select count(*) from events_outbox where event_id = $1 and channel = $2", id, ch).Scan(&n)
+		return n
+	}
+	if count(notice, "ntfy") != 1 || count(notice, "email") != 1 || count(account, "email") != 1 {
+		t.Fatal("rows not queued")
+	}
+	if r := e.do(t, tok, "PATCH", "/me", map[string]any{"notify": map[string]any{"ntfy_url": nil, "email": false}}); r.status != 200 {
+		t.Fatalf("channels off: %d %s", r.status, r.raw)
+	}
+	if count(notice, "ntfy") != 0 || count(notice, "email") != 0 {
+		t.Fatal("a queued user notice outlived its channel")
+	}
+	if count(account, "email") != 1 {
+		t.Fatal("account mail was dropped with the notify setting")
 	}
 }
 
@@ -904,6 +957,23 @@ func TestConfigMenuPackages(t *testing.T) {
 	}
 }
 
+// A config change while a stop is under way is refused with the reason,
+// not as a build in progress (DECISIONS I-710).
+func TestConfigWhileStopping(t *testing.T) {
+	e := newEnv(t)
+	tok := e.signIn(t, "sub-stopcfg", "stopcfg")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "stopcfg", "class": "small"})
+	pid := r.body["id"].(string)
+	e.waitOp(t, r)
+	if _, err := e.h.Pool.Exec(e.h.Ctx, "update projects set state = 'stopping' where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	r = e.do(t, tok, "PUT", "/projects/"+pid+"/config", map[string]any{"menu": []map[string]any{{"package": "jq"}}})
+	if r.status != 409 || errCode(r) != "conflict" || !strings.Contains(string(r.raw), "stopcfg is stopping") {
+		t.Fatalf("config put while stopping: %d %s", r.status, r.raw)
+	}
+}
+
 func TestConfigRoutes(t *testing.T) {
 	e := newEnv(t)
 	tok := e.signIn(t, "sub-carol", "carol")
@@ -1182,9 +1252,10 @@ func TestSSELiveStreamAndConcurrentLoad(t *testing.T) {
 	}
 	wg.Wait()
 	for i, n := range counts {
-		// hostd's three, then the api's "switching the machine" as the
-		// running project's build moves to its apply (I-320).
-		if n != 4 {
+		// The fake hostd's eleven (nixbuild's lines with Nix's lists,
+		// I-708), then the api's "switching the machine" as the running
+		// project's build moves to its apply (I-320).
+		if n != 12 {
 			t.Fatalf("stream %d saw %d lines (negative: no switching line)", i, n)
 		}
 	}

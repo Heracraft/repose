@@ -157,3 +157,34 @@ func TestExpiryContinuesPastOneFailedBlob(t *testing.T) {
 		t.Fatalf("retry: %v %v", d, err)
 	}
 }
+
+// A fork's own snapshot (reason fork, I-703) goes at its expires_at even
+// on a live project and even when it is the newest, and it never counts
+// as the newest: the project's last other snapshot stays.
+func TestForkSnapshotExpires(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	b := blob.New()
+	e := snapshots.New(pool, b, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	live := project(t, pool, false)
+	last := snap(t, pool, b, live, 30*24*time.Hour, nil) // the project's only other snapshot, old
+	past := time.Now().Add(-time.Minute)
+	future := time.Now().Add(time.Hour)
+	forkGone := snap(t, pool, b, live, 25*time.Hour, &past)
+	forkKept := snap(t, pool, b, live, time.Hour, &future)
+	if _, err := pool.Exec(ctx, "update snapshots set reason = 'fork' where id = any($1)", []uuid.UUID{forkGone, forkKept}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := e.Once(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 1 || deleted[0] != forkGone {
+		t.Fatalf("deleted %v, want only the expired fork snapshot %s", deleted, forkGone)
+	}
+	for _, id := range []uuid.UUID{last, forkKept} {
+		if s, _ := store.GetSnapshot(ctx, pool, id); s.DeletedAt != nil {
+			t.Fatalf("snapshot %s should survive", id)
+		}
+	}
+}

@@ -1,6 +1,8 @@
 <!--
   The agents running on the machine, from the newest signals (I-157): one
-  row each, its tmux window and its state. An agent that needs input and
+  row each, its tmux window and its state: working, needs input or idle
+  from an agent's hooks, running for one without hooks (I-694), any other
+  word as the api sends it. An agent that needs input and
   has a question waiting links to it on this page. Under them, how many
   SSH sessions and terminal clients are attached, and when this was read.
 -->
@@ -33,7 +35,7 @@
 		<p class="mt-3 text-sm text-ink-muted">No agents running</p>
 	{:else}
 		<ul class="mt-2">
-			{#each agents as a (a.window)}
+			{#each agents as a, i (`${a.agent}-${a.window}-${i}`)}
 				{@const label = agentStateLabel(a.state)}
 				<li class="row flex items-center justify-between gap-3 py-2.5 text-sm">
 					<span class="flex min-w-0 items-baseline gap-2">

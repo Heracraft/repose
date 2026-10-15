@@ -1,7 +1,13 @@
+{{/* repose-ask (DECISIONS I-245, I-688): the question on a sunken block, one button per option to its signed reply link, the dashboard for a free answer. */}}
+{{define "preheader"}}{{.M.Summary}}{{end}}
 {{define "heading"}}{{.Title}}{{end}}
-{{define "body"}}{{.M.Summary}}{{end}}
+{{define "meta"}}{{.Meta}}{{end}}
+{{define "quote"}}{{.M.Summary}}{{end}}
 {{define "buttons_label"}}Answer with one click{{end}}
-{{define "link_label"}}Answer on the dashboard{{end}}
+{{define "quiet_label"}}{{if .M.Question}}{{if .M.Question.Options}}Open {{.M.Project}}{{end}}{{end}}{{end}}
+{{define "quiet_url"}}{{.ProjectURL}}{{end}}
+{{define "link_label"}}{{if .M.Question}}{{if not .M.Question.Options}}Write an answer{{end}}{{else}}Write an answer{{end}}{{end}}
 {{define "link_url"}}{{.ProjectURL}}{{end}}
-{{define "lines"}}or from your laptop: repose reply {{.M.Project}}
-{{if .M.Question}}The question expires at {{.M.Question.Expires.UTC.Format "2006-01-02 15:04 UTC"}}. The first answer wins.{{end}}{{end}}
+{{define "lines"}}Or from your laptop: repose reply {{.M.Project}}
+The first answer wins.{{end}}
+{{define "why"}}You get these because an agent on your machine asked you something.{{end}}

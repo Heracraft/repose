@@ -1,0 +1,14 @@
+todo-app: claude is done
+claude · main · 28 Sep 18:30 UTC
+
+Billing export is in place: 14 tests pass, committed on branch export.
+Look at docs/export.md first.
+
+Attach from your laptop
+  repose attach --project todo-app
+
+Open todo-app: https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1
+
+--
+repose. Open the dashboard: https://repose.herakraft.co
+You get these because an agent on your machine reported its work done. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

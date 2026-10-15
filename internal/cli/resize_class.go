@@ -190,6 +190,14 @@ func ResizeClassCmd(ctx context.Context, e *Env, projectArg, class string, confi
 		return nil
 	}
 	from := project.Class
+	if project.State == "stopping" {
+		pr := e.newProgress()
+		err := waitOutStop(ctx, e, project, pr)
+		pr.Fail()
+		if err != nil {
+			return err
+		}
+	}
 	switch project.State {
 	case "stopped":
 		if _, err := e.Client.PatchProject(ctx, project.ID, PatchProjectRequest{Class: &class}); err != nil {

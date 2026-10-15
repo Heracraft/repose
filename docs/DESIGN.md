@@ -73,7 +73,7 @@ cannot create v5 or v6 sizes, DECISIONS I-39), East US, created with
 `--security-type Standard`. The launch size is `Standard_D64s_v7` (64 vCPU,
 256 GB). Until launch the single host is `Standard_D16s_v7` (16 vCPU, 64 GB,
 about $770 a month on-demand), which holds 7 large or 14 small running guests
-with the 8 GB host reserve; stopped projects cost only disk, so 20 projects
+with its roughly 8 GB host reserve; stopped projects cost only disk, so 20 projects
 fit as long as about a dozen small ones run at once. If that is tight,
 `D32s_v7` (128 GB, about $1,540 a month) holds 15 large. The host size is an
 OpenTofu variable; growing it is deallocate, resize, start, with guests
@@ -106,8 +106,11 @@ from `nix/hosts/`. The host configuration declares:
 **Capacity.** Memory is never oversubscribed, and on the shapes Azure
 sells it is no longer the only binding constraint: CPU binds first on a
 host with 4 GB per core or less (DECISIONS I-734,
-`proposals/2026-10-14-host-cpu-capacity.md`). The host reserve is 8 GB
-below 128 GB of RAM and 16 GB above. A `D64s_v7` has memory for 30 large
+`proposals/2026-10-14-host-cpu-capacity.md`). The host reserve is an
+eighth of the host's memory, never below 2 GiB and never above 16 GiB
+(I-724): 8 GB on a 64 GB host and 16 GB on a 128 GB one, as the two flat
+steps it replaced were, and small enough on a small host that one can
+still run a guest. A `D64s_v7` has memory for 30 large
 guests, 55 small, or 15 XL, in any mix, and a `D16s_v7` for 7 large or 14
 small. v7 sizes expose disks over NVMe only, and both
 disks are resolved at install time from their namespace ids, because which

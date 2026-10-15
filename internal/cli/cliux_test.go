@@ -166,20 +166,27 @@ func TestNotRunningMessagesSayTheTruth(t *testing.T) {
 	}
 }
 
-func TestAttachToAnErroredGuestSaysError(t *testing.T) {
+// `repose attach` restarts a machine in error, as run and start do
+// (I-709; it exited 5 before), and the progress line says so.
+func TestAttachToAnErroredGuestRestartsIt(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	e := newLifecycleEnv(t, fake)
+	var errOut strings.Builder
+	e.ErrOut = &errOut
 	ctx := context.Background()
 	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "age-calculator", Class: "large"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fake.SetState(p.ID, "error")
-	err = runRun(ctx, e, RunOptions{ProjectArg: "age-calculator"}, true)
-	ee, ok := err.(*exitError)
-	if !ok || ee.code != ExitGuestNotRunning || !strings.Contains(ee.msg, "error state") {
-		t.Fatalf("err = %v", err)
+	// The attach itself needs ssh, which this env has not.
+	_ = runRun(ctx, e, RunOptions{ProjectArg: "age-calculator"}, true)
+	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
+		t.Fatalf("after attach: %+v %v", got, err)
+	}
+	if !strings.Contains(errOut.String(), "Restarting age-calculator") {
+		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
 

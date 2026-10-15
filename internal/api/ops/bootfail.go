@@ -19,6 +19,10 @@ const codeBootFailed = "boot_failed"
 // new system and runs its previous one records (DECISIONS I-590).
 const EventBootFailed = "boot_failed"
 
+// EventStopFailed is the platform event a stop op that failed records:
+// `repose stop` no longer waits for it (DECISIONS I-710).
+const EventStopFailed = "stop_failed"
+
 // Warning is what an op that finished with the machine running, but not
 // as asked, carries in result.warning and leaves in last_error: a start
 // whose switch failed or whose new system did not boot (I-590).

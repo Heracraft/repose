@@ -47,6 +47,9 @@ func ConfigShowCmd(ctx context.Context, e *Env, projectArg string, revisions boo
 // applyFragmentAndRender PUTs a fragment, streams the build log, and
 // prints the error block on failure (07-cli.md §5.10, §5.8).
 func applyFragmentAndRender(ctx context.Context, e *Env, project *Project, fragment, localFragmentPath string) error {
+	if err := settleStop(ctx, e, project); err != nil {
+		return err
+	}
 	revisionID, opID, err := e.Client.PutConfigFragment(ctx, project.ID, fragment)
 	if err != nil {
 		var apiErr *APIError
@@ -82,6 +85,14 @@ func applyFragmentAndRender(ctx context.Context, e *Env, project *Project, fragm
 	}
 	printApplied(e, project, op, revisionID, pr)
 	return nil
+}
+
+// settleStop waits out a stop under way before a config change, which
+// the api refuses while the stop op is open (DECISIONS I-710).
+func settleStop(ctx context.Context, e *Env, project *Project) error {
+	pr := e.newProgress()
+	defer pr.Fail()
+	return waitOutStop(ctx, e, project, pr)
 }
 
 func mustReadFragment(path string) []byte {

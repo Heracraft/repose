@@ -97,13 +97,31 @@ const HostGuestSlots = 1000
 // slotsSQL is the guest slot condition for hosts h, with $5 the slots.
 const slotsSQL = `(select count(*) from projects p where p.host_id = h.id and p.destroyed_at is null) < $5`
 
-// HostReserve is the memory kept for the host itself (DESIGN.md §4).
+// HostReserve is the memory kept for the host itself (DESIGN.md §4): an
+// eighth of it, never below 2 GiB and never above 16 GiB. The eighth is
+// what the two steps it replaced already were at their edges (8 GiB at
+// 64 GB, 16 GiB at 128 GB), so no host repose runs today changes by more
+// than a rounding of its own size; what changes is the small end, where a
+// flat 8 GiB left an 8 GB host unable to start any guest at all
+// (DECISIONS I-724). hostd computes the same figure, and so does the SQL
+// below and nix/hosts/hostd.nix's guests.slice ceiling: three languages,
+// one rule, and the VM test in nix/hosts/tests/guest-memory.nix holds
+// them together. Memory is still never oversubscribed (R3-2): the reserve
+// is only the host's own share, taken off the top before any guest.
 func HostReserve(memBytes int64) int64 {
-	if memBytes >= 128<<30 {
-		return 16 << 30
+	r := memBytes / 8
+	if r < 2<<30 {
+		r = 2 << 30
 	}
-	return 8 << 30
+	if r > 16<<30 {
+		r = 16 << 30
+	}
+	return r
 }
+
+// hostReserveSQL is HostReserve for host rows h, kept beside it so the
+// two cannot drift (DECISIONS I-724).
+const hostReserveSQL = `least(greatest(h.mem_bytes / 8, 2::bigint<<30), 16::bigint<<30)`
 
 // Pick is a placement.
 type Pick struct {
@@ -138,7 +156,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 	need := ClassRAM(class)
 	vcpu := ClassVCPU(class)
 	var p Pick
-	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpus, 0)")),
+	err := tx.QueryRow(ctx, pickSQL(cpuRoomSQL("coalesce(r.vcpus, 0)", "$6", "true")),
 		now.Add(-HeartbeatWindow), holdBytes, need, volumeBytes, HostGuestSlots, vcpu).Scan(&p.HostID, &p.Name, &p.FreeBytes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -166,7 +184,7 @@ func PickHost(ctx context.Context, tx pgx.Tx, class string, holdBytes, volumeByt
 func pickSQL(cpuRoom string) string {
 	return `
 		select h.id, h.name,
-		       least(h.free_mem_bytes, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0)) as free
+		       least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) as free
 		  from hosts h
 		  left join host_reservations r on r.host_id = h.id
 		 where h.state = 'ready'
@@ -177,9 +195,54 @@ func pickSQL(cpuRoom string) string {
 		   and ` + poolRoomSQL + `
 		   and ` + slotsSQL + `
 		   and ` + cpuRoom + `
-		   and least(h.free_mem_bytes, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0)) >= $3
+		   and least(h.free_mem_bytes, h.mem_bytes - ` + hostReserveSQL + ` - coalesce(r.reserved_bytes, 0)) >= $3
 		 order by free desc, h.name
 		 limit 1`
+}
+
+// FitsOn reports whether host can take count more projects of class,
+// each starting (needMem) or not, under PickHost's conditions, with the
+// placement lock taken: a fork's copies cloned on their source's host
+// (DECISIONS I-701). A clone holds nothing new at first, so the pool is
+// asked only to be under PlacementPoolPct. Copies that start are asked
+// for their memory and for their guest vCPUs against the host's cores,
+// the same two terms PickHost asks (I-734, I-736); copies created
+// stopped are asked for neither. A host whose hostd does not say
+// local_clone in its Hello never fits.
+func FitsOn(ctx context.Context, tx pgx.Tx, host uuid.UUID, class string, count int, needMem bool, now time.Time) (bool, error) {
+	if _, err := tx.Exec(ctx, "select pg_advisory_xact_lock($1)", LockPlacement); err != nil {
+		return false, err
+	}
+	need := int64(0)
+	vcpu := 0
+	if needMem {
+		need = ClassRAM(class) * int64(count)
+		// Copies that start commit their vCPUs on the source's host the
+		// same moment they commit their memory, so the CPU term applies
+		// to exactly the forks the memory term applies to (I-736). A
+		// fork of five xl copies is 40 guest vCPUs; without this the
+		// whole fork path placed them against nothing.
+		vcpu = ClassVCPU(class) * count
+	}
+	var ok bool
+	err := tx.QueryRow(ctx, `
+		select exists (
+		select 1
+		  from hosts h
+		  left join host_reservations r on r.host_id = h.id
+		 where h.id = $6
+		   and h.state = 'ready'
+		   and not h.draining
+		   and not h.pool_unavailable
+		   and 'local_clone' = any(h.features)
+		   and h.last_heartbeat_at is not null
+		   and h.last_heartbeat_at > $1
+		   and `+poolRoomSQL+`
+		   and (select count(*) from projects p where p.host_id = h.id and p.destroyed_at is null) + $7 <= $5
+		   and `+cpuRoomSQL("coalesce(r.vcpus, 0)", "$8", "$7 <= 1")+`
+		   and least(h.free_mem_bytes, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0)) >= $3)`,
+		now.Add(-HeartbeatWindow), int64(0), need, int64(0), HostGuestSlots, host, count, vcpu).Scan(&ok)
+	return ok, err
 }
 
 // Freeing reports whether some host that PickHost could choose would fit
@@ -215,8 +278,8 @@ func Freeing(ctx context.Context, q interface {
 		   and `+poolRoomSQL+`
 		   and `+slotsSQL+`
 		   and g.going > 0
-		   and `+cpuRoomSQL("(coalesce(r.vcpus, 0) - g.stopping_vcpu)")+`
-		   and least(h.free_mem_bytes + g.going, h.mem_bytes - (case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
+		   and `+cpuRoomSQL("(coalesce(r.vcpus, 0) - g.stopping_vcpu)", "$6", "true")+`
+		   and least(h.free_mem_bytes + g.going, h.mem_bytes - `+hostReserveSQL+` - coalesce(r.reserved_bytes, 0) + g.stopping) >= $3)`,
 		now.Add(-HeartbeatWindow), holdBytes, ClassRAM(class), volumeBytes, HostGuestSlots, ClassVCPU(class)).Scan(&ok)
 	return ok, err
 }
@@ -248,18 +311,26 @@ const classVCPUSQL = `(case p.class when 'small' then 2 when 'xl' then 8 else 4 
 // percent does, at 12.
 const PlacementVCPUPct = 150
 
-// cpuRoomSQL is the CPU condition for hosts h, with $6 the class's guest
-// vCPUs and committed the SQL for the guest vCPUs already committed
-// there. Integer arithmetic, after the multiply, as PlacementPoolPct's
-// condition is: 8 cores allow 12.
+// cpuRoomSQL is the CPU condition for hosts h: committed is the SQL for
+// the guest vCPUs already committed there and want the placeholder for
+// the vCPUs this placement adds. Integer arithmetic, after the multiply,
+// as PlacementPoolPct's condition is: 8 cores allow 12.
 //
-// Two escapes, both so that the term refuses less rather than
+// Three escapes, all so that the term refuses less rather than
 // everything. A host that has reported no cores is exempt: 0 means
 // unknown (hosts.cores, 0027), and refusing every create on a one-host
 // fleet because a field is missing is worse than placing on it, which is
-// what every release before I-736 did. And an empty host always takes
-// one guest, so a host with fewer cores than the class asks for -- a
-// staging or dev host -- can still run something.
+// what every release before I-736 did. A placement that adds no running
+// guest is never refused, which is how the memory term already behaves:
+// FitsOn passes 0 for a fork whose copies are created stopped, and
+// `least(...) >= 0` holds for any host. And an empty host takes one
+// guest whatever its class, so a host with fewer cores than the class
+// asks for -- a staging or dev host -- can still run something; single
+// is the condition under which this placement is that one guest, which
+// is always true for PickHost and Freeing and is `count = 1` for a
+// fork's batch. Writing that escape as `committed = 0` alone would wave
+// a whole fork through on an empty host, which is what
+// TestFitsOnCountsTheCopiesVCPUs catches.
 //
 // What this does not do: a project keeps its host for life, so `repose
 // start` of a stopped machine never asks placement again, hostd's own
@@ -267,8 +338,9 @@ const PlacementVCPUPct = 150
 // placing by hand bypasses this. A host can therefore still be driven
 // past the ratio by the guests already on it; HostCPUSaturated (I-738) is
 // the backstop that says so.
-func cpuRoomSQL(committed string) string {
+func cpuRoomSQL(committed, want, single string) string {
 	return `(h.cores <= 0
-		        or ` + committed + ` = 0
-		        or ` + committed + ` + $6 <= h.cores * ` + strconv.Itoa(PlacementVCPUPct) + ` / 100)`
+		        or ` + want + ` = 0
+		        or (` + committed + ` = 0 and ` + single + `)
+		        or ` + committed + ` + ` + want + ` <= h.cores * ` + strconv.Itoa(PlacementVCPUPct) + ` / 100)`
 }

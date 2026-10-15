@@ -10,11 +10,11 @@ import (
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
-// I-746: when the request's budget runs out inside --check-validity,
-// RegisterPaths says so and stops. Going on ran --load-db with a dead
-// context, which failed at once and named --load-db for the time the
-// validity pass had spent — the error the owner saw on the creates that
-// failed at step 10.
+// I-746: when the request's BootDeadline (3 min, I-705) runs out inside
+// --check-validity, RegisterPaths says so and stops. Going on ran
+// --load-db with a dead context, which failed at once and named
+// --load-db for the time the validity pass had spent — the error the
+// owner saw on the creates that failed at step 10.
 func TestRegisterPathsNamesTheCommandThatRanOutOfTime(t *testing.T) {
 	lib := storeName('a', "glibc")
 	p, _ := overlayRoot(t, "/mnt-root", lib)

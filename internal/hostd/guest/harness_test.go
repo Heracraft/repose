@@ -104,6 +104,7 @@ type harness struct {
 	chc     *ch.Fake
 	nix     *nixbuild.Fake
 	blob    *snapshot.MemBlob
+	stream  *snapshot.FakeStreamer
 	rec     *recorder
 	roots   gcroot.Roots
 	closure string
@@ -177,6 +178,7 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	h.closure = fakeClosure(t, "nixos-system-v1")
 	h.nix = &nixbuild.Fake{Closure: h.closure, ClosureBytes: 1 << 30}
 	h.blob = snapshot.NewMemBlob()
+	h.stream = &snapshot.FakeStreamer{LVM: h.lvm}
 	h.rec = &recorder{}
 	h.roots = gcroot.Roots{Dir: filepath.Join(t.TempDir(), "gcroots")}
 	// Not t.TempDir: its path holds the test's name, and a long name
@@ -251,8 +253,8 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	logger := obs.NewTestLogger(t, obs.ComponentHostd, &h.logs)
 	h.metrics = metrics.New()
 	m, err := New(cfg, Deps{
-		State: st, LVM: h.lvm, Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
-		Stream: &snapshot.FakeStreamer{LVM: h.lvm}, Emit: h.rec, Metrics: h.metrics, Log: logger,
+		State: st, LVM: harnessLVM(h), Mount: h.mount, View: h.view, Net: h.net, Systemd: h.sd, CH: h.chc, Nix: h.nix, Roots: h.roots, Blob: h.blob,
+		Stream: h.stream, Emit: h.rec, Metrics: h.metrics, Log: logger,
 		Guestd:  vsockclient.UnixDialer{Path: func(tg vsockclient.Target) string { return filepath.Join(h.sockDir, tg.GuestID+".sock") }},
 		MemInfo: func() (uint64, uint64, error) { return 64 << 30, 40 << 30, nil },
 		Load1:   func() float64 { return 0.5 },
@@ -278,6 +280,17 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 		_ = st.Close()
 	})
 	return h
+}
+
+// realLVM, set by the hostbench host check, gives the harness's Manager
+// a real volume group in place of the fake.
+var realLVM lvm.LVM
+
+func harnessLVM(h *harness) lvm.LVM {
+	if realLVM != nil {
+		return realLVM
+	}
+	return h.lvm
 }
 
 func (h *harness) guestd(id string) *fakeguestd.Server {

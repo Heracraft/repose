@@ -30,9 +30,9 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0027 (hosts.cores, I-735) is the newest: its column goes, and
-	// nothing older does. Its down also recreates host_reservations
-	// without the vcpus column 0027 added to it.
+	// 0027 (hosts.cores and host_reservations.vcpus, I-735, I-736) is the
+	// newest: its column and the view's column go, and nothing older
+	// does.
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -46,11 +46,53 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if n != 0 {
 		t.Fatal("host_reservations.vcpus is still there after 0027's down")
 	}
+	if err := pool.QueryRow(ctx, "select count(*) from pg_indexes where indexname = 'projects_guest_ip_live'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("down 1 reverted 0026 too")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatal("down 1 reverted 0022 too")
+	}
+	// Down to and including 0022 (resume after a host reboot, I-645), one
+	// at a time, so this checks 0022's down whatever numbers land between
+	// it and the newest.
+	for {
+		cur, err := db.MigrateStatus(ctx, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		newest := cur.Applied[len(cur.Applied)-1]
+		if newest < 22 {
+			break
+		}
+		if _, err := db.MigrateDown(ctx, pool, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 0026's index (I-723) and 0022's two tables went with the loop, and
+	// nothing below 0022 did.
+	if err := pool.QueryRow(ctx, "select count(*) from pg_indexes where indexname = 'projects_guest_ip_live'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("0026's index is still there after its down")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("0022's tables are still there after 0022's down")
+	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name = 'provider'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatal("down 1 reverted 0020 too")
+		t.Fatal("the loop down to 0022 reverted 0020 too")
 	}
 	// Down to and including 0020, one at a time, so what follows checks
 	// 0020's down whatever numbers land between them.
@@ -67,14 +109,8 @@ func TestMigrateUpDownUp(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 0022 (resume after a host reboot, I-645) and 0021
-	// (hosts.pool_unavailable, I-644) went with the loop.
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatal("0022's tables are still there after 0022's down")
-	}
+	// 0021 (hosts.pool_unavailable, I-644) went with this loop; 0022 went
+	// with the one before it.
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'pool_unavailable'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}

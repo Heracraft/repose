@@ -7,28 +7,27 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 )
 
-// RegisterPaths forks nix-store several times against the guest's database
-// — --check-validity over the shared store's lower, --load-db, the view
-// sync — which the 30 s default did not cover on a loaded host, so creates
-// failed at step 10 (DECISIONS I-746). It has its own deadline, above the
-// default and under the two 10-minute bounds outside it (hostd's
-// vsockclient cap on the call and the api's create_guest phase), so the
-// error a tenant gets still names the command that was slow.
-func TestRegisterPathsGetsItsOwnDeadline(t *testing.T) {
+// RegisterPaths and SetupProject wait on the boot itself: the load of the
+// closure's registration, and home-manager's first activation before the
+// session unit can start. On a busy host both took over 30 s, the default
+// deadline, and the boot failed instead of finishing (2026-10-13: three
+// creates on host-01 failed with "SetupProject: context deadline
+// exceeded", DECISIONS I-705).
+func TestBootRequestsOutliveTheDefaultDeadline(t *testing.T) {
 	s := &Server{}
-	req := &guestdv1.Request{Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{}}}
-	if d := s.deadlineFor(req); d != RegisterPathsDeadline {
-		t.Fatalf("RegisterPaths deadline %s, want %s", d, RegisterPathsDeadline)
+	for name, req := range map[string]*guestdv1.Request{
+		"RegisterPaths": {Req: &guestdv1.Request_RegisterPaths{RegisterPaths: &guestdv1.RegisterPaths{}}},
+		"SetupProject":  {Req: &guestdv1.Request_SetupProject{SetupProject: &guestdv1.SetupProject{}}},
+	} {
+		if got := s.deadlineFor(req); got != BootDeadline {
+			t.Errorf("%s deadline %s, want %s", name, got, BootDeadline)
+		}
 	}
-	if RegisterPathsDeadline <= DefaultDeadline {
-		t.Fatalf("RegisterPathsDeadline %s is not above the %s default", RegisterPathsDeadline, DefaultDeadline)
+	if BootDeadline < 3*time.Minute {
+		t.Errorf("BootDeadline %s is under 3 minutes", BootDeadline)
 	}
-	if RegisterPathsDeadline >= 10*time.Minute {
-		t.Fatalf("RegisterPathsDeadline %s leaves no room under the 10-minute bounds outside guestd", RegisterPathsDeadline)
-	}
-	// A request family with no case keeps the default.
 	ping := &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{}}}
-	if d := s.deadlineFor(ping); d != DefaultDeadline {
-		t.Fatalf("Ping deadline %s, want the %s default", d, DefaultDeadline)
+	if got := s.deadlineFor(ping); got != DefaultDeadline {
+		t.Errorf("Ping deadline %s, want the default %s", got, DefaultDeadline)
 	}
 }

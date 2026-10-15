@@ -1,0 +1,46 @@
+{
+  "fallbackText": "todo-app: claude asks: Which branch should the release come from?",
+  "cardsV2": [
+    {
+      "cardId": "repose",
+      "card": {
+        "header": {
+          "title": "todo-app",
+          "subtitle": "claude asks"
+        },
+        "sections": [
+          {
+            "widgets": [
+              {
+                "textParagraph": {
+                  "text": "Which branch should the release come from?"
+                }
+              },
+              {
+                "textParagraph": {
+                  "text": "Open until 29 Sep 20:00 CEST"
+                }
+              },
+              {
+                "buttonList": {
+                  "buttons": [
+                    {
+                      "text": "Answer",
+                      "type": "OUTLINED",
+                      "onClick": {
+                        "openLink": {
+                          "url": "https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+threadKey: q-01a0c14a-fdb3-78af-9c30-5abd8fce0a84

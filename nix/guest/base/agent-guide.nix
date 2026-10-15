@@ -70,16 +70,30 @@ let
     done < $src | sed -E 's/[[:space:]]*<!--([^-]|-[^-])*-->//g; s/[[:space:]]+$//' \
       | sed '/./,$!d' | sed "s/@playwrightVersion@/$playwrightVersion/g" > $out/agent-guide.md
 
-    # Top-level keys only: in TOML every key after a [table] header belongs
-    # to that table. A JSON string is a valid TOML basic string.
+    # Top-level keys first: in TOML every key after a [table] header
+    # belongs to that table. A JSON string is a valid TOML basic string.
+    # Then the prompt hook (DECISIONS I-690): hooks in this system file are
+    # managed, so Codex runs them without the trust review it asks for
+    # hooks in the user's own files; codex 0.157.1 needs the hooks
+    # feature on for any of them.
     {
       printf 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\ncheck_for_update_on_startup = false\n'
       printf 'developer_instructions = '; jq -Rs . $out/agent-guide.md
+      printf '\n[features]\nhooks = true\n'
+      printf '\n[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\ntype = "command"\ncommand = "repose-hook --agent codex"\n'
     } > $out/codex-config.toml
     jq '{ "$schema": "https://opencode.ai/config.json", instructions: [ "/etc/repose/agent-guide.md" ],
           mcp: with_entries(.value = { type: "local", command: ([ .value.command ] + .value.args) }) }' $mcp > $out/opencode.json
     jq -n '{ name: "repose-machine-guide", version: "1.0.0", contextFileName: "GEMINI.md" }' > $out/gemini-extension/gemini-extension.json
     cp $out/agent-guide.md $out/gemini-extension/GEMINI.md
+    # The turn hooks (I-690, I-694): Gemini CLI runs an extension's hooks
+    # also in a folder the user has not trusted, which settings.json
+    # hooks are not.
+    mkdir -p $out/gemini-extension/hooks
+    jq -n '{ hooks: {
+      BeforeAgent: [ { hooks: [ { type: "command", command: "repose-hook --agent gemini" } ] } ],
+      AfterAgent: [ { hooks: [ { type: "command", command: "repose-hook --agent gemini" } ] } ] } }' \
+      > $out/gemini-extension/hooks/hooks.json
   '';
 
   # pi has no system-level instructions file; its extensions can add a
@@ -92,10 +106,33 @@ let
   # an older pi has no registerMcpServer, and a bad entry throws, neither of
   # which may cost the guide.
   piExtension = pkgs.writeText "repose-pi-extension.js" ''
-    // repose machine guide (DECISIONS I-243) and MCP servers (I-554).
+    // repose machine guide (DECISIONS I-243), MCP servers (I-554) and turn
+    // hooks (I-690, I-694).
     // Managed by the platform: repose-agent-setup links it here; do not edit.
     const fs = require("node:fs");
+    const { spawn } = require("node:child_process");
+    // report posts to guestd's hook socket through repose-hook, in the
+    // socket's own shape; a failure never reaches pi.
+    const report = (kind, summary) => {
+      try {
+        const body = JSON.stringify({ agent: "pi", kind, summary: String(summary || "").slice(0, 1000) });
+        const child = spawn("repose-hook", ["--agent", "pi", body], { stdio: "ignore" });
+        child.on("error", () => {});
+        child.unref();
+      } catch {}
+    };
+    const lastText = (messages) => {
+      for (const m of [...(messages || [])].reverse()) {
+        if (!m || m.role !== "assistant" || !Array.isArray(m.content)) continue;
+        const text = m.content.filter((c) => c && c.type === "text").map((c) => c.text).join(" ").trim();
+        if (text) return text;
+      }
+      return "";
+    };
     module.exports = function (pi) {
+      // The prompt's text is not passed on: guestd needs only the fact.
+      pi.on("input", (event) => { if (!event || event.source !== "extension") report("prompt", ""); });
+      pi.on("agent_end", (event) => { report("completed", lastText(event && event.messages) || "pi finished"); });
       pi.on("before_agent_start", (event) => {
         let text;
         try { text = fs.readFileSync("/etc/repose/agent-guide.md", "utf8"); } catch { return; }

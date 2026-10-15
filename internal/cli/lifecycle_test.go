@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,11 @@ func newLifecycleEnv(t *testing.T, fake *fakeapi.Fake) *Env {
 		Dir: dir, Cfg: defaultConfig(), Cache: newProjectsCache(), Cwd: t.TempDir(),
 		Client: newClient(fake.URL()+"/v1", staticToken("tok")),
 		Out:    &discardWriter{}, ErrOut: &discardWriter{},
+		// No ssh to a guest the fake api only pretends to run: a machine
+		// with no checkout.
+		readGuest: func(context.Context, string, []string, time.Duration) guestStatus {
+			return guestStatus{mux: "tmux"}
+		},
 	}
 }
 
@@ -76,8 +82,11 @@ func TestDestroyRequiresConfirmation(t *testing.T) {
 	}
 }
 
-// `repose attach` starts a stopped machine, as run does, without a sync
-// (I-631, review G7); a destroyed one still exits 5.
+// `repose attach` brings the machine up in one step from every state a
+// start can leave: stopped, in error, stopping, starting, restoring, and
+// running on a server that is restarting (I-631, I-709). It waits on a
+// machine on its way up and starts it after a restore. A machine stopped
+// for abuse, or one being destroyed, still exits 5.
 func TestAttachStartsAStoppedMachine(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -87,24 +96,153 @@ func TestAttachStartsAStoppedMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The fake starts a freshly created project running at once (its own
-	// doc: "operations complete at once"); stop it to get to the state
-	// this test wants.
-	if _, err := e.Client.StopProject(ctx, p.ID, false); err != nil {
+	e.Cache.ByDir[e.Cwd] = p.ID
+	// This env has no ssh: each connection burns its whole wait.
+	defer func(l, s time.Duration) { sshWaitTimeout, sshWaitShort = l, s }(sshWaitTimeout, sshWaitShort)
+	sshWaitTimeout, sshWaitShort = 300*time.Millisecond, 300*time.Millisecond
+	state := func() *Project {
+		t.Helper()
+		got, err := e.Client.GetProject(ctx, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	// The attach itself needs ssh, which this env has not; what this
+	// test is about is the state it leaves. A machine on its way
+	// somewhere gets there once the attach shows it is waiting (then),
+	// as the api would move it when the op it waits on ends.
+	for _, tc := range []struct {
+		name, state, lastError string
+		waiting, then          string
+	}{
+		{name: "stopped", state: "stopped"},
+		{name: "error", state: "error", lastError: "boot_failed: the machine did not boot"},
+		{name: "stopping", state: "stopping", waiting: "Stopping todo-app", then: "stopped"},
+		{name: "starting", state: "starting", waiting: "Booting todo-app", then: "running"},
+		{name: "restoring", state: "restoring", waiting: "Restoring todo-app", then: "stopped"},
+	} {
+		fake.SetState(p.ID, tc.state)
+		fake.SetLastError(p.ID, tc.lastError)
+		errOut := &syncWriter{}
+		e.ErrOut = errOut
+		moved := false
+		if tc.then != "" {
+			fake.OnGet(p.ID, func(fp *fakeapi.Project) bool {
+				if !errOut.Contains(tc.waiting) {
+					return false
+				}
+				fp.State, fp.GuestIP, moved = tc.then, "10.64.4.99", true
+				return true
+			})
+		}
+		_ = runRun(ctx, e, RunOptions{}, true)
+		fake.OnGet(p.ID, nil)
+		if got := state(); got.State != "running" {
+			t.Fatalf("attach from %s left it %s; stderr %q", tc.name, got.State, errOut.String())
+		}
+		if tc.then != "" && !moved {
+			t.Fatalf("attach from %s never showed %q; stderr %q", tc.name, tc.waiting, errOut.String())
+		}
+	}
+
+	// Frozen across its server's restart (I-652): running, with the
+	// host unreachable. The attach waits for the host, and starts
+	// nothing.
+	const waiting = "Waiting for todo-app's server to come back"
+	backOnceWaiting := func(errOut *syncWriter, back *bool) {
+		fake.OnGet(p.ID, func(fp *fakeapi.Project) bool {
+			if !errOut.Contains(waiting) {
+				return false
+			}
+			fp.HostUnreachable, *back = false, true
+			return true
+		})
+	}
+	fake.SetLastError(p.ID, "")
+	fake.SetHostUnreachable(p.ID, true)
+	ops := len(fake.OpKinds(p.ID))
+	errOut := &syncWriter{}
+	e.ErrOut = errOut
+	back := false
+	backOnceWaiting(errOut, &back)
+	_ = runRun(ctx, e, RunOptions{}, true)
+	if !back {
+		t.Fatalf("attach did not wait for the server; stderr %q", errOut.String())
+	}
+	if n := len(fake.OpKinds(p.ID)); n != ops {
+		t.Fatalf("attach to a frozen machine sent %d ops", n-ops)
+	}
+	// Stopped on that server: the start is refused while it is away (the
+	// fake refuses it as the api does), so the attach waits for it and
+	// then starts the machine.
+	fake.SetState(p.ID, "stopped")
+	fake.SetHostUnreachable(p.ID, true)
+	errOut = &syncWriter{}
+	e.ErrOut = errOut
+	back = false
+	backOnceWaiting(errOut, &back)
+	_ = runRun(ctx, e, RunOptions{}, true)
+	if got := state(); got.State != "running" || !back {
+		t.Fatalf("attach to a stopped machine on a server that came back left it %s (waited %v); stderr %q", got.State, back, errOut.String())
+	}
+
+	for _, tc := range []struct {
+		name, state, lastError, msg string
+	}{
+		{"abuse", "stopped", "abuse_stopped: stopped: a cryptocurrency miner (xmrig) was running", "todo-app is stopped: a cryptocurrency miner"},
+		{"destroying", "destroying", "", "todo-app is being destroyed"},
+	} {
+		fake.SetState(p.ID, tc.state)
+		fake.SetLastError(p.ID, tc.lastError)
+		err = runRun(ctx, e, RunOptions{}, true)
+		if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning || !strings.Contains(ee.msg, tc.msg) {
+			t.Fatalf("attach while %s: %v, want exit 5 with %q", tc.name, err, tc.msg)
+		}
+	}
+}
+
+// syncWriter is a stderr a test reads while the command still writes it.
+type syncWriter struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *syncWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func (w *syncWriter) Contains(s string) bool { return strings.Contains(w.String(), s) }
+
+// A server that stays away is waited for up to hostWaitTimeout, then
+// the attach exits 5 and says so.
+func TestAttachGivesUpOnAServerThatStaysAway(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	e.Cache.ByDir[e.Cwd] = p.ID
-
-	// The attach itself needs ssh, which this env has not; the start is
-	// what this test is about.
-	_ = runRun(ctx, e, RunOptions{}, true)
-	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
-		t.Fatalf("after attach: %+v %v", got, err)
-	}
-	fake.SetState(p.ID, "restoring")
+	defer func(l, s time.Duration) { sshWaitTimeout, sshWaitShort = l, s }(sshWaitTimeout, sshWaitShort)
+	sshWaitTimeout, sshWaitShort = 300*time.Millisecond, 300*time.Millisecond
+	fake.SetHostUnreachable(p.ID, true)
+	defer func(d time.Duration) { hostWaitTimeout = d }(hostWaitTimeout)
+	hostWaitTimeout = time.Second
 	err = runRun(ctx, e, RunOptions{}, true)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
-		t.Fatalf("attach while restoring: %v, want exit 5", err)
+	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning || !strings.Contains(ee.msg, "todo-app's server has not answered for 1s") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -123,6 +261,9 @@ func TestSSHStartsAStoppedMachineAndExecDoesNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.Cache.ByDir[e.Cwd] = p.ID
+	// This env has no ssh: each connection burns its whole wait.
+	defer func(l, s time.Duration) { sshWaitTimeout, sshWaitShort = l, s }(sshWaitTimeout, sshWaitShort)
+	sshWaitTimeout, sshWaitShort = 300*time.Millisecond, 300*time.Millisecond
 
 	err = ExecCmd(ctx, e, ExecOptions{Command: []string{"true"}}, nil)
 	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
@@ -137,10 +278,48 @@ func TestSSHStartsAStoppedMachineAndExecDoesNot(t *testing.T) {
 	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" {
 		t.Fatalf("after ssh: %+v %v", got, err)
 	}
+	// A restore is waited for and the machine started after it (I-709);
+	// a destroy is not.
 	fake.SetState(p.ID, "restoring")
+	errOut := &syncWriter{}
+	e.ErrOut = errOut
+	restored := false
+	fake.OnGet(p.ID, func(fp *fakeapi.Project) bool {
+		if !errOut.Contains("Restoring todo-app") {
+			return false
+		}
+		fp.State, fp.GuestIP, restored = "stopped", "", true
+		return true
+	})
+	_ = SSHCmd(ctx, e, "")
+	if got, err := e.Client.GetProject(ctx, p.ID); err != nil || got.State != "running" || !restored {
+		t.Fatalf("after ssh while restoring (waited %v): %+v %v; stderr %q", restored, got, err, errOut.String())
+	}
+	// Frozen across its server's restart (I-652): ssh waits for the
+	// server, as attach does, and sends no op.
+	fake.SetHostUnreachable(p.ID, true)
+	ops := len(fake.OpKinds(p.ID))
+	errOut = &syncWriter{}
+	e.ErrOut = errOut
+	back := false
+	fake.OnGet(p.ID, func(fp *fakeapi.Project) bool {
+		if !errOut.Contains("Waiting for todo-app's server to come back") {
+			return false
+		}
+		fp.HostUnreachable, back = false, true
+		return true
+	})
+	_ = SSHCmd(ctx, e, "")
+	if !back {
+		t.Fatalf("ssh did not wait for the server; stderr %q", errOut.String())
+	}
+	if n := len(fake.OpKinds(p.ID)); n != ops {
+		t.Fatalf("ssh to a frozen machine sent %d ops", n-ops)
+	}
+	fake.SetState(p.ID, "destroying")
 	err = SSHCmd(ctx, e, "")
 	if ee, ok := err.(*exitError); !ok || ee.code != ExitGuestNotRunning {
-		t.Fatalf("ssh while restoring: %v, want exit 5", err)
+		t.Fatalf("ssh while destroying: %v, want exit 5", err)
 	}
 }
 
@@ -332,5 +511,79 @@ func TestStopLineSaysWhatTheStopDid(t *testing.T) {
 	}
 	if got := out2.String(); got != "waterville is already stopped.\n" {
 		t.Errorf("already stopped printed %q", got)
+	}
+}
+
+// `repose start` on a machine frozen across its server's restart waits
+// for the server, as attach does, sends no op, and says it is running
+// (I-709).
+func TestStartWaitsForARestartingServer(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Cache.ByDir[e.Cwd] = p.ID
+	fake.SetHostUnreachable(p.ID, true)
+	ops := len(fake.OpKinds(p.ID))
+	var out bytes.Buffer
+	e.Out = &out
+	errOut := &syncWriter{}
+	e.ErrOut = errOut
+	back := false
+	fake.OnGet(p.ID, func(fp *fakeapi.Project) bool {
+		if !errOut.Contains("Waiting for todo-app's server to come back") {
+			return false
+		}
+		fp.HostUnreachable, back = false, true
+		return true
+	})
+	if err := StartCmd(ctx, e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !back {
+		t.Fatalf("start did not wait for the server; stderr %q", errOut.String())
+	}
+	if n := len(fake.OpKinds(p.ID)); n != ops {
+		t.Fatalf("start on a frozen machine sent %d ops", n-ops)
+	}
+	if !strings.Contains(out.String(), "todo-app is running (large)") {
+		t.Fatalf("out %q", out.String())
+	}
+}
+
+// A machine that a wait leaves running (a restore that booted it, a
+// start someone else sent) gets the early boot probe, as one this
+// command started does (I-237, I-709).
+func TestWaitThatEndsRunningCallsGuestUp(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	ctx := context.Background()
+	p, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "todo-app", Class: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{"restoring", "starting"} {
+		fake.SetState(p.ID, from)
+		go func() {
+			time.Sleep(700 * time.Millisecond)
+			fake.SetState(p.ID, "running")
+		}()
+		called := 0
+		e.guestUp = func(*Project) { called++ }
+		project, err := e.Client.GetProject(ctx, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ensureRunningFrom(ctx, e, project, e.newProgress(), true); err != nil {
+			t.Fatal(err)
+		}
+		if project.State != "running" || called != 1 {
+			t.Fatalf("from %s: state %s, guestUp called %d times", from, project.State, called)
+		}
 	}
 }

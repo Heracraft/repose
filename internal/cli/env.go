@@ -102,6 +102,12 @@ type Env struct {
 	// machine has not opted out: the tool scan leaves the laptop's
 	// global tools to it (DECISIONS I-490).
 	personalOn bool
+	// readGuest stands in for the guest's answer to the status script
+	// (tests); nil reads it over ssh (readGuestFor).
+	readGuest func(ctx context.Context, slug string, have []string, budget time.Duration) guestStatus
+	// stopEarly is `repose stop`'s reads of the machines it names,
+	// started beside the api's read of them (I-740), by slug.
+	stopEarly map[string]*stopProbe
 	// longSSHWait is set by run, start and attach, which may have just
 	// booted the machine: its first ssh may take the whole minute
 	// (I-634).
@@ -260,7 +266,7 @@ func apiErrorExit(apiErr *APIError, stderr io.Writer) int {
 		say("%s", paymentRequiredMessage(apiErr))
 		return ExitPaymentRequired
 	case "capacity":
-		say("repose has no room for this machine right now. Try again in a few minutes.")
+		say("repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.")
 		return ExitCapacity
 	case "waitlisted":
 		// A first project while the fleet is near full (DECISIONS

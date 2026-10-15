@@ -22,8 +22,11 @@ import (
 // defines `heading`, `body` (paragraphs separated by a blank line) and,
 // where the kind has them, `link_label` and `link_url` (the primary
 // button), `command` and `command_label` (the mono row), `buttons_label`
-// (an agent_question's reply buttons), `lines` (small print, one a line)
-// and `steps` (title and command, alternating lines). The partials
+// (an agent_question's reply buttons), `quiet_label` and `quiet_url` (a
+// plain link under the buttons), `meta` (a grey line under the heading),
+// `quote` (tenant text on a sunken block), `preheader` (the inbox
+// preview), `lines` (small print, one a line) and `steps` (title and
+// command, alternating lines). The partials
 // produce plain strings; the HTML layout is html/template, so whatever a
 // tenant wrote (a summary, a project name, a question) is escaped when it
 // is placed, never before.
@@ -34,7 +37,10 @@ var templateFS embed.FS
 // content is what the two layouts render.
 type content struct {
 	Subject      string
+	Preheader    string
 	Heading      string
+	Meta         string
+	Quote        string
 	Paragraphs   []string
 	Steps        []step
 	CommandLabel string
@@ -42,6 +48,7 @@ type content struct {
 	ButtonsLabel string
 	Buttons      []link
 	Primary      *link
+	Quiet        *link
 	Lines        []string
 	Dashboard    string
 	Unsubscribe  string
@@ -59,6 +66,48 @@ type step struct {
 type link struct {
 	Label string
 	URL   string
+}
+
+// Meta is the grey line under a question's or a done report's heading:
+// agent, window, when it was asked and, for a question, until when it is
+// open, in the user's zone ("claude · main · asked 28 Sep 18:00 UTC · open
+// until 18:30 UTC"; UTC when none is set).
+func (d kindData) Meta() string {
+	var parts []string
+	if d.M.Agent != "" {
+		parts = append(parts, d.M.Agent)
+	}
+	if d.M.Window != "" {
+		parts = append(parts, d.M.Window)
+	}
+	loc := d.M.Loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	at := d.M.At.In(loc)
+	if !d.M.At.IsZero() {
+		if d.M.Question != nil {
+			parts = append(parts, "asked "+at.Format("2 Jan 15:04 MST"))
+		} else {
+			parts = append(parts, at.Format("2 Jan 15:04 MST"))
+		}
+	}
+	if q := d.M.Question; q != nil && !q.Expires.IsZero() {
+		parts = append(parts, "open until "+expiryAt(d.M.At, q.Expires, loc))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// expiryAt is a question's expiry in the owner's zone, as the email and
+// the Google Chat card both print it: with the date when it falls on
+// another day than the ask, or the ask's time is unknown.
+func expiryAt(asked, expires time.Time, loc *time.Location) string {
+	exp := expires.In(loc)
+	at := asked.In(loc)
+	if !asked.IsZero() && exp.YearDay() == at.YearDay() && exp.Year() == at.Year() {
+		return exp.Format("15:04 MST")
+	}
+	return exp.Format("2 Jan 15:04 MST")
 }
 
 // Rendered is one email, ready for Resend.
@@ -226,6 +275,20 @@ func block(t *texttemplate.Template, name string, d kindData) (string, error) {
 	return strings.TrimSpace(b.String()), nil
 }
 
+// Heading is the email's heading for m's kind, or "" when its partial
+// has none. Google Chat uses it as a card title (gchat.go).
+func Heading(m Message) string {
+	if err := loadTemplates(); err != nil {
+		return ""
+	}
+	d := kindData{M: m, Title: Title(m), Dashboard: strings.TrimRight(m.Dashboard, "/"), P: payload{}}
+	h, err := block(partialFor(m.Kind), "heading", d)
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
 // Render builds the subject, the HTML and the text of a message.
 func Render(m Message) (Rendered, error) {
 	if err := loadTemplates(); err != nil {
@@ -261,6 +324,15 @@ func Render(m Message) (Rendered, error) {
 	if c.Heading, err = block(t, "heading", d); err != nil {
 		return Rendered{}, err
 	}
+	if c.Meta, err = block(t, "meta", d); err != nil {
+		return Rendered{}, err
+	}
+	if c.Quote, err = block(t, "quote", d); err != nil {
+		return Rendered{}, err
+	}
+	if c.Preheader, err = block(t, "preheader", d); err != nil {
+		return Rendered{}, err
+	}
 	body, err := block(t, "body", d)
 	if err != nil {
 		return Rendered{}, err
@@ -285,6 +357,17 @@ func Render(m Message) (Rendered, error) {
 	}
 	if label != "" && url != "" {
 		c.Primary = &link{Label: label, URL: url}
+	}
+	qlabel, err := block(t, "quiet_label", d)
+	if err != nil {
+		return Rendered{}, err
+	}
+	qurl, err := block(t, "quiet_url", d)
+	if err != nil {
+		return Rendered{}, err
+	}
+	if qlabel != "" && qurl != "" {
+		c.Quiet = &link{Label: qlabel, URL: qurl}
 	}
 	lines, err := block(t, "lines", d)
 	if err != nil {

@@ -81,7 +81,7 @@ func (g *guestSide) open(t *testing.T) questions.Question {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if p := g.store.Pending(); len(p) > 0 {
+		if p := g.store.List(func(questions.Question) bool { return true }); len(p) > 0 {
 			return p[0]
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -293,12 +293,32 @@ func TestAskExitCodes(t *testing.T) {
 		if got := waitExit(t, done); got != ExitInterrupted {
 			t.Fatalf("exit %d", got)
 		}
-		if got, _ := g.store.Get(q.ID); got.State != questions.StateCancelled {
+		if got, _ := g.store.Get(q.ID); got.State != questions.StateCancelled || got.Reason != questions.ReasonInterrupted {
 			t.Fatalf("question after ^C: %+v", got)
 		}
 	})
+	// I-690: the user answered in the agent's terminal (exit 6), or the
+	// agent took the question back (exit 5).
+	for _, c := range []struct {
+		reason, msg string
+		want        int
+	}{
+		{questions.ReasonTerminal, "repose-ask: the user answered in the terminal\n", ExitAnsweredInTerminal},
+		{questions.ReasonWithdrawn, "repose-ask: the question was withdrawn\n", ExitCancelled},
+	} {
+		t.Run(c.reason, func(t *testing.T) {
+			done, out, errb := ask([]string{"q?"}, make(chan os.Signal))
+			q := g.open(t)
+			g.store.CloseWhere(func(o questions.Question) bool { return o.ID == q.ID }, c.reason)
+			// The first line names the question, for --cancel ID.
+			want := "repose-ask: asked " + q.ID + "\n" + c.msg
+			if got := waitExit(t, done); got != c.want || out.Len() != 0 || errb.String() != want {
+				t.Fatalf("exit %d stdout %q stderr %q, want %d %q", got, out, errb, c.want, want)
+			}
+		})
+	}
 	t.Run("usage", func(t *testing.T) {
-		for _, args := range [][]string{{}, {"q", "--options", "a,b,c,d"}, {"q", "--timeout", "never"}} {
+		for _, args := range [][]string{{}, {"q", "--options", "a,b,c,d"}, {"q", "--timeout", "never"}, {"--all"}, {"--cancel", "a", "b"}, {"--cancel", "--options", "a"}} {
 			done, _, _ := ask(args, make(chan os.Signal))
 			if got := waitExit(t, done); got != ExitUsage {
 				t.Errorf("%v: exit %d", args, got)
@@ -341,4 +361,79 @@ func errorsAs(err error, target **exec.ExitError) bool {
 		*target = e
 	}
 	return ok
+}
+
+// TestNotifyDone (I-688): --done sends kind agent_done.
+func TestNotifyDone(t *testing.T) {
+	g := newGuestSide(t)
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "claude", "REPOSE_AGENT_WINDOW", "claude")
+	var out, errb bytes.Buffer
+	if code := runNotify([]string{"--done", "PR 12 is up"}, strings.NewReader(""), &out, &errb); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	g.mu.Lock()
+	got := strings.Join(g.messages, "\n")
+	g.mu.Unlock()
+	if got != "claude|claude|agent_done|PR 12 is up" {
+		t.Fatalf("messages: %s", got)
+	}
+}
+
+// TestAskCancel (I-690): --cancel withdraws the caller's own open
+// questions, --cancel ID one, --cancel --all every one, and each prints
+// how many it closed; the askers exit 5.
+func TestAskCancel(t *testing.T) {
+	old := pollWait
+	pollWait = 1
+	t.Cleanup(func() { pollWait = old })
+	g := newGuestSide(t)
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "claude", "REPOSE_AGENT_WINDOW", "claude")
+	cancel := func(args ...string) (int, string, string) {
+		var out, errb bytes.Buffer
+		code := runAsk(append([]string{"--cancel"}, args...), strings.NewReader(""), &out, &errb, make(chan os.Signal))
+		return code, out.String(), errb.String()
+	}
+	waitOpen := func(n int) []questions.Question {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if p := g.store.List(func(questions.Question) bool { return true }); len(p) == n {
+				return p
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("never %d open", n)
+		return nil
+	}
+
+	mine1, _, _ := ask([]string{"one?"}, make(chan os.Signal))
+	mine2, _, _ := ask([]string{"two?"}, make(chan os.Signal))
+	waitOpen(2)
+	withEnv(t, "REPOSE_HOOK_AGENT", "codex", "REPOSE_AGENT_WINDOW", "codex")
+	theirs, _, _ := ask([]string{"three?"}, make(chan os.Signal))
+	waitOpen(3)
+	withEnv(t, "REPOSE_HOOK_AGENT", "claude", "REPOSE_AGENT_WINDOW", "claude")
+	if code, out, errb := cancel(); code != ExitOK || out != "withdrew 2 questions\n" {
+		t.Fatalf("--cancel: %d %q %q", code, out, errb)
+	}
+	for _, d := range []<-chan int{mine1, mine2} {
+		if got := waitExit(t, d); got != ExitCancelled {
+			t.Fatalf("a withdrawn asker exited %d", got)
+		}
+	}
+	left := waitOpen(1)
+	if code, _, errb := cancel("0199aaaa-0000-7000-8000-000000000000"); code != ExitError || !strings.Contains(errb, "no open question") {
+		t.Fatalf("--cancel unknown: %d %q", code, errb)
+	}
+	if code, out, _ := cancel(left[0].ID); code != ExitOK || out != "withdrew 1 question\n" {
+		t.Fatalf("--cancel ID: %d %q", code, out)
+	}
+	if got := waitExit(t, theirs); got != ExitCancelled {
+		t.Fatalf("exit %d", got)
+	}
+	if got, _ := g.store.Get(left[0].ID); got.Reason != questions.ReasonWithdrawn {
+		t.Fatalf("reason %q", got.Reason)
+	}
+	if code, out, _ := cancel("--all"); code != ExitOK || out != "withdrew 0 questions\n" {
+		t.Fatalf("--cancel --all: %d %q", code, out)
+	}
 }

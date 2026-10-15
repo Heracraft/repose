@@ -3,7 +3,17 @@ import { EVENT_FILTERS, eventKind } from './events';
 
 describe('eventKind', () => {
 	it('names the agent kinds', () => {
-		expect(eventKind('completed', 'claude')).toEqual({ label: 'done', tone: 'ok', group: 'agent' });
+		// A turn's end is not the work's end (I-688): only agent_done says done.
+		expect(eventKind('agent_done', 'claude')).toEqual({
+			label: 'done',
+			tone: 'ok',
+			group: 'agent'
+		});
+		expect(eventKind('completed', 'claude')).toEqual({
+			label: 'turn ended',
+			tone: 'neutral',
+			group: 'agent'
+		});
 		expect(eventKind('needs_input', 'codex')).toEqual({
 			label: 'needs input',
 			tone: 'attention',
@@ -24,6 +34,7 @@ describe('eventKind', () => {
 			'boot_failed',
 			'snapshot_failed',
 			'destroy_failed',
+			'stop_failed',
 			'base_update_failed',
 			'personal_failed',
 			'abuse_stopped'
@@ -78,7 +89,7 @@ describe('EVENT_FILTERS', () => {
 	});
 	it('lists the agent kinds', () => {
 		expect([...EVENT_FILTERS.agents].sort()).toEqual(
-			['agent_message', 'agent_question', 'completed', 'error', 'needs_input'].sort()
+			['agent_done', 'agent_message', 'agent_question', 'completed', 'error', 'needs_input'].sort()
 		);
 	});
 });

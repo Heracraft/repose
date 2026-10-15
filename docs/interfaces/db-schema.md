@@ -9,6 +9,8 @@ trigger. Ids are `uuid` (UUIDv7 generated in Go). Money is `bigint` cents.
 ```sql
 users        (id pk, logto_sub text unique, handle text unique, email text,
               github_login text, tz text, notify_email bool, ntfy_url text,
+              gchat_url text,              -- Google Chat webhook, canonical; a credential (0023, I-692)
+              gchat_broken_at timestamptz, -- when Google refused it; no gchat delivery while set
               billing_customer_id text unique,  -- Polar's customer id; was stripe_customer_id (0008, I-289),
                                                -- then paddle_customer_id (0020, I-604)
               billing_anchor timestamptz,   -- signup; unused since I-289, the period is the subscription's
@@ -33,6 +35,7 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
                                                              -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
+              features text[] not null default '{}',  -- Hello.features: local_clone (0025, I-701)
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
 
 projects     (id pk, user_id fk, name text, slug text, remote_url text,
@@ -53,7 +56,13 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- (1 GB; a restore's or fork's source figure); both null
                 -- counts volume_bytes
               unique (user_id, slug) where destroyed_at is null,
-              unique (user_id, remote_url) where destroyed_at is null)
+              unique (user_id, remote_url) where destroyed_at is null,
+              unique (guest_ip) where destroyed_at is null and guest_ip is not null)
+                -- one live project per guest address (0026, I-723): each host
+                -- allocates inside the disjoint /22 it was handed at
+                -- registration, so two live rows holding one address would
+                -- relay two users' logins to one guest. Destroyed rows keep
+                -- their history and are outside it.
 
 host_reservations (view: host_id, reserved_bytes, guests, vcpus)  -- class RAM, and class guest vCPUs, summed over projects placed on the host in a state that holds memory (vcpus: 0027, I-736)
 
@@ -88,7 +97,8 @@ certificates (serial bigint pk, user_id fk, project_ids uuid[], public_key_fp te
               issued_at, expires_at, revoked_at)
 
 snapshots    (id pk, project_id fk, host_id fk, blob_path text unique, bytes bigint,
-              reason text,  -- scheduled|stop|manual
+              reason text,  -- scheduled|stop|manual|fork (fork: a fork's own, expires_at a day on, never
+                            -- the project's newest for retention; 0025, I-703)
               taken_at, expires_at, deleted_at, restoring_op_id uuid null,  -- set while a restore reads it; expiry skips it
               sha256 text null)  -- hex SHA-256 of the blob, checked on restore; null before 0013 (I-462)
 
@@ -97,10 +107,11 @@ events       (id pk, project_id fk null, user_id fk null,  -- one of them is set
               ts timestamptz, ts_second bigint, kind text, agent text null,
               tmux_window text null, summary text, source text,  -- host|http|api
               skew_seconds int null, host_event_id text unique,
-              delivered jsonb)  -- {email: ts|"error: ..."|"failed: ...", ntfy: ...}
+              delivered jsonb)  -- {email: ts|"held"|"dropped: resolved"|"error: <why>"|"failed: <why>", ntfy: ..., gchat: ...}; <why> is a few words, never a URL (I-689, I-691, I-692)
               -- unique (project_id, agent, kind, ts_second) for kinds completed|needs_input|error
 
-events_outbox (event_id fk, channel text, attempts int, next_at, last_error text,
+events_outbox (event_id fk, channel text,  -- email|ntfy|gchat
+              attempts int, next_at, last_error text,
               primary key (event_id, channel))
 
 meter_samples (ts timestamptz, project_id, host_id, state text, class text,
@@ -171,7 +182,7 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
               project_id fk, guest_id uuid, event_id uuid,  -- the agent_question event that notified the owner
               agent text, tmux_window text null, text text, options text[],  -- 0..3
               state text,          -- pending|answered|cancelled|expired|no_channel
-              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email
+              answer text null, answered_via text null,  -- dashboard|cli|ntfy|email|gchat|terminal|agent (I-690, I-692)
               expires_at, answered_at null,
               delivered_at null, delivery text null,  -- ok|gone|given_up|guest: the close reached the guest, or why not
               deliver_command_id uuid null, deliver_attempts int, deliver_next_at null)
@@ -235,7 +246,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0022_resume`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0026_project_guest_ip_unique`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 

@@ -203,8 +203,9 @@ Metrics `repose_gateway_` live in `internal/obs/metrics` as the
 `GatewayMetrics` family workstream 10 owns, extended by this workstream
 (DECISIONS I-81): `sessions` (open relays), `sessions_total`,
 `auth_fail_total{reason}` with reasons `no_cert`, `bad_ca`, `expired`,
-`revoked`, `wrong_principal`, `stopped`, `route_error`, `rate_limited`,
-`not_found`, `bad_login`, `busy`; `dial_fail_total`;
+`revoked`, `wrong_principal`, `stopped`, `route_error`, `no_address`
+(I-721: running, host reachable, no address on the project row),
+`rate_limited`, `not_found`, `bad_login`, `busy`; `dial_fail_total`;
 `relay_bytes_total{direction}`; `session_seconds` histogram;
 `route_duration_seconds` histogram; `revocation_cache_age_seconds`;
 `wgsync_peers`; `wgsync_errors_total`; `hook_events_total{result}`. An

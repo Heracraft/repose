@@ -55,7 +55,11 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`todo-app: a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one`.** A garbage collection run on the machine on an older base deleted store paths that repose shares with it and that the new system needs. The machine keeps running what it had. `repose stop todo-app`, then `repose start todo-app`: the start puts the paths back and switches to the new system.
 
+**`error while loading shared libraries: libpq.so.5: cannot open shared object file`** from a program you built on the machine. The program names a library by the exact path it had when you compiled it, and a later platform update moved that library. The machine keeps the libraries of the base it runs, so building the program again is the usual fix. To keep the old build, `repose-store-repair ./your-program` on the machine downloads the libraries it names, well under a second each, as long as the machine can reach the internet. If it says the path is empty, `repose stop` and `repose start` the machine, then run it again.
+
 **`todo-app: the new system is not in the machine's store, so it was not switched to and keeps its current system`.** The machine's store doesn't show paths the new system needs: on an older base, a `nix-collect-garbage` or `nix store gc` run inside the machine hid them; on a current base, the server no longer has them. The machine keeps running what it had.
+
+**``todo-app is running but repose has no address for it; run `repose stop todo-app` then `repose start todo-app` ``.** The machine is running, but repose doesn't hold the address connections go to, so nothing can reach it. The stop and the start give it one; waiting doesn't help.
 
 **`Could not start todo-app: the server's machine disks are unavailable right now; the machine's disk is intact`.** The server running the machine restarted and its disk storage for machines didn't come back. `todo-app` stays stopped with its disk as it was. `repose start todo-app` works once the storage is back.
 
@@ -63,7 +67,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`The claude window closed before the attach`.** The agent `repose run -p "..."` started exited before you were attached, so you're in the machine's session instead. Start the agent again there, for example by typing `claude`. If it exits right away again, running it by hand shows why.
 
-**`No capacity right now`** or **`Could not create todo-app: no host with capacity`.** The servers are full. A start changes nothing. A new project is left in the error state with no machine; `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room. Try again in a few minutes. Right after `repose rm` or `repose stop` of another machine, a new one waits up to three minutes for that machine's memory instead of failing.
+**`No capacity right now`** or **`Could not create todo-app: no host with capacity`.** The servers are full. A start changes nothing. A new project is left in the error state with no machine; `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room. Memory is never oversubscribed and a machine holds its own while it runs, so waiting alone doesn't free any: stopping or removing a machine you aren't using does, and right after `repose rm` or `repose stop` a new machine waits up to three minutes for that memory instead of failing.
 
 **`repose is full right now`.** [Every seat](/docs/limits#when-repose-is-full) is taken. Join the waitlist from the dashboard's [Billing page](https://repose.herakraft.co/billing); you're emailed when a seat frees, with 72 hours to choose a plan.
 

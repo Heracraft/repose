@@ -46,9 +46,29 @@ const (
 	// MaxTimeout is the longest an ask may wait.
 	MaxTimeout = 24 * time.Hour
 	// Keep is how long a closed question stays readable, so an asker that
-	// was reconnecting when the answer arrived still gets it.
+	// was reconnecting when the answer arrived still gets it, and how long
+	// a close made on this side is re-sent on each new hostd connection.
 	Keep = 10 * time.Minute
+	// OrphanAfter is how long an open question may go without a poll
+	// before it closes as asker_gone (DECISIONS I-690). repose-ask polls
+	// every 25 s and retries a lost guestd for 2 minutes, during which
+	// the poll time does not move; a restarted guestd starts every open
+	// question's clock at its load.
+	OrphanAfter = 90 * time.Second
 )
+
+// Reasons a question closes on this side (DECISIONS I-690), sent up as
+// Question.reason. The api stores terminal as answered in the terminal and
+// withdrawn as withdrawn by the agent; the rest as a plain cancel.
+const (
+	ReasonTerminal    = "terminal"
+	ReasonWithdrawn   = "withdrawn"
+	ReasonInterrupted = "interrupted"
+	ReasonAskerGone   = "asker_gone"
+)
+
+// Reasons is the fixed set of close reasons.
+var Reasons = map[string]bool{ReasonTerminal: true, ReasonWithdrawn: true, ReasonInterrupted: true, ReasonAskerGone: true}
 
 // States. "" (open) is never written as a status; the rest are the status
 // values of the AnswerQuestion request and the Question notify.
@@ -80,6 +100,16 @@ type Question struct {
 	State    string    `json:"state"`
 	Answer   string    `json:"answer,omitempty"`
 	Closed   time.Time `json:"closed,omitempty"`
+	// Reason is why this side closed it, one of Reasons; "" for an
+	// expiry and for a close hostd sent.
+	Reason string `json:"reason,omitempty"`
+	// AgentProc is the asker's agent process as "pid:starttime", "" when
+	// the asker runs under no agent. It stays in the guest: a prompt in
+	// that process closes the question (I-690).
+	AgentProc string `json:"agent_proc,omitempty"`
+	// GuestClosed marks a close made on this side, which is re-sent on a
+	// new hostd connection until Keep has passed.
+	GuestClosed bool `json:"guest_closed,omitempty"`
 }
 
 // Open reports whether the question is still waiting.
@@ -92,6 +122,10 @@ type Emitter func(q Question)
 type entry struct {
 	q    Question
 	done chan struct{}
+	// lastPoll is when an asker last polled; polling counts the polls
+	// in progress. Neither is persisted.
+	lastPoll time.Time
+	polling  int
 }
 
 // Store is the set of questions of this guest.
@@ -116,6 +150,7 @@ func New(dir string, emit Emitter, log *slog.Logger, now func() time.Time) *Stor
 }
 
 func (s *Store) load() {
+	now := s.now()
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
 		return
@@ -132,7 +167,7 @@ func (s *Store) load() {
 		if json.Unmarshal(b, &q) != nil || q.ID == "" {
 			continue
 		}
-		en := &entry{q: q, done: make(chan struct{})}
+		en := &entry{q: q, done: make(chan struct{}), lastPoll: now}
 		if !q.Open() {
 			close(en.done)
 		}
@@ -154,8 +189,9 @@ func Clean(s string, n int) string {
 	return s
 }
 
-// Open starts a question and announces it.
-func (s *Store) Open(agent, window, text string, options []string, timeout time.Duration) (Question, error) {
+// Open starts a question and announces it. proc is the asker's agent
+// process key ("" for none).
+func (s *Store) Open(agent, window, proc, text string, options []string, timeout time.Duration) (Question, error) {
 	text = Clean(text, TextCap)
 	if text == "" {
 		return Question{}, fmt.Errorf("%w: the question is empty", ErrInvalid)
@@ -183,6 +219,7 @@ func (s *Store) Open(agent, window, text string, options []string, timeout time.
 	q := Question{
 		ID: uuid.Must(uuid.NewV7()).String(), Agent: agent, Window: window, Text: text, Options: opts,
 		TimeoutS: uint32(timeout / time.Second), Created: now, Expires: now.Add(timeout), State: StateOpen,
+		AgentProc: proc,
 	}
 	s.mu.Lock()
 	open := 0
@@ -195,7 +232,7 @@ func (s *Store) Open(agent, window, text string, options []string, timeout time.
 		s.mu.Unlock()
 		return Question{}, ErrTooMany
 	}
-	s.qs[q.ID] = &entry{q: q, done: make(chan struct{})}
+	s.qs[q.ID] = &entry{q: q, done: make(chan struct{}), lastPoll: s.now()}
 	s.persist(q)
 	s.mu.Unlock()
 	s.emit(q)
@@ -214,10 +251,15 @@ func (s *Store) Get(id string) (Question, error) {
 }
 
 // Wait returns the question once it is closed, or as it stands when ctx
-// ends first.
+// ends first. A wait is a poll: the orphan sweep leaves the question
+// alone while one is in progress and for OrphanAfter after it.
 func (s *Store) Wait(ctx context.Context, id string) (Question, error) {
 	s.mu.Lock()
 	e := s.qs[id]
+	if e != nil {
+		e.lastPoll = s.now()
+		e.polling++
+	}
 	s.mu.Unlock()
 	if e == nil {
 		return Question{}, ErrNotFound
@@ -226,6 +268,10 @@ func (s *Store) Wait(ctx context.Context, id string) (Question, error) {
 	case <-e.done:
 	case <-ctx.Done():
 	}
+	s.mu.Lock()
+	e.lastPoll = s.now()
+	e.polling--
+	s.mu.Unlock()
 	return s.Get(id)
 }
 
@@ -237,14 +283,22 @@ func (s *Store) Answer(id, status, answer string) error {
 	default:
 		return fmt.Errorf("%w: unknown status %q", ErrInvalid, status)
 	}
-	_, err := s.close(id, status, Clean(answer, AnswerCap))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.closeLocked(id, status, Clean(answer, AnswerCap), "", false)
 	return err
 }
 
-// Cancel closes a question from the guest side (the asker gave up, or the
-// timeout passed) and tells hostd.
-func (s *Store) Cancel(id, state string) error {
-	q, err := s.close(id, state, "")
+// Cancel closes a question from the guest side (the asker gave up or took
+// it back, or the timeout passed) and tells hostd. reason is one of
+// Reasons, or "" (an expiry).
+func (s *Store) Cancel(id, state, reason string) error {
+	if reason != "" && !Reasons[reason] {
+		return fmt.Errorf("%w: unknown reason %q", ErrInvalid, reason)
+	}
+	s.mu.Lock()
+	q, err := s.closeLocked(id, state, "", reason, true)
+	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -254,10 +308,47 @@ func (s *Store) Cancel(id, state string) error {
 	return nil
 }
 
-// close marks a question closed and returns it, or nil if it was already.
-func (s *Store) close(id, state, answer string) (*Question, error) {
+// CloseWhere cancels every open question match accepts, with reason, tells
+// hostd about each, and returns how many it closed. A reason outside
+// Reasons closes nothing.
+func (s *Store) CloseWhere(match func(Question) bool, reason string) int {
+	if !Reasons[reason] {
+		return 0
+	}
+	var closed []Question
+	s.mu.Lock()
+	for id, e := range s.qs {
+		if !e.q.Open() || !match(e.q) {
+			continue
+		}
+		if q, err := s.closeLocked(id, StateCancelled, "", reason, true); err == nil && q != nil {
+			closed = append(closed, *q)
+		}
+	}
+	s.mu.Unlock()
+	for _, q := range closed {
+		s.emit(q)
+	}
+	return len(closed)
+}
+
+// List returns the open questions match accepts, oldest first.
+func (s *Store) List(match func(Question) bool) []Question {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var out []Question
+	for _, e := range s.qs {
+		if e.q.Open() && match(e.q) {
+			out = append(out, e.q)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
+	return out
+}
+
+// closeLocked marks a question closed and returns it, or nil if it was
+// already; called with mu held.
+func (s *Store) closeLocked(id, state, answer, reason string, guest bool) (*Question, error) {
 	e := s.qs[id]
 	if e == nil {
 		return nil, ErrNotFound
@@ -269,6 +360,8 @@ func (s *Store) close(id, state, answer string) (*Question, error) {
 	if state == StateAnswered {
 		e.q.Answer = answer
 	}
+	e.q.Reason = reason
+	e.q.GuestClosed = guest
 	e.q.Closed = s.now().UTC()
 	close(e.done)
 	s.persist(e.q)
@@ -276,14 +369,18 @@ func (s *Store) close(id, state, answer string) (*Question, error) {
 	return &q, nil
 }
 
-// Pending lists the open questions, oldest first: what is re-announced on
-// a new hostd connection.
+// Pending lists, oldest first, what is announced again on a new hostd
+// connection: the open questions, and the closes made on this side in the
+// last Keep. The api applies a close only to a pending row, so a close it
+// already has changes nothing; one lost on the way (a full queue, a hostd
+// restart) arrives this way (DECISIONS I-690).
 func (s *Store) Pending() []Question {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
 	var out []Question
 	for _, e := range s.qs {
-		if e.q.Open() {
+		if e.q.Open() || (e.q.GuestClosed && now.Sub(e.q.Closed) <= Keep) {
 			out = append(out, e.q)
 		}
 	}
@@ -291,16 +388,19 @@ func (s *Store) Pending() []Question {
 	return out
 }
 
-// Sweep expires open questions past their deadline and forgets closed ones
-// older than Keep.
+// Sweep expires open questions past their deadline, closes those nobody
+// has polled for OrphanAfter (asker_gone), and forgets closed ones older
+// than Keep.
 func (s *Store) Sweep() {
 	now := s.now()
-	var expired []string
+	var expired, orphaned []string
 	s.mu.Lock()
 	for id, e := range s.qs {
 		switch {
 		case e.q.Open() && !now.Before(e.q.Expires):
 			expired = append(expired, id)
+		case e.q.Open() && e.polling == 0 && now.Sub(e.lastPoll) > OrphanAfter:
+			orphaned = append(orphaned, id)
 		case !e.q.Open() && now.Sub(e.q.Closed) > Keep:
 			delete(s.qs, id)
 			_ = os.Remove(s.file(id)) // a leftover file is reloaded as closed and swept again
@@ -308,7 +408,10 @@ func (s *Store) Sweep() {
 	}
 	s.mu.Unlock()
 	for _, id := range expired {
-		_ = s.Cancel(id, StateExpired) // gone meanwhile is fine
+		_ = s.Cancel(id, StateExpired, "") // gone meanwhile is fine
+	}
+	for _, id := range orphaned {
+		_ = s.Cancel(id, StateCancelled, ReasonAskerGone)
 	}
 }
 

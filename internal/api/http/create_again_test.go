@@ -16,8 +16,12 @@ func TestStartCreatesAProjectWhoseCreateFailed(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
 	tok := e.signIn(t, "sub-gus", "gus")
-	// Full: the host's reservations leave nothing for a large guest.
-	if _, err := e.h.Pool.Exec(ctx, "update hosts set mem_bytes = 12::bigint<<30"); err != nil {
+	// Full: no room for a large guest (8 GiB plus 512 MiB of overhead).
+	// 8 GiB of host memory keeps 2 GiB for the host itself and leaves 6,
+	// which a large guest cannot fit. 12 GiB used to be full too, when the
+	// reserve was a flat 8 GiB below 128 GB; it is an eighth with a 2 GiB
+	// floor since I-724, so 12 GiB now leaves 10 and fits one.
+	if _, err := e.h.Pool.Exec(ctx, "update hosts set mem_bytes = 8::bigint<<30"); err != nil {
 		t.Fatal(err)
 	}
 	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "recruiting-2", "class": "large"})

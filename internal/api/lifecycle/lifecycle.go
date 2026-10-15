@@ -148,14 +148,22 @@ func Start(ctx context.Context, tx db.Tx, d Deps, u *store.User, projectID uuid.
 	// half-written volume, so the way back is another restore (DECISIONS
 	// I-461).
 	if p.State == "error" {
-		unfinished, err := ops.UnfinishedRestore(ctx, tx, p.ID)
+		unfinished, source, err := ops.UnfinishedClone(ctx, tx, p.ID)
 		if err != nil {
 			return nil, err
 		}
 		if unfinished {
-			return nil, &Refusal{Code: "conflict", Reason: ReasonRestoreUnfinished,
-				Message: fmt.Sprintf("%s has no usable volume because the restore into it did not finish; restore a snapshot into it again, or remove it with `repose rm %s`", p.Slug, p.Slug),
-				Detail:  map[string]any{"reason": ReasonRestoreUnfinished}}
+			msg := fmt.Sprintf("%s has no usable volume because the restore into it did not finish; restore a snapshot into it again, or remove it with `repose rm %s`", p.Slug, p.Slug)
+			// A fork's cloned copy has no snapshot of its own (I-701, I-703).
+			if source != uuid.Nil {
+				if src, err := store.GetProject(ctx, tx, source); err == nil && src.DestroyedAt == nil {
+					msg = fmt.Sprintf("%s has no usable volume because copying %s's disk into it did not finish; remove it with `repose rm %s` and fork %s again", p.Slug, src.Slug, p.Slug, src.Slug)
+				} else {
+					msg = fmt.Sprintf("%s has no usable volume because copying its source's disk into it did not finish; remove it with `repose rm %s`", p.Slug, p.Slug)
+				}
+			}
+			return nil, &Refusal{Code: "conflict", Reason: ReasonRestoreUnfinished, Message: msg,
+				Detail: map[string]any{"reason": ReasonRestoreUnfinished}}
 		}
 	}
 	if p.GuestID == nil {

@@ -325,6 +325,30 @@ groups:
           description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
           runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
+      - alert: BootSlow
+        # Most creates and starts on a host took over 2 minutes (DECISIONS
+        # I-707). A busy host boots in 30 to 70 s (2026-10-13 on host-01,
+        # I-704), so a 30 s line would fire all day; past 2 minutes a boot
+        # is close to the 3-minute setup bound (I-705) and about to fail.
+        # Two boots at least, so one stuck tenant is not a host problem.
+        expr: |
+          (
+            sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+              - sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_bucket{kind=~"CreateGuest|StartGuest",le="120"}[30m]))
+          )
+            / sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+            > 0.5
+          and
+            sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~"CreateGuest|StartGuest"}[30m]))
+            > 1.5
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "most creates and starts on {{ $labels.host_id }} took over 2 minutes"
+          description: "Share of the last 30 minutes' boots over 2 minutes: {{ $value | humanizePercentage }}."
+          runbook: "docs/ops/RUNBOOK.md#bootslow"
+
       - alert: SnapshotStale
         # Nightly at 03:00 plus one on every stop (DESIGN §6), so 36 hours
         # without one means two schedules have been missed.
@@ -440,6 +464,27 @@ groups:
           summary: "guest samples were not stored as sent ({{ $labels.reason }})"
           description: "{{ $value }} guest sample(s) in 15 minutes. Loki `{component=\"api\"} | json | event=\"samples_fail\"` names the host, the project and the Postgres error."
           runbook: "docs/ops/RUNBOOK.md#samplesfailing"
+
+      - alert: NotifyFailing
+        # Notifications stopped reaching users (DECISIONS I-691): email
+        # sends failing for good, or due rows nobody picks up. Only email
+        # counts: an ntfy failure is the user's own server (a reserved
+        # topic, a 404, a private address) and nothing we can fix, and a
+        # Google Chat webhook is the user's own too: a deleted one marks
+        # the channel broken and mails the user (I-692). Before it, a
+        # revoked Resend key would have failed every queued email with no
+        # alert. The lag is how long the oldest due row has waited for the
+        # worker; a held or retrying row is not due, so neither counts.
+        expr: |
+          sum(increase(repose_api_notify_total{result="failed",channel="email"}[10m])) > 0
+            or max(repose_api_outbox_lag_seconds) > 300
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "notifications are failing or not being sent"
+          description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes ({{ $value }}). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+          runbook: "docs/ops/RUNBOOK.md#notifyfailing"
 
       - alert: HostReportsRefused
         # A host reported a guest of a project placed elsewhere, or a

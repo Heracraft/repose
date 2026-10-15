@@ -135,7 +135,16 @@ of the regional total and of the `Dsv7` family.
    it buys is every guest on the host typing at 17-45 ms. Check:
    `repose-admin seats` prints total, held, free, waiting and the two
    ceilings; the landing page's pricing section shows "N seats left".
-3. Your own account and any tester's: `repose-admin users exempt <handle>`
+3. Expect host-01 to refuse new projects until the launch host is up.
+   Placement counts committed guest vCPUs against a host's physical cores
+   and refuses past 1.5 per core (I-736, I-734); host-01's 8 cores allow
+   12 and the guests already on it commit 20, so a create lands there only
+   once it is under 12. The refusal is `capacity`, and the api's
+   `schedule_fail` line says `reason=no_cpu`. Bring the launch host up
+   first, or move guests off with `repose-admin projects move`.
+   `repose-admin hosts list` and the `host_reservations` view show the
+   committed figure.
+4. Your own account and any tester's: `repose-admin users exempt <handle>`
    passes the gate without a plan and holds no seat.
 
 ## 4. Deploy order

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heracraft/repose/internal/agentproc"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 )
 
@@ -14,49 +15,35 @@ import (
 // recognises.
 var Agents = []string{"claude", "opencode", "codex", "gemini", "pi"}
 
-// binaries maps an agent to the process name to look for in the pane's
-// process tree (features/agents.md's "Binary" column).
-var binaries = map[string][]string{
-	"claude":   {"claude"},
-	"opencode": {"opencode"},
-	"codex":    {"codex"},
-	// Gemini CLI is a bundle the guest's node runs (DECISIONS I-46), so
-	// its process is `node`, never `gemini`; without that name here the
-	// window was never an agent window and the heuristic never fired on
-	// host-01 (I-122).
-	"gemini": {"gemini", "node"},
-	"pi":     {"pi"},
-}
+// binaries and matchesBinary live in internal/agentproc, which is a leaf:
+// the hook socket needs IsAgentCommand and must not link this package's
+// generated protobuf to get it (DECISIONS I-729).
+var binaries = agentproc.Binaries
 
 // isAgentCommand reports whether comm is one of the process names the
 // agent runs as.
-func isAgentCommand(agent, comm string) bool {
-	return matchesBinary(binaries[agent], comm)
-}
+func isAgentCommand(agent, comm string) bool { return agentproc.IsAgentCommand(agent, comm) }
 
-// matchesBinary reports whether a process name (comm, or the exe link's
-// basename) is one of wants, directly or as nixpkgs' wrapper renames it:
-// makeWrapper moves the real program to `.X-wrapped`, so the nix claude
-// runs as `.claude-wrapped` (comm and exe alike), and comm is cut to 15
-// bytes (`.opencode-wrapp`). Without this the guest's claude was never
-// found and never OOM-protected (DECISIONS I-213).
-func matchesBinary(wants []string, name string) bool {
-	for _, w := range wants {
-		if name == w {
-			return true
-		}
-		wrapped := "." + w + "-wrapped"
-		if name == wrapped || (len(name) == 15 && len(name) > len(w)+1 && strings.HasPrefix(wrapped, name)) {
-			return true
-		}
-	}
-	return false
-}
+// IsAgentCommand is isAgentCommand for callers outside this package.
+// internal/agentproc is the one to import in a new caller.
+func IsAgentCommand(agent, comm string) bool { return agentproc.IsAgentCommand(agent, comm) }
 
-// HookedAgents are the agents whose completion is reported by a real hook.
-// The rest fall back to the pane-idle heuristic, and the notification says so
-// (features/agents.md: "claude finished" versus "gemini went idle").
+func matchesBinary(wants []string, name string) bool { return agentproc.Matches(wants, name) }
+
+// HookedAgents are the agents whose turns are always reported by a real
+// hook. gemini and pi report through the platform extensions (I-690),
+// which a user may replace, so they count as hooked once a hook from
+// their window arrives; until then they fall back to the pane-idle
+// heuristic, and the event says so ("gemini went idle"), and show
+// running (I-694).
 var HookedAgents = map[string]bool{"claude": true, "codex": true, "opencode": true}
+
+// PromptHookedAgents are the agents whose prompts are always reported by a
+// hook the base installs and the user cannot drop: Claude Code's merged
+// settings and Codex's /etc/codex/config.toml (I-690). Their state comes
+// from hooks from the start (I-694). Any other agent's does once its
+// window sent a prompt hook; OpenCode 2 sends none and stays running.
+var PromptHookedAgents = map[string]bool{"claude": true, "codex": true}
 
 // AgentOf maps a tmux window name to an agent name, or "" if the window is not
 // an agent window. "claude" and "claude-2" are both claude.

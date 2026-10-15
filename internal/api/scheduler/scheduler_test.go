@@ -388,3 +388,83 @@ func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
 		t.Fatalf("freeing %v %v with the xl stopping, want true", ok, err)
 	}
 }
+
+// The host reserve is an eighth of the host's memory with a 2 GiB floor
+// and a 16 GiB ceiling (DECISIONS I-724). The two sizes repose runs today
+// keep the figures the flat steps gave them, and an 8 GB host — which the
+// flat 8 GiB left unable to start anything — keeps 6 GB for guests, enough
+// for a small one.
+func TestHostReserveIsAnEighthWithAFloorAndACeiling(t *testing.T) {
+	gib := int64(1) << 30
+	for _, c := range []struct{ total, want int64 }{
+		{4 * gib, 2 * gib},
+		{8 * gib, 2 * gib},
+		{16 * gib, 2 * gib},
+		{32 * gib, 4 * gib},
+		{64 * gib, 8 * gib},
+		{128 * gib, 16 * gib},
+		{256 * gib, 16 * gib},
+		{1024 * gib, 16 * gib},
+	} {
+		if got := scheduler.HostReserve(c.total); got != c.want {
+			t.Errorf("HostReserve(%d GiB) = %d GiB, want %d GiB", c.total/gib, got/gib, c.want/gib)
+		}
+	}
+	// A small guest (4 GiB + 512 MiB) fits on an 8 GB host.
+	if 8*gib-scheduler.HostReserve(8*gib) < 4*gib+512<<20 {
+		t.Error("an 8 GB host cannot start a small guest")
+	}
+}
+
+// A fork's copies are placed by FitsOn, not PickHost, so the CPU term has
+// to be asked there too or the whole fork path places against nothing
+// (DECISIONS I-736 over I-701). Copies that start commit their vCPUs;
+// copies created stopped commit none and are never refused for CPU, which
+// is how the memory term already behaves.
+func TestFitsOnCountsTheCopiesVCPUs(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	h := addHostCores(t, pool, host{"host-01", "ready", false, 256 << 30, 240 << 30, 1 << 40, now}, 8)
+	if _, err := pool.Exec(ctx, "update hosts set features = array['local_clone'] where id = $1", h); err != nil {
+		t.Fatal(err)
+	}
+	fits := func(class string, count int, start bool) bool {
+		t.Helper()
+		var ok bool
+		if err := db.InTx(ctx, pool, func(tx pgx.Tx) error {
+			var err error
+			ok, err = scheduler.FitsOn(ctx, tx, h, class, count, start, now)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	// 8 cores allow 12 committed guest vCPUs. Memory is never the
+	// constraint here: the host has 240 GB free.
+	if !fits("large", 3, true) {
+		t.Fatal("three large copies that start (12 vCPUs) do not fit on 8 cores, want 12 of 12")
+	}
+	if fits("large", 4, true) {
+		t.Fatal("four large copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	}
+	if fits("xl", 2, true) {
+		t.Fatal("two xl copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	}
+	// Created stopped, they commit nothing and the CPU term must not
+	// refuse them, exactly as the memory term does not.
+	if !fits("xl", 5, false) {
+		t.Fatal("five xl copies created stopped are refused for CPU, want them placed")
+	}
+	// With the host already at its ceiling, a copy that starts is refused
+	// and a copy created stopped is still fine.
+	commit(t, pool, h, "xl", "kanali")
+	commit(t, pool, h, "large", "s2-sync")
+	if fits("small", 1, true) {
+		t.Fatal("a copy that starts fits a host at its CPU ceiling, want a refusal")
+	}
+	if !fits("small", 1, false) {
+		t.Fatal("a copy created stopped is refused on a host at its CPU ceiling, want it placed")
+	}
+}

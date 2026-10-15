@@ -68,13 +68,22 @@ type takenSnapshot struct {
 // From its return the snapshot is a fixed point in time, whatever the
 // guest does next; uploadSnapshot streams and removes it.
 func (m *Manager) takeSnapshot(ctx context.Context, g *state.Guest, reason string) (*takenSnapshot, *Error) {
+	return m.takeSnapshotAs(ctx, g, reason, "")
+}
+
+// takeSnapshotAs is takeSnapshot into the volume lv ("" for a snap-*
+// name of its own).
+func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv string) (*takenSnapshot, *Error) {
 	switch g.State {
 	case StateRunning, StateStopped, StateError:
 	default:
 		return nil, errf(CodeInvalidArgument, "guest is %s; snapshot needs running or stopped", g.State)
 	}
 	start := m.d.Now()
-	t := &takenSnapshot{lv: fmt.Sprintf("snap-%s-%d", g.GuestID, start.UnixMilli()), reason: reason, start: start}
+	if lv == "" {
+		lv = fmt.Sprintf("snap-%s-%d", g.GuestID, start.UnixMilli())
+	}
+	t := &takenSnapshot{lv: lv, reason: reason, start: start}
 	vol := VolumeName(g.GuestID)
 	t.log = m.log(g).With("reason", reason)
 	t.log.Info("snapshot start", "event", "snapshot_start")
@@ -192,8 +201,12 @@ func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSn
 }
 
 func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.CreateResult, *Error) {
-	if c.GuestId == "" || c.ProjectId == "" || c.BlobPath == "" {
-		return nil, errf(CodeInvalidArgument, "guest_id, project_id and blob_path required")
+	clone := c.Clone
+	if c.GuestId == "" || c.ProjectId == "" || (c.BlobPath == "" && clone == nil) {
+		return nil, errf(CodeInvalidArgument, "guest_id, project_id and blob_path (or clone) required")
+	}
+	if c.BlobPath != "" && clone != nil {
+		return nil, errf(CodeInvalidArgument, "a restore names blob_path or clone, not both")
 	}
 	want := strings.ToLower(c.Sha256)
 	if want != "" {
@@ -214,14 +227,26 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 		}
 		return nil, errf(CodeAlreadyExists, "guest %s exists in state %s", c.GuestId, existing.State)
 	}
+	var src *state.Guest
+	if clone != nil {
+		var e *Error
+		if src, e = m.cloneSource(c); e != nil {
+			return nil, e
+		}
+	}
 	if err := m.capacityCheck(c.GuestId, c.Class, c.VolumeBytes, false); err != nil {
 		return nil, err
 	}
-	info, ok, err := m.d.Blob.Stat(ctx, c.BlobPath)
-	if err != nil {
-		return nil, errf(CodeInternal, "blob: %v", err)
-	} else if !ok {
-		return nil, errf(CodeNotFound, "snapshot %s not in the store", c.BlobPath)
+	var info snapshot.Info
+	if clone == nil {
+		var ok bool
+		var err error
+		info, ok, err = m.d.Blob.Stat(ctx, c.BlobPath)
+		if err != nil {
+			return nil, errf(CodeInternal, "blob: %v", err)
+		} else if !ok {
+			return nil, errf(CodeNotFound, "snapshot %s not in the store", c.BlobPath)
+		}
 	}
 	if c.SystemClosure != "" {
 		if ok, err := m.d.Nix.PathExists(ctx, c.SystemClosure); err != nil {
@@ -230,23 +255,6 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 			return nil, errf(CodeNotFound, "system closure %s is not in the host store", c.SystemClosure)
 		}
 	}
-	// The whole blob is checked against the digest the api recorded before
-	// a byte of it is decompressed or written, and before any guest state
-	// exists; the write below reads the same version and is checked again
-	// (I-462). A snapshot from before I-462 has no digest and is restored
-	// unchecked.
-	verifyStart := m.d.Now()
-	if want != "" {
-		vh := sha256.New()
-		if err := m.d.Blob.Download(ctx, c.BlobPath, info.Version, vh); err != nil {
-			return nil, errf(CodeInternal, "snapshot download failed: %v", err)
-		}
-		if got := hex.EncodeToString(vh.Sum(nil)); got != want {
-			m.d.Log.Error("snapshot checksum mismatch", "event", "restore_fail", "guest_id", c.GuestId, "code", CodeInternal)
-			return nil, errf(CodeInternal, "snapshot checksum mismatch: the stored snapshot is not the one that was taken; nothing was restored")
-		}
-	}
-	verified := m.d.Now()
 	idx, err := m.d.State.AllocIndex(c.GuestId, m.maxIndex)
 	if err != nil {
 		return nil, errf(CodeInsufficientCapacity, "%v", err)
@@ -273,51 +281,78 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 			log.Warn("removing the volume of a failed restore", "event", "restore_fail", "err", err.Error())
 		}
 		_ = m.setState(g, StateError, "restore: "+e.Message) // e is what the api sees; the state write is logged inside
+		if clone != nil {
+			m.releaseForkPoint(clone)
+		}
 		return nil, e
 	}
 	// A volume left by an earlier attempt at this guest holds a partial
-	// write; an extent stream writes only used blocks, so it starts over
-	// on a fresh one.
+	// write (or a clone of a point that may be gone); an extent stream
+	// writes only used blocks, so it starts over on a fresh one.
 	if existing != nil {
 		if err := m.d.LVM.RemoveVolume(ctx, vol); err != nil {
 			return fail(lvmErr("lvremove", err))
 		}
 	}
-	if err := m.d.LVM.CreateVolume(ctx, vol, g.VolumeBytes); err != nil {
-		return fail(lvmErr("lvcreate", err))
+	if clone != nil {
+		pointMs, cloneMs, e := m.cloneVolume(ctx, src, clone, vol, c.VolumeBytes)
+		if e != nil {
+			return fail(e)
+		}
+		// No check follows: the volume is the source's own blocks at a
+		// moment its filesystem was frozen, never bytes that came through
+		// a store, and the guest's mount replays its journal as the
+		// source's would (I-701).
+		log.Info("restore done", "event", "restore_done", "source", "clone", "duration_ms", m.d.Now().Sub(start).Milliseconds(),
+			"point_ms", pointMs, "clone_ms", cloneMs, "volume_bytes", g.VolumeBytes)
+	} else {
+		if err := m.d.LVM.CreateVolume(ctx, vol, g.VolumeBytes); err != nil {
+			return fail(lvmErr("lvcreate", err))
+		}
+		// One download: the blob is hashed as it is written into the new
+		// volume, and a digest that differs fails the restore and removes
+		// the volume before anything can start it (I-700, which amends
+		// I-462's check before the write). A snapshot from before I-462
+		// has no digest and is restored unchecked.
+		pr, pw := io.Pipe()
+		dlErr := make(chan error, 1)
+		var downloaded countingWriter
+		wh := sha256.New()
+		// With a digest to check, a write that fails lets the download
+		// run on into the hash alone, so a blob changed in the store is
+		// reported as that and not as whatever its bytes made the write
+		// fail with.
+		feed := &pipeFeed{w: pw, keepOn: want != ""}
+		go func() {
+			err := m.d.Blob.Download(ctx, c.BlobPath, info.Version, io.MultiWriter(&downloaded, wh, feed))
+			_ = pw.CloseWithError(err) // the reader sees err; CloseWithError itself cannot fail
+			dlErr <- err
+		}()
+		werr := m.d.Stream.Write(ctx, m.d.LVM.DevPath(vol), pr)
+		_ = pr.Close() // stops the feed if it is still going; the error is the download's
+		if err := <-dlErr; err != nil {
+			return fail(errf(CodeInternal, "snapshot download failed: %v", err))
+		}
+		if want != "" && hex.EncodeToString(wh.Sum(nil)) != want {
+			return fail(checksumMismatch(log))
+		}
+		if werr != nil {
+			return fail(errf(CodeInternal, "restore stream: %v", werr))
+		}
+		written := m.d.Now()
+		code, err := m.d.LVM.Fsck(ctx, vol)
+		if err != nil {
+			return fail(errf(CodeInternal, "e2fsck: %v", err))
+		}
+		if code > 1 {
+			return fail(errf(CodeInternal, "filesystem check failed after restore (e2fsck exit %d)", code))
+		}
+		// The stages a slow restore spent its time on: the download and
+		// the write overlap, the check follows (I-403). verify_ms stays,
+		// 0, for the dashboards that read it (I-700).
+		log.Info("restore done", "event", "restore_done", "source", "blob", "bytes", uint64(downloaded), "duration_ms", m.d.Now().Sub(start).Milliseconds(),
+			"verify_ms", 0, "verified", want != "", "write_ms", written.Sub(start).Milliseconds(), "fsck_ms", m.d.Now().Sub(written).Milliseconds(), "volume_bytes", g.VolumeBytes)
 	}
-	pr, pw := io.Pipe()
-	dlErr := make(chan error, 1)
-	var downloaded countingWriter
-	wh := sha256.New()
-	go func() {
-		err := m.d.Blob.Download(ctx, c.BlobPath, info.Version, io.MultiWriter(pw, &downloaded, wh))
-		_ = pw.CloseWithError(err) // the reader sees err; CloseWithError itself cannot fail
-		dlErr <- err
-	}()
-	werr := m.d.Stream.Write(ctx, m.d.LVM.DevPath(vol), pr)
-	_ = pr.Close() // stops the writer if it is still going; the error is the download's
-	if err := <-dlErr; err != nil {
-		return fail(errf(CodeInternal, "snapshot download failed: %v", err))
-	}
-	if werr != nil {
-		return fail(errf(CodeInternal, "restore stream: %v", werr))
-	}
-	if want != "" && hex.EncodeToString(wh.Sum(nil)) != want {
-		return fail(errf(CodeInternal, "snapshot checksum mismatch: the stored snapshot changed during the restore"))
-	}
-	written := m.d.Now()
-	code, err := m.d.LVM.Fsck(ctx, vol)
-	if err != nil {
-		return fail(errf(CodeInternal, "e2fsck: %v", err))
-	}
-	if code > 1 {
-		return fail(errf(CodeInternal, "filesystem check failed after restore (e2fsck exit %d)", code))
-	}
-	// The stages a slow restore spent its time on: the download and the
-	// write overlap, the check follows (I-403).
-	log.Info("restore done", "event", "restore_done", "bytes", uint64(downloaded), "duration_ms", m.d.Now().Sub(start).Milliseconds(),
-		"verify_ms", verified.Sub(verifyStart).Milliseconds(), "verified", want != "", "write_ms", written.Sub(start).Milliseconds(), "fsck_ms", m.d.Now().Sub(written).Milliseconds(), "volume_bytes", g.VolumeBytes)
 	if g.SystemClosure != "" {
 		if err := m.d.Roots.Set(g.GuestID, g.SystemClosure); err != nil {
 			return fail(errf(CodeInternal, "gcroot: %v", err))
@@ -329,7 +364,40 @@ func (m *Manager) restore(ctx context.Context, c *hostdv1.Restore) (*hostdv1.Cre
 	if err := m.setState(g, StateStopped, ""); err != nil {
 		return nil, errf(CodeInternal, "%v", err)
 	}
+	if clone != nil {
+		m.releaseForkPoint(clone)
+	}
 	return &hostdv1.CreateResult{GuestIp: g.IP, VsockCid: g.CID}, nil
+}
+
+// checksumMismatch is the failure of a restore whose blob is not the one
+// the snapshot recorded (I-462): the store's copy was changed.
+func checksumMismatch(log *slog.Logger) *Error {
+	log.Error("snapshot checksum mismatch", "event", "restore_fail", "code", CodeInternal)
+	return errf(CodeInternal, "snapshot checksum mismatch: the stored snapshot is not the one that was taken; nothing was restored")
+}
+
+// pipeFeed hands the download to the stream's pipe. Once the stream has
+// stopped reading (the pipe is closed), keepOn swallows the error so the
+// download goes on to its end for the hash; without it the error stops
+// the download.
+type pipeFeed struct {
+	w      *io.PipeWriter
+	keepOn bool
+	closed bool
+}
+
+func (f *pipeFeed) Write(p []byte) (int, error) {
+	if f.closed {
+		return len(p), nil
+	}
+	if _, err := f.w.Write(p); err != nil {
+		if !f.keepOn {
+			return 0, err
+		}
+		f.closed = true
+	}
+	return len(p), nil
 }
 
 // countingWriter counts the bytes written through it.

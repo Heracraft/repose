@@ -94,19 +94,21 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 | `/etc/repose/bash-env.sh` | `BASH_ENV` of every bash, and sourced by `/etc/profile.d/repose.sh`: sources `/run/repose/secrets.refresh` when its first line names another generation than the process's `REPOSE_ENV_GEN`; POSIX sh, silent, runs no other program, keeps `$?`, `$_`, the positional parameters and the shell options, leaves the unexported `__repose_bash_env_u`, a no-op when the file is missing or unreadable (I-475); in a `bash -c` string (`BASH_EXECUTION_STRING` set) it also defines `command_not_found_handle` (`repose-command-not-found`, exit 127) unless one is defined, which runs a program only when a command is missing (I-219, I-516) |
 | `/run/repose/hooks.sock` | hook ingest, HTTP over unix, 0660 root:dev, created by guestd |
 | `/run/repose/guestd.sock` | dev-only stand-in for vsock (absent in real guests) |
+| `/run/repose/project-set-up` | written by guestd once `SetupProject` has started the session unit; the mark, in a boot record, that the project was set up (DECISIONS I-706) |
 | `/run/repose/paths-registered` | written by guestd after the first `RegisterPaths`; `repose-paths.service` waits for it (up to 180 s) and `home-manager-dev.service` runs after that (DECISIONS I-67) |
 | `/var/lib/repose/paths-loaded` | sha256 of the last registration `nix-store --load-db` took, on the volume; a `RegisterPaths` with the same bytes and `/nix/var/nix/db/db.sqlite` present only writes the stamp above (DECISIONS I-225) |
 | `/run/repose/desktop/vnc-password` | the viewer's VNC password, generated once per boot the first time the display starts, 0600 dev (DECISIONS I-33, I-292); `vnc-passwd` beside it is TigerVNC's obfuscated form Xvnc reads |
 | `/run/repose/desktop/web` | the viewer's web root, rebuilt at every viewer start: links to the shipped page (`index.html`, `viewer.js`, `viewer.css`, `healthz`, noVNC's `core/` and `vendor/`) and `project.json` (`{name, idle_minutes}`) for the page's bar (I-292) |
-| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it |
-| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it |
+| `/run/repose/desktop/last-client` | mtime of the last observed desktop client; the idle stop reads it. Owned by dev whoever writes it: every writer runs `repose-desktop-stamp` as root (DECISIONS I-727) |
+| `/run/repose/desktop/last-cdp` | mtime of the last observed DevTools client of the agents' browser (I-246); the idle stop reads it. Owned by dev, written as `last-client` is (I-727) |
 | `/run/repose/mcp/` | tmpfiles `d 0700 dev dev`: one socket per forwarded MCP server, `NAME.sock` (0600 dev), bound by `repose-mcp hold` while a laptop forwards NAME and removed when the hold ends, and `NAME.alive` (0600 dev), touched at each keepalive from the laptop; a missing socket, or a keepalive file more than 30 s old, is how `status` says `laptop not connected` (DECISIONS I-557). A CLI that sends no keepalive leaves no `NAME.alive`, and the socket alone decides |
-| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246) |
+| `/home/dev/.local/share/repose/browser` | the agents' browser's Chromium profile (I-246). Before each start, `repose-browser-unlock` removes its `SingletonLock`, `SingletonSocket` and `SingletonCookie` unless the process the lock names runs with this profile (I-727) |
 | `/nix/.ro-store` | read-only virtio-fs mount of the host store (tag `ro-store`) |
 | `/nix/.rw-store` | the guest's writable store overlay (upper dir `store/`, work dir `work/`), on the thin volume |
 | `/nix/store` | overlay of the two: what `nix profile install` in the guest writes lands in `/nix/.rw-store` |
 | `/home/dev/.local/state/nix/profiles/profile` | dev's nix profile; `repose-pin-profile` copies its closure into the overlay whenever it changes |
-| `/nix/var/nix/gcroots/repose-link-targets/` | one root per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`), for every base the guest has run; `repose-pin-profile` adds them and copies their closures into the overlay (DECISIONS I-533) |
+| `/nix/var/nix/gcroots/repose-link-targets/` | one symlink per store path a binary built in the guest links against (the gcc wrapper's glibc and gcc-lib, and the libraries on `PKG_CONFIG_PATH`: eleven), written by `repose-pin-profile` at every boot and switch, for every base the guest has run. Nothing is copied into the overlay for them since base 2026.10.14 (DECISIONS I-718, amends I-533); the roots keep the guest's own collection off the libraries and are the record of which paths an older binary may name, which `repose-store-repair --link-targets` reads. Copies an earlier base made stay in the upper dir |
+| `repose-store-repair` | `repose-store-repair PROGRAM \| /nix/store/PATH ... \| --link-targets`, in the system path: fetches again, as root, the store paths a program's ELF interpreter and RUNPATH name and the machine no longer really has (an existing but empty path asks for a `repose stop` and `repose start` instead). `repose-store-repair.timer` runs `--link-targets` once a boot, `OnBootSec=4min`, and the unit tolerates its own failure (DECISIONS I-719) |
 | `/nix/var/nix/gcroots/repose-view/` | guestd: one root per store path the lower layer (`/nix/.ro-store`) serves and the guest's database lists, named by its basename; updated at every `RegisterPaths` and at guestd's start (DECISIONS I-588) |
 | stage 1 | removes every whiteout (0:0 character device) at the top of the overlay's upper store dir before stage 2 and prints `repose: store overlay: N whiteouts removed, M of them over shared store paths` on the console and in the kernel log (DECISIONS I-587) |
 | `repose-store-gc.timer` | weekly: deletes dev's profile generations older than 14 days, then the dead store paths that exist in the overlay's upper dir alone (DECISIONS I-529) |
@@ -142,7 +144,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   skips that check.
 - guestd sets the window option `@repose-state` on an agent window to
   the state it last announced (`working`, `idle`, `needs_input`,
-  `unknown`) each time that changes (DECISIONS I-606). `repose ps` reads
+  `running`, `unknown`) each time that changes (DECISIONS I-606, I-694). `repose ps` reads
   it as STATE, and `/etc/tmux.conf`'s window formats put `?` after the
   name of a window at `needs_input`. When the agent exits and its shell
   keeps the window, guestd unsets the option (I-631). A window with no
@@ -286,7 +288,11 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   (I-512).
 - Shell: a login bash sources `~/.bashrc` last in `/etc/bashrc` when
   there is no `~/.bash_profile` or `~/.bash_login` and `~/.profile` does
-  not mention bashrc (I-513). `ls` is GNU ls; `ll`, `la`, `lt` run eza;
+  not mention bashrc (I-513). Not the base's doing, and not suppressed by
+  a login file: nixpkgs' bash has `-DSSH_SOURCE_BASHRC`, so the
+  non-interactive `bash -c` sshd runs a command in reads `~/.bashrc`
+  itself and exports what it sets to the shells it starts (I-725). `ls`
+  is GNU ls; `ll`, `la`, `lt` run eza;
   `histappend`, `HISTSIZE=100000`, `HISTFILESIZE=200000`,
   `HISTCONTROL=ignoredups` when unset; fzf key bindings and completion;
   `vi` and `vim` are neovim (I-514). A fragment's `home.shellAliases` are
@@ -503,9 +509,9 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
 1. Run `repose-agent-setup <agent>`, which makes the agent's hook config
    point at `repose-hook` without touching anything the user configured:
    - `claude`: `~/.claude/settings.json` gains the entries from
-     `/etc/repose/claude-settings.json` under `hooks.Notification` and
-     `hooks.Stop` unless an entry whose command contains `repose-hook`
-     already exists under that event, and its `permissions.defaultMode`
+     `/etc/repose/claude-settings.json` under `hooks.Notification`,
+     `hooks.Stop` and `hooks.UserPromptSubmit` (I-690) unless an entry
+     whose command contains `repose-hook` already exists under that event, and its `permissions.defaultMode`
      and `skipDangerousModePermissionPrompt` only when the user's file has
      no `permissions.defaultMode` (I-250), and its `tui` only when the
      user's file has no `tui` (I-425); `~/.claude.json` `mcpServers` gains
@@ -516,6 +522,11 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      `~/.claude.json` holds Claude Code's lock `~/.claude.json.lock`.
    - `codex`: `~/.codex/config.toml` gains `notify = ["repose-hook"]`
      unless a `notify` key exists, under `flock ~/.repose/mcp/.lock`.
+     The prompt hook is not in the user's file: the base's
+     `/etc/codex/config.toml` sets `[features] hooks = true` and a
+     `[[hooks.UserPromptSubmit]]` running `repose-hook --agent codex`
+     (I-690). Codex runs hooks of that system file without the trust
+     review it asks for hooks in `~/.codex` (checked with 0.157.1).
      Its MCP servers, the platform's included, are `repose-mcp sync
      codex`'s; on a base without `repose-mcp`, agent-setup appends an
      `[mcp_servers.NAME]` table (`command`, `args`) for each server in
@@ -527,8 +538,14 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
      absent, and replaced only while its sha256 is one an earlier base
      installed (I-481); the `repose-agent-hooks` user unit also runs this
      at login, for an OpenCode 2 started outside the wrapper.
-   - `gemini`, `pi`: no hook (guestd's pane-idle heuristic reports for
-     them); the machine guide is linked in as an extension (I-243):
+   - `gemini`, `pi`: the machine guide (I-243) and the turn hooks
+     (I-690) are linked in as an extension: Gemini CLI runs the
+     extension's `hooks/hooks.json` (`BeforeAgent`, `AfterAgent`, each
+     `repose-hook --agent gemini`), also in a folder the user has not
+     trusted; the pi extension runs `repose-hook --agent pi` with the
+     socket's own shape on pi's `input` (not from an extension) and
+     `agent_end` events. guestd's pane-idle heuristic reports for either
+     until its first hook arrives:
      `~/.gemini/extensions/repose-machine-guide` →
      `/etc/repose/gemini-extension`, and
      `${PI_CODING_AGENT_DIR:-~/.pi/agent}/extensions/repose-machine-guide.js`
@@ -592,14 +609,24 @@ never blocks an agent. Mapping:
 
 | Agent | Payload | kind | summary |
 |---|---|---|---|
-| claude | `hook_event_name=Stop` | `completed` | last assistant text from the transcript tail (200 chars), else `claude finished` |
+| claude | `hook_event_name=UserPromptSubmit` (I-690) | `prompt` | none; the prompt is never decoded. One whose prompt starts with Claude Code's own `<task-notification>` (the turn a finished background task starts) is `resume` instead |
+| claude | `hook_event_name=Stop` with no `background_tasks` entry `running` or `pending` (I-688) | `completed` | `last_assistant_message` (200 chars), else the last assistant text from the transcript tail, else `claude finished`. A `Stop` that fails the condition is a pause: no event, the agent stays `working` until its pane is quiet for 2 minutes. `stop_hook_active` is not read: it marks the end of a turn a Stop hook forced on |
 | claude | `Notification` with `notification_type` in `permission_prompt`, `agent_needs_input` (`idle_prompt` is no event since DECISIONS I-418) | `needs_input` | `message` |
 | claude | `StopFailure` | `error` | `error` or `message` |
 | codex | `type=agent-turn-complete` | `completed` | `last-assistant-message` |
-| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input` | | |
+| codex | `hook_event_name=UserPromptSubmit` (stdin, from `/etc/codex/config.toml`, I-690) | `prompt` | none |
+| gemini | `hook_event_name=BeforeAgent` (I-690) | `prompt` | none |
+| gemini | `hook_event_name=AfterAgent` | `completed` | `prompt_response`, else `gemini finished` |
+| pi | the extension's `{agent, kind, summary}`: `input` → `prompt`, `agent_end` → `completed` (summary: the last assistant text, else `pi finished`) | | |
+| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1's `chat.message` hook → `prompt` (I-690; checked with 1.18.34) | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
-Anything else is dropped silently. `window` is the tmux window name of the
+Anything else is dropped silently. The kinds `prompt` and `resume` never
+leave the guest. On `prompt` guestd closes the caller's open questions (see
+"Messages and questions") and marks the window `working`; `resume` only
+marks it `working`. A window marked `working` whose pane has printed
+nothing for 2 minutes becomes `idle` (an interrupted turn sends no turn
+end, DECISIONS I-694). `window` is the tmux window name of the
 caller's `$TMUX_PANE` when set; else, with `HERDR_ENV=1`,
 `herdr:<$HERDR_PANE_ID>` (I-506); else absent.
 
@@ -759,8 +786,9 @@ are the same commands). Any process in the guest may run them: an agent's
 shell tool, a script, the user.
 
 ```
-repose-notify [--agent NAME] MESSAGE...        # or the message on stdin
+repose-notify [--done] [--agent NAME] MESSAGE...   # or the message on stdin
 repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
+repose-ask --cancel [ID | --all]
 ```
 
 - The agent is `--agent`, else `REPOSE_HOOK_AGENT` (the wrappers export it,
@@ -770,16 +798,38 @@ repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
   `REPOSE_AGENT_WINDOW`, else guestd's `$TMUX_PANE` lookup, else
   `herdr:<$HERDR_PANE_ID>` in a herdr pane (I-506).
 - `repose-notify` POSTs `/notify` and returns at once. The message (1 KB)
-  goes to the owner's channels as kind `agent_message` and counts against
-  the project's notification cap (30 an hour, `features/notifications.md`).
-  Exit 0 sent, 1 guestd unreachable or refused, 2 usage.
+  goes to the owner's channels as kind `agent_message`, or with `--done`
+  as `agent_done` (I-688), and counts against the project's notification
+  cap (30 an hour, `features/notifications.md`). Exit 0 sent, 1 guestd
+  unreachable or refused, 2 usage.
 - `repose-ask` POSTs `/ask`, then long-polls `GET /ask/<id>` and prints the
   answer on stdout. `--options` (at most 3, comma-separated, 64 bytes each)
-  makes the answer one of them and gives ntfy and email one-click buttons;
+  makes the answer one of them and gives ntfy, email and Google Chat buttons;
   `--timeout` is a duration or seconds, default 30 minutes, at most 24
   hours. Flags may come before or after the question. While guestd is
   unreachable (a restart) it retries for 2 minutes. SIGINT, SIGTERM or
-  SIGHUP cancel the question (`DELETE /ask/<id>`) and exit 130.
+  SIGHUP cancel the question (`DELETE /ask/<id>`, reason `interrupted`) and
+  exit 130.
+- guestd keys each question to the asker's agent process, `pid:starttime`
+  of the nearest of the five agents among the asker's ancestors (by
+  `/proc/<pid>/stat` comm, or the exe link's name for Gemini CLI's
+  `node`), read through SO_PEERCRED; the key never leaves the guest. A
+  `prompt` hook closes every open question with the hook's own key, or,
+  where either side has none, asked from the hook's window, with reason
+  `terminal` (I-690); the asker exits 6.
+- `repose-ask --cancel` withdraws the caller's own open questions (the
+  same match, `DELETE /ask?agent=&window=&reason=withdrawn`), `--cancel
+  ID` one (`DELETE /ask/<id>?reason=withdrawn`, exit 1 when it is not
+  open), `--cancel --all` every open one (`DELETE /ask?scope=all`), and
+  prints `withdrew N questions`. The askers exit 5.
+- guestd closes an open question no asker has polled for 90 seconds
+  (reason `asker_gone`); after a guestd restart the 90 seconds count from
+  the restart.
+- A close made on the guest side (an asker's cancel, a withdrawal, a
+  prompt, the orphan sweep, the timeout) goes to hostd as a `Question`
+  notify with its state and `reason`, and is announced again on each new
+  hostd connection for 10 minutes, beside the open questions; the api
+  applies a close only to a pending question.
 
 | Exit | Meaning |
 |---|---|
@@ -787,8 +837,9 @@ repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
 | 1 | guestd unreachable, refused the question, or lost for 2 minutes |
 | 2 | usage: no question, more than 3 options, a bad `--timeout` |
 | 3 | no answer before the timeout |
-| 4 | no notification channel is on for the owner (email off and no ntfy) |
-| 5 | cancelled: the owner dismissed it, the guest stopped, or the question is gone (the guest rebooted) |
+| 4 | no notification channel is on for the owner (email off, no ntfy, no working Google Chat webhook) |
+| 5 | cancelled: the owner dismissed it, the agent withdrew it, the guest stopped, or the question is gone (the guest rebooted) |
+| 6 | the user sent the asking agent a prompt, which closed the question (I-690) |
 | 130 | interrupted |
 
 ## Credentials the CLI syncs into the guest
@@ -960,7 +1011,18 @@ The units set the rest (I-576, `nix/guest/base/keystroke-path.nix`):
 `DefaultOOMScoreAdjust=0` (upstream gives its units the manager's value
 plus 100), `sshd.service` `OOMScoreAdjust=-800` (sshd hands it to each
 session it forks), guestd -900 and journald upstream's -250.
-`repose-tmux-session.service` has `OOMPolicy=continue`. MGLRU's
+
+The ranking only holds if the cgroup the kill happened in is left alone,
+so `dev`'s user manager runs with `DefaultOOMPolicy=continue` (I-697):
+systemd's default is to stop that unit, which takes the agent beside the
+kill with it. Every cgroup of `dev`'s holds one: a tmux pane is a
+`tmux-spawn-*.scope` with the agent and everything it started, herdr's
+panes share `repose-herdr-server.service`, a `chromium` runs in a
+transient scope of `repose-browser.slice` with its renderers. Both
+session units set `OOMPolicy=continue` on themselves as well, and each
+logind `session-N.scope` has it by prefix drop-in (`repose exec` and
+`repose code` run what they start in the session's own scope; the system
+manager's default stays `stop`). MGLRU's
 `/sys/kernel/mm/lru_gen/min_ttl_ms` is 1000: the kernel runs its OOM
 killer when it cannot keep the pages touched in the last second.
 

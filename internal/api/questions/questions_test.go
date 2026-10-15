@@ -114,3 +114,48 @@ func TestQuestionWithNULIsStored(t *testing.T) {
 		t.Fatalf("stored %q %q %q", agent, window, text)
 	}
 }
+
+// TestGuestCloseReasons (DECISIONS I-690): a close the guest sends with
+// reason terminal is an answer with no text, via terminal; withdrawn is a
+// cancel via agent; any other reason, or none (an older hostd), is the
+// plain close of before. Nothing is delivered back down for any of them.
+func TestGuestCloseReasons(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := questions.New(pool, events.New(pool, metrics.NewNop(), log), nil, log)
+	_, gid := seed(t, pool, "delta")
+	for _, tc := range []struct {
+		state, reason, wantState, wantVia, describe string
+	}{
+		{"cancelled", "terminal", "answered", "terminal", "answered in the terminal"},
+		{"cancelled", "withdrawn", "cancelled", "agent", "withdrawn by the agent"},
+		{"cancelled", "asker_gone", "cancelled", "", "this question was cancelled"},
+		{"cancelled", "", "cancelled", "", "this question was cancelled"},
+		{"expired", "", "expired", "", "this question has expired"},
+	} {
+		qid := uuid.Must(uuid.NewV7())
+		if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: qid.String(), Agent: "claude", Text: "Go?"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: qid.String(), State: tc.state, Reason: tc.reason}); err != nil {
+			t.Fatal(err)
+		}
+		q, err := svc.Get(ctx, nil, qid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		via := ""
+		if q.AnsweredVia != nil {
+			via = *q.AnsweredVia
+		}
+		var delivery string
+		_ = pool.QueryRow(ctx, "select coalesce(delivery, '') from questions where id = $1", qid).Scan(&delivery)
+		if q.State != tc.wantState || via != tc.wantVia || q.Answer != nil || delivery != "guest" || questions.Describe(q) != tc.describe {
+			t.Errorf("%s/%s: state %s via %q answer %v delivery %q describe %q", tc.state, tc.reason, q.State, via, q.Answer, delivery, questions.Describe(q))
+		}
+		if tc.wantState == "answered" && q.AnsweredAt == nil {
+			t.Errorf("%s: no answered_at", tc.reason)
+		}
+	}
+}

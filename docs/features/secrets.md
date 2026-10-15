@@ -245,7 +245,8 @@ Rules that must hold:
   at its provider.
 - A `rm` deletes the ciphertext row and the guest file. The audit log
   records the action, the name, and never the value.
-- Secrets are per project. The same name in two projects is two secrets.
+- Secrets are per project, and per account (DECISIONS I-697; below).
+  The same name in two projects is two secrets.
   Each ciphertext is bound to its project id and its name (AES-GCM
   additional data, DECISIONS I-433), so a row copied into another project
   or renamed does not decrypt. Rows written before I-474 were bound to
@@ -273,6 +274,31 @@ Rules that must hold:
   ciphertext; `repose-admin secrets rewrap` does it and is rehearsed before
   launch.
 
+### Account secrets (I-697)
+
+`repose secrets set|list|rm|import --global` and the dashboard's Settings
+page set a named secret once for every project of the account. It is the
+same home: a row in Postgres (`account_secrets`, one per user and name),
+sealed under the user's data key with the ciphertext bound to the user
+and the name (`repose-account-secret-v1`), and delivered only as the
+tmpfs files and environment above. Nothing new holds a value.
+
+- A machine's set is its project's secrets plus each account secret the
+  project has none of its own for: a project's own value wins on that
+  machine. `DecryptForGuest` makes the merge, so create, start, restore,
+  `UpdateSecrets`, the fragment refusal and build-log redaction all see
+  the same set.
+- A set or rm pushes `UpdateSecrets` to every running project of the
+  account without its own secret of that name; a stopped one gets the
+  set at its next start. The PUT answers how many it pushed to and names
+  the projects whose own secret wins.
+- `GET /projects/:id/secrets` lists the project's rows alone (its shape is
+  unchanged); `GET /me/secrets` lists the account's. The CLI shows both
+  on a terminal and marks a name the project overrides.
+- `repose fork` copies the project's rows; the copy gets the account's
+  rows as every project does. Rewrap covers both tables, and one data key
+  serves both.
+
 ## Where secrets are not
 
 Not in the repo. Gitignored `.env` files do travel, over the sync's SSH and
@@ -298,5 +324,5 @@ login sync), 08 (dashboard page), 12 (fragment scan, build log redaction).
 ## Deferred
 
 Per-project LUKS so an operator with root on a host cannot read a stopped
-tenant's disk (R3-10 revisit). User-level secrets shared across projects.
-Copy between projects. Secret versions and rollback.
+tenant's disk (R3-10 revisit). Keeping one account secret off one project
+without a value of its own there (I-697). Copy between projects. Secret versions and rollback.

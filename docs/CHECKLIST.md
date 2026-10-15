@@ -257,6 +257,40 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       (R3-20) stays a fallback; I-39 records the v7 sizes used.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
+- [ ] **Paging reaches a human.** The Google Chat adapter (calert) and its
+      webhook secret are on the personal server, and Alertmanager's route
+      and rules are loaded (`ops/README.md` step 3). Evidence: a test alert
+      (`amtool alert add alertname=ReposeTest ...`) arrives in the Chat
+      space, and an Uptime Kuma Push monitor (180 s) alerts there when
+      Alertmanager stops pushing. Until this is closed every Prometheus
+      page, including the host-down ones, reaches nobody: the 2026-10-10
+      outage paged no one because `ntfy.herakraft.co` answered 503 on every
+      path (DECISIONS I-648).
+- [ ] **The Azure alert path is proven**, not just created. Evidence: the
+      portal's **Test** on action group `repose-prod` delivers to
+      `alert_email`. `az monitor action-group test-notifications create`
+      refuses with "no valid receivers", so the portal is the way
+      (I-648).
+- [ ] **A console login exists on host-01 and the edge.** Both are built
+      with root locked, so the Azure serial console shows output but cannot
+      log in, and a host that will not boot cannot be rescued. Evidence: a
+      yescrypt hash in `/var/lib/repose/root-console.hash` on each machine
+      (made by the owner, never in the repo), a switch after it, and one
+      login on the portal's serial console. SSH stays key-only; the boot
+      menu waits 10 s so an older generation can be chosen (I-649, I-654).
+- [ ] **A planned host-01 restart has been ridden out.** It is the only
+      proof of the new initrd pool activation (I-643), the restart of
+      machines that were running (I-645) and the guest freeze on prod
+      (I-652, I-685, I-686), none of which a switch exercises. Evidence:
+      `journalctl -u hostd` shows `guest_freeze` before the shutdown and
+      `guest_thaw` after the boot, every guest back `running` with its
+      earlier pids, `lvs -o seg_monitor` says `monitored`, and the pool
+      unit logged `pool_activated`. `hostd freeze` is all-or-nothing, so
+      this cannot be rehearsed on one guest while others must keep
+      running (I-696).
+- [ ] **The herdr laptop checks** from release r20261008-1 have been run on
+      the owner's laptop. Evidence: the five steps in commit `7bd8807c`'s
+      message, with their output (I-596, I-597, I-598).
 - [x] Tenant isolation verified on a shared host: guest A cannot ping,
       ARP, or port-scan guest B or the host; guest A cannot read the store's
       `.links`; guest A cannot reach 169.254.169.254; a certificate for A is

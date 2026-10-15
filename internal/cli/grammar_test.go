@@ -319,30 +319,110 @@ func TestNotifyShowAndTest(t *testing.T) {
 	if err := NotifyShowCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); got != "email: on, to dev@example.com\nntfy: off\n" {
+	if got := out.buf.String(); got != "email: on, to dev@example.com\nntfy: off\ngchat: off\n" {
 		t.Fatalf("notify: %q", got)
 	}
 	// --ntfy off clears it, as none did.
 	off, url := "off", "https://ntfy.sh/fail-topic"
 	out.buf.Reset()
-	if err := NotifySetCmd(ctx, e, nil, &url); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, &url, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := NotifyTestCmd(ctx, e); exitCode(err) != ExitGeneric {
 		t.Fatalf("a failed ntfy exits %d, want 1", exitCode(err))
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "email: sent\nntfy: failed: the server answered 403\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "email: sent\nntfy: failed: the server answered 403\ngchat: off\n") {
 		t.Fatalf("notify test: %q", got)
 	}
 	out.buf.Reset()
-	if err := NotifySetCmd(ctx, e, nil, &off); err != nil {
+	if err := NotifySetCmd(ctx, e, nil, &off, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := NotifyTestCmd(ctx, e); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.buf.String(); !strings.HasSuffix(got, "ntfy: off\nemail: sent\nntfy: off\n") {
+	if got := out.buf.String(); !strings.HasSuffix(got, "ntfy: off\ngchat: off\nemail: sent\nntfy: off\ngchat: off\n") {
 		t.Fatalf("after --ntfy off: %q", got)
+	}
+}
+
+// --gchat saves a Google Chat webhook; no output shows the URL, only its
+// space, and a broken one shows since when (DECISIONS I-692).
+func TestNotifyGChat(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e, _ := newRoundtripEnv(t, fake)
+	ctx := context.Background()
+	out := &discardWriter{}
+	e.Out = out
+	const key, token = "AIzaSyCliTestKey", "cliTestToken"
+	hook := "https://chat.googleapis.com/v1/spaces/AAAAcli1/messages?key=" + key + "&token=" + token
+	if err := NotifySetCmd(ctx, e, nil, nil, &hook); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli1\n") {
+		t.Fatalf("set: %q", got)
+	}
+	out.buf.Reset()
+	// A URL copied from a thread, token first, is accepted as the api
+	// accepts it.
+	copied := "https://chat.googleapis.com/v1/spaces/AAAAcli2/messages?token=" + token + "&key=" + key + "&threadKey=t1"
+	if err := NotifySetCmd(ctx, e, nil, nil, &copied); err != nil {
+		t.Fatalf("set a copied thread URL: %v", err)
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: on, space AAAAcli2\n") {
+		t.Fatalf("set copied: %q", got)
+	}
+	if err := NotifySetCmd(ctx, e, nil, nil, &hook); err != nil {
+		t.Fatal(err)
+	}
+	out.buf.Reset()
+	if err := NotifyTestCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); got != "email: sent\nntfy: off\ngchat: sent\n" {
+		t.Fatalf("test: %q", got)
+	}
+	// A refused webhook: the test fails, and the settings say since when.
+	bad := strings.Replace(hook, token, "fail-"+token, 1)
+	if err := NotifySetCmd(ctx, e, nil, nil, &bad); err != nil {
+		t.Fatal(err)
+	}
+	out.buf.Reset()
+	if err := NotifyTestCmd(ctx, e); exitCode(err) != ExitGeneric {
+		t.Fatalf("a refused webhook exits %d, want 1", exitCode(err))
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: failed: the server answered 403: the webhook was deleted, or its space removed it\n") {
+		t.Fatalf("refused: %q", got)
+	}
+	out.buf.Reset()
+	if err := NotifyShowCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.Contains(got, "gchat: broken since ") || !strings.Contains(got, "Google refused the webhook") {
+		t.Fatalf("broken: %q", got)
+	}
+	// Invalid: refused, without the URL in the message.
+	nope := "https://evil.example/v1/spaces/A/messages?key=" + key + "&token=" + token
+	err := NotifySetCmd(ctx, e, nil, nil, &nope)
+	if err == nil || strings.Contains(err.Error(), token) {
+		t.Fatalf("invalid: %v", err)
+	}
+	off := "off"
+	out.buf.Reset()
+	if err := NotifySetCmd(ctx, e, nil, nil, &off); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.buf.String(); !strings.HasSuffix(got, "gchat: off\n") {
+		t.Fatalf("off: %q", got)
+	}
+	e.JSON = true
+	out.buf.Reset()
+	if err := NotifyShowCmd(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.buf.String(), `"gchat": null`) {
+		t.Fatalf("json: %s", out.buf.String())
 	}
 }
 

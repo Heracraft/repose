@@ -33,9 +33,9 @@ framing; hostd picks by flag.
 | Notify | Fields | Origin |
 |---|---|---|
 | `Ready` | boot_id | after network up and sshd listening |
-| `AgentEvent` | agent, tmux_window, kind (completed\|needs_input\|error\|agent_message), summary | agent hooks via the unix socket `/run/repose/hooks.sock`; `agent_message` is `repose-notify` (DECISIONS I-244), whose agent may also be `shell`. Also `completed` for gemini and pi when herdr reports a finished turn (I-504). `tmux_window` carries the agent's key: a tmux window name or a herdr agent key (`guest-conventions.md` "herdr"), at most 64 bytes; the field keeps its name and number (I-504) |
-| `AgentState` | agent, tmux_window, state | on change, debounced 5 s; `tmux_window` as in `AgentEvent` |
-| `Question` | question_id (UUIDv7, chosen by guestd), agent, tmux_window, text (1 KB), options (0 to 3, 64 bytes each), timeout_s, state (`""` open, else `cancelled\|expired` when the asker gave up or timed out) | `repose-ask` through the hook socket. Sent when the ask opens, again for every open question on each new hostd connection (the api ignores a repeat), and once more when guestd closes it itself. Open questions live in `/run/repose/questions/<id>.json` (root, 0600) so a guestd restart keeps them (DECISIONS I-244) |
+| `AgentEvent` | agent, tmux_window, kind (completed\|needs_input\|error\|agent_message\|agent_done), summary | agent hooks via the unix socket `/run/repose/hooks.sock`; `agent_message` is `repose-notify` (DECISIONS I-244), whose agent may also be `shell`, and `agent_done` is `repose-notify --done` (I-688). Also `completed` for gemini and pi when herdr reports a finished turn (I-504). `tmux_window` carries the agent's key: a tmux window name or a herdr agent key (`guest-conventions.md` "herdr"), at most 64 bytes; the field keeps its name and number (I-504) |
+| `AgentState` | agent, tmux_window, state (`working\|idle\|needs_input\|running\|unknown`) | on change, debounced 5 s; `tmux_window` as in `AgentEvent`. Since I-694 an agent with prompt hooks is `working` from a `prompt` or `resume` hook to its end-of-turn hook or 2 minutes without output in its tmux pane, `needs_input` from a `needs_input` hook, `idle` otherwise (also before its first hook, and kept across a guestd restart in `/run/repose/agent-hooks.json`); CPU no longer counts. claude and codex are hooked from the start; gemini, pi and opencode once a `prompt` hook from their window arrives; before that, and for any agent without hooks (OpenCode 2), the state is `running`. herdr's reported state is taken as before |
+| `Question` | question_id (UUIDv7, chosen by guestd), agent, tmux_window, text (1 KB), options (0 to 3, 64 bytes each), timeout_s, state (`""` open, else `cancelled\|expired` when the asker gave up or timed out), reason (field 8, I-690: on a close, `terminal` (a prompt to the asking agent), `withdrawn` (`repose-ask --cancel`), `interrupted` (the asker caught a signal), `asker_gone` (no poll for 90 s); empty for an expiry) | `repose-ask` through the hook socket. Sent when the ask opens, again for every open question on each new hostd connection (the api ignores a repeat), and once more when guestd closes it itself; that close is sent again on each new hostd connection for 10 minutes (the api applies a close only to a pending question). Open questions live in `/run/repose/questions/<id>.json` (root, 0600) so a guestd restart keeps them (DECISIONS I-244) |
 | `Warning` | kind, detail | kinds: `disk_high` (over 90 percent), `inotify_exhausted`, `docker_down`, `freeze_timeout`, `store_path_missing` (a path in the running system is absent from the share, which means the host GC'd it), `oom` (the kernel killed a process for memory; detail carries the process name), `tmux_down` (no tmux server for `dev`, sent only when `project.json` names tmux or has no `multiplexer`), `herdr_down` (`project.json` names herdr and its socket refused, or answered a protocol below 22, on two refreshes in a row; DECISIONS I-507). Neither is sent before this guestd has run SetupProject, which starts the session unit, or 60 s after guestd started (I-562). A hostd from before I-507 relays `herdr_down` as `guest_other`; hostd and the api take the kind first and the base that sends it ships after. Each kind is sent at most once per 10 minutes. See DECISIONS I-11 and I-29 |
 
 hostd treats every notification as written by whoever is root in the guest
@@ -54,8 +54,12 @@ Agents (via their wrappers) POST JSON to the Unix socket
 `/run/repose/hooks.sock` (HTTP over unix, group `dev`):
 `{"agent":"claude","kind":"completed","summary":"...","window":"claude"}`.
 guestd relays as `AgentEvent`. `agent` must be one of the five the platform
-ships, `kind` one of `completed|needs_input|error`, and `summary` is truncated
-to 1 KB. The api treats a guest's `AgentEvent` as guest-sourced whatever it
+ships, `kind` one of `completed|needs_input|error|prompt|resume`, and `summary` is truncated
+to 1 KB. A `resume` (I-690) is a turn the agent started on its own: it marks
+the window `working`, closes no question and is not relayed. A `prompt` (I-690) is not relayed: guestd closes the open questions
+asked from the caller's agent process (or, where either has none, from its
+window) with reason `terminal`, and marks the window `working`; its
+`summary`, if any, is dropped unread. The api treats a guest's `AgentEvent` as guest-sourced whatever it
 says (DECISIONS I-441): a kind outside `completed|needs_input|error|agent_message`
 is stored as `error`, and an agent outside the five and `shell` as no agent. `window` is optional: without it guestd resolves the calling process's
 `$TMUX_PANE` through `SO_PEERCRED`, and failing that relays the event under the
@@ -74,11 +78,17 @@ agent is `internal/guestd/hooks` with a recorded fixture per shape in its
 
 The same socket serves `repose-notify` and `repose-ask` (DECISIONS I-244;
 `guest-conventions.md` "Messages and questions"): `POST /notify {agent?,
-window?, text}` → 204, relayed as an `AgentEvent` of kind `agent_message`;
+window?, kind?, text}` → 204, relayed as an `AgentEvent` of kind `agent_message`,
+or `agent_done` when `kind` is `agent_done` (any other kind is `400 unknown_kind`);
 `POST /ask {agent?, window?, text, options?, timeout_s?}` → `201 {id, state:
 open, expires_at}`, announced as a `Question`; `GET /ask/<id>?wait=<s>` (at
-most 25) → `{id, state, answer?, expires_at}` once the question closes or
-the wait ends; `DELETE /ask/<id>` → 204, closes it `cancelled`. An agent not
+most 25) → `{id, state, answer?, reason?, expires_at}` once the question closes or
+the wait ends, and records the poll; `DELETE /ask/<id>?reason=interrupted|withdrawn`
+(default `interrupted`) → 204, closes it `cancelled` with that reason, `409
+question_closed` when it is closed already; `GET /ask?scope=mine|all&agent=&window=`
+→ `{questions: [{id, state, text, expires_at}]}`, the open ones, the
+caller's own by default (asked from its agent process, else its window);
+`DELETE /ask?scope=mine|all&agent=&window=&reason=withdrawn` → `{closed: N}`. An agent not
 among the five is recorded as `shell`. At most 16 questions may be open at
 once (`429 too_many_questions`); guestd expires an open question at its
 timeout (default 30 minutes, at most 24 hours). The hook POST to `/` is

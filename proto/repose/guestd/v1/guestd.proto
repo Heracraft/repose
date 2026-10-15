@@ -118,6 +118,9 @@ message Question {
   repeated string options = 5;
   uint32 timeout_s = 6;
   string state = 7;
+  // Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
+  // (I-690). Empty on an open and on older guests.
+  string reason = 8;
 }
 
 message Notify {
