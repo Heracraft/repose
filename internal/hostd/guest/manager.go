@@ -855,6 +855,12 @@ func validateSecretNames(secrets []*hostdv1.Secret) *Error {
 	return nil
 }
 
+// cacheSecrets records a create's, start's or restore's delivery: the
+// named secrets and the sshd material together. A delivery with nothing in
+// it leaves the cache as it was, because a command that carries nothing
+// (a start the api sent without fields, I-26) has nothing in hand, not an
+// empty set. UpdateSecrets, which is always the whole named set, goes
+// through replaceNamedSecrets instead (I-732).
 func (m *Manager) cacheSecrets(guestID string, secrets []*hostdv1.Secret, sshCAPub string, hostKey, hostCert []byte) *Error {
 	if err := validateSecretNames(secrets); err != nil {
 		return err
@@ -880,10 +886,49 @@ func (m *Manager) cacheSecrets(guestID string, secrets []*hostdv1.Secret, sshCAP
 	return nil
 }
 
+// replaceNamedSecrets makes secrets the guest's whole named set, an empty
+// one included, and keeps the sshd material the cache holds, so a later
+// boot that brings no delivery of its own still writes the host key
+// (I-732). It returns the named set for guestd: the sshd material is not
+// resent, so a secret change does not reload sshd.
+func (m *Manager) replaceNamedSecrets(guestID string, secrets []*hostdv1.Secret) ([]*guestdv1.Secret, *Error) {
+	if err := validateSecretNames(secrets); err != nil {
+		return nil, err
+	}
+	named := make([]*guestdv1.Secret, 0, len(secrets))
+	for _, s := range secrets {
+		named = append(named, &guestdv1.Secret{Name: s.Name, Value: s.Value})
+	}
+	m.mu.Lock()
+	out := make([]*guestdv1.Secret, 0, len(named)+3)
+	out = append(out, named...)
+	for _, s := range m.secrets[guestID] {
+		switch s.Name {
+		case SecretHostKey, SecretHostCert, SecretUserCA:
+			out = append(out, s)
+		}
+	}
+	m.secrets[guestID] = out
+	m.mu.Unlock()
+	return named, nil
+}
+
 func (m *Manager) cachedSecrets(guestID string) []*guestdv1.Secret {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.secrets[guestID]
+}
+
+// cachedHostKey reports whether the cache holds the guest's sshd host key.
+func (m *Manager) cachedHostKey(guestID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, s := range m.secrets[guestID] {
+		if s.Name == SecretHostKey {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) forgetSecrets(guestID string) {

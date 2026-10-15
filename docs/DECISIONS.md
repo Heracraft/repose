@@ -21255,9 +21255,15 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
 - *Rejected:* deleting the snapshot once the copies are restored (the
   retry above), and a hidden snapshot outside the list (it holds a
   tenant's disk; the list is where they see what repose keeps).
-**I-697. An OOM kill in a pane no longer stops the pane: dev's user
+**I-733. An OOM kill in a pane no longer stops the pane: dev's user
 manager, its units and each session scope run with `OOMPolicy=continue`
-(pane-oom, 2026-10-13).** Amends I-576 and I-560. *Made during implementation*: an
+(pane-oom, 2026-10-13; renumbered 2026-10-15).** Amends I-576 and I-560.
+This shipped in r20261014-1 as a second **I-697**, which account-secrets
+had already taken: the two lanes reserved the number on different
+machines, and `release-queue id` reads only the machine it runs on. Account
+secrets keep I-697 because the api's code and tests cite it; this one
+moved, and `nix/flake.nix`, `browser.nix`, `herdr.nix` and the guest tests
+moved with it. *Made during implementation*: an
 agent left running overnight on kanali was gone in the morning, and the
 journal said why.
 - *What happened.* At 02:10:46 the kernel's OOM killer picked one
@@ -22456,3 +22462,45 @@ to send the api before it: the handshake can overlap the api's
   the project list (`REPOSE_TIMING=1`: `stop: s2-b4-probe-a read beside the
   api`); with the list at 690 ms and the read at 590 ms, the stop returned
   in 1.08 s.
+**I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
+sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
+implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`
+of the only secret two running guests had made the api push UpdateSecrets
+with zero secrets; hostd logged `secrets updated count=0`, and the guests
+kept `/run/repose/secrets/<NAME>` and the variable. hostd's cache took a
+delivery only when it held something (`if len(out) > 0`, there since
+709607bb, 2026-09-19), so an empty set never replaced the old one, and
+`updateSecrets` then wrote the cached, old set to guestd. Any removal that
+left a running guest with no named secret did this, a project's own last
+secret too.
+- *Why the guard was there.* `cacheSecrets` serves create, restore and a
+  start; a start the api sent without delivery fields (a host that
+  restarted, I-26) has nothing in hand, and must not wipe the cache. The
+  start already skips `cacheSecrets` then; the guard is kept for those
+  callers.
+- *What changed.* UpdateSecrets is always the guest's whole named set (the
+  api builds it from `DecryptForGuest`, project and account secrets
+  together; proto3 has no "omitted" list to tell apart from an empty one),
+  so it goes through its own path: it replaces the named secrets in the
+  cache, an empty set included, and sends guestd the named set alone.
+- *A second bug the same line hid.* UpdateSecrets carries no sshd material,
+  and the old path replaced the whole cache with it, so after any secret
+  change the cache had no host key, host certificate or user CA. A boot
+  with no delivery of its own (a forced apply reboot, I-590) then started
+  sshd on the tmpfs with none of them. The new path keeps the cached
+  material. guestd is not sent it on an update, so a secret change does not
+  reload sshd, as before.
+- The start's `no_secrets` warning now asks whether the cache has a host
+  key: after a hostd restart an UpdateSecrets fills the named set but
+  brings no sshd material.
+- *Not changed.* guestd's Write already treated an empty list as the whole
+  set (files, `secrets.env`, `secrets.refresh`, tmux); a test now holds it.
+  The api already sent UpdateSecrets on each removal path (project rm,
+  `rm --global` via `accountReach`; `import` only sets); tests in
+  `api/http` (both DELETE routes) and `api/ops` hold the empty set on the
+  wire. hostd keeps the cache in memory only (`state.Guest` stores no
+  secret), so a hostd restart cannot bring an old value back; a hostd test
+  restarts the manager and checks that, and the `no_secrets` warning, both
+  ways. The fake guestd in `internal/hostd/fakeguestd` merged writes,
+  which would have hidden this; it now replaces the named set, as guestd
+  does.
