@@ -189,3 +189,40 @@ func TestRelayDeliversExitStatusBeforeEOF(t *testing.T) {
 		}
 	}
 }
+
+// I-740. An OpenSSH client with stdin from /dev/null sends its EOF right
+// after the exec request, without waiting for the answer. The gateway
+// relays the exec from one goroutine and the EOF from another, so the
+// EOF could reach the guest's sshd first, where it closes nothing: the
+// command's stdin never ended, and `repose stop`'s read of the checkout
+// (which reads stdin) hung in 3 of 8 stops made just after a start on
+// prod. The gateway holds a session's EOF until the guest has accepted
+// the exec.
+func TestRelayHoldsStdinEOFUntilTheExecIsAccepted(t *testing.T) {
+	h := newHarness(t, harnessOpts{})
+	_, key := genKey(t)
+	c, banner, err := h.dial(h.login, h.userCert(t, key, []string{h.project.ID}, time.Hour))
+	if err != nil {
+		t.Fatalf("dial: %v (banner %q)", err, banner)
+	}
+	defer func() { _ = c.Close() }()
+	for i := 0; i < 3; i++ {
+		ch, reqs, err := c.OpenChannel("session", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		go ssh.DiscardRequests(reqs)
+		accepted := make(chan bool, 1)
+		go func() {
+			ok, _ := ch.SendRequest("exec", true, ssh.Marshal(struct{ Command string }{"eof-order"}))
+			accepted <- ok
+		}()
+		time.Sleep(20 * time.Millisecond) // the exec is on the wire; OpenSSH sends its EOF now
+		_ = ch.CloseWrite()
+		out, _ := io.ReadAll(ch)
+		_ = ch.Close()
+		if ok := <-accepted; !ok || string(out) != "eof-after-exec\n" {
+			t.Fatalf("run %d: exec accepted %v, guest said %q; want \"eof-after-exec\\n\"", i, ok, out)
+		}
+	}
+}

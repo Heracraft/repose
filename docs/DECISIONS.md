@@ -22352,6 +22352,215 @@ dashboard, and got an error.
 - `internal/api/notify/gchat_test.go` now asserts the query has **no**
   `requestId`, where it asserted its value before.
 
+**I-740. The stop reads the checkout within its own 15 s, past a dead
+master and with no stdin to wait on, and says when it could not; the
+gateway holds a session's EOF until the guest accepts its command
+(stop-probe, 2026-10-14). Amends I-634, I-710.** *Made during
+implementation.* The owner asked that `repose stop` "tell them 1 file not
+committed then do the rest in the background" (I-710). Live on prod from
+kanali with CLI c5e24d2d, the clause came in 9 of 13 stops, and in 6 of 8
+in this branch's own baseline (s2-b4-probe-a, one untracked file, each stop
+3 s after a start, from a folder that is not a checkout); the other stops
+printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
+- *Two causes.* (1) `probeBeforeStop` read the machine with status's 4 s
+  budget (`statusProcsTimeout`, ssh `ConnectTimeout=3`) and dropped the
+  clause when the budget ran out. On the guest the script takes about
+  0.5 s (ss, ps, stat, the worktree list and `git status` each under
+  0.1 s); the rest is the handshake through the gateway, 0.3 to 3.2 s from
+  kanali, slowest in the first minutes after a start. (2) The script began
+  `repose_have=$(cat)`, and with no laptop checkout there is nothing on
+  stdin. ssh sends its EOF right after the exec request without waiting
+  for the reply; the gateway relays the exec from one goroutine and the
+  EOF from another (`pipe` in `internal/gateway/relay.go`), and when the
+  EOF reached the guest's sshd first, a session with no command yet had
+  no stdin to close, so `cat` waited out every budget. `ssh -vv` of the
+  script, run 3 s after a start, hung 3 times in 8 with `exec request
+  accepted` and then nothing; `x=$(cat)` from a running guest, 1 in 20;
+  the same command without `cat`, 0 in 20. With data on stdin the EOF
+  follows the data, which sshd buffers until the command has a stdin, so
+  the reads that sent the laptop's commits were not hit. Measured from a
+  checkout through prod's gateway (c5e24d2d, without the gateway change
+  below): s2-b4-probe-c, a temporary machine with a `repose` remote added
+  by hand, one untracked file, each stop 3 s after a start, every read
+  sending the laptop's commit (the 1614-byte script with `$(cat)`): the
+  clause in 8 of 8 stops, 2.4 to 3.9 s with the fetch before each, and
+  3 of 3 status reads of the running machine.
+- *The stop's read.* `stopProbeTimeout` is 15 s, with ssh's
+  `ConnectTimeout` at the budget less a second, at most 10 s. A stop is
+  the last moment the machine can be read, and a slow network makes the
+  handshake slow, not wrong. `repose status` keeps 4 s: it can be run
+  again, and its rows do not wait on the guest. A ControlPersist master
+  that answers `-O check` but whose connection died (the laptop slept)
+  would hold the read for the whole 15 s, so the read calls `masterAlive`
+  first (I-491), which stops a dead master; a live one carries the read.
+  Status's read does the same (`guestStatusWithin`), so after a sleep
+  the two read the machine alike. The budget counts from before
+  `masterAlive`: a dead master's check (up to about 2 s) comes out of it,
+  so the read never waits past the budget the line names. A read that
+  times out says how long it waited, in whole seconds: the budget, or
+  less when ssh's `ConnectTimeout` gave up first (`no ssh answer in
+  10 s`).
+  `--wait` and the commands that stop through `stopOne` (`resize --size`,
+  `fork`, run's plan question) use the same read.
+- *No stdin when there is nothing to send.* `statusScript` sets
+  `repose_have=` and reads no stdin when the laptop has no commits to send,
+  which covers the owner's case of stopping a machine from another folder.
+  `repose status` uses the same script.
+- *The gateway.* A session's EOF to the guest now waits until the guest
+  has answered the client's exec, shell or subsystem request, or the
+  client's requests have ended. Every `ssh <slug>.repose CMD </dev/null`
+  whose command reads stdin had the same race, `repose exec` without `-i`
+  among them. `TestRelayHoldsStdinEOFUntilTheExecIsAccepted`: a fake
+  guest that takes 300 ms to accept, as one just after a boot does, says
+  whether the EOF was already there; it was on every run before the fix.
+- *When the read fails, the line says so*, in the words status's checkout
+  row uses (`checkoutUnknown`, shared): `Stopping job; checkout unknown (no
+  ssh answer in 15 s).` or `... (ssh failed: Connection refused).` A
+  machine that answered with no checkout still adds nothing. stop-left.json
+  keeps the failure (`error`, `detail`, `waited_s`, with `rows` null), and
+  `repose status` on the stopped machine says `checkout   unknown at the
+  stop, 9h ago (no ssh answer in 15 s)` and `--json` `git_error`: no row
+  would read as a machine with no checkout (I-634's reason for the
+  running machine's row). A CLI before this one reads such an entry as no
+  rows. A Ctrl-C while the stop waits for its early read (I-741) is not
+  a timeout: the stop ends, the line is not printed and nothing is kept.
+- *Measured* from kanali on prod, s2-b4-probe-a (large), one untracked
+  file, eight stops per CLI with the two CLIs taking turns, the network
+  faster than in the baseline (the project list answered in 60 to 180 ms,
+  not 530 to 590): main 6 of 8 with the clause, 0.8 to 4.5 s (median
+  1.0 s); this branch 8 of 8, 0.55 to 1.3 s (median 0.85 s), and 8 of 8 more in a row, 0.8 to 2.0 s, while kanali ran the CLI's tests. With an ssh that never answers, the stop printed `Stopping s2-b4-probe-a; checkout unknown (no ssh answer in 15 s).` and the machine stopped. A first build
+  with the 15 s budget but still reading stdin had 6 of 8, two of them
+  `checkout unknown (no ssh answer in 15 s)` after 15.2 s, which is how
+  the second cause was found.
+- *Not done:* the gateway change is live only after a release that ships
+  the gateway; until then the CLI's script change is what keeps the
+  stop's read off the race.
+
+**I-741. `repose stop NAME` reads the machine beside the api's read of the
+project (stop-probe, 2026-10-14).** *Made during implementation.* The read
+needs only the slug, and after resolving the project the stop has nothing
+to send the api before it: the handshake can overlap the api's
+`GET /projects`, as run's early probe does (I-223).
+- `startStopProbes` starts a read for each name given on the command line
+  before `resolveProjects`, with the laptop's commits computed from the
+  cache's guess for the project (`cachedGuess`: id and remote), or from the
+  slug alone. The stop uses that read when the api returns the same slug,
+  `running`, and the laptop's commits computed for the real project after
+  the fetch are the same ones the read sent (a fetch that brought commits
+  changes the count, so the machine is read again), and the read started
+  at most 10 s before (`stopEarlyMaxAge`: an agent that the busy-agent
+  question asked about kept working while the user answered). Otherwise
+  it reads again. The reads end with the command.
+- Not for `repose stop` with no name or `--unused`: in a checkout, the
+  fetch before the stop (I-615) leaves a ControlPersist master that the
+  read rides, and `--unused` learns its machines from the api.
+- A name that resolves to a machine that is not running costs one
+  refused connection. The gateway caches that refusal for 5 s; nothing in
+  the stop connects again.
+- *Rejected:* sending the stop to the api beside the read. hostd's stop
+  freezes the guest's filesystems for the snapshot as its first step and
+  shuts the guest down straight after (I-404), and on prod the engine had
+  the op about 0.1 s after the `202`, so the read would race the shutdown,
+  and its `git status` could wait on a frozen filesystem. An api that held
+  the stop until the CLI's read would gain the api's ~50 ms and needs a
+  contract change.
+- *Measured:* in each of this branch's stops in I-740 the read ran beside
+  the project list (`REPOSE_TIMING=1`: `stop: s2-b4-probe-a read beside the
+  api`); with the list at 690 ms and the read at 590 ms, the stop returned
+  in 1.08 s.
+**I-742. The apply reports its own steps' times.** (sync-idle,
+2026-10-14) A first sync on prod (r20261014-2's live check, CLI and api
+c5e24d2d) took about 47 s, and the guest sat about 20 s between the
+GitHub pack landing and the checkout with nothing on the laptop's side
+to say why: `REPOSE_TIMING` timed the apply's ssh as one span. The apply
+now marks the end of each step on stdout (`#t <step> <seconds>`, bash's
+`$EPOCHREALTIME`, no process per mark), and `REPOSE_TIMING=1` prints
+each as `sync apply <step> <ms>`, its time since the mark before: upload
+(the payload unpacked), logins (a first sync with fetches: the logins
+and the git config, I-743) or carry, fetch (the wait for the fetches),
+checks, guard, checkout, diffs, submodules, record, carry (the rest of a
+first sync's carry), end. No path, no value. `ops/dev` scripts and the
+public docs' "prints how long each step took" cover it unchanged.
+- *What the marks found* (creates of one fixture from kanali,
+  2026-10-14 21:30-22:45Z, host-01: a superproject with origin
+  github.com/heracraft/repose and 3 laptop-only commits, jqlang/jq as an
+  8.6 MiB submodule fetched by the guest, kanali's real logins and
+  Claude files). On c5e24d2d the sync phase took 5.5 to 9.5 s (9 runs,
+  mean 6.8 s) with an apply of 4.4 to 8.2 s. In 4 runs of c5e24d2d with
+  the marks added, of an apply of 4.6 to 5.2 s, 2.2 to 2.8 s was the
+  carry, run whole before the fetch was joined, and the fetch itself
+  (1.1 to 1.4 s) ended inside it; after it guard 0.3 s,
+  checkout 0.04 s, the submodule's steps 0.6 to 0.9 s, record 0.3 to
+  0.7 s, end 0.15 to 0.4 s. The carry is about 700 small processes over
+  ten parts, none over 0.5 s (a set -x trace on the guest). The payload
+  is 4.3 MB, nearly all of it the carry, whose largest files are the
+  Claude carry's skills, XML schemas three times over, sent as a plain
+  tar: 7.0 s of the apply's upload at
+  5 Mbit/s. The 20 s gap did not come back on any of 33 creates; the
+  live check's run had booted in 48 s on a busy host-01, where a carry
+  of 700 processes and an unthrottled tools install would stretch. Only
+  that run stays unexplained; on the next one, the marks name the step.
+- *Rejected:* batching the apply's git calls into one script (the
+  analysis's first idea): on these runs the git steps after the fetch
+  are 1.5 to 2.5 s in all, the checkout of a 900-file tree 0.04 s, and
+  the I-210 script that would be rewritten went through three reviews;
+  a set -x trace by default (1,600 lines per apply, and it would print
+  paths).
+
+**I-743. A first sync checks out beside the rest of the carry, and the
+carry travels compressed.** (sync-idle, 2026-10-14; amends I-713, I-224)
+From I-742's marks, two cuts:
+- *The carry beside the checkout.* On a first sync with fetches (I-713)
+  the apply starts the carry's script in the background. Its first half
+  is the logins' lines and the git part, now the first part of the carry
+  (`addCarry`), and ends with a line that touches the file
+  `REPOSE_CARRY_EARLY` names (nothing when it is unset, as in the
+  carry's own ssh). The apply waits for that file, or for the carry's
+  end when it stops before it, then touches `creds` (a private
+  repository's fetch needs only the logins) and goes on: the checkout
+  needs the git config (the carried `core.*` keys and excludes), and
+  nothing else of the carry. The Claude, MCP and tools parts run beside
+  the checkout and are joined after the record, before the fresh shell,
+  which should start with everything the carry wrote; the reply lines
+  print then. A carry that failed in its first half still fails the
+  apply before the checkout is touched, with the same message. Every
+  other way out joins it too: the `#needfull` exit waits for it and
+  prints its lines (the second payload carries no carry, as before), and
+  the EXIT trap waits for it before removing the payload it reads, so no
+  part is cut off half way. Later syncs keep the carry in line: their
+  stash and merge need the identity the carry writes, and their carry
+  is usually a few markers.
+- *The carry's tar compressed.* `guestPayload` sends its tar gzipped
+  (`tar -xz` in the carry's script), in the apply's payload as
+  `carry.tar.gz` and in the carry's own ssh. ssh sends its stdin as it
+  is given (no `Compression`), and kanali's carry is 4.3 MB of tar and
+  0.66 MB gzipped, 74 ms to compress. The bundles and the untracked tar
+  stay as they are: a bundle is already compressed, and no measurement
+  says the untracked files are worth the CPU.
+- *Evidence* (prod, host-01, from kanali, the fixture of I-742, each run
+  a fresh `repose run --temp --name s2-b4-idle-<x> --no-attach`, removed
+  after). Interleaved, unthrottled: c5e24d2d 6.9, 6.4, 7.3, 6.9 s, the
+  branch 6.2, 6.1, 5.6, 5.8 s (apply 5.2 to 5.5 s against 3.8 to 4.4 s);
+  the rest of the carry ends 15 to 35 ms after the record, so it is
+  hidden. On this build the apply waits 0.76 to 1.24 s for the logins
+  and the git config (7 runs). Uplink held to 5 Mbit/s by a throttle on
+  ssh's stdin: c5e24d2d 13.9 and 14.1 s (a 4.3 MB payload), the branch
+  6.1, 6.0 and 5.9 s (0.67 MB; upload 1.1 to 1.3 s where it was 7.0). An
+  earlier build of the branch with the carry beside the checkout and the
+  tar not yet gzipped took 4.7, 5.3 and 4.9 s unthrottled (not
+  interleaved with c5e24d2d, logins 0.71 to 0.81 s) and 12.0 and 11.8 s
+  at 5 Mbit/s, still sending 4.3 MB: of the throttled gain, about 2 s is
+  the carry beside the checkout and about 6 s the gzip. A submodule
+  whose origin GitHub lacks: `sync fetch s0 failed`, the I-712 line, a
+  second payload of 1964 commits, HEADs 84eec58 and 0404249, clean tree,
+  every login and carry marker written. A private 4.75 MiB submodule
+  (fetched with gh's login after the anonymous attempt fails): 9.7 s
+  against 11.6 s on c5e24d2d, its fetch done 2 s sooner, HEADs right on
+  both. A first sync interrupted 6 s into a 1 Mbit/s upload (SIGINT to
+  the process group): no HEAD; `repose sync` then ended in 5.8 s with
+  the right HEADs, the untracked 3 MB file byte for byte and the logins
+  in. The third whole payload (the kept payload gone) is covered by
+  TestPrefetchResendWithoutTheKeptPayload, not on prod.
 **I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
 sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
 implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`
@@ -22394,3 +22603,9 @@ secret too.
   ways. The fake guestd in `internal/hostd/fakeguestd` merged writes,
   which would have hidden this; it now replaces the named set, as guestd
   does.
+
+**I-744. A project with no remote of its own fetches from the checkout's origin; amends I-713.** (temp-prefetch, 2026-10-15) The conductor's live check of r20261014-2 found that `repose run --temp` uploaded the whole history from the laptop. On a tmux clone (25.3 MiB of history) with jq as a submodule, a named create sent 662,528 B and printed `sync fetch top partial`; `--temp` sent 23,229,440 B and had no top fetch. A temporary project records no remote_url (I-351), so the sync passed NoRemote, planPrefetch got an empty top URL, and only the submodules were fetched: their URLs come from the laptop's own config. I-713's measurements used named projects, which is why nobody saw it.
+- The fetch's source is now the project's remote, or, when the project has none, the checkout's own `remote.origin.url`, normalised the way a submodule's is. The same planPrefetch rules apply: github.com, at least 4 MiB of history, blobless first and then backfilled for a public repository.
+- The source feeds only the fetch and the summary's "history cloned from" line. The guest still gets no `origin` for a project without a remote, and the project still records no remote_url (I-351). The laptop's bundle is still made against the checkout's own `refs/remotes/origin/*`, as for a named project.
+- A checkout whose origin is some other repository is safe: the apply checks that every commit it needs arrived and asks for the full payload when one is missing (I-713's #needfull).
+- *Evidence.* TestPrefetchWithoutAProjectRemoteUsesTheCheckoutsOrigin syncs with NoRemote from a checkout whose origin is the fixture's github.com/a/b. Before the fix, the summary was "1 new commit" sent from the laptop. After, it reads cloned from github.com with no commit sent, and the guest has no origin.

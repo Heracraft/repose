@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-748 entries.
+753 entries.
 
 ## Scope
 
@@ -308,7 +308,7 @@ pointer, not a summary.
 - **I-221** `run` carries the laptop's global tools; the guest installs what it lacks in the background, from nixpkgs first — 2026-09-23; L5026
 - **I-222** `run` scans the checkout for the commands its scripts run and the node major it pins; `repose scan` shows the result — 2026-09-23; L5063
 - **I-223** `repose run` and `attach` spend round trips only where something changed; `REPOSE_TIMING=1` shows where the time goes — amended by I-491; L5094
-- **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; L5141
+- **I-224** The sync's writes are one ssh, and none when nothing changed — amended by I-713; amended by I-743; L5141
 - **I-225** Server side of a start: hostd dials a booting guest's guestd every 200 ms, guestd skips a registration it already loaded, and a sample from before a start is not the new guest's — amended by I-588; L5175
 - **I-228** Tools that download their own binaries work in the guest with their stock commands — 2026-09-23; L5204
 - **I-227** Every package manager's user bin dir is on PATH for every process of dev's — 2026-09-23; amended by I-520; amended by I-563; L5274
@@ -683,7 +683,7 @@ pointer, not a summary.
 - **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; L17783
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17880
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17919
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; L18017
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; L18017
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18080
 - **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; L18112
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18154
@@ -745,7 +745,7 @@ pointer, not a summary.
 - **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L20745
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L20756
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L20765
-- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; L20771
+- **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L20771
 - **I-711** New machines stay `large` by default on every plan, Solo included (stop-background, 2026-10-13) — L20787
 - **I-697** Account secrets: a named secret set once for every project, with the project's own winning (account-secrets, 2026-10-13) — L20795
 - **I-698** The dashboard shows account secrets on Settings and on each project's Secrets page (account-secrets, 2026-10-13) — L20871
@@ -774,9 +774,14 @@ pointer, not a summary.
 - **I-729** The agent process-name predicate lives in a leaf package, so `repose-hook` does not link gRPC (batch r20261014-1, 2026-10-14; amends I-690) — L22061
 - **I-730** A fork or a start that waits out a background stop, after fork-fast and attach-run-home (stop-background, 2026-10-14) — L22096
 - **I-712** A large submodule's history comes from GitHub on the first sync; amends I-263 — 2026-10-13; L22122
-- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; L22147
+- **I-713** The guest's GitHub fetch runs inside the apply's ssh, overlapped with the upload; amends I-203 and I-224 — 2026-10-13; amended by I-743; amended by I-744; L22147
 - **I-714** A public repository's first fetch is blobless, then backfilled; amends I-203 — 2026-10-13; L22218
 - **I-715** The threshold is 4 MiB, and a sync reports its time — 2026-10-13; L22262
 - **I-716** The fetch does not start during boot — 2026-10-13; L22309
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22320
-- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22355
+- **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22355
+- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22439
+- **I-742** The apply reports its own steps' times — 2026-10-14; L22471
+- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22510
+- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
+- **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607

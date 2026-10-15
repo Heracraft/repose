@@ -209,7 +209,11 @@ test('a Save with a change to save does not look disabled', async ({ page }) => 
 	const resting = await colour();
 	await page.getByLabel('ntfy URL').fill('https://ntfy.sh/repose-look');
 	await expect(save).toBeEnabled();
-	expect(await colour()).not.toBe(resting);
+	// The colour transitions over 150 ms (layout.css), so one read taken right
+	// after the button is enabled can still see the resting colour: this failed
+	// once in each full run of the suite on the r20261015-2 tree and never when
+	// the file ran alone. The matcher below retries until the colour changes.
+	await expect(save).not.toHaveCSS('color', resting);
 });
 
 test('Sign out on Settings signs out', async ({ page }) => {

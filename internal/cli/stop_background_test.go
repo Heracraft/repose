@@ -143,10 +143,10 @@ func TestStartWaitsForAStopUnderWay(t *testing.T) {
 func TestStoppingLineSaysWhatItLeaves(t *testing.T) {
 	n := func(i int) *int { return &i }
 	rows := []gitRow{{Worktree: "job", Branch: "main", NotOnLaptop: n(0), Uncommitted: n(1)}}
-	if l := stoppingLine("job", rows); l != "Stopping job; 1 file not committed." {
+	if l := stoppingLine("job", guestStatus{git: rows}); l != "Stopping job; 1 file not committed." {
 		t.Fatalf("line %q", l)
 	}
-	if l := stoppingLine("job", nil); l != "Stopping job." {
+	if l := stoppingLine("job", guestStatus{}); l != "Stopping job." {
 		t.Fatalf("clean %q", l)
 	}
 }

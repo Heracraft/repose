@@ -274,7 +274,7 @@ func prefetchUnpackScript(plan *prefetchPlan) string {
 	} else {
 		t += "rm -rf \"$t\"\nmkdir -p \"$t\"\n"
 	}
-	return t + "trap '[ -n \"$repose_keep\" ] || rm -rf \"$t\"; [ -z \"$repose_pfp\" ] || kill $repose_pfp 2>/dev/null' EXIT\ntar -x -C \"$t\"\n"
+	return t + "repose_cpid=\ntrap '[ -z \"$repose_cpid\" ] || wait \"$repose_cpid\" 2>/dev/null || true; [ -n \"$repose_keep\" ] || rm -rf \"$t\"; [ -z \"$repose_pfp\" ] || kill $repose_pfp 2>/dev/null' EXIT\ntar -x -C \"$t\"\n" + applyMarkUpload
 }
 
 // resendKeeps reports whether a payload entry is sent again when the
@@ -303,14 +303,19 @@ func resendKeeps(name string) bool {
 // the checkout is touched.
 func prefetchJoinScript(plan *prefetchPlan, carryScript string, topBundle bool, subBundles map[int]bool) string {
 	var b strings.Builder
+	b.WriteString(carryJoinFn)
 	if carryScript != "" {
-		// Without the lock's descriptor: what the carry starts must not
-		// hold it.
-		b.WriteString("{\n" + carryScript + "} 9>&-\n")
+		// In the background, without the lock's descriptor (what the
+		// carry starts must not hold it). Its first half, the logins and
+		// the git config, is waited for here: a private repository's
+		// fetch needs the logins, the checkout the git config. The rest
+		// (Claude, MCP servers, tools) runs beside the checkout and is
+		// joined before the fresh shell (I-743).
+		b.WriteString(carryBackground + applyMark("logins"))
 	}
 	b.WriteString(": > \"$repose_pf/creds\"\n")
 	if !plan.resume {
-		b.WriteString("[ -z \"$repose_pfp\" ] || wait $repose_pfp || true\nrepose_pfp=\n")
+		b.WriteString("[ -z \"$repose_pfp\" ] || wait $repose_pfp || true\nrepose_pfp=\n" + applyMark("fetch"))
 		for _, r := range plan.repos {
 			_, _ = fmt.Fprintf(&b, "if [ -f \"$repose_pf/%[1]s.res\" ]; then { IFS= read -r repose_l; IFS= read -r repose_ms; } < \"$repose_pf/%[1]s.res\"; printf '#pf %[1]s %%s\\n#pfms %[1]s %%s\\n' \"$repose_l\" \"$repose_ms\"; else echo '#pf %[1]s failed the fetch did not finish'; fi\n", r.key)
 		}
@@ -340,7 +345,7 @@ func prefetchJoinScript(plan *prefetchPlan, carryScript string, topBundle bool, 
 			_, _ = fmt.Fprintf(&b, "{ %sGIT_NO_LAZY_FETCH=1 git -C \"%s\" cat-file -e %s 2>/dev/null; } || repose_need=yes\n", inBundle, dir, shQuote(c+"^{commit}"))
 		}
 	}
-	b.WriteString("if [ -n \"$repose_need\" ]; then\n  echo '#needfull'\n")
+	b.WriteString("if [ -n \"$repose_need\" ]; then\n  repose_carry_join\n  echo '#needfull'\n")
 	for _, r := range plan.repos {
 		dir := "."
 		if r.sub >= 0 {
@@ -355,9 +360,37 @@ func prefetchJoinScript(plan *prefetchPlan, carryScript string, topBundle bool, 
 	}
 	// The rest of this payload stays for the second, which carries the
 	// bundles alone; the carry has run and is not sent again.
-	b.WriteString("  rm -f \"$t/bundle\" \"$t/bases\" \"$t\"/carry.* \"$t\"/sub/*/bundle\n  repose_keep=yes\n  exit 0\nfi\n")
+	b.WriteString("  rm -f \"$t/bundle\" \"$t/bases\" \"$t\"/carry.* \"$t\"/sub/*/bundle\n  repose_keep=yes\n  exit 0\nfi\n" + applyMark("checks"))
 	return b.String()
 }
+
+// carryJoinFn waits for a carry carryBackground started, fails the apply
+// as the carry in line did when it failed, and prints its reply lines.
+// Every path out of the apply joins it (the EXIT trap only waits), so no
+// part is cut off half way and its files are not removed under it.
+var carryJoinFn = `repose_carry_join() {
+  [ -n "$repose_cpid" ] || return 0
+  wait "$repose_cpid" 2>/dev/null || true
+  repose_cpid=
+  [ "$(cat "$t/carry.rc" 2>/dev/null)" = 0 ] || { echo ` + shQuote(carryFailed) + ` >&2; exit 1; }
+  while IFS= read -r l || [ -n "$l" ]; do printf '` + carryLinePrefix + `%s\n' "$l"; done < "$t/carry.out"
+}
+`
+
+// carryBackground starts the carry's script in the background and waits
+// for its first half (carryEarlyLine), or for its end when it stops
+// before that: a carry that failed then fails the apply before the
+// checkout is touched.
+const carryBackground = `{ if REPOSE_CARRY_EARLY="$t/carry.early" bash "$t/carry.sh" < "$t/carry.tar.gz" > "$t/carry.out"; then echo 0 > "$t/carry.rc"; else echo 1 > "$t/carry.rc"; fi; } 9>&- &
+repose_cpid=$!
+while [ ! -e "$t/carry.early" ] && [ ! -e "$t/carry.rc" ] && kill -0 "$repose_cpid" 2>/dev/null; do sleep 0.05; done
+[ -e "$t/carry.early" ] || repose_carry_join
+`
+
+// prefetchCarryJoin is where an apply with fetches waits for the rest
+// of its carry: after the checkout and its record, before the fresh
+// shell, which should start with everything the carry wrote.
+const prefetchCarryJoin = "repose_carry_join\n"
 
 // prefetchSubPlace is the start of a prefetched submodule's lines in the
 // apply, in place of `git init`: the repository its fetch made moves into

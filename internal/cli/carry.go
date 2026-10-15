@@ -3,6 +3,7 @@ package cli
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -158,8 +159,23 @@ type guestPayload struct {
 func newGuestPayload() *guestPayload {
 	p := &guestPayload{}
 	p.tw = tar.NewWriter(&p.buf)
-	p.script.WriteString("set -e\nt=$(mktemp -d)\ntrap 'rm -rf \"$t\"' EXIT\ntar -x -C \"$t\"\n")
+	p.script.WriteString("set -e\nt=$(mktemp -d)\ntrap 'rm -rf \"$t\"' EXIT\ntar -xz -C \"$t\"\n")
 	return p
+}
+
+// gz is the tar as it travels: compressed (I-743). A Claude carry is
+// mostly text (skills, schemas), 4.3 MB of it on the laptop that
+// measured it, 0.66 MB compressed, and ssh sends it as it is given.
+func (p *guestPayload) gz() ([]byte, error) {
+	var out bytes.Buffer
+	w := gzip.NewWriter(&out)
+	if _, err := w.Write(p.buf.Bytes()); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 // file adds one file to the tar, 0600.
@@ -203,13 +219,27 @@ func (p *guestPayload) run(ctx context.Context, t sshTarget) ([]byte, error) {
 	if observePayload != nil {
 		observePayload(p.script.String(), p.buf.Bytes())
 	}
-	return runSSH(ctx, t, p.script.String(), &p.buf)
+	z, err := p.gz()
+	if err != nil {
+		return nil, err
+	}
+	return runSSH(ctx, t, p.script.String(), bytes.NewReader(z))
 }
 
 // addCarry adds every part opts asks for to p and returns the labels of
 // the parts it added.
 func addCarry(p *guestPayload, opts carryOptions) ([]string, error) {
 	var sent []string
+	// The git config first, after the logins: those two are all a
+	// checkout needs (the carried core.* keys and excludes, gh's helper),
+	// and a first sync's apply checks out as soon as they are in, beside
+	// the rest of the carry (I-743).
+	if ok, err := addGitPart(p, opts.Git, opts); err != nil {
+		return nil, err
+	} else if ok {
+		sent = append(sent, "git")
+	}
+	p.script.WriteString(carryEarlyLine)
 	// The zone is sent when it differs from the one the guest last took;
 	// a reboot keeps it (repose-tmux-session reads /etc/repose/env, and
 	// the next start's SetupProject writes the project's tz, which the CLI
@@ -225,11 +255,6 @@ func addCarry(p *guestPayload, opts carryOptions) ([]string, error) {
 			return nil, err
 		}
 		sent = append(sent, "cli-version")
-	}
-	if ok, err := addGitPart(p, opts.Git, opts); err != nil {
-		return nil, err
-	} else if ok {
-		sent = append(sent, "git")
 	}
 	cs, err := addClaudeParts(p, opts.Claude, opts)
 	if err != nil {
@@ -248,6 +273,12 @@ func addCarry(p *guestPayload, opts carryOptions) ([]string, error) {
 	sent = append(sent, ts...)
 	return sent, nil
 }
+
+// carryEarlyLine ends the carry's first half, the logins and the git
+// config: an apply that runs the carry in the background is told by the
+// file REPOSE_CARRY_EARLY names (I-743). Without it, nothing. Not a
+// line of p's own: a carry with nothing else is still empty.
+const carryEarlyLine = `[ -z "${REPOSE_CARRY_EARLY:-}" ] || : > "$REPOSE_CARRY_EARLY"` + "\n"
 
 // markerScript is the shell that prints the guest's markers as
 // `#marker <item> <hash>` lines.

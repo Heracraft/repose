@@ -16,6 +16,9 @@ and elapsed time on a terminal, or one line per phase elsewhere (I-154).
 $ repose stop todo-app                  # returns once the stop is under way (I-710)
 Stopping todo-app; 1 file not committed.
 
+$ repose stop todo-app                  # the machine did not answer in 15 s (I-740)
+Stopping todo-app; checkout unknown (no ssh answer in 15 s).
+
 $ repose stop todo-app --wait
 Snapshotting and stopping todo-app...
 Stopped todo-app in 11s with a 2.1 GB snapshot.
