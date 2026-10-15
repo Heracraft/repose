@@ -158,11 +158,13 @@ Ownership:
 
 A seat is 8 GB of memory that may run at once on the fleet; Solo holds one,
 Plus two, Pro four (`docs/PRICING.md`, DECISIONS I-290, I-362). The fleet has as many seats
-as its `ready`, undrained hosts have usable 8 GB blocks, or `SEATS_TOTAL`
-when the operator set it. Seats are held by every subscription that is
-`trialing`, `active` or `past_due` and by every waitlist invitation whose
-72-hour hold has not run out. `POST /billing/checkout` needs the plan's
-seats free; otherwise, and on `POST /billing/waitlist`, the user joins the
+as its `ready`, undrained hosts deliver, each the smaller of its usable
+8 GB blocks and what its physical cores can serve (I-739), or
+`SEATS_TOTAL` when the operator set it. Seats are held by every
+subscription that is `trialing`, `active` or `past_due` and by every
+waitlist invitation whose 72-hour hold has not run out.
+`POST /billing/checkout` needs the plan's seats free; otherwise, and on
+`POST /billing/waitlist`, the user joins the
 waitlist and gets `503 waitlisted` with `{position, joined_at, email}`. The
 CLI prints the api's sentence as it is, `repose is full right now. You're
 number N on the waitlist; we'll email you@example.com when there's a

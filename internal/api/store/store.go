@@ -112,7 +112,11 @@ func (p *Project) HeldBytes() int64 {
 
 const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at`
 
-// Host is a hosts row.
+// Host is a hosts row. Cores is the host's physical cores, which
+// placement counts committed guest vCPUs against (0027, DECISIONS I-735,
+// I-736); VCPUs is the SMT thread count, twice that on every shape repose
+// runs. Cores is 0 when it is unknown: a host that registered before the
+// field and has not rotated since.
 type Host struct {
 	ID            uuid.UUID     `db:"id"`
 	Name          string        `db:"name"`
@@ -122,6 +126,7 @@ type Host struct {
 	Region        *string       `db:"region"`
 	MemBytes      int64         `db:"mem_bytes"`
 	VCPUs         int           `db:"vcpus"`
+	Cores         int           `db:"cores"`
 	PoolBytes     int64         `db:"pool_bytes"`
 	GuestCIDR     *netip.Prefix `db:"guest_cidr"`
 	WGPubkey      *string       `db:"wg_pubkey"`
@@ -148,7 +153,7 @@ type Host struct {
 	UpdatedAt          time.Time  `db:"updated_at"`
 }
 
-const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
+const hostCols = `id, name, hostname, sku, provider, region, mem_bytes, vcpus, cores, pool_bytes, guest_cidr, wg_pubkey, wg_ip, state, draining, free_mem_bytes, pool_free_bytes, pool_unavailable, load1, running_guests, last_heartbeat_at, cert_serial, prev_cert_serial, cert_expires_at, nixos_system, ch_version, join_token_hash, join_token_expires_at, registered_at, created_at, updated_at`
 
 // Op is an ops row.
 type Op struct {

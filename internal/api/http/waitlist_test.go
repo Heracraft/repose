@@ -15,7 +15,8 @@ import (
 	"github.com/heracraft/repose/internal/db"
 )
 
-// DECISIONS I-290: seats are the fleet's 8 GB blocks (or SEATS_TOTAL),
+// DECISIONS I-290: seats are what the fleet's hosts deliver (or
+// SEATS_TOTAL), the smaller of memory and cores per host since I-739,
 // held by live subscriptions and unexpired invitations. Reserve says
 // whether a checkout may proceed and otherwise puts the user on the list;
 // POST /billing/waitlist joins it idempotently; GET /public/seats counts
@@ -45,9 +46,10 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 		return n
 	}
 	// The harness host is all reserve (8 GB); a second host of 24 GB has
-	// two 8 GB blocks after its reserve: the fleet has two seats.
-	exec("update hosts set mem_bytes = $2 where id = $1", e.h.HostID, int64(8)<<30)
-	exec("insert into hosts (id, name, state, mem_bytes) values ($1, 'host-wl', 'ready', $2)", store.NewID(), int64(24)<<30)
+	// two 8 GB blocks after its reserve, and 32 physical cores to serve
+	// them, so memory is what bounds the fleet: it has two seats.
+	exec("update hosts set mem_bytes = $2, cores = 32 where id = $1", e.h.HostID, int64(8)<<30)
+	exec("insert into hosts (id, name, state, mem_bytes, cores) values ($1, 'host-wl', 'ready', $2, 32)", store.NewID(), int64(24)<<30)
 	filler := e.h.NewUser("filler")
 	exec("insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_filler', $1, 'ctm_filler', 'plus', 'active', 2)", filler.ID)
 
@@ -284,10 +286,22 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 	if ws, err := store.ListWaiting(ctx, e.h.Pool); err != nil || len(ws) != 0 {
 		t.Fatalf("still waiting: %+v %v", ws, err)
 	}
-	c, src, err := (&waitlist.Service{Pool: e.h.Pool, Total: 10, Now: func() time.Time { return clock.Add(time.Minute) }}).CountSource(ctx)
-	// Held: B's subscription, D's hold, C's hold.
-	if err != nil || src != waitlist.SourceConfig || c != (waitlist.Count{Total: 10, Held: 3, Free: 7, Waiting: 0}) {
-		t.Fatalf("count from config %+v %s %v", c, src, err)
+	c, src, der, err := (&waitlist.Service{Pool: e.h.Pool, Total: 10, Now: func() time.Time { return clock.Add(time.Minute) }}).CountSource(ctx)
+	// Held: B's subscription, D's hold, C's hold. A total that came from
+	// SEATS_TOTAL was derived from nothing, so it carries no ceilings.
+	if err != nil || src != waitlist.SourceConfig || c != (waitlist.Count{Total: 10, Held: 3, Free: 7, Waiting: 0}) || der != (waitlist.Derivation{}) {
+		t.Fatalf("count from config %+v %s %+v %v", c, src, der, err)
+	}
+	// The CPU ceiling binds below the memory ceiling (I-739): 64 GB is
+	// seven 8 GB blocks, but eight physical cores serve one busy seat, so
+	// the fleet is one seat and `repose-admin seats` has both figures.
+	exec("update hosts set mem_bytes = 64::bigint<<30, cores = 8 where name = 'host-wl'")
+	c, src, der, err = svc.CountSource(ctx)
+	// Both hosts are counted: the harness host's 32 cores could serve 11
+	// seats and its memory none, which is why one enum could not say
+	// which ceiling bound the fleet.
+	if err != nil || src != waitlist.SourceHosts || c.Total != 1 || der != (waitlist.Derivation{Hosts: 2, Memory: 7, CPU: 12}) {
+		t.Fatalf("CPU-bound host: %+v %s %+v %v", c, src, der, err)
 	}
 	// A seat count with no ready host at all is zero, not an error.
 	exec("update hosts set state = 'unreachable'")

@@ -25,7 +25,7 @@ func TestHeartbeatStoresPoolUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := hostdv1.NewHostServiceClient(h.dial(t, nil))
-	resp, err := client.Register(ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: &hostdv1.HostInfo{Hostname: "host-01", MemBytes: 64 << 30, Vcpus: 16, PoolBytes: 500 << 30}})
+	resp, err := client.Register(ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: &hostdv1.HostInfo{Hostname: "host-01", MemBytes: 64 << 30, Vcpus: 16, Cores: 8, PoolBytes: 500 << 30}})
 	if err != nil {
 		t.Fatal(err)
 	}

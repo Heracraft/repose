@@ -20,6 +20,15 @@ message HostInfo {
   string nixos_system = 5;
   string ch_version = 6;
   uint64 pool_bytes = 7;
+  // The host's physical cores, which is what placement counts committed
+  // guest vCPUs against. vcpus is the SMT thread count runtime.NumCPU()
+  // reports, twice the cores on every host repose runs on, so a ratio
+  // computed against it permits about twice the load at which typing
+  // stops being smooth (2026-10-14-host-cpu-capacity.md, sections 1 and
+  // 3). Not Limits.cores, which is a nix build's job count. 0 from a
+  // hostd older than I-735, for which the api records vcpus / 2 instead,
+  // accepted for one release (DECISIONS I-735).
+  uint32 cores = 8;
 }
 
 message WireguardPeer {

@@ -47,6 +47,18 @@ const NotifyQueue = 256
 // DefaultDeadline bounds a request handler that does not set its own.
 const DefaultDeadline = 30 * time.Second
 
+// RegisterPathsDeadline bounds a RegisterPaths request. The 30 s default
+// was a create's whole nix-store budget: `--check-validity` over the
+// shared store's lower, `--load-db`, then the view sync, each forked
+// against the guest's nix database. On a host whose scheduling latency is
+// 6-10x its quiet figure (proposal 2026-10-14 §1) that ran out and the
+// create failed at step 10 (DECISIONS I-740). The bounding chain is
+// guestd 30 s < hostd's vsockclient 10 min < the api's create_guest
+// phase 10 min, so raising hostd's alone changes nothing — guestd fires
+// first — and 5 minutes leaves room under both outer bounds while the
+// error still names the command that was slow.
+const RegisterPathsDeadline = 5 * time.Minute
+
 // ReadyPollInterval is how often the readiness check looks for sshd. It
 // reads /proc/net/tcp and stops at the first hit, so a short step costs
 // nothing and takes up to 0.4 s off every boot's Ready (DECISIONS I-161).

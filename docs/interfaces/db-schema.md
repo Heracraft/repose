@@ -25,6 +25,8 @@ users        (id pk, logto_sub text unique, handle text unique, email text,
 
 hosts        (id pk, name text unique, hostname text, sku text, provider text, region text,
               mem_bytes bigint, vcpus int, pool_bytes bigint, guest_cidr cidr,  -- pool_bytes: registered, then the newest heartbeat's (I-586)
+              cores int not null default 0,  -- physical cores, what placement counts committed guest vCPUs
+                                             -- against; vcpus is SMT threads. 0 is unknown (0027, I-735)
               wg_pubkey text, wg_ip inet, state text,  -- registering|ready|draining|unreachable|retired|lost
               draining bool, free_mem_bytes bigint, pool_free_bytes bigint, load1 float, running_guests int,
               pool_unavailable bool not null default false,  -- the thin pool cannot serve volumes, from Hello and
@@ -53,7 +55,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               unique (user_id, slug) where destroyed_at is null,
               unique (user_id, remote_url) where destroyed_at is null)
 
-host_reservations (view: host_id, reserved_bytes, guests)  -- class RAM summed over projects placed on the host in a state that holds memory
+host_reservations (view: host_id, reserved_bytes, guests, vcpus)  -- class RAM, and class guest vCPUs, summed over projects placed on the host in a state that holds memory (vcpus: 0027, I-736)
 
 config_revisions (id pk, project_id fk, fragment text, menu jsonb null,
               base_version text, status text,  -- building|built|applied|failed

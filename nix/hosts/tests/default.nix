@@ -1114,7 +1114,7 @@ in
           host.succeed("ip tuntap add dev tap-h2 mode tap user hostd vnet_hdr")
           host.succeed("touch /var/lib/repose/guests/other/vsock.sock && chown hostd /var/lib/repose/guests/other/vsock.sock")
           props = " ".join("-p " + p for p in [
-              "MemoryMax=512M", "CPUQuota=100%", "Restart=no", "Slice=guests.slice", "User=hostd",
+              "MemoryMax=512M", "CPUQuota=100%", "CPUWeight=25", "Restart=no", "Slice=guests.slice", "User=hostd",
               "NoNewPrivileges=yes", "CapabilityBoundingSet=", "UMask=0077", "ProtectSystem=strict",
               "ProtectHome=yes", "PrivateTmp=yes", "ProtectKernelTunables=yes", "ProtectKernelModules=yes",
               "ProtectKernelLogs=yes", "ProtectControlGroups=yes", "ProtectProc=invisible",
@@ -1307,7 +1307,7 @@ in
           # GuestUnitProps as unit.golden pins them), so the clean stop runs
           # in the real guest sandbox; there is no thin volume to allow.
           props = " ".join("-p " + p for p in [
-              "KillMode=mixed", "MemoryMax=512M", "CPUQuota=100%", "Restart=no", "Slice=guests.slice",
+              "KillMode=mixed", "MemoryMax=512M", "CPUQuota=100%", "CPUWeight=25", "Restart=no", "Slice=guests.slice",
               "User=hostd", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "UMask=0077",
               "ProtectSystem=strict", "ProtectHome=yes", "PrivateTmp=yes", "ProtectKernelTunables=yes",
               "ProtectKernelModules=yes", "ProtectKernelLogs=yes", "ProtectControlGroups=yes",

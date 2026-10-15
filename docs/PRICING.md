@@ -125,12 +125,15 @@ needs that changed first.
 ## Seats and the waitlist
 
 A seat is 8 GB of memory that may run at once on the fleet: Solo holds one,
-Plus two, Pro four. Memory is never oversubscribed, so the fleet has exactly as many
-seats as its `ready`, undrained hosts have usable 8 GB blocks (RAM minus the
-host reserve), or `SEATS_TOTAL` when the operator sets it (the launch host,
-a `D64s_v7`, is 30 seats). Seats are held by every subscription that is
-`trialing`, `active` or `past_due`, and by every waitlist invitation that
-has not expired. Checkout for a plan needs that many free seats; without
+Plus two, Pro four. A seat is also 4 guest vCPUs, since every class is 2 GB
+per vCPU, so a host delivers the smaller of two ceilings: the usable 8 GB
+blocks its memory divides into (RAM minus the host reserve) and the seats
+its physical cores can serve while typing still feels immediate. The fleet
+has as many seats as its `ready`, undrained hosts deliver, counted per host
+and summed, or `SEATS_TOTAL` when the operator sets it (DECISIONS I-739;
+the launch host, a `D64s_v7`, is 11 seats, and host-01 today is 1). Seats
+are held by every subscription that is `trialing`, `active` or `past_due`,
+and by every waitlist invitation that has not expired. Checkout for a plan needs that many free seats; without
 them the user joins the waitlist, and the waitlist invites the oldest
 waiting user whenever a seat is free, holding it 72 hours for them
 (DECISIONS I-290, amending I-269). The landing page and the dashboard show
@@ -172,6 +175,13 @@ chargeback, which cancels the subscription. The public statement is
 `apps/web/src/content/legal/refunds.md`.
 
 ## The cost floor
+
+**Every figure in this section is owed a re-derivation and is wrong until
+it gets one** (I-739, `proposals/2026-10-14-host-cpu-capacity.md` §7 item
+6). It is computed at 30 seats a host; measurement on 2026-10-14 puts a
+`D64s_v7` at 11, so a seat costs about $281 rather than $100 and the
+margin against Hetzner shrinks or inverts. The prices themselves are the
+owner's call, so nothing below has been changed.
 
 The plans have to cover an always-on seat on the chosen host. Memory is the
 binding constraint at 30 seats per host (256 GB minus 16 GB reserve, no

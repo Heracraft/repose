@@ -54,6 +54,8 @@ func (s *Server) deadlineFor(req *guestdv1.Request) time.Duration {
 			d = exec.MaxTimeout
 		}
 		return d + 10*time.Second
+	case *guestdv1.Request_RegisterPaths:
+		return RegisterPathsDeadline
 	default:
 		return DefaultDeadline
 	}

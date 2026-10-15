@@ -1,6 +1,7 @@
 MemoryMax=8704M
 MemoryHigh=8576M
 CPUQuota=400%
+CPUWeight=100
 Restart=no
 Slice=guests.slice
 User=hostd

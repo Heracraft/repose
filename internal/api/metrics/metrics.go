@@ -77,9 +77,10 @@ type M struct {
 	// projects at full CPU on every vCPU for six hours with no session, no
 	// tmux client and no agent (I-239), recomputed from meter_samples.
 	AbuseBusyUnattendedProjects prometheus.Gauge
-	// SeatsTotal and SeatsHeld are the fleet's seats (DECISIONS I-290):
-	// the 8 GB blocks of the ready hosts (or SEATS_TOTAL) and those held
-	// by live subscriptions and unexpired invitations.
+	// SeatsTotal and SeatsHeld are the fleet's seats (DECISIONS I-290,
+	// I-739): what the ready hosts deliver, each the smaller of its
+	// memory and its cores (or SEATS_TOTAL), and those held by live
+	// subscriptions and unexpired invitations.
 	SeatsTotal prometheus.Gauge
 	SeatsHeld  prometheus.Gauge
 	// WaitlistWaiting is the users holding a place on the seats waitlist
@@ -143,7 +144,7 @@ func New(reg prometheus.Registerer) *M {
 		AbuseStopsTotal:              prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_abuse_stops_total", Help: "Guests the api stopped for abuse, by kind."}, []string{"kind"}),
 		AbuseHeldProjects:            prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_abuse_held_projects", Help: "Projects whose start is refused until repose-admin abuse clear."}),
 		AbuseBusyUnattendedProjects:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_abuse_busy_unattended_projects", Help: "Projects at full CPU on every vCPU for 6 h with no session, tmux client or agent."}),
-		SeatsTotal:                   prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_seats_total", Help: "Seats on the fleet: 8 GB blocks of the ready hosts, or SEATS_TOTAL."}),
+		SeatsTotal:                   prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_seats_total", Help: "Seats on the fleet: per ready host the smaller of its 8 GB memory blocks and what its cores can serve, or SEATS_TOTAL."}),
 		SeatsHeld:                    prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_seats_held", Help: "Seats held by live subscriptions and unexpired waitlist invitations."}),
 		WaitlistWaiting:              prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_waitlist_waiting", Help: "Users waiting on the seats waitlist."}),
 		WaitlistJoinedTotal:          prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_waitlist_joined_total", Help: "Users put on the seats waitlist."}),

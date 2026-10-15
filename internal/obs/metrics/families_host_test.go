@@ -32,6 +32,8 @@ func TestHostFamily(t *testing.T) {
 	for _, want := range []string{
 		"repose_host_mem_free_bytes",
 		"repose_host_mem_reserved_bytes",
+		"repose_host_cpu_cores",
+		"repose_host_load1",
 		"repose_host_pool_free_bytes",
 		"repose_host_store_bytes",
 		`repose_host_guests{class="large",state="running"}`,

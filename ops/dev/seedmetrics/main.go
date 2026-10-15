@@ -80,6 +80,11 @@ func main() {
 	for step := 0; ; step++ {
 		reserved := float64(int64(34<<30) + int64(rand.N(4<<30)))
 		host.MemReservedBytes.Set(reserved)
+		// Eight physical cores, as host-01 has, so HostCPUSaturated's
+		// expression is a number rather than NaN in the local stack
+		// (DECISIONS I-738).
+		host.CPUCores.Set(8)
+		host.Load1.Set(6 + 4*math.Sin(float64(step)/8))
 		host.MemFreeBytes.Set(totalMem - 8<<30 - reserved)
 		host.PoolBytes.Set(poolBytes)
 		host.PoolFreeBytes.Set(poolBytes * (0.35 + 0.02*math.Sin(float64(step)/10)))

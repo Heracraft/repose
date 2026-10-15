@@ -309,7 +309,7 @@ def host_capacity() -> dict:
             panel(
                 "timeseries", "Guest CPU seconds by class",
                 [q('sum by (class) (rate(repose_host_guest_cpu_seconds_total{host_id=~"$host_id"}[5m]))', "{{class}}")],
-                desc="CPU is oversubscribed 2:1 against the host's vCPU (DESIGN §4); this is what is actually being used, by size class.",
+                desc="Busy guest vCPUs, by size class. Placement commits at most 1.5 guest vCPUs per physical core (DECISIONS I-734); past 1 busy vCPU per core, typing is laggy in every guest on the host and HostCPUSaturated warns. Divide by repose_host_cpu_cores, not by the vendor's vCPU count.",
                 unit="none",
             ),
             panel(

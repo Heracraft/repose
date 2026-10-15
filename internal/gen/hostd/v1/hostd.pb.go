@@ -25,14 +25,23 @@ const (
 )
 
 type HostInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	Sku           string                 `protobuf:"bytes,2,opt,name=sku,proto3" json:"sku,omitempty"`
-	MemBytes      uint64                 `protobuf:"varint,3,opt,name=mem_bytes,json=memBytes,proto3" json:"mem_bytes,omitempty"`
-	Vcpus         uint32                 `protobuf:"varint,4,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
-	NixosSystem   string                 `protobuf:"bytes,5,opt,name=nixos_system,json=nixosSystem,proto3" json:"nixos_system,omitempty"`
-	ChVersion     string                 `protobuf:"bytes,6,opt,name=ch_version,json=chVersion,proto3" json:"ch_version,omitempty"`
-	PoolBytes     uint64                 `protobuf:"varint,7,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Hostname    string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Sku         string                 `protobuf:"bytes,2,opt,name=sku,proto3" json:"sku,omitempty"`
+	MemBytes    uint64                 `protobuf:"varint,3,opt,name=mem_bytes,json=memBytes,proto3" json:"mem_bytes,omitempty"`
+	Vcpus       uint32                 `protobuf:"varint,4,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
+	NixosSystem string                 `protobuf:"bytes,5,opt,name=nixos_system,json=nixosSystem,proto3" json:"nixos_system,omitempty"`
+	ChVersion   string                 `protobuf:"bytes,6,opt,name=ch_version,json=chVersion,proto3" json:"ch_version,omitempty"`
+	PoolBytes   uint64                 `protobuf:"varint,7,opt,name=pool_bytes,json=poolBytes,proto3" json:"pool_bytes,omitempty"`
+	// The host's physical cores, which is what placement counts committed
+	// guest vCPUs against. vcpus is the SMT thread count runtime.NumCPU()
+	// reports, twice the cores on every host repose runs on, so a ratio
+	// computed against it permits about twice the load at which typing
+	// stops being smooth (2026-10-14-host-cpu-capacity.md, sections 1 and
+	// 3). Not Limits.cores, which is a nix build's job count. 0 from a
+	// hostd older than I-735, for which the api records vcpus / 2 instead,
+	// accepted for one release (DECISIONS I-735).
+	Cores         uint32 `protobuf:"varint,8,opt,name=cores,proto3" json:"cores,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,6 +121,13 @@ func (x *HostInfo) GetChVersion() string {
 func (x *HostInfo) GetPoolBytes() uint64 {
 	if x != nil {
 		return x.PoolBytes
+	}
+	return 0
+}
+
+func (x *HostInfo) GetCores() uint32 {
+	if x != nil {
+		return x.Cores
 	}
 	return 0
 }
@@ -4323,7 +4339,7 @@ var File_repose_hostd_v1_hostd_proto protoreflect.FileDescriptor
 
 const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
-	"\x1brepose/hostd/v1/hostd.proto\x12\x0frepose.hostd.v1\"\xcc\x01\n" +
+	"\x1brepose/hostd/v1/hostd.proto\x12\x0frepose.hostd.v1\"\xe2\x01\n" +
 	"\bHostInfo\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x10\n" +
 	"\x03sku\x18\x02 \x01(\tR\x03sku\x12\x1b\n" +
@@ -4333,7 +4349,8 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\n" +
 	"ch_version\x18\x06 \x01(\tR\tchVersion\x12\x1d\n" +
 	"\n" +
-	"pool_bytes\x18\a \x01(\x04R\tpoolBytes\"\x85\x01\n" +
+	"pool_bytes\x18\a \x01(\x04R\tpoolBytes\x12\x14\n" +
+	"\x05cores\x18\b \x01(\rR\x05cores\"\x85\x01\n" +
 	"\rWireguardPeer\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x1d\n" +
 	"\n" +

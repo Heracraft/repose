@@ -210,9 +210,11 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.bcfg = bcfg
 	a.gate = billing.NewGate(a.pool, bcfg, a.m, log)
 	a.resume = resume.New(a.pool, a.engine, a.gate, a.m, log)
-	// The seat count (I-290): live subscriptions and unexpired invitations
-	// against the hosts' 8 GB blocks or SEATS_TOTAL; checkout asks it, the
-	// webhook tells it, /public/seats reads it.
+	// The seat count (I-290, I-739): live subscriptions and unexpired
+	// invitations against what the ready hosts deliver -- the smaller of
+	// their memory in 8 GB blocks and what their physical cores can serve
+	// -- or SEATS_TOTAL; checkout asks it, the webhook tells it,
+	// /public/seats reads it.
 	a.seats = &waitlist.Service{Pool: a.pool, Total: cfg.SeatsTotal, M: a.m, Log: log}
 	seats := a.seats
 	if polarOn {

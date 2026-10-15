@@ -30,14 +30,21 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0022 (resume after a host reboot, I-645) is the newest: its two
-	// tables go, and nothing older does.
+	// 0027 (hosts.cores, I-735) is the newest: its column goes, and
+	// nothing older does. Its down also recreates host_reservations
+	// without the vcpus column 0027 added to it.
 	var n int
-	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatal("0022's tables are still there after down 1")
+		t.Fatal("hosts.cores is still there after down 1")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'host_reservations' and column_name = 'vcpus'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("host_reservations.vcpus is still there after 0027's down")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'subscriptions' and column_name = 'provider'").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -60,7 +67,14 @@ func TestMigrateUpDownUp(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// 0021 (hosts.pool_unavailable, I-644) went with the loop.
+	// 0022 (resume after a host reboot, I-645) and 0021
+	// (hosts.pool_unavailable, I-644) went with the loop.
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.tables where table_name in ('guest_resumes', 'resume_notices')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("0022's tables are still there after 0022's down")
+	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'pool_unavailable'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}

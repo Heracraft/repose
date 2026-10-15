@@ -42,10 +42,19 @@ type M struct {
 	MemFreeBytes          prometheus.Gauge
 	MemReservedBytes      prometheus.Gauge
 	GuestdLost            prometheus.Gauge
-	GuestCPUSecondsTotal  *prometheus.CounterVec
-	GuestNetBytesTotal    *prometheus.CounterVec
-	EventsPending         prometheus.Gauge
-	GuestNotifyDropped    *prometheus.CounterVec
+	// CPUCores and Load1 are for CPU what MemReservedBytes and
+	// MemFreeBytes are for memory: the capacity figure and the load
+	// against it. Cores are physical cores, not SMT threads, because that
+	// is the denominator the latency measurement is in — HostCPUSaturated
+	// divides the busy guest vCPUs by them (DECISIONS I-738). Neither
+	// reaches Prometheus any other way: hosts.load1 is a Postgres column
+	// and Prometheus scrapes exporters.
+	CPUCores             prometheus.Gauge
+	Load1                prometheus.Gauge
+	GuestCPUSecondsTotal *prometheus.CounterVec
+	GuestNetBytesTotal   *prometheus.CounterVec
+	EventsPending        prometheus.Gauge
+	GuestNotifyDropped   *prometheus.CounterVec
 	// EgressBlockedTotal and EgressBlockedGuests are the per-guest
 	// nftables blocks summed per host (DECISIONS I-238..I-240): packets
 	// dropped by reason, and guests over their reason's threshold right
@@ -96,6 +105,8 @@ func NewVersion(version string) *M {
 		StoreBytes:            f.gauge("store_bytes", "Bytes used by the host store filesystem."),
 		MemFreeBytes:          f.gauge("mem_free_bytes", "Host free memory after the reserve."),
 		MemReservedBytes:      f.gauge("mem_reserved_bytes", "Memory reserved by running guests."),
+		CPUCores:              f.gauge("cpu_cores", "Physical cores on this host (not SMT threads)."),
+		Load1:                 f.gauge("load1", "Host one-minute load average."),
 		GuestdLost:            f.gauge("guestd_lost", "Count of guests with guestd_ok=false."),
 		GuestsInterrupted:     f.gauge("guests_interrupted", "Guests a host restart took down in the last 6 h that have not run since (I-645)."),
 		GuestCPUSecondsTotal:  f.counterVec("guest_cpu_seconds_total", "Guest CPU time summed by class.", "class"),

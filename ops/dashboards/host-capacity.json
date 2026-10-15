@@ -615,7 +615,7 @@
     {
       "type": "timeseries",
       "title": "Guest CPU seconds by class",
-      "description": "CPU is oversubscribed 2:1 against the host's vCPU (DESIGN \u00a74); this is what is actually being used, by size class.",
+      "description": "Busy guest vCPUs, by size class. Placement commits at most 1.5 guest vCPUs per physical core (DECISIONS I-734); past 1 busy vCPU per core, typing is laggy in every guest on the host and HostCPUSaturated warns. Divide by repose_host_cpu_cores, not by the vendor's vCPU count.",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"

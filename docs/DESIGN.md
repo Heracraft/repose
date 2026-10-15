@@ -103,14 +103,22 @@ from `nix/hosts/`. The host configuration declares:
 - WireGuard client to the edge (outbound only), Fluent Bit, node_exporter.
 - No public IP. Inbound NSG: nothing. Outbound: unrestricted (guests need it).
 
-**Capacity.** Memory is the binding constraint and is never oversubscribed.
-The host reserve is 8 GB below 128 GB of RAM and 16 GB above. A `D64s_v7`
-fits 30 large guests, 55 small, or 15 XL, in any mix; a `D16s_v7` fits 7
-large or 14 small. v7 sizes expose disks over NVMe only, and both
+**Capacity.** Memory is never oversubscribed, and on the shapes Azure
+sells it is no longer the only binding constraint: CPU binds first on a
+host with 4 GB per core or less (DECISIONS I-734,
+`proposals/2026-10-14-host-cpu-capacity.md`). The host reserve is 8 GB
+below 128 GB of RAM and 16 GB above. A `D64s_v7` has memory for 30 large
+guests, 55 small, or 15 XL, in any mix, and a `D16s_v7` for 7 large or 14
+small. v7 sizes expose disks over NVMe only, and both
 disks are resolved at install time from their namespace ids, because which
-controller enumerates first is not fixed (DECISIONS I-41, I-647). CPU is oversubscribed 2:1 against the 64 vCPU. Capacity is added by hand:
-an alert fires at 80 percent reserved memory and a human runs the OpenTofu
-apply for the next host.
+controller enumerates first is not fixed (DECISIONS I-41, I-647). CPU is
+oversubscribed at most 1.5 committed guest vCPUs per **physical core** --
+half of a `D64s_v7`'s 64 Azure vCPUs are SMT threads of the other half --
+which that `D64s_v7` reaches at 48 guest vCPUs, so its CPU allows 12 large
+guests where its memory allows 30 (I-734, I-736). Capacity is added by
+hand: an alert fires at 80 percent reserved memory, another past one busy
+guest vCPU per core (I-738), and a human runs the OpenTofu apply for the
+next host.
 
 **Thin pool capacity** (DECISIONS I-586). A full pool fails or stalls the
 writes of every guest on it, so it is watched by what it holds, data or
@@ -339,9 +347,11 @@ Postgres holds users, projects, hosts, guests, volumes, snapshots, secrets
 config revisions, build logs. Schema in `interfaces/db-schema.md`.
 
 The scheduler is a function, not a service: on `create`, pick the host with
-the most free reserved memory that is `ready` and whose thin pool stays at
-most 70 percent used with the new volume's first bytes in it (I-586),
-reserve the guest's memory in a transaction, and send the create command. A host that has not heartbeated for
+the most free reserved memory that is `ready`, whose thin pool stays at
+most 70 percent used with the new volume's first bytes in it (I-586), and
+whose committed guest vCPUs stay within 1.5 per physical core with the new
+guest's in them (I-736), reserve the guest's memory in a transaction, and
+send the create command. A host that has not heartbeated for
 90 seconds is `unreachable` and receives no placements.
 
 **Deployment.** `api` and the dashboard are single-container Coolify

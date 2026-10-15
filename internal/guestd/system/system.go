@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -237,12 +238,23 @@ func (h *Handler) RegisterPaths(ctx context.Context, registration []byte) error 
 				}
 			}
 		}
-		if got, err := h.invalidPaths(ctx, ask); err == nil {
+		got, err := h.invalidPaths(ctx, ask)
+		switch {
+		case err == nil:
 			invalid, known = got, map[string]bool{}
 			for _, p := range ask {
 				known[p] = true
 			}
+		case errors.Is(err, context.DeadlineExceeded):
+			// The request's whole budget went on --check-validity. Going
+			// on would run the load with a dead context, and it would
+			// fail at once naming --load-db for time this spent — what
+			// hid the real cause of the creates that failed at step 10
+			// (DECISIONS I-740). The wrapped error names the command.
+			return sysdep.Errf(sysdep.CodeInternal, "register paths: %w", err)
 		}
+		// Any other failure is skipped: what it feeds, the load's skip
+		// and the view's roots, is best-effort.
 	}
 
 	if err := h.loadRegistration(ctx, registration, overlay, invalid, known); err != nil {

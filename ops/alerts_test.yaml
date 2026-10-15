@@ -43,6 +43,43 @@ tests:
               description: "85% of usable memory is reserved by running guests. Add a host before the next XL create fails."
               runbook: "docs/ops/RUNBOOK.md#hostmemory80"
 
+  # --- HostCPUSaturated ---------------------------------------------------
+  - interval: 1m
+    name: HostCPUSaturated warns past one busy guest vCPU per core and not below
+    input_series:
+      # host-01: 8 physical cores and 14 busy guest vCPUs (two xl and a
+      # large under an agent) = 1.75 per core, the state measured on
+      # 2026-10-14. 600 CPU-seconds per 60 s step is 10 busy vCPUs, 240 is 4.
+      - series: 'repose_host_cpu_cores{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "8+0x40"
+      - series: 'repose_host_guest_cpu_seconds_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",class="xl"}'
+        values: "0+600x40"
+      - series: 'repose_host_guest_cpu_seconds_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",class="large"}'
+        values: "0+240x40"
+      # host-02: 8 cores, 4 busy guest vCPUs. A quiet host stays quiet.
+      - series: 'repose_host_cpu_cores{job="hostd",instance="10.255.0.8:9101",host_id="host-02"}'
+        values: "8+0x40"
+      - series: 'repose_host_guest_cpu_seconds_total{job="hostd",instance="10.255.0.8:9101",host_id="host-02",class="large"}'
+        values: "0+240x40"
+    alert_rule_test:
+      # The ratio is over 1 from the first rate point, so the alert is
+      # pending from 1m and firing from 16m: quiet at 14m, firing at 20m.
+      - eval_time: 14m
+        alertname: HostCPUSaturated
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: HostCPUSaturated
+        exp_alerts:
+          # sum by (host_id) drops job and instance, which is where this
+          # case differs from HostMemory80's.
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+            exp_annotations:
+              summary: "host host-01 is running 1.75 busy guest vCPUs per physical core"
+              description: "Over one busy guest vCPU per core for 15 minutes: typing is laggy in every guest on this host, including guests doing nothing, and sessions take seconds to open. Add a host or move to a larger SKU; nothing on the host itself fixes it."
+              runbook: "docs/ops/RUNBOOK.md#hostcpusaturated"
+
   # --- PoolHigh -----------------------------------------------------------
   - interval: 1m
     name: PoolHigh warns past 70 percent used and not at 69

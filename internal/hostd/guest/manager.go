@@ -115,6 +115,17 @@ const OverheadMiB = 512
 // MemoryMax has only the hypervisor to kill (DECISIONS I-230).
 const HighMarginMiB = 128
 
+// CPUWeightPerVCPU sets each guest's cgroup v2 cpu.weight from its class,
+// so that under contention the host's cycles divide in proportion to the
+// vCPUs the tenant paid for instead of equally (DECISIONS I-737): small
+// 50, large 100, xl 200. The anchor is the default class: large keeps the
+// 100 every guest had, which is also what virtiofsd@<id> and
+// virtiofsd-auth@<id> have — they are this guest's siblings in
+// guests.slice and sit on its store-read path, so no guest is given more
+// than twice their weight. It divides contention; it does not add
+// capacity.
+const CPUWeightPerVCPU = 25
+
 // Error is a command failure with its documented code.
 type Error struct {
 	Code         string

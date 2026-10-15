@@ -31,6 +31,39 @@ groups:
           description: "{{ $value | humanizePercentage }} of usable memory is reserved by running guests. Add a host before the next XL create fails."
           runbook: "docs/ops/RUNBOOK.md#hostmemory80"
 
+      - alert: HostCPUSaturated
+        # Memory had HostMemory80 and CPU had nothing, so on 2026-10-14 the
+        # owner found a fleet-wide latency problem by feel
+        # (docs/proposals/2026-10-14-host-cpu-capacity.md §1-§3; DECISIONS
+        # I-738). Busy guest vCPUs per PHYSICAL core is the quantity the
+        # measurement is in: on host-01 (a D16s_v7, 16 Azure vCPUs = 8
+        # cores), measured into a guest with nothing running in it, 0.5 per
+        # core echoed a keystroke in 2.7 ms p50 / 4.3 ms p90 and opened an
+        # ssh session in 0.2 s; 1.8 per core gave 17.0 ms p50 / 44.5 ms p90
+        # and 2.0 s. Degradation is already visible at 1.2 per core
+        # (keystroke p90 42 ms), so 1 is the boundary the measurement names
+        # rather than a round number, and placement holds commitments to 1.5
+        # per core (I-734) on the duty cycle that keeps busy vCPUs under it.
+        # Throughput barely moves while this happens, which is why no other
+        # capacity series says anything.
+        #
+        # 15m, like PoolHigh: longer than one `nix build` burst or a single
+        # agent run, short enough that the hours-long state the owner felt is
+        # reported the same morning. Nothing is down, no data is at risk and
+        # the remedy is a human OpenTofu apply for a bigger or another host,
+        # so it warns. sum by (host_id) on both sides keeps host_id, so
+        # group_by and the HostdDown/HostScrapeDown inhibitions still match.
+        expr: |
+          sum by (host_id) (rate(repose_host_guest_cpu_seconds_total[5m]))
+            / sum by (host_id) (repose_host_cpu_cores) > 1
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: 'host {{ $labels.host_id }} is running {{ $value | printf "%.2f" }} busy guest vCPUs per physical core'
+          description: "Over one busy guest vCPU per core for 15 minutes: typing is laggy in every guest on this host, including guests doing nothing, and sessions take seconds to open. Add a host or move to a larger SKU; nothing on the host itself fixes it."
+          runbook: "docs/ops/RUNBOOK.md#hostcpusaturated"
+
       - alert: PoolHigh
         # The plan's disk counts what volumes hold, not their sizes, so
         # the pool is overcommitted by design (DECISIONS I-585, I-586). At

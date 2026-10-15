@@ -94,7 +94,9 @@ component must emit:
   `shutdown`, and `warning` (carries `kind`, the enumeration in
   `interfaces/vsock-guestd.md`).
 - api: `request` (method, route, status, duration_ms), `cert_issue`,
-  `cert_revoke`, `schedule` (host chosen, free memory), `schedule_fail`,
+  `cert_revoke`, `schedule` (host chosen, free memory), `schedule_fail`
+  (`reason` is `no_capacity`, `no_cpu` when the committed guest vCPUs per
+  physical core are what refused, or `error`; I-736),
   `schedule_wait` (no host fits until a guest being stopped is down, I-408),
   `command_send`, `command_result`, `build_reused` (a create whose closure
   was already on the host, DECISIONS I-160), `rollup_done`, `webhook_received`,
@@ -126,6 +128,9 @@ over.
 Families:
 
 - Host (hostd): `repose_host_mem_free_bytes`, `repose_host_mem_reserved_bytes`,
+  `repose_host_cpu_cores` (physical cores, not SMT threads) and
+  `repose_host_load1`, which are for CPU what the two memory gauges are
+  for memory (I-738),
   `repose_host_pool_free_bytes`, `repose_host_pool_available` (I-644), `repose_host_store_bytes`,
   `repose_host_guests{state,class}`, `repose_host_builds_running`,
   `repose_host_build_duration_seconds{result}` (histogram),
@@ -205,6 +210,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | Alert | Rule | Severity |
 |---|---|---|
 | `HostMemory80` | `reserved / (reserved+free) > 0.8` for 10m | warn |
+| `HostCPUSaturated` | `sum by (host_id) (rate(repose_host_guest_cpu_seconds_total[5m])) / sum by (host_id) (repose_host_cpu_cores) > 1` for 15m: busy guest vCPUs per physical core, the quantity the latency measurement is in (I-738) | warn |
 | `HostUnreachable` | `repose_api_hosts{state="unreachable"} > 0` for 2m | page |
 | `SnapshotStale` | `repose_api_snapshot_age_seconds > 36*3600` | warn |
 | `BuildQueueStuck` | `repose_host_builds_running >= 2` and no `build_done` for 45m | warn |

@@ -266,3 +266,125 @@ func TestFreeingSkipsPoolUnavailable(t *testing.T) {
 		t.Fatalf("freeing %v %v on a host whose pool is down, want false", ok, err)
 	}
 }
+
+// addHostCores adds h with physical cores reported. 0 cores is a host
+// that registered before I-735 and has not rotated since, which the
+// Register path would have given vcpus / 2 had it reported threads.
+func addHostCores(t *testing.T, pool *db.Pool, h host, cores int) uuid.UUID {
+	t.Helper()
+	id := addHost(t, pool, h)
+	if _, err := pool.Exec(context.Background(), "update hosts set cores = $2 where id = $1", id, cores); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// commit places a guest of class on host in a state that holds it, so
+// its vCPUs and memory are committed there.
+func commit(t *testing.T, pool *db.Pool, hostID uuid.UUID, class, slug string) {
+	t.Helper()
+	ctx := context.Background()
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "select id from users limit 1").Scan(&uid); err != nil {
+		uid = uuid.Must(uuid.NewV7())
+		if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, $3, $3, $4, 'running', $5, 1)`,
+		uuid.Must(uuid.NewV7()), uid, slug, class, hostID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The incident of 2026-10-14, reproduced: host-01 is a D16s_v7, 8
+// physical cores, with memory to spare. PlacementVCPUPct allows 12
+// committed guest vCPUs there, so the second xl -- the 16 guest vCPUs on
+// 8 cores that took keystrokes from 2.7 ms to 17 ms -- is refused, and
+// the refusal says it was CPU and not memory (DECISIONS I-736).
+func TestPickCountsCommittedVCPUsAgainstCores(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"host-01", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 8)
+
+	commit(t, pool, h, "xl", "kanali") // 8 of 12
+	if p, err := pick(t, pool, "large", 1<<30, 40<<30); err != nil || p.Name != "host-01" {
+		t.Fatalf("a large on 8 of 12 committed vCPUs: %+v %v, want host-01", p, err)
+	}
+	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
+		t.Fatalf("a small at the ceiling: %+v %v, want ErrNoCPUCapacity", p, err)
+	}
+	if p, err := pick(t, pool, "xl", 1<<30, 80<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("an xl at the ceiling: %+v %v, want a capacity error", p, err)
+	}
+	// Memory was never the reason: the host has 56 GB free and the xl
+	// needs 16.
+	var free int64
+	if err := pool.QueryRow(context.Background(), "select free_mem_bytes from hosts where id = $1", h).Scan(&free); err != nil || free < 16<<30 {
+		t.Fatalf("free memory %d, want room for the xl that was refused", free)
+	}
+}
+
+// A host that reports no cores is exempt: 0 means unknown, and refusing
+// every create on a one-host fleet because a field is missing is worse
+// than placing on it (DECISIONS I-736).
+func TestPickIgnoresCPUWhenAHostReportsNoCores(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"a", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 0)
+	commit(t, pool, h, "xl", "one")
+	commit(t, pool, h, "xl", "two")
+	commit(t, pool, h, "large", "three") // 20 vCPUs, past any ratio
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); err != nil || p.Name != "a" {
+		t.Fatalf("host with unknown cores: %+v %v, want a placement", p, err)
+	}
+}
+
+// An empty host always takes one guest, so a host with fewer cores than
+// the class asks for can still run something; the next guest is refused.
+func TestPickTakesOneGuestOnAHostSmallerThanTheClass(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"small-host", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 1)
+	if p, err := pick(t, pool, "xl", 1<<30, 80<<30); err != nil || p.Name != "small-host" {
+		t.Fatalf("first guest on a 1-core host: %+v %v, want a placement", p, err)
+	}
+	commit(t, pool, h, "xl", "first")
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
+		t.Fatalf("second guest on a 1-core host: %+v %v, want ErrNoCPUCapacity", p, err)
+	}
+}
+
+// Freeing refuses a host that is at its CPU ceiling even while memory
+// is coming back on it, and allows it once the vCPUs are what is being
+// freed: the reservation view counts a `stopping` guest, so the term
+// subtracts it (DECISIONS I-736).
+func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	h := addHostCores(t, pool, host{"a", "ready", false, 64 << 30, 56 << 30, 1 << 40, now}, 8)
+	uid := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, pool, h, "xl", "kanali")     // 8 of the 12 cores allow
+	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	// A guest being destroyed frees memory -- hostd still counts it, so
+	// Freeing is asked at all -- but the reservation view never counted
+	// its vCPUs, so nothing is freed on the CPU side and a create that
+	// waits for this host would be refused again.
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, 'gone', 'gone', 'large', 'destroying', $3, 1)`,
+		uuid.Must(uuid.NewV7()), uid, h); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || ok {
+		t.Fatalf("freeing %v %v at the CPU ceiling, want false: memory frees, cores do not", ok, err)
+	}
+	// Stop the xl instead: its 8 vCPUs are in the view and come back, so
+	// the small fits and the create waits rather than failing.
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'kanali'"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || !ok {
+		t.Fatalf("freeing %v %v with the xl stopping, want true", ok, err)
+	}
+}
