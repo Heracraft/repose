@@ -21255,9 +21255,15 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
 - *Rejected:* deleting the snapshot once the copies are restored (the
   retry above), and a hidden snapshot outside the list (it holds a
   tenant's disk; the list is where they see what repose keeps).
-**I-697. An OOM kill in a pane no longer stops the pane: dev's user
+**I-732. An OOM kill in a pane no longer stops the pane: dev's user
 manager, its units and each session scope run with `OOMPolicy=continue`
-(pane-oom, 2026-10-13).** Amends I-576 and I-560. *Made during implementation*: an
+(pane-oom, 2026-10-13; renumbered 2026-10-14).** Amends I-576 and I-560.
+This shipped in r20261014-1 as a second **I-697**, which account-secrets
+had already taken: the two lanes reserved the number on different
+machines, and `release-queue id` reads only the machine it runs on. Account
+secrets keep I-697 because the api's code and tests cite it; this one
+moved, and `nix/flake.nix`, `browser.nix`, `herdr.nix` and the guest tests
+moved with it. *Made during implementation*: an
 agent left running overnight on kanali was gone in the morning, and the
 journal said why.
 - *What happened.* At 02:10:46 the kernel's OOM killer picked one
