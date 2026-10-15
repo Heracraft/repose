@@ -22609,3 +22609,51 @@ secret too.
 - The source feeds only the fetch and the summary's "history cloned from" line. The guest still gets no `origin` for a project without a remote, and the project still records no remote_url (I-351). The laptop's bundle is still made against the checkout's own `refs/remotes/origin/*`, as for a named project.
 - A checkout whose origin is some other repository is safe: the apply checks that every commit it needs arrived and asks for the full payload when one is missing (I-713's #needfull).
 - *Evidence.* TestPrefetchWithoutAProjectRemoteUsesTheCheckoutsOrigin syncs with NoRemote from a checkout whose origin is the fixture's github.com/a/b. Before the fix, the summary was "1 new commit" sent from the laptop. After, it reads cloned from github.com with no commit sent, and the guest has no origin.
+
+**I-745. The dev tools catch what let two lanes take one id, and the
+closure check names the paths it refuses (dev-tool-guards, 2026-10-15).**
+*Made during implementation.* Amends I-411's description of
+`release-queue id`. Six ids were taken twice in two days (I-718, I-719,
+I-732, and before them I-642 and I-647), and the closure gate twice said
+a closure was too big without saying what filled it.
+- *Why the ids collided.* `id` read every local branch, every worktree's
+  working copy and its own reservations, which is the whole world on one
+  machine. There are two: the conductor works on woker-1 and the agents on
+  the kanali guest, each with its own clone and its own reservations file,
+  so a number taken on one was invisible to the other until a shared ref
+  carried it. Measured on woker-1 on 2026-10-15: the old scan's highest
+  id was I-740 and it would have handed out I-741, which stop-probe had
+  already written; reading `refs/remotes` as well finds I-744 and hands
+  out I-745. `id` now scans `refs/heads` and `refs/remotes` both, so
+  `origin/integrated` (I-651) and a `kanali` remote close the gap, and it
+  refuses to print a number that is already an entry id rather than
+  trusting its own arithmetic. It also reads both ends of a range header
+  (`**I-195..I-205.`), where it used to read the first and leave the rest
+  to be handed out again.
+- *Why nobody noticed.* `decisions-index.py` kept the first entry for a
+  duplicated id and rendered nothing of the second, so a collision looked
+  like a clean index and a cross-reference landed on the wrong entry.
+  `--check`, and the write, now exit 1 and name each duplicated id with
+  the lines of every entry that declares it. I-642 and I-647, which the
+  staging-host and pricing lanes took at the same time, stay as they are
+  and are named in the script: renumbering them now would move
+  cross-references in several documents, and the check exists for the
+  next collision, not those two.
+- *The closure gate.* `guest-closure-size` printed "largest paths:" and
+  exited without printing any. It now prints the twenty largest, from
+  `closureInfo`'s registration (path, hash, NAR size, deriver, then the
+  references), whose sizes add up to `total-nar-size` exactly. Checked by
+  lowering the limit to 1 MiB: chromium-unwrapped 701.7 MB,
+  playwright-chromium 390.8 MB, codex 349.8 MB, gcc 264.4 MB. The heading
+  no longer says "6 GB", which the line above it already prints and a
+  changed limit would have made false. The guest closure stood at
+  6,437,828,064 bytes of 6,442,450,944 at r20261015-2, which leaves
+  4.6 MB: the next package added to the base trips this gate.
+- *Not in the repository.* `~/repose-ws/decl-collide.sh`, the conductor's
+  scan for two branches adding the same Go declaration (it found
+  attach-run-home and boot-real-addr both adding
+  `Fake.SetHostUnreachable`), compared each branch against a hardcoded
+  branch's merge-base and fell back to main, which charged every branch
+  with the declarations it had merged from main. It now uses each pair's
+  own merge-base and prints it, and a pair it cannot compare because a
+  branch is not fetched says so instead of printing "ok", which it did.
