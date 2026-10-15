@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -282,6 +283,8 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	}
 	tz := laptopTZ()
 	tzSaved := saveProjectTZ(ctx, e, project, tz)
+	// Every way out waits for it (or cancels it), a refusal included.
+	defer tzSaved()
 
 	pr.Phase("Connecting to "+project.Slug, "")
 	endConnect := timeSpan("phase connect")
@@ -801,16 +804,26 @@ func saveProjectTZ(ctx context.Context, e *Env, project *Project, tz string) (wa
 		return func() {}
 	}
 	done := make(chan struct{})
+	// Cancelled when the wait gives up, so the request does not outlive
+	// the command (the process exit would end it anyway; a test's fake
+	// api would otherwise close with it in flight).
+	pctx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(done)
 		z := tz
-		_, _ = e.Client.PatchProject(ctx, project.ID, PatchProjectRequest{TZ: &z})
+		_, _ = e.Client.PatchProject(pctx, project.ID, PatchProjectRequest{TZ: &z})
 	}()
+	var once sync.Once
 	return func() {
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-		}
+		once.Do(func() {
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				cancel()
+				<-done
+			}
+			cancel()
+		})
 	}
 }
 
