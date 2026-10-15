@@ -780,5 +780,5 @@ pointer, not a summary.
 - **I-716** The fetch does not start during boot — 2026-10-13; L22309
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22320
 - **I-740** The stop reads the checkout within its own 15 s, past a dead master and with no stdin to wait on, and says when it could not; the gateway holds a session's EOF until the guest accepts its command (stop-probe, 2026-10-14). Amends I-634, I-710 — L22355
-- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22433
-- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22465
+- **I-741** `repose stop NAME` reads the machine beside the api's read of the project (stop-probe, 2026-10-14) — L22439
+- **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22471

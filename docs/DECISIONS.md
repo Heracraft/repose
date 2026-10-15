@@ -22378,7 +22378,13 @@ printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
   accepted` and then nothing; `x=$(cat)` from a running guest, 1 in 20;
   the same command without `cat`, 0 in 20. With data on stdin the EOF
   follows the data, which sshd buffers until the command has a stdin, so
-  the reads that sent the laptop's commits were not hit.
+  the reads that sent the laptop's commits were not hit. Measured from a
+  checkout through prod's gateway (c5e24d2d, without the gateway change
+  below): s2-b4-probe-c, a temporary machine with a `repose` remote added
+  by hand, one untracked file, each stop 3 s after a start, every read
+  sending the laptop's commit (the 1614-byte script with `$(cat)`): the
+  clause in 8 of 8 stops, 2.4 to 3.9 s with the fetch before each, and
+  3 of 3 status reads of the running machine.
 - *The stop's read.* `stopProbeTimeout` is 15 s, with ssh's
   `ConnectTimeout` at the budget less a second, at most 10 s. A stop is
   the last moment the machine can be read, and a slow network makes the
