@@ -46,6 +46,7 @@ add_rejects_a_multiline_note       P10 a newline in --note is written raw
 add_note_cannot_forge_a_field      P10 a note line that looks like a key wins over the real one
 needs_ignores_a_test_only_change   P4 a _test.go change reaches no binary
 stray_temp_entry_is_not_a_branch   P10 an interrupted add leaves entries/<b>.new, which ls and cut read
+two_branches_keep_two_entries      P10 key() maps / to %, so a%b and a/b share one entry file
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -566,6 +567,25 @@ t_stray_temp_entry_is_not_a_branch() {
   assert_eq "times the cut merges it" "$merged" "1" || { note "$out"; return 1; }
   # and never at the commit the interrupted add had not committed to
   assert_not "the cut takes only one commit of it" "$out" "${old_sha:0:9}"
+}
+
+# P10, third: key() is `tr '/' '%'`, which is not injective. A branch
+# named a%b and a branch named a/b encode to the same filename, so the
+# second to queue silently overwrites the first's entry -- and `/` is the
+# common case here (ws/01-host-nixos, release/r20261015-4). Found while
+# checking the cpu-weight lane's sweep, which turned up repose%fider on
+# kanali as the encoding working as designed.
+t_two_branches_keep_two_entries() {
+  local a b; a=$(branch woker 'pair/one'); b=$(branch woker 'pair%one')
+  echo 'const A = 1' >> "$a/internal/shared/shared.go"; commit "$a" "a"
+  echo 'const B = 1' >> "$b/internal/clipkg/clipkg.go"; commit "$b" "b"
+  q "$a" add >/dev/null; sleep 0.01; q "$b" add >/dev/null
+  local s; s=$(state_of woker)/release-queue
+  local files; files=$(find "$s/entries" -type f | wc -l)
+  assert_eq "entry files for two branches" "$files" "2" || return 1
+  local out; out=$(q "$root/woker" ls)
+  assert_has "the first branch is still queued" "$out" "pair/one" || return 1
+  assert_has "and so is the second" "$out" "pair%one"
 }
 
 # --------------------------------------------------------------- where is it

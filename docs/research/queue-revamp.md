@@ -18,8 +18,8 @@ costs, and what was rejected.
 
 The tool had no tests, which is why each of these was argued about rather
 than run. The first thing built was the fixture: `ops/dev/release-queue-test`
-("The fixture" below). Eleven of its tests fail today — one for each of the
-brief's problems 1 to 7, three for problem 10 and one for the test-file half
+("The fixture" below). Twelve of its tests fail today — one for each of the
+brief's problems 1 to 7, four for problem 10 and one for the test-file half
 of problem 2 — and each is listed in the script's `KNOWN_BAD` with the
 problem it belongs to. That list is the acceptance criterion for this work:
 a fix lands when its line comes out of `KNOWN_BAD` and the suite still
@@ -36,14 +36,14 @@ cpu-weight lane while queueing, after this document was first written.
 |---|---|---|---|---|
 | 1 | 5 | `needs` and the commit count are read against `refs/heads/main` | compute against the integration tip; refuse a stale `cut` | no, a bug |
 | 2 | 4 | path-derived `needs` charges a deploy for a gate | gates install nothing; move `checks` out of `flake.nix` | no, a bug |
-| 3 | 3 | a released branch has no answer, and 32 finished worktrees read as work | `where`, `worktrees` | no, new read-only commands |
+| 3 | 3 | a released branch has no answer, and a finished worktree reads as work | `where`, `worktrees` | no, new read-only commands |
 | 4 | 1 | ids collide across the two machines | a shared id ledger on a git ref, pushed to `origin` | **yes**: a new ref on a public remote |
 | 5 | 6 | a stale copy of the script is silent | the script checks its own age against `origin/integrated` | no |
 | 6 | 2 | queue state is per machine and nothing says so | `where` answers from refs; entries record their machine | no |
 | 7 | 7 | live checks and the release record are written by hand | `live`, and `record` prints the STATUS line | no |
 | 8 | 8 | reaching the other lanes | `say` and `inbox` per branch | no |
 | 9 | 9 | the gateway bans the conductor | renew the operator certificate before use; commit the vsock route | partly: the gateway is yours |
-| 10 | — | a newline in `--note` or `--live` corrupts the entry, silently | refuse or flatten it; read the last field, not the first | no, a bug |
+| 10 | — | the entry store has no schema: free text, first-match reads, sibling temp files, a lossy filename | refuse a newline, read the last match, move temp files out, encode the filename | no, three bugs |
 
 Problems 1, 2, 3, 5 are bug fixes and new read-only commands; they can land
 without a decision from you beyond "yes, go". Problem 4 asks for a new ref
@@ -229,7 +229,7 @@ someone reformats the file.
 
 ---
 
-## 3. A released branch has no answer, and 32 finished worktrees read as work (brief 3)
+## 3. A released branch has no answer, and a finished worktree reads as work (brief 3)
 
 **What happens.** `ls` drops a `released` entry, so the question "did this
 ship" is answerable only from the state file in the common git dir — on the
@@ -774,7 +774,12 @@ certificate: the 8-hour TTL is what makes the key on this box low-value.
 
 ---
 
-## 10. A newline in `--note` or `--live` corrupts the entry, silently (not in the brief)
+## 10. The entry store has no schema, and three ways in lose a branch (not in the brief)
+
+Three defects with one root: an entry is a flat `key=value` file with no
+escaping, no schema and no injective name, and every reader trusts it.
+Each of the three ends the same way — **a branch leaves the queue while
+`add` prints a success line** — and each was found by a different route.
 
 **What happens.** An entry is a flat `key=value` file, written as a block of
 `echo "key=$value"` lines in a fixed order: `branch sha worktree needs live
@@ -836,13 +841,44 @@ it duplicates rather than inventing anything. A later `add` on the same
 branch cleans it up as a side effect of its own write, so the exposure is a
 cut that comes first.)
 
-**It has never fired.** The cpu-weight lane swept all 129 live entries on
-kanali the way `field()` reads them: 0 with orphan lines, 0 where the first
-`state=` differs from the last, 0 stray temp files. So no entry was ever
-written through a multi-line note, and `ls` has never silently hidden a
-queued branch. This is a pre-emptive fix, not a cleanup — it is first in the
-order of work because it is three lines and needs no decision, not because
-it is burning.
+**The third way in: the filename is lossy.** `key()` is `printf '%s' "$1"
+| tr '/' '%'`, which is not injective — `pair/one` and `pair%one` encode to
+the same filename, so the second to queue silently overwrites the first's
+entry. Verified:
+
+```
+$ release-queue add            # on pair/one
+queued pair/one at 1b0d5ef9 (1 commits; ships as: api,host)
+$ release-queue add            # on pair%one
+queued pair%one at 7c9e9daa (1 commits; ships as: cli)
+$ ls .git/release-queue/entries/
+pair%one
+$ release-queue ls
+queued  pair%one  7c9e9daad  ships as cli
+```
+
+`pair/one` is gone from the queue, with a success line behind it. Nobody
+names a branch with a `%`, but `/` is the common case here
+(`ws/01-host-nixos`, `release/r20261015-4`), so the colliding partner of a
+normal branch name is one character away. Encode the filename properly, or
+name the entry by a hash of the branch and keep the name in the file.
+
+**None of the three has ever fired.** The cpu-weight lane swept all 129
+live entries on kanali the way `field()` reads them: 0 with orphan lines, 0
+where the first `state=` differs from the last, 0 strays, and the one
+filename that does not match its `branch=` is `repose%fider`, which is
+`key()` working as designed. So no entry was ever written through a
+multi-line note, no interrupted `add` left one behind, and `ls` has never
+silently hidden a queued branch. This is pre-emptive, not a cleanup — it is
+first in the order of work because it is a handful of lines and needs no
+decision, not because it is burning.
+
+The lane corrected that sweep itself, and the correction is worth recording
+because the proposal rests on it: the first pass grepped `entries/` for
+`\.[A-Za-z0-9]{4}$`, which matches `setfield`'s `mktemp "$f.XXXX"` and
+cannot match `cmd_add`'s `"$f.new"` — three characters. The re-sweep, for
+`*.new`, for names containing a dot, tilde or `tmp`, and for files whose
+`branch=` differs from the filename, is what the result above is.
 
 **What it should do.** Three lines of change, and the first alone closes the
 forging half:
@@ -857,11 +893,19 @@ forging half:
 - Problem 4's ledger inherits the same guard. Anything that stores a reason
   string will eventually be handed a paragraph — the voided-id field is
   exactly that.
-- Every reader globs a fixed set of names rather than `entries/*`, or the
-  writers stop leaving siblings next to the entry (`mktemp` in a `tmp/`
-  subdirectory, and `$f.new` with it). The lane's sweep for strays is worth
-  keeping as a test either way: there are none now, and an interrupted `add`
-  is all it takes.
+- The writers stop leaving siblings next to the entry: `mktemp` into a
+  `tmp/` subdirectory, and `$f.new` with it. **Not** a name filter in the
+  readers. The two temp names sit at lines 37 and 152 of the same script, on
+  every box, and look nothing alike:
+
+  ```
+  origin/integrated    mktemp "$f.XXXX" at 37   "$f.new" at 152,153
+  origin/main          mktemp "$f.XXXX" at 37   "$f.new" at 152,153
+  ```
+
+  A reader taught to skip one still trips on the other, and would rot
+  silently when a third is added. A directory that holds only entries needs
+  to know none of them. (The lane's point, and it is the right call.)
 
 **Cost.** Three lines for the note, and one directory for the temp files.
 Three fixture tests (`add_rejects_a_multiline_note`,
@@ -895,7 +939,7 @@ the `ops/dev/release-queue` under test copied in.
 
 ```
 $ TMPDIR=/tmp/rt ops/dev/release-queue-test
-release-queue tests (2c46672a)
+release-queue tests (ea7fe85d)
   ok      abandon_requeues
   known   add_note_cannot_forge_a_field  (P10 a note line that looks like a key wins over the real one)
   ok      add_records_live_and_note
@@ -928,15 +972,16 @@ release-queue tests (2c46672a)
   ok      needs_web
   known   stale_script_warns  (P6 a worktree's old copy says nothing)
   known   stray_temp_entry_is_not_a_branch  (P10 an interrupted add leaves entries/<b>.new, which ls and cut read)
+  known   two_branches_keep_two_entries  (P10 key() maps / to %, so a%b and a/b share one entry file)
   known   where_is_branch_on_the_other_box  (P2 the queue state is per machine)
   known   where_is_released_branch  (P3 no command answers 'did this branch ship')
 
-23 passed, 0 failed, 11 known bad, 0 unexpectedly passing
-exit 0, 10 s
+23 passed, 0 failed, 12 known bad, 0 unexpectedly passing
+exit 0, 11 s
 ```
 
 Every test asserts the behaviour its name asks for. `KNOWN_BAD` at the top
-of the script names the eleven that fail until their fix lands, with the
+of the script names the twelve that fail until their fix lands, with the
 problem each belongs to; the suite exits 0 when exactly those fail, and 1
 when any other fails **or when a known-bad one starts passing**, which means
 its line is stale and should come out. The numbering in `KNOWN_BAD` is the
@@ -944,14 +989,26 @@ brief's, which is why it runs P1 to P7 rather than this document's order;
 P10 is this document's problem 10, which the brief does not have.
 
 It has already earned its keep. `needs_ignores_a_test_only_change` and the
-three entry-file tests were written from field reports rather than from
-reading the script, and all four were failing within minutes of being
-written — including the one that proves a branch can leave the queue while
-`add` reports success. One of them passed on its first run and was wrong:
-it modelled an interrupted `add` followed by another `add`, which cleans the
-stray up as a side effect, and had to be rewritten to model the cut coming
-first. A fixture that can be wrong in a way its author notices is the point
-of having one.
+four entry-store tests were written from field reports rather than from
+reading the script, and all five were failing within minutes of being
+written — including the three that prove a branch can leave the queue while
+`add` reports success.
+
+**Why a fixture and not a sweep of the live queue.** Both were used here and
+they answer different questions: a sweep of the 129 live entries says a
+shape has never occurred, and only a fixture says what happens when it does.
+Neither is sufficient — the sweep called problem 10 pre-emptive, which
+reranked it, and the fixture is what showed that the pre-emptive case loses
+a branch. (The framing is the cpu-weight lane's.)
+
+Three measurements in this document were wrong and were caught, which is
+the other half of the argument. One of the entry-store tests passed on its
+first run because it modelled an interrupted `add` followed by another
+`add` — the self-cleaning order — and had to be rewritten to put the cut
+first. The lane's first stray sweep used a four-character pattern that
+could not match a three-character suffix. And two worktree censuses decayed
+between measurements, one because the finding had been acted on. Every one
+surfaced because someone re-ran it rather than citing it.
 
 It needs `go` and `python3` and nothing else: no network, no nix, no
 Postgres, no host. `ops/check.sh` is where it belongs once this work lands,
