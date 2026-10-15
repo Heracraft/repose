@@ -716,11 +716,22 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 	// The first sync of a large GitHub repository, and of each large
 	// submodule from GitHub, is fetched by the guest itself, in the
 	// background of the apply (I-203, I-712, I-713).
+	// Where the fetch comes from: the project's remote, or, for a project
+	// with none (a temporary machine, I-351), the checkout's own origin,
+	// as for its submodules (I-744). It only feeds the fetch: the guest
+	// still gets no origin.
+	fetchRemote := opts.RemoteURL
+	if opts.NoRemote {
+		fetchRemote = ""
+		if u, err := gitCmd(localRepoDir, "config", "--get", "remote.origin.url"); err == nil {
+			fetchRemote = normalizeRemote(u)
+		}
+	}
 	var plan *prefetchPlan
 	if len(probe.tips) == 0 {
 		topURL := ""
-		if !opts.NoRemote {
-			topURL = hybridCloneURL(opts.RemoteURL)
+		if fetchRemote != "" {
+			topURL = hybridCloneURL(fetchRemote)
 		}
 		plan = planPrefetch(localRepoDir, topURL, subs)
 	}
@@ -778,7 +789,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 		cloned := ""
 		summary := &SyncSummary{Branch: branch, Head: head, Copied: copied, Carried: carried, Checkout: probe.checkout, Created: probe.created}
 		if plan.active() && plan.resume {
-			cloned = pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
+			cloned = pfSummarize(summary, summaryPlan, pfResult, subs, fetchRemote)
 		}
 		if summary.Commits, err = countRevs(localRepoDir, revs); err != nil {
 			return nil, err
@@ -1130,7 +1141,7 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 			continue
 		}
 		if plan.active() && !plan.resume {
-			pfSummarize(summary, summaryPlan, pfResult, subs, opts.RemoteURL)
+			pfSummarize(summary, summaryPlan, pfResult, subs, fetchRemote)
 		}
 		return summary, nil
 	}
