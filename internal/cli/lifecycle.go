@@ -325,7 +325,7 @@ func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) sto
 	}
 	r.accepted = true
 	closeMaster(ctx, e, project.Slug)
-	saveStopLeft(e.Dir, project.ID, left.git, time.Now())
+	saveStopLeft(e.Dir, project.ID, left, time.Now())
 	op, err := waitStopTaken(ctx, e, project.ID, opID)
 	if err != nil {
 		r.err = err
@@ -485,7 +485,7 @@ func stopOne(ctx context.Context, e *Env, project *Project, snapshot bool, pr *p
 	}
 	r.line = withLeft(r.line, stopClause(left))
 	r.done = true
-	saveStopLeft(e.Dir, p.ID, left.git, time.Now())
+	saveStopLeft(e.Dir, p.ID, left, time.Now())
 	if reason := projectReason(p); reason != "" && p.LastError != nil {
 		// I-158: a stop whose snapshot failed leaves the project stopped
 		// with last_error set; say so rather than implying a snapshot.

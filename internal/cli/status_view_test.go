@@ -470,7 +470,7 @@ func TestStatusSaysTheProbeFailed(t *testing.T) {
 	}
 
 	var b bytes.Buffer
-	writeGitRowsOr(&b, nil, time.Now(), "ssh_timeout", "")
+	writeGitRowsOr(&b, nil, time.Now(), "ssh_timeout", "", 0)
 	if b.String() != "  checkout   unknown (no ssh answer in 4 s)\n" {
 		t.Fatalf("timeout row %q", b.String())
 	}

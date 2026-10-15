@@ -191,6 +191,8 @@ type guestStatus struct {
 	probeErr string
 	// probeDetail is ssh's last error line, for the row.
 	probeDetail string
+	// waited is how long the read waited before probeErr ssh_timeout.
+	waited time.Duration
 }
 
 // guestStatusRead asks the guest, best effort, for its listening
@@ -201,7 +203,24 @@ type guestStatus struct {
 // and never leaves a new one behind (ControlMaster=no), so a status does
 // not hold a gateway session for ControlPersist's ten minutes.
 func guestStatusRead(ctx context.Context, t sshTarget, slug string, have []string) guestStatus {
-	return guestStatusReadIn(ctx, t, slug, have, statusProcsTimeout)
+	return guestStatusWithin(ctx, t, slug, have, statusProcsTimeout)
+}
+
+// guestStatusWithin is the read status and the stop make, bounded by
+// budget from its start (I-740). A master whose connection died (the
+// laptop slept) would hold the read for the whole budget, so
+// masterAlive stops it first, inside the budget; a live one carries the
+// read. waited is the time it took when it timed out, for the line.
+func guestStatusWithin(ctx context.Context, t sshTarget, slug string, have []string, budget time.Duration) guestStatus {
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	masterAlive(ctx, t)
+	g := guestStatusReadIn(ctx, t, slug, have, budget-time.Since(started))
+	if g.probeErr == "ssh_timeout" {
+		g.waited = time.Since(started)
+	}
+	return g
 }
 
 // guestStatusReadIn is guestStatusRead within budget: status's 4 s, or
@@ -375,15 +394,22 @@ func laptopCommits(e *Env, p *Project) []string {
 
 // checkoutUnknown says why the checkout was not read, for status's row
 // and the stop's line (I-634, I-740): "unknown (no ssh answer in 4 s)",
-// "unknown (ssh failed: Connection refused)". budget is the read's.
-func checkoutUnknown(probeErr, detail string, budget time.Duration) string {
+// "unknown (ssh failed: Connection refused)".
+func checkoutUnknown(probeErr, detail string, waited time.Duration) string {
+	return "unknown (" + unknownReason(probeErr, detail, waited) + ")"
+}
+
+// unknownReason is checkoutUnknown's reason. waited is how long a read
+// that timed out waited, in whole seconds: the budget, or less when
+// ssh's ConnectTimeout gave up first.
+func unknownReason(probeErr, detail string, waited time.Duration) string {
 	switch {
 	case probeErr == "ssh_timeout":
-		return fmt.Sprintf("unknown (no ssh answer in %d s)", int(budget.Seconds()))
+		return fmt.Sprintf("no ssh answer in %d s", max(int(waited.Round(time.Second)/time.Second), 1))
 	case detail != "":
-		return "unknown (ssh failed: " + detail + ")"
+		return "ssh failed: " + detail
 	}
-	return "unknown (ssh failed)"
+	return "ssh failed"
 }
 
 // writeGitRowsOr prints the checkout row, one line per worktree:
@@ -393,9 +419,12 @@ func checkoutUnknown(probeErr, detail string, budget time.Duration) string {
 //
 // or, when the probe failed, one row that says the checkout is unknown
 // and why (I-634): no row would read as a machine with no checkout.
-func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string) {
+func writeGitRowsOr(w io.Writer, rows []gitRow, now time.Time, probeErr, detail string, waited time.Duration) {
 	if probeErr != "" {
-		statusRow(w, "checkout", checkoutUnknown(probeErr, detail, statusProcsTimeout))
+		if waited == 0 {
+			waited = statusProcsTimeout
+		}
+		statusRow(w, "checkout", checkoutUnknown(probeErr, detail, waited))
 		return
 	}
 	for i, r := range rows {

@@ -22381,6 +22381,13 @@ printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
   that answers `-O check` but whose connection died (the laptop slept)
   would hold the read for the whole 15 s, so the read calls `masterAlive`
   first (I-491), which stops a dead master; a live one carries the read.
+  Status's read does the same (`guestStatusWithin`), so after a sleep
+  the two read the machine alike. The budget counts from before
+  `masterAlive`: a dead master's check (up to about 2 s) comes out of it,
+  so the read never waits past the budget the line names. A read that
+  times out says how long it waited, in whole seconds: the budget, or
+  less when ssh's `ConnectTimeout` gave up first (`no ssh answer in
+  10 s`).
   `--wait` and the commands that stop through `stopOne` (`resize --size`,
   `fork`, run's plan question) use the same read.
 - *No stdin when there is nothing to send.* `statusScript` sets
@@ -22398,8 +22405,13 @@ printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
   row uses (`checkoutUnknown`, shared): `Stopping job; checkout unknown (no
   ssh answer in 15 s).` or `... (ssh failed: Connection refused).` A
   machine that answered with no checkout still adds nothing. stop-left.json
-  forgets the project's rows, as before, so `repose status` on the stopped
-  machine shows no checkout row.
+  keeps the failure (`error`, `detail`, `waited_s`, with `rows` null), and
+  `repose status` on the stopped machine says `checkout   unknown at the
+  stop, 9h ago (no ssh answer in 15 s)` and `--json` `git_error`: no row
+  would read as a machine with no checkout (I-634's reason for the
+  running machine's row). A CLI before this one reads such an entry as no
+  rows. A Ctrl-C while the stop waits for its early read (I-741) is not
+  a timeout: the stop ends, the line is not printed and nothing is kept.
 - *Measured* from kanali on prod, s2-b4-probe-a (large), one untracked
   file, eight stops per CLI with the two CLIs taking turns, the network
   faster than in the baseline (the project list answered in 60 to 180 ms,

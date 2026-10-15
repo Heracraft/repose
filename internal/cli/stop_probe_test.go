@@ -95,7 +95,7 @@ func TestStopLineSaysWhenTheCheckoutIsUnknown(t *testing.T) {
 		t.Fatalf("failed %q", l)
 	}
 	var b bytes.Buffer
-	writeGitRowsOr(&b, nil, time.Now(), "ssh_timeout", "")
+	writeGitRowsOr(&b, nil, time.Now(), "ssh_timeout", "", 0)
 	if b.String() != "  checkout   unknown (no ssh answer in 4 s)\n" {
 		t.Fatalf("status row %q", b.String())
 	}
@@ -110,12 +110,12 @@ func TestStopProbeStartsBesideTheApi(t *testing.T) {
 	e := newLifecycleEnv(t, fake)
 	runningProject(t, fake, e, "job")
 
-	// The project list answers a second late, as from a far laptop.
+	// The project list answers two seconds late, as from a far laptop.
 	u, _ := url.Parse(fake.URL())
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/projects" {
-			time.Sleep(time.Second)
+			time.Sleep(2 * time.Second)
 		}
 		proxy.ServeHTTP(w, r)
 	}))
@@ -132,7 +132,7 @@ func TestStopProbeStartsBesideTheApi(t *testing.T) {
 		if budget != stopProbeTimeout {
 			t.Errorf("budget %s", budget)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(2 * time.Second)
 		return guestStatus{mux: "tmux", git: []gitRow{{Worktree: "job", Branch: "main", Uncommitted: &n}}}
 	}
 	var out bytes.Buffer
@@ -148,7 +148,8 @@ func TestStopProbeStartsBesideTheApi(t *testing.T) {
 	if reads != 1 {
 		t.Fatalf("%d reads of the machine", reads)
 	}
-	if took > 1800*time.Millisecond {
+	// In turn the two take 4 s; beside each other, about 2.2 s.
+	if took > 3*time.Second {
 		t.Fatalf("stop took %s; the read waited for the api", took)
 	}
 }
@@ -201,5 +202,101 @@ func TestStatusScriptReadsStdinOnlyWithCommits(t *testing.T) {
 	}
 	if s := statusScript("job", true); !strings.HasPrefix(s, "repose_have=$(cat)\n") {
 		t.Fatalf("script with commits does not read them:\n%.80s", s)
+	}
+}
+
+// fakeSSHScript puts an ssh on PATH that runs body for every session
+// and answers `-O` control commands as master says: "dead" is a master
+// whose sessions hang until `-O stop`, "" is no master.
+func fakeSSHScript(t *testing.T, master, body string) {
+	t.Helper()
+	bin := t.TempDir()
+	stopped := filepath.Join(bin, "stopped")
+	check, hang := "exit 255", ""
+	if master == "dead" {
+		check, hang = "exit 0", "[ -e "+stopped+" ] || exec sleep 30"
+	}
+	script := "#!/bin/sh\nif [ \"$1\" = -O ]; then\n  case \"$2\" in\n  stop) : > " + stopped + "; exit 0 ;;\n  check) " + check + " ;;\n  esac\n  exit 0\nfi\n" + hang + "\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// The budget the line names bounds the whole read, the dead master's
+// check included: with a dead master and a machine that never answers,
+// the read used to wait the master's 2 s and then the full budget.
+func TestStopProbeBudgetCoversTheMasterCheck(t *testing.T) {
+	fakeSSHScript(t, "dead", "exec sleep 30")
+	started := time.Now()
+	g := (&Env{}).readGuestFor(context.Background(), "job", nil, 3*time.Second)
+	took := time.Since(started)
+	if g.probeErr != "ssh_timeout" {
+		t.Fatalf("read of a machine that never answers: %+v", g)
+	}
+	if took > 3800*time.Millisecond {
+		t.Fatalf("a 3 s read took %s", took)
+	}
+	if c := stopClause(g); c != "checkout unknown (no ssh answer in 3 s)" {
+		t.Fatalf("clause %q", c)
+	}
+}
+
+// When ssh's own ConnectTimeout gives up first, the line names the time
+// the stop waited, not the budget it would have waited.
+func TestStopProbeNamesTheTimeItWaited(t *testing.T) {
+	fakeSSHScript(t, "", "sleep 1\necho 'Connection timed out during banner exchange' >&2\nexit 255")
+	g := (&Env{}).readGuestFor(context.Background(), "job", nil, stopProbeTimeout)
+	if c := stopClause(g); c != "checkout unknown (no ssh answer in 1 s)" {
+		t.Fatalf("clause %q (%+v)", c, g)
+	}
+}
+
+// status's read stops a dead master too, so status and the stop read a
+// machine the same way after the laptop slept.
+func TestStatusReadSkipsADeadMaster(t *testing.T) {
+	fakeSSHAnswer(t, "0", true)
+	g := guestStatusRead(context.Background(), hostTarget("job"), "job", nil)
+	if g.probeErr != "" || len(g.git) != 1 {
+		t.Fatalf("status's read past a dead master: %+v", g)
+	}
+}
+
+// A Ctrl-C while the stop waits for its early read is not an ssh
+// timeout, and the line says nothing about the checkout.
+func TestStopProbeInterruptedIsNotATimeout(t *testing.T) {
+	e := &Env{Cwd: t.TempDir(), Cache: newProjectsCache()}
+	p := &Project{ID: "id-1", Slug: "job", State: "running"}
+	e.stopEarly = map[string]*stopProbe{"job": {started: time.Now(), done: make(chan struct{})}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	g := probeBeforeStop(ctx, e, p)
+	if g.probeErr != "interrupted" || stopClause(g) != "" {
+		t.Fatalf("interrupted read: %+v, clause %q", g, stopClause(g))
+	}
+	dir := t.TempDir()
+	saveStopLeft(dir, p.ID, g, time.Now())
+	p.State = "stopped"
+	if _, ok := stoppedRows(dir, p); ok {
+		t.Fatal("an interrupted read was kept for status")
+	}
+}
+
+// After a stop that could not read the machine, status on the stopped
+// machine says the checkout is unknown, as the stop line did, instead
+// of showing no checkout row.
+func TestStatusAfterAStopThatReadNothing(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now().Add(-9 * time.Hour)
+	saveStopLeft(dir, "id-1", guestStatus{probeErr: "ssh_timeout", waited: stopProbeTimeout}, at)
+	p := &Project{ID: "id-1", Slug: "job", State: "stopped", Class: "large"}
+	l, ok := stoppedRows(dir, p)
+	if !ok {
+		t.Fatal("no entry for a stop that read nothing")
+	}
+	var b bytes.Buffer
+	writeStatus(&b, statusView{p: p, mux: "tmux", now: time.Now(), left: l, hasLeft: true})
+	if !strings.Contains(b.String(), "\n  checkout   unknown at the stop, 9h ago (no ssh answer in 15 s)\n") {
+		t.Fatalf("status:\n%s", b.String())
 	}
 }

@@ -26,6 +26,13 @@ const stopLeftName = "stop-left.json"
 type stopLeft struct {
 	At   time.Time `json:"at"`
 	Rows []gitRow  `json:"rows"`
+	// Error, Detail and Waited are why the stop could not read the
+	// machine (guestStatus's probeErr, probeDetail and waited), so status
+	// says the checkout is unknown, as the stop line did (I-740). Absent
+	// when it read the machine.
+	Error  string  `json:"error,omitempty"`
+	Detail string  `json:"detail,omitempty"`
+	Waited float64 `json:"waited_s,omitempty"`
 }
 
 // stopProbeTimeout bounds the stop's read of the checkout (I-740).
@@ -83,10 +90,9 @@ func startStopProbes(ctx context.Context, e *Env, names []string) map[string]*st
 	return m
 }
 
-// readGuestFor reads the guest's status within budget. A master whose
-// connection died (the laptop slept) would hold the read for the whole
-// budget, so masterAlive stops it first; a live one carries the read.
-// Tests that stand in for ssh with TargetFor read nothing.
+// readGuestFor reads the guest's status within budget
+// (guestStatusWithin). Tests that stand in for ssh with TargetFor read
+// nothing.
 func (e *Env) readGuestFor(ctx context.Context, slug string, have []string, budget time.Duration) guestStatus {
 	if e.readGuest != nil {
 		return e.readGuest(ctx, slug, have, budget)
@@ -94,9 +100,7 @@ func (e *Env) readGuestFor(ctx context.Context, slug string, have []string, budg
 	if e.TargetFor != nil {
 		return guestStatus{}
 	}
-	t := e.target(slug)
-	masterAlive(ctx, t)
-	return guestStatusReadIn(ctx, t, slug, have, budget)
+	return guestStatusWithin(ctx, e.target(slug), slug, have, budget)
 }
 
 // probeBeforeStop reads the machine's checkout before its stop: the
@@ -114,7 +118,8 @@ func probeBeforeStop(ctx context.Context, e *Env, p *Project) guestStatus {
 			timingf("stop: %s read beside the api", p.Slug)
 			return sp.g
 		case <-ctx.Done():
-			return guestStatus{probeErr: "ssh_timeout"}
+			// Interrupted: the stop ends without a line.
+			return guestStatus{probeErr: "interrupted"}
 		}
 	}
 	return e.readGuestFor(ctx, p.Slug, have, stopProbeTimeout)
@@ -124,8 +129,16 @@ func probeBeforeStop(ctx context.Context, e *Env, p *Project) guestStatus {
 // the machine keeps (leftClause), or that the checkout is unknown and
 // why, in status's words.
 func stopClause(g guestStatus) string {
-	if g.probeErr != "" {
-		return "checkout " + checkoutUnknown(g.probeErr, g.probeDetail, stopProbeTimeout)
+	switch g.probeErr {
+	case "":
+	case "interrupted":
+		return ""
+	default:
+		waited := g.waited
+		if waited == 0 {
+			waited = stopProbeTimeout
+		}
+		return "checkout " + checkoutUnknown(g.probeErr, g.probeDetail, waited)
 	}
 	return leftClause(g.git)
 }
@@ -179,9 +192,10 @@ func readStopLeft(dir string) map[string]stopLeft {
 	return m
 }
 
-// saveStopLeft records rows as what project id had at its stop, and
-// forgets it when rows is nil. Best effort.
-func saveStopLeft(dir, id string, rows []gitRow, at time.Time) {
+// saveStopLeft records what the stop's read of project id found: its
+// rows, or why it found none. A read that found no checkout, or was
+// interrupted, forgets the entry. Best effort.
+func saveStopLeft(dir, id string, g guestStatus, at time.Time) {
 	if dir == "" {
 		return
 	}
@@ -189,13 +203,16 @@ func saveStopLeft(dir, id string, rows []gitRow, at time.Time) {
 	stopLeftMu.Lock()
 	defer stopLeftMu.Unlock()
 	m := readStopLeft(dir)
-	if rows == nil {
+	switch {
+	case g.git != nil:
+		m[id] = stopLeft{At: at, Rows: g.git}
+	case g.probeErr != "" && g.probeErr != "interrupted":
+		m[id] = stopLeft{At: at, Error: g.probeErr, Detail: g.probeDetail, Waited: g.waited.Seconds()}
+	default:
 		if _, ok := m[id]; !ok {
 			return
 		}
 		delete(m, id)
-	} else {
-		m[id] = stopLeft{At: at, Rows: rows}
 	}
 	if b, err := json.Marshal(m); err == nil {
 		_ = writeFileAtomic(filepath.Join(dir, stopLeftName), b, 0o600)
@@ -209,7 +226,7 @@ func stoppedRows(dir string, p *Project) (stopLeft, bool) {
 		return stopLeft{}, false
 	}
 	l, ok := readStopLeft(dir)[p.ID]
-	if !ok || len(l.Rows) == 0 || (p.StartedAt != nil && p.StartedAt.After(l.At)) {
+	if !ok || (len(l.Rows) == 0 && l.Error == "") || (p.StartedAt != nil && p.StartedAt.After(l.At)) {
 		return stopLeft{}, false
 	}
 	return l, true
@@ -217,8 +234,14 @@ func stoppedRows(dir string, p *Project) (stopLeft, bool) {
 
 // writeStoppedRows prints a stopped project's checkout rows, with when
 // they were read: `checkout   main: 3 commits not on this laptop (at the
-// stop, 9h ago)`.
+// stop, 9h ago)`, or that the stop could not read them: `checkout
+// unknown at the stop, 9h ago (no ssh answer in 15 s)`.
 func writeStoppedRows(w interface{ Write([]byte) (int, error) }, l stopLeft, now time.Time) {
+	if len(l.Rows) == 0 && l.Error != "" {
+		waited := time.Duration(l.Waited * float64(time.Second))
+		statusRow(w, "checkout", "unknown at the stop, "+compactAge(now.Sub(l.At))+" ago ("+unknownReason(l.Error, l.Detail, waited)+")")
+		return
+	}
 	for i, r := range l.Rows {
 		line := gitRowText(r, now)
 		if i == 0 {
