@@ -116,6 +116,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 - Cmd+V did nothing on a Mac: you started with `REPOSE_NO_CLIPBOARD_PATH=1`, or a CLI older than v0.1.22, and a terminal sends nothing for Cmd+V when the clipboard holds only an image. Press Ctrl+V, which reads the clipboard itself.
 - Your laptop's path appeared, not the machine's: the file was over 20 MB, you dropped more than 20 files, or the copy failed, and the tmux status line said which. `REPOSE_NO_INPUT_PROXY=1` pastes the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. When `repose` itself runs on a computer you reached over SSH, it has no clipboard to read.
+- Ctrl+V did nothing under WSL: it reads the Linux clipboard, which may not hold an image you copied in Windows.
 - The machine's path appeared as text: Claude Code attaches images only; for another file it gets the path, which it can open.
 
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing the files its background server needs. The next platform update fixes it in place. Until then, start it with `codex --no-daemon`.

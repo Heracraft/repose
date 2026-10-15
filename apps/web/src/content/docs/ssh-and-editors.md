@@ -17,7 +17,7 @@ rsync -a todo-app.repose:todo-app/dist/ ./dist/
 ssh -L 9229:localhost:9229 todo-app.repose
 ```
 
-You log in as `dev`. Paths are relative to `/home/dev`, and the project's checkout is `/home/dev/<folder>`, named after the laptop folder it was first synced from: run `todo-app` from `~/code/todo-app` and it is `/home/dev/todo-app`, run it from `~/code/factory` and it is `/home/dev/factory` ([Where the checkout is](/docs/sync#where-the-checkout-is)). `repose exec pwd` prints it. Plain `ssh` doesn't attach to tmux; run `tmux attach` for that, or use `repose attach`.
+You log in as `dev`. Paths are relative to `/home/dev`, and the project's checkout is `/home/dev/<folder>`, named after the laptop folder it was first synced from: run `todo-app` from `~/code/todo-app` and it is `/home/dev/todo-app`, run it from `~/code/factory` and it is `/home/dev/factory` ([Where the checkout is](/docs/sync#where-the-checkout-is)). `repose exec pwd` prints it. Plain `ssh` doesn't attach to tmux; run `tmux attach` for that, or use `repose attach`. A job you start over plain `ssh` ends with the connection; one in tmux outlives it.
 
 git works over the same host:
 
