@@ -45,6 +45,7 @@ live_check_is_recorded             P7 nothing stores whether the check ran
 add_rejects_a_multiline_note       P10 a newline in --note is written raw
 add_note_cannot_forge_a_field      P10 a note line that looks like a key wins over the real one
 needs_ignores_a_test_only_change   P4 a _test.go change reaches no binary
+stray_temp_entry_is_not_a_branch   P10 an interrupted add leaves entries/<b>.new, which ls and cut read
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -536,6 +537,35 @@ and the rest of the reason'
   [ -f "$f" ] || { note "no entry was written"; return 1; }
   assert_eq "the entry's state" "$(field_of "$f" state)" "queued" || return 1
   assert_has "and it is still in the queue" "$(q "$root/woker" ls)" "forged"
+}
+
+# P10, second half (the cpu-weight lane's sweep, 2026-10-15). `cmd_add`
+# writes "$f.new" and moves it into place, and `setfield` writes
+# "$f.XXXX"; every reader globs entries/*. So an add or a setfield killed
+# between the write and the mv leaves a file that is a complete entry, and
+# the branch is then queued twice -- `ls` lists it twice and `cut` merges
+# it twice, the stray at whatever sha it held.
+t_stray_temp_entry_is_not_a_branch() {
+  local wt; wt=$(branch woker interrupted)
+  echo 'const A = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "a"
+  q "$wt" add >/dev/null
+  local s; s=$(state_of woker)/release-queue
+  local old_sha; old_sha=$(field_of "$s/entries/interrupted" sha)
+  # The branch moves on, and the second `add` is killed between its write
+  # and its mv: entries/interrupted.new is left holding the NEW commit while
+  # entries/interrupted still holds the old one. A later add would clean the
+  # stray up as a side effect of its own write, so the exposure is a cut
+  # that comes first -- which is what the lane is told to let happen.
+  echo 'const B = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "b"
+  sed "s/^sha=.*/sha=$(git -C "$wt" rev-parse HEAD)/" "$s/entries/interrupted" \
+    > "$s/entries/interrupted.new"
+  local listed; listed=$(q "$root/woker" ls | grep -c 'interrupted')
+  assert_eq "times the branch is listed" "$listed" "1" || return 1
+  local out; out=$(q "$root/woker" cut)
+  local merged; merged=$(grep -c 'merged interrupted' <<<"$out")
+  assert_eq "times the cut merges it" "$merged" "1" || { note "$out"; return 1; }
+  # and never at the commit the interrupted add had not committed to
+  assert_not "the cut takes only one commit of it" "$out" "${old_sha:0:9}"
 }
 
 # --------------------------------------------------------------- where is it

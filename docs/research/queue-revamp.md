@@ -18,8 +18,8 @@ costs, and what was rejected.
 
 The tool had no tests, which is why each of these was argued about rather
 than run. The first thing built was the fixture: `ops/dev/release-queue-test`
-("The fixture" below). Ten of its tests fail today — one for each of the
-brief's problems 1 to 7, two for problem 10 and one for the test-file half
+("The fixture" below). Eleven of its tests fail today — one for each of the
+brief's problems 1 to 7, three for problem 10 and one for the test-file half
 of problem 2 — and each is listed in the script's `KNOWN_BAD` with the
 problem it belongs to. That list is the acceptance criterion for this work:
 a fix lands when its line comes out of `KNOWN_BAD` and the suite still
@@ -247,6 +247,15 @@ $ git merge-base --is-ancestor boot-real-addr origin/main && echo released
 released
 ```
 
+The census here moved while this was being written, and the direction is
+worth recording: **52 worktrees with 33 on branches wholly on `origin/main`
+at 17:5x, 29 with 8 at 20:3x**, and the eight are the main checkout plus
+seven `.claude/worktrees/agent-*` leftovers. Nothing updated a worktree;
+they were deleted, after this finding was relayed. That is the argument for
+the `worktrees` command rather than against it — the list was actionable the
+moment someone could see it — and it is also why the numbers in this section
+carry a time.
+
 `boot-real-addr` shipped in r20261014-1 with CLI v0.1.35 and its migration
 0026 is applied on prod. Two agents concluded it was never queued. What
 misled both is still on disk: `~/kanali-boot-real-addr`, a worktree on a
@@ -451,24 +460,54 @@ carve-out exists to prevent.
 
 **What happens.** Every worktree has its own `ops/dev/release-queue`, from
 whatever main it was cut from, and they all write the same state in the
-common git dir. Today on woker-1:
+common git dir.
+
+**The stale copy is what `main` gives you.** This is the part that does not
+decay, so it is the claim rather than the count:
 
 ```
-$ git rev-parse origin/integrated:ops/dev/release-queue
-ba144becbdb091449be0869f1bed54cacd842460
-$ for wt in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do
-    git hash-object "$wt/ops/dev/release-queue"; done | sort | uniq -c
-     30 e07d81cdcd3a619508226e550d6df2bba762ba2c
-     14 aca8ec4c412c1a1ac494550e6e4e9ab1227feaff
-      3 ba144becbdb091449be0869f1bed54cacd842460   <- origin/integrated's
+$ for r in origin/main origin/integrated refs/heads/main; do
+    printf '%-20s %s\n' "$r" "$(git rev-parse $r:ops/dev/release-queue)"; done
+origin/main          e07d81cdcd3a619508226e550d6df2bba762ba2c
+origin/integrated    ba144becbdb091449be0869f1bed54cacd842460
+refs/heads/main      e07d81cdcd3a619508226e550d6df2bba762ba2c
+$ git show origin/main:ops/dev/release-queue | grep -c 'ids_in_use()'
+0
 ```
 
-**44 of the 47 worktrees that have the script carry an older copy**, in two
-generations, the main checkout among them.
+`e07d81cd` is the dominant stale generation in every worktree census below
+**and** it is byte-for-byte what `origin/main` and this box's `refs/heads/main`
+hold. I-745's whole rewrite — `ids_in_use`, the `refs/remotes` scan, the
+range-header pattern, the refusal to print a number that is already an entry
+id — is on `origin/integrated` and on no `main`. CLAUDE.md tells every agent
+to start with `git worktree add ../<checkout>-<slug> -b <slug> main`, so on
+this box a worktree created exactly as documented gets the pre-I-745 script
+every time. The stale copies are a steady state, not a backlog that drains:
+**a guard against handing out a used number cannot live only on the branch
+nobody branches from.** Found by the docs lane after its own reservation.
 
-A lane in any of them runs a version of `id`, `needs_of` and `add` that
-was superseded, and nothing says so. The old `id` is the one that handed out
-a used number six times.
+One qualifier the lane's version does not have, and it ties this to problem
+1: there are three different mains in play. On kanali, `refs/heads/main`
+*is* integrated main, so the documented command there does carry the fix. On
+woker-1 it does not, because `refs/heads/main` is the stale ref of problem 1.
+The same root defect produces both symptoms, and it means the lane that most
+needs the guard — one on the box whose main is stale — is the one that
+cannot get it.
+
+The census, which does decay:
+
+```
+17:5x  52 worktrees, 47 with the script: 44 older, in two generations
+20:3x  29 worktrees, 23 with the script: 18 older
+```
+
+The drop is worktrees being removed between the two measurements, not copies
+being updated. The two older generations date from 2026-10-04 (`aca8ec4c`)
+and 2026-10-11 (`e07d81cd`, which is `main`'s).
+
+A lane in any of them runs a version of `id`, `needs_of` and `add` that was
+superseded, and nothing says so. The old `id` is the one that handed out a
+used number six times.
 
 It happened again while this was being written, and the lane could not have
 known. The docs lane, explaining its I-747 reservation, cited `cmd_id`'s
@@ -505,6 +544,16 @@ Silent in two cases: when the branch itself changes `ops/dev/release-queue`
 (the author of a change to the tool is not running a stale copy), and when
 `origin/integrated` is not fetched at all, where the line would be noise
 about a missing ref rather than about the script.
+
+**And the guard has to reach `main`.** The warning above tells a lane its
+copy is old; it does not stop the copy being old, because the documented
+worktree command reproduces it. That half is a process change, not a code
+one, and it is the owner's: a fix to `ops/dev/release-queue` or
+`ops/dev/decisions-index.py` is tooling every lane runs before it writes
+anything, so it should reach `main` in the next release rather than wait for
+the queue to fill (`RELEASE.md`, "For the conductor: releasing"). I-745 has
+been integrated and unreleased since 2026-10-15; until main moves, every
+lane on this box reserving ids runs the script it replaced.
 
 **Cost.** Ten lines, one `git rev-parse`. Two fixture tests
 (`stale_script_warns`, `author_script_no_warning` — the second guards
@@ -766,7 +815,37 @@ the forged value and **merge a different commit**, and `needs=`, where the
 cut would record the wrong targets. Nobody here is hostile; a note that
 quotes a command, a diff or an error message is all it takes.
 
-**What it should do.** Three lines of change, and the first alone closes it:
+**The second half: a stray temp file is a second queue entry.** `cmd_add`
+writes `"$f.new"` and moves it into place; `setfield` writes `"$f.XXXX"`;
+every reader globs `entries/*`. So an `add` killed between its write and its
+`mv` leaves a complete entry behind, and the branch is queued twice.
+Reproduced in the fixture — a successful `add`, then a second `add`
+interrupted after the branch moved:
+
+```
+$ release-queue ls
+queued  interrupted  37f5013ae  ships as api,host  (branch moved since queued: 7cb230d; queue again)
+queued  interrupted  7cb230d4f  ships as api,host
+```
+
+Two commits of one branch, both queued; `cut` merges both and the release
+record gets two `merged=` lines for it. (The cpu-weight lane expected the
+stray to read as a branch named `cpu-weight.aBcD` with no sha; it is worse
+than that — the stray carries the full entry including the branch name, so
+it duplicates rather than inventing anything. A later `add` on the same
+branch cleans it up as a side effect of its own write, so the exposure is a
+cut that comes first.)
+
+**It has never fired.** The cpu-weight lane swept all 129 live entries on
+kanali the way `field()` reads them: 0 with orphan lines, 0 where the first
+`state=` differs from the last, 0 stray temp files. So no entry was ever
+written through a multi-line note, and `ls` has never silently hidden a
+queued branch. This is a pre-emptive fix, not a cleanup — it is first in the
+order of work because it is three lines and needs no decision, not because
+it is burning.
+
+**What it should do.** Three lines of change, and the first alone closes the
+forging half:
 
 - `add` refuses a `--note` or `--live` value containing a newline, or
   flattens it to one line and says it did. Flatten is the better default:
@@ -778,9 +857,15 @@ quotes a command, a diff or an error message is all it takes.
 - Problem 4's ledger inherits the same guard. Anything that stores a reason
   string will eventually be handed a paragraph — the voided-id field is
   exactly that.
+- Every reader globs a fixed set of names rather than `entries/*`, or the
+  writers stop leaving siblings next to the entry (`mktemp` in a `tmp/`
+  subdirectory, and `$f.new` with it). The lane's sweep for strays is worth
+  keeping as a test either way: there are none now, and an interrupted `add`
+  is all it takes.
 
-**Cost.** Three lines. Two fixture tests
-(`add_rejects_a_multiline_note`, `add_note_cannot_forge_a_field`).
+**Cost.** Three lines for the note, and one directory for the temp files.
+Three fixture tests (`add_rejects_a_multiline_note`,
+`add_note_cannot_forge_a_field`, `stray_temp_entry_is_not_a_branch`).
 
 **Rejected.** Making the entry a different format (JSON, a directory of
 one-value files): it would be more correct and it is not worth rewriting
@@ -810,14 +895,14 @@ the `ops/dev/release-queue` under test copied in.
 
 ```
 $ TMPDIR=/tmp/rt ops/dev/release-queue-test
-release-queue tests (97411806)
+release-queue tests (2c46672a)
   ok      abandon_requeues
-  known   add_note_cannot_forge_a_field      (P10 a note line that looks like a key wins)
+  known   add_note_cannot_forge_a_field  (P10 a note line that looks like a key wins over the real one)
   ok      add_records_live_and_note
   ok      add_refuses_dirty_tree
   ok      add_refuses_main
   ok      add_refuses_no_commits
-  known   add_rejects_a_multiline_note       (P10 a newline in --note is written raw)
+  known   add_rejects_a_multiline_note  (P10 a newline in --note is written raw)
   ok      add_runs_cli_guards
   ok      author_script_no_warning
   ok      cut_merges_in_queue_order
@@ -826,42 +911,47 @@ release-queue tests (97411806)
   ok      id_hands_out_several
   ok      id_refuses_used_number
   ok      id_sees_local_branch
-  known   id_sees_other_machine_reservation  (P1 reservations never leave the machine)
+  known   id_sees_other_machine_reservation  (P1 the reservations file never leaves the machine)
   ok      id_sees_range_header
   ok      id_sees_remote_tracking
   ok      id_sees_uncommitted_worktree
-  known   live_check_is_recorded             (P7 nothing stores whether the check ran)
-  known   needs_against_stale_local_main     (P5 needs and the count read refs/heads/main)
+  known   live_check_is_recorded  (P7 nothing stores whether the check ran)
+  known   needs_against_stale_local_main  (P5 needs and the commit count read refs/heads/main)
   ok      needs_cli_only
   ok      needs_docs_only
   ok      needs_embedded_file
-  known   needs_flake_checks_only            (P4 a checks-only flake change ships as 3)
+  known   needs_flake_checks_only  (P4 a checks-only flake change ships as base,host,edge)
   ok      needs_go_shared_package
   ok      needs_guest_nix
-  known   needs_ignores_a_test_only_change   (P4 a _test.go change reaches no binary)
+  known   needs_ignores_a_test_only_change  (P4 a _test.go change reaches no binary)
   ok      needs_shared_nix
   ok      needs_web
-  known   stale_script_warns                 (P6 a worktree's old copy says nothing)
-  known   where_is_branch_on_the_other_box   (P2 the queue state is per machine)
-  known   where_is_released_branch           (P3 no answer to 'did this branch ship')
+  known   stale_script_warns  (P6 a worktree's old copy says nothing)
+  known   stray_temp_entry_is_not_a_branch  (P10 an interrupted add leaves entries/<b>.new, which ls and cut read)
+  known   where_is_branch_on_the_other_box  (P2 the queue state is per machine)
+  known   where_is_released_branch  (P3 no command answers 'did this branch ship')
 
-23 passed, 0 failed, 10 known bad, 0 unexpectedly passing
+23 passed, 0 failed, 11 known bad, 0 unexpectedly passing
 exit 0, 10 s
 ```
 
 Every test asserts the behaviour its name asks for. `KNOWN_BAD` at the top
-of the script names the ten that fail until their fix lands, with the
+of the script names the eleven that fail until their fix lands, with the
 problem each belongs to; the suite exits 0 when exactly those fail, and 1
 when any other fails **or when a known-bad one starts passing**, which means
 its line is stale and should come out. The numbering in `KNOWN_BAD` is the
 brief's, which is why it runs P1 to P7 rather than this document's order;
 P10 is this document's problem 10, which the brief does not have.
 
-It has already earned its keep twice. `needs_ignores_a_test_only_change`
-and the two note tests were written from field reports rather than from
-reading the script, and all three were failing within minutes of being
+It has already earned its keep. `needs_ignores_a_test_only_change` and the
+three entry-file tests were written from field reports rather than from
+reading the script, and all four were failing within minutes of being
 written — including the one that proves a branch can leave the queue while
-`add` reports success.
+`add` reports success. One of them passed on its first run and was wrong:
+it modelled an interrupted `add` followed by another `add`, which cleans the
+stray up as a side effect, and had to be rewritten to model the cut coming
+first. A fixture that can be wrong in a way its author notices is the point
+of having one.
 
 It needs `go` and `python3` and nothing else: no network, no nix, no
 Postgres, no host. `ops/check.sh` is where it belongs once this work lands,
@@ -890,9 +980,11 @@ so CI runs it.
 5. Problem 9 — `--if-stale` and `ops/dev/guest-exec` are small and
    independent; the gateway question is yours whenever you want it.
 
-Problem 10 goes in front of all of it. It is three lines, it needs no
-decision, and it is the only one on this list that can lose a branch
-between `add` and the cut.
+Problem 10 goes first. It is three lines, it needs no decision, and it is
+the only one on this list that can lose a branch between `add` and the cut —
+though the sweep says it never has, so it is cheap insurance rather than a
+fire. The same pass should move the entry writers' temp files out of
+`entries/`.
 
 Each step ships with its `RELEASE.md` and `ORCHESTRATION.md` update and a
 `DECISIONS.md` entry under "Made during implementation", amending I-416 and
