@@ -274,7 +274,7 @@ func prefetchUnpackScript(plan *prefetchPlan) string {
 	} else {
 		t += "rm -rf \"$t\"\nmkdir -p \"$t\"\n"
 	}
-	return t + "repose_cpid=\ntrap '[ -z \"$repose_cpid\" ] || wait \"$repose_cpid\" 2>/dev/null; [ -n \"$repose_keep\" ] || rm -rf \"$t\"; [ -z \"$repose_pfp\" ] || kill $repose_pfp 2>/dev/null' EXIT\ntar -x -C \"$t\"\n" + applyMarkUpload
+	return t + "repose_cpid=\ntrap '[ -z \"$repose_cpid\" ] || wait \"$repose_cpid\" 2>/dev/null || true; [ -n \"$repose_keep\" ] || rm -rf \"$t\"; [ -z \"$repose_pfp\" ] || kill $repose_pfp 2>/dev/null' EXIT\ntar -x -C \"$t\"\n" + applyMarkUpload
 }
 
 // resendKeeps reports whether a payload entry is sent again when the

@@ -780,4 +780,4 @@ pointer, not a summary.
 - **I-716** The fetch does not start during boot — 2026-10-13; L22303
 - **I-731** No `requestId` on a Chat webhook: Google refuses it and every Google Chat notification failed (gchat-no-requestid, 2026-10-14; amends I-692) — L22314
 - **I-742** The apply reports its own steps' times — 2026-10-14; L22349
-- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22387
+- **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22388

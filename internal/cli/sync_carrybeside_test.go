@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -181,5 +182,66 @@ func TestCarryTravelsCompressed(t *testing.T) {
 	}
 	if len(z)*10 > plain {
 		t.Fatalf("compressed %d bytes to %d", plain, len(z))
+	}
+}
+
+// The apply is released at the early line, so what a checkout needs has
+// to come before it in the carry's script: the logins, then the git
+// config. The sync test above cannot pin this, since a git part placed
+// after the line usually still lands before the checkout's status.
+func TestCarryPutsTheLoginsAndGitConfigBeforeTheEarlyLine(t *testing.T) {
+	home := laptopHomeWithGH(t)
+	writeFile(t, filepath.Join(home, ".gitconfig"), "[user]\n\tname = Dev\n\temail = dev@example.com\n")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	repo := t.TempDir()
+	mustRun(t, repo, "git", "init", "-q")
+	gc, err := buildGitCarry(repo, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := buildCredentialsAndCarry(home, repo, credSyncOptions{}, carryOptions{TZ: "UTC", Git: gc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := c.p.script.String()
+	logins := strings.Index(s, carryMarkerDir+"/"+credsMarker+"\n")
+	git := strings.Index(s, "'#failed git'")
+	early := strings.Index(s, carryEarlyLine)
+	tz := strings.Index(s, "'#failed time zone'")
+	if logins < 0 || git < 0 || early < 0 || tz < 0 {
+		t.Fatalf("logins %d, git %d, early %d, tz %d in:\n%s", logins, git, early, tz, s)
+	}
+	if !(logins < git && git < early && early < tz) {
+		t.Fatalf("order logins %d, git %d, early %d, tz %d; want the logins, the git config, the early line, then the rest:\n%s", logins, git, early, tz, s)
+	}
+}
+
+// An apply that leaves early while the background carry fails still
+// runs its whole EXIT trap: under set -e a failed wait would end the
+// trap before it removes the payload and stops the fetch.
+func TestApplyExitTrapSurvivesAFailedCarry(t *testing.T) {
+	var trap string
+	for _, l := range strings.Split(prefetchUnpackScript(&prefetchPlan{full: true}), "\n") {
+		if strings.HasPrefix(l, "trap ") {
+			trap = l
+		}
+	}
+	if trap == "" {
+		t.Fatal("no trap line in the unpack script")
+	}
+	dir := t.TempDir()
+	script := "set -e\nrepose_pf=\"$1\"\nrepose_pfp=\nt=\"$PWD/" + prefetchPayloadDir + "\"\nrepose_keep=\nrepose_cpid=\n" + trap +
+		"\nmkdir -p \"$t\"\nsleep 30 & repose_pfp=$!\necho $repose_pfp > \"$1.pid\"\n(exit 3) & repose_cpid=$!\nsleep 0.2\nfalse\n"
+	cmd := exec.Command("bash", "-c", script, "bash", "pf")
+	cmd.Dir = dir
+	_ = cmd.Run()
+	if _, err := os.Stat(filepath.Join(dir, "pf", "payload")); !os.IsNotExist(err) {
+		t.Fatalf("the payload is still there after the trap: %v", err)
+	}
+	pid := strings.TrimSpace(readFile(t, filepath.Join(dir, "pf.pid")))
+	if err := exec.Command("kill", "-0", pid).Run(); err == nil {
+		_ = exec.Command("kill", pid).Run()
+		t.Fatal("the fetch still runs after the trap")
 	}
 }

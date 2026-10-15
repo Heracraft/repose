@@ -314,10 +314,10 @@ Interrupted. job-search was created and stays on your account; `repose rm job-se
   start in the background at the top of the apply's script, in the
   apply's own ssh, while the payload is still uploading (I-713); the
   laptop bundles each repository against its own `refs/remotes/origin/*`
-  (laptopBases), and its logins travel in the apply as on any sync,
-  in the background (I-743): the apply waits only for the logins and the
-  git config, then checks out while the Claude, MCP and tools parts run,
-  and joins them before the fresh shell. The
+  (laptopBases), and its logins travel in the apply as on any sync. The
+  carry runs in the background (I-743): the apply waits only for the
+  logins and the git config, then checks out while the Claude, MCP and
+  tools parts run, and joins them before the fresh shell. The
   first attempt is anonymous: a public superproject is fetched with
   `--filter=blob:none` through a promisor remote named `repose-backfill`
   (I-714) when the guest's `git backfill` takes revisions (git 2.54 and

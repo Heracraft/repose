@@ -22365,8 +22365,9 @@ public docs' "prints how long each step took" cover it unchanged.
   8.6 MiB submodule fetched by the guest, kanali's real logins and
   Claude files). On c5e24d2d the sync phase took 5.5 to 9.5 s (9 runs,
   mean 6.8 s) with an apply of 4.4 to 8.2 s. In 4 runs of c5e24d2d with
-  the marks added, of an apply of 4.6 to 5.2 s, 2.2 to 2.8 s was the carry, run whole before the fetch was joined, and the
-  fetch itself (1.1 to 1.4 s) ended inside it; after it guard 0.3 s,
+  the marks added, of an apply of 4.6 to 5.2 s, 2.2 to 2.8 s was the
+  carry, run whole before the fetch was joined, and the fetch itself
+  (1.1 to 1.4 s) ended inside it; after it guard 0.3 s,
   checkout 0.04 s, the submodule's steps 0.6 to 0.9 s, record 0.3 to
   0.7 s, end 0.15 to 0.4 s. The carry is about 700 small processes over
   ten parts, none over 0.5 s (a set -x trace on the guest). The payload
@@ -22375,8 +22376,8 @@ public docs' "prints how long each step took" cover it unchanged.
   tar: 7.0 s of the apply's upload at
   5 Mbit/s. The 20 s gap did not come back on any of 33 creates; the
   live check's run had booted in 48 s on a busy host-01, where a carry
-  of 700 processes and an unthrottled tools install would stretch. What
-  stays open is that run alone; the marks now name the step on the next.
+  of 700 processes and an unthrottled tools install would stretch. Only
+  that run stays unexplained; on the next one, the marks name the step.
 - *Rejected:* batching the apply's git calls into one script (the
   analysis's first idea): on these runs the git steps after the fetch
   are 1.5 to 2.5 s in all, the checkout of a 900-file tree 0.04 s, and
@@ -22419,16 +22420,22 @@ From I-742's marks, two cuts:
   after). Interleaved, unthrottled: c5e24d2d 6.9, 6.4, 7.3, 6.9 s, the
   branch 6.2, 6.1, 5.6, 5.8 s (apply 5.2 to 5.5 s against 3.8 to 4.4 s);
   the rest of the carry ends 15 to 35 ms after the record, so it is
-  hidden. Uplink held to 5 Mbit/s by a throttle on ssh's stdin: c5e24d2d
-  13.9 and 14.1 s (a 4.3 MB payload), the branch 6.1, 6.0 and 5.9 s
-  (0.67 MB; upload 1.1 to 1.3 s where it was 7.0). A submodule whose
-  origin GitHub lacks: `sync fetch s0 failed`, the I-712 line, a second
-  payload of 1964 commits, HEADs 84eec58 and 0404249, clean tree, every
-  login and carry marker written. A private 4.75 MiB submodule (fetched
-  with gh's login after the anonymous attempt fails): 9.7 s against
-  11.6 s on c5e24d2d, its fetch done 2 s sooner, HEADs right on both. A
-  first sync interrupted 6 s into a 1 Mbit/s upload (SIGINT to the
-  process group): no HEAD; `repose sync` then ended in 5.8 s with the
-  right HEADs, the untracked 3 MB file byte for byte and the logins in.
-  The third whole payload (the kept payload gone) is covered by
+  hidden. On this build the apply waits 0.76 to 1.24 s for the logins
+  and the git config (7 runs). Uplink held to 5 Mbit/s by a throttle on
+  ssh's stdin: c5e24d2d 13.9 and 14.1 s (a 4.3 MB payload), the branch
+  6.1, 6.0 and 5.9 s (0.67 MB; upload 1.1 to 1.3 s where it was 7.0). An
+  earlier build of the branch with the carry beside the checkout and the
+  tar not yet gzipped took 4.7, 5.3 and 4.9 s unthrottled (not
+  interleaved with c5e24d2d, logins 0.71 to 0.81 s) and 12.0 and 11.8 s
+  at 5 Mbit/s, still sending 4.3 MB: of the throttled gain, about 2 s is
+  the carry beside the checkout and about 6 s the gzip. A submodule
+  whose origin GitHub lacks: `sync fetch s0 failed`, the I-712 line, a
+  second payload of 1964 commits, HEADs 84eec58 and 0404249, clean tree,
+  every login and carry marker written. A private 4.75 MiB submodule
+  (fetched with gh's login after the anonymous attempt fails): 9.7 s
+  against 11.6 s on c5e24d2d, its fetch done 2 s sooner, HEADs right on
+  both. A first sync interrupted 6 s into a 1 Mbit/s upload (SIGINT to
+  the process group): no HEAD; `repose sync` then ended in 5.8 s with
+  the right HEADs, the untracked 3 MB file byte for byte and the logins
+  in. The third whole payload (the kept payload gone) is covered by
   TestPrefetchResendWithoutTheKeptPayload, not on prod.
