@@ -313,6 +313,10 @@ func (g *fakeGuest) session(sconn *ssh.ServerConn, ch ssh.Channel, reqs <-chan *
 		case "exec":
 			var e struct{ Command string }
 			_ = ssh.Unmarshal(req.Payload, &e)
+			if e.Command == "eof-order" {
+				exit(g.eofOrder(ch, req))
+				return
+			}
 			_ = req.Reply(true, nil)
 			status := g.exec(sconn, ch, e.Command, envs)
 			exit(status)
@@ -322,6 +326,37 @@ func (g *fakeGuest) session(sconn *ssh.ServerConn, ch ssh.Channel, reqs <-chan *
 				_ = req.Reply(false, nil)
 			}
 		}
+	}
+}
+
+// eofOrder is OpenSSH's sshd on an exec whose stdin is empty: the
+// command's stdin exists only once sshd has accepted the exec, and an
+// EOF that arrives before it closes nothing, so `cat` waits for ever
+// (I-740). It takes its time to accept, as a guest just after a boot
+// does, says "early-eof" (exit 1) when the EOF was already there, and
+// "eof-after-exec" when it came after the accept.
+func (g *fakeGuest) eofOrder(ch ssh.Channel, req *ssh.Request) uint32 {
+	time.Sleep(300 * time.Millisecond)
+	eof := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(io.Discard, ch)
+		close(eof)
+	}()
+	select {
+	case <-eof:
+		_ = req.Reply(true, nil)
+		_, _ = fmt.Fprintf(ch, "early-eof\n")
+		return 1
+	case <-time.After(100 * time.Millisecond):
+	}
+	_ = req.Reply(true, nil)
+	select {
+	case <-eof:
+		_, _ = fmt.Fprintf(ch, "eof-after-exec\n")
+		return 0
+	case <-time.After(5 * time.Second):
+		_, _ = fmt.Fprintf(ch, "no-eof\n")
+		return 2
 	}
 }
 

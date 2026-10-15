@@ -22352,6 +22352,122 @@ dashboard, and got an error.
 - `internal/api/notify/gchat_test.go` now asserts the query has **no**
   `requestId`, where it asserted its value before.
 
+**I-740. The stop reads the checkout within its own 15 s, past a dead
+master and with no stdin to wait on, and says when it could not; the
+gateway holds a session's EOF until the guest accepts its command
+(stop-probe, 2026-10-14). Amends I-634, I-710.** *Made during
+implementation.* The owner asked that `repose stop` "tell them 1 file not
+committed then do the rest in the background" (I-710). Live on prod from
+kanali with CLI c5e24d2d, the clause came in 9 of 13 stops, and in 6 of 8
+in this branch's own baseline (s2-b4-probe-a, one untracked file, each stop
+3 s after a start, from a folder that is not a checkout); the other stops
+printed `Stopping s2-b4-probe-a.` as if nothing stayed, in 3.1 to 6.6 s.
+- *Two causes.* (1) `probeBeforeStop` read the machine with status's 4 s
+  budget (`statusProcsTimeout`, ssh `ConnectTimeout=3`) and dropped the
+  clause when the budget ran out. On the guest the script takes about
+  0.5 s (ss, ps, stat, the worktree list and `git status` each under
+  0.1 s); the rest is the handshake through the gateway, 0.3 to 3.2 s from
+  kanali, slowest in the first minutes after a start. (2) The script began
+  `repose_have=$(cat)`, and with no laptop checkout there is nothing on
+  stdin. ssh sends its EOF right after the exec request without waiting
+  for the reply; the gateway relays the exec from one goroutine and the
+  EOF from another (`pipe` in `internal/gateway/relay.go`), and when the
+  EOF reached the guest's sshd first, a session with no command yet had
+  no stdin to close, so `cat` waited out every budget. `ssh -vv` of the
+  script, run 3 s after a start, hung 3 times in 8 with `exec request
+  accepted` and then nothing; `x=$(cat)` from a running guest, 1 in 20;
+  the same command without `cat`, 0 in 20. With data on stdin the EOF
+  follows the data, which sshd buffers until the command has a stdin, so
+  the reads that sent the laptop's commits were not hit. Measured from a
+  checkout through prod's gateway (c5e24d2d, without the gateway change
+  below): s2-b4-probe-c, a temporary machine with a `repose` remote added
+  by hand, one untracked file, each stop 3 s after a start, every read
+  sending the laptop's commit (the 1614-byte script with `$(cat)`): the
+  clause in 8 of 8 stops, 2.4 to 3.9 s with the fetch before each, and
+  3 of 3 status reads of the running machine.
+- *The stop's read.* `stopProbeTimeout` is 15 s, with ssh's
+  `ConnectTimeout` at the budget less a second, at most 10 s. A stop is
+  the last moment the machine can be read, and a slow network makes the
+  handshake slow, not wrong. `repose status` keeps 4 s: it can be run
+  again, and its rows do not wait on the guest. A ControlPersist master
+  that answers `-O check` but whose connection died (the laptop slept)
+  would hold the read for the whole 15 s, so the read calls `masterAlive`
+  first (I-491), which stops a dead master; a live one carries the read.
+  Status's read does the same (`guestStatusWithin`), so after a sleep
+  the two read the machine alike. The budget counts from before
+  `masterAlive`: a dead master's check (up to about 2 s) comes out of it,
+  so the read never waits past the budget the line names. A read that
+  times out says how long it waited, in whole seconds: the budget, or
+  less when ssh's `ConnectTimeout` gave up first (`no ssh answer in
+  10 s`).
+  `--wait` and the commands that stop through `stopOne` (`resize --size`,
+  `fork`, run's plan question) use the same read.
+- *No stdin when there is nothing to send.* `statusScript` sets
+  `repose_have=` and reads no stdin when the laptop has no commits to send,
+  which covers the owner's case of stopping a machine from another folder.
+  `repose status` uses the same script.
+- *The gateway.* A session's EOF to the guest now waits until the guest
+  has answered the client's exec, shell or subsystem request, or the
+  client's requests have ended. Every `ssh <slug>.repose CMD </dev/null`
+  whose command reads stdin had the same race, `repose exec` without `-i`
+  among them. `TestRelayHoldsStdinEOFUntilTheExecIsAccepted`: a fake
+  guest that takes 300 ms to accept, as one just after a boot does, says
+  whether the EOF was already there; it was on every run before the fix.
+- *When the read fails, the line says so*, in the words status's checkout
+  row uses (`checkoutUnknown`, shared): `Stopping job; checkout unknown (no
+  ssh answer in 15 s).` or `... (ssh failed: Connection refused).` A
+  machine that answered with no checkout still adds nothing. stop-left.json
+  keeps the failure (`error`, `detail`, `waited_s`, with `rows` null), and
+  `repose status` on the stopped machine says `checkout   unknown at the
+  stop, 9h ago (no ssh answer in 15 s)` and `--json` `git_error`: no row
+  would read as a machine with no checkout (I-634's reason for the
+  running machine's row). A CLI before this one reads such an entry as no
+  rows. A Ctrl-C while the stop waits for its early read (I-741) is not
+  a timeout: the stop ends, the line is not printed and nothing is kept.
+- *Measured* from kanali on prod, s2-b4-probe-a (large), one untracked
+  file, eight stops per CLI with the two CLIs taking turns, the network
+  faster than in the baseline (the project list answered in 60 to 180 ms,
+  not 530 to 590): main 6 of 8 with the clause, 0.8 to 4.5 s (median
+  1.0 s); this branch 8 of 8, 0.55 to 1.3 s (median 0.85 s), and 8 of 8 more in a row, 0.8 to 2.0 s, while kanali ran the CLI's tests. With an ssh that never answers, the stop printed `Stopping s2-b4-probe-a; checkout unknown (no ssh answer in 15 s).` and the machine stopped. A first build
+  with the 15 s budget but still reading stdin had 6 of 8, two of them
+  `checkout unknown (no ssh answer in 15 s)` after 15.2 s, which is how
+  the second cause was found.
+- *Not done:* the gateway change is live only after a release that ships
+  the gateway; until then the CLI's script change is what keeps the
+  stop's read off the race.
+
+**I-741. `repose stop NAME` reads the machine beside the api's read of the
+project (stop-probe, 2026-10-14).** *Made during implementation.* The read
+needs only the slug, and after resolving the project the stop has nothing
+to send the api before it: the handshake can overlap the api's
+`GET /projects`, as run's early probe does (I-223).
+- `startStopProbes` starts a read for each name given on the command line
+  before `resolveProjects`, with the laptop's commits computed from the
+  cache's guess for the project (`cachedGuess`: id and remote), or from the
+  slug alone. The stop uses that read when the api returns the same slug,
+  `running`, and the laptop's commits computed for the real project after
+  the fetch are the same ones the read sent (a fetch that brought commits
+  changes the count, so the machine is read again), and the read started
+  at most 10 s before (`stopEarlyMaxAge`: an agent that the busy-agent
+  question asked about kept working while the user answered). Otherwise
+  it reads again. The reads end with the command.
+- Not for `repose stop` with no name or `--unused`: in a checkout, the
+  fetch before the stop (I-615) leaves a ControlPersist master that the
+  read rides, and `--unused` learns its machines from the api.
+- A name that resolves to a machine that is not running costs one
+  refused connection. The gateway caches that refusal for 5 s; nothing in
+  the stop connects again.
+- *Rejected:* sending the stop to the api beside the read. hostd's stop
+  freezes the guest's filesystems for the snapshot as its first step and
+  shuts the guest down straight after (I-404), and on prod the engine had
+  the op about 0.1 s after the `202`, so the read would race the shutdown,
+  and its `git status` could wait on a frozen filesystem. An api that held
+  the stop until the CLI's read would gain the api's ~50 ms and needs a
+  contract change.
+- *Measured:* in each of this branch's stops in I-740 the read ran beside
+  the project list (`REPOSE_TIMING=1`: `stop: s2-b4-probe-a read beside the
+  api`); with the list at 690 ms and the read at 590 ms, the stop returned
+  in 1.08 s.
 **I-732. UpdateSecrets with no secrets is the empty set, and it keeps the
 sshd material (secrets-empty-push, 2026-10-14; amends I-26).** *Made during
 implementation.* Found live on prod at 21:49Z: `repose secrets rm --global`

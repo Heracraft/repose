@@ -19,6 +19,11 @@ func newLifecycleEnv(t *testing.T, fake *fakeapi.Fake) *Env {
 		Dir: dir, Cfg: defaultConfig(), Cache: newProjectsCache(), Cwd: t.TempDir(),
 		Client: newClient(fake.URL()+"/v1", staticToken("tok")),
 		Out:    &discardWriter{}, ErrOut: &discardWriter{},
+		// No ssh to a guest the fake api only pretends to run: a machine
+		// with no checkout.
+		readGuest: func(context.Context, string, []string, time.Duration) guestStatus {
+			return guestStatus{mux: "tmux"}
+		},
 	}
 }
 
