@@ -21255,9 +21255,9 @@ fork's snapshot, and `host_moved`. *Made during implementation.*
 - *Rejected:* deleting the snapshot once the copies are restored (the
   retry above), and a hidden snapshot outside the list (it holds a
   tenant's disk; the list is where they see what repose keeps).
-**I-732. An OOM kill in a pane no longer stops the pane: dev's user
+**I-733. An OOM kill in a pane no longer stops the pane: dev's user
 manager, its units and each session scope run with `OOMPolicy=continue`
-(pane-oom, 2026-10-13; renumbered 2026-10-14).** Amends I-576 and I-560.
+(pane-oom, 2026-10-13; renumbered 2026-10-15).** Amends I-576 and I-560.
 This shipped in r20261014-1 as a second **I-697**, which account-secrets
 had already taken: the two lanes reserved the number on different
 machines, and `release-queue id` reads only the machine it runs on. Account

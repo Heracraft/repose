@@ -478,10 +478,10 @@ in
           guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal)\\)'")
           guest.execute("sudo -u dev tmux kill-window -t todo-app:hog")
 
-          # I-732: the hog as a child of the pane's own process, which is
+          # I-733: the hog as a child of the pane's own process, which is
           # where an agent's test run or dev server is. The kernel kills
           # the hog; the pane's process, the window and the scope that
-          # holds the agent stay. Before I-732 systemd stopped the scope
+          # holds the agent stay. Before I-733 systemd stopped the scope
           # and the pane went with the hog (kanali, 2026-10-13).
           assert guest.succeed("sudo -H -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show -p DefaultOOMPolicy --value").strip() == "continue"
           # The kill is reported against every unit above the scope, this
@@ -588,7 +588,7 @@ in
           main = user("systemctl --user show -p MainPID --value repose-herdr-server.service").strip()
           environ = guest.succeed(f"tr '\\0' '\\n' < /proc/{main}/environ")
           assert "__NIXOS_SET_ENVIRONMENT_DONE=" not in environ and "__ETC_PROFILE_DONE=" not in environ, environ
-          # I-732: herdr's panes run in the unit's cgroup, so the unit's
+          # I-733: herdr's panes run in the unit's cgroup, so the unit's
           # OOMPolicy is what keeps the server and the agents in the other
           # panes when the kernel kills a test run in one of them. The
           # tmux half of this is the I-576 subtest's pane scope.

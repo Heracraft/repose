@@ -312,7 +312,7 @@
             # The kernel's ranking is undone if systemd stops the cgroup
             # the kill happened in: every unit and scope of dev's, and
             # each session scope, holds an agent beside the work it
-            # started (I-732).
+            # started (I-733).
             need "$userConf" 'DefaultOOMPolicy=continue'
             need "$sshd" 'OOMScoreAdjust=-800'
             need "$sshd" 'MemoryLow=16M'
@@ -331,7 +331,7 @@
             need "$tmux" 'MemoryLow=48M'
             need "$tmux" 'OOMPolicy=continue'
             # herdr's panes share this unit's cgroup, so the policy is
-            # what keeps its agents (I-560, I-732).
+            # what keeps its agents (I-560, I-733).
             need "$herdr" 'OOMPolicy=continue'
             need "$appSlice" 'MemoryLow=48M'
             need "$tmpfiles" 'w- /sys/kernel/mm/lru_gen/min_ttl_ms - - - - 1000'

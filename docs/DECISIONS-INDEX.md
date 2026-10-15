@@ -597,7 +597,7 @@ pointer, not a summary.
 - **I-511** A laptop herdr's SSH bridge counts as someone at the machine — 2026-10-05; L14431
 - **I-549** A fork or restore as new gates herdr on the source's base — 2026-10-05; L14442
 - **I-551** mux-base as built: the tmux unit restarts its server after 5 s, and the herdr steps' exact rules — 2026-10-05; amended by I-560; L14458
-- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-732; L14506
+- **I-560** The session units outlive their own servers' exits: herdr's keeps its panes through a handoff and an OOM kill, tmux's never restarts a start that failed — 2026-10-06; amended by I-733; L14506
 - **I-563** The session units start their servers outside a login shell, herdr's panes load the current environment, and a running herdr rereads a changed config — 2026-10-06; amended by I-565; L14573
 - **I-535** Under herdr, guestd protects the agents it can name by binary, and leaves `node` out — 2026-10-05; L14635
 - **I-561** A herdr agent's turn finishes when `completion_seq` rises, the read after a failed one is a baseline, and of two herdr agents with one key the first is reported — 2026-10-06; L14654
@@ -623,7 +623,7 @@ pointer, not a summary.
 - **I-540** The browser has CJK fonts — 2026-10-05; L15131
 - **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; L15149
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15161
-- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-732; L15211
+- **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-733; L15211
 - **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15319
 - **I-570** A stop says how long it took and how big its snapshot is, and nothing about cost — 2026-10-07; amended by I-710; L15343
 - **I-571** A snapshot reads eight chunks at a time, around the page cache, and hostd logs a stop's phases — 2026-10-07; L15370
@@ -758,7 +758,7 @@ pointer, not a summary.
 - **I-701** A fork whose copies stay on their source's host clones its volume there (fork-fast, 2026-10-13) — L21109
 - **I-702** Each step of a fork's copies prints a timed line (fork-fast, 2026-10-13) — L21212
 - **I-703** A fork's own snapshot is reason `fork` and expires in a day (fork-fast, 2026-10-13) — L21237
-- **I-732** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-14) — L21258
+- **I-733** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-15) — L21258
 - **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21356
 - **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21474
 - **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21567

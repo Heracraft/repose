@@ -157,7 +157,7 @@ in
       # unit carries it where the reason is. I-560 read a tmux pane's own
       # scope as needing none, which was backwards: the scope holds the
       # agent and everything it started, and systemd stopping it is what
-      # ended an agent on kanali, 2026-10-13 (DECISIONS I-560, I-732).
+      # ended an agent on kanali, 2026-10-13 (DECISIONS I-560, I-733).
       OOMPolicy = "continue";
       TasksMax = "infinity";
       # No CPUWeight: herdr's panes live in this unit's cgroup, so a
