@@ -1,0 +1,606 @@
+#!/usr/bin/env bash
+# Tests for ops/dev/release-queue, against a scratch world instead of this
+# repository. `release-queue` reserves decision ids, reads the deploy
+# targets out of a diff and merges branches; every one of those was
+# verified by running it on the real checkout, which is why six ids were
+# taken twice and a comment in a test script asked for two host switches
+# (docs/research/queue-revamp.md). None of it is testable in place: the
+# state lives in the common git dir of a checkout with 50 worktrees, and
+# `cut` makes branches and worktrees.
+#
+#   ops/dev/release-queue-test            run every test
+#   ops/dev/release-queue-test needs      run the tests whose name matches
+#   ops/dev/release-queue-test -k         keep the scratch world and print it
+#
+# The scratch world is three clones of a synthetic repository that has the
+# shape release-queue reads: the seven cmd/ binaries with internal
+# packages between them, apps/web, nix/ split the way the real one is,
+# infra/, docs/DECISIONS.md, and the `ops/dev/release-queue` under test
+# copied in. `origin.git` is GitHub, `woker` is the conductor's box and
+# `kanali` the agents' box, so a test can say what one machine sees of
+# the other's reservations.
+#
+# A test asserts the behaviour its name asks for. KNOWN_BAD below names
+# the tests that fail until their fix lands; the suite exits 0 when
+# exactly those fail, and 1 when any other fails or when a known-bad one
+# starts passing, which means its line here is stale.
+set -uo pipefail
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+keep=0
+[ "${1:-}" != -k ] || { keep=1; shift; }
+filter=${1:-}
+
+# ---------------------------------------------------------------- known bad
+
+# Each line: the test name, the problem it belongs to, one line of why.
+KNOWN_BAD="
+needs_flake_checks_only            P4 a checks-only flake change ships as base,host,edge
+needs_against_stale_local_main     P5 needs and the commit count read refs/heads/main
+id_sees_other_machine_reservation  P1 the reservations file never leaves the machine
+where_is_released_branch           P3 no command answers 'did this branch ship'
+where_is_branch_on_the_other_box   P2 the queue state is per machine
+stale_script_warns                 P6 a worktree's old copy says nothing
+live_check_is_recorded             P7 nothing stores whether the check ran
+"
+# KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
+# shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
+known_bad_lines=$(sed 's/^[[:space:]]*//' <<<"$KNOWN_BAD")
+known_bad() { grep -qE "^$1 " <<<"$known_bad_lines"; }
+known_bad_why() { sed -n "s/^$1  *//p" <<<"$known_bad_lines"; }
+
+# -------------------------------------------------------------------- plumbing
+
+pass=0; fail=0; xfail=0; xpass=0
+out=$(mktemp -d); trap 'cleanup' EXIT
+cleanup() { [ $keep = 1 ] && { echo "scratch world kept: $root"; return; }; rm -rf "$out" "${root:-/nonexistent}"; }
+
+ok()   { printf '  ok      %s\n' "$*"; }
+bad()  { printf '  FAIL    %s\n' "$*"; }
+note() { printf '          %s\n' "$*"; }
+
+# assert_eq <what> <got> <want>
+assert_eq() {
+  if [ "$2" = "$3" ]; then return 0; fi
+  note "$1: got '$2', want '$3'"; return 1
+}
+# assert_has <what> <haystack> <needle>
+assert_has() {
+  if grep -qF -- "$3" <<<"$2"; then return 0; fi
+  note "$1: '$3' is not in: $(head -c 300 <<<"$2")"; return 1
+}
+# assert_not <what> <haystack> <needle>
+assert_not() {
+  if grep -qF -- "$3" <<<"$2"; then note "$1: '$3' is in: $(head -c 300 <<<"$2")"; return 1; fi
+  return 0
+}
+
+run_test() { # name
+  local name=$1 rc
+  [ -z "$filter" ] || [[ $name == *$filter* ]] || return 0
+  world >/dev/null 2>&1   # every test gets a fresh world
+  "t_$name" >"$out/$name.log" 2>&1; rc=$?
+  if [ $rc = 0 ]; then
+    if known_bad "$name"; then
+      bad "$name (known bad, but it passed: remove its KNOWN_BAD line)"; xpass=$((xpass + 1))
+    else ok "$name"; pass=$((pass + 1)); fi
+  else
+    if known_bad "$name"; then
+      printf '  known   %s  (%s)\n' "$name" "$(known_bad_why "$name")"
+      xfail=$((xfail + 1))
+    else bad "$name"; sed 's/^/          /' "$out/$name.log"; fail=$((fail + 1)); fi
+  fi
+}
+
+# q runs release-queue in a worktree and prints its output and exit code.
+q() { # dir args...
+  local d=$1; shift
+  ( cd "$d" && PATH="$root/bin:$PATH" ops/dev/release-queue "$@" 2>&1 )
+}
+
+# ------------------------------------------------------------------ the world
+
+# world builds origin.git, woker and kanali from scratch. Keep it cheap:
+# every test calls it.
+world() {
+  rm -rf "${root:-/nonexistent}"
+  root=$(mktemp -d "${TMPDIR:-/tmp}/rq-fixture.XXXXXX")
+  mkdir -p "$root/bin"
+  # A pnpm that answers for the web copy guards, so a `web` branch can be
+  # queued without node_modules and a real install.
+  cat > "$root/bin/pnpm" <<'EOF'
+#!/usr/bin/env bash
+# fixture stub: exits 0, or 1 when the tree plants REPOSE_FIXTURE_PNPM_FAIL
+[ -z "${REPOSE_FIXTURE_PNPM_FAIL:-}" ] || exit 1
+exit 0
+EOF
+  chmod +x "$root/bin/pnpm"
+
+  local src=$root/src
+  mkdir -p "$src"
+  ( cd "$src" && seed_repo )
+
+  git init -q --bare "$root/origin.git"
+  # the bare repo's HEAD decides what a clone checks out
+  git -C "$root/origin.git" symbolic-ref HEAD refs/heads/main
+  git -C "$src" remote add origin "$root/origin.git"
+  git -C "$src" push -q origin main:main
+  git -C "$src" push -q origin main:integrated
+
+  git clone -q "$root/origin.git" "$root/woker"
+  git clone -q "$root/origin.git" "$root/kanali"
+  local c
+  for c in woker kanali; do
+    git -C "$root/$c" config user.email fixture@example.com
+    git -C "$root/$c" config user.name fixture
+    git -C "$root/$c" config commit.gpgsign false
+  done
+}
+
+# seed_repo writes the synthetic repository in the current directory and
+# commits it as `main`. Its shape, not its content, is what matters: the
+# seven binaries and the packages between them, so `go list -deps` has
+# something to resolve, and the nix/ split the real flake has.
+seed_repo() {
+  git init -q -b main .
+  git config user.email fixture@example.com
+  git config user.name fixture
+  git config commit.gpgsign false
+
+  cat > go.mod <<'EOF'
+module repose.test
+
+go 1.24
+EOF
+  local p
+  # internal packages, and which binaries import them
+  for p in shared clipkg guest edge; do
+    mkdir -p "internal/$p"
+    printf 'package %s\n\nconst Name = "%s"\n' "$p" "$p" > "internal/$p/$p.go"
+  done
+  # internal/cli holds the trust-the-reader guards release-queue runs for a
+  # branch that ships as cli.
+  mkdir -p internal/cli
+  printf 'package cli\n\nconst Name = "cli"\n' > internal/cli/cli.go
+  cat > internal/cli/guards_test.go <<'EOF'
+package cli
+
+import (
+	"os"
+	"testing"
+)
+
+// The fixture's stand-ins for the real guards (DECISIONS I-484, I-485).
+// A tree that plants REPOSE_FIXTURE_CLI_FAIL fails them, which is how the
+// test for `add` refusing such a branch is written.
+func TestSuccessOutputNamesNoCommand(t *testing.T) {
+	if os.Getenv("REPOSE_FIXTURE_CLI_FAIL") != "" {
+		t.Fatal("fixture: the CLI prints help nobody asked for")
+	}
+}
+
+func TestCLIReassures(t *testing.T) {
+	if os.Getenv("REPOSE_FIXTURE_CLI_FAIL") != "" {
+		t.Fatal("fixture: the CLI reassures")
+	}
+}
+EOF
+  # a non-Go file under a package directory: it ships with the package above it
+  mkdir -p internal/api/mail
+  printf 'package mail\n\nconst Name = "mail"\n' > internal/api/mail/mail.go
+  printf 'Welcome.\n' > internal/api/mail/welcome.txt
+
+  mk_cmd() { # dir import...
+    local d=$1; shift
+    mkdir -p "cmd/$d"
+    { echo 'package main'; echo; echo 'import ('
+      for p in "$@"; do echo "	_ \"repose.test/internal/$p\""; done
+      echo ')'; echo; echo 'func main() {}'; } > "cmd/$d/main.go"
+  }
+  mk_cmd api shared api/mail
+  mk_cmd repose-admin shared
+  mk_cmd repose clipkg
+  mk_cmd hostd shared
+  mk_cmd guestd guest
+  mk_cmd repose-hook guest
+  mk_cmd gateway edge
+
+  mkdir -p apps/web/src apps/web/node_modules
+  printf 'export const x = 1\n' > apps/web/src/x.ts
+  : > apps/web/node_modules/.keep
+
+  mkdir -p nix/guest/base nix/hosts nix/edge nix/overlay/agents infra/azure
+  printf '{ }\n' > nix/guest/base/boot.nix
+  printf '{ }\n' > nix/hosts/default.nix
+  printf '{ }\n' > nix/edge/default.nix
+  printf '{ }\n' > nix/overlay/agents/claude.nix
+  printf '{ }\n' > nix/packages.nix
+  printf '{ "nodes": {} }\n' > nix/flake.lock
+  # flake.nix with the two regions the real one has: the outputs a deploy
+  # installs, and the checks a gate evaluates.
+  cat > nix/flake.nix <<'EOF'
+{
+  outputs = { self, nixpkgs }:
+    let system = "x86_64-linux"; in {
+      nixosConfigurations.host-01 = { };
+      nixosConfigurations.edge = { };
+
+      packages.${system} = {
+        guest-system = "guest";
+      };
+
+      checks.${system} = {
+        guest-closure-size = ''
+          echo "guest system closure"
+        '';
+        guest-session-survives-switch = ''
+          echo "no session unit restarts"
+        '';
+      };
+
+      devShells.${system} = { };
+    };
+}
+EOF
+  printf 'resource "azurerm_resource_group" "r" {}\n' > infra/azure/main.tf
+
+  mkdir -p docs ops/dev
+  printf 'docs/DECISIONS.md merge=union\n' > .gitattributes
+  cat > docs/DECISIONS.md <<'EOF'
+# Decisions
+
+## Made during implementation
+
+**I-100. The first entry.** (fixture) Text.
+
+**I-101..I-103. A range header names both ends.** (fixture) Text.
+EOF
+  printf '# Decisions index\n' > docs/DECISIONS-INDEX.md
+  cp "$repo/ops/dev/release-queue" ops/dev/release-queue
+  cp "$repo/ops/dev/decisions-index.py" ops/dev/decisions-index.py
+  chmod +x ops/dev/release-queue
+  git add -A
+  git commit -qm "the fixture repository"
+}
+
+# branch <clone> <name> [from]: a worktree of the clone on a new branch.
+branch() { # clone name [from]
+  local c=$1 b=$2 from=${3:-main}
+  git -C "$root/$c" worktree add -q -b "$b" "$root/$c-$b" "$from"
+  echo "$root/$c-$b"
+}
+# commit <dir> <message>
+commit() { git -C "$1" add -A && git -C "$1" commit -qm "$2"; }
+# state <clone>: the clone's queue state directory
+state_of() { git -C "$root/$1" rev-parse --path-format=absolute --git-common-dir; }
+# cut_release <clone>: the release id the one cut in this world made
+cut_release() { local d; d=$(state_of "$1")/release-queue/releases; (cd "$d" && printf '%s\n' r* | head -1); }
+
+# ------------------------------------------------------------- needs: targets
+
+# needs_line <add output> prints what `add` said the branch ships as.
+needs_line() { sed -n 's/.*ships as: \(.*\))$/\1/p' <<<"$1"; }
+
+t_needs_go_shared_package() {
+  local wt; wt=$(branch woker shared-pkg)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  assert_eq "a change to internal/shared" "$(needs_line "$(q "$wt" add)")" "api,host"
+}
+
+t_needs_cli_only() {
+  local wt; wt=$(branch woker cli-pkg)
+  echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "cli"
+  assert_eq "a change only cmd/repose imports" "$(needs_line "$(q "$wt" add)")" "cli"
+}
+
+t_needs_embedded_file() {
+  local wt; wt=$(branch woker mail-template)
+  echo 'Welcome again.' >> "$wt/internal/api/mail/welcome.txt"
+  commit "$wt" "mail"
+  assert_eq "a non-Go file under a package" "$(needs_line "$(q "$wt" add)")" "api"
+}
+
+t_needs_web() {
+  local wt; wt=$(branch woker web-copy)
+  echo 'export const y = 2' >> "$wt/apps/web/src/x.ts"
+  commit "$wt" "web"
+  assert_eq "a change under apps/web" "$(needs_line "$(q "$wt" add)")" "web"
+}
+
+t_needs_guest_nix() {
+  local wt; wt=$(branch woker guest-nix)
+  echo '# a guest module' >> "$wt/nix/guest/base/boot.nix"
+  commit "$wt" "guest nix"
+  assert_eq "a change under nix/guest" "$(needs_line "$(q "$wt" add)")" "base"
+}
+
+t_needs_shared_nix() {
+  local wt; wt=$(branch woker shared-nix)
+  echo '# the package set' >> "$wt/nix/packages.nix"
+  commit "$wt" "packages.nix"
+  assert_eq "a change to the shared package set" "$(needs_line "$(q "$wt" add)")" "base,edge,host"
+}
+
+t_needs_docs_only() {
+  local wt; wt=$(branch woker docs-only)
+  echo 'A note.' >> "$wt/docs/DECISIONS.md"
+  commit "$wt" "docs"
+  assert_eq "a docs-only branch" "$(needs_line "$(q "$wt" add)")" "none"
+}
+
+# P4. The checks region of nix/flake.nix is evaluated by a gate and
+# installed by nothing. A change inside it reaches no machine, and the
+# conductor who reads "base,edge,host" switches two of them for it
+# (dev-tool-guards, 6950361a: a comment and an awk script in
+# checks.guest-closure-size).
+t_needs_flake_checks_only() {
+  local wt; wt=$(branch woker flake-checks)
+  python3 - "$wt/nix/flake.nix" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+s = s.replace('echo "guest system closure"', 'echo "guest system closure"\n          # a comment inside the check')
+open(p, "w").write(s)
+PY
+  commit "$wt" "the closure gate prints the paths"
+  assert_eq "a change only inside the flake's checks" "$(needs_line "$(q "$wt" add)")" "none"
+}
+
+# P5. `needs` and the commit count are read against refs/heads/main, which
+# on woker-1 was 132 commits behind origin/main on 2026-10-15. This branch
+# ships one CLI commit; against a stale main it claims everything that
+# landed meanwhile.
+t_needs_against_stale_local_main() {
+  # origin moves ahead with a host change; woker's refs/heads/main does not.
+  local other; other=$(branch kanali host-change)
+  echo '# a host module' >> "$other/nix/hosts/default.nix"
+  commit "$other" "hosts"
+  git -C "$other" push -q origin "HEAD:refs/heads/main"
+  git -C "$other" push -q origin "HEAD:refs/heads/integrated"
+  git -C "$root/woker" fetch -q origin
+
+  local wt; wt=$(branch woker late-cli refs/remotes/origin/integrated)
+  echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "cli"
+  local o; o=$(q "$wt" add)
+  assert_eq "ships as" "$(needs_line "$o")" "cli" || return 1
+  assert_has "the commit count" "$o" "(1 commits" || return 1
+}
+
+# -------------------------------------------------------------------- ids
+
+t_id_sees_local_branch() {
+  local wt; wt=$(branch woker took-id)
+  printf '\n**I-200. Taken on a branch.** (fixture) Text.\n' >> "$wt/docs/DECISIONS.md"
+  commit "$wt" "I-200"
+  local wt2; wt2=$(branch woker other)
+  assert_eq "the next id after I-200 on another branch" "$(q "$wt2" id)" "I-201"
+}
+
+t_id_sees_range_header() {
+  # the seed has **I-101..I-103, so 104 is next
+  local wt; wt=$(branch woker ranged)
+  assert_eq "both ends of a range header count" "$(q "$wt" id)" "I-104"
+}
+
+t_id_sees_remote_tracking() {
+  local other; other=$(branch kanali remote-id)
+  printf '\n**I-300. Integrated elsewhere.** (fixture) Text.\n' >> "$other/docs/DECISIONS.md"
+  commit "$other" "I-300"
+  git -C "$other" push -q origin "HEAD:refs/heads/integrated"
+  git -C "$root/woker" fetch -q origin
+  local wt; wt=$(branch woker after-fetch)
+  assert_eq "an id only on origin/integrated" "$(q "$wt" id)" "I-301"
+}
+
+t_id_sees_uncommitted_worktree() {
+  local wt; wt=$(branch woker uncommitted)
+  printf '\n**I-400. Written, not committed.** (fixture) Text.\n' >> "$wt/docs/DECISIONS.md"
+  local wt2; wt2=$(branch woker asker)
+  assert_eq "an id in a working copy" "$(q "$wt2" id)" "I-401"
+}
+
+t_id_hands_out_several() {
+  local wt; wt=$(branch woker several)
+  assert_eq "three ids" "$(q "$wt" id 3 | paste -sd' ')" "I-104 I-105 I-106"
+}
+
+t_id_refuses_used_number() {
+  # a reservation below an entry id must not be handed out again: plant a
+  # reservation for I-104 and an entry for I-105, so arithmetic that
+  # trusts the reservations alone would offer I-105.
+  local wt; wt=$(branch woker clash)
+  printf '\n**I-105. Already an entry.** (fixture) Text.\n' >> "$wt/docs/DECISIONS.md"
+  commit "$wt" "I-105"
+  local s; s=$(state_of woker)/release-queue
+  echo "I-104 someone 2026-10-15" >> "$s/ids"
+  assert_eq "the next id skips the entry" "$(q "$wt" id)" "I-106"
+}
+
+# P1. The reservations file lives in each machine's own git dir, so an id
+# reserved on kanali is invisible on woker-1 until it reaches a shared
+# ref. I-718, I-719, I-732 and I-740 were each handed out twice this way.
+t_id_sees_other_machine_reservation() {
+  local there; there=$(branch kanali reserving)
+  local got_there; got_there=$(q "$there" id)
+  assert_eq "kanali reserves" "$got_there" "I-104" || return 1
+  local here; here=$(branch woker asking)
+  local got_here; got_here=$(q "$here" id)
+  [ "$got_here" != "$got_there" ] || { note "woker handed out $got_here, which kanali already holds"; return 1; }
+  assert_eq "woker's next id" "$got_here" "I-105"
+}
+
+# ------------------------------------------------------------------- add
+
+t_add_refuses_dirty_tree() {
+  local wt; wt=$(branch woker dirty)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  echo 'const Dirty = 1' >> "$wt/internal/shared/shared.go"
+  local o; o=$(q "$wt" add)
+  assert_has "a dirty tree is refused" "$o" "uncommitted changes"
+}
+
+t_add_refuses_main() {
+  local o; o=$(q "$root/woker" add)
+  assert_has "main is refused" "$o" "work in a worktree"
+}
+
+t_add_refuses_no_commits() {
+  local wt; wt=$(branch woker empty)
+  local o; o=$(q "$wt" add)
+  assert_has "a branch with nothing new is refused" "$o" "no commits that main lacks"
+}
+
+t_add_runs_cli_guards() {
+  local wt; wt=$(branch woker loud-cli)
+  echo 'const More = 1' >> "$wt/internal/clipkg/clipkg.go"
+  commit "$wt" "cli"
+  local o; o=$(cd "$wt" && REPOSE_FIXTURE_CLI_FAIL=1 PATH="$root/bin:$PATH" ops/dev/release-queue add 2>&1)
+  assert_has "a branch that fails the guards is refused" "$o" "help nobody asked for"
+}
+
+t_add_records_live_and_note() {
+  local wt; wt=$(branch woker with-live)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  q "$wt" add --live "repose start under 12 s" --note "depends on nothing" >/dev/null
+  local s; s=$(state_of woker)/release-queue
+  local f=$s/entries/with-live
+  assert_has "the live check is stored" "$(cat "$f")" "live=repose start under 12 s" || return 1
+  assert_has "the note is stored" "$(cat "$f")" "note=depends on nothing"
+}
+
+# --------------------------------------------------------------- where is it
+
+# P3. `ls` drops a released entry, so "did this branch ship" has no
+# answer from the tool; two agents read the leftover worktree
+# ~/kanali-boot-real-addr as unqueued work after it had shipped in
+# r20261014-1.
+t_where_is_released_branch() {
+  local wt; wt=$(branch woker shipped)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  git -C "$root/woker" merge -q --ff-only "release/$rel"
+  q "$root/woker" "done" "$rel" >/dev/null
+  git -C "$root/woker" push -q origin main:main
+  git -C "$root/woker" fetch -q origin
+  local o; o=$(q "$wt" where shipped)
+  assert_has "a released branch is named released" "$o" "released" || return 1
+  assert_has "and names the release it shipped in" "$o" "$rel"
+}
+
+# P2. kanali's queue is the authoritative one and nothing says so: an
+# agent on kanali told the conductor its branch was invisible from
+# woker-1 and should be fetched, an hour after it was merged.
+t_where_is_branch_on_the_other_box() {
+  local there; there=$(branch kanali queued-there)
+  echo 'const More = 1' >> "$there/internal/shared/shared.go"
+  commit "$there" "shared"
+  q "$there" add >/dev/null
+  git -C "$there" push -q origin "HEAD:refs/heads/queued-there"
+  git -C "$root/woker" fetch -q origin
+  local o; o=$(q "$root/woker" where queued-there)
+  assert_has "woker can say where a branch queued on kanali is" "$o" "queued"
+}
+
+# ---------------------------------------------------------------- cut, done
+
+t_cut_merges_in_queue_order() {
+  local a b; a=$(branch woker first); b=$(branch woker second)
+  echo 'const A = 1' >> "$a/internal/shared/shared.go"; commit "$a" "a"
+  echo 'const B = 1' >> "$b/internal/clipkg/clipkg.go"; commit "$b" "b"
+  q "$a" add >/dev/null; sleep 0.01; q "$b" add >/dev/null
+  local o; o=$(q "$root/woker" cut)
+  assert_has "both are merged" "$o" "merged first" || return 1
+  assert_has "both are merged" "$o" "merged second" || return 1
+  local order; order=$(sed -n 's/.*merged \([a-z]*\) .*/\1/p' <<<"$o" | paste -sd, -)
+  assert_eq "queue order" "$order" "first,second"
+}
+
+t_cut_regenerates_decisions_index() {
+  local a b; a=$(branch woker dec-a); b=$(branch woker dec-b)
+  local i
+  for i in a b; do
+    local wt; wt=$([ $i = a ] && echo "$a" || echo "$b")
+    printf '\n**I-%s. Entry %s.** (fixture) Text.\n' "$([ $i = a ] && echo 110 || echo 111)" "$i" >> "$wt/docs/DECISIONS.md"
+    ( cd "$wt" && python3 ops/dev/decisions-index.py >/dev/null )
+    commit "$wt" "decision $i"
+  done
+  q "$a" add >/dev/null; sleep 0.01; q "$b" add >/dev/null
+  local o; o=$(q "$root/woker" cut)
+  assert_has "the index conflict is settled by the generator" "$o" "regenerated"
+}
+
+t_done_requires_main_to_hold_it() {
+  local wt; wt=$(branch woker not-yet)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  local o; o=$(q "$root/woker" "done" "$rel")
+  assert_has "done refuses before main holds it" "$o" "does not hold"
+}
+
+t_abandon_requeues() {
+  local wt; wt=$(branch woker goes-back)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  q "$root/woker" abandon "$rel" >/dev/null
+  assert_has "the branch is queued again" "$(q "$root/woker" ls)" "queued     goes-back"
+}
+
+# ------------------------------------------------------- the script's own age
+
+# P6. 44 of the 52 worktrees on woker-1 carried an older
+# ops/dev/release-queue on 2026-10-15, the main checkout among them, and
+# running one said nothing.
+t_stale_script_warns() {
+  local wt; wt=$(branch woker old-copy)
+  # an older copy, as a worktree cut from an older main has
+  sed -i '1a # an older generation of this script' "$wt/ops/dev/release-queue"
+  git -C "$wt" checkout -q -- ops/dev/release-queue 2>/dev/null || true
+  sed -i '1a # an older generation of this script' "$wt/ops/dev/release-queue"
+  local o; o=$(q "$wt" ls)
+  assert_has "an older copy says so" "$o" "origin/integrated"
+}
+
+# A branch that is itself changing the tool is its author, not a stale
+# copy, and must not be told to take the script from origin/integrated.
+t_author_script_no_warning() {
+  local wt; wt=$(branch woker tool-change)
+  sed -i '1a # this branch changes the tool' "$wt/ops/dev/release-queue"
+  commit "$wt" "the tool"
+  local o; o=$(q "$wt" ls)
+  assert_not "the author is not warned" "$o" "take the script from"
+}
+
+# ------------------------------------------------------------- the live check
+
+# P7. `add --live` stores the text and nothing stores whether it ran or
+# what it printed; three releases went out with "NOT DONE: the --live
+# checks" in their STATUS line.
+t_live_check_is_recorded() {
+  local wt; wt=$(branch woker live-recorded)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add --live "repose start under 12 s" >/dev/null
+  local o; o=$(q "$root/woker" live live-recorded --ran "started in 7.4 s on e2e-top")
+  assert_has "the result is stored" "$o" "live-recorded" || return 1
+  local s; s=$(state_of woker)/release-queue
+  assert_has "and read back" "$(cat "$s/entries/live-recorded")" "started in 7.4 s"
+}
+
+# -------------------------------------------------------------------- run
+
+tests=$(declare -F | sed -n 's/^declare -f t_//p' | sort)
+printf 'release-queue tests (%s)\n' "$(cd "$repo" && git rev-parse --short HEAD 2>/dev/null || echo "no git")"
+for t in $tests; do run_test "$t"; done
+printf '\n%s passed, %s failed, %s known bad, %s unexpectedly passing\n' "$pass" "$fail" "$xfail" "$xpass"
+[ "$fail" = 0 ] && [ "$xpass" = 0 ]
