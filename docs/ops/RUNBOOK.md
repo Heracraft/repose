@@ -2489,14 +2489,26 @@ and no user row exists. The Management API call
 
 ## api: no capacity right now
 
-An op ended `capacity`; `repose_api_schedule_total{result="capacity"}`
-rose; the CLI printed `no capacity right now; you have not been charged`.
+An op ended `capacity`; `repose_api_schedule_total{result}` rose on
+`no_capacity`, or on `no_cpu` when the CPU term alone refused (I-736);
+the CLI printed `no capacity right now; you have not been charged`.
 
-1. `repose-admin hosts list`: no host is `ready` with free memory above
-   the reserve for the class and pool room for the volume. Draining,
-   unreachable and stale-heartbeat hosts do not count.
-2. Add a host (11 §5) or undrain one. The user runs `repose run` again;
-   the project is in `error` with `last_error = capacity` until then.
+1. Which term refused is in the api's `schedule_fail` line: `reason` is
+   `no_cpu` when a host had the memory and the pool room but was already
+   committed past 1.5 guest vCPUs per physical core, and `no_capacity`
+   for every other full fleet.
+2. `repose-admin hosts list`: no host is `ready` with free memory above
+   the reserve for the class, pool room for the volume, and cores for the
+   class's guest vCPUs. Draining, unreachable and stale-heartbeat hosts
+   do not count. For the CPU term, `repose-admin seats` prints what the
+   fleet's cores allow, and `select name, cores from hosts` against
+   `host_reservations.vcpus` is the per-host figure.
+3. Add a host (11 §5) or undrain one. The user runs `repose run` again;
+   the project is in `error` with `last_error = capacity` until then. A
+   `no_cpu` refusal does not clear by waiting: a project keeps its host
+   for life, so only a guest on that host stopping, or another host,
+   frees the cores (`HostCPUSaturated` is the same wall seen from the
+   other side).
 
 ## dashboard: up but the "Cannot reach the API" bar is showing
 
