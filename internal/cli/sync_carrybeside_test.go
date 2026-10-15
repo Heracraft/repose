@@ -212,7 +212,8 @@ func TestCarryPutsTheLoginsAndGitConfigBeforeTheEarlyLine(t *testing.T) {
 	if logins < 0 || git < 0 || early < 0 || tz < 0 {
 		t.Fatalf("logins %d, git %d, early %d, tz %d in:\n%s", logins, git, early, tz, s)
 	}
-	if !(logins < git && git < early && early < tz) {
+	ascending := logins < git && git < early && early < tz
+	if !ascending {
 		t.Fatalf("order logins %d, git %d, early %d, tz %d; want the logins, the git config, the early line, then the rest:\n%s", logins, git, early, tz, s)
 	}
 }
