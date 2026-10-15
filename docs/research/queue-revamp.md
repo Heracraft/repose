@@ -85,11 +85,51 @@ none
 
 A branch with nothing in it would have been queued as shipping the whole
 product: a push, a CLI tag, a base publish, a switch of every host and a
-switch of the edge. `staging-host`, queued on 2026-10-11, carries the
-workaround in its own note: *"The computed 'needs' is wrong because this
-worktree's local main is 109 behind origin/main."* `cpu-weight`'s note says
-the same of its merge base. Two of the three branches in the queue right now
-are annotated against this bug.
+switch of the edge.
+
+The docs lane then reproduced it on real work, which is the better evidence:
+`docs-prose` changes thirteen files — eight docs pages, three under `docs/`,
+the agent guide, and one `_test.go` — and `add` recorded
+`needs=api,base,cli,edge,host,web` over a 371-file diff. Verified here:
+
+```
+$ git diff --name-only $(git merge-base docs-prose origin/main)..docs-prose | wc -l
+13
+$ git diff --name-only main...docs-prose | wc -l
+371
+$ needs_of main...docs-prose
+api,base,cli,edge,host,web
+$ needs_of <merge-base with origin/main>...docs-prose
+base,cli,web
+```
+
+A conductor reading that entry plans a host switch and an edge switch to
+ship four documentation pages.
+
+**The dots are not the bug.** The lane's reading was that `...` takes a
+symmetric difference and so attributes other lanes' files to this branch.
+It does not: in `git diff`, `A...B` is exactly `git diff $(git merge-base A
+B) B`, and the two spellings are byte-identical here —
+
+```
+$ git diff --name-only main...docs-prose          | md5sum   a75e10b8ca34
+$ git diff --name-only $(git merge-base main docs-prose) docs-prose | md5sum   a75e10b8ca34
+$ git rev-parse --short $(git merge-base main docs-prose)
+a8865ad8                                            # local main itself
+```
+
+The inflation is that the merge-base **is** the stale local main, because
+local main is an ancestor of every branch cut from anything newer. So
+changing `...` to `..` would change nothing, and a fix written against the
+symmetric-difference reading would fix nothing. The base is the bug, which
+is what the integration tip below addresses.
+
+Lanes already work around it by hand. `staging-host`, queued on 2026-10-11,
+carries the workaround in its own note: *"The computed 'needs' is wrong
+because this worktree's local main is 109 behind origin/main."*
+`cpu-weight`'s note says the same of its merge base, and `docs-prose`'s now
+carries its true set beside the wrong line. Three queued branches are
+annotated against this one bug.
 
 It is worse than noise in both directions. A branch cut from
 `origin/integrated` is charged for everything integrated since the stale
@@ -120,6 +160,16 @@ Three consequences:
 - `ls`'s last line (`git rev-list --count refs/remotes/origin/main..main`)
   prints `0 commits` on woker-1 while 132 are unreleased. It reads the tip
   as well.
+
+**One stale ref, three wrong answers.** The docs lane's framing, and it is
+the reason this problem is first: `id` reads local main's branches, the
+worktree's script copy comes from local main, and `needs` is computed
+against local main. On the box where main is stale all three are wrong at
+once — and they fail differently. The id collision is loud when it bites
+(two entries with one number, and `decisions-index.py --check` now catches
+it). The stale script is silent but harmless until it hands out a used
+number. The target set is silent and lands in the conductor's plan, where
+the next thing that reads it is a host switch.
 
 **Cost.** About twenty lines, no new state, no network beyond the `git fetch`
 agents already run before `id`. Two fixture tests
@@ -200,6 +250,14 @@ Over history, 38 of the 542 non-merge commits touching Go since 2026-09-15
 changed only `_test.go` files and nothing else that installs anywhere;
 several are a `gofmt` of a test file. Each was charged every target the
 changed packages' importers deploy to.
+
+And it is live on a second branch. `docs-prose`'s only Go path is
+`internal/cli/agent_guide_test.go`, which is why its correct target set is
+`base,cli,web` rather than `base,web`: with the right base the `cli` is
+still there, and only this rule removes it. The two halves of this problem
+are independent and both are needed — the docs lane read its own set as
+"web, base, and nothing else", which is the answer after both fixes, not
+after one.
 
 *Name the paths that install nothing.* `nix/checks.nix`, `nix/guest/tests/`,
 `nix/hosts/tests/` and `nix/guest/checks.nix` are gates. A branch that
@@ -592,6 +650,14 @@ question that was actually asked that night, with no shared state at all.
 for at all (the verified `test-hygiene` case above). That is the whole of
 what was asked that night.
 
+And the remaining state cannot be derived, which is now measured rather
+than assumed. The cpu-weight lane counted 129 entries against 196 distinct
+branch names on kanali: entries outlive their branches, because `done`
+deletes the branch it merged. So a ledger — problem 4's or any other —
+cannot reconstruct the queue from git alone; `where`'s refs-only answer
+covers merged and released, and queued-but-not-cut is irreducibly local
+state.
+
 For the remaining state, three small things:
 
 - Each entry records the machine that queued it (`machine=`), and `ls`
@@ -857,11 +923,32 @@ $ release-queue ls
 queued  pair%one  7c9e9daad  ships as cli
 ```
 
-`pair/one` is gone from the queue, with a success line behind it. Nobody
-names a branch with a `%`, but `/` is the common case here
-(`ws/01-host-nixos`, `release/r20261015-4`), so the colliding partner of a
-normal branch name is one character away. Encode the filename properly, or
-name the entry by a hash of the branch and keep the name in the file.
+`pair/one` is gone from the queue, with a success line behind it.
+
+The live exposure, swept by the cpu-weight lane on both boxes and
+re-measured here for woker-1: no two branches collide today, no branch name
+anywhere contains a literal `%`, and one entry on kanali is exposed —
+`repose%fider`, whose decoded branch is `repose/fider` and whose colliding
+partner does not exist. So, as with the other two, the defect is real and
+has never fired.
+
+The risk is not today's names, it is the naming convention, and this is the
+lane's point: `/` is the documented shape (`ws/01-host-nixos`,
+`release/r20261015-4`, `bump/agents-20260924`), so the queue's own habit is
+what produces the slashes.
+
+```
+$ git for-each-ref refs/heads refs/remotes | <strip the remote> | sort -u | wc -l
+212 distinct branch names on woker-1
+  with a literal %:  0
+  with a slash:     43
+  key() collisions:  none
+```
+
+**43 of the 212 are one keystroke from a silent erase**, and a branch
+created by a tab-completion slip is likelier than a deliberate `%`. Encode
+the filename properly, or name the entry by a hash of the branch and keep
+the name in the file.
 
 **None of the three has ever fired.** The cpu-weight lane swept all 129
 live entries on kanali the way `field()` reads them: 0 with orphan lines, 0
