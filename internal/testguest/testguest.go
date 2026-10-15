@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -37,6 +39,16 @@ type Guest struct {
 	sockDir  string
 	wg       sync.WaitGroup
 	conns    atomic.Int64
+
+	// sessions counts the commands running now; mu guards running, their
+	// process groups. Close ends and waits for both, so a test's cleanup
+	// never removes the fake guest's home while a command it started is
+	// still writing there (TestSyncRefusesAnUnrelatedCheckout on a loaded
+	// box, 2026-10-15).
+	sessions sync.WaitGroup
+	mu       sync.Mutex
+	running  map[int]struct{}
+	closed   bool
 }
 
 // New starts a fake guest that accepts authorizedKey and runs every exec
@@ -118,6 +130,18 @@ func NewWithCA(home string, userCA ssh.PublicKey, principalFor func(login string
 func (g *Guest) Close() {
 	_ = g.listener.Close()
 	g.wg.Wait()
+	g.mu.Lock()
+	g.closed = true
+	for pgid := range g.running {
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	}
+	g.mu.Unlock()
+	done := make(chan struct{})
+	go func() { g.sessions.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+	}
 	killTmux(g.sockDir)
 }
 
@@ -293,10 +317,18 @@ func (g *Guest) run(command string, channel ssh.Channel) int {
 	// server instead of the one this fake guest's TMUX_TMPDIR points at.
 	// XDG_CONFIG_HOME is the test process's (the "laptop's"); a real
 	// guest has none, and git would read the laptop's config through it.
-	cmd.Env = append(filterEnv(os.Environ(), "TMUX", "XDG_CONFIG_HOME"),
+	// Git's auto-maintenance and auto-gc are off: git 2.47 and later
+	// start `git maintenance run --auto --detach` after a commit or a
+	// fetch, in a session of its own that Close cannot end.
+	cmd.Env = append(filterEnv(os.Environ(), "TMUX", "XDG_CONFIG_HOME", "GIT_CONFIG_COUNT"),
 		"HOME="+g.Home,
 		"TMUX_TMPDIR="+g.sockDir,
+		"GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_KEY_0=maintenance.auto", "GIT_CONFIG_VALUE_0=false",
+		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0",
 	)
+	// Its own process group, which Close kills if it is still running.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Stdin through a pipe the command's exit does not wait on: a client
 	// such as scp sends EOF only after the remote command has exited, so
 	// exec's own stdin copy (which Wait waits for) would never finish.
@@ -308,7 +340,29 @@ func (g *Guest) run(command string, channel ssh.Channel) int {
 	go func() { _, _ = io.Copy(stdin, channel); _ = stdin.Close() }()
 	cmd.Stdout = channel
 	cmd.Stderr = channel.Stderr()
-	if err := cmd.Run(); err != nil {
+	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return 1
+	}
+	if err := cmd.Start(); err != nil {
+		g.mu.Unlock()
+		_, _ = fmt.Fprintln(channel.Stderr(), err)
+		return 1
+	}
+	pgid := cmd.Process.Pid
+	if g.running == nil {
+		g.running = map[int]struct{}{}
+	}
+	g.running[pgid] = struct{}{}
+	g.sessions.Add(1)
+	g.mu.Unlock()
+	err = cmd.Wait()
+	g.mu.Lock()
+	delete(g.running, pgid)
+	g.mu.Unlock()
+	g.sessions.Done()
+	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			return ee.ExitCode()
 		}
