@@ -283,18 +283,30 @@ and about eight lines in `needs_of`. Two fixture tests
 (`needs_flake_checks_only`, `needs_ignores_a_test_only_change`), and three
 more for the test directories.
 
-**Rejected.** *Resolving the real targets through the flake's own graph* —
-evaluating `nixosConfigurations.host-01.config.system.build.toplevel.drvPath`
-and the guest system on both sides of the diff and comparing. That is the
-only answer that is right by construction, and it is the right answer for
-the conductor at cut time, not for an agent's `add`: it needs the flake
-inputs, a warm evaluation cache and minutes, and it cannot run inside a
-repose guest at all for the host configurations. Worth adding later as
-`release-queue needs --exact` for the conductor to run once per batch; not
-worth putting in an agent's path to the queue. *Keeping `checks` in
-`flake.nix` and classifying by line range*: a refactor inside the block
-moves every line number, and the classifier would be wrong the first time
-someone reformats the file.
+**Resolving the real targets through the flake's own graph** was rejected in
+the first draft of this document on the grounds that it needs minutes. That
+was wrong: it was never measured. It takes **about three seconds**, it works
+at an arbitrary revision, and it answers the question exactly. The
+measurements and the working comparison are in
+[queue-revamp-plan.md](queue-revamp-plan.md) §1; the short version is that a
+plain `drvPath` comparison is useless because `self.shortRev` is stamped into
+hostd, guestd and the base version, so every commit changes every system's
+drvPath — but comparing the derivation graphs modulo that stamp gives ground
+truth, and it says `dev-tool-guards` produced a **byte-identical** host-01
+system. The plan therefore uses paths to decide *whether to ask* and
+evaluation to *answer*, which costs nothing for the branches that touch no
+nix at all.
+
+That does not retire the `_test.go` rule above: the Go source filter includes
+test files, so a test-only change alters the derivation's input and nix
+reports a change the built binary would not have. Nix is conservative about
+inputs; `go list -deps` is what knows about binaries. Both halves stay.
+
+**Rejected.** *Keeping `checks` in `flake.nix` and classifying by line range*:
+a refactor inside the block moves every line number, and the classifier would
+be wrong the first time someone reformats the file. (The move itself is now
+optional rather than load-bearing — see the plan — because evaluation sees
+through a checks-only change whatever the paths say.)
 
 ---
 
