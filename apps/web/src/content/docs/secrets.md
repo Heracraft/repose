@@ -63,7 +63,7 @@ Value for COOLIFY_BASE_URL: ****************************
 Set COOLIFY_BASE_URL for every project; 1 running machine has it now.
 ```
 
-With `--global`, the secret is your account's rather than one project's. Every project gets it, including the ones you create later. A project's own secret of the same name wins, and `set --global` names the projects that keep theirs. Remove a project's own and it gets your account's.
+With `--global`, the secret is your account's. Every project gets it, including the ones you create later. A project's own secret of the same name wins, and `set --global` names the projects that keep theirs. Remove a project's own and it gets your account's.
 
 ```
 repose secrets list --global
@@ -75,7 +75,7 @@ The dashboard keeps these on **Settings**, and each project's **Secrets** page l
 
 ## Logins copied from your laptop
 
-At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. `Logins copied: gh, codex` prints when what was copied changes, not on every run of the same project.
+At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. `Logins copied: gh, codex` prints when a project's copied logins change.
 
 | Tool       | File                                                                             |
 | ---------- | -------------------------------------------------------------------------------- |
@@ -162,7 +162,7 @@ Add the public key to that one repository as a deploy key with write access. It 
 
 ## Git and Claude Code settings
 
-Your global git settings are copied. A setting you make on the machine wins over the copy. Left on your laptop: credential helpers, signing keys, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, anything that looks like a token, and any setting naming a program or path the machine doesn't have. Your global gitignore is copied, not the setting naming it. The name and email on the machine's commits are the ones git resolves in your checkout, so a per-directory `includeIf`, or an identity the repository sets itself, is what arrives.
+Your global git settings are copied, and your global gitignore to `~/.config/git/ignore`, which git reads by default. A setting you make on the machine wins over the copy. Left on your laptop: credential helpers, signing keys, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, anything that looks like a token, and any setting naming a program or path the machine doesn't have. The name and email on the machine's commits are the ones git resolves in your checkout, so a per-directory `includeIf`, or an identity the repository sets itself, is what arrives.
 
 Commits made on the machine are unsigned, since the signing key stays on your laptop. Where neither sets a value, git on the machine starts a new repository on `main`, merges on `git pull`, and sets the upstream on a branch's first `git push`.
 

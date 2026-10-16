@@ -5,7 +5,7 @@ section: Tutorials
 order: 24
 ---
 
-A conductor is one more agent whose only job is to run the others. repose was built this way: a conductor session in the main checkout and four to six worker sessions in worktrees, for weeks.
+A conductor is one more agent whose only job is to run the others. We built repose with one in the main checkout and four to six workers in worktrees, for weeks.
 
 ## The roles
 
@@ -54,7 +54,7 @@ git branch -r | grep repose/worktree- # the workers' branches
 Put them in the conductor's prompt or in the repository's `CLAUDE.md`, where every worker reads them.
 
 - **Workers claim before they build and record when they stop.** Keep a STATUS file with one line per task, appended by whoever is working. The next session reads it first.
-- **Merge one branch at a time, and check after each merge.**
+- **Merge one branch at a time.** Run the checks after each merge.
 - **Assign shared numbers up front.** Anything workers number in parallel (decision entries, migration files, changelog lines) collides. The conductor hands out ranges in the launch prompt.
 - **Append-only files union-merge.** Mark STATUS and decision logs with `merge=union` in `.gitattributes`, so two workers appending never conflict.
 - **Done needs evidence.** Each worker's report names the evidence for each item in its checklist: "the migration is registered, here's the row".

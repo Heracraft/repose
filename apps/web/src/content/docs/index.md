@@ -4,7 +4,7 @@ description: Install the CLI, start a machine for your project and hand a task t
 section: Start here
 order: 1
 ---
-repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your daily driver and the private content inside it are out of its reach.
+repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your laptop, your SSH keys and your other projects are out of its reach.
 
 You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not been tested enough. [Feedback](https://repose.fider.io) is appreciated.
 
@@ -17,11 +17,11 @@ repose login
 
 ## 2. Choose a plan
 
-Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory for machines running around the clock, not hours.
+Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory by the month, however long your machines run.
 
 ## 3. Skip permissions
 
-Claude Code on the machine starts in `bypassPermissions` mode. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#permissions), the machine uses yours.
+Claude Code on the machine starts in `bypassPermissions` mode: it runs commands and edits files without asking. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#permissions), the machine uses yours.
 
 ## 4. Let it loose
 

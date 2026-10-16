@@ -93,7 +93,7 @@ WINDOW is the window's number and name, with `*` on the one `attach` opens on. C
 
 A herdr project lists herdr's agents instead, under `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
 
-With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as whole lines rather than as the pane wrapped them; `-n`/`--tail N` for N lines, 1 to 10000. `-n` without a window prints every window's, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
+With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, unwrapped; `-n`/`--tail N` for N lines, 1 to 10000. `-n` without a window prints every window's, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
 
 `--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `agent_state` spells `needs input` as `needs_input`, and reads `unknown` where an agent exited or never reported, which the table shows as `-`. `state` repeats `agent_state`, except on herdr, where it keeps herdr's own word (`blocked`, `done`) for this release. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
 
@@ -232,7 +232,7 @@ Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` fo
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted, not sent; you press Enter. Needs the machine running.
+Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running.
 
 | Flag            | What it does                                                                          |
 | --------------- | ------------------------------------------------------------------------------------- |

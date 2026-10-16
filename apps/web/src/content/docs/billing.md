@@ -25,7 +25,7 @@ Prices are in USD and exclude tax, which Polar adds at checkout for your country
 - `large`: 4 vCPU and 8 GB
 - `xl`: 8 vCPU and 16 GB
 
-Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk, not your memory. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page does.
+Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page does.
 
 ## What a plan means
 

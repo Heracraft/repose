@@ -79,7 +79,7 @@ With an allowlist:
 - The agents see only the tabs that are on those sites, and the blank tabs they open themselves.
 - In the tabs they can see, a page from any other site fails with `ERR_BLOCKED_BY_CLIENT`, however it was started: a tool's navigation, a click, a script, a redirect, a form post, a popup, a frame inside an allowed page. The agent is told the site isn't on the allowlist and to ask you, and a `blocked` line goes in [the page list](#the-page-list).
 - Your own tabs are not affected. A tab you open on an allowed site while the bridge is open becomes one the agents can see, though.
-- The bridge keeps a connection of its own to Chrome, and that connection is what stops the pages; with Chrome's switch you allow it before any tool can connect. If it ends, because Chrome quit or remote debugging went off, the bridge closes instead of carrying on without the list.
+- The bridge keeps a connection of its own to Chrome, and that connection is what stops the pages; with Chrome's switch you allow it before any tool can connect. If it ends, because Chrome quit or remote debugging went off, the bridge closes with it.
 
 When a login goes through another site (Google or GitHub sign-in, an SSO provider), add that site too, or log in yourself before you start the bridge.
 
@@ -104,7 +104,7 @@ The bridge never lets them, whatever you pass:
 
 A page's own JavaScript still reads what that page can: cookies not marked HttpOnly, local storage, what it fetches from its own site, the messages on its own WebSockets. The agents can run JavaScript in a page, so keep a bridge to sites you'd let an agent act on.
 
-`--allow` holds the pages the agents open, not the images, scripts and fetches those pages make to other hosts, which carry whatever cookies those sites allow cross-site. The agents can't open or read those sites' pages.
+The bridge checks each page the agents open against `--allow`. Images, scripts and fetches go to any host the page names, with whatever cookies those sites allow cross-site. The agents can't open or read those sites' pages.
 
 ## Stop it
 

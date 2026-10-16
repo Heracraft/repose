@@ -5,7 +5,7 @@ section: Tutorials
 order: 21
 ---
 
-Every machine has [one browser](/docs/machine#browser) for its agents: a real Chromium on a virtual screen, driven through the `playwright` and `chrome-devtools` tools. It starts the first time an agent reaches for it and keeps its cookies and logins from then on. You can watch that screen and click in it.
+Every machine has [one browser](/docs/machine#browser) for its agents: a real Chromium on a virtual screen, driven through the `playwright` and `chrome-devtools` tools. It starts the first time an agent reaches for it and keeps its cookies and logins from then on.
 
 ## Give the agent a browser job
 

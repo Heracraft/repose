@@ -42,9 +42,9 @@ Fetched 2 commits on repose/main.
 Stopping todo-app; 1 file not committed.
 ```
 
-A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or that the machine stopped answering before any of it could be read. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
+A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
 
-The command comes back once the stop is under way, not when it's done. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
+The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
 
 Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`.
 
@@ -59,7 +59,7 @@ Each agent's window opens again with the conversation it was in ([When the machi
 
 ## When a machine's server restarts
 
-A machine whose server restarts comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. Servers restart for maintenance and after faults. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server and removed once the machine is back.
+Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server and removed once the machine is back.
 
 A machine that can't come back that way stops instead. Its disk is kept; processes and memory are lost, the agent's turn with them ([When the machine ends without a stop](/docs/run-and-attach#when-the-machine-ends-without-a-stop)). That's what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
 
@@ -113,7 +113,7 @@ repose snapshots create
 repose snapshots list
 ```
 
-A snapshot holds the whole disk: the checkout, the home directory, logins made on the machine, installed tools. Not [secrets](/docs/secrets), and not your [Claude Code login](/docs/agents#log-in). Snapshots from the last 7 days are kept, and the newest one always.
+A snapshot holds the whole disk: the checkout, the home directory, logins made on the machine, installed tools. Secrets are kept in memory, and your [Claude Code login](/docs/agents#log-in) outside the machines, so a snapshot holds neither. Snapshots from the last 7 days are kept, and the newest one always.
 
 To put a project back to a snapshot, stop it first:
 
@@ -122,7 +122,7 @@ repose stop todo-app
 repose snapshots restore todo-app SNAPSHOT_ID
 ```
 
-The question names the snapshot it would write and whether anything keeps the disk as it is now. The stop's own snapshot usually does, so the restore is itself undoable. After `repose stop --no-snapshot` or `repose resize --size`, whose stop takes none, it says instead that what changed since the newest snapshot is lost for good; a stopped project can still be snapshotted, which is the way back from that. The restore starts the machine on the restored disk and ends with `Restored todo-app; it is running (large).`
+The question names the snapshot it would write and whether anything keeps the disk as it is now. The stop's own snapshot does when it's the newest one and the machine hasn't started since, so the restore is itself undoable. After `repose stop --no-snapshot` or `repose resize --size`, whose stop takes none, it says instead that what changed since the newest snapshot is lost for good; a stopped project can still be snapshotted, which is the way back from that. The restore starts the machine on the restored disk and ends with `Restored todo-app; it is running (large).`
 
 Or restore into a new project and leave the original alone:
 

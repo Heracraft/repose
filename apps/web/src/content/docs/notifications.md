@@ -9,7 +9,7 @@ order: 16
 
 Email is on from the start and goes to the address on your account. Every notification email ends with a **Stop these emails** link; it opens a page with an **Unsubscribe** button and works for 90 days. `repose notify set --email off` stops them, `--email on` brings them back.
 
-Notification settings are your account's, not a project's. The dashboard's **Settings** page has the same controls, plus **Send test**.
+Notification settings cover every project on your account. The dashboard's **Settings** page has the same controls, plus **Send test**.
 
 ## Your phone, with ntfy
 
@@ -89,7 +89,7 @@ An agent finishing its turn sends you nothing. The turn lands in `repose events`
 
 ## Emails about your account
 
-Some emails are about your account rather than a machine. They're email only, they're sent even with notification emails off, and they carry no unsubscribe link, because each one answers something you did or are about to be charged for. Polar, which takes the payments, sends the receipt for each charge, the confirmation of a new plan and the reminder when your card is about to expire. The rest are ours.
+Account emails are email only, they're sent even with notification emails off, and they carry no unsubscribe link, because each one answers something you did or are about to be charged for. Polar, which takes the payments, sends the receipt for each charge, the confirmation of a new plan and the reminder when your card is about to expire. The rest are ours.
 
 | Subject                                        | When                                                                                                                       |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -138,7 +138,7 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
 | `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.                                                                          |
-| `--agent NAME`    | detected   | Who is asking. Usually detected from the agent running the command, else `shell`.                                                                     |
+| `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
 | `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |
 
 It exits with:

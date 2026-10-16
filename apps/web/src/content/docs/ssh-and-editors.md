@@ -66,7 +66,7 @@ It only writes those files, so a plain `ssh todo-app.repose` never starts a stop
 
 When `~/.ssh/config` is a symlink, the line goes in at the far end of it, your dotfiles repository included. When that target is one repose can't write, home-manager's in the Nix store for instance, it prints the path and the line to add there yourself, and every command that connects says so until the line is in place.
 
-repose's own commands connect anyway: they hand ssh the file with `-F` rather than trust your config. The editor `repose code` opens does not, and nor do plain `ssh`, `scp` and `git`.
+repose's own commands connect anyway: they hand ssh the file with `-F`. The editor `repose code` opens does not, and nor do plain `ssh`, `scp` and `git`.
 
 The line that runs the prepare names the `repose` binary by absolute path. Move that binary and ssh prints your shell's `not found` for the old path, then connects on the certificate and Host blocks already on disk, which holds until the certificate expires. The next repose command that connects writes the current path in.
 
@@ -80,6 +80,6 @@ So the machine has no key of yours to push with. GitHub works anyway, over HTTPS
 
 ## Windows
 
-Inside WSL, `ssh`, `scp`, `rsync` and `git` reach a project as above, with the CLI [installed there](/docs/install) rather than on Windows.
+Inside WSL, `ssh`, `scp`, `rsync` and `git` reach a project as above, with the CLI [installed inside WSL](/docs/install).
 
 An editor installed on Windows can't reach a project yet. It connects with Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, where repose writes the Host block and the certificate. `repose code` refuses that editor: `VS Code here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.`

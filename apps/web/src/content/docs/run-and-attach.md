@@ -38,9 +38,9 @@ Worktree: ~/todo-app-worktree-1 on branch worktree-1
 Copied 1 .env file from ~/todo-app
 ```
 
-Worktrees are folders beside the checkout, `~/todo-app-worktree-1` and up, each on its own `worktree-N` branch. The branch starts at the checkout's last commit, so uncommitted changes there aren't in it, and `run` says so when the checkout is dirty. The window keeps the agent's name, `claude` or `claude-2`. Each `--worktree` run takes the lowest number whose folder and branch are both free, so a new prompt never lands on an old attempt's files. Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
+Worktrees are folders beside the checkout, `~/todo-app-worktree-1` and up, each on its own `worktree-N` branch. The window keeps the agent's name, `claude` or `claude-2`. Each `--worktree` run takes the lowest number whose folder and branch are both free, so a new prompt never lands on an old attempt's files. Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
 
-In the worktree the agent has the whole repository at that commit, plus the checkout's gitignored `.env` and `.env.*` files. Dependencies aren't shared, so the agent installs them again and they count toward your plan's disk; build output and local databases aren't copied either. A worktree sits outside the synced tree, so `repose sync` leaves it alone and what the agent does there doesn't count as changes on the machine. Its commits come back as `repose/worktree-1` ([Getting work back](/docs/sync#getting-work-back)).
+The branch starts at the checkout's last commit, so uncommitted changes there aren't in it, and `run` says so when the checkout is dirty. In the worktree the agent has the whole repository at that commit, plus the checkout's gitignored `.env` and `.env.*` files. Dependencies aren't shared, so the agent installs them again and they count toward your plan's disk; build output and local databases aren't copied either. A worktree sits outside the synced tree, so `repose sync` leaves it alone and what the agent does there doesn't count as changes on the machine. Its commits come back as `repose/worktree-1` ([Getting work back](/docs/sync#getting-work-back)).
 
 On tmux, `repose stop -w claude-2` closes the window, fetches the branch and removes the worktree. One with uncommitted files, another window in it, or a branch the fetch didn't bring stays, and the line says why ([`repose stop`](/docs/cli#repose-stop-project)).
 
@@ -108,7 +108,7 @@ Exiting the last window ends the session, and a new one with a `shell` window st
 
 The mouse stays with your laptop's terminal, so selecting and copying text work as they do outside tmux. For tmux's own mouse (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`.
 
-Shift+Enter is a newline in Claude Code rather than a submit, if your terminal answers tmux's request for modified keys (modifyOtherKeys). Ghostty, WezTerm, iTerm2 and xterm answer; Apple's Terminal doesn't, and there `\` then Enter, or Ctrl+J, is the newline. Links an agent prints stay clickable in a terminal that draws them (OSC 8).
+Shift+Enter starts a new line in Claude Code, if your terminal answers tmux's request for modified keys (modifyOtherKeys). Ghostty, WezTerm, iTerm2 and xterm answer; Apple's Terminal doesn't, and there `\` then Enter, or Ctrl+J, is the newline. Links an agent prints stay clickable in a terminal that draws them (OSC 8).
 
 tmux passes 24-bit colour to a terminal that has it (Ghostty, kitty, WezTerm, iTerm2, Alacritty, foot, or any that sets `COLORTERM=truecolor`); Apple's Terminal before macOS 26 gets 256 colours.
 
@@ -229,4 +229,4 @@ A machine whose server crashes, or that can't be brought back when its server re
 - every other process, and what the windows showed;
 - the last few seconds of writes to the disk.
 
-On a herdr project herdr's last save is seconds old rather than a minute, and the start puts back what it holds.
+On a herdr project herdr's last save is only seconds old, and the start puts back what it holds.

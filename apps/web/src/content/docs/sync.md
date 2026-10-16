@@ -5,13 +5,13 @@ section: Using repose
 order: 11
 ---
 
-The first `repose run` for a machine copies your checkout to it. After that, `repose run` attaches to the machine as it is, and your laptop's later work goes over only when you run `repose sync`. Nothing syncs continuously and nothing comes back on its own: the agent commits, and you fetch its commits with `git fetch repose`.
+The first `repose run` for a machine copies your checkout to it. After that, `repose run` attaches to the machine as it is, and your laptop's later work goes over only when you run `repose sync`. Work comes back the other way: the agent commits, and you fetch its commits with `git fetch repose`.
 
-`repose attach` and `repose run --no-sync` never touch the machine's checkout, not even on a new machine.
+`repose attach` and `repose run --no-sync` never touch the machine's checkout.
 
 ## Where the checkout is
 
-The first sync puts your checkout under the machine's home directory, named after your repository's folder on the laptop, not after the project. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` while the checkout is `/home/dev/factory`:
+The first sync puts your checkout under the machine's home directory, named after your repository's folder on the laptop. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` while the checkout is `/home/dev/factory`:
 
 ```text
 Synced: 14 modified, 30 untracked, 1 env file  2.4s
@@ -32,7 +32,7 @@ A second repository can live on the same machine in [a checkout of its own](/doc
 - **Uncommitted changes** to tracked files.
 - **Untracked files** that git isn't ignoring.
 - **`repose.nix`.** At the root of the repository, it's applied as the machine's configuration when it changed ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)).
-- **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each, anywhere in the checkout. If the machine's copy is newer, it's kept and the CLI says which. Unlike [secrets](/docs/secrets), they're files on the machine's disk, so they're in its snapshots. [Turn them off](/docs/secrets#choose-what-is-copied) and they stay on your laptop.
+- **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each, anywhere in the checkout. If the machine's copy is newer, it's kept and the CLI says which. They're files on the machine's disk, so they're in its snapshots. [Turn them off](/docs/secrets#choose-what-is-copied) and they stay on your laptop.
 
 The checkout goes over the sync's own SSH connection, so [repose never gets a copy of your code](/docs/secrets#what-repose-stores). `repose.nix` is the exception: it goes to repose too, which builds it and keeps every version as a [revision](/docs/config#revisions-and-base-updates).
 

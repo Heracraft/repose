@@ -71,7 +71,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`The claude window closed before the attach: the agent in it exited. Attached to the session instead; start the agent again there.`** Running the agent by hand shows why it exited.
 
-**`repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.`** or **`Could not create todo-app: no host with capacity`.** The servers are full. Memory is never oversubscribed, so waiting frees nothing. Right after `repose rm` or `repose stop`, a new machine waits up to three minutes for that memory instead of failing. A create that failed this way leaves the project in the error state with no machine: `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room.
+**`repose has no room for this machine. A machine holds its memory while it runs, so stopping one frees room for it.`** or **`Could not create todo-app: no host with capacity`.** The servers are full. Memory is never oversubscribed, so waiting frees nothing. Right after `repose rm` or `repose stop`, a new machine waits up to three minutes for that memory. A create that failed this way leaves the project in the error state with no machine: `repose ls` lists it, and `repose start todo-app` or `repose run` in the checkout creates its machine once there's room.
 
 **`repose is full right now`.** [Every seat](/docs/limits#when-repose-is-full) is taken, and choosing a plan put you on the waitlist.
 
@@ -120,7 +120,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 **An [image you dropped or pasted](/docs/run-and-attach#drop-a-file-or-paste-an-image) didn't attach.**
 
 - Cmd+V did nothing on a Mac: you started with `REPOSE_NO_CLIPBOARD_PATH=1`, or a CLI older than v0.1.22. Ctrl+V reads the clipboard itself.
-- Your laptop's path appeared, not the machine's: the drop was past a limit, or the copy failed, and the status line said which. `REPOSE_NO_INPUT_PROXY=1` pastes the laptop's path too.
+- Your laptop's path appeared: the drop was past a limit, or the copy failed, and the status line said which. `REPOSE_NO_INPUT_PROXY=1` pastes the laptop's path too.
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. Over SSH there is no desktop clipboard to read, so run `repose` on the computer you copied the image on.
 - Ctrl+V did nothing under WSL: it reads the Linux clipboard, which may not hold an image you copied in Windows.
 

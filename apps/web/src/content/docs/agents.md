@@ -123,7 +123,7 @@ An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
 `run` and `attach` copy from your laptop's `~/.claude/`: `CLAUDE.md`, `settings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, `keybindings.json`, and scripts your hooks or status line run. Plugins you enabled are installed on the machine in the background. The other four get your MCP servers, and Codex and opencode your login; nothing from their own config directories.
 
-Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours; a hook you delete on your laptop stays on the machine. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
+Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Keys that hold a credential or run one (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours, and a hook you delete on your laptop stays on the machine; one that calls a command the machine doesn't have, such as macOS's `afplay`, is left out with a note.
 
 Never copied: your login, conversation history, anything in `~/.claude.json` besides your MCP servers, and anything named like a key or credential.
 
@@ -131,7 +131,7 @@ Never copied: your login, conversation history, anything in `~/.claude.json` bes
 
 Every agent on the machine has the [browser tools](/docs/machine#browser) `playwright` and `chrome-devtools`. In place of Claude in Chrome, `repose browser bridge` lends those tools [your laptop's Chrome](/docs/your-chrome), logins included.
 
-`run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine, not Claude Code alone. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
+`run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
 
 Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it.
 

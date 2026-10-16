@@ -5,7 +5,7 @@ section: Tutorials
 order: 20
 ---
 
-You have a checkout on your laptop. The agent works in a copy of it on the machine. Git is the only thing that moves work between the two, and it moves it in two different ways: your side goes up with `repose run`, the agent's side comes back with `git fetch`.
+The agent works in a copy of your checkout on the machine. Git is the only thing that moves work between the two: your side goes up with `repose run`, the agent's side comes back with `git fetch`.
 
 ## Start with something small
 

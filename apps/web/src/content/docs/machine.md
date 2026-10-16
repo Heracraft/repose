@@ -217,7 +217,7 @@ A deleted file's blocks go back to the server at the daily `fstrim`, and at once
 
 Once a week the machine deletes the nix store paths it downloaded or built itself that nothing uses any more, and generations of your nix profile older than 14 days; `sudo systemctl start repose-store-gc` does it now. `nix-collect-garbage` and `nix store gc` are safe to run too: they keep the store paths repose shares with the machine, its system included. If an earlier garbage collection hid any of them, the machine's next start puts them back.
 
-`repose status`, `repose ls` and the project's page in the dashboard say when the machine's filesystem is 90 percent full or more, the point past which a build's next write can fail. Grow the disk with `repose resize 80G`, or with **Resize…** under Disk in the dashboard, which offers 20, 40, 80, 160 and 320 GB. Disks can't shrink, and a bigger one raises the ceiling rather than the bill.
+`repose status`, `repose ls` and the project's page in the dashboard say when the machine's filesystem is 90 percent full or more, the point past which a build's next write can fail. Grow the disk with `repose resize 80G`, or with **Resize…** under Disk in the dashboard, which offers 20, 40, 80, 160 and 320 GB. Disks can't shrink, and a bigger one raises the ceiling.
 
 ## Seeing what the machine is doing
 
@@ -226,7 +226,7 @@ The dashboard's **Usage** card draws four charts over the last hour, day or week
 - **CPU**: the share of the machine's vCPUs in use.
 - **Memory**: memory in use without the page cache, of the size's memory.
 - **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than vCPUs, several builds or test runs at once. Run fewer at a time, or [give the machine more vCPUs](#changing-the-size).
-- **Waiting for the server**: the time the machine's vCPUs waited for a CPU on the server. A slow minute with your own CPU low came from the server, not from you.
+- **Waiting for the server**: the time the machine's vCPUs waited for a CPU on the server. A slow minute with your own CPU low came from the server.
 
 The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap.
 

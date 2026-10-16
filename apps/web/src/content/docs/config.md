@@ -38,7 +38,7 @@ Nothing changed in todo-app; the previous revision is still active.
 
 `repose config remove air` takes a package out, with the same build and switch.
 
-Press Ctrl-C and the CLI stops, not the build: `Interrupted. The build keeps going on the machine.` It's applied when it finishes, and `repose config revisions` says when.
+Press Ctrl-C to stop watching: `Interrupted. The build keeps going on the machine.` It's applied when it finishes, and `repose config revisions` says when.
 
 ## The menu
 
@@ -51,7 +51,7 @@ The dashboard's project Config page is this menu: tick an entry, choose a versio
 | tools     | `awscli`, `opentofu`, `kubernetes` (kubectl, Helm, k9s), `shell-extras` (lazygit, delta, tldr, hyperfine)                    |
 | deploy    | `wrangler`, `supabase`, `flyctl`, `vercel`, `portless`, `cloudflared`                                                        |
 
-Those are the names `repose config add` takes, not the labels the dashboard shows. `repose config add` can't pick a version and takes the default: `nodejs` 22, `python` 3.13, `jdk` 21, `postgresql` 16.
+Those are the names `repose config add` takes. `repose config add` can't pick a version and takes the default: `nodejs` 22, `python` 3.13, `jdk` 21, `postgresql` 16.
 
 Databases listen on localhost only: PostgreSQL on 5432, Redis 6379, MariaDB 3306, Memcached 11211, RabbitMQ 5672 with its management UI on 15672, Meilisearch 7700, NATS 4222. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work; MariaDB has a `dev` database too. Meilisearch runs in development mode, with no master key.
 
@@ -98,7 +98,7 @@ A tmux config the file adds, changes or removes (`xdg.configFile."tmux/tmux.conf
 
 On a machine that runs herdr, a `~/.config/herdr/config.toml` written from Nix replaces the seeded one, and herdr can't save its own settings into a file Nix manages. Keep its keys: `shell_mode = "login"` under `[terminal]`, or new panes start shells that skip your `~/.bash_profile`; `version_check = false` under `[update]`, or herdr offers updates the base's pin won't install; and the `[ui.toast]` key that [shows repose's messages in the session](/docs/run-and-attach#herdr-instead-of-tmux). A running herdr reads the file again at each apply.
 
-The file is a home-manager module, not a flake. A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
 Once the file is written by hand, the menu and `repose config add` are off for that project: they can't read arbitrary Nix, so `config add` stops and names `repose config edit` instead. Nothing turns the menu back on but applying the file a new project starts with:
 
@@ -121,7 +121,7 @@ Commit the file as `repose.nix` at the root of your repository and you never app
 Applying repose.nix (revision 4f1c2a9e) in the background.
 ```
 
-An unchanged file costs nothing and prints nothing. A failed build changes nothing, and later runs name the error instead of building the same file again; fix the file, or `repose config apply` retries it as it is. Only the project's own checkout counts: a run from another repository never replaces this machine's configuration. With the file in the repository it is the configuration, so an edit on the dashboard's **Nix** tab stands only until the file changes again.
+An unchanged file costs nothing and prints nothing. A failed build changes nothing, and later runs name the error until the file changes; fix the file, or `repose config apply` retries it as it is. Only the project's own checkout counts: a run from another repository never replaces this machine's configuration. With the file in the repository it is the configuration, so an edit on the dashboard's **Nix** tab stands only until the file changes again.
 
 ## Your machine.nix
 
