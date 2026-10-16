@@ -54,7 +54,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 
 Attach to the project's session, on its current window, without syncing. WINDOW (or `-w`/`--window NAME`) opens on that window instead: a name or number as `repose ps` shows it, or on herdr an agent's name. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2.
 
-A machine that isn't running comes up first, as with `run`: a stopped one starts, one in `error` restarts, one starting is waited for, and one stopping or being restored is waited out and then started. So is one whose server is restarting ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). A machine being removed, or one stopped for running a miner, exits 5.
+A machine that isn't running comes up first, as [`repose start`](#repose-start-project) does. A machine being removed, or one stopped for running a miner, exits 5.
 
 A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist.
 
@@ -247,7 +247,15 @@ List what the next `repose run` would install on the machine, and why. Installs 
 
 ### `repose ls`
 
-Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS is the [agent's state](/docs/agents#agent-states) with the longest wait's age (`needs input 4h`); a `?` after it means the machine's last report is over two minutes old. With several agents AGENTS counts them by state, needs input first, and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). `repose projects`, the old name, still works.
+
+AGENTS names the agent and its [state](/docs/agents#agent-states), with how long one that needs input has waited: `claude: needs input 4h`. A `?` means the machine's last report is two minutes or older. Several agents are counted by state, needs input first, with the longest wait: `2 agents: 1 needs input (4h), 1 working`.
+
+LEFT is a column only while a temporary machine is listed: its time left, or `up` once that has run out ([Temporary machines](/docs/lifecycle#temporary-machines)). DISK is a column only while a listed project's disk is 90 percent full or more, and reads `93% full`.
+
+A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). The last line is your plan and how much of it is in use: memory running, the disk your projects hold, egress this month. Under it, a line for each limit in the way: disk over the plan ([Projects](/docs/limits#projects)), egress past the allowance ([Egress](/docs/limits#egress)), a payment that failed ([If a payment fails](/docs/billing#if-a-payment-fails)).
+
+`--json` prints the full records. `--destroyed` lists the destroyed projects `repose restore` can still bring back, one row per name with the earlier destroys counted; `--all` goes with `--destroyed` and lists every row, each with the `ID` that restores it. `-q`/`--quiet` prints the names alone, one per line:
 
 ```
 repose stop $(repose ls -q)
@@ -269,68 +277,100 @@ todo-app  running 2h14m  large
   last event 14m ago, claude finished "Added auth flow"
 ```
 
-`checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. A stopped machine, or one that hasn't reported, shows the disk's size alone. Lines above the rows say when the machine has been unused for a day, when a temporary one is destroyed, what differs from a new project's settings (`setup: agent codex`, machine.nix kept off, base updates held), when the disk is 90 percent full or more (with the `repose resize` that doubles it, up to 320 GB), and the plan lines `repose ls` prints. `-v` adds the server's name and the machine's address.
+`checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
+
+`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
+
+Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that did not answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. |
-| `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A failed read doesn't end it. `--watch`, the old name, still works. |
-| `--wait STATE`       | Wait until the machine is in STATE (`running`, `stopped`, `error`, ...), then print the status. Exits 1 if it lands in `error` or is destroyed instead. |
-| `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`).                                                                                               |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. |
+| `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A read that fails because the server is unreachable or busy prints `Could not read the status at 21:38:02:` and the reason, and the loop goes on; any other failure ends it. `--watch`, the old name, still works. |
+| `--wait STATE`       | Wait until the machine is in STATE, any [project state](/docs/lifecycle#states), then print the status. Exits 1 if it lands in `error` or is destroyed instead, or if the wait runs out. Not with `-f`. |
+| `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`). Only with `--wait`.                                                                            |
 
 ### `repose start [PROJECT]`
 
-Start a stopped machine, or restart one in `error`. Doesn't sync. One starting is waited for, and one stopping or being restored is waited out and then started. So is one whose server is restarting ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). `--json` prints the project as JSON when done.
+Start a stopped machine, or restart one in `error`. Doesn't sync. One starting is waited for; one stopping or being restored is waited out and then started; one whose [server is restarting](/docs/lifecycle#when-a-machines-server-restarts) waits for the server. A machine already running prints `todo-app is already running.`, unless repose's service on it stopped answering, which restarts it. `--json` prints the project as JSON when done.
 
 ### `repose stop [PROJECT...]`
 
-Stop the machine and snapshot its disk. `--no-snapshot` skips the snapshot. Several projects stop at once, one line each; `--unused` stops every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines). If an agent is `working` or `needs input`, it names the agent and asks first; `-y`/`--yes` skips the question (required without a terminal), and the stop line is then followed by `Ending claude (working).` It runs `git fetch repose` first in each folder on this laptop whose `repose` remote is a stopping machine, wherever you run it, and prints what came, as `Fetched 3 commits on repose/main.` (`... in ~/code/api.` for a folder other than the one you're in). The stop line ends with what stays on the machine: `Stopping todo-app; 3 commits on main not fetched, 4 files not committed.` Commits are counted when this laptop has a checkout of the project. When the machine can't be read within 15 seconds, the line says so and why: `Stopping todo-app; checkout unknown (no ssh answer in 15 s).`, or `(ssh failed: Connection refused)`. `repose status` on the stopped machine shows the same rows, or the same `unknown`, with when the stop read them. The command returns once the machine reads `stopping`, and the snapshot and the shutdown go on without it; a stop that fails puts the project in `error` and notifies you (`stop failed`). A machine already stopping prints `todo-app is already stopping.`; `--no-snapshot` can't change a stop already under way, and the line says so. `--wait` waits for the stop, prints `Stopped todo-app in 11s with a 2.1 GB snapshot.` and `Ended claude (working).`, and exits 1 when the stop failed. `--json` prints the project as JSON (`stopping`, or with `--wait` as the stop left it), or an array of them for several projects or `--unused`.
+Stop the machine and snapshot its disk, several projects at once with one line each ([Stop and start](/docs/lifecycle#stop-and-start)).
 
-`repose stop [PROJECT] -w WINDOW` (`--window`) closes one agent's window, a name or number as `repose ps` shows it (on herdr an agent's name), and the machine keeps running. It asks first when that agent is working or waiting for an answer, as a stop does. If the window works in a `--worktree` folder, it fetches first as above, then removes the worktree if no other window works in it, `git status` lists nothing there and your laptop has the branch's last commit: `Closed claude-2 on todo-app and removed its worktree ~/todo-app-worktree-2.` The branch stays on the machine. Otherwise the worktree stays and the line says why: `Closed claude-2 on todo-app; its worktree ~/todo-app-worktree-2 stays: worktree-2 is not fetched to this laptop.` On herdr only the agent's pane closes.
+| Flag                    | What it does                                                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--no-snapshot`         | Stop without a snapshot. It can't change a stop already under way, and the line says so.                                                                                                        |
+| `--unused`              | Stop every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines); it takes no PROJECT. `No machine is unused.` when none is.                                                   |
+| `-y`, `--yes`           | Don't ask when an agent is `working` or `needs input` (required without a terminal). The stop line is then followed by the agent it ends: `Ending claude (working).`, or `Ended claude (working).` with `--wait`. |
+| `--wait`                | Wait for the snapshot and the shutdown instead of returning once the machine reads `stopping`: `Stopped todo-app in 11s with a 2.1 GB snapshot.` Exits 1 when the stop failed.                   |
+| `-w`, `--window WINDOW` | Close one agent's window and leave the machine running. One PROJECT, and not with `--no-snapshot`, `--wait` or `--unused`.                                                               |
+| `--json`                | The project as JSON (`stopping`, or with `--wait` as the stop left it), an array for several projects or `--unused`; the text goes to stderr.                                                   |
+
+Before a machine goes it runs `git fetch repose` in every folder on this laptop whose `repose` remote is one of the machines being stopped, wherever you run it, and prints what came: `Fetched 3 commits on repose/main.`, or `Fetched 3 commits on repose/main in ~/code/api.` for a folder other than the one you're in. A fetch that fails is one line on stderr and the stop goes ahead. The stop line ends with what stays on the machine: `Stopping todo-app; 3 commits on main not fetched, 4 files not committed.` Commits are counted only where this laptop has a checkout of the project. The read of the machine gets 15 seconds, and the clause says when it didn't answer: `Stopping todo-app; checkout unknown (no ssh answer in 15 s).`, or `(ssh failed: Connection refused)`. A machine already stopping prints `todo-app is already stopping.`, a stopped one `todo-app is already stopped.`
+
+`-w WINDOW` closes that agent's window, a name or number as `repose ps` shows it, or on herdr an agent's name, where only its pane closes. It asks about a busy agent as a stop does. On tmux it also removes the window's [worktree](/docs/run-and-attach#several-agents-separate-trees) when nothing there would be lost, after the same fetch: `Closed claude-2 on todo-app and removed its worktree ~/todo-app-worktree-2.` The branch stays on the machine. Otherwise the worktree stays and the line names what kept it: `Closed claude-2 on todo-app; its worktree ~/todo-app-worktree-2 stays: worktree-2 is not fetched to this laptop.`
 
 ### `repose rm [PROJECT...]`
 
-Delete the machine and disk; a final snapshot is kept 30 days. Several projects get one question. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits until it's done. A running machine's commits are fetched first, as `stop` fetches them, in each of the project's checkouts on your laptop. Run in the project's checkout, it removes the `repose` git remote; branches already fetched from it stay.
+Delete the machine and disk; a final snapshot is kept 30 days, and a [temporary machine](/docs/lifecycle#temporary-machines) keeps none. A running machine's commits are fetched first, as `stop` fetches them. Several projects get one question, which names any `working` or `needs input` agent. `-y`/`--yes` skips the question (required without a terminal), and the line then says until when the snapshot is kept. `--wait` waits for the destroy. Run in the project's checkout, it removes the `repose` git remote.
 
-`repose rm PROJECT:CHECKOUT` removes only a checkout that `run --on` added: its folder and its worktrees on the running machine, after the same question, and the link from your laptop folder. It exits 6 while a process works in one of those folders, and 2 for a name the machine doesn't have.
+`repose rm PROJECT:CHECKOUT` removes only [a checkout `run --on` added](/docs/run-and-attach#several-repositories-on-one-machine): its folder and its worktrees on the machine, and the link from your laptop folder. Needs the machine running. Nothing is fetched first, and the question names what goes: `Remove ~/api from todo-app? It is deleted with its worktrees, uncommitted work and any commits you have not fetched or pushed. [y/N]` It exits 6 while a process works in one of those folders, and 2 for a `PROJECT:CHECKOUT` passed beside any other name.
 
-`repose projects` and `repose destroy`, the old names, still work.
-
-On a temporary machine the question starts by saying that no snapshot is kept, and it can't be restored. A busy agent is named in the question, as on `stop`.
+`repose destroy`, the old name, still works.
 
 ### `repose keep [PROJECT] [DURATION]`
 
-Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one: it is no longer destroyed when its time runs out. With DURATION (`10m` to `24h`, such as `3h`; `1d` is `24h`), it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary until Sep 29 17:02.` One argument that is a number and a unit (`s`, `m`, `h`, `d` or `w`) is DURATION, so a project called `2fa` is a project. It adds no git remote; reach it by name. On a project that isn't temporary it says so and does nothing.
+Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no longer destroyed when its time runs out. With DURATION it stays temporary and is destroyed that long from now instead: `tmp-k3f9 is temporary until Sep 29 17:02.` DURATION is `10m` to `24h`, such as `3h`; `1d` is `24h`. One argument that is a number and a unit (`s`, `m`, `h`, `d` or `w`) is DURATION, so a project called `2fa` is a project. It adds no git remote; reach it by name. On a project that isn't temporary it prints `todo-app is not temporary.` and does nothing.
 
 ### `repose restore [NAME]`
 
-Bring back a project destroyed in the last 30 days. `--as NEW-NAME` for another name, `--snapshot ID` for an older snapshot. It ends with the project, the snapshot, the time it took, and its state and size, as `snapshots restore --as` does.
+Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` from an older snapshot than the newest. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
 
 ### `repose fork [PROJECT]`
 
-Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. `-n`/`--count N` makes N copies (1 to 10, default 1), named `PROJECT-fork-1`, `PROJECT-fork-2` and so on; `--name NAME` names them `NAME-1`, `NAME-2`. `--size` sets their size (default: the project's). `--snapshot ID` copies one of the project's snapshots instead. `--prompt TEXT` starts the agent in every copy with that prompt (`--agent` picks the agent). `--no-start` creates the copies stopped, so they take none of your plan's memory until `repose start`; it can't be combined with `--prompt`. `--json` prints the copies as JSON. The project itself keeps running. In a checkout whose `repose` remote is the project's machine, `fork` adds a git remote named after each copy, so `git fetch todo-app-fork-2` brings that copy's commits back; `repose rm` of the copy removes its remote. Each copy is a project: it counts toward the [100 an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or need more memory than your plan has beside what runs now, it exits before copying anything and nothing is created; the memory refusal names `--no-start` (exit code 7).
+Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. The project itself keeps running. Without `--snapshot` it has to be running or stopped: a stopping one is waited out, and any other state exits 5.
+
+| Flag                      | What it does                                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-n`, `--count N`         | How many copies: 1 to 10, default 1. Another number exits 2.                                                                                         |
+| `--name NAME`             | Name them `NAME-1`, `NAME-2` and so on, in place of `PROJECT-fork-1`. Numbers a live project of yours already has are skipped.                        |
+| `--size small\|large\|xl` | Size of the copies. Default: the project's.                                                                                                          |
+| `--snapshot ID`           | Copy one of the project's [snapshots](#snapshots) instead of its disk as it is now.                                                                  |
+| `--prompt TEXT`           | Start the agent in every copy with that prompt. Your checkout isn't synced into them.                                                                |
+| `--agent NAME`            | Which agent `--prompt` starts: `claude`, `codex`, `opencode`, `gemini` or `pi`. Default: the project's. Needs `--prompt`.                             |
+| `--no-start`              | Create the copies stopped, so they take none of your plan's memory until `repose start`. Not with `--prompt`.                                        |
+| `--json`                  | Print the copies as JSON.                                                                                                                            |
+
+In a checkout whose `repose` remote is the project's machine, each copy gets a git remote of its own name; `repose rm` of a copy removes that remote again.
+
+Each copy is a project, and counts toward [the 100 an account can have](/docs/limits#projects) and toward your plan's disk and memory. A fork that would pass any of those is refused before anything is copied and exits 7; the memory refusal names `--no-start`.
 
 ### `repose resize [PROJECT] [DISK]`
 
-Grow the project's disk, for example `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T` (`80G`, `80GB` and `80GiB` are the same); a bare number exits 2. Disks can't shrink: a smaller size exits 2 with the disk's size, and the size it already has does nothing. A larger disk adds nothing to your plan's disk total, which counts what your projects hold, and one disk can be at most the plan's whole disk. A single argument that reads as a size is the disk; anything else is the project.
+Grow the project's disk: `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T`, all binary (`80G`, `80GB` and `80GiB` are one size); a bare number exits 2. Disks can't shrink: a smaller size exits 2 and names the disk's size, and a size it already has changes nothing. A grow ends with `Resized todo-app's disk to 120G.` One argument that reads as a size is DISK; anything else is PROJECT. A disk past your [plan's ceiling for one project](/docs/billing#what-a-plan-means) exits 7.
 
-`--size small|large|xl` [changes the project's size](/docs/machine#changing-the-size), for example `repose resize --size xl` (or `repose resize todo-app --size xl`) when it keeps running out of memory. Asking for the size the project already has does nothing. A stopped project starts at the new size next time. A running one has to be stopped for it: repose asks, then stops it, changes it and starts it again, which ends every process on it, agents included. A larger size your plan can't run beside what runs now is refused before the question, with exit code 7, and nothing is stopped. `-y`/`--yes` skips the question (required without a terminal). It prints what the new size gives and which plan it needs. `--json` prints the project as JSON when done.
+`--size small|large|xl` [changes the project's size](/docs/machine#changing-the-size), for example `repose resize --size xl` when the machine keeps running out of memory. A running project has to be stopped for the change, so it asks first: `todo-app is running. Changing it from large to xl stops it, which ends every process on it, agents included, then starts it again. Go ahead? [y/N]`. `-y`/`--yes` skips the question and is required without a terminal. A size your plan can't run beside what runs now exits 7 before the question, and nothing is stopped. The change ends with `Changed todo-app from large to xl: 8 vCPU, 16 GB memory; needs the Plus plan. Running again in 43s.`; a stopped project's line ends `It starts at the new size.` instead of the time.
+
+DISK and `--size` go in one command, the disk first: `repose resize todo-app 160G --size xl`. With neither, it exits 2. `--json` prints the project as JSON when done.
 
 ### `repose logs [PROJECT]`
 
-`--kind console|build|ops` (default `console`), `--since` (below), `-n`/`--tail N` for the last N lines, `-f`/`--follow` to follow, `--json` for one JSON object per line. Each line starts with its local time.
+One of the machine's logs: `--kind console|build|ops`, default `console`. Lines come oldest first. A stopped machine, or one in `error`, still has its logs.
 
-`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, for its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log, `ops` one line per operation: its kind, how it ended (`done`, `failed`, or `running` while it runs), how long it took, and for a failed one its error code and message:
+`console` is what the machine printed during a boot that failed: the last 200 lines of each such boot, 16 KB at most, over its last 20 operations. A machine that booted cleanly has none. `build` is the last configuration build's log. `ops` is one line per operation: its kind, how it ended (`done` or `failed`) or that it hasn't (`pending`, `running`), how long it took, and a failed one's error code and message:
 
-```
+```text
 2026-10-08T21:38:02-04:00 stop done 4.2s
 ```
+
+`-n`/`--tail N` keeps the last N lines of the first read; `-f`/`--follow` then prints each new line, polling every 2 seconds. `--json` prints one JSON object per line.
 
 `--since` on `logs` and `events` takes a duration back from now (`90m`, `2d`, `1w`, `1d12h`), a date (`2026-10-01`, from local midnight) or an RFC 3339 time (`2026-10-01T08:00:00Z`). Anything else exits 2. `logs` has no default; `console` and `build` hold only the last boots and build.
 
 ### `repose events [PROJECT]`
 
-Every event in the window, oldest first, one per line: local time, agent (with its tmux window), what happened in the words its [notification](/docs/notifications) uses, summary. Outside a checkout, and with no PROJECT, it covers all your projects and adds a project column. `--since 3d` (default `24h`; the forms are under `logs`), `-f`/`--follow` to keep printing new ones as they come, `--json` for one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
+Every event in the window, oldest first, one per line: time, the agent and its window, what happened in the [word its notification uses](/docs/notifications), the summary. Outside a checkout, with no PROJECT, it covers every project and adds a project column. `--since 3d` sets the window (default `24h`); its forms are under `repose logs`. `-f`/`--follow` polls for new events every 10 seconds. `--json` prints one JSON object per line, with the event's `kind` and `project`. An empty window prints `No events on todo-app in the last 24h.` on stderr.
 
 ```text
 2026-10-08T20:58:30-04:00  -           snapshot  taken (stop)
@@ -340,13 +380,25 @@ Every event in the window, oldest first, one per line: local time, agent (with i
 
 ### `repose questions [PROJECT]`
 
-The [questions](/docs/notifications#agents-can-message-you-and-ask-questions) agents are waiting on you to answer, from all your projects (wherever you run it) or from PROJECT. Each shows the project, the agent's window (the name `attach -w` takes), how long ago it asked, when it expires, the question and its options. After them it lists agents waiting at a prompt in their terminal, such as a permission prompt, which `repose reply` can't answer, by window and project: for `claude-2 on todo-app`, `repose run todo-app -w claude-2 -p 1` types `1` and Enter there, and `repose attach todo-app -w claude-2` opens it. `-q`/`--quiet` prints only the question ids. `--json` prints the questions; the agents at a terminal prompt are in `repose ls --json`, as each project's `signals.agents` with `state` `needs_input`.
+The [questions](/docs/notifications#agents-can-message-you-and-ask-questions) agents are waiting on you to answer.
+
+```text
+todo-app  claude-2 asked 12m ago, expires in 18m  (id 7f3a1c2d)
+  Drop the legacy sessions table?
+  options: yes|no
+```
+
+The window is the one `repose attach` takes, or the agent's name where the window has none; the id is the question's last 8 characters. With no PROJECT it covers every project on your account. Only PROJECT or `--project` narrows that, not the checkout and not `REPOSE_PROJECT`.
+
+Agents waiting at a prompt in their own terminal, such as a permission prompt, come after the questions, by window and project. `repose reply` can't answer those; `repose run PROJECT -w WINDOW -p TEXT` types into the window instead.
+
+`-q`/`--quiet` prints only the question ids, whole. `--json` prints the questions alone; `repose ls --json` carries the agents at a terminal prompt, in each project's `signals.agents` with `state` `needs_input`.
 
 ### `repose reply [PROJECT] [--] [ANSWER...]`
 
-Answer a waiting question: `repose reply todo-app yes`. The first word is the project when it names one of your projects; otherwise every word is the answer, which works when only one question is waiting. A project with no waiting question exits 1 and sends nothing. For an answer that starts with a project's name, put `--` before it: `repose reply -- todo-app is fine`. With several waiting, it lists them and sends nothing; name the project or pass `--question ID` (the id `repose questions` shows). With no answer, it asks for one in the terminal. If the question has options, the answer must be one of them. `--json` prints the answered question.
+Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-questions): `repose reply todo-app yes`. The first word is the project when it names one of your projects; otherwise every word is the answer. Put `--` before an answer that starts with a project's name: `repose reply -- todo-app is fine`. A project with no waiting question exits 1. With several waiting it lists them and exits 2; name the project, or pass `--question ID`, a whole id or its last characters as `repose questions` shows them. With no answer it asks for one in the terminal, and off a terminal exits 2. The answer to a question with options has to be one of them. A question answered or closed before your answer lands exits 1 and says how: `Not sent: answered in the terminal.` `--json` prints the answered question.
 
-`repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way, and the agent's `repose-ask` exits 5. With no question waiting it exits 1, as `reply` does. One that closes while the dismiss is on its way, for example because you answered it in the agent's terminal, prints `Not dismissed: answered in the terminal.` and exits 1.
+`repose reply --dismiss [PROJECT]` cancels the waiting question without an answer, chosen the same way. With no question waiting it exits 1, as `reply` does. One that closed before the dismiss landed exits 1 with `Not dismissed: answered in the terminal.`
 
 ## Snapshots
 
@@ -354,7 +406,7 @@ Answer a waiting question: `repose reply todo-app yes`. The first word is the pr
 | ------------------------------------------------ | ------------ |
 | `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the Snapshot object. |
-| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after a question that says whether a snapshot keeps the disk as it is now. It ends with `Restored todo-app; it is running (large).` `--as NAME` restores into a new project instead, which starts too; `-y`/`--yes` skips the question. |
+| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after a question that says whether a snapshot keeps the disk as it is now. It ends with `Restored todo-app; it is running (large).` `--as NAME` restores into a new project instead, which starts too and ends as [`repose restore`](#repose-restore-name) does; `-y`/`--yes` skips the question. |
 
 SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
 
@@ -491,7 +543,7 @@ Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` 
 | 3    | Not logged in, or the login expired.                                                                                                                                                        |
 | 4    | No such project.                                                                                                                                                                            |
 | 5    | The machine isn't running.                                                                                                                                                                  |
-| 6    | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped.                                                                                 |
+| 6    | The machine changed files the sync would write, is in the middle of a merge or rebase, or has a process working in a folder being removed; nothing changed.                                 |
 | 7    | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it.                                                                   |
 | 8    | No capacity, before or during a start: running machines hold the memory, so stopping one frees room. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10   | The configuration build failed.                                                                                                                                                             |
