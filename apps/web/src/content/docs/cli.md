@@ -24,62 +24,62 @@ Global flags: `--project NAME`, `-v`/`--verbose` (one line on stderr for each AP
 
 If a newer release of the CLI is out, the next command says so once on stderr, with the install command that updates it. It says it again only for a later release.
 
-A command whose usage shows `[PROJECT]` takes the project there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
+A command whose usage shows `[PROJECT]` takes the project there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
 
 ## Working on a project
 
 ### `repose run [PROJECT]`
 
-Create or start this checkout's machine and [attach](/docs/run-and-attach). With PROJECT, the machine called PROJECT, created if there is none: a second machine for this checkout, or a name other than the folder's for one with no git remote. A new machine gets a copy of your checkout first; one that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. Your tool logins and settings are copied every time, and a changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
+Create or start this checkout's machine and [attach](/docs/run-and-attach). PROJECT is the machine of that name, created if there is none: [a second machine for this checkout](/docs/lifecycle#a-second-machine-for-the-same-repository), or one for a folder with no git remote. A new machine gets a copy of your checkout. One that already has it is left as it is, and `run` says when your laptop has work to send with `repose sync`. A changed `repose.nix` at the repository's root is applied in the background ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)). `run` and `attach` write your CLI's version to `~/.repose/cli-version` on the machine, so an agent there can tell when your CLI is older than these docs.
 
-Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the billing page, prints `Waiting for a plan at https://repose.herakraft.co/billing...` and waits up to 30 minutes for you to choose. Off a terminal, or with `--json`, it exits 7 with `Choose a plan at https://repose.herakraft.co/billing first.`
+Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the billing page, prints `Waiting for a plan at https://repose.herakraft.co/billing...` and waits up to 30 minutes for you to choose. Off a terminal it exits 7 with `Choose a plan at https://repose.herakraft.co/billing first.`
 
-On your laptop, `run` changes one thing in the checkout: it adds a git remote named `repose` for the machine's checkout, so `git fetch repose` brings [the agent's commits back](/docs/sync#getting-work-back). A second machine for the checkout's repository (`repose run todo-app-experiment`) gets a remote named after it instead, as a [fork](#repose-fork-project)'s copy does; `repose rm` of that machine removes it.
-
-| Flag                      | What it does                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it. On a machine where Claude Code has no login yet, the window opens on the login and PROMPT is typed after it.                                                                                                                                                                                                                                                  |
-| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`, for `-p`. Default: the project's agent, which for a new project is `default_agent`, else `claude`. Without `-p`, NAME becomes the project's agent; `repose status` names it when it isn't `default_agent`.                                                                                                                                                        |
-| `-d`, `--no-attach`       | Don't attach afterwards. With `-p`, print the window the agent is in (`Window: claude-2`). If Claude Code has no login on the machine yet, exit 1 without typing the prompt.                                                                                                                                                                                                                            |
-| `-w`, `--window WINDOW`   | Type PROMPT and Enter into that agent's window instead of starting an agent: an answer to a permission prompt (`-p 1`) or a follow-up. WINDOW is a name or number as `repose ps` shows it, or on herdr an agent's name; a window the session doesn't have exits 2. The attach opens on it. Not with `--worktree` or `--agent`. |
-| `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                                                                                                                                                                    |
-| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                                                                                                                                                                   |
-| `--size small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: `default_size`, else `large`. On a running project of another size it exits 2 and names `repose resize`. |
-| `--on PROJECT`            | Add this folder to PROJECT's machine as [another checkout](/docs/run-and-attach#several-repositories-on-one-machine), beside its own.                                                                                                                                                                                                                          |
-| `--temp [DURATION]`       | A new [temporary machine](/docs/lifecycle#temporary-machines), destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments.                                                                                                                                                                                                                                       |
-| `--bridge`                | Also [bridge your Chrome](#repose-browser-bridge-project) to the machine while attached.                                                                                                                                                                                                                                                                                   |
-| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                                                                     |
-| `--no-personal`           | Keep your [machine.nix](/docs/config#your-machine-nix) off this machine from now on: a new one is created without it, and one that has it switches without it in the background.                                                                                                                                                                                                  |
-| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start. It stays with the project. Without it a new project takes `default_multiplexer`, else [herdr](/docs/run-and-attach#herdr-instead-of-tmux) when you run it from a herdr pane on your laptop, else tmux. |
-
-Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
+| Flag                      | What it does                                                                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-p`, `--prompt PROMPT`   | Start an agent and type PROMPT into it. On a machine where Claude Code has no login yet, the window opens on the login and PROMPT is typed after it.                                                                                                               |
+| `--agent NAME`            | `claude`, `codex`, `opencode`, `gemini` or `pi`, for `-p`. Default: the project's agent, set at creation from [`default_agent`](#config-toml). Without `-p`, NAME becomes the project's agent.                                                                      |
+| `-d`, `--no-attach`       | Don't attach afterwards. With `-p`, print the window the agent is in (`Window: claude-2`, or `Tab:` on herdr). If Claude Code has no login on the machine yet, exit 1 without typing the prompt.                                                                                       |
+| `-w`, `--window WINDOW`   | Type PROMPT and Enter into that agent's window instead of starting an agent: an answer to a permission prompt (`-p 1`) or a follow-up. WINDOW is a name or number as `repose ps` shows it, or on herdr an agent's name; one the session doesn't have exits 2. The attach opens on it. Not with `--worktree` or `--agent`. |
+| `--worktree`              | Start the agent in its own git worktree. Needs `-p`.                                                                                                                                                                                                              |
+| `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                              |
+| `--size small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: [`default_size`](#config-toml). A machine of another size exits 2 and names `repose resize`, unless it's stopped; a stopping one is waited out first.                                                              |
+| `--on PROJECT`            | Add this folder to PROJECT's machine as [another checkout](/docs/run-and-attach#several-repositories-on-one-machine), beside its own.                                                                                                                               |
+| `--temp [DURATION]`       | A new [temporary machine](/docs/lifecycle#temporary-machines), destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments.                                                                  |
+| `--bridge`                | Also [bridge your Chrome](#repose-browser-bridge-project) to the machine while attached.                                                                                                                                                                           |
+| `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                           |
+| `--no-personal`           | Keep your [machine.nix](/docs/config#your-machine-nix) off this machine from now on: a new one is created without it, and one that has it switches without it in the background.                                                                                   |
+| `--multiplexer NAME`      | `tmux` or `herdr`: what runs the machine's terminals, from its next start, and it stays with the project. Default: [`default_multiplexer`](#config-toml).    |
 
 ### `repose attach [PROJECT[:CHECKOUT]] [WINDOW]`
 
-Attach to the project's tmux session without syncing, on its current window, or with WINDOW (or `-w`/`--window NAME`) on that window: a name or number as `repose ps` shows it, or on herdr an agent's name. A machine that isn't running comes up first, as with `run`: a stopped one starts, one in `error` restarts, one starting is waited for, and one stopping or being restored is waited for and then started. While its server restarts, it waits up to 10 minutes for the server to come back ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). A machine being removed, or one stopped for running a miner, exits 5. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2. A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). In the project's checkout, it adds the `repose` git remote too if it's missing. In a folder `run --on` added to a machine, or with `PROJECT:CHECKOUT`, it opens that checkout's windows ([Several repositories on one machine](/docs/run-and-attach#several-repositories-on-one-machine)). `--bridge` also [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached, and `--bridge-allow HOST` does that with an allowlist.
+Attach to the project's session, on its current window, without syncing. WINDOW (or `-w`/`--window NAME`) opens on that window instead: a name or number as `repose ps` shows it, or on herdr an agent's name. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2.
 
-`run` and `attach` print one line when another of your projects is running idle, once per idle stretch. An `attach` that reuses an open connection makes no api call and skips it.
+A machine that isn't running comes up first, as with `run`: a stopped one starts, one in `error` restarts, one starting is waited for, and one stopping or being restored is waited out and then started. So is one whose server is restarting ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). A machine being removed, or one stopped for running a miner, exits 5.
 
-While you're attached, a file you drop on the terminal, or an image you paste with `Cmd+V` or `Ctrl+V`, is copied to the machine and its path there is pasted ([Drop a file or paste an image](/docs/run-and-attach#drop-a-file-or-paste-an-image)).
+A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist.
 
 If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. With `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead.
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's [current work](/docs/sync) to its machine, over the checkout already there, and don't attach. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It stops with exit code 6 when the machine changed files that your laptop's work changes too, and names them, or when the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect there; the machine's changes to other files stay. If the machine's branch has commits your laptop doesn't, it merges your laptop's commit into that branch, or checks your commit out detached if the two can't be merged cleanly. `--stash-machine` and `--discard-machine` were `--stash-remote` and `--discard-remote`, which still work for one release; `run` given any of them exits 2 naming this command. In a folder that isn't a git checkout, and in your home folder, it exits 2. It sends only: nothing on the machine comes back to your laptop.
+Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
+
+It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder, and in a folder that isn't a git checkout, it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
-| `--stash-machine`          | Move the machine's uncommitted changes to its git stash before syncing. The summary names the stash commit. |
-| `--discard-machine`        | The same, and also end a merge, rebase, cherry-pick, revert or bisect in progress there. |
+| `--stash-machine`         | Move the machine's uncommitted changes, untracked files included, to its git stash before syncing. The summary names the stash commit. |
+| `--discard-machine`       | The same, and also end a merge, rebase, am, cherry-pick, revert or bisect in progress there. |
 | `--size small\|large\|xl` | Size of a new or stopped project, as on `run`.                     |
 | `--temp [DURATION]`       | A new temporary machine, destroyed after DURATION (default `24h`). |
 | `--multiplexer NAME`      | `tmux` or `herdr`, from the machine's next start, as on `run`.     |
-| `--json`                  | Print the project as JSON when done; the text goes to stderr. |
+| `--json`                  | Print the project as JSON when done; the text goes to stderr.      |
+
+`--stash-machine` and `--discard-machine` were `--stash-remote` and `--discard-remote`, which still work for one release. `repose run` given any of them exits 2 and names this command.
 
 ### `repose ps [PROJECT] [WINDOW]`
 
-The project's tmux windows: number and name, the program running in each (its name, not its arguments), the agent's state, the folder it works in and when it last printed something. `*` marks the current window, the one `attach` opens on. STATE is `working`, `idle`, `needs input` or `running`, as in `repose ls` (`--json` has it as `agent_state`, with `needs_input`), and `-` for a window with no agent or one that hasn't settled. TREE is `checkout`, `worktree-N` for a `--worktree` agent, or another folder as `~/PATH`. `-q`/`--quiet` prints only the names. On a herdr project it lists herdr's agents instead: `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one; in `--json`, `state` there is herdr's own (`blocked`, `done`) until the next release.
+The project's windows, without attaching. Needs the machine running.
 
 ```
 $ repose ps
@@ -89,13 +89,17 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 2:claude-2  claude   needs input  worktree-1  12m ago
 ```
 
-With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as the agent's screen shows them; `-n`/`--tail N` for N lines. `-n` without a window prints the last N lines of every window, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. If a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
+WINDOW is the window's number and name, with `*` on the one `attach` opens on. COMMAND is the program in the window's active pane, its name and never its arguments. STATE is the [agent's state](/docs/agents#agent-states); `-` is a window with no agent, or one whose agent exited or never reported. TREE is the folder the window works in, `checkout`, `worktree-N`, `~/PATH`, or the path itself outside your home folder, as [`exec --workdir`](#repose-exec-project-checkout-command-arg) takes it. ACTIVE is how long since the window last printed. `-q`/`--quiet` prints the names alone, one per line.
 
-`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `state` equals `agent_state` on tmux and keeps herdr's own word on herdr. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
+A herdr project lists herdr's agents instead, under `WORKSPACE`, `AGENT`, `NAME` and `STATE`, with `*` on the focused one.
+
+With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines instead, as whole lines rather than as the pane wrapped them; `-n`/`--tail N` for N lines, 1 to 10000. `-n` without a window prints every window's, each under a `==> 1:claude <==` line. On herdr, WINDOW is an agent's name. Where a project resolves, one word that names none of your projects is WINDOW: `repose ps claude-2` in the checkout.
+
+`--json` gives one shape on tmux and herdr: `name`, `agent`, `command`, `agent_state`, `tree`, `focused` and `idle_seconds`, with `null` where the multiplexer can't say (`command` and `idle_seconds` on herdr; `agent` and `agent_state` for a window with no agent). `agent_state` spells `needs input` as `needs_input`, and reads `unknown` where an agent exited or never reported, which the table shows as `-`. `state` repeats `agent_state`, except on herdr, where it keeps herdr's own word (`blocked`, `done`) for this release. For this release it also keeps the old keys: `index`, `current` and `activity` on tmux, `workspace` on herdr.
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with your secrets and the project's dev shell, as an agent there has them. Output streams back and the exit code is the command's. The command is passed word for word, its own flags included, and no shell reads it; for a pipeline, run a shell yourself, as in the last example. If the first word names one of your projects, it is PROJECT. To run a command that has a project's name, put `--` before it. Put `-i` and `-t` before the command.
+Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it; for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
 
 ```
 $ repose exec npm test
@@ -104,7 +108,7 @@ $ repose exec -it psql
 $ repose exec sh -c "npm run build && npm test"
 ```
 
-`-i`/`--interactive` passes your input to the command; without it the command reads nothing. `-t`/`--tty` gives it a terminal. Pass both, as with `docker exec`, for anything interactive.
+`-i`/`--interactive` passes your input to the command; `-t`/`--tty` gives it a terminal. Without either, the command reads nothing. Pass both for anything interactive.
 
 `--workdir DIR` runs the command in DIR instead of the checkout: `worktree-N` for a `--worktree` agent's worktree, `checkout`, `~/PATH`, `/PATH`, or a path inside the checkout, each of the first two with an optional `/SUBDIR`. A folder that isn't there exits 2 before the command runs.
 
@@ -114,11 +118,11 @@ $ repose exec --workdir worktree-1 npm test
 
 ### `repose ssh [PROJECT[:CHECKOUT]]`
 
-Open a shell on the machine in the checkout, outside tmux; `exit` ends it. A machine that isn't running comes up first, without a sync, as with `attach`. A command after PROJECT exits 2 and names `repose exec`, which runs one.
+Open a login shell in the checkout on the machine, outside the session `attach` opens; `exit` ends it. A machine that isn't running comes up first, without a sync, as with `attach`. A command after PROJECT exits 2 and names `repose exec`.
 
 ### `repose code [PROJECT[:CHECKOUT]]`
 
-Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over [SSH](/docs/ssh-and-editors) to `<project>.repose`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed (`zed`); on a Mac it also looks in `/Applications` and `~/Applications`. A machine that isn't running comes up first, as with `attach`. Under WSL, an editor whose command is the Windows app exits 1, since it would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
+Open the project's checkout, `/home/dev/<folder>` ([Where the checkout is](/docs/sync#where-the-checkout-is)), in an editor on your laptop, over [SSH](/docs/ssh-and-editors) to `<project>.repose`. A machine that isn't running comes up first, as with `attach`. It uses VS Code (`code`) if it's installed, else Cursor (`cursor`), else Zed, whose command is `zed` or `zeditor`; on a Mac it also looks in `/Applications` and `~/Applications`. A named editor that isn't installed exits 1, as does having none of the three. Under WSL it refuses an editor whose command is the Windows app, which would connect with Windows' `ssh` ([Windows](/docs/ssh-and-editors#windows)).
 
 ```
 $ repose code todo-app
@@ -131,7 +135,7 @@ Opening todo-app.repose:/home/dev/todo-app in VS Code
 
 ### `repose open [LOCAL:]PORT`
 
-Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`. With nothing listening on the port yet, `open` says `Nothing on todo-app is listening on port 3000 yet; the forward reaches it once it listens on 127.0.0.1 or 0.0.0.0.` and forwards to `127.0.0.1` anyway. The laptop port is the same as PORT, or LOCAL with `repose open 8080:3000`; when it's taken, a free one, and `open` says which. The database ports 5432, 3306, 6379 and 27017 open no browser. If the connection drops, `open` reconnects on the same laptop port, for up to 2 minutes.
+Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Needs the machine running. Works for servers on `127.0.0.1`, `0.0.0.0` or `::1`. With nothing listening on the port yet, `open` says `Nothing on todo-app is listening on port 3000 yet; the forward reaches it once it listens on 127.0.0.1 or 0.0.0.0.` and forwards to `127.0.0.1` anyway. The laptop port is PORT, or LOCAL with `repose open 8080:3000`; when it's taken, a free one, and `open` says which. The database ports 5432, 3306, 6379 and 27017 open no browser. If the connection drops, `open` reconnects on the same laptop port, for up to 2 minutes.
 
 | Flag           | What it does        |
 | -------------- | ------------------- |
@@ -141,7 +145,7 @@ Forward one port to your laptop and open it in the browser, until `Ctrl-C`. Work
 
 ### `repose browser [PROJECT]`
 
-Watch the agent's [browser](/docs/machine#browser) on the machine and take it over: starts the machine's desktop view if needed, forwards it to laptop port 6080 (or a free one) in the background, and opens the link in your browser. The password is in the link after `#`. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it.
+Watch the agents' [browser](/docs/machine#browser) on the machine and take it over. It starts the machine's desktop view, forwards it in the background to laptop port 6080, or a free one when that's taken, and opens the link in your browser. The view is the size of your tab and sleeps after 30 idle minutes; opening the page again wakes it. Needs the machine running.
 
 | Flag           | What it does         |
 | -------------- | -------------------- |
@@ -151,11 +155,11 @@ Watch the agent's [browser](/docs/machine#browser) on the machine and take it ov
 
 ### `repose browser stop [PROJECT]`
 
-Stop the view on the machine and the forward on your laptop. The agent's browser keeps running.
+Stop the view on the machine and the forward on your laptop. The [agents' browser](/docs/machine#browser) keeps running. On a stopped machine it clears the laptop's forward alone.
 
 ### `repose browser bridge [PROJECT]`
 
-Let the agents on the machine browse in [your laptop's Chrome](/docs/your-chrome), with your logins and extensions, until `Ctrl-C`. The machine's browser tools (`playwright` and `chrome-devtools`) reach your Chrome through the SSH connection; nothing on the machine changes, and the next call an agent makes lands in your Chrome. Each page they load is listed in the terminal, by site and path.
+Let the agents on the machine browse in [your laptop's Chrome](/docs/your-chrome), with your logins and extensions, until `Ctrl-C`: their [browser tools](/docs/machine#browser) drive it instead of the machine's own.
 
 ```
 $ repose browser bridge
@@ -167,7 +171,7 @@ An agent on todo-app is in your Chrome.
 14:03:21  admin.internal.example/signups
 ```
 
-Needs the machine running (it doesn't start it) and Chrome 144 or newer with remote debugging turned on at `chrome://inspect/#remote-debugging`. If it's off, the command opens that page and waits up to 5 minutes for you to turn it on.
+Needs the machine running, and Chrome 144 or newer with remote debugging on at `chrome://inspect/#remote-debugging`. With that off, it opens that page and waits up to 5 minutes for you to turn it on.
 
 | Flag                  | What it does                                                                                                                                                                  |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -176,11 +180,11 @@ Needs the machine running (it doesn't start it) and Chrome 144 or newer with rem
 | `--user-data-dir DIR` | The profile directory of a Chrome that isn't Google Chrome's default one (Chromium, Brave, Edge, a second profile).                                                           |
 | `--no-inspect`        | Don't open `chrome://inspect` when remote debugging is off; print what to do and wait. `--no-browser` is its old name.                                                        |
 
-Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to two minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
+Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to 2 minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
 
 ### `repose mcp forward NAME...`
 
-Let the agents on the machine use [MCP servers](/docs/agents#mcp-servers) that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`. It runs on your laptop with your apps, files and tokens; `${VAR}` in its config comes from your laptop's environment, and a `${VAR}` that environment lacks stops the forward before it starts. Only servers that start with a command can be forwarded; an HTTP server on your laptop can't be yet. Each agent session on the machine gets its own copy over SSH, and each call is listed here by agent and tool.
+Let the agents on the machine use [MCP servers](/docs/agents#mcp-servers) that run on your laptop, until `Ctrl-C`. NAME is a server in your laptop's Claude Code config (this project's servers, then your user scope), Claude Desktop config (macOS), Codex config or Gemini CLI settings, or the command after `--`, which goes with one NAME. It runs on your laptop, with your apps, files and tokens. `${VAR}` in its config comes from your laptop's environment, and a `${VAR}` that environment lacks stops the forward before it starts. Only servers that start with a command can be forwarded; an HTTP server on your laptop can't be yet. Each agent session on the machine gets its own copy, and each call is printed here by agent and tool.
 
 ```
 $ repose mcp forward apple-notes
@@ -193,17 +197,17 @@ claude called apple-notes.search_notes
 $ repose mcp forward notes -- node ~/mcp/notes.js
 ```
 
-The project is the folder's, or `--project`'s; NAME takes the place a PROJECT has in other commands. Needs the machine running. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. Within about 20 seconds of your laptop sleeping, the tools answer that it isn't connected. A dropped connection is named once and retried; a machine that stops ends the forward with exit code 5. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
+Needs the machine running; a machine that stops ends the forward with exit code 5. The agents keep listing NAME after `Ctrl-C`; until the next forward, its tools answer that your laptop isn't connected. A laptop that goes to sleep brings the same answer within about 20 seconds. A dropped connection is named once and retried. A second forward of the same NAME takes over from the first. `[mcp] forward` in [config.toml](#config-toml) forwards servers whenever you're attached.
 
 `--remove` is the old form of `repose mcp rm NAME`.
 
 ### `repose mcp rm NAME...`
 
-Alias `remove`. Take forwarded servers off the machine's agents; they drop them at their next start. The project is the folder's, or `--project`'s. Needs the machine running.
+Alias `remove`. Take forwarded servers off the machine's agents; they drop them at their next start. Needs the machine running. A NAME the machine has no forward for exits 1: `todo-app has no forwarded MCP server named linear.`
 
 ### `repose mcp list [PROJECT]`
 
-Alias `repose mcp ls`, and `repose mcp` alone. Show each MCP server on the machine, where it came from, which agents have it, and what it lacks. It reads the agents' configs and starts no server. Needs the machine running.
+Every MCP server the agents on the machine have, and the ones your laptop kept. Alias `repose mcp ls`, and `repose mcp` alone. It starts no server. Needs the machine running.
 
 ```
 $ repose mcp list
@@ -216,34 +220,34 @@ apple-notes  forward  claude codex gemini opencode pi
 my-db        machine  claude
 ```
 
-FROM is `repose` for the browser tools, `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE starts with the checkout for a server from one (`~/todo-app`), and is otherwise empty when the server needs nothing; a forwarded server whose laptop is away shows `laptop not connected`, and an agent that lacks a server says why (`codex: ~/.codex/config.toml is a link, which repose does not write`). A file on the machine that repose had to leave out, such as a `laptop.json` that doesn't parse, is named on stderr after the rows. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
+FROM is `repose` for the [browser tools](/docs/machine#browser), `laptop` for a server copied from your laptop's Claude Code or kept there (AGENTS `none`, the reason in STATE), `project` for a checkout's `.mcp.json` (Claude Code only), `forward` for [`repose mcp forward`](#repose-mcp-forward-name), and `machine` for one you added on the machine. STATE is empty when the server needs nothing. It starts with the checkout for a server that belongs to one (`~/todo-app`), reads `laptop not connected` for a forwarded server whose laptop is away, and names each agent that lacks the server with why (`codex: ~/.codex/config.toml is a link, which repose does not write`). A file repose had to leave out, such as a `laptop.json` that doesn't parse, is named on stderr after the rows. Piped, each server is one tab-separated `NAME FROM AGENTS STATE` line with no header.
 
-| Flag     | What it does                                                                                        |
-| -------- | --------------------------------------------------------------------------------------------------- |
-| `--json` | Print the machine's answer as JSON: `name`, `from`, `agents`, `state` and the details behind STATE. |
+| Flag     | What it does                                                                                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--json` | The machine's answer as it sent it: a `servers` array with `name`, `from`, `agents` and `state`, the `checkout`, `needs`, `missing` and `skipped` behind STATE, and `problems` for the files left out. |
 
 ### `repose cp [-r] SRC... DST`
 
-Copy files with `scp`. One side is `PROJECT:PATH`, or `:PATH` for this checkout's project. Relative machine paths start at the checkout. `-r`/`--recursive` copies directories. With several sources, all on the same side, the files go into the directory `DST`, so a glob works: `repose cp ./Fwd_* todo-app:/tmp/`.
+Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` for this checkout's project. A relative path on the machine starts in its checkout, or in `/home/dev` on a machine with no checkout. `-r`/`--recursive` copies directories. Several sources go into the directory `DST`, so a shell glob works: `repose cp ./Fwd_* todo-app:/tmp/`. Sources sit on one side and name one project; anything else exits 2. Needs the machine running.
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard to `/tmp/repose-paste/` on the machine and paste its path into the tmux session's current pane, or herdr's focused pane, where Claude Code attaches it. `--window NAME` picks a tmux window, or a herdr agent by name. Nothing is sent with it; you press Enter. While you're attached, `Ctrl+V` does the same; `repose paste` is for scripts and other windows.
+Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted, not sent; you press Enter. Needs the machine running.
 
-| Flag            | What it does                                                     |
-| --------------- | ---------------------------------------------------------------- |
-| `--window NAME` | Paste into this tmux window (name or number) instead.            |
-| `--print`       | Copy the image and print its path on the machine; paste nothing. |
+| Flag            | What it does                                                                          |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `--window NAME` | Paste into this tmux window (name or number), or this herdr agent's pane, instead.    |
+| `--print`       | Copy the image and print its path on the machine; paste nothing. Not with `--window`. |
 
 ### `repose scan [DIR]`
 
-List the tools the next `repose run` would install on the machine, and why, and the Node, Ruby and Java versions the project pins with the version the machine gets (the closest nixpkgs has when it lacks the pinned one). Installs nothing. `--json` for JSON. A `.nix` file takes precedence: with a machine.nix on your account your laptop's tools are skipped, and with a `repose.nix` at the checkout root the commands the project's scripts run are skipped; the list says which half it skipped and why (`skipped` in the JSON). Logged out, it goes by `~/.config/repose/machine.nix` and says so.
+List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. A [machine.nix](/docs/config#your-machine-nix) on your account takes over the laptop half, and a `repose.nix` at the checkout root the project half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads `~/.config/repose/machine.nix` and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
 
 ## Projects
 
 ### `repose ls`
 
-Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS reads `working` (from your prompt to the end of its turn), `idle` (at its prompt), `needs input`, or `running` for an agent whose turns no hook reports ([Agent states](/docs/agents#agent-states)), with the longest wait's age (`needs input 4h`); a `?` after it means the machine's last report is over two minutes old. With several agents AGENTS counts them by state, needs input first, and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
+Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). AGENTS is the [agent's state](/docs/agents#agent-states) with the longest wait's age (`needs input 4h`); a `?` after it means the machine's last report is over two minutes old. With several agents AGENTS counts them by state, needs input first, and gives the longest wait: `2 agents: 1 needs input (4h), 1 working`. A line under the table names each running project nobody has used for a day ([Unused machines](/docs/lifecycle#unused-machines)). A `LEFT` column appears while a temporary machine is listed, and a `DISK` column while a listed project's disk is 90 percent full or more, as `93% full`. The last line is your plan and how much of it is in use: memory running, the disk your projects hold, and egress this month. A line under it says when your projects hold more than your plan's disk ([creating, restoring, forking and growing a disk](/docs/limits#projects) are refused until they hold less), when egress is past the plan's allowance, and when a payment failed. `--json` for full records, `--destroyed` for destroyed projects that can still be restored (with `--all`, every one). `-q`/`--quiet` prints only the names, one per line:
 
 ```
 repose stop $(repose ls -q)
@@ -276,7 +280,7 @@ todo-app  running 2h14m  large
 
 ### `repose start [PROJECT]`
 
-Start a stopped machine, or restart one in `error`. Doesn't sync. One starting is waited for, and one stopping or being restored is waited for and then started. While its server restarts, it waits up to 10 minutes for the server to come back, as `attach` does, and then says the machine is running or starts it. `--json` prints the project as JSON when done.
+Start a stopped machine, or restart one in `error`. Doesn't sync. One starting is waited for, and one stopping or being restored is waited out and then started. So is one whose server is restarting ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). `--json` prints the project as JSON when done.
 
 ### `repose stop [PROJECT...]`
 
@@ -493,4 +497,4 @@ Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` 
 | 10   | The configuration build failed.                                                                                                                                                             |
 | 130  | Interrupted with `Ctrl-C`, at a question too.                                                                                                                                                                  |
 
-Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection and `run`, `attach` or `open` could not reconnect within 2 minutes. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.
+Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection and the command could not reconnect. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.

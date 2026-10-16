@@ -38,7 +38,7 @@ Worktree: ~/todo-app-worktree-1 on branch worktree-1
 Copied 1 .env file from ~/todo-app
 ```
 
-Worktrees are folders beside the checkout, `~/todo-app-worktree-1` and up, each on its own `worktree-N` branch. The branch starts at the checkout's last commit, so uncommitted changes there aren't in it, and `run` says so when the checkout is dirty. The window keeps the agent's name, `claude` or `claude-2`. Each `--worktree` run takes the lowest number whose folder and branch are both free, so a new prompt never lands on an old attempt's files.
+Worktrees are folders beside the checkout, `~/todo-app-worktree-1` and up, each on its own `worktree-N` branch. The branch starts at the checkout's last commit, so uncommitted changes there aren't in it, and `run` says so when the checkout is dirty. The window keeps the agent's name, `claude` or `claude-2`. Each `--worktree` run takes the lowest number whose folder and branch are both free, so a new prompt never lands on an old attempt's files. Worktrees made before CLI v0.1.22 keep their old names, `~/todo-app-claude-2` on branch `repose/claude-2`, which your laptop fetches as `repose/repose/claude-2`.
 
 In the worktree the agent has the whole repository at that commit, plus the checkout's gitignored `.env` and `.env.*` files. Dependencies aren't shared, so the agent installs them again and they count toward your plan's disk; build output and local databases aren't copied either. A worktree sits outside the synced tree, so `repose sync` leaves it alone and what the agent does there doesn't count as changes on the machine. Its commits come back as `repose/worktree-1` ([Getting work back](/docs/sync#getting-work-back)).
 

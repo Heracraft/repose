@@ -125,7 +125,7 @@ If the agent committed on your branch and your laptop has commits of its own, th
 
 ## Getting work back
 
-`repose run` and `repose attach` add a git remote named `repose` to a checkout that is the project's own. Its URL is the checkout's folder under the [SSH host every project has](/docs/ssh-and-editors#every-project-is-an-ssh-host), `todo-app.repose:~/todo-app`. Once the agent has committed, fetch its commits like any other remote's:
+`repose run`, `repose attach` and `repose sync` add a git remote named `repose` to a checkout that is the project's own. Its URL is the checkout's folder under the [SSH host every project has](/docs/ssh-and-editors#every-project-is-an-ssh-host), `todo-app.repose:~/todo-app`. Once the agent has committed, fetch its commits like any other remote's:
 
 ```
 $ git fetch repose
