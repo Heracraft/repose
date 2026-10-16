@@ -90,6 +90,8 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
 
+A hookless agent's turn ends in `repose events` as `finished` with the summary `gemini went idle`, once its window has printed nothing for about 90 seconds. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) herdr reports the turn end and the state instead, and a permission prompt it reports sets `needs input` with no notification.
+
 A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
 
 ## Let it ask you
@@ -131,7 +133,7 @@ Every agent on the machine has the [browser tools](/docs/machine#browser) `playw
 
 `run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine, not Claude Code alone. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
 
-Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. An agent that's already running sees a new server, or a secret you just set, after you restart it.
+Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it.
 
 A server that signs in with OAuth needs a sign-in from `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it.
 

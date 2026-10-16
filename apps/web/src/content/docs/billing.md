@@ -52,6 +52,8 @@ Polar retries the card 2, 7, 14 and 21 days after the first failure. Meanwhile:
 | day 3  | every running machine is snapshotted and stopped, and you get an email  |
 | day 33 | the snapshots are deleted                                              |
 
+The day-3 email's subject is `Your machines were stopped: a payment failed`.
+
 A payment unblocks starts. It doesn't start your machines again; `repose start` does. Your card, billing address and receipts are in Polar's customer portal, behind **Manage card and receipts** on the **Billing** page.
 
 ## Refunds

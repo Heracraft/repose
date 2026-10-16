@@ -360,7 +360,7 @@ func writeLoginsTable(dir string, scope loginsScope, off []string, remove bool) 
 
 	var cfg Config
 	if _, err := toml.Decode(out, &cfg); err != nil {
-		return exitf(ExitGeneric, "Could not update %s (%v); it was left as it was. Set the list there by hand: see /docs/cli#configtoml.", path, err)
+		return exitf(ExitGeneric, "Could not update %s (%v); it was left as it was. Set the list there by hand: see /docs/cli#config-toml.", path, err)
 	}
 	got, own := scope.current(cfg)
 	want := map[string]bool{}
