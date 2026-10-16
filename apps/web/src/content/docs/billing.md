@@ -39,7 +39,7 @@ Seven days free on any plan, once per email and card: if either has had a free w
 
 ## Changing and cancelling
 
-Upgrading to a bigger plan takes effect at once, and Polar charges the prorated difference that day. Downgrading takes effect at your next renewal. It's refused while your running machines or the disk your projects hold wouldn't fit the smaller plan: stop machines, or destroy projects or delete files in them, first. Cancelling ends the plan at the end of the month you have paid for: machines run until then, stop then, and their snapshots stay 30 days. You can undo a cancellation until it takes effect.
+Upgrading to a bigger plan takes effect at once, and Polar charges the prorated difference that day. It needs the extra [seats](/docs/limits#when-repose-is-full) free and never goes on the waitlist: without them it's refused with `no seat is free for the upgrade right now; try again later`, and you keep the plan you have. Downgrading takes effect at your next renewal. It's refused while your running machines or the disk your projects hold wouldn't fit the smaller plan: stop machines, or destroy projects or delete files in them, first. Cancelling ends the plan at the end of the month you have paid for: machines run until then, stop then, and their snapshots stay 30 days. You can undo a cancellation until it takes effect.
 
 ## If a payment fails
 

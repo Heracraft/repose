@@ -11,38 +11,36 @@ The first `repose run` for a machine copies your checkout to it. After that, `re
 
 ## Where the checkout is
 
-The first sync puts your checkout in the machine's home directory under your laptop folder's name, whatever the project is called. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` but the checkout is `/home/dev/factory`, and the run says so:
+The first sync puts your checkout under the machine's home directory, named after your repository's folder on the laptop, not after the project. Run `repose run kanali` in `~/Downloads/projects/factory` and the project is `kanali` while the checkout is `/home/dev/factory`:
 
 ```text
 Synced: 14 modified, 30 untracked, 1 env file  2.4s
 Checkout: ~/factory on the machine
 ```
 
-The host is the project's name and the path is your folder's: `scp -r ./infra kanali.repose:factory/`, `ssh kanali.repose 'cd factory && ls'`. A folder name with spaces or other characters becomes a safe name (`job search` is `job-search`). If the machine already has a non-empty directory of that name, such as `~/go`, the checkout goes under the project's name instead.
+The `Checkout:` line prints on the sync that makes the checkout and on no run after it. The [SSH host](/docs/ssh-and-editors#every-project-is-an-ssh-host) is the project's name; the path under it is your folder's. A folder name with spaces or other awkward characters becomes a safe one: `job search` is `job-search`. If anything but an empty directory already holds that name, `~/go` say, the checkout takes the project's name instead.
 
-A machine with no checkout, one made with `repose run --no-sync` or from a directory that isn't a git repository, has you work in `/home/dev` itself. Its first `repose sync` makes the checkout.
+A machine with no checkout, one made by `repose run --no-sync` or from a folder that isn't a git repository, has you working in `/home/dev` itself. Its first `repose sync` makes the checkout.
 
-Later runs, from any folder or laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
+Later runs, from any folder or any laptop, use the checkout the machine already has. A machine whose checkout an earlier version of repose made keeps it at `/home/dev/<project>`.
 
 A second repository can live on the same machine in [a checkout of its own](/docs/run-and-attach#several-repositories-on-one-machine): run `repose run --on PROJECT` in its folder.
 
 ## What travels
 
-- **Commits.** Your current branch, including commits you haven't pushed. They go straight from your laptop, so private repositories work with no setup on the machine.
+- **Commits.** Your current branch, including commits you haven't pushed. Private repositories work with no setup on the machine.
 - **Uncommitted changes** to tracked files.
 - **Untracked files** that git isn't ignoring.
 - **`repose.nix`.** At the root of the repository, it's applied as the machine's configuration when it changed ([repose.nix in your repository](/docs/config#repose-nix-in-your-repository)).
-- **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each. If the machine's copy is newer, it's kept. Unlike [secrets](/docs/secrets), they are files on the machine's disk, so they are in snapshots. `repose secrets choose --off env` keeps them on your laptop ([Secrets](/docs/secrets#choose-what-is-copied)).
+- **`.env` files.** Gitignored `.env` and `.env.*` files up to 1 MB each, anywhere in the checkout. If the machine's copy is newer, it's kept and the CLI says which. Unlike [secrets](/docs/secrets), they're files on the machine's disk, so they're in its snapshots. [Turn them off](/docs/secrets#choose-what-is-copied) and they stay on your laptop.
 
-Everything goes over your SSH connection. None of it is stored by repose.
-
-```text
-Synced: 4 modified, 2 untracked, 2 env files (3 new commits)  1.9s
-```
+The checkout goes over the sync's own SSH connection, so [repose never gets a copy of your code](/docs/secrets#what-repose-stores). `repose.nix` is the exception: it goes to repose too, which builds it and keeps every version as a [revision](/docs/config#revisions-and-base-updates).
 
 ## Sending later work
 
-When the machine already has your checkout and your laptop has work it doesn't, `repose run` attaches without copying it and tells you, in the terminal and on the machine's tmux status line (a herdr notification on herdr) once attached:
+`repose sync` sends your laptop's current work over the machine's checkout and returns without attaching. It creates or starts the machine first if it needs to. With nothing to send and nothing on the machine it says `Nothing new to sync: the machine already has this checkout.`
+
+A `repose run` that finds the checkout already there leaves it alone and says what your laptop still has, in your terminal and again on the machine's status line (a [herdr notification](/docs/run-and-attach#herdr-instead-of-tmux) on herdr), because the attach covers the terminal before you've read it:
 
 ```text
 Not synced: your laptop has work the machine doesn't (3 modified,
@@ -51,52 +49,45 @@ Not synced: your laptop has work the machine doesn't (3 modified,
 
 With nothing new on your laptop, `repose run` says nothing about syncing.
 
-`repose sync` (or `repose sync PROJECT`) copies your laptop's current work over the machine's checkout and returns without attaching. It creates or starts the machine if needed. With nothing new it says `Nothing new to sync: the machine already has this checkout.`
-
-Your tool logins, git identity and Claude Code settings are copied at every `repose run` whether or not the checkout is, so a rotated token reaches the machine on your next run. The lines about them, such as `Logins copied: gh, codex`, print when they change, not on every run of the same project.
+Your tool logins, git settings and agent config don't wait for a sync: every `repose run` copies them ([Logins copied from your laptop](/docs/secrets#logins-copied-from-your-laptop)).
 
 ## What doesn't
 
 - Other gitignored files: build output, caches, local databases.
 - Dependency directories such as `node_modules`, `.venv`, `.next` and `.turbo`, even when they aren't ignored. The CLI names what it skipped. Install dependencies on the machine.
-- Files over 100 MB, and untracked files past 500 MB in one sync.
+- Untracked files over 100 MB each, and any that doesn't fit under one sync's 500 MB of untracked files.
 
-To leave out more, add gitignore-style patterns to `~/.config/repose/config.toml`:
-
-```toml
-[sync]
-exclude = ["dist", "*.mp4", "fixtures/large"]
-```
+`sync.exclude` in [config.toml](/docs/cli#config-toml) takes more gitignore-style patterns. Both caps and that list are about untracked files: a tracked file travels whatever its size and whatever pattern matches it.
 
 ## Submodules
 
-Submodules you have checked out travel the same way, nested ones included. Each arrives at the commit your laptop has checked out in it, with its uncommitted changes, untracked files and `.env` files, under the same rules and limits as the rest of the checkout. Submodule commits you haven't pushed travel too, and a private submodule needs no access from the machine. A submodule you never checked out on your laptop stays empty on the machine.
+Submodules you have checked out travel with the checkout, nested ones included; one you never checked out stays empty on the machine. Each arrives at the commit your laptop has in it, with its uncommitted changes, untracked files and `.env` files, under the same rules and limits as the rest of the checkout. A private submodule needs no access from the machine: its commits come from your laptop.
 
-A submodule that is a shallow clone on your laptop can't be sent. The machine fetches it from its own remote instead, which works for github.com when you're logged in to `gh`. If that fails, the run goes on and the CLI says the submodule is empty on the machine. Changes inside a shallow submodule aren't sent; run `git -C <path> fetch --unshallow` on your laptop to send them.
+A shallow submodule can't be sent. The machine fetches it from the submodule's own remote instead, which works for github.com when you're logged in to `gh`. If that fails the run goes on, and the CLI says the submodule is empty on the machine. Changes inside a shallow submodule don't travel; run `git -C <path> fetch --unshallow` on your laptop to send them.
 
-Git LFS files arrive as their small pointer files. Run `git lfs pull` on the machine to fetch their contents.
+Git LFS files arrive as pointer files. Run `git lfs pull` on the machine to fetch their contents.
 
 ## When the machine has changes of its own
 
-`repose sync` never restarts or rebuilds the machine.
+A sync writes only the files your work touches.
 
-If the machine changed since your last sync (usually an agent's edits or commits) and your laptop has nothing new since then, there is nothing to copy, and the checkout is left as it is:
+With nothing new on your laptop the checkout is left as it is:
 
 ```text
 Nothing new to sync. The machine has 3 commits on main your laptop
 doesn't have, and uncommitted changes to 2 files.
 ```
 
-Commits count from the last sync and stop counting once your laptop has fetched them with `git fetch repose`. Uncommitted files never travel back.
+Commits count from your last sync and stop counting once `git fetch repose` has brought them over.
 
-When your laptop has new work, the sync writes only the files that work touches: the ones your new commits change, your uncommitted changes and your untracked files. The machine's changes to any other file stay where they are, and the summary counts them:
+When your laptop does have new work, the sync writes the files your new commits change, your uncommitted changes and your untracked files. The machine's changes to every other file stay where they are, and the summary counts them:
 
 ```text
 Synced: 2 modified, 1 untracked (6 new commits); kept the machine's
 changes to 3 files  1.6s
 ```
 
-If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names those files and exits with code 6:
+If the machine changed a file your laptop changed too, the sync would write over it, so it stops, changes nothing, names them and exits with code 6:
 
 ```text
 Not synced: the machine changed 2 files that your laptop changed
@@ -107,7 +98,7 @@ too:
 stash first.
 ```
 
-`--stash-machine` moves all of the machine's uncommitted changes, untracked files included, to `git stash` there, named `repose sync --stash-machine`, and the summary says how many files went and the stash commit:
+`--stash-machine` moves all of the machine's uncommitted changes, untracked files included, to `git stash` there, named `repose sync --stash-machine`:
 
 ```text
 Synced: 1 modified, 0 untracked; stashed the machine's changes to 3
@@ -116,9 +107,11 @@ files (git stash 1a2b3c4)  1.2s
 
 `git stash apply 1a2b3c4` on the machine brings them back.
 
-A file the agent creates while the sync runs, at a path where your laptop sends an untracked file, is overwritten.
+Changes that are exactly what the previous sync wrote aren't the machine's, so they never stop one. They go to a stash named `repose run: last sync`; the newest 10 of those are kept, and the sync carries on.
 
-If the agent is in the middle of a merge, rebase, cherry-pick, revert or bisect on the machine, the sync stops before it changes anything and exits with code 6:
+A file the agent creates while the sync runs, at a path your laptop is sending, is overwritten: the sync checked for overlaps before it started writing.
+
+A merge, rebase, am, cherry-pick, revert or bisect in progress on the machine stops the sync before it changes anything, with code 6 again:
 
 ```text
 Not synced: the machine's checkout is in the middle of a git rebase.
@@ -126,15 +119,13 @@ Finish or abort it there, or run `repose sync --discard-machine` to
 end it and move the machine's changes to its git stash.
 ```
 
-`--stash-machine` stops there too: a stash can't hold a merge or rebase in progress. `--discard-machine` ends the operation where it stands, then stashes as `--stash-machine` does, under the name `repose sync --discard-machine`. Commits a rebase had made stay in the machine's `git reflog`.
+`--stash-machine` stops there too: a stash can't hold one of those in progress. `--discard-machine` ends the operation where it stands, then stashes as `--stash-machine` does, under the name `repose sync --discard-machine`. Commits the rebase had already made stay in the machine's `git reflog`.
 
-Changes that are exactly what the previous sync wrote don't count as the machine's: they are stashed on the machine as `repose run: last sync` (the newest 10 are kept) and the sync goes on.
-
-If the agent committed on your branch and your laptop has new commits of its own, the sync merges your laptop's commit into the machine's copy of that branch, so the branch has both. This happens even when the machine is on another branch: the checkout moves to your branch, as every sync does, and the other branch keeps its commits. It makes that merge only when git can make it without a conflict and the agent's commits leave your uncommitted files alone. The merge commit carries your laptop's git name and email. Otherwise the sync checks out your laptop's commit detached, leaves the agent's branches where they are, and says so. `git fetch repose` brings the agent's branch to your laptop to merge or rebase.
+If the agent committed on your branch and your laptop has commits of its own, the sync merges your laptop's commit into the machine's copy of that branch, so the branch has both. It merges only when git can do it without a conflict and the agent's commits leave your uncommitted files alone. The merge commit carries your laptop's git name and email. The machine sitting on another branch doesn't stop it: the checkout moves to your branch, as it does on every sync, and the other branch keeps its commits. Otherwise the sync checks your commit out detached, leaves the agent's branches where they are, and says so.
 
 ## Getting work back
 
-`repose run` adds a git remote named `repose` to your checkout. It points at the checkout on the machine, over the same SSH connection as `ssh todo-app.repose`. Once the agent has committed, fetch its commits like any other remote's:
+`repose run` and `repose attach` add a git remote named `repose` to a checkout that is the project's own. Its URL is the checkout's folder under the [SSH host every project has](/docs/ssh-and-editors#every-project-is-an-ssh-host), `todo-app.repose:~/todo-app`. Once the agent has committed, fetch its commits like any other remote's:
 
 ```
 $ git fetch repose
@@ -146,53 +137,36 @@ $ git log --oneline main..repose/main
 da9c3c3 Validate the email field
 ```
 
-Then use them as you would any branch:
+Nothing goes through GitHub, and the agent doesn't need to push. Only commits travel: a file the agent changed but didn't commit stays on the machine. Ask the agent to commit, or `repose attach` and commit it yourself.
 
-```
-git diff main repose/main          # what the agent changed
-git merge repose/main              # take all of it
-git cherry-pick da9c3c3            # take one commit
-git pull repose main               # fetch and merge in one step
-```
+The branch of a [`--worktree` agent](/docs/run-and-attach#several-agents-separate-trees) is `worktree-1` on the machine and `repose/worktree-1` on your laptop, so `git pull repose worktree-1` names it as the machine does.
 
-Nothing goes through GitHub, and the agent doesn't need to push. Only commits travel: files the agent changed but didn't commit stay on the machine. Ask the agent to commit, or `repose attach` and commit yourself.
+The remote is fetch-only. `git push repose` fails with `'this remote is fetch-only; repose sync sends your work to the machine' does not appear to be a git repository`; a remote added before that wording changed still says `repose run`. The machine's checkout has a branch checked out and a push would move it under the agent, so work goes the other way, with `repose sync`. `git fetch --all` skips the remote, so it never reaches for a machine that's stopped.
 
-A branch on the machine appears under `repose/` followed by its name there. The branch of a [`--worktree` agent](/docs/run-and-attach#several-agents-separate-trees), `worktree-1` on the machine, is `repose/worktree-1` on your laptop, and `git pull repose worktree-1` names it as the machine does.
-
-The remote is for fetching. `git push repose` fails with `'this remote is fetch-only; repose sync sends your work to the machine' does not appear to be a git repository` (remotes added before this change name `repose run`): the machine's checkout has a branch checked out, and pushing would move it under the agent. To send your work, run `repose sync`. `git fetch --all` skips the remote, so it doesn't try a machine that's stopped.
-
-Details:
-
-- `repose run` and `repose attach` add the remote when the checkout is the project's own, and say so the first time. They leave it alone after that. It lives in `.git/config`.
-- If your checkout already has a remote named `repose` that points somewhere else, it's left alone, and the CLI says once how to add the machine under another name: `git remote add NAME todo-app.repose:~/todo-app`.
-- `repose rm` in the checkout removes the remote. Branches you already fetched stay as `repose/...` until you delete them with `git branch -rd`.
-- Copies made with [`repose fork`](/docs/lifecycle#fork-a-project) in your checkout get a remote each, named after the copy: `git fetch todo-app-fork-2`.
-- The machine has to be running. On a stopped one, `git fetch repose` fails with ``todo-app is stopped; run `repose start todo-app` ``.
+`run` and `attach` say so once and leave it alone after that. It lives in `.git/config`. A remote named `repose` that you added yourself is left alone, and the CLI says once how to reach the machine under another name: `git remote add NAME todo-app.repose:~/todo-app`.
 
 ### Pushing from the machine
 
-The machine's checkout has the same `origin` as yours, so `git push` there works as it does locally. If you're logged in to the GitHub CLI (`gh`) on your laptop and the remote is on github.com, that login is copied and git on the machine pushes over HTTPS with it. [Other git hosts](/docs/secrets#other-git-hosts) have no login that repose copies.
+The machine's checkout has an `origin` of its own: the SSH form of your project's remote, `git@github.com:owner/repo.git`, so `git push` there reaches the same repository yours does. It pushes with the `gh` login copied from your laptop ([Logins copied from your laptop](/docs/secrets#logins-copied-from-your-laptop)); [other git hosts](/docs/secrets#other-git-hosts) have none that repose copies. A project with no remote of its own gets no `origin` on the machine.
 
 ### Single files
 
-For a file that shouldn't go through git, use `repose cp`. A path after `:` is on the machine, relative to the checkout:
+For a file that shouldn't go through git, use [`repose cp`](/docs/cli#repose-cp-r-src-dst). A path after `:` is on the machine, relative to the checkout:
 
 ```
 repose cp :logs/app.log .
-repose cp todo-app:/tmp/trace.json .
-repose cp ./report-*.pdf todo-app:/tmp/
-repose cp -r ./fixtures :test/fixtures
+repose cp ./report.pdf todo-app:/tmp/
 ```
 
 ## Repositories the sync can't handle
 
-The checkout must be a git repository with at least one commit and full history. The CLI tells you what to run:
+The checkout has to be a git repository with at least one commit and its whole history. The CLI refuses before it creates or starts a machine, so a refused run costs nothing:
 
-- No repository or no commits: `git init && git add -A && git commit -m init`
+- No commits yet: `git add -A && git commit -m init`
 - A shallow clone: `git fetch --unshallow`
 
-It says so before it creates or starts a machine, so a refused run costs nothing. `repose run` in a directory that isn't a repository makes a machine without syncing and says `Not a git repository, so nothing was synced.` `repose sync` there refuses.
+On a `repose run` both refusals end with `, or pass --no-sync`, which makes the machine with no checkout.
 
-A directory without a remote gets a machine named after the directory (`job search` becomes `job-search`); `repose run NAME` picks another name. To sync it into a machine you already have, run `repose sync job` once: from then on a plain `repose sync` there uses `job`. If you press `Ctrl-C` after a sync created a machine and before it connected, that directory doesn't keep the machine, and the CLI names it so you can remove it with `repose rm`.
+Outside a git repository `repose run` refuses nothing: it creates the machine, copies nothing and says `Not a git repository, so nothing was synced.` The machine is [named after the folder](/docs/lifecycle#a-second-machine-for-the-same-repository). `repose sync` there exits 2 with `This folder is not a git checkout, so there is nothing to sync.`
 
-For a repository on github.com with more than 4 MiB of history, the first sync has the machine fetch that history from GitHub while your laptop uploads the rest, and sends only the commits GitHub doesn't have. Submodules on github.com are fetched the same way. A public repository arrives with the files of the commit you're on, and the machine fetches older versions in the background; until it has them, `git remote` on the machine also lists `repose-backfill`. If a fetch fails, the CLI sends that history itself and says so.
+A repository on github.com with at least 4 MiB of history is cloned by the machine itself on the first sync, over its own network, and your laptop sends only the commits GitHub doesn't have; the summary says `history cloned from github.com`. Submodules on github.com go the same way. A public repository arrives with the files of the commit you're on, and the machine fetches older versions in the background, so `git remote` on the machine lists `repose-backfill` until it's whole. If a fetch fails, the CLI sends that history itself and says so.

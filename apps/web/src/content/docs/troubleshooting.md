@@ -21,6 +21,8 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`ssh todo-app.repose` says `Could not resolve hostname`.** With ``Not logged in. Run `repose login`.`` on a line before it, log in and connect again. With no other message, ssh isn't reading [the file repose writes](/docs/ssh-and-editors#when-it-doesnt-connect).
 
+**``repose: No repose project is called todo-app. `repose ls` lists yours.``** The host name is misspelt, or the project was destroyed.
+
 **`ssh todo-app.repose` says `Permission denied`.** The certificate couldn't be renewed, most often because you're logged out: run `repose login`, then connect again. `repose attach todo-app` renews it too.
 
 **`too many open connections for your account; close some and try again`.** You have 32 [SSH connections](/docs/limits#ssh-connections) open through the gateway, across all your projects. A script that opens connections without closing them is the usual cause.

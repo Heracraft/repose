@@ -75,7 +75,7 @@ The dashboard keeps these on **Settings**, and each project's **Secrets** page l
 
 ## Logins copied from your laptop
 
-At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them.
+At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. `Logins copied: gh, codex` prints when what was copied changes, not on every run of the same project.
 
 | Tool       | File                                                                             |
 | ---------- | -------------------------------------------------------------------------------- |
