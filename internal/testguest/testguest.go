@@ -75,8 +75,8 @@ func start(home string, auth func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permiss
 	if err != nil {
 		return nil, fmt.Errorf("testguest: host key: %w", err)
 	}
-	sockDir := filepath.Join(home, ".tmux-sockets")
-	if err := os.MkdirAll(sockDir, 0o700); err != nil {
+	sockDir, err := TmuxTmpdir()
+	if err != nil {
 		return nil, err
 	}
 
@@ -154,6 +154,7 @@ func (g *Guest) Close() {
 	case <-time.After(time.Until(deadline)):
 	}
 	killTmux(g.sockDir)
+	_ = os.RemoveAll(g.sockDir)
 }
 
 // Connections is how many SSH connections have authenticated so far, for
@@ -411,6 +412,37 @@ func filterEnv(env []string, drop ...string) []string {
 		}
 	}
 	return out
+}
+
+// TmuxTmpdir makes a directory for a tmux server's socket whose path is
+// short whatever the caller's own paths look like, and is the only place a
+// test should get one.
+//
+// A unix socket path is 108 bytes including its NUL, and tmux adds
+// `/tmux-<uid>/default` (18 for uid 1000) to whatever $TMUX_TMPDIR says.
+// This used to be `<home>/.tmux-sockets`, and a home under a Go test's own
+// temporary directory carries the test's name: with TMPDIR=/tmp/rt,
+// `TestSyncInterruptedBeforeTheCreateLandedSaysItMayExist` overran the
+// limit and the fake guest answered `error connecting to
+// .../default (File name too long)`. The failure was load-dependent, so a
+// package run failed a different two or three tests each time and nobody
+// read it as a fixture bug (2026-10-17). It is also closer to a real
+// guest, where TMUX_TMPDIR is /run/user/1000 and not under $HOME.
+//
+// The caller owns the directory: Guest.Close removes the one it made.
+func TmuxTmpdir() (string, error) {
+	dir, err := os.MkdirTemp("", "tgs")
+	if err != nil {
+		return "", fmt.Errorf("testguest: tmux tmpdir: %w", err)
+	}
+	// 108 is the sun_path limit, 18 is tmux's own suffix; a path that
+	// fails this means $TMPDIR itself is too deep to run these tests in,
+	// which is worth saying plainly rather than failing per test later.
+	if n := len(dir) + len("/tmux-4294967295/default"); n >= 108 {
+		_ = os.RemoveAll(dir)
+		return "", fmt.Errorf("testguest: $TMPDIR is too deep for a tmux socket: %s leaves %d bytes of the 108 a unix socket path has", dir, n)
+	}
+	return dir, nil
 }
 
 func killTmux(sockDir string) {
