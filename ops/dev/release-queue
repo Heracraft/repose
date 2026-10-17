@@ -84,6 +84,47 @@ setfield() { # file key value
   mv "$tmp" "$f"
 }
 
+# integration_tip: the newest integrated commit this branch was cut from.
+#
+# Not refs/heads/main. On woker-1 that ref sat 132 commits behind
+# origin/main for weeks, and every `add` read its targets against it: a
+# branch with no commits of its own was told it shipped
+# api,base,cli,edge,host,web across a 371-file diff, and three of the
+# branches queued at the time carried a note correcting their own field.
+# The merge-base with a stale main is the stale main itself, because it is
+# an ancestor of anything cut from something newer -- so spelling the diff
+# `..` instead of `...` changes nothing, and the base is the bug.
+#
+# Each candidate contributes merge-base(HEAD, candidate); the newest of
+# those wins, which is the one the others are ancestors of. On kanali
+# refs/heads/main IS integrated main (checked: both 293a8dba) so it wins
+# there; on woker-1 origin/integrated does. Local main also wins while a
+# security batch is held back from the integrated branch
+# (REPOSE_INTEGRATED_REMOTE=none, DECISIONS I-651), which is the one case
+# where main is ahead of it.
+integration_tip() {
+  local ref b best=""
+  for ref in refs/heads/main refs/remotes/origin/integrated refs/remotes/origin/main; do
+    git rev-parse -q --verify "$ref" >/dev/null || continue
+    b=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
+    [ -n "$b" ] || continue
+    if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$b"; then best=$b; fi
+  done
+  [ -n "$best" ] || die "no common commit with main, origin/integrated or origin/main; fetch, or say what this branch was cut from"
+  echo "$best"
+}
+
+# The ref a cut will merge into, for the conflict check: the tip itself
+# rather than a merge-base with it.
+integration_ref() {
+  local ref best=""
+  for ref in refs/heads/main refs/remotes/origin/integrated refs/remotes/origin/main; do
+    git rev-parse -q --verify "$ref" >/dev/null || continue
+    if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$ref" 2>/dev/null; then best=$ref; fi
+  done
+  echo "$best"
+}
+
 # What a branch has to ship as: the deploy targets its changes reach.
 #   api   push to main (Coolify redeploys api and api-grpc)
 #   web   push to main (Coolify redeploys web; /docs is part of it)
@@ -93,8 +134,12 @@ setfield() { # file key value
 #   edge  a switch of the edge (the owner's)
 #   infra tofu apply (the owner's)
 needs_of() {
-  local range=$1 files t=() pkgs cmd target
-  files=$(git diff --name-only "$range")
+  local range=$1 files t=() pkgs cmd target all
+  all=$(git diff --name-only "$range")
+  # A gate is evaluated and installed on nothing: the VM tests and the
+  # fragment checks. 37 commits since 2026-09-15 changed only paths like
+  # these and were charged a deploy target, five of them base,edge,host.
+  files=$(grep -vE '^nix/(guest/tests/|hosts/tests/|guest/checks\.nix$)' <<<"$all" || true)
   grep -q '^apps/web/' <<<"$files" && t+=(web)
   grep -q '^nix/guest/' <<<"$files" && t+=(base)
   grep -q '^nix/hosts/' <<<"$files" && t+=(host)
@@ -104,6 +149,15 @@ needs_of() {
   # Go: a changed package ships in every binary that imports it.
   # A non-Go file under cmd/ or internal/ (an embedded email template, a
   # migration) ships with the nearest package above it.
+  # A package whose changed files are all _test.go reaches no binary: go
+  # does not compile a test file into one. cpu-weight was charged `edge`,
+  # the owner's switch, because its only change under cmd/gateway's deps
+  # was internal/obs/metrics/families_host_test.go. 38 of the 542 non-merge
+  # Go commits since 2026-09-15 changed only test files.
+  #
+  # Nix cannot see this: the source filter in nix/packages.nix includes
+  # test files, so a test-only commit changes repose-go-src and every
+  # derivation reading it. go list -deps is what knows about binaries.
   pkgs=$(
     while IFS= read -r p; do
       case $p in
@@ -115,6 +169,22 @@ needs_of() {
       esac
     done <<<"$files" | sort -u
   )
+  local keep=""
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case $d in
+      go.mod | go.sum) keep="$keep$d
+"; continue ;;
+    esac
+    # every changed file of this package, and whether any is not a test
+    if git diff --name-only "$range" -- "$d" | grep -qE '\.go$' &&
+       ! git diff --name-only "$range" -- "$d" | grep -E '\.go$' | grep -qv '_test\.go$'; then
+      continue
+    fi
+    keep="$keep$d
+"
+  done <<<"$pkgs"
+  pkgs=$(printf '%s' "$keep" | { grep -v '^$' || true; })
   if [ -n "$pkgs" ]; then
     local mod; mod=$(go list -m)
     for cmd in api repose-admin repose hostd guestd repose-hook gateway; do
@@ -135,6 +205,50 @@ needs_of() {
   fi
   [ ${#t[@]} -gt 0 ] || t=(none)
   printf '%s\n' "${t[@]}" | sort -u | paste -sd, -
+}
+
+# exact_nix narrows base, host and edge to the ones whose system really
+# changes, by comparing the derivation graphs at both ends of the range.
+#
+# Paths decide whether to ask; this answers. A plain drvPath comparison
+# cannot: self.shortRev is stamped into hostd, guestd and the guest's
+# baseVersion, so every commit changes every system's drvPath.
+# ops/dev/closure-equiv.py compares modulo that stamp. Measured on this
+# box: about 3 s a side, and dev-tool-guards (I-745) -- queued as
+# base,edge,host -- changes none of the three systems.
+#
+# Skipped by --fast, and skipped when nix is not on PATH, which is every
+# repose guest: the answer then stays the path-based one and the entry says
+# so, because a wrong "nothing to deploy" is worse than a wide one.
+exact_nix() {  # base-commit targets...
+  local base=$1; shift
+  local t out keep=() attr equiv
+  # REPOSE_QUEUE_EQUIV names the comparison command, so the wiring here can
+  # be tested against a scratch repository that nix cannot evaluate; the
+  # comparison itself is checked against this repository's own revisions
+  # (ops/dev/closure-equiv.py --self-test is not a thing; see the plan).
+  equiv=${REPOSE_QUEUE_EQUIV:-$(git rev-parse --show-toplevel)/ops/dev/closure-equiv.py}
+  if [ "${REPOSE_QUEUE_FAST:-}" = 1 ] || ! command -v nix >/dev/null || [ ! -x "$equiv" ]; then
+    printf '%s\n' "$@"; return 0
+  fi
+  for t in "$@"; do
+    case $t in
+      base) attr=packages.x86_64-linux.guest-system ;;
+      host) attr=nixosConfigurations.host-01.config.system.build.toplevel ;;
+      edge) attr=nixosConfigurations.edge.config.system.build.toplevel ;;
+      *) keep+=("$t"); continue ;;
+    esac
+    if out=$("$equiv" "$attr" "$base" HEAD 2>&1); then
+      echo "release-queue: $t: the system is unchanged from $(git rev-parse --short "$base"), so it is not a deploy target" >&2
+    else
+      case $out in
+        *"VERDICT: the system really changes"*) keep+=("$t") ;;
+        *) keep+=("$t")
+           echo "release-queue: $t: could not compare the systems, so it stays a target" >&2 ;;
+      esac
+    fi
+  done
+  [ ${#keep[@]} -eq 0 ] || printf '%s\n' "${keep[@]}"
 }
 
 # trust_reader runs the guards against help nobody asked for (DECISIONS
@@ -178,14 +292,26 @@ cmd_add() {
   [ -n "$branch" ] || die "add: not on a branch"
   [ "$branch" != main ] || die "add: this is main; work in a worktree on its own branch (docs/ops/RELEASE.md)"
   [ -z "$(git status --porcelain --untracked-files=no)" ] || die "add: $branch has uncommitted changes; commit them first"
-  local ahead; ahead=$(git rev-list --count main..HEAD)
-  [ "$ahead" -gt 0 ] || die "add: $branch has no commits that main lacks"
+  local tip ref; tip=$(integration_tip); ref=$(integration_ref)
+  local ahead; ahead=$(git rev-list --count "$tip..HEAD")
+  [ "$ahead" -gt 0 ] || die "add: $branch has no commits that $(git rev-parse --short "$tip") lacks"
   local clash
-  if ! clash=$(git merge-tree --write-tree --name-only main HEAD 2>/dev/null); then
+  if ! clash=$(git merge-tree --write-tree --name-only "$ref" HEAD 2>/dev/null); then
     clash=$(sed -n '2,/^$/p' <<<"$clash" | grep -v -e '^$' -e "^$index\$" || true)
-    [ -z "$clash" ] || die "add: $branch conflicts with main in: $(paste -sd' ' <<<"$clash"); run 'git merge main' here, resolve, and queue again"
+    [ -z "$clash" ] || die "add: $branch conflicts with $ref in: $(paste -sd' ' <<<"$clash"); run 'git merge main' here, resolve, and queue again"
   fi
-  local needs; needs=$(needs_of main...HEAD)
+  local needs; needs=$(needs_of "$tip...HEAD")
+  # narrow base/host/edge to the systems that really change
+  local nix_t=() other=() x
+  for x in ${needs//,/ }; do
+    case $x in base | host | edge) nix_t+=("$x") ;; *) other+=("$x") ;; esac
+  done
+  if [ ${#nix_t[@]} -gt 0 ]; then
+    local kept; kept=$(exact_nix "$tip" "${nix_t[@]}")
+    needs=$(printf '%s\n%s\n' "$(printf '%s\n' "${other[@]:-}")" "$kept" |
+      { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
+    [ -n "$needs" ] || needs=none
+  fi
   trust_reader "$needs"
   locked
   local f prev="" tmpf
@@ -203,6 +329,8 @@ cmd_add() {
     echo "sha=$(git rev-parse HEAD)"
     echo "worktree=$(git rev-parse --show-toplevel)"
     echo "needs=$needs"
+    echo "base=$(git rev-parse "$tip")"
+    echo "exact=$( { [ "${REPOSE_QUEUE_FAST:-}" = 1 ] || ! command -v nix >/dev/null; } && echo no || echo yes)"
     echo "live=$live"
     echo "note=$note"
     echo "queued=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -240,7 +368,8 @@ cmd_ls() {
   done < <(entries)
   if [ -n "$pending" ]; then
     pending=$(tr ',' '\n' <<<"$pending" | { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
-    echo "on main, not released: $(git rev-list --count refs/remotes/origin/main..main) commits; the next release ships as: ${pending:-nothing to deploy}"
+    local held; held=$(git rev-list --count refs/remotes/origin/main..main 2>/dev/null || echo 0)
+    echo "on main, not released: $held commits; the next release ships as: ${pending:-nothing to deploy}"
   fi
 }
 
@@ -339,6 +468,14 @@ summary() { # release
 
 cmd_cut() {
   locked
+  # A cut from a stale main re-merges everything integrated since, through
+  # --no-ff merges, which is how a release quietly loses a change. On
+  # woker-1 refs/heads/main sat 132 commits behind for weeks and nothing
+  # stopped this.
+  local newest; newest=$(integration_ref)
+  if [ "$newest" != refs/heads/main ] && ! git merge-base --is-ancestor "$newest" main 2>/dev/null; then
+    die "cut: main is behind $newest by $(git rev-list --count main.."$newest") commits; fast-forward it first: git -C $main_wt merge --ff-only $newest"
+  fi
   local any=0 f
   while IFS= read -r f; do [ "$(field "$f" state)" = queued ] && any=1; done < <(entries)
   [ $any = 1 ] || die "cut: nothing is queued"

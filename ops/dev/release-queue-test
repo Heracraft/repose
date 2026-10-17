@@ -35,14 +35,11 @@ filter=${1:-}
 
 # Each line: the test name, the problem it belongs to, one line of why.
 KNOWN_BAD="
-needs_flake_checks_only            P4 a checks-only flake change ships as base,host,edge
-needs_against_stale_local_main     P5 needs and the commit count read refs/heads/main
 id_sees_other_machine_reservation  P1 the reservations file never leaves the machine
 where_is_released_branch           P3 no command answers 'did this branch ship'
 where_is_branch_on_the_other_box   P2 the queue state is per machine
 stale_script_warns                 P6 a worktree's old copy says nothing
 live_check_is_recorded             P7 nothing stores whether the check ran
-needs_ignores_a_test_only_change   P4 a _test.go change reaches no binary
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -96,7 +93,8 @@ run_test() { # name
 # q runs release-queue in a worktree and prints its output and exit code.
 q() { # dir args...
   local d=$1; shift
-  ( cd "$d" && PATH="$root/bin:$PATH" ops/dev/release-queue "$@" 2>&1 )
+  ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      ops/dev/release-queue "$@" 2>&1 )
 }
 
 # ------------------------------------------------------------------ the world
@@ -116,6 +114,21 @@ world() {
 exit 0
 EOF
   chmod +x "$root/bin/pnpm"
+  # The comparison release-queue runs for base/host/edge. The scratch
+  # repository is not an evaluable flake, so this stands in for
+  # ops/dev/closure-equiv.py. It answers "the system really changes" by
+  # default, which is the conservative answer and the one that leaves the
+  # path-derived targets alone; a test that wants the narrowing exercised
+  # sets REPOSE_FIXTURE_EQUIV_SAME. The comparison itself is checked
+  # against this repository's own revisions, not here.
+  cat > "$root/bin/equiv-stub" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${REPOSE_FIXTURE_EQUIV_SAME:-}" ]; then
+  echo "VERDICT: the same system; only the version stamp differs"; exit 0
+fi
+echo "VERDICT: the system really changes"; exit 1
+EOF
+  chmod +x "$root/bin/equiv-stub"
 
   local src=$root/src
   mkdir -p "$src"
@@ -357,12 +370,38 @@ t_needs_docs_only() {
   assert_eq "a docs-only branch" "$(needs_line "$(q "$wt" add)")" "none"
 }
 
-# P4. The checks region of nix/flake.nix is evaluated by a gate and
-# installed by nothing. A change inside it reaches no machine, and the
-# conductor who reads "base,edge,host" switches two of them for it
-# (dev-tool-guards, 6950361a: a comment and an awk script in
-# checks.guest-closure-size).
-t_needs_flake_checks_only() {
+# dev-tool-guards (6950361a) changed a comment and an awk script inside
+# checks.guest-closure-size and was queued as base,edge,host -- a base
+# publish and two switches, both the owner's. Comparing the derivation
+# graphs says all three systems are byte-identical, so the targets are
+# dropped. Here the comparison is stubbed; the real one is checked against
+# this repository (docs/research/queue-revamp-plan.md §1).
+# The same change when the comparison says the system DOES change: the
+# target stays. Guards against a narrowing that drops a real deploy.
+t_needs_keeps_a_target_the_comparison_confirms() {
+  local wt; wt=$(branch woker real-guest-change)
+  echo '# a real guest module change' >> "$wt/nix/guest/base/boot.nix"
+  commit "$wt" "guest"
+  local o; o=$(cd "$wt" && REPOSE_FIXTURE_EQUIV_CHANGED=1 PATH="$root/bin:$PATH" \
+    REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" ops/dev/release-queue add 2>&1)
+  assert_eq "a confirmed change keeps its target" "$(needs_line "$o")" "base"
+}
+
+# --fast, and a box with no nix (every repose guest), keep the path answer
+# and record that it was not checked: a wrong "nothing to deploy" is worse
+# than a wide one.
+t_fast_records_that_it_did_not_check() {
+  local wt; wt=$(branch woker fast-path)
+  echo '# a guest module' >> "$wt/nix/guest/base/boot.nix"
+  commit "$wt" "guest"
+  local o; o=$(cd "$wt" && REPOSE_QUEUE_FAST=1 PATH="$root/bin:$PATH" \
+    REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" ops/dev/release-queue add 2>&1)
+  assert_eq "--fast keeps the path answer" "$(needs_line "$o")" "base" || return 1
+  local s; s=$(state_of woker)/release-queue
+  assert_has "and records that it did not check" "$(cat "$s/entries/fast-path")" "exact=no"
+}
+
+t_needs_drops_a_target_whose_system_is_unchanged() {
   local wt; wt=$(branch woker flake-checks)
   python3 - "$wt/nix/flake.nix" <<'PY'
 import sys
@@ -372,7 +411,21 @@ s = s.replace('echo "guest system closure"', 'echo "guest system closure"\n     
 open(p, "w").write(s)
 PY
   commit "$wt" "the closure gate prints the paths"
-  assert_eq "a change only inside the flake's checks" "$(needs_line "$(q "$wt" add)")" "none"
+  local o; o=$(cd "$wt" && REPOSE_FIXTURE_EQUIV_SAME=1 PATH="$root/bin:$PATH" \
+    REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" ops/dev/release-queue add 2>&1)
+  assert_eq "a target whose system is unchanged is dropped" "$(needs_line "$o")" "none"
+}
+
+# A gate installs nothing, and this needs no comparison at all: the VM
+# tests and the fragment checks are evaluated and deployed nowhere.
+t_needs_gate_paths_ship_nothing() {
+  local wt; wt=$(branch woker gate-paths)
+  mkdir -p "$wt/nix/guest/tests" "$wt/nix/hosts/tests"
+  echo '# a guest VM test' >> "$wt/nix/guest/tests/default.nix"
+  echo '# a host VM test' >> "$wt/nix/hosts/tests/default.nix"
+  echo '# a fragment check' >> "$wt/nix/guest/checks.nix"
+  commit "$wt" "gates"
+  assert_eq "a gate-only branch" "$(needs_line "$(q "$wt" add)")" "none"
 }
 
 # P5. `needs` and the commit count are read against refs/heads/main, which
@@ -478,7 +531,7 @@ t_add_refuses_main() {
 t_add_refuses_no_commits() {
   local wt; wt=$(branch woker empty)
   local o; o=$(q "$wt" add)
-  assert_has "a branch with nothing new is refused" "$o" "no commits that main lacks"
+  assert_has "a branch with nothing new is refused" "$o" "has no commits that"
 }
 
 t_add_runs_cli_guards() {
