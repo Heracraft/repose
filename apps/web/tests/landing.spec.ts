@@ -13,16 +13,13 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await resetBilling();
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	await expect(
-		pricing.getByText(
-			"Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs at the same time, around the clock, across up to 100 projects; a stopped project uses none. A plan's disk counts the data your projects hold."
-		)
-	).toBeVisible();
+	await expect(pricing.getByText('Launch prices. Seven days free.')).toBeVisible();
 	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
 	await expect(pricing.getByText('$39')).toBeVisible();
-	await expect(
-		pricing.getByText('First 12 months for the first 30 subscribers, then $49')
-	).toBeVisible();
+	// The founding price is the two numbers, the list price struck (I-772).
+	const solo = pricing.locator('.tier', { has: page.getByRole('heading', { name: 'Solo' }) });
+	await expect(solo.locator('.tier-price .was')).toHaveText('$49');
+	await expect(solo.locator('.tier-then')).toHaveText('First 12 months, first 30 subscribers');
 	await expect(pricing.getByText('$89')).toBeVisible();
 	await expect(pricing.getByText('$169')).toBeVisible();
 	await expect(pricing.getByText('8 GB running at once')).toBeVisible();
@@ -34,12 +31,10 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
 	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
-	// The launch-price terms under the cards (I-672).
-	await expect(
-		pricing.getByText(
-			'Launch prices. A change reaches you by email 30 days ahead. Your subscription keeps the list price it started on for 12 months from its start.'
-		)
-	).toBeVisible();
+	// The notice period and the 12-month hold left the landing with I-772.
+	// They are kept in terms.md (the site footer's Terms), billing.md and
+	// PRICING.md; "Launch prices" stays, in the section's head.
+	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
 test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
@@ -49,6 +44,8 @@ test('with no founding places left, Solo shows $49 and no founding line', async 
 	const solo = pricing.locator('.tier', { has: page.getByRole('heading', { name: 'Solo' }) });
 	await expect(solo.locator('.tier-price .n')).toHaveText('$49');
 	await expect(solo.locator('.tier-then')).toHaveCount(0);
+	// Nothing is struck once the list price is the price (I-772).
+	await expect(solo.locator('.tier-price .was')).toHaveCount(0);
 	await expect(pricing.getByText('$39')).toHaveCount(0);
 	await setBilling({ founding_left: 30 });
 });

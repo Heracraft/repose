@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-784 entries.
+785 entries.
 
 ## Scope
 
@@ -462,7 +462,7 @@ pointer, not a summary.
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9987
 - **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10014
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10045
-- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; L10074
+- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; amended by I-772; L10074
 - **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; amended by I-667; L10134
 - **I-399** Landing repair round 2: the drawn pictures' rows are 12px mono, every picture motion is in LANDING.md's list, OneCommand takes the picture palette, the repair round's notes leave the owner's sections, and the a11y gate's landing allowance is phone width only — 2026-10-01; amended by I-400; L10199
 - **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; amended by I-660; L10262
@@ -528,7 +528,7 @@ pointer, not a summary.
 - **I-466** hostd creates the guest directory's socket directories without following a link — 2026-10-03; L11922
 - **I-467** The bridge keeps credentials and traffic bodies in the laptop's Chrome, not only cookies — 2026-10-03; L11932
 - **I-468** A dropped path is judged by the file it reads, and key files are never a drop — 2026-10-03; L11975
-- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; L12005
+- **I-477** The landing leads with replicating your laptop's dev environment, for solo founders — 2026-10-04; amended by I-667; amended by I-772; L12005
 - **I-475** Each bash command loads the current secrets through BASH_ENV, without replacing a value the process set itself — 2026-10-04; amended by I-508; L12027
 - **I-476** Removed secrets leave running processes, and WriteSecrets updates the tmux environment through stdin — 2026-10-04; amended by I-508; L12161
 - **I-474** Named secrets are written bound to their project, and the api rebinds older rows at start — 2026-10-04; L12187
@@ -816,3 +816,4 @@ pointer, not a summary.
 - **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23354
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23361
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23405
+- **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
