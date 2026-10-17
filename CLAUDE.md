@@ -79,6 +79,11 @@ on this machine only, and pushes and ships `main` when the owner asks for a
 release (`docs/ops/RELEASE.md`, DECISIONS I-416, I-424).
 Switching an existing worktree to another branch, or deleting one that is
 not yours, still needs the user's approval.
+`git stash` is one stack for the whole repository, not one per worktree, so
+a bare `push` here is popped by whoever pops next: on 2026-10-17 a bare
+`pop` applied another session's security fix into the wrong worktree.
+Commit to your branch instead; if you must stash, name it (`git stash push
+-m "<branch>: <what>"`) and apply it by that name, never `pop` the top.
 
 ## Trust the reader
 
