@@ -22657,3 +22657,86 @@ a closure was too big without saying what filled it.
   with the declarations it had merged from main. It now uses each pair's
   own merge-base and prints it, and a pair it cannot compare because a
   branch is not fetched says so instead of printing "ok", which it did.
+
+**I-772. The landing says the chore it removes, in plain words, and the
+founding price is a struck number, not a sentence.** (landing-feedback,
+2026-10-17.) Amends I-477, I-397/I-401, I-402 and I-672 where they fix
+the landing's copy; amends "Copy" and "The grid cards" in LANDING.md.
+The owner reviewed the live page on 2026-10-17 and pinned ten places
+(open-toolbar capture `01a14b16-58e0-7628-913a-bb19cfe55849`, which
+holds their words). The page had drifted into short "punchy" lines that
+read as generated and said less than they cost:
+
+- *The hero's lead is one paragraph, not three lines.* It stood as three
+  sentences each kept whole on its own line, a staircase of fragments
+  under a headline twice as wide ("in steps and not in full width below
+  the headline is super weird"). It is now one paragraph at 48rem, about
+  70 characters, with `text-wrap: pretty`; `.hero-grid .lead > span` and
+  its nowrap went. "If one wrecks it, a snapshot puts it back" was
+  called "pure AI slop, corpo LLM speak" and is gone: the lead now says
+  that agents run with full permissions and nobody approves commands one
+  by one, and that snapshotting as you go lets you put a wrecked machine
+  back in minutes.
+- *The setup section names the chore.* "Unpushed commits, uncommitted
+  changes and .env files..." listed what is copied without saying why
+  anyone would want it. The owner: the chore is a machine you have to set
+  up for tens of minutes to hours, GitHub login, a CLI to install, a
+  `.env` to paste, before an agent can start, and that is what makes a VM
+  not worth it. The head is two sentences: the hour you spend on a cloud
+  box, then `repose run` copying all of it from your laptop. The first
+  rewrite of it was its own wall of text (the owner: "bro you just added
+  verbosity"), and its "Your SSH keys stay home" went with the x-not-y
+  shape below.
+- *A section head's sentence takes the hero's 48rem*, not the 36rem of
+  every other lead: at 36rem the setup sentence stood as six short lines
+  under a heading twice as wide, the staircase again.
+- *The snapshot card tells the truth about snapshots.* "Databases, tools,
+  logins, uncommitted work. Back in minutes." implied recovery with no
+  snapshot taken ("if you didnt snapshot before it fucked up then you
+  cant magically recover"). It now says snapshots run nightly and
+  that repose snapshots the machine nightly and you can take one
+  yourself any time, and that restoring it brings those things back in
+  minutes. `.whole` and its nowrap span went with it: held nowrap, the
+  longer sentence ran 275px past a 320px phone.
+- *Two card titles say what they do.* "Your dev server on your localhost"
+  ("tacky") is "The machine's ports on your localhost"; "Watch the agent
+  use the browser" is "Watch the agent's browser, and take over", since
+  taking over was in the card's line but not its title.
+- *"Five agents and a full toolchain on first boot"* is "The agents you
+  use, and the tools they need, on first boot", after the owner's "all
+  the agents and all the tools they could need for the task". This
+  reverses LANDING.md's "is clean; leave it".
+- *Pricing is not the docs.* The head's four sentences on memory, stopped
+  projects and what disk counts are cut; the cards already say "8 GB
+  running at once" and "100 GB disk". The head is "Launch prices. Seven days
+  free." (owner: "shorty as fuck"); the currency, the tax line and "card
+  at checkout" live in `billing.md`, on the billing page and at
+  checkout.
+- *The price-change promise leaves the landing.* "A change reaches you by
+  email 30 days ahead. Your subscription keeps the list price it started
+  on for 12 months from its start." is terms, and stays in `terms.md`
+  (the footer's Terms), `billing.md` and PRICING.md, which I-672 also put
+  it in. "Launch prices" stays, in the head. I-672's requirement that it
+  be on the landing under the plans is lifted; the promise itself is
+  unchanged, and PRICING.md still records that the code cannot keep the
+  12-month hold yet.
+- *The founding price is two numbers.* "First 12 months for the first 30
+  subscribers, then $49" wrapped to two lines under the price ("This is
+  just ugly... just do strike through"). Solo now shows `$49` struck in
+  the faint ink before `$39`, with one short line, "First 12 months,
+  first 30 subscribers", under it. The line stays because the discount
+  ends and is capped, and a struck number alone does not say so. With
+  `founding_left` 0 Solo shows $49 with nothing struck and no line, as
+  I-672 has it.
+
+The owner also named the shapes that read as generated, from
+`hardikpandya/stop-slop`, and LANDING.md's "Copy" now lists them: x-not-y
+contrast, triplets, choppy fragments standing in for sentences, punchy
+closers written to be quoted, sentences with no human actor, em-dashes,
+and "every/always/never" as emphasis. The first rewrite under this entry
+broke several of them and was sent back ("bro you just added verbosity");
+the copy above is the second.
+
+The public docs under `content/docs/` are untouched: the owner asked for
+the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
+user-visible outside the landing changed, so no page there needs one.

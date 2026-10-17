@@ -255,10 +255,53 @@ How it moves (I-668):
   their agents", and "full permissions" sits in the lead's second
   sentence.
 
+- Short is not the point; plain is (owner, 2026-10-17, I-772). "Punchy"
+  lines that leave the reader working out what the product does cost
+  more than the words they save: "if one wrecks it, a snapshot puts it
+  back" was read as "pure AI slop, corpo LLM speak". Say the thing a
+  developer already feels, in the words they would use. The chore repose
+  removes is a machine you set up for tens of minutes to hours, the
+  GitHub login, the CLI to install, the `.env` to paste, before an agent
+  can start; the hero and the setup head say that, and are a paragraph
+  where a paragraph says it better than three fragments. "No
+  hand-holding" above still rules out explaining the picture or the
+  screen; it does not license a line nobody can parse.
+- The lead is one paragraph on its measure, never one line per
+  sentence (I-772): three sentences each held whole read as a staircase
+  of fragments under a headline twice as wide. The hero's lead and a
+  section head's sentence take 48rem, about 70 characters; every other
+  lead keeps 36rem.
+- The shapes that read as generated, and are banned on this page
+  (owner, 2026-10-17, I-772, from `hardikpandya/stop-slop`):
+  - **x-not-y.** "costs you minutes, not your setup", "the machine is
+    disposable, not precious". Say the thing you mean and stop. "Your
+    SSH keys stay home" went for this reason.
+  - **Triplets.** Three sentences or three clauses in a row beat like a
+    speech. Prefer two.
+  - **Choppy fragments** standing in for sentences in prose: a lead or
+    a card's line reads as sentences. A deliberate label is not prose
+    and may be two words ("Launch prices. Seven days free."), as the
+    pricing head is.
+  - **Punchy closers.** A last line written to be quoted.
+  - **No actor.** Prefer a person doing something ("You spend an hour
+    setting up a cloud box") over a state of the world.
+  - **Em-dashes**, filler adverbs, and "every/always/never" as
+    emphasis rather than fact.
+  Plain beats clever, and a sentence that explains the product beats a
+  sentence that performs. The first rewrite under I-772 traded a wall of
+  text for a different wall of text; the owner's word for it was "bro you
+  just added verbosity".
 - Never write as if the product were Claude-only: "the agent" drives the
   browser, reads the console; not "Claude Code does X".
 - No empty phrasing that sounds generated ("tests in a real browser": as
   opposed to what?). Say what the viewer gains.
+- A card title says what you can do, not what you can see (I-772):
+  "Watch the agent's browser, and take over", since taking over was in
+  the card's line and not its title.
+- Never promise recovery the product cannot give (I-772). A snapshot
+  restores a machine only if one was taken, so the page says repose
+  snapshots the machine nightly and that you can take one yourself any
+  time; it never implies a wreck undoes itself.
 
 ## The grid cards (owner's notes, 2026-09-26)
 
@@ -292,7 +335,10 @@ How it moves (I-668):
   restored machine through the loop's exit, never by a cut.
 - "Five agents and a full toolchain on first boot" is clean; leave it.
   2026-09-27: the agents' row shows the marks alone, no name or command
-  under them.
+  under them. The title went with I-772, after the owner asked for "all
+  the agents and all the tools they could need for the task": it reads
+  "The agents you use, and the tools they need, on first boot". The
+  picture is unchanged.
 
 ## Shape language (owner's direction, 2026-09-27)
 
@@ -330,15 +376,17 @@ and underlined every heading. The page is one system:
     over it in paper.
   - *pill* is the sync, before "Your working state, in one command".
   - *halves* (the same thing above and below) is the localhost forward,
-    before "Your dev server on your localhost".
+    before "The machine's ports on your localhost" (I-772; it was "Your
+    dev server on your localhost").
   - *ring* (a lens: one disc, a paper ring, an ink pupil; the quartered
     ring was redrawn 2026-09-27, its four tones did not work small) is
-    watching the agent's browser, before "Watch the agent use the
-    browser".
+    watching the agent's browser, before "Watch the agent's browser, and
+    take over" (I-772; it was "Watch the agent use the browser").
   - *arch* (a door in) is the editor over SSH, before "Open it in your
     editor".
   - *asterisk* (a wildcard) is the toolchain and anything installable,
-    before "Five agents and a full toolchain on first boot".
+    before "The agents you use, and the tools they need, on first boot"
+    (I-772).
   Sun, moon and leaf name nothing on the page and are not shown. A shape
   on a head or a card title sits inline before the words, one em tall, so
   it matches the title's letters (`.head-mark`, `.cell-mark`; owner,
@@ -469,7 +517,11 @@ reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
   `content/docs/machine.md`; I-401), and Browser's is "`repose browser` shows
   the agent's Chromium on your laptop; click in it to take over" (it was
   "puts you in the same window. Take over any time."). "Back in minutes"
-  is kept whole on one line.
+  was kept whole on one line in a nowrap span (`.whole`); both went with
+  I-772, which made the snapshot card "repose snapshots the machine
+  nightly, and you can take one yourself any time. Restoring it brings
+  back the databases, logins and uncommitted work in minutes." Held
+  nowrap, that sentence ran 275px past a 320px phone.
 - **The grid's four pictures share one frame** (I-669): 17rem tall, the
   windows inset 12px top and sides (10px on a phone) and run off the
   frame's bottom edge, each under the same 28px head naming where it
@@ -502,6 +554,16 @@ reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
   `docs/PRICING.md`'s, facts the cards do not show. Each card's spec
   reads "N GB of memory" (it was "N GB running at once", which did not
   say it was memory), naming what the units count (I-402).
+  Cut back with I-772: the memory, stopped-project and disk sentences
+  were the docs on the page ("Verbosity for the sake of verbosity...
+  this is not the docs"), and the cards already carry those figures. The
+  head is "Launch prices. Seven days free." (owner, 2026-10-17: "shorty
+  as fuck"). The currency, the tax line and "card at checkout" are in
+  `billing.md`, on the billing page and at checkout, and off the
+  landing.; the price-change promise under the cards went to `terms.md`,
+  `billing.md` and PRICING.md alone, and Solo's founding price is `$49`
+  struck before `$39` with "First 12 months, first 30 subscribers" under
+  it, not a sentence that wrapped to two lines.
 - **The meta description** (I-397, recorded in I-401): "A cloud dev
   machine for your repo in one command, with your code, tools and logins
   on it, so coding agents can run with full permissions and your laptop

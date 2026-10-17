@@ -96,12 +96,15 @@
 	// the plans compare at a glance. The cards say "running at once" in words and
 	// count no agents or machines: a count reads as a ceiling on what the
 	// product does, and the memory is shared by whatever is running
-	// (I-402). Solo shows its founding price, then the price it becomes
-	// (I-672); once GET /public/seats says no founding places are left,
-	// Solo shows its list price alone.
+	// (I-402). Solo shows its founding price with the list price struck
+	// through beside it, and the terms in one short line (I-772: a
+	// two-line sentence about the discount was the owner's "just do
+	// strike through"); once GET /public/seats says no founding places
+	// are left, Solo shows its list price alone, unstruck.
 	const allPlans: {
 		name: string;
 		price: string;
+		was?: string;
 		then?: string;
 		memory: number;
 		disk: string;
@@ -110,7 +113,8 @@
 		{
 			name: 'Solo',
 			price: '$39',
-			then: 'First 12 months for the first 30 subscribers, then $49',
+			was: '$49',
+			then: 'First 12 months, first 30 subscribers',
 			memory: 8,
 			disk: '100 GB',
 			egress: '250 GB'
@@ -132,7 +136,9 @@
 	];
 	const plans = $derived(
 		seats?.founding_left === 0
-			? allPlans.map((p) => (p.name === 'Solo' ? { ...p, price: '$49', then: undefined } : p))
+			? allPlans.map((p) =>
+					p.name === 'Solo' ? { ...p, price: '$49', was: undefined, then: undefined } : p
+				)
 			: allPlans
 	);
 	// The sign-off row: every shape the page used, in the order it used
@@ -220,9 +226,9 @@
 					<span class="line">replicated in the cloud</span>
 				</h1>
 				<p class="lead">
-					<span>Your code, tools and logins on a machine of its own.</span>
-					<span>Your agents run there with full permissions.</span>
-					<span>If one wrecks it, a snapshot puts it back.</span>
+					Your code, tools and logins sit on a machine of its own, where agents run with full
+					permissions and nobody approves commands one by one. Snapshot it as you go, and you can
+					put a wrecked machine back in minutes.
 				</p>
 				<div class="hero-ctas">
 					{@render authAction('btn btn--lg', 'Get started', 'Open the dashboard')}
@@ -236,8 +242,8 @@
 
 		<section class="sec">
 			<SectionHead shape="pill" title="Your laptop's setup, in one command">
-				Unpushed commits, uncommitted changes and <code>.env</code> files. The CLIs you installed globally.
-				Your gh, Codex and opencode logins. Your SSH keys stay home.
+				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
+				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</SectionHead>
 			<div class="landing-stage">
 				<OneCommand animated />
@@ -250,15 +256,14 @@
 				<li class="land-cell">
 					<ComesBack />
 					<h3>{@render cellMark('pinwheel')}Let it break the whole machine</h3>
-					<!-- The line breaks between the two sentences (.whole): at 1440 it
-					     broke as "Back / in minutes." -->
-					<p class="whole">
-						Databases, tools, logins, uncommitted work. <span>Back in minutes.</span>
+					<p>
+						repose snapshots the machine nightly, and you can take one yourself any time. Restoring
+						it brings back the databases, logins and uncommitted work in minutes.
 					</p>
 				</li>
 				<li class="land-cell">
 					<Localhost />
-					<h3>{@render cellMark('halves')}Your dev server on your localhost</h3>
+					<h3>{@render cellMark('halves')}The machine's ports on your localhost</h3>
 					<p>
 						Ports from 1024 up, while <code>repose run</code> is open. Cookies and OAuth redirects behave
 						as they do locally.
@@ -266,7 +271,7 @@
 				</li>
 				<li class="land-cell">
 					<Browser />
-					<h3>{@render cellMark('ring')}Watch the agent use the browser</h3>
+					<h3>{@render cellMark('ring')}Watch the agent's browser, and take over</h3>
 					<p>
 						<code>repose browser</code> shows the agent's Chromium on your laptop; click in it to take
 						over.
@@ -281,7 +286,10 @@
 		</section>
 
 		<section class="sec">
-			<SectionHead shape="asterisk" title="Five agents and a full toolchain on first boot" />
+			<SectionHead
+				shape="asterisk"
+				title="The agents you use, and the tools they need, on first boot"
+			/>
 			<div class="landing-stage">
 				<Ready />
 			</div>
@@ -309,11 +317,7 @@
 		</section>
 
 		<section class="sec">
-			<SectionHead id="pricing" title="Pricing">
-				Seven days free, card at checkout. Prices in USD, before tax. A plan's memory is what runs
-				at the same time, around the clock, across up to 100 projects; a stopped project uses none.
-				A plan's disk counts the data your projects hold.
-			</SectionHead>
+			<SectionHead id="pricing" title="Pricing">Launch prices. Seven days free.</SectionHead>
 			<ul class="tiers" use:landOnView>
 				{#each plans as t, i (t.name)}
 					<li class="tier">
@@ -328,6 +332,7 @@
 							<span>{t.disk} disk ·</span> <span>{t.egress} egress</span>
 						</p>
 						<p class="tier-price">
+							{#if t.was}<s class="was">{t.was}</s>{/if}
 							<span class="n">{t.price}</span>
 							<span class="per">a month</span>
 						</p>
@@ -337,10 +342,6 @@
 					</li>
 				{/each}
 			</ul>
-			<p class="tier-note">
-				Launch prices. A change reaches you by email 30 days ahead. Your subscription keeps the list
-				price it started on for 12 months from its start.
-			</p>
 			<div class="cta-row">
 				{@render authAction('btn btn--lg', 'Start a free week', 'Open the dashboard')}
 				{#if !authState.authenticated}

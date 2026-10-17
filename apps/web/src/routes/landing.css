@@ -164,6 +164,13 @@ main > .sec:first-child {
 .sec-head {
 	padding-block: var(--land-y);
 }
+/* A section head's sentence takes the hero lead's measure (I-772), not
+   the 36rem every other lead has: at 36rem the setup section's sentence
+   stood as six short lines under a heading twice as wide, the staircase
+   the hero was pulled out of. */
+.sec-head .lead {
+	max-width: 48rem;
+}
 @media (min-width: 1024px) {
 	.sec-head {
 		padding-block: 3.5rem 2.5rem;
@@ -291,22 +298,19 @@ main > .sec:first-child {
 		font-size: 2.5rem;
 	}
 }
-/* Three sentences, each kept whole, so a line breaks between sentences
-   and never ends on the next one's first word: balance alone left a lone
-   "A", then a lone "The", at the end of line 1. Balanced, the three break
-   as one, then two at 1440, and one to a line on a phone. Each is an
-   inline block no wider than the column, not nowrap: a sentence wider
-   than the column wraps inside its own box. With nowrap, the first one
-   ran 46px past a 320px phone under WCAG 1.4.12 text spacing and the
-   page scrolled sideways. */
+/* One paragraph running the measure under the headline (I-772). It was
+   three sentences each kept whole on its own line, which read as a
+   staircase of fragments beside a headline twice as wide ("in steps and
+   not in full width below the headline is super weird", owner,
+   2026-10-17). 48rem is about 70 characters at the lead's size: wide
+   enough that the lines are full ones, inside the 75 the measure takes
+   before a line is hard to track back. `pretty`, not `balance`:
+   balancing a three-sentence paragraph gives it short last lines
+   again. */
 .hero-grid .lead {
-	max-width: 34rem;
-	text-wrap: balance;
+	max-width: 48rem;
+	text-wrap: pretty;
 	margin-top: 1.75rem;
-}
-.hero-grid .lead > span {
-	display: inline-block;
-	max-width: 100%;
 }
 .hero-ctas {
 	display: flex;
@@ -439,15 +443,10 @@ main > .sec:first-child {
 	line-height: 1.55;
 	color: var(--ink-muted);
 }
-/* A sentence that ends on a short one keeps that one whole, so the line
-   breaks between them and not inside it ("Back / in minutes." at 1440).
-   Plain wrapping here: pretty moved "work." down beside it instead. */
-.land-cell p.whole {
-	text-wrap: wrap;
-}
-.land-cell p.whole > span {
-	white-space: nowrap;
-}
+/* `.whole` kept the snapshot card's short closing sentence ("Back in
+   minutes.") off a line of its own in a nowrap span. It went with I-772,
+   which made that card two full sentences: held nowrap, the longer one
+   ran 275px past a 320px phone. */
 /* A picture in a cell: one frame for all four (I-669). The frame is a
    fixed height; each picture stands its windows in it at one inset, top
    and sides, and runs them off its bottom edge, so every cell has the same
@@ -667,21 +666,26 @@ main > .sec:first-child {
 	text-transform: uppercase;
 	color: var(--ink-faint);
 }
-/* The price Solo becomes after its founding months (I-672), under the
-   price in the muted ink of the spec line. */
+/* The list price Solo's founding price comes off (I-772), struck
+   through before the price itself in the faint ink: the discount is the
+   two numbers, not a sentence about them. Smaller than `.n` and on its
+   baseline, so the founding price stays the one the eye lands on. */
+.tier-price .was {
+	font-family: var(--font-display);
+	font-size: 1.5rem;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	color: var(--ink-faint);
+	text-decoration-thickness: 2px;
+}
+/* What the founding price holds for (I-772, cut from two lines to one),
+   under the price in the muted ink of the spec line. */
 .tier-then {
 	margin-top: 0.5rem;
 	font-size: 0.875rem;
 	color: var(--ink-muted);
 	text-wrap: balance;
-}
-/* The launch-price terms (I-672), under the cards in the same muted ink,
-   aligned with the cards' text. */
-.tier-note {
-	margin: 0;
-	padding: 0 var(--land-x) 1.5rem;
-	font-size: 0.875rem;
-	color: var(--ink-muted);
 }
 .cta-row {
 	display: flex;
