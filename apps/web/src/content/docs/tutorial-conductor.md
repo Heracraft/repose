@@ -10,12 +10,12 @@ A conductor is one more agent whose only job is to run the others. We built repo
 ## The roles
 
 - **The conductor** is one long-lived Claude Code session in the checkout on the machine (`~/todo-app`, on `main`). It never builds a task itself. It cuts the work into pieces that touch different files, launches a worker per piece, merges finished branches, runs the checks on the merged result, and fixes anything that blocks more than one worker.
-- **A worker** is an agent in its own git worktree on its own branch. It reads the docs, builds its whole piece, commits on its branch, and stops with a report. It never merges and never pushes.
+- **A worker** is an agent in its own [git worktree](/docs/run-and-attach#several-agents-separate-trees) on its own branch. It reads the docs, builds its whole piece, commits on its branch, and stops with a report. It never merges and never pushes.
 - **You** answer questions nobody else can, and run anything that spends money or leaves the machine.
 
 ## Start the conductor
 
-Attach and start Claude Code in the checkout, with a prompt that sets the role:
+From your repository folder on the laptop, with a prompt that sets the role:
 
 ```
 repose run -p "You are the conductor for this repository. \
@@ -29,7 +29,7 @@ docs/STATUS.md: claimed, done, blocked, with what is done and \
 what is not. Don't push. Ask me only when a decision needs me."
 ```
 
-Claude Code's own Agent tool launches workers in isolated worktrees (under `.claude/worktrees/`, each on a `worktree-` branch) and tells the conductor when each finishes. The conductor waits on those notices rather than polling, and merges in dependency order: a task that defines an interface before the tasks that use it.
+The conductor merges in dependency order: a task that defines an interface before the tasks that use it.
 
 To see each worker in its own tmux window, launch them from your laptop instead, one `repose run -d --worktree -p "..."` per task, and give the conductor the branch names to merge.
 
@@ -39,7 +39,7 @@ To see each worker in its own tmux window, launch them from your laptop instead,
 repose ps
 ```
 
-shows the conductor's window and, if you launched workers as windows, theirs. You get a notification when the conductor stops or asks; `repose questions` and `repose reply` handle the asking without an attach. The conductor's STATUS file is the log you read in the morning: one line per task, newest at the bottom.
+shows the conductor's window and, if you launched workers as windows, theirs. You get a [notification](/docs/notifications#what-youll-get) when the conductor stops or asks; [`repose questions` and `repose reply`](/docs/notifications#agents-can-message-you-and-ask-questions) handle the asking without an attach. The conductor's STATUS file is what you read in the morning.
 
 From your laptop:
 
@@ -59,11 +59,11 @@ Put them in the conductor's prompt or in the repository's `CLAUDE.md`, where eve
 - **Append-only files union-merge.** Mark STATUS and decision logs with `merge=union` in `.gitattributes`, so two workers appending never conflict.
 - **Done needs evidence.** Each worker's report names the evidence for each item in its checklist: "the migration is registered, here's the row".
 - **Workers never push, never deploy, never touch another worktree.** The conductor merges; you push.
-- **Snapshot before a big round.** [`repose snapshots create`](/docs/lifecycle#snapshots) before the conductor starts merging means a bad round is a one-minute restore, worktrees and all.
+- **Snapshot before a big round.** [`repose snapshots create`](/docs/lifecycle#snapshots) before the conductor starts merging means a bad round is one restore away, worktrees and all.
 
 ## When it gets big
 
-- **Memory.** Six agents plus their test runs want more than a small machine. `repose resize --size large` or `xl` before a round starts.
+- **Memory.** Six agents plus their test runs want more than a small machine. [`repose resize --size large`](/docs/machine#changing-the-size) or `xl` before a round starts.
 - **Nix and other heavy builds.** Have the conductor serialize them (one lock file everyone `flock`s) or the machine spends the round swapping.
-- **A second machine for a second front.** [`repose fork`](/docs/lifecycle#fork-a-project) copies the whole machine; a conductor on the copy can take a different branch of the plan.
-- **You are the rate limit.** The conductor should batch its questions. "Ask me only when a decision needs me" in its prompt, and a notification channel you'll see.
+- **A second machine for a second front.** [`repose fork`](/docs/lifecycle#fork-a-project) copies the machine's disk into new projects; a conductor on a copy can take a different branch of the plan.
+- **You are the rate limit.** The conductor should batch its questions, and needs a notification channel you'll see.
