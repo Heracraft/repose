@@ -41,6 +41,10 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
 
+**`repose gateway: certificate not valid for this project`.** The certificate on your laptop is for another project or another account handle: a project removed and made again has a new id, and so does a renamed handle. Any `repose` command gets a new certificate and connects; plain `ssh` and your editor don't, so run `repose ssh todo-app` once first.
+
+**`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.
+
 **`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead.
 
 ## Machine state
