@@ -55,10 +55,14 @@ func parseSSE(r io.Reader, emit func(SSEFrame)) error {
 }
 
 // StreamBuildLog implements 07-cli.md §5.8: GET the SSE log, print each
-// line with a dim "nix › " prefix, and return the terminal state from the
-// "done" event.
+// of Nix's lines with a dim "nix › " prefix and repose's own step lines
+// as they are, and return the terminal state from the "done" event.
 func StreamBuildLog(ctx context.Context, c *Client, projectID, opID string, w io.Writer, sinceSeq int) (state string, lastSeq int, err error) {
 	return streamBuildLines(ctx, c, projectID, opID, sinceSeq, func(line string) {
+		if isBuildStep(line) {
+			_, _ = fmt.Fprintln(w, line) // repose's own, not Nix's (I-755)
+			return
+		}
 		_, _ = fmt.Fprintf(w, "nix › %s\n", line) // a gone client is noticed by ctx
 	})
 }

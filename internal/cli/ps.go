@@ -398,11 +398,9 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 		},
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 2 {
-				if opts.Window != "" && opts.Window != args[1] {
-					return cobraUsageError{fmt.Errorf("%s and --window %s name two windows; pass one", args[1], opts.Window)}
-				}
-				opts.Window, args = args[1], args[:1]
+			var err error
+			if args, opts.Window, err = windowArgs(args, opts.Window, g.project); err != nil {
+				return err
 			}
 			if _, err := projectFrom(args, g); err != nil {
 				return err
@@ -433,6 +431,32 @@ func newPsCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, erro
 	cmd.Flags().StringVarP(&opts.Window, "window", "w", "", "print the last lines of window `NAME` (a name or number, or a herdr agent)")
 	cmd.Flags().IntVarP(&opts.Lines, "tail", "n", 0, "print the last `N` lines: of WINDOW (default 20), or of every window")
 	return cmd
+}
+
+// windowArgs settles ps's and attach's positional words against
+// --window and --project: `PROJECT WINDOW` gives up its second word,
+// and with --project naming the project the one word left is the WINDOW,
+// which projectFrom used to refuse as a second project. Naming the
+// window twice is a usage error either way.
+func windowArgs(args []string, window, projectFlag string) ([]string, string, error) {
+	switch {
+	case len(args) == 2:
+		if window != "" && window != args[1] {
+			return nil, "", twoWindows(args[1], window)
+		}
+		return args[:1], args[1], nil
+	case len(args) == 1 && projectFlag != "":
+		if window != "" && window != args[0] {
+			return nil, "", twoWindows(args[0], window)
+		}
+		return nil, args[0], nil
+	}
+	return args, window, nil
+}
+
+// twoWindows is the refusal for a window named as a word and as --window.
+func twoWindows(arg, window string) error {
+	return cobraUsageError{fmt.Errorf("%s and --window %s name two windows; pass one", arg, window)}
 }
 
 // orWindow runs fn on PROJECT and WINDOW for ps and attach (I-606). One

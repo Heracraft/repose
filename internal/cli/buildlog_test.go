@@ -36,7 +36,7 @@ func TestStreamBuildLogRendersLinesAndDoneState(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("id: 1\ndata: {\"seq\":1,\"line\":\"evaluating configuration\"}\n\n"))
-		_, _ = w.Write([]byte("id: 2\ndata: {\"seq\":2,\"line\":\"built\"}\n\n"))
+		_, _ = w.Write([]byte("id: 2\ndata: {\"seq\":2,\"line\":\"copying path '/nix/store/abc-hello'\"}\n\n"))
 		_, _ = w.Write([]byte("event: done\ndata: {\"state\":\"done\"}\n\n"))
 	}))
 	defer srv.Close()
@@ -50,9 +50,17 @@ func TestStreamBuildLogRendersLinesAndDoneState(t *testing.T) {
 	if state != "done" || lastSeq != 2 {
 		t.Fatalf("state=%q lastSeq=%d", state, lastSeq)
 	}
+	// Nix's line carries the prefix; repose's own step line does not
+	// (I-755).
 	out := buf.String()
-	if !strings.Contains(out, "nix › evaluating configuration") || !strings.Contains(out, "nix › built") {
-		t.Fatalf("output missing rendered lines: %q", out)
+	if !strings.Contains(out, "nix › copying path '/nix/store/abc-hello'") {
+		t.Fatalf("output missing Nix's line: %q", out)
+	}
+	if !strings.Contains(out, "\nevaluating configuration\n") && !strings.HasPrefix(out, "evaluating configuration\n") {
+		t.Fatalf("step line not printed as it is: %q", out)
+	}
+	if strings.Contains(out, "nix › evaluating configuration") {
+		t.Fatalf("step line printed as Nix's output: %q", out)
 	}
 }
 

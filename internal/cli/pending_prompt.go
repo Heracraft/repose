@@ -39,10 +39,9 @@ func pendingBlockers() []string {
 // pendingShell is the parts of the waiter that differ between tmux and
 // herdr, each a shell command.
 type pendingShell struct {
-	alive   string // exit 0 while the agent's terminal is there
-	runs    string // exit 0 while the agent, not a shell, is in front
-	capture string // print the screen
-	send    string // type the prompt (in $repose_pp) and Enter
+	alive  string      // exit 0 while the agent's terminal is there
+	runs   string      // exit 0 while the agent, not a shell, is in front
+	submit submitShell // print the screen, type the prompt, press Enter
 }
 
 // pendingPromptScript is shell that starts the waiter in the background,
@@ -53,6 +52,7 @@ func pendingPromptScript(prompt string, sh pendingShell) string {
 		grep.WriteString(" -e " + shQuote(b))
 	}
 	waiter := fmt.Sprintf(`repose_pp=%[1]s
+repose_hd=%[10]s
 repose_end=$(( $(date +%%s) + %[2]d ))
 # exists-check only: the login file is never read or copied (R2-8)
 until [ -s "$HOME/.claude/.credentials.json" ]; do
@@ -66,13 +66,15 @@ while [ "$(date +%%s)" -lt "$repose_end" ]; do
   repose_cur=$(%[6]s 2>/dev/null)
   if %[5]s && [ -n "$repose_cur" ] && [ "$repose_cur" = "$repose_prev" ] && ! printf '%%s\n' "$repose_cur" | grep -qF%[9]s; then
     repose_n=$((repose_n + 1))
-    if [ "$repose_n" -ge %[8]d ]; then %[7]s; exit 0; fi
+    if [ "$repose_n" -ge %[8]d ]; then
+%[7]s
+    fi
   else
     repose_n=0
   fi
   repose_prev=$repose_cur
   sleep 1
-done`, shQuote(prompt), pendingLoginSecs, pendingReadySecs, sh.alive, sh.runs, sh.capture, sh.send, pendingStableSecs, grep.String())
+done`, shQuote(prompt), pendingLoginSecs, pendingReadySecs, sh.alive, sh.runs, sh.submit.capture, submitPromptScript(sh.submit), pendingStableSecs, grep.String(), shQuote(promptHead(prompt)))
 	return "setsid -f sh -c " + shQuote(waiter) + " </dev/null >/dev/null 2>&1\n"
 }
 
@@ -80,10 +82,9 @@ done`, shQuote(prompt), pendingLoginSecs, pendingReadySecs, sh.alive, sh.runs, s
 func pendingPromptTmux(slug, window, prompt string) string {
 	t := shQuote(tmuxWindowTarget(slug, window))
 	return pendingPromptScript(prompt, pendingShell{
-		alive:   "tmux has-session -t " + t + " 2>/dev/null",
-		runs:    `[ "$(tmux display -p -t ` + t + ` '#{pane_current_command}' 2>/dev/null)" = claude ]`,
-		capture: "tmux capture-pane -p -t " + t,
-		send:    "tmux send-keys -t " + t + ` -l "$repose_pp" && tmux send-keys -t ` + t + " Enter",
+		alive:  "tmux has-session -t " + t + " 2>/dev/null",
+		runs:   `[ "$(tmux display -p -t ` + t + ` '#{pane_current_command}' 2>/dev/null)" = claude ]`,
+		submit: tmuxSubmitShell(t),
 	})
 }
 
@@ -92,9 +93,8 @@ func pendingPromptTmux(slug, window, prompt string) string {
 // agent: Claude Code exited, and the prompt would run as a command.
 func pendingPromptHerdr(prompt string) string {
 	return `repose_pane=$repose_p ` + pendingPromptScript(prompt, pendingShell{
-		alive:   `herdr pane get "$repose_pane" 2>/dev/null | grep -q '"result"'`,
-		runs:    `herdr pane process-info "$repose_pane" 2>/dev/null | jq -e '.result.process_info | .foreground_process_group_id != .shell_pid' >/dev/null 2>&1`,
-		capture: `herdr pane read "$repose_pane" --source visible --format text`,
-		send:    `herdr pane run "$repose_pane" "$repose_pp"`,
+		alive:  `herdr pane get "$repose_pane" 2>/dev/null | grep -q '"result"'`,
+		runs:   `herdr pane process-info "$repose_pane" 2>/dev/null | jq -e '.result.process_info | .foreground_process_group_id != .shell_pid' >/dev/null 2>&1`,
+		submit: herdrSubmitShell("repose_pane"),
 	})
 }

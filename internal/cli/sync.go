@@ -987,12 +987,21 @@ func syncGuestSteps(ctx context.Context, t sshTarget, localRepoDir, slug string,
 		if summary.Unchanged || summary.GuestAhead {
 			// Nothing the apply would change: the guest's tree is what the
 			// last sync left, and the laptop sends exactly what it sent then
-			// (I-224). Only the carry, when it has something, still goes.
+			// (I-224). The carry still goes when it has something, and so
+			// do the .env files: they are gitignored, so they are not part
+			// of the checkout GuestAhead leaves alone, and the laptop's are
+			// the authority (I-197, I-753). Unchanged never has any: an
+			// empty envScript is one of its conjuncts.
 			timingf("sync: unchanged since the last sync")
-			if carryScript == "" {
+			if carryScript == "" && envScript == "" {
 				return summary, nil
 			}
-			script = "set -e\n" + applyMarkFn + applyUnpack + carryScript + applyMark("carry")
+			script = "set -e\n" + applyMarkFn + applyUnpack
+			if envScript != "" {
+				// The env part runs in the checkout, as the apply does.
+				script += "(cd " + homeShell(probe.checkout) + "\n" + envScript + ")\n"
+			}
+			script += carryScript + applyMark("carry")
 		} else {
 			// The key is cleared before the checkout is touched and written
 			// once the apply has finished, so a sync that stopped half way
@@ -2136,7 +2145,7 @@ func (s *SyncSummary) Warnings() []string {
 // guestAheadLine is a sync's whole report when the laptop had nothing
 // new and the machine moved on since the last sync (I-248): its commits
 // the laptop lacks and its uncommitted files, each counted on its own
-// (DECISIONS I-618).
+// (DECISIONS I-618), after the .env files this sync still copied (I-753).
 func guestAheadLine(s *SyncSummary) string {
 	var parts []string
 	switch n := s.GuestCommitCount; {
@@ -2149,10 +2158,23 @@ func guestAheadLine(s *SyncSummary) string {
 	if s.GuestFiles > 0 {
 		parts = append(parts, "uncommitted changes to "+plural(s.GuestFiles, "1 file", fmt.Sprintf("%d files", s.GuestFiles)))
 	}
+	env := ""
+	switch {
+	case s.EnvFiles == 1:
+		env = "Copied 1 env file. "
+	case s.EnvFiles > 1:
+		env = fmt.Sprintf("Copied %d env files. ", s.EnvFiles)
+	}
 	if len(parts) == 0 {
+		if env != "" {
+			return strings.TrimSpace(env)
+		}
 		// Only the last sync's own changes are left, or commits the
 		// laptop fetched already: nothing the laptop lacks.
 		return nothingNewLine
+	}
+	if env != "" {
+		return env + "The machine has " + strings.Join(parts, ", and ") + "."
 	}
 	return "Nothing new to sync. The machine has " + strings.Join(parts, ", and ") + "."
 }

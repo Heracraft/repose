@@ -51,10 +51,39 @@ func countOf(s string) int {
 	return n
 }
 
-// Line takes one build log line.
+// Line takes one build log line. repose's own step lines (api.md "Build
+// log lines") become the step and nothing else: they were also printed
+// with the `nix › ` prefix, which named hostd's markers as Nix's output
+// and showed each step twice, the raw copy first (I-755). Nix's own
+// output goes to raw behind the step it belongs to.
 func (v *buildView) Line(line string) {
+	if v.step(line) {
+		return
+	}
+	v.nixLine(line)
 	if v.raw != nil {
 		_, _ = fmt.Fprintf(v.raw, "nix › %s\n", line) // a gone terminal is noticed by ctx
+	}
+}
+
+// isBuildStep reports whether line is one of repose's own step lines
+// (the table in api.md "Build log lines"): hostd's and the api's, not
+// Nix's. They are shown as the step they name and never carry the
+// `nix › ` prefix, which is Nix's own output (I-755).
+func isBuildStep(line string) bool {
+	switch line {
+	case "waiting for a build slot", "fetching the base", "evaluating configuration", "switching the machine", "building", "built":
+		return true
+	}
+	return (strings.HasPrefix(line, "building ") && !strings.HasPrefix(line, "building '")) ||
+		strings.HasPrefix(line, "built /")
+}
+
+// step takes line as one of repose's own step lines and reports whether
+// it was one.
+func (v *buildView) step(line string) bool {
+	if !isBuildStep(line) {
+		return false
 	}
 	switch {
 	case line == "waiting for a build slot":
@@ -78,50 +107,55 @@ func (v *buildView) Line(line string) {
 			}
 			v.stage = stageBuilt
 			v.built()
-			return
+			return true
 		}
 		v.stage = stageBuilt
 		v.pr.End()
 	case line == "switching the machine":
 		v.switching()
-	default:
-		if m := nixDrvsRe.FindStringSubmatch(line); m != nil {
-			v.drvN = countOf(m[1])
-			return
+	}
+	return true
+}
+
+// nixLine takes one line of Nix's own output: the lists it prints before
+// it works and its per-path lines, which name what the step has done.
+func (v *buildView) nixLine(line string) {
+	if m := nixDrvsRe.FindStringSubmatch(line); m != nil {
+		v.drvN = countOf(m[1])
+		return
+	}
+	if m := nixPathsRe.FindStringSubmatch(line); m != nil {
+		v.fetchN, v.fetchSize = countOf(m[1]), m[2]
+		if v.stage == stageNone {
+			v.stage = stageFetch
+			v.pr.Phase(v.fetchLabel())
 		}
-		if m := nixPathsRe.FindStringSubmatch(line); m != nil {
-			v.fetchN, v.fetchSize = countOf(m[1]), m[2]
-			if v.stage == stageNone {
-				v.stage = stageFetch
-				v.pr.Phase(v.fetchLabel())
-			}
-			return
-		}
-		if strings.HasPrefix(line, "copying path '") {
-			v.fetchDone++
-			if v.stage == stageFetch {
-				if v.fetchDone >= v.fetchN && v.drvDone > 0 {
-					v.startBuild()
-					return
-				}
-				v.pr.Relabel(v.fetchLabel())
-			}
-			return
-		}
-		if strings.HasPrefix(line, "building '/nix/store/") {
-			v.drvDone++
-			switch v.stage {
-			case stageNone:
+		return
+	}
+	if strings.HasPrefix(line, "copying path '") {
+		v.fetchDone++
+		if v.stage == stageFetch {
+			if v.fetchDone >= v.fetchN && v.drvDone > 0 {
 				v.startBuild()
-			case stageFetch:
-				// A derivation whose inputs are here starts while other
-				// paths still download; the step moves on once they are in.
-				if v.fetchDone >= v.fetchN {
-					v.startBuild()
-				}
-			case stageBuild:
-				v.pr.Relabel(v.buildLabel())
+				return
 			}
+			v.pr.Relabel(v.fetchLabel())
+		}
+		return
+	}
+	if strings.HasPrefix(line, "building '/nix/store/") {
+		v.drvDone++
+		switch v.stage {
+		case stageNone:
+			v.startBuild()
+		case stageFetch:
+			// A derivation whose inputs are here starts while other
+			// paths still download; the step moves on once they are in.
+			if v.fetchDone >= v.fetchN {
+				v.startBuild()
+			}
+		case stageBuild:
+			v.pr.Relabel(v.buildLabel())
 		}
 	}
 }

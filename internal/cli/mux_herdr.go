@@ -597,12 +597,12 @@ func herdrAgentPane(name string) string {
 `, shQuote(name), typeExitNoWindow)
 }
 
-// TypeScript sends the text to the agent's pane, then Enter. Not
-// `herdr agent prompt`: it refuses an agent that is blocked, and
-// answering one that is is what `run -w` is for.
+// TypeScript sends the text to the agent's pane, then Enter, and makes
+// sure the pane took it (submitPromptFor, I-752). Not `herdr agent
+// prompt`: it refuses an agent that is blocked, and answering one that
+// is is what `run -w` is for.
 func (herdrMux) TypeScript(slug, window, text string) string {
-	return herdrAgentPane(window) + fmt.Sprintf(`herdr pane send-text "$p" %s >/dev/null && herdr pane send-keys "$p" enter >/dev/null
-`, shQuote(text))
+	return herdrAgentPane(window) + submitPromptFor(herdrSubmitShell("p"), text)
 }
 
 // CloseScript closes the agent's pane.

@@ -115,7 +115,9 @@ func TestPendingPromptWaitsOnBlockers(t *testing.T) {
 
 func TestPendingPromptHerdrScript(t *testing.T) {
 	s := pendingPromptHerdr("hi")
-	for _, want := range []string{`repose_pane=$repose_p setsid -f sh -c `, `herdr pane run "$repose_pane" "$repose_pp"`, `foreground_process_group_id != .shell_pid`} {
+	// The prompt and the Enter are the submit script's two commands
+	// (I-752), not one `herdr pane run`.
+	for _, want := range []string{`repose_pane=$repose_p setsid -f sh -c `, `herdr pane send-text "$repose_pane" "$repose_pp"`, `herdr pane send-keys "$repose_pane" enter`, `foreground_process_group_id != .shell_pid`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("herdr waiter lacks %q", want)
 		}

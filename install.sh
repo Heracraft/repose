@@ -186,8 +186,18 @@ case ":$PATH:" in
       */bash) shell_rc="$HOME/.bashrc" ;;
       *) shell_rc="$HOME/.profile" ;;
     esac
-    printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$shell_rc"
-    echo "Added $INSTALL_DIR to PATH in $shell_rc; restart your shell or run: export PATH=\"$INSTALL_DIR:\$PATH\""
+    # An rc file this script cannot append to is not fought: on a
+    # home-manager box ~/.bashrc is a link into /nix/store, and under
+    # `set -eu` the failed append ended a finished install with exit 2
+    # (I-754). The install stands and the line to add is printed, as
+    # cert.go does for a read-only ~/.ssh/config.
+    if { [ -e "$shell_rc" ] && [ -w "$shell_rc" ]; } || { [ ! -e "$shell_rc" ] && [ -w "$HOME" ]; }; then
+      printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$shell_rc"
+      echo "Added $INSTALL_DIR to PATH in $shell_rc; restart your shell or run: export PATH=\"$INSTALL_DIR:\$PATH\""
+    else
+      echo "$shell_rc is not writable, so $INSTALL_DIR is not on your PATH. Add it where that file is generated (home-manager: home.sessionPath = [ \"$INSTALL_DIR\" ];), or run:"
+      echo "    export PATH=\"$INSTALL_DIR:\$PATH\""
+    fi
     ;;
 esac
 

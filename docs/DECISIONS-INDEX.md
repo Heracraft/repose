@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-753 entries.
+757 entries.
 
 ## Scope
 
@@ -327,7 +327,7 @@ pointer, not a summary.
 - **I-242** A feature without user docs is not done, and a test says so — 2026-09-24; L5903
 - **I-243** Every agent in the guest is told what the machine offers, from one source, without a word written into the user's files — 2026-09-24; L5941
 - **I-247** The laptop's ssh-agent is never forwarded; GitHub pushes go over HTTPS with the carried gh login — 2026-09-24; L5985
-- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; amended by I-618; L6024
+- **I-248** `repose run` with nothing new on the laptop attaches without syncing instead of refusing a guest that changed — 2026-09-24; amended by I-573; amended by I-618; amended by I-753; L6024
 - **I-249** The command-not-found hint is the plain bash line plus two aligned commands — 2026-09-24; L6056
 - **I-244** Agents message the owner with `repose-notify` and ask with `repose-ask`; the answer comes back over the hostd channel — 2026-09-24; amended by I-506; amended by I-688; amended by I-690; L6073
 - **I-245** Questions are rows; the owner answers from ntfy, email, the dashboard or the CLI, and the first answer wins — 2026-09-24; amended by I-690; L6121
@@ -785,3 +785,7 @@ pointer, not a summary.
 - **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22510
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607
+- **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; L22613
+- **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L22621
+- **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22626
+- **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L22631

@@ -13,7 +13,7 @@ The CLI runs on macOS and Linux, x86-64 or ARM64. On Windows, install it inside 
 curl -fsSL https://repose.herakraft.co/install.sh | sh
 ```
 
-The script downloads the latest release, checks it and installs `~/.local/bin/repose`. If `~/.local/bin` isn't on your `PATH`, it adds it to your shell's startup file and tells you. Open a new terminal afterwards.
+The script downloads the latest release, checks it and installs `~/.local/bin/repose`. If `~/.local/bin` isn't on your `PATH`, it adds it to your shell's startup file and tells you; when that file can't be edited (home-manager writes `~/.bashrc` read-only, for one) it prints the `export PATH` line to add instead. Open a new terminal afterwards.
 
 The script needs `curl`, `tar` and `openssl`; macOS and most Linux distributions include all three. A slim container image may lack `openssl`, so install it first.
 

@@ -525,10 +525,19 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		if _, err := runSSH(ctx, target, mux.TypeScript(project.Slug, opts.Window, opts.Prompt), nil); err != nil {
 			var se *sshError
-			if errors.As(err, &se) && se.ExitCode == typeExitNoWindow {
+			switch {
+			case errors.As(err, &se) && se.ExitCode == typeExitNoWindow:
 				return noWindow(project.Slug, opts.Window, mux.Unit())
+			case errors.As(err, &se) && se.ExitCode == typeExitNotSubmitted:
+				// Typed and not taken (I-752): the prompt is in the
+				// input, and saying nothing is the defect.
+				if opts.NoAttach {
+					return exitf(ExitGeneric, "The %s %s did not take your prompt; it is in its input. `repose attach %s -w %s`, then press Enter.", opts.Window, mux.Unit(), project.Slug, opts.Window)
+				}
+				_, _ = fmt.Fprintf(e.ErrOut, "The %s %s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", opts.Window, mux.Unit(), mux.Unit())
+			default:
+				return stepFailed("type into "+opts.Window, err, "")
 			}
-			return stepFailed("type into "+opts.Window, err, "")
 		}
 		window = opts.Window
 	} else if opts.Prompt != "" {
@@ -597,6 +606,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		}
 		err = mux.StartAgent(ctx, target, agentStart{Slug: project.Slug, Agent: agent, Name: name, Dir: dir, Worktree: opts.Worktree, Prompt: prompt, AttachOnly: attachInstead, OnLoading: loadingDevShell, MCPApprovals: mcpAppr})
 		var dialog *agentDialogError
+		var unsent *promptNotSubmittedError
 		if errors.As(err, &dialog) {
 			// The pre-trust did not take (I-486): the window is open
 			// on the dialog, and the prompt was not typed.
@@ -605,6 +615,14 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 				return exitf(ExitGeneric, "%s, so your prompt was not typed. Answer it in the %s %s with `repose attach %s -w %s`, then type your prompt there.", dialog.Error(), name, mux.Unit(), project.Slug, name)
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s, so your prompt was not typed. Answer it in the %s that opens, then type your prompt there.\n", dialog.Error(), mux.Unit())
+		} else if errors.As(err, &unsent) {
+			// The prompt was typed and the agent never took it (I-752):
+			// it is in the input, waiting for an Enter.
+			pr.Fail()
+			if opts.NoAttach {
+				return exitf(ExitGeneric, "%s did not take your prompt; it is in its input in the %s %s. `repose attach %s -w %s`, then press Enter.", agentDisplayName(agent), name, mux.Unit(), project.Slug, name)
+			}
+			_, _ = fmt.Fprintf(e.ErrOut, "%s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", agentDisplayName(agent), mux.Unit())
 		} else if err != nil {
 			return stepFailed("start "+agent+" on the machine", err, "")
 		}
