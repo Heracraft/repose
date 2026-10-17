@@ -23211,3 +23211,42 @@ I-745 on `id`.
   ban itself is unchanged, and whether an expired certificate from a
   source that has authenticated before should count towards it is the
   owner's and is open.
+
+**I-763. The conductor's main and the release queue live on woker-1;
+kanali keeps only its own history (book-of-record, 2026-10-17).** Settles
+the two-box split I-745 described, and reverses the 2026-10-14 convention
+that the queue on the kanali guest was the authoritative one. The owner's
+call, 2026-10-17.
+- *Two books, and they disagreed.* Queue state is per checkout
+  (`.git/release-queue`, this file's "The queue"), so each box had one. On
+  2026-10-17 woker-1's held `queue-revamp`, `api-capacity`, `docs-prose`
+  and `stash-rule`; kanali's held `cpu-capacity` and `launch-seats-cpu`;
+  and `cpu-weight` was queued on both, at the same commit `31118b12`, six
+  minutes apart, with contradictory target sets — `api,base,cli,edge,host,web`
+  on woker-1, computed against a main seven commits behind, against
+  `api,base,edge,host` on kanali, computed against its own base. The same
+  branch also landed under two release ids: `test-hygiene` is r20261015-3
+  on woker-1 and r20261015-4 on kanali.
+- *Why woker-1 and not the guest.* The VM checks a batch gate runs do not
+  boot on a repose guest (this file, step 4) and kanali is one, so every
+  gate already ran on woker-1; nested KVM there is 20-50x too slow for the
+  test driver. All work of 2026-10-17 was on woker-1 — checked that day,
+  kanali held none of its branches.
+- *What moved.* woker-1's main fast-forwarded `6560ee9d` to kanali's
+  `293a8dba` (clean, +7: test-hygiene, release-record-r20261015,
+  dev-tool-guards). Kanali's three queued entries were re-added on woker-1
+  carrying their own `live` and `note` text with `needs` recomputed against
+  `293a8dba`, and its 308 id reservations were appended to woker-1's `ids`
+  so no reservation is invisible here. Kanali's queue is frozen.
+- *A debt the move carries.* Those seven commits are integrated and never
+  deployed: kanali's queue still reads "the next release ships as:
+  base,edge,host" for `dev-tool-guards`, and woker-1's queue holds no
+  entry for any of the three, so its own `ls` cannot know. The next
+  release from woker-1 ships them whether or not its record says so — the
+  record must name `test-hygiene`, `release-record-r20261015` and
+  `dev-tool-guards`, and its base, edge and host targets are due a deploy.
+- *What did not change.* `integrated` is still the only copy of an
+  unpushed main off the conductor's box (I-651). During a
+  `REPOSE_INTEGRATED_REMOTE=none` batch the off-box copy is now a fetch of
+  woker-1's main from kanali — the reverse of what I-651 wrote, because the
+  box it names is no longer the one holding main.
