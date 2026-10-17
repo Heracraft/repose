@@ -4,7 +4,7 @@ description: Install the CLI, start a machine for your project and hand a task t
 section: Start here
 order: 1
 ---
-repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your daily driver and the private content inside it are out of its reach.
+repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your laptop, your SSH keys and your other projects are out of its reach.
 
 You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not been tested enough. [Feedback](https://repose.fider.io) is appreciated.
 
@@ -17,7 +17,7 @@ repose login
 
 ## 2. Choose a plan
 
-Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory for machines running around the clock, not hours.
+Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory by the month, however long your machines run.
 
 ## 3. Skip permissions
 
@@ -69,4 +69,4 @@ Stop the machine when you're done:
 repose stop
 ```
 
-Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.
+Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward [your plan's disk](/docs/billing#what-a-plan-means). The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.

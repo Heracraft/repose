@@ -22,11 +22,11 @@ Added postgresql and air to todo-app. Building revision 4f1c2a9e ...
 Applied revision 4f1c2a9e in 45s.
 ```
 
-Any package from nixpkgs works; search names at [search.nixos.org](https://search.nixos.org/packages). Nested names work too, such as `python312Packages.black`. A few names are menu entries that set up more than a package: `postgresql`, `redis` and the other databases also start the service. `repose config add` with no names lists the menu's entries.
+Any package from nixpkgs works, nested names like `python312Packages.black` included; search names at [search.nixos.org](https://search.nixos.org/packages). An unfree package is refused unless it's on the platform's allowlist: the agents, `terraform`, `ngrok`, `google-chrome`, `vscode` and `cursor`. A few names are menu entries that do more than install a package: `postgresql`, `redis` and the other databases also start the service.
 
-The build steps are: waiting for a build slot (only when the server is busy with other builds), evaluating your configuration, fetching what's already built from the package cache, building the rest, and switching the running machine to the result. A first `repose run` that needs a build shows these steps up to the build, then `Booted`. `-v` also prints Nix's own output. Without a terminal, each step is one line and Nix's output follows it.
+The build usually takes under a minute, and it's switched into the running machine without a restart, so your agents keep running. A `Waiting for a build slot` step means the server's builders are all busy with other builds. `-v` adds Nix's own output, and so does a run with no terminal.
 
-The build usually takes under a minute. It's switched into the running machine without a restart, so your agents keep running and new shells see the new packages. If the build fails, nothing changes:
+A failed build leaves the machine on the revision it has, and the name you got wrong never reaches the menu:
 
 ```
 $ repose config add gcc-typo
@@ -36,55 +36,38 @@ search https://search.nixos.org/packages
 Nothing changed in todo-app; the previous revision is still active.
 ```
 
-Remove with:
+`repose config remove air` takes a package out, with the same build and switch.
 
-```
-repose config remove air
-```
-
-If you press Ctrl-C while it builds, only the CLI stops. The build carries on and is applied when it finishes; `repose config revisions` shows when it has.
-
-A change to the kernel is built but not switched in, because that needs a restart. The machine starts on it the next time it starts: `repose stop && repose start`.
+Press Ctrl-C to stop watching: `Interrupted. The build keeps going on the machine.` It's applied when it finishes, and `repose config revisions` says when.
 
 ## The menu
 
-The dashboard's project **Config** page has the same list as a menu: tick an entry, choose a version where there's a choice, **Apply**. Packages added with `repose config add` show under **Extra packages**, each with **Remove**. While a build runs, the page shows its log.
+The dashboard's project Config page is this menu: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Packages that aren't menu entries show under **Extra packages**, each with **Remove**.
 
-| Group     | Entries                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------- |
-| Runtimes  | Bun, Deno, Node.js (20 or 22), Python (3.11 or 3.13), Go tools, Zig, Elixir, Ruby, Java, .NET SDK |
-| Databases | PostgreSQL, Redis, MySQL (MariaDB), Memcached, RabbitMQ, Meilisearch, NATS                        |
-| Tools     | AWS CLI, OpenTofu, Kubernetes tools, Shell extras                                                 |
-| Deploy    | Wrangler, Supabase CLI, flyctl, Vercel CLI, portless, cloudflared                                 |
+| Group     | Entries                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| runtimes  | `bun`, `deno`, `nodejs` (20 or 22), `python` (3.11 or 3.13), `go-tools`, `zig`, `elixir`, `ruby`, `jdk` (17 or 21), `dotnet` |
+| databases | `postgresql` (15, 16 or 17), `redis`, `mysql` (MariaDB), `memcached`, `rabbitmq`, `meilisearch`, `nats`                      |
+| tools     | `awscli`, `opentofu`, `kubernetes` (kubectl, Helm, k9s), `shell-extras` (lazygit, delta, tldr, hyperfine)                    |
+| deploy    | `wrangler`, `supabase`, `flyctl`, `vercel`, `portless`, `cloudflared`                                                        |
 
-Databases listen on localhost only. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work.
+Those are the names `repose config add` takes. `repose config add` can't pick a version and takes the default: `nodejs` 22, `python` 3.13, `jdk` 21, `postgresql` 16.
+
+Databases listen on localhost only: PostgreSQL on 5432, Redis 6379, MariaDB 3306, Memcached 11211, RabbitMQ 5672 with its management UI on 15672, Meilisearch 7700, NATS 4222. PostgreSQL has a `dev` superuser and a `dev` database with no password, so `psql` and `postgres://localhost/dev` work; MariaDB has a `dev` database too. Meilisearch runs in development mode, with no master key.
+
+nixpkgs carries neither `vercel` nor `portless`, so those two entries install them from npm at the machine's next boot.
 
 ## Write it in Nix
 
-Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module for the user `dev`. You only need it for things the menu can't express, such as dotfiles or environment variables.
+Under the menu is a Nix file, a [home-manager](https://nix-community.github.io/home-manager/) module applied to the user `dev`. Write it for what the menu can't say, such as dotfiles or environment variables.
 
 ```
 repose config show            # print it
 repose config edit            # edit in $EDITOR, apply on save
 repose config apply ./repose.nix
-repose config apply           # ./repose.nix, or else apply it again
 ```
 
-### repose.nix in your repository
-
-Commit the file as `repose.nix` at the root of your repository and you don't need to apply it yourself. `repose run` and `repose sync` send it whenever it changed since they last did, including the run that creates the machine, and the build goes on while you work:
-
-```text
-Applying repose.nix (revision 4f1c2a9e) in the background.
-```
-
-`repose config revisions` shows when it's applied. An unchanged file costs nothing and prints nothing. If the build fails, the machine keeps its configuration, and later runs name the error instead of building the same file again; fix the file, or run `repose config apply` to retry it as it is. Only the project's own checkout counts: a run from another repository never replaces the machine's configuration. With `repose.nix` in the repository, the file is the configuration: a change made from the menu or the dashboard is replaced the next time it's sent.
-
-`repose config apply` with no file and no `./repose.nix` switches the running machine to the project's configuration again: the active revision, or a newer one that built but wasn't applied because its switch failed. Use it when the machine seems to be missing something the configuration has.
-
-Or use the **Nix** tab on the dashboard's Config page (**Edit as Nix** from the menu).
-
-An example:
+The dashboard's Config page has the same file under its **Nix** tab. While the menu manages the project, that editor is read-only until **Edit as Nix**.
 
 ```nix
 { pkgs, ... }:
@@ -109,19 +92,40 @@ An example:
 }
 ```
 
-`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells that are already running keep the environment they started with; new ones get the change. A tmux config the file adds, changes or removes (`xdg.configFile."tmux/tmux.conf"` or `home.file.".tmux.conf"`) reaches the running tmux session at the switch. A switch that changes a tmux config, a platform update included, also puts back options and key bindings you set by hand in the running tmux. Setting `PATH` directly is refused (use `home.sessionPath`), as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
+`home.sessionVariables` and `home.sessionPath` reach every process on the machine: agents and the commands they run, your shells, `repose exec` and user services. Directories in `home.sessionPath` go first on `PATH`. A value can use `$HOME`, and one you set wins over the machine's own, such as `EDITOR`. Agents and shells already running keep the environment they started with; new ones get the change. `PATH` itself is refused, as are `BASH_ENV`, `ENV`, `REPOSE_ENV_GEN` and `REPOSE`, and a value can't contain a double quote.
 
-On a machine that runs herdr, a `~/.config/herdr/config.toml` you write with `xdg.configFile` replaces the one the machine starts with, and herdr can't save its own settings into it. Put two keys in yours: `shell_mode = "login"` under `[terminal]`, or new panes start shells that skip your `~/.bash_profile`, and `delivery = "herdr"` under `[ui.toast]`, or repose's messages (copied files, new port forwards) don't show. A running herdr reads the file again after each apply.
+A tmux config the file adds, changes or removes (`xdg.configFile."tmux/tmux.conf"` or `home.file.".tmux.conf"`) reaches the running session at the switch, and takes with it whatever you set by hand there: every global option and key binding goes back to tmux's default before the files are read again. Window and pane options stay; a platform update that changes `/etc/tmux.conf` resets the same way.
 
-The file is a home-manager module, not a flake. A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
+On a machine that runs herdr, a `~/.config/herdr/config.toml` written from Nix replaces the seeded one, and herdr can't save its own settings into a file Nix manages. Keep its keys: `shell_mode = "login"` under `[terminal]`, or new panes start shells that skip your `~/.bash_profile`; `version_check = false` under `[update]`, or herdr offers updates the base's pin won't install; and the `[ui.toast]` key that [shows repose's messages in the session](/docs/run-and-attach#herdr-instead-of-tmux). A running herdr reads the file again at each apply.
 
-Once you edit the Nix by hand, the menu and `repose config add` are off for that project, because they can't read arbitrary Nix. Applying from the menu later replaces your file.
+A `flake.nix` given to `repose config apply` fails with `this file is a Nix flake`. A project's `flake.nix` does something else: it gives agents a dev shell in the checkout ([Projects with a flake.nix](/docs/machine#projects-with-a-flake-nix)).
 
-The file can't set NixOS system options other than the database services under `repose.system`, define a user service whose name starts with `repose-`, download without a hash, download from a private or local address (a fetch during the build reaches the public internet only), read files outside itself, or choose its own nixpkgs version. Don't put secrets in it; use [Secrets](/docs/secrets). A config that holds a secret's value, whole or any one line of it, is refused with the secret's name, and a value that shows up in a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters aren't matched.
+Once the file is written by hand, the menu and `repose config add` are off for that project: they can't read arbitrary Nix, so `config add` stops and names `repose config edit` instead. Nothing turns the menu back on but applying the file a new project starts with:
+
+```nix
+{ pkgs, ... }:
+{
+  home.packages = [ ];
+}
+```
+
+The file can't set NixOS options outside the database services under `repose.system`, define a user service whose name starts with `repose-`, fetch without a hash, fetch from a private or local address (a build reaches the public internet and nothing else), read files outside itself, or pick its own nixpkgs.
+
+Keep secrets out of it and use [Secrets](/docs/secrets). A file carrying a secret's current value, whole, base64-encoded or one line of it, is refused before the build with `fragment contains the value of secret STRIPE_KEY`. A value that reaches a build log or a build error is stored as `[redacted]`. Values shorter than 4 characters are left alone.
+
+### repose.nix in your repository
+
+Commit the file as `repose.nix` at the root of your repository and you never apply it yourself. `repose run` and `repose sync` send it whenever it changed since they last sent it, the run that creates the machine included, and the build goes on while you work:
+
+```text
+Applying repose.nix (revision 4f1c2a9e) in the background.
+```
+
+An unchanged file costs nothing and prints nothing. A failed build changes nothing, and later runs name the error until the file changes; fix the file, or `repose config apply` retries it as it is. Only the project's own checkout counts: a run from another repository never replaces this machine's configuration. With the file in the repository it is the configuration, so an edit on the dashboard's **Nix** tab stands only until the file changes again.
 
 ## Your machine.nix
 
-`repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment, on each new machine. It lives on your account, and on your laptop at `~/.config/repose/machine.nix`.
+`repose config` changes one project. Your machine.nix is the same kind of file for every machine of your account: your packages, shell aliases, prompt, dotfiles and environment. It lives on your account, on your laptop at `~/.config/repose/machine.nix`, and on the dashboard under **Settings** → **machine.nix**.
 
 ```
 repose config --global add ripgrep fd  # add packages
@@ -130,7 +134,7 @@ repose config --global show            # the account's copy
 repose config --global apply           # push the laptop's
 ```
 
-An example:
+It is a home-manager module under the same rules as a project's file.
 
 ```nix
 { pkgs, ... }:
@@ -149,34 +153,30 @@ An example:
 
 `home.shellAliases` work in every shell on the machine, and yours replace the machine's own of the same name. `programs.bash.initExtra` is not carried: put shell code in `~/.bashrc` (from machine.nix, `home.file.".bashrc".text`). The machine already runs starship, so the prompt needs only its config file.
 
-It is a home-manager module with the same rules as a project's file (above). Both go into one configuration, so lists such as `home.packages` merge. If both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
+Your machine.nix and the project's file go into one configuration, so lists such as `home.packages` merge. If both set one option to different values, the build fails and names the option; wrap the value that should win in `lib.mkForce`. An error in machine.nix names its line there:
 
 ```
 config error: attribute 'ripgrepp' missing at machine.nix:3:21
 ```
 
-**When it applies.** A save rebuilds every machine of your account that has it on: a running one switches in place, a stopped one at its next start. A new machine, temporary ones included, gets it too. The machine never waits for it: when the server has not built that combination before, the machine starts with the project's configuration alone and switches to the one with your machine.nix as soon as it's built, usually within a minute. If machine.nix doesn't build, your machines keep what they had and you get a notification naming it.
+**When it applies.** A save rebuilds every machine of your account that has it on: a running one switches in place, a stopped one at its next start. A new machine, temporary ones included, gets it too. The machine never waits for it. When the server hasn't built that combination before, the machine boots on the project's configuration alone and switches once yours is built, usually within a minute. If machine.nix doesn't build, your machines keep what they had and you get a notification naming it.
 
-**From your laptop.** `repose run` pushes `~/.config/repose/machine.nix` when you changed it since its last push, in the background:
+**From your laptop.** `repose run` pushes `~/.config/repose/machine.nix` when you changed it since its last push, and the build runs in the background:
 
 ```text
 Applying machine.nix (changed) to 3 machines in the background.
 ```
 
-If you saved it on the dashboard since, the laptop's copy is brought up to date instead, when you haven't changed it. If both changed, `run` pushes nothing and says so in one line; `repose config --global apply` keeps the laptop's copy, `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
-
-**On the dashboard.** **Settings** → **machine.nix** shows and edits it. Each project's Config page has a **machine.nix** switch.
+If you saved it on the dashboard since and haven't changed the laptop's copy, the laptop's is brought up to date instead. If both changed, `run` pushes nothing and says so. `repose config --global apply` then keeps the laptop's copy, and `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
 
 **Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with `repose config --global on todo-app`, or the switch on the project's Config page; `repose config --global off todo-app` turns it off without a run.
 
 **Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
-**And your laptop's tools.** With a machine.nix on your account, `repose run` stops copying the [tools you installed globally on your laptop](/docs/machine#your-laptops-tools-come-along); your machine.nix says which tools you want.
-
 ## Revisions and base updates
 
-Every change is saved as a revision. `repose config revisions` lists them with any errors. To go back after a change broke something, `repose config apply --revision 9c41d2e7` switches the running machine to an earlier revision that built, by the id the list shows; the dashboard can do the same. `repose logs --kind build` shows the last build's log.
+Every change to a project's configuration is saved as a revision. `repose config revisions` lists them with the error of any that failed. To get back from a change that broke something, `repose config apply --revision 9c41d2e7` switches the running machine to a revision that built; the dashboard's Config page re-applies one from its Revisions list.
 
-The platform updates the base (agents, tools, kernel) about once a week. Each project is rebuilt on the new base and switched in place. If your configuration doesn't build on it, the project stays where it was and you get a notification. To hold a project on its current base, tick **Hold base updates** on its Config page.
+The platform updates the base (agents, tools, kernel) most weeks, sooner for a security fix. Each project is rebuilt on it. A running machine switches in place; a stopped one gets the new base at its next start. A revision that changes the kernel, from a base update or a change of your own, is built but applies only when the machine restarts: `repose stop todo-app && repose start todo-app` when the agents are idle. If your configuration doesn't build on it, the project stays on the revision it runs and you get a [notification](/docs/notifications) naming the error. To hold a project on its current base, tick **Hold base updates** on its Config page; there's no CLI flag for it.
 
-herdr ([herdr instead of tmux](/docs/run-and-attach#herdr-instead-of-tmux)) is in every base from the one that added it. A project on an older base, held or not yet rebuilt, can't switch to herdr: `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.06 or newer.`, naming the two bases. Untick **Hold base updates** and let it update first.
+Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base, held or not yet rebuilt, can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and let it update first.

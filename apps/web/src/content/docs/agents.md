@@ -23,7 +23,7 @@ repose run --agent codex -p "port the build scripts to bun"
 
 All five get new versions with platform updates.
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. Started by `repose run`, or by hand in a tmux window, an agent runs in the project's dev environment: its `.envrc`, or [its flake's dev shell](/docs/machine#projects-with-a-flake-nix).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. An agent gets the checkout's [dev environment](/docs/machine#projects-with-a-flake-nix) however it was started.
 
 ## Permissions
 
@@ -85,14 +85,18 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 - `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
 - `needs input`: waiting for your permission (Claude Code and opencode).
-- `idle`: at its prompt. A finished turn sends no notification; an agent says its work is done with `repose-notify --done`.
+- `idle`: at its prompt.
 - `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
 
+A hookless agent's turn ends in `repose events` as `finished` with the summary `gemini went idle`, once its window has printed nothing for about 90 seconds. On a [herdr project](/docs/run-and-attach#herdr-instead-of-tmux) herdr reports the turn end and the state instead, and a permission prompt it reports sets `needs input` with no notification.
+
+A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
+
 ## Let it ask you
 
-Any agent can message you or ask you a question from the machine. `repose-notify "text"` sends a notification, and `repose-notify --done "text"` says the work you asked for is finished. `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it; if you answer the agent in its own terminal instead, the question closes by itself. The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
 ## Log in
 
@@ -109,7 +113,7 @@ repose secrets set CLAUDE_CODE_OAUTH_TOKEN
 
 An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
-**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one.
+**Codex and opencode.** Your laptop's login is [copied at each `run`](/docs/secrets#logins-copied-from-your-laptop).
 
 **Gemini CLI.** Store `GEMINI_API_KEY` as a secret, or run `gemini` on the machine and log in there.
 
@@ -119,7 +123,7 @@ An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
 `run` and `attach` copy from your laptop's `~/.claude/`: `CLAUDE.md`, `settings.json`, `skills/`, `agents/`, `commands/`, `output-styles/`, `keybindings.json`, and scripts your hooks or status line run. Plugins you enabled are installed on the machine in the background. The other four get your MCP servers, and Codex and opencode your login; nothing from their own config directories.
 
-Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours; a hook you delete on your laptop stays on the machine. Keys that tend to hold secrets (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks that call commands the machine doesn't have, such as macOS's `afplay`, are left out with a note.
+Your `settings.json` is merged into the machine's: your keys win, and permission lists are combined, so answers you gave on the machine are kept. Keys that hold a credential or run one (`env`, `apiKeyHelper` and the cloud auth helpers) are removed first. Hooks are combined per event, so a hook set up on the machine, such as herdr's `SessionStart` hook, stays next to yours, and a hook you delete on your laptop stays on the machine; one that calls a command the machine doesn't have, such as macOS's `afplay`, is left out with a note.
 
 Never copied: your login, conversation history, anything in `~/.claude.json` besides your MCP servers, and anything named like a key or credential.
 
@@ -127,9 +131,9 @@ Never copied: your login, conversation history, anything in `~/.claude.json` bes
 
 Every agent on the machine has the [browser tools](/docs/machine#browser) `playwright` and `chrome-devtools`. In place of Claude in Chrome, `repose browser bridge` lends those tools [your laptop's Chrome](/docs/your-chrome), logins included.
 
-`run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine, not Claude Code alone. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
+`run` and `attach` copy the MCP servers in your laptop's Claude Code config, `~/.claude.json`: the ones at user scope and the ones you added for this checkout. They reach all five agents on the machine. A server you added to another agent on your laptop stays there. `repose secrets choose --off mcp` stops the copy.
 
-Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. An agent that's already running sees a new server, or a secret you just set, after you restart it.
+Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it.
 
 A server that signs in with OAuth needs a sign-in from `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it.
 

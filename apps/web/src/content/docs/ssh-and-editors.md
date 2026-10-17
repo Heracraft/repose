@@ -7,7 +7,7 @@ order: 10.5
 
 ## Every project is an SSH host
 
-Once you've run `repose login`, each of your projects is an SSH host called `<project>.repose`. Anything that uses your `ssh` can reach it: projects you created on another laptop, and projects you've never run from this one, included.
+After `repose login`, every one of your projects is an SSH host called `<project>.repose`, including ones you created on another laptop and have never run from this one. Anything that uses your own `ssh` reaches it.
 
 ```
 ssh todo-app.repose
@@ -15,18 +15,14 @@ ssh todo-app.repose 'cd todo-app && git log --oneline -3'
 scp todo-app.repose:todo-app/report.html .
 rsync -a todo-app.repose:todo-app/dist/ ./dist/
 ssh -L 9229:localhost:9229 todo-app.repose
-```
-
-You log in as `dev`. Paths are relative to `/home/dev`, and the project's checkout is `/home/dev/<folder>`, named after the laptop folder it was first synced from: run `todo-app` from `~/code/todo-app` and it is `/home/dev/todo-app`, run it from `~/code/factory` and it is `/home/dev/factory` ([Where the checkout is](/docs/sync#where-the-checkout-is)). `repose exec pwd` prints it. Plain `ssh` doesn't attach to tmux; run `tmux attach` for that, or use `repose attach`.
-
-git works over the same host:
-
-```
 git clone todo-app.repose:todo-app todo-app-from-machine
-git ls-remote todo-app.repose:todo-app
 ```
 
-In a checkout you've used `repose run` in, you don't need these: the `repose` remote already points at the machine, and `git fetch repose` brings the agent's commits ([Getting work back](/docs/sync#getting-work-back)).
+A path with no leading slash is under `/home/dev`, in a folder that may not be the project's name ([Where the checkout is](/docs/sync#where-the-checkout-is)).
+
+Plain `ssh` lands in a login shell outside tmux, so the agents' windows aren't there and what you start in it dies with the connection. `repose attach` from your laptop, or `tmux attach` in that shell, puts you in the session ([Detach and come back](/docs/run-and-attach#detach-and-come-back)).
+
+In a checkout you've run `repose run` in, skip the clone: the `repose` remote already points at the machine ([Getting work back](/docs/sync#getting-work-back)).
 
 ## VS Code and Cursor
 
@@ -38,59 +34,52 @@ repose code todo-app
 Opening todo-app.repose:/home/dev/todo-app in VS Code
 ```
 
-`repose code` checks the machine is running and that SSH to it works, then opens the checkout. It uses VS Code if `code` is installed, else Cursor, else Zed. Pick one with `--editor code`, `--editor cursor` or `--editor zed`, or set `REPOSE_EDITOR` to one of those.
+To pin one editor instead of the first `repose code` finds, see [`repose code`](/docs/cli#repose-code-project-checkout).
 
-To connect by hand, install the **Remote - SSH** extension (Cursor has its own), run **Remote-SSH: Connect to Host…** from the Command Palette, type `todo-app.repose`, pick **Linux** if it asks, and open `/home/dev/todo-app`. From a terminal:
+To connect by hand, point **Remote - SSH** at `todo-app.repose`; Cursor has its own. From a terminal:
 
 ```
 code --remote ssh-remote+todo-app.repose /home/dev/todo-app
 ```
 
-If `code` isn't found on a Mac, run **Shell Command: Install 'code' command in PATH** in VS Code; `repose code` also finds VS Code, Cursor and Zed in `/Applications` and `~/Applications` without it.
+If your shell has no `code`, run **Shell Command: Install 'code' command in PATH** from VS Code's Command Palette.
 
 ## Zed
 
-```
-repose code --editor zed
-```
-
-or from a terminal, `zed ssh://todo-app.repose/home/dev/todo-app`. In Zed itself, open a remote project, add a server with `ssh todo-app.repose`, and open `/home/dev/todo-app`.
+`repose code --editor zed` opens the checkout in Zed. By hand, `zed ssh://todo-app.repose/home/dev/todo-app`.
 
 ## JetBrains Gateway
 
-Gateway uses its own SSH client instead of your `ssh`, so it can't renew the certificate for you. Run `ssh todo-app.repose true` before connecting, and again when Gateway loses the connection: a connection ends when its certificate expires. Then in Gateway, choose **SSH**, add a connection to host `todo-app.repose`, choose **OpenSSH config and authentication agent** for authentication, and open `/home/dev/todo-app`. We haven't tested Gateway yet.
+Gateway brings its own SSH client instead of yours, so it renews no certificate and writes no Host block. `ssh todo-app.repose true` does both: run it before you connect, and again each time Gateway drops the connection. Point it at host `todo-app.repose` and tell it to authenticate from your OpenSSH config, where repose's key and certificate are named and nowhere else. We haven't tested Gateway yet.
 
 ## How it works
 
-`repose login` adds one line to `~/.ssh/config`, `Include ~/.ssh/repose/config`, and writes that file. Before every `ssh` to a `.repose` host, the file has ssh run `repose ssh-prepare`, which checks the host's entry and your certificate:
+`repose login` puts one `Include ~/.ssh/repose/config` line at the top of `~/.ssh/config`. The file it includes has your `ssh` run `repose ssh-prepare` before every connection to a `.repose` host. With the certificate and the project's `Host` block already on disk the prepare reads a few files and returns without touching the network. Otherwise it renews the certificate ([SSH connections](/docs/limits#ssh-connections)) or writes the missing block, and ssh goes on with those.
 
-- When both are in place, it returns at once. It reads a few files and makes no network call.
-- When the certificate has less than 12 hours left (they last 24 hours) or the project is new to this laptop, it gets a new certificate and writes the project's entry, then ssh goes on with them.
+The prepare never prompts, so an editor can't hang on it. An editor that reconnects runs it again, so the certificate is renewed without you. A renewal that fails doesn't end the connection as long as the certificate on disk is good for another minute: ssh connects on that one, and the prepare prints `repose: could not renew the SSH certificate (...); using the one on disk.`
 
-A connection ends when the certificate it logged in with expires, so an `ssh` you start keeps its connection for at least 12 hours ([SSH connections](/docs/limits#ssh-connections)). Editors reconnect on their own, and the reconnect renews the certificate.
-
-It never asks you anything, so an editor can't hang on it. The entries themselves are in `~/.ssh/repose/hosts`, one per project.
-
-A plain `ssh todo-app.repose` never starts a stopped machine. `repose ssh`, `repose code`, `repose attach` and `repose run` start it, and so does `repose start todo-app`.
+It only writes those files, so a plain `ssh todo-app.repose` never starts a stopped machine, while `repose ssh` [does](/docs/lifecycle#stop-and-start).
 
 ## When it doesn't connect
 
-**``Not logged in. Run `repose login`.``** followed by `Could not resolve hostname todo-app.repose`: log in, then connect again.
+`Could not resolve hostname todo-app.repose` with no other message means ssh isn't reading the file repose writes: no entry gave ssh the name, so it asked DNS. `Include ~/.ssh/repose/config` has to sit above the first `Host` or `Match` line of `~/.ssh/config`, because below one it applies to that block alone. `repose login` puts it at the top, and leaves a line of your own further down where you put it.
 
-**``repose: you have no project called todo-ap (`repose ls` lists them).``** The name is wrong, or the project was destroyed.
+When `~/.ssh/config` is a symlink, the line goes in at the far end of it, your dotfiles repository included. When that target is one repose can't write, home-manager's in the Nix store for instance, it prints the path and the line to add there yourself, and every command that connects says so until the line is in place.
 
-**``todo-app is stopped; run `repose start todo-app` ``**: start it, then connect again.
+repose's own commands connect anyway: they hand ssh the file with `-F`. The editor `repose code` opens does not, and nor do plain `ssh`, `scp` and `git`.
 
-**`Could not resolve hostname todo-app.repose` with no other message.** ssh isn't reading `~/.ssh/repose/config`. The `Include ~/.ssh/repose/config` line must come before the first `Host` or `Match` line of `~/.ssh/config`. If your `~/.ssh/config` is read-only (managed by Nix or a dotfiles tool), add the line where it's generated; `repose login` prints what to add when it can't.
-
-**You moved or reinstalled the `repose` binary** and ssh says `not found` before connecting: run `repose login` or `repose attach` once, and the path is written again.
+The line that runs the prepare names the `repose` binary by absolute path. Move that binary and ssh prints your shell's `not found` for the old path, then connects on the certificate and Host blocks already on disk, which holds until the certificate expires. The next repose command that connects writes the current path in.
 
 ## Your SSH keys stay on your laptop
 
-Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refused. Nothing running there, an agent or a package's install script, can use your keys, even while you're attached.
+Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refused. Nothing running there, an agent or a package's install script, can use your keys, even while you're attached. Three layers say no: the generated config sets `ForwardAgent no`, the gateway answers the forwarding request with a failure, and the guest's sshd has `AllowAgentForwarding no`.
 
-With your `gh` login copied over, git on the machine sends `git@github.com:` and `ssh://git@github.com/` URLs over HTTPS with that login, so `git push` works without changing the remote. [Other git hosts](/docs/secrets#other-git-hosts) have no login that repose copies.
+repose connects with a key it generated for itself and never reads or certifies your own keys in `~/.ssh`, so connecting never asks for your key's passphrase.
+
+So the machine has no key of yours to push with. [Pushing from the machine](/docs/sync#pushing-from-the-machine) has what git uses instead.
 
 ## Windows
 
-Install the CLI inside WSL. `ssh`, `scp`, `rsync` and `git` inside WSL work as above. VS Code, Cursor and Zed running on Windows use Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, so they can't connect to a project yet. `repose code` under WSL exits 1 and says so when the editor it finds is the Windows app; an editor installed inside WSL works.
+Inside WSL, `ssh`, `scp`, `rsync` and `git` reach a project as above, with the CLI [installed inside WSL](/docs/install).
+
+An editor installed on Windows can't reach a project yet. It connects with Windows' own `ssh`, which doesn't read the `~/.ssh` in WSL, where repose writes the Host block and the certificate. `repose code` refuses that editor: `VS Code here is the Windows app, which connects with Windows' ssh and cannot reach a repose machine yet. Use repose ssh, or an editor installed inside WSL.`

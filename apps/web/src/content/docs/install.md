@@ -5,7 +5,7 @@ section: Start here
 order: 2
 ---
 
-The CLI runs on Linux and macOS, x86-64 or ARM64. macOS is not tested enough yet. On Windows, install it inside WSL. It needs `git` and the OpenSSH client.
+The CLI runs on Linux and macOS, x86-64 or ARM64. On Windows, install it inside WSL. It needs `git` and the OpenSSH client.
 
 ## Install
 
@@ -68,7 +68,7 @@ repose completion fish > ~/.config/fish/completions/repose.fish
 
 ## Update
 
-Run the install command again. It replaces the binary and leaves your login and settings alone. Update command coming soon.
+Run the install command again. It replaces the binary and leaves your login and settings alone. A CLI older than the latest release says so on stderr, once per release, with this same command. Update command coming soon.
 
 ## Uninstall
 
@@ -77,6 +77,6 @@ repose logout --purge
 rm ~/.local/bin/repose
 ```
 
-`--purge` also deletes [the CLI's files](/docs/cli#files-on-your-laptop): `~/.config/repose/`, `~/.ssh/repose/` and the `Include` line the CLI added to `~/.ssh/config`. Your projects keep running on the server, so stop them, or remove them with `repose rm`, first.
+`--purge` also removes [the CLI's files](/docs/cli#files-on-your-laptop). Your projects keep running on the server, so stop them, or remove them with `repose rm`, first.
 
-The CLI never reads or changes your own keys in `~/.ssh`.
+[Your SSH keys stay on your laptop](/docs/ssh-and-editors#your-ssh-keys-stay-on-your-laptop).

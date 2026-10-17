@@ -13,7 +13,7 @@ Value for STRIPE_SECRET_KEY: ********************************
 Set STRIPE_SECRET_KEY on todo-app; the running machine has it now.
 ```
 
-Or pipe the value in, or read it from a file or from your laptop's environment:
+Pipe the value in instead, or read it from a file or your laptop's environment:
 
 ```
 op read op://dev/stripe/secret-key \
@@ -22,9 +22,9 @@ repose secrets set GOOGLE_CREDENTIALS --from-file ./sa.json
 repose secrets set OPENAI_API_KEY --from-env
 ```
 
-A piped value loses one trailing newline. `repose secrets set NAME=VALUE` is refused, since the value would stay in your shell history.
+`repose secrets set NAME=VALUE` is [refused](/docs/cli#secrets): the value would stay in your shell history.
 
-To set several at once from a `.env` file, import it:
+[`repose secrets import`](/docs/cli#secrets) sets one for every `NAME=VALUE` in a `.env` file:
 
 ```
 $ repose secrets import .env.local
@@ -32,24 +32,26 @@ Set 3 on todo-app from .env.local (pushed to the running machine):
 DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 ```
 
-Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
+Only names are printed, never values. The file is read the way docker compose and the dotenv libraries read it. `#` comments and blank lines are skipped, and `export ` in front of a name is ignored. `'single quotes'` keep a value exactly as written; `"double quotes"` understand `\n`, `\r`, `\t`, `\"`, `\\`, `\$` and `` \` ``. A quoted value can span lines (a PEM key, say), and an unquoted value ends where a space or tab is followed by `#`. `${VAR}` is not expanded. A name that isn't a valid secret name (below) stops the whole import before anything is sent, and the error lists the lines to fix.
 
-The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in, or with `--global` for [every project](#secrets-for-every-project). A server that starts with a command reads its secrets each time an agent starts it. In a server you add on the machine yourself, write the token by its secret's name and never its value: `${NAME}` for Claude Code, Gemini CLI and pi, `{env:NAME}` for opencode, and in Codex `env_vars = ["NAME"]` or `bearer_token_env_var = "NAME"`. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
+In a server you add on the machine yourself, write the token by its secret's name, never its value ([MCP servers](/docs/agents#mcp-servers)).
 
-The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
+On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. The one exception is [a restart of the server it runs on](/docs/lifecycle#when-a-machines-server-restarts), which keeps the machine's memory, secrets included, as an encrypted image there for at most 6 hours.
 
-On the machine, each secret is an environment variable and a file at `/run/repose/secrets/NAME`. Both are kept in memory only: never on the machine's disk, never in snapshots. The one exception is a restart of the server the machine runs on: it keeps the machine's memory, secrets included, as an encrypted image on that server, for at most 6 hours, and removes it once the machine is back ([Lifecycle](/docs/lifecycle#when-a-machines-server-restarts)). A change, a removal included, reaches a running machine within seconds. Each command an agent runs after that sees it, and so does each new shell, tmux window or herdr tab. On a herdr machine a program that isn't bash, started from a tab opened before the change, keeps the values herdr started with. A program already running, such as a dev server or a shell you have open, keeps the old value until you restart it (`exec $SHELL` in a shell). The refresh comes from bash, so a command an agent runs with `sh` (`sh -c`, a `#!/bin/sh` script) keeps the values the agent started with.
+A change, a removal included, reaches a running machine within seconds, and a stopped one at its next start. Every command an agent runs after that sees it, and so does every new shell, tmux window and herdr tab. A program already running keeps the old value until you restart it: a dev server, or a shell you have open (`exec $SHELL`). The refresh comes from bash, so a command an agent runs with `sh` (`sh -c`, a `#!/bin/sh` script) keeps the values the agent started with.
 
-A value you set yourself wins over a secret of the same name and stays when secrets change later: one in the project's `.envrc`, one you export in a shell, or one you give a single command (`STRIPE_KEY=sk_test ./run-tests.sh`). The machine tells your value from its own by comparing it with the values it delivered for that name, the last 16 of them. A value equal to one of those follows the secret, so an `.envrc` that loads the same `.env` you imported gets your later changes. A command that lacks a secret gets it back after the next change, a sandbox's command included; to keep a secret out of a command, give the variable an empty value, or leave `BASH_ENV` out of that command's environment. The machine does this with two environment variables of its own. `BASH_ENV` points every bash at `/etc/repose/bash-env.sh`, which refreshes the secrets; if you set your own `BASH_ENV`, commands under it stop picking up changes. `REPOSE_ENV_GEN` records which version of your secrets a process holds. Neither can be a secret's name, and nor can `ENV`.
+A value you set yourself wins over a secret of the same name and stays when secrets change later: one in the project's `.envrc`, one you export in a shell, or one you give a single command (`STRIPE_KEY=sk_test ./run-tests.sh`). The machine tells your value from its own by comparing it with the values it delivered for that name, the last 16 of them. A value equal to one of those follows the secret, so an `.envrc` that loads the same `.env` you imported gets your later changes. To keep a secret out of one command, give that variable an empty value.
 
-So that a program still holding a removed or replaced value loses it, the machine keeps that value in memory in `/run/repose/secrets.refresh`, readable by the `dev` user, until the machine stops or reboots (for a secret you keep changing, until 16 newer values replace it). If a key leaked, revoke it with its provider: removing the secret here takes it out of the machine's commands but leaves it valid.
+`BASH_ENV` points every bash at `/etc/repose/bash-env.sh`, which refreshes the secrets; set your own and commands under it stop picking up changes. `REPOSE_ENV_GEN` records which version of your secrets a process holds. Neither can be a secret's name, and nor can `ENV`.
+
+So that a program still holding a removed or replaced value loses it, the machine keeps that value in memory, readable by `dev`, until the machine stops or reboots (for a secret you keep changing, until 16 newer values replace it). If a key leaked, revoke it with its provider: removing the secret here takes it out of the machine's commands but leaves it valid.
 
 ```
 repose secrets list
 repose secrets rm STRIPE_SECRET_KEY
 ```
 
-`list` shows names and dates, never values, and on a terminal it also lists your [account's secrets](#secrets-for-every-project) and the logins your laptop copies ([below](#choose-what-is-copied)). Nothing shows a value again after you set it. [`repose fork`](/docs/lifecycle#fork-a-project) gives each copy the project's secrets as they are at the time. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
+Nothing shows a value again after you set it. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
 The dashboard's project **Secrets** page does the same: type the value, or take it from a file with **Load from file**.
 
@@ -61,7 +63,7 @@ Value for COOLIFY_BASE_URL: ****************************
 Set COOLIFY_BASE_URL for every project; 1 running machine has it now.
 ```
 
-With `--global`, a secret is your account's: every project gets it, including the ones you create later, the same way it gets its own. A project's own secret of the same name wins on that machine, and `set --global` names the projects that keep theirs. Removing the project's own gives it the account's.
+With `--global`, the secret is your account's. Every project gets it, including the ones you create later. A project's own secret of the same name wins, and `set --global` names the projects that keep theirs. Remove a project's own and it gets your account's.
 
 ```
 repose secrets list --global
@@ -69,39 +71,39 @@ repose secrets rm --global COOLIFY_BASE_URL
 repose secrets import --global ~/.config/shared.env
 ```
 
-`import --global --mcp` sets the tokens of the MCP servers in your Claude Code user scope, which every project's agents get; a local-scope server belongs to one repository, so its tokens stay with that project. The dashboard's **Settings** page lists your account's secrets and adds and deletes them, and each project's **Secrets** page shows the ones that reach it.
+The dashboard keeps these on **Settings**, and each project's **Secrets** page lists them, striking out any the project has itself.
 
 ## Logins copied from your laptop
 
-At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them.
+At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. A copied login or `.env` file lands on the machine's disk, so in its [snapshots](/docs/lifecycle#snapshots) and in anything you fork from it. `Logins copied: gh, codex` prints when a project's copied logins change.
 
-| Tool       | File                                                                          |
-| ---------- | ----------------------------------------------------------------------------- |
-| GitHub CLI | `~/.config/gh/hosts.yml` (with the token, even if it's in the macOS keychain) |
-| Codex CLI  | `~/.codex/auth.json`                                                          |
-| opencode   | `~/.local/share/opencode/auth.json`                                           |
+| Tool       | File                                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| GitHub CLI | `~/.config/gh/hosts.yml` (with the token, even when gh keeps it in your keyring) |
+| Codex CLI  | `~/.codex/auth.json`                                                             |
+| opencode   | `~/.local/share/opencode/auth.json`                                              |
 
-Your SSH keys never reach the machine, and your ssh-agent isn't forwarded. With `gh` logged in on your laptop, git on the machine sends every GitHub URL, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included, over HTTPS with that login. If you log in to `gh` on the machine instead, `gh auth login` is enough for HTTPS GitHub URLs; SSH URLs are rewritten to HTTPS only for a login copied from your laptop.
+With the `gh` login copied, git on the machine sends every GitHub URL over HTTPS with that login, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included. A `gh auth login` made on the machine covers HTTPS URLs only; the SSH rewrite comes with a copied login. A copy on the machine newer than your laptop's is kept, so the login you made there survives the next run.
 
 Never copied: SSH private keys, [Claude Code's login, Gemini's OAuth login](/docs/agents#log-in), the Vercel CLI's login.
 
-The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, either log in there:
+The Vercel CLI's login stays on your laptop because it reaches your whole Vercel account: every team and every project. An agent on the machine could deploy, delete a project or read another project's environment variables with it. To use Vercel on the machine, log in there:
 
 ```
 vercel login
 ```
 
-That login is saved on the machine's disk, so it's in its snapshots. Or create a token in Vercel's account settings, scoped to one team and with an expiry, and store it as a secret. The Vercel CLI reads `VERCEL_TOKEN` from the environment:
+That login is on the machine's disk and in its [snapshots](/docs/lifecycle#snapshots). Or create a token in Vercel's account settings, scoped to one team and with an expiry, and store it under the name the Vercel CLI reads:
 
 ```
 repose secrets set VERCEL_TOKEN
 ```
 
-repose used to copy this login. If an earlier `repose run` copied it, the next `repose run` removes that copy and says so. A login you made on the machine is left alone, and so is a copy the Vercel CLI on the machine has rewritten since; delete `~/.local/share/com.vercel.cli/auth.json` there to remove it. Snapshots taken before then still hold the copy; to be sure, revoke that login's token in Vercel's settings and run `vercel login` on your laptop again.
+repose used to copy this login. The next `repose run` removes a copy an earlier run left, and says so. It leaves alone a login you made on the machine, or a copy the Vercel CLI has rewritten since; `rm ~/.local/share/com.vercel.cli/auth.json` on the machine removes it. Snapshots taken before then still hold the copy, so revoke that login's token in Vercel's settings and run `vercel login` on your laptop again.
 
 ### Choose what is copied
 
-The logins in the table above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)) and your Claude Code MCP servers ([Agents](/docs/agents#mcp-servers)). To keep some of them on your laptop, run `repose secrets choose`:
+The logins above are copied until you say otherwise, and so are your gitignored `.env` files ([Sync](/docs/sync)) and your Claude Code MCP servers ([Agents](/docs/agents#mcp-servers)). Keep any of them on your laptop with `repose secrets choose`:
 
 ```
 $ repose secrets choose
@@ -122,15 +124,15 @@ repose secrets choose --off gh env
 repose secrets choose --on env
 ```
 
-The choice is saved in `~/.config/repose/config.toml` on your laptop, as `skip = [...]` under `[logins]`, and applies to every project. `--project NAME` gives one project its own list, saved under `[projects.NAME.logins]`, and `repose secrets choose --reset --project NAME` sends it back to the shared list. repose never sees the list.
+The list is saved in `~/.config/repose/config.toml` on your laptop and covers every project; `--project NAME` gives one project its own ([config.toml](/docs/cli#config-toml)). repose never sees it.
 
-The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A login you made on the machine, or a `.env` file an agent changed there, is left alone, and `run` names the file. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays. Snapshots taken before then still hold the copy; revoke that token where you created it.
+The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A `.env` file an agent changed there is left alone, and `run` names it. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays.
 
 Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a [token](#other-git-hosts).
 
 ### Other git hosts
 
-GitLab, Bitbucket and your own server have no login that repose copies, and your SSH keys stay on your laptop.
+GitLab, Bitbucket and your own server have no login that repose copies.
 
 **A token, kept as a secret.** Create a token with write access to the repository on the git host, then store it:
 
@@ -148,7 +150,7 @@ git config --global url.https://gitlab.com/.insteadOf git@gitlab.com:
 
 Bitbucket takes your username and an app password or access token in the same place.
 
-**A deploy key made on the machine.** On the machine:
+**A deploy key made on the machine.**
 
 ```
 ssh-keygen -t ed25519 -N '' -C todo-app.repose \
@@ -156,29 +158,31 @@ ssh-keygen -t ed25519 -N '' -C todo-app.repose \
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Add the public key to that one repository as a deploy key with write access. It can push to that repository and nothing else. The private key lives on the machine's disk, so it's in its snapshots; delete the deploy key on the git host when you destroy the project.
+Add the public key to that one repository as a deploy key with write access. It can push to that repository and nothing else. The private key is on the machine's disk and in its snapshots; delete the deploy key on the git host when you destroy the project.
 
 ## Git and Claude Code settings
 
-Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager, editor or diff filter the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Where neither sets a value, the machine's git starts new repositories on `main`, merges on `git pull`, and sets the upstream on the first `git push` of a branch. Commits made on the machine are unsigned, since the signing key stays on your laptop.
+Your global git settings are copied, and your global gitignore to `~/.config/git/ignore`, which git reads by default. A setting you make on the machine wins over the copy. Left on your laptop: credential helpers, signing keys, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, anything that looks like a token, and any setting naming a program or path the machine doesn't have. The name and email on the machine's commits are the ones git resolves in your checkout, so a per-directory `includeIf`, or an identity the repository sets itself, is what arrives.
 
-Your [agent setup](/docs/agents#your-agent-setup-comes-along) is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run.
+Commits made on the machine are unsigned, since the signing key stays on your laptop. Where neither sets a value, git on the machine starts a new repository on `main`, merges on `git pull`, and sets the upstream on a branch's first `git push`.
+
+Your Claude Code setup is copied too, with the keys that hold credentials taken out of `settings.json` first ([what travels](/docs/agents#your-agent-setup-comes-along)).
 
 ## What an agent on the machine can reach
 
-- **Everything on the machine**, including your checkout, `.env` files and the logins above. It has `sudo`.
-- **The internet**, outbound, within the [limits](/docs/limits).
+- **Everything on the machine.** Your checkout, your `.env` files, your secrets and the logins in the table above. It runs as `dev`, with [`sudo`](/docs/machine).
+- **The internet**, outbound, within the [network limits](/docs/limits#network).
 - **Your git host**, with whatever credentials the machine has.
-- **Not your other projects.** Each is a separate machine, and the network stops them from reaching each other.
-- **Not your laptop.** The machine can't open connections to it, and it never gets your SSH keys or your ssh-agent. While you're attached, ports on the machine appear on your laptop's `localhost`.
+- **Not your other projects.** Each is a separate machine, and the network stops them from reaching each other. Your [Claude Code login](/docs/agents#log-in) and your [account's secrets](#secrets-for-every-project) are the exceptions; a hook or a setting an agent writes stays on its machine.
+- **Not your laptop.** Nothing on the machine can open a connection to it. A tunnel you open is the exception: a [Chrome bridge](/docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome) hands anything on the machine your logged-in Chrome, and [`repose mcp forward`](/docs/agents#mcp-servers) runs a server on your laptop for the agents to call.
 
 ## What repose stores
 
 - Your account (GitHub login, email), and each project's name, git remote, size, state, configuration and build logs.
 - Named secrets, encrypted with a key for your account that is itself protected by a key in Azure Key Vault.
-- Once a minute, for billing and abuse detection: whether the machine is running, CPU, memory, network and disk use, and the names of running processes. Never their arguments or environment.
-- Agent events: which agent, what kind of event, and the agent's own one-line summary.
+- Once a minute, for billing and abuse detection: whether the machine is running, CPU, memory, network and disk use, and the names of running processes. Never a process's arguments or environment. The same sample carries which agents are running, in which window, and each one's [state](/docs/agents#agent-states).
+- Agent events: which agent, what kind of event, and the summary the agent wrote. The messages and questions [agents send you](/docs/notifications#agents-can-message-you-and-ask-questions) are stored with your answers.
 
-Never stored ([full list](/privacy)): your code, prompts, terminal contents, files on the machine, or the logins copied from your laptop.
+Never stored ([full list](/privacy)): your code, prompts, terminal contents, or files on the machine.
 
 Disks aren't encrypted per project yet, so an operator with root on a server can read the disks on it. Every operator login and command inside a machine is audited, and operators look inside only for an incident, an abuse report or a support request you made. Machines and snapshots are in Azure East US.

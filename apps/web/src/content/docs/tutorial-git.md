@@ -5,7 +5,7 @@ section: Tutorials
 order: 20
 ---
 
-You have a checkout on your laptop. The agent works in a copy of it on the machine. Git is the only thing that moves work between the two, and it moves it in two different ways: your side goes up with `repose run`, the agent's side comes back with `git fetch`.
+The agent works in a copy of your checkout on the machine. Git is how work moves between the two: your side goes up with `repose run`, the agent's side comes back with `git fetch`.
 
 ## Start with something small
 
@@ -28,7 +28,7 @@ The first `repose run` copied the state of your checkout:
 - untracked files that aren't gitignored;
 - gitignored `.env` files.
 
-It doesn't copy build output, `node_modules` or anything else gitignored ([full list and size limits](/docs/sync)), and it never watches your files afterwards. Later runs attach to the machine as it is. Change something on your laptop and it stays there until you run `repose sync`.
+It doesn't copy build output, `node_modules` or anything else gitignored ([full list and size limits](/docs/sync)).
 
 On your laptop:
 
@@ -56,13 +56,13 @@ Neither command restarts or rebuilds the machine.
 
 ## What comes back
 
-The agent commits, and you fetch. The first `repose run` added a git remote called `repose` to your checkout, pointing at the machine's copy over the same SSH connection everything else uses:
+The agent commits, and you fetch. The first `repose run` added a git remote called `repose` to your checkout, pointing at the machine's copy:
 
 ```
 $ git remote -v
 repose  hello.repose:~/hello (fetch)
-repose  'this remote is fetch-only; repose sync sends your work to
-the machine' (push)
+repose  this remote is fetch-only; repose sync sends your work to
+the machine (push)
 ```
 
 Give the agent something to commit:
@@ -71,7 +71,7 @@ Give the agent something to commit:
 repose run -p "add an MIT LICENSE file and commit it"
 ```
 
-Fetch once it's done (you get a notification):
+Watch it commit, detach, and fetch:
 
 ```
 $ git fetch repose
@@ -89,7 +89,7 @@ git merge repose/main          # take it
 git cherry-pick 3f1c2a0        # or take one commit
 ```
 
-Only commits travel this way. Files the agent changed but didn't commit stay on the machine; ask the agent to commit, or `repose attach` and commit yourself. For a single file that shouldn't go through git, `repose cp :path/on/machine .` copies it.
+Only commits travel this way; a file the agent changed but didn't commit stays on the machine ([Getting work back](/docs/sync#getting-work-back)). A single file comes over with [`repose cp`](/docs/sync#single-files).
 
 ## When both sides changed
 
@@ -102,18 +102,18 @@ Not synced: the machine changed 1 file that your laptop changed too:
 stash first.
 ```
 
-The exit code is 6, so a script notices. Files the agent changed that your laptop didn't touch never stop a sync; they stay as the agent left them. Ask agents to commit: had the agent committed instead of leaving the file dirty, the sync would merge your laptop's commit into the agent's branch, or, when the two conflict, check your commit out detached and leave the agent's branch where it is. `git fetch repose` brings that branch to you to merge like any other.
+Files the agent changed that your laptop didn't touch never stop a sync; they stay as the agent left them. Ask agents to commit; committed work doesn't stop a sync ([when the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)).
 
 ## Agents on their own branches
 
-`--worktree` gives an agent its own git worktree and branch, next to the checkout on the machine:
+[`--worktree`](/docs/run-and-attach#several-agents-separate-trees) gives an agent its own git worktree and branch on the machine:
 
 ```
 $ repose run --worktree -p "try another parser approach"
 Worktree: ~/hello-worktree-1 on branch worktree-1
 ```
 
-Two agents in two worktrees never edit each other's files. On your laptop the branch arrives as `repose/worktree-1`:
+On your laptop the branch arrives as `repose/worktree-1`:
 
 ```
 git fetch repose
@@ -123,11 +123,11 @@ git merge repose/worktree-1
 
 ## Pushing from the machine
 
-The machine's checkout has the same `origin` as yours. If you're logged in to the GitHub CLI on your laptop, that login is copied, and `git push` on the machine works over HTTPS, so an agent can open a pull request with `gh pr create`. Your SSH keys never go to the machine; [Secrets and security](/docs/secrets#other-git-hosts) covers other hosts.
+[The machine pushes to GitHub](/docs/sync#pushing-from-the-machine) with the `gh` login copied from your laptop, so an agent can open a pull request with `gh pr create`.
 
 ## Git and snapshots
 
-Git protects tracked source. A [snapshot](/docs/lifecycle#snapshots) protects the whole machine: the database, installed tools, uncommitted work, logins. Take one before letting an agent loose on something destructive, and you can put everything back in a few minutes, git included.
+Git protects tracked source. A [snapshot](/docs/lifecycle#snapshots) protects the whole machine, git included.
 
 ## Clean up
 
