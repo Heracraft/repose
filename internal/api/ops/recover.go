@@ -193,7 +193,45 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		// leaves the project stopped, so the same command works later.
 		return "the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back", true
 	case "insufficient_capacity":
-		return "the host has no room for this project right now; try again in a few minutes", true
+		// One code, five producers in hostd, and what the reader should
+		// do differs by producer, so the sentence does (I-771, which
+		// closes the choice I-756 left open and amends I-724). hostd's
+		// message is the only thing that tells them apart and this arm
+		// used to drop it, which is how every client ended up giving one
+		// piece of advice for five causes.
+		switch {
+		case strings.Contains(msg, "not enough free memory"):
+			// Memory is never oversubscribed and a running machine
+			// holds its own until it stops (I-724); the three minutes
+			// after a stop or rm are the api's own wait (I-408), so a
+			// refusal that reaches here has nothing left to wait for.
+			return "the host has no free memory for a machine this size; a machine holds its memory while it runs, so stopping one frees room", true
+		case strings.Contains(msg, "thin pool"):
+			// I-586: no start past 95 percent, and nothing stops a
+			// running guest for the pool, so neither waiting nor
+			// stopping is the answer here. poolRoom refuses a resize
+			// through the same check (stop.go calls create.go's
+			// poolRoom), and "no machine starts" is not what a refused
+			// resize did, so the sentence follows the operation.
+			if kind == KindResize {
+				return "the host's disk pool is full, so the disk cannot grow until the operator grows the pool; stopping a machine does not free pool space", true
+			}
+			return "the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space", true
+		case strings.Contains(msg, "build queue full"):
+			// The one cause where waiting is what works.
+			return "the host is building as many machines at once as it can; this one starts when one of those finishes", true
+		case strings.Contains(msg, "host store full"):
+			return "the host has no disk left to build new systems, and only the operator can clear it", true
+		case strings.Contains(msg, "host draining"):
+			// phases.go sets draining and the scheduler places nothing
+			// on such a host; how long the drain takes is the
+			// operator's, so this promises no time.
+			return "the host this project is on is being emptied, so nothing starts on it", true
+		}
+		// create.go and snapshot.go also wrap an LVM or filesystem
+		// error in this code, whose text is the host's own (shown to
+		// operators under -v, never here).
+		return "the host has no room for this project right now", true
 	}
 	return msg, false
 }

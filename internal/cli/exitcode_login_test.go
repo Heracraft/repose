@@ -162,10 +162,15 @@ func TestOpFailedExitCodes(t *testing.T) {
 		code int
 		want string
 	}{
-		{OpError{Code: "insufficient_capacity", Message: "the host has no room for this project right now; try again in a few minutes"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
-			"Could not start todo-app: the host has no room for this project right now; try again in a few minutes (insufficient_capacity)."},
+		// The api names the cause and what works for it (I-771), so the
+		// CLI adds nothing of its own: the memory cause carries the
+		// lever that is true of it, and the pool cause carries none.
+		{OpError{Code: "insufficient_capacity", Message: "the host has no free memory for a machine this size; a machine holds its memory while it runs, so stopping one frees room"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
+			"Could not start todo-app: the host has no free memory for a machine this size; a machine holds its memory while it runs, so stopping one frees room (insufficient_capacity)."},
+		{OpError{Code: "insufficient_capacity", Message: "the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
+			"Could not start todo-app: the host's disk pool is full, so no machine starts on it until the operator grows it; stopping a machine does not free pool space (insufficient_capacity)."},
 		{OpError{Code: "insufficient_capacity"}, nextAfterFailedStart("todo-app", "insufficient_capacity"), ExitCapacity,
-			"Could not start todo-app: no server had room for it (insufficient_capacity). A machine holds its memory while it runs, so stopping one frees room for this."},
+			"Could not start todo-app: no server had room for it (insufficient_capacity)."},
 		{OpError{Code: "payment_required", Message: "the account needs a plan"}, "", ExitPaymentRequired, "Could not start todo-app: the account needs a plan (payment_required)."},
 		{OpError{Code: "boot_failed"}, "", ExitGeneric, "Could not start todo-app"},
 		// A host whose pool is down (DECISIONS I-644): exit 1, and the

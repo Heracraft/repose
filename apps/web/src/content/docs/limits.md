@@ -50,7 +50,7 @@ Data your machines send to the internet is counted against the month's allowance
 ## Disk and console
 
 - Disk reads and writes together are limited by size: `small` 2,000 operations a second and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.
-- A disk can grow only as far as the server it runs on has room. A [resize](/docs/machine#memory-and-disk) past that fails with `the host has no room for this project right now`, even within your plan's disk, and so does starting a stopped project on a server whose disk is nearly full.
+- A disk can grow only as far as the server it runs on has room. A [resize](/docs/machine#memory-and-disk) past that fails with `the host's disk pool is full, so the disk cannot grow until the operator grows the pool`, even within your plan's disk, and so does starting a stopped project on a server whose disk is nearly full.
 - The console log repose keeps of each machine's serial console, whose end from a failed boot `repose logs --kind console` shows, takes up to 2 KB a second after the first 1 MB. Output past that is dropped, and the log has a line saying how many bytes went. Your programs' own output in a terminal or a log file isn't affected.
 
 ## What isn't allowed

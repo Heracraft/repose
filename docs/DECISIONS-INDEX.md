@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-755 entries.
+756 entries.
 
 ## Scope
 
@@ -761,7 +761,7 @@ pointer, not a summary.
 - **I-733** An OOM kill in a pane no longer stops the pane: dev's user manager, its units and each session scope run with `OOMPolicy=continue` (pane-oom, 2026-10-13; renumbered 2026-10-15) — L21258
 - **I-718** What a guest-built binary links is not copied into every guest (boot-real-copy, 2026-10-13; amends I-533, I-234 and I-706) — L21356
 - **I-719** repose-store-repair fetches back a library the machine has lost (boot-real-copy, 2026-10-13) — L21474
-- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — L21567
+- **I-724** The host memory reserve is an eighth of the host, and a full host says so instead of saying "try again" (host-capacity, 2026-10-14; amends DESIGN §4) — amended by I-771; L21567
 - **I-725** The guest-base check for "a user's login file decides" measures the login shell, not the shell sshd wraps it in — 2026-10-13; L21628
 - **I-709** From the home folder, `attach NAME` and `run NAME` bring NAME up in one step, and `attach` comes up from every state a start can leave, a server restart included (attach-run-home, 2026-10-13) — L21675
 - **I-720** The api learns a guest's address from the host, not only from a create's result (boot-real-addr, 05/03, 2026-10-13) — L21769
@@ -787,3 +787,4 @@ pointer, not a summary.
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607
 - **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22613
 - **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22627
+- **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L22675

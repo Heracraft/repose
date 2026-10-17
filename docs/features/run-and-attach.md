@@ -237,11 +237,13 @@ Failure output:
   frees room for it.` The API also raises a capacity alert. (I-623 removed
   the "(We have been alerted.)" this bullet used to quote; the sentence
   here is what `run.go` and `env.go` actually print.)
-- A start refused by the host: exit 8, `Could not start <slug>: the host
-  has no room for this project right now; try again in a few minutes
-  (insufficient_capacity).` No second lever follows it, because the api's
-  sentence already says to try again (I-623). That sentence is right for
-  one of five causes of the code, which is open under I-756.
+- A start refused by the host: exit 8, `Could not start <slug>: <the api's
+  sentence> (insufficient_capacity).` The api names which of the five
+  causes refused it and what works for that one — free memory (stopping a
+  machine frees room), the thin pool or the host's store (only the
+  operator clears those), the build queue (it starts when a build
+  finishes), a draining host (nothing starts on it) — and no client adds
+  advice of its own (I-771, closing I-756 and amending I-724).
 - A first project while the fleet is near full: exit 8, `repose is at
   capacity. You're number N on the waitlist; we'll email <address> when
   there's room.` (projects.md, "Limits"; DECISIONS I-269).

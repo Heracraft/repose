@@ -245,13 +245,12 @@ func opExitCode(code string) int {
 func nextAfterFailedStart(slug, code string) string {
 	switch code {
 	case "insufficient_capacity", "capacity":
-		// Memory is never oversubscribed and a running machine holds
-		// its own until it stops, so waiting is not what frees room
-		// (DECISIONS I-724). The one case where waiting works is the
-		// three minutes after a stop or rm, which the api handles
-		// itself (I-408), so by the time this refusal is printed there
-		// is nothing to wait for.
-		return "A machine holds its memory while it runs, so stopping one frees room for this."
+		// The api's sentence names the cause and what works for it
+		// (I-771): five producers share this code, and a lever chosen
+		// from the code alone is wrong for four of them. I-724's
+		// "stopping one frees room" survives as the api's sentence for
+		// the one cause it is true of.
+		return ""
 	case "volume_unavailable":
 		// The api's sentence already says when `repose start` works.
 		return ""

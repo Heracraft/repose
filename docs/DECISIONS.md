@@ -22671,3 +22671,47 @@ a closure was too big without saying what filled it.
   with the declarations it had merged from main. It now uses each pair's
   own merge-base and prints it, and a pair it cannot compare because a
   branch is not fetched says so instead of printing "ok", which it did.
+
+**I-771. The api says which kind of "no capacity" it was, and no client
+adds advice of its own (capacity-cause, 2026-10-17).** Closes the choice
+I-756 left open, by the owner's call for option (a), and amends I-724.
+- *The defect.* Five producers in hostd share `insufficient_capacity` —
+  create.go:76 (draining), :89 and :637 (memory), :105 and :645 (thin
+  pool), manager.go:1033 (build queue), build.go:38 (host store) — plus
+  create.go:165 and snapshot.go:260, which wrap an LVM error in it.
+  `humanError` dropped hostd's message, the only thing that tells them
+  apart, and returned one sentence; then three clients appended advice
+  keyed off the code alone — humanize.go's `nextAfterFailedStart`, the
+  dashboard's `startBanner`, and helptopics_data.go's exit 8. "Stopping
+  one frees room" is true of the memory producer and false of the other
+  four, and for the pool it is the opposite of I-586, which says nothing
+  stops a running guest for the pool.
+- *What ships.* One sentence per producer in `humanError`, chosen from
+  hostd's message. The pool sentence follows the operation, because
+  `poolRoom` refuses a resize through the same check (stop.go calls
+  create.go's `poolRoom`) and "no machine starts on it" is not what a
+  refused resize did. `nextAfterFailedStart` returns "" for this code.
+  `repose help 8` and cli.md's exit-8 row say the message names the kind,
+  and that stopping a machine frees memory and nothing else. limits.md's
+  quote for a refused resize moves with the sentence.
+- *Why (a) and not (b).* No new field, so no `docs/interfaces` change and
+  no old shape to keep accepted for a release. (b) — the cause in a
+  machine-readable field — buys clients that can *act* on the cause
+  rather than describe it, and nothing in these five needs that yet;
+  `OpError.Detail` is documented as the host's wording for operators
+  under `-v`, so repurposing it would itself have been an interface
+  change.
+- *Kept from I-623.* No sentence invites a wait that does not work, and
+  none reintroduces "(We have been alerted.)" in other words. The api
+  test asserts both: the first draft of this change said "the operator
+  has been alerted" for the host-store cause, and that assertion is what
+  caught it.
+- *Deliberately unchanged.* The api's own `capacity` code (engine.go:708,
+  placement) keeps its single-cause sentence: the scheduler has one
+  reason for it, and stopping a machine does free room for it. Note for
+  whoever touches that path: phases.go:554 returns `capacity` with a
+  message naming a host and its state, which no client prints today — a
+  client that starts printing api messages raw for this code would leak
+  host names to tenants.
+- *OWED.* No live check. Only a real host refusing for each cause shows
+  these sentences in place, and the box this was built on has no fleet.
