@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-753 entries.
+754 entries.
 
 ## Scope
 
@@ -785,3 +785,4 @@ pointer, not a summary.
 - **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22510
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607
+- **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22613

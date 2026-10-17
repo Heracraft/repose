@@ -923,7 +923,8 @@ func (f *Fake) billingPlan(w http.ResponseWriter, r *http.Request) *apiError {
 		writeJSON(w, http.StatusOK, map[string]any{"plan": cur.ID, "scheduled_plan": nil, "effective_at": now})
 	case to.Seats > cur.Seats:
 		if f.seatsFree() < to.Seats-cur.Seats {
-			return errf("conflict", "no seat is free for %s right now; try again when one is", to.Name).withDetail(map[string]any{"reason": "no_seat"})
+			// The real api's sentence, with the plan named (I-756).
+			return errf("conflict", "no seat is free for the upgrade to %s; each seat that frees goes to the oldest account on the waitlist", to.Name).withDetail(map[string]any{"reason": "no_seat"})
 		}
 		f.bill.seatsHeld += to.Seats - cur.Seats
 		f.bill.plan = to.ID

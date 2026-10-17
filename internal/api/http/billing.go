@@ -18,6 +18,14 @@ import (
 // the api has no POLAR_ACCESS_TOKEN (s.d.Billing is nil); the logic is
 // internal/billing's, this file maps its answers and refusals to HTTP.
 
+// msgNoSeat is the refusal of an upgrade while every seat is held. There
+// is nothing to wait out: each seat that frees is handed to the oldest
+// account on the waitlist within the minute (waitlist.Inviter.Run), so
+// the sentence names the waitlist instead of a later attempt (I-756,
+// completing I-724). An upgrade does not join the list and the answer
+// carries no place on it, so the sentence promises none.
+const msgNoSeat = "no seat is free for the upgrade; each seat that frees goes to the oldest account on the waitlist"
+
 // billingService returns the service or the disabled error.
 func (s *Server) billingService() (*billing.Service, error) {
 	if s.d.Billing == nil {
@@ -130,7 +138,7 @@ func (s *Server) billingPlan(w http.ResponseWriter, r *http.Request) error {
 	case errors.Is(err, billing.ErrSamePlan):
 		return withDetail(errf("conflict", "you are on that plan already"), map[string]any{"reason": "same_plan"})
 	case errors.Is(err, billing.ErrNoSeat):
-		return withDetail(errf("conflict", "no seat is free for the upgrade right now; try again later"), map[string]any{"reason": "no_seat"})
+		return withDetail(errf("conflict", "%s", msgNoSeat), map[string]any{"reason": "no_seat"})
 	case errors.As(err, &over):
 		// disk_allocated_gb is the held figure too, kept one release (I-585).
 		return withDetail(errf("conflict", "your account does not fit the %s plan yet: %d GB running (it allows %d) and %s GB of disk held by your projects (it allows %d); stop machines, or destroy projects or delete files in them, first",
