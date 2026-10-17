@@ -49,6 +49,15 @@ Grafana "Host capacity", variable `host_id`. Then on the host itself:
 `systemctl list-units 'guest@*'`, `lvs vg-guests`, `nft list counters`,
 `journalctl -u hostd -f`.
 
+Capacity (DECISIONS I-738): `repose_host_mem_reserved_bytes` and
+`repose_host_mem_free_bytes` are memory, and `repose_host_cpu_cores` with
+`repose_host_load1` are CPU. `cpu_cores` is the host's physical cores, not
+its SMT threads, because busy guest vCPUs per physical core is what
+`HostCPUSaturated` divides and what the typing latency follows;
+`sum(rate(repose_host_guest_cpu_seconds_total[5m]))` is the numerator.
+`load1` is the same number the heartbeat puts in the `hosts.load1` column,
+exported because Prometheus scrapes exporters, not the database.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),
@@ -63,8 +72,9 @@ cents, gb), `gate_refused` (user_id, reason, plan) and `disk_over_plan`
 webhook, an email, a card or an amount a tenant typed.
 
 The fleet as a whole: `repose_api_seats_total` and `repose_api_seats_held`
-are the seats (8 GB running at once each, DECISIONS I-290) and those held
-by live subscriptions and unexpired invitations; `repose_api_waitlist_waiting`
+are the seats (8 GB running at once each, DECISIONS I-290; per ready host
+the smaller of its 8 GB blocks and what its cores can serve, I-739) and
+those held by live subscriptions and unexpired invitations; `repose_api_waitlist_waiting`
 is the users waiting for one, `repose_api_waitlist_joined_total`,
 `_invited_total`, `_converted_total` and `_expired_total` the traffic
 through the list. The api logs `waitlist_join` (user_id, position),

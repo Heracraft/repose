@@ -181,7 +181,7 @@ copy-paste version):
 | Rotate the Key Vault wrapping key | `az keyvault key rotate` then `repose-admin secrets rewrap` |
 | Know when the name-only secret read path can go (I-433 step 3) | `secrets_name_only_none` in the api log of a release with I-474 (both apps, after a deploy); until it appears, `secrets_reseal` and `secrets_reseal_fail` show each pass; `secrets_reseal_incomplete` names how many rows Key Vault would not unwrap, which have to be repaired or deleted first (I-474) |
 | Query audit log | `repose-admin audit --user <handle> --since 24h` |
-| See the seats and the waitlist | `repose-admin seats` (total, held, free, waiting, source), `repose-admin waitlist list` (position, handle, joined, invited, hold, converted, expired, by) |
+| See the seats and the waitlist | `repose-admin seats` (total, held, free, waiting, source, and for a derived total the memory and core ceilings), `repose-admin waitlist list` (position, handle, joined, invited, hold, converted, expired, by) |
 | Invite someone ahead of the queue | `repose-admin waitlist admit <handle>`, or `repose-admin waitlist admit --next N` for the next N; a 72-hour seat hold and one email each, audited `waitlist_admit` (I-269, I-290) |
 | Publish a base version | `repose-admin base publish --rev <full 40-hex sha on main> --changelog "..." [--security]`; a short, unknown or off-main sha is refused (I-173); `--unverified-rev` skips only the GitHub check, for when GitHub is down |
 | Smoke-test a host | `repose-admin hosts smoke host-NN` (create, snapshot, stop, start, destroy a throwaway guest) |
@@ -200,18 +200,59 @@ Reserved memory on a host is above 80 percent.
    drift").
 2. Add a host (workstream 11 §5). Until it is `ready`, the scheduler still
    places on the full host; drain it if placements must stop now.
-3. Checkouts are already being held once every 8 GB seat of the fleet is
-   taken ("Waitlist growing"); memory at 80 percent on one host says
-   nothing about seats, which count the whole fleet.
+3. Checkouts are already being held once every seat of the fleet is taken
+   ("Waitlist growing"); memory at 80 percent on one host says nothing
+   about seats, which count the whole fleet and on an `ls`-line host are
+   as likely to be bound by its cores as by its memory.
+
+## HostCPUSaturated
+
+A host is running more than one busy guest vCPU per physical core for 15
+minutes. Nothing is down and no throughput figure moves; what has
+collapsed is scheduling latency, so typing is laggy in every guest on the
+host, including guests doing nothing, and sessions take seconds to open
+(DECISIONS I-738, docs/proposals/2026-10-14-host-cpu-capacity.md). The
+api already refuses to place a new project on a host committed past 1.5
+guest vCPUs per core (I-734), so the host stops taking new projects by
+itself; it does not shed the load already there.
+
+Why one per core: measured on host-01, a `D16s_v7` whose 16 Azure vCPUs
+are 8 physical cores, on 2026-10-14, into a `small` guest with nothing
+running inside it. At 0.5 busy guest vCPUs per core a keystroke echoed in
+2.7 ms p50 and 4.3 ms p90 and an ssh session opened in 0.2 s; at 1.8 per
+core the same keystroke took 17.0 ms p50 and 44.5 ms p90, the session took
+2.0 s, and a new guest's first boot failed twice. Steal inside the guests
+was 1.2-3.7 percent throughout, so this is queueing, not shortage.
+
+1. How far over, and whose: Grafana "Host capacity" with `host_id` set to
+   the host, "Guest CPU seconds by class" against
+   `repose_host_cpu_cores`. `repose-admin projects list --host host-NN`
+   names the projects and classes placed there.
+2. Two things that look like fixes are not, both measured. Do not renice
+   inside a guest: an interleaved A/B of four CPU hogs at nice 0 against
+   nice 19 produced no reproducible difference over two rounds. And cgroup
+   throttling is not the constraint, so raising `CPUQuota` changes
+   nothing: `nr_throttled` was 298 of 3,082,823 periods (0.01 percent) on
+   the busiest guest.
+3. Add a host, or move to a larger SKU (workstream 11 §5; the shapes are
+   in the proposal's §3). The `tofu apply` is the owner's. New projects go
+   to the new host, but a project is pinned to its host for life, so this
+   one only cools as its own guests stop. `repose-admin hosts drain
+   host-NN` stops placements on it immediately if the apply has to wait.
+4. If one project is the whole load and it is sustained for hours with
+   nobody attached, `BusyUnattended` is the entry to act on, not this one.
 
 ## Waitlist growing
 
 `repose_api_waitlist_waiting` above zero, or `repose-admin waitlist list`
 shows people waiting (DECISIONS I-269, I-290). A checkout needs the plan's
 seats free; a seat is 8 GB running at once, the fleet has as many as its
-`ready`, undrained hosts have usable 8 GB blocks (or `SEATS_TOTAL`), and
-live subscriptions and unexpired invitations hold them. `repose-admin
-seats` prints total, held, free, waiting and where the total came from.
+`ready`, undrained hosts deliver -- per host the smaller of its usable
+8 GB blocks and what its physical cores can serve (I-739) -- or
+`SEATS_TOTAL`, and live subscriptions and unexpired invitations hold them.
+`repose-admin seats` prints total, held, free, waiting, where the total
+came from and, when it came from the hosts, both ceilings: which of the
+two is the smaller is whether the next host should bring memory or cores.
 
 1. Add a host (workstream 11 §5), or raise `SEATS_TOTAL` on both api apps
    and redeploy if the number was the limit rather than the hosts. Nothing
@@ -230,7 +271,8 @@ seats` prints total, held, free, waiting and where the total came from.
    invitation waits for it.
 4. There is no off switch. A launch with hosts to spare sets `SEATS_TOTAL`
    high enough that nobody is refused; `0` derives the count from the
-   hosts. With no ready host at all the count is zero and every checkout
+   hosts, and a value above the derivation sells seats the hosts cannot
+   serve. With no ready host at all the count is zero and every checkout
    waitlists: that is an outage, fix the hosts.
 
 ## Temporary machine not destroyed
@@ -2549,14 +2591,26 @@ and no user row exists. The Management API call
 
 ## api: no capacity right now
 
-An op ended `capacity`; `repose_api_schedule_total{result="capacity"}`
-rose; the CLI printed `no capacity right now; you have not been charged`.
+An op ended `capacity`; `repose_api_schedule_total{result}` rose on
+`no_capacity`, or on `no_cpu` when the CPU term alone refused (I-736);
+the CLI printed `no capacity right now; you have not been charged`.
 
-1. `repose-admin hosts list`: no host is `ready` with free memory above
-   the reserve for the class and pool room for the volume. Draining,
-   unreachable and stale-heartbeat hosts do not count.
-2. Add a host (11 §5) or undrain one. The user runs `repose run` again;
-   the project is in `error` with `last_error = capacity` until then.
+1. Which term refused is in the api's `schedule_fail` line: `reason` is
+   `no_cpu` when a host had the memory and the pool room but was already
+   committed past 1.5 guest vCPUs per physical core, and `no_capacity`
+   for every other full fleet.
+2. `repose-admin hosts list`: no host is `ready` with free memory above
+   the reserve for the class, pool room for the volume, and cores for the
+   class's guest vCPUs. Draining, unreachable and stale-heartbeat hosts
+   do not count. For the CPU term, `repose-admin seats` prints what the
+   fleet's cores allow, and `select name, cores from hosts` against
+   `host_reservations.vcpus` is the per-host figure.
+3. Add a host (11 §5) or undrain one. The user runs `repose run` again;
+   the project is in `error` with `last_error = capacity` until then. A
+   `no_cpu` refusal does not clear by waiting: a project keeps its host
+   for life, so only a guest on that host stopping, or another host,
+   frees the cores (`HostCPUSaturated` is the same wall seen from the
+   other side).
 
 ## dashboard: up but the "Cannot reach the API" bar is showing
 

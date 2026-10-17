@@ -128,7 +128,7 @@ func TestRegisterSessionSendSweep(t *testing.T) {
 	// the bootstrap key (security review M-1).
 	h.srv.SetHostCAPub(func() string { return "ssh-ed25519 AAAAtest repose-host-ca\n" })
 	client := hostdv1.NewHostServiceClient(h.dial(t, nil))
-	info := &hostdv1.HostInfo{Hostname: "host-01", Sku: "Standard_D16s_v7", MemBytes: 64 << 30, Vcpus: 16, PoolBytes: 500 << 30, NixosSystem: "/nix/store/x", ChVersion: "53"}
+	info := &hostdv1.HostInfo{Hostname: "host-01", Sku: "Standard_D16s_v7", MemBytes: 64 << 30, Vcpus: 16, Cores: 8, PoolBytes: 500 << 30, NixosSystem: "/nix/store/x", ChVersion: "53"}
 	if _, err := client.Register(ctx, &hostdv1.RegisterRequest{JoinToken: "wrong", Info: info}); err == nil {
 		t.Fatal("wrong token accepted")
 	}
@@ -152,6 +152,12 @@ func TestRegisterSessionSendSweep(t *testing.T) {
 	hostRow, err := store.GetHost(ctx, h.pool, hostID)
 	if err != nil || hostRow.RegisteredAt == nil || hostRow.MemBytes != 64<<30 || hostRow.JoinTokenHash != nil {
 		t.Fatalf("host row after register: %+v %v", hostRow, err)
+	}
+	// Threads and cores are both recorded, and they are not the same
+	// number: placement counts committed guest vCPUs against the cores
+	// (DECISIONS I-735, I-736).
+	if hostRow.VCPUs != 16 || hostRow.Cores != 8 {
+		t.Fatalf("host row vcpus %d cores %d; want 16 threads on 8 cores", hostRow.VCPUs, hostRow.Cores)
 	}
 	if _, err := hostmgr.MintJoinToken(ctx, h.pool, "host-01", "", "", "", false); err == nil {
 		t.Fatal("minting for a registered host without --reissue should refuse")
@@ -297,5 +303,43 @@ func TestHelloRefusedClosesTheStream(t *testing.T) {
 		if lh == nil || !lh.Equal(before) {
 			t.Fatalf("last heard before Hello %d: %v, want %v", i+1, lh, before)
 		}
+	}
+}
+
+// A hostd older than I-735 reports threads and no cores, and the api
+// records half the threads: every shape repose can run is two threads to
+// a core (DESIGN.md §4). Register is single use, so a rotate is such a
+// host's only way to report cores once it is upgraded, and it does
+// (DECISIONS I-735).
+func TestRegisterAndRotateRecordCoresAndTheThreadBridge(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	token, err := hostmgr.MintJoinToken(ctx, h.pool, "host-old", "azure", "Standard_D16s_v7", "eastus", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := hostdv1.NewHostServiceClient(h.dial(t, nil))
+	old := &hostdv1.HostInfo{Hostname: "host-old", MemBytes: 64 << 30, Vcpus: 16, PoolBytes: 500 << 30}
+	resp, err := client.Register(ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: old})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostID := uuid.MustParse(resp.HostId)
+	row, err := store.GetHost(ctx, h.pool, hostID)
+	if err != nil || row.Cores != 8 {
+		t.Fatalf("cores %d from a hostd that reported 16 threads and no cores; want 8: %v", row.Cores, err)
+	}
+	// An upgraded hostd rotates and reports the real figure; a host that
+	// reports nothing keeps what is recorded.
+	cert, err := tls.X509KeyPair(resp.ClientCert, resp.ClientKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rot := hostdv1.NewHostServiceClient(h.dial(t, &cert))
+	if _, err := rot.Rotate(ctx, &hostdv1.RegisterRequest{Info: &hostdv1.HostInfo{Hostname: "host-old", Vcpus: 16, Cores: 8}}); err != nil {
+		t.Fatal(err)
+	}
+	if row, err = store.GetHost(ctx, h.pool, hostID); err != nil || row.Cores != 8 || row.VCPUs != 16 {
+		t.Fatalf("after a rotate that reported 8 cores: vcpus %d cores %d %v", row.VCPUs, row.Cores, err)
 	}
 }

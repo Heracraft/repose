@@ -1,7 +1,7 @@
 // Package hostinfo collects what Register reports about a host: hostname,
 // Azure SKU from IMDS (reachable from the host, blocked from guests),
-// memory, vCPUs, the running NixOS system, the Cloud Hypervisor version
-// and the thin pool size.
+// memory, vCPUs, physical cores, the running NixOS system, the Cloud
+// Hypervisor version and the thin pool size.
 package hostinfo
 
 import (
@@ -137,6 +137,43 @@ func StoreStat() (total, used uint64, err error) {
 	return total, used, nil
 }
 
+// CPUTopologyRoot is where the kernel publishes each online CPU's
+// topology.
+const CPUTopologyRoot = "/sys/devices/system/cpu"
+
+// PhysicalCores returns the host's physical cores: the number of distinct
+// (physical_package_id, core_id) pairs across the online CPUs.
+// runtime.NumCPU() counts SMT threads, twice that on every host repose
+// runs on, and placement counts committed guest vCPUs against cores
+// (DECISIONS I-735). A host whose topology cannot be read reports the
+// thread count, which is the number this field held before it existed:
+// 0 would read as "unknown" and leave the host unbounded.
+func PhysicalCores() uint32 { return physicalCoresFrom(CPUTopologyRoot) }
+
+func physicalCoresFrom(root string) uint32 {
+	dirs, err := filepath.Glob(filepath.Join(root, "cpu[0-9]*"))
+	if err != nil {
+		return uint32(runtime.NumCPU())
+	}
+	type core struct{ pkg, id string }
+	seen := make(map[core]struct{}, len(dirs))
+	for _, d := range dirs {
+		pkg, err := os.ReadFile(filepath.Join(d, "topology", "physical_package_id"))
+		if err != nil {
+			continue // an offline or hotplugged CPU publishes no topology
+		}
+		id, err := os.ReadFile(filepath.Join(d, "topology", "core_id"))
+		if err != nil {
+			continue
+		}
+		seen[core{strings.TrimSpace(string(pkg)), strings.TrimSpace(string(id))}] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return uint32(runtime.NumCPU())
+	}
+	return uint32(len(seen))
+}
+
 // Load1 reads the one-minute load average.
 func Load1() float64 {
 	b, err := os.ReadFile("/proc/loadavg")
@@ -177,7 +214,7 @@ func SKU(ctx context.Context) string {
 
 // Collect builds the HostInfo message.
 func Collect(ctx context.Context, r shell.Runner, l lvm.LVM) *hostdv1.HostInfo {
-	info := &hostdv1.HostInfo{Vcpus: uint32(runtime.NumCPU())}
+	info := &hostdv1.HostInfo{Vcpus: uint32(runtime.NumCPU()), Cores: PhysicalCores()}
 	info.Hostname, _ = os.Hostname() // an unreadable hostname is reported as empty
 	info.MemBytes, _, _ = MemInfo()  // same
 	info.Sku = SKU(ctx)

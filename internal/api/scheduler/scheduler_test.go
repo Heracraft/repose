@@ -267,6 +267,128 @@ func TestFreeingSkipsPoolUnavailable(t *testing.T) {
 	}
 }
 
+// addHostCores adds h with physical cores reported. 0 cores is a host
+// that registered before I-735 and has not rotated since, which the
+// Register path would have given vcpus / 2 had it reported threads.
+func addHostCores(t *testing.T, pool *db.Pool, h host, cores int) uuid.UUID {
+	t.Helper()
+	id := addHost(t, pool, h)
+	if _, err := pool.Exec(context.Background(), "update hosts set cores = $2 where id = $1", id, cores); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// commit places a guest of class on host in a state that holds it, so
+// its vCPUs and memory are committed there.
+func commit(t *testing.T, pool *db.Pool, hostID uuid.UUID, class, slug string) {
+	t.Helper()
+	ctx := context.Background()
+	var uid uuid.UUID
+	if err := pool.QueryRow(ctx, "select id from users limit 1").Scan(&uid); err != nil {
+		uid = uuid.Must(uuid.NewV7())
+		if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, $3, $3, $4, 'running', $5, 1)`,
+		uuid.Must(uuid.NewV7()), uid, slug, class, hostID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The incident of 2026-10-14, reproduced: host-01 is a D16s_v7, 8
+// physical cores, with memory to spare. PlacementVCPUPct allows 12
+// committed guest vCPUs there, so the second xl -- the 16 guest vCPUs on
+// 8 cores that took keystrokes from 2.7 ms to 17 ms -- is refused, and
+// the refusal says it was CPU and not memory (DECISIONS I-736).
+func TestPickCountsCommittedVCPUsAgainstCores(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"host-01", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 8)
+
+	commit(t, pool, h, "xl", "kanali") // 8 of 12
+	if p, err := pick(t, pool, "large", 1<<30, 40<<30); err != nil || p.Name != "host-01" {
+		t.Fatalf("a large on 8 of 12 committed vCPUs: %+v %v, want host-01", p, err)
+	}
+	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
+		t.Fatalf("a small at the ceiling: %+v %v, want ErrNoCPUCapacity", p, err)
+	}
+	if p, err := pick(t, pool, "xl", 1<<30, 80<<30); !errors.Is(err, scheduler.ErrNoCapacity) {
+		t.Fatalf("an xl at the ceiling: %+v %v, want a capacity error", p, err)
+	}
+	// Memory was never the reason: the host has 56 GB free and the xl
+	// needs 16.
+	var free int64
+	if err := pool.QueryRow(context.Background(), "select free_mem_bytes from hosts where id = $1", h).Scan(&free); err != nil || free < 16<<30 {
+		t.Fatalf("free memory %d, want room for the xl that was refused", free)
+	}
+}
+
+// A host that reports no cores is exempt: 0 means unknown, and refusing
+// every create on a one-host fleet because a field is missing is worse
+// than placing on it (DECISIONS I-736).
+func TestPickIgnoresCPUWhenAHostReportsNoCores(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"a", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 0)
+	commit(t, pool, h, "xl", "one")
+	commit(t, pool, h, "xl", "two")
+	commit(t, pool, h, "large", "three") // 20 vCPUs, past any ratio
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); err != nil || p.Name != "a" {
+		t.Fatalf("host with unknown cores: %+v %v, want a placement", p, err)
+	}
+}
+
+// An empty host always takes one guest, so a host with fewer cores than
+// the class asks for can still run something; the next guest is refused.
+func TestPickTakesOneGuestOnAHostSmallerThanTheClass(t *testing.T) {
+	pool := testdb.Open(t)
+	h := addHostCores(t, pool, host{"small-host", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 1)
+	if p, err := pick(t, pool, "xl", 1<<30, 80<<30); err != nil || p.Name != "small-host" {
+		t.Fatalf("first guest on a 1-core host: %+v %v, want a placement", p, err)
+	}
+	commit(t, pool, h, "xl", "first")
+	if p, err := pick(t, pool, "small", 1<<30, 20<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
+		t.Fatalf("second guest on a 1-core host: %+v %v, want ErrNoCPUCapacity", p, err)
+	}
+}
+
+// Freeing refuses a host that is at its CPU ceiling even while memory
+// is coming back on it, and allows it once the vCPUs are what is being
+// freed: the reservation view counts a `stopping` guest, so the term
+// subtracts it (DECISIONS I-736).
+func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	h := addHostCores(t, pool, host{"a", "ready", false, 64 << 30, 56 << 30, 1 << 40, now}, 8)
+	uid := uuid.Must(uuid.NewV7())
+	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, pool, h, "xl", "kanali")     // 8 of the 12 cores allow
+	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	// A guest being destroyed frees memory -- hostd still counts it, so
+	// Freeing is asked at all -- but the reservation view never counted
+	// its vCPUs, so nothing is freed on the CPU side and a create that
+	// waits for this host would be refused again.
+	if _, err := pool.Exec(ctx, `insert into projects (id, user_id, name, slug, class, state, host_id, volume_bytes) values ($1, $2, 'gone', 'gone', 'large', 'destroying', $3, 1)`,
+		uuid.Must(uuid.NewV7()), uid, h); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || ok {
+		t.Fatalf("freeing %v %v at the CPU ceiling, want false: memory frees, cores do not", ok, err)
+	}
+	// Stop the xl instead: its 8 vCPUs are in the view and come back, so
+	// the small fits and the create waits rather than failing.
+	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'kanali'"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || !ok {
+		t.Fatalf("freeing %v %v with the xl stopping, want true", ok, err)
+	}
+}
+
 // The host reserve is an eighth of the host's memory with a 2 GiB floor
 // and a 16 GiB ceiling (DECISIONS I-724). The two sizes repose runs today
 // keep the figures the flat steps gave them, and an 8 GB host — which the
@@ -291,5 +413,58 @@ func TestHostReserveIsAnEighthWithAFloorAndACeiling(t *testing.T) {
 	// A small guest (4 GiB + 512 MiB) fits on an 8 GB host.
 	if 8*gib-scheduler.HostReserve(8*gib) < 4*gib+512<<20 {
 		t.Error("an 8 GB host cannot start a small guest")
+	}
+}
+
+// A fork's copies are placed by FitsOn, not PickHost, so the CPU term has
+// to be asked there too or the whole fork path places against nothing
+// (DECISIONS I-736 over I-701). Copies that start commit their vCPUs;
+// copies created stopped commit none and are never refused for CPU, which
+// is how the memory term already behaves.
+func TestFitsOnCountsTheCopiesVCPUs(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	now := time.Now()
+	h := addHostCores(t, pool, host{"host-01", "ready", false, 256 << 30, 240 << 30, 1 << 40, now}, 8)
+	if _, err := pool.Exec(ctx, "update hosts set features = array['local_clone'] where id = $1", h); err != nil {
+		t.Fatal(err)
+	}
+	fits := func(class string, count int, start bool) bool {
+		t.Helper()
+		var ok bool
+		if err := db.InTx(ctx, pool, func(tx pgx.Tx) error {
+			var err error
+			ok, err = scheduler.FitsOn(ctx, tx, h, class, count, start, now)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	// 8 cores allow 12 committed guest vCPUs. Memory is never the
+	// constraint here: the host has 240 GB free.
+	if !fits("large", 3, true) {
+		t.Fatal("three large copies that start (12 vCPUs) do not fit on 8 cores, want 12 of 12")
+	}
+	if fits("large", 4, true) {
+		t.Fatal("four large copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	}
+	if fits("xl", 2, true) {
+		t.Fatal("two xl copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	}
+	// Created stopped, they commit nothing and the CPU term must not
+	// refuse them, exactly as the memory term does not.
+	if !fits("xl", 5, false) {
+		t.Fatal("five xl copies created stopped are refused for CPU, want them placed")
+	}
+	// With the host already at its ceiling, a copy that starts is refused
+	// and a copy created stopped is still fine.
+	commit(t, pool, h, "xl", "kanali")
+	commit(t, pool, h, "large", "s2-sync")
+	if fits("small", 1, true) {
+		t.Fatal("a copy that starts fits a host at its CPU ceiling, want a refusal")
+	}
+	if !fits("small", 1, false) {
+		t.Fatal("a copy created stopped is refused on a host at its CPU ceiling, want it placed")
 	}
 }

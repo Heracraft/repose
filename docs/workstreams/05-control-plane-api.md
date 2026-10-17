@@ -148,13 +148,19 @@ The `create` op:
 
 1. `Build` on a host chosen by `scheduler.Pick(class)`: hosts in state
    `ready`, not draining, heartbeat within 90 s, with `free_mem_bytes -
-   reserve >= class RAM` and `pool_free >= volume_bytes`; pick the one with
-   the most free memory (spread, not bin-pack, because a host loss then
-   hurts fewer users; bin-packing is a later decision when hosts are many).
+   reserve >= class RAM`, `pool_free >= volume_bytes`, and committed guest
+   vCPUs plus the class's own within `PlacementVCPUPct` of the host's
+   physical cores (`hosts.cores`; 1.5 per core, DECISIONS I-734, I-736 --
+   a host that reports no cores, and an empty host, are exempt); pick the
+   one with the most free memory (spread, not bin-pack, because a host loss
+   then hurts fewer users; bin-packing is a later decision when hosts are
+   many).
    Reserve the memory in the same transaction by inserting the host id into
    `projects.host_id` and summing reservations per host in a view
-   `host_reservations`. `capacity` error to the user if no host fits, with
-   an operator alert.
+   `host_reservations`, which carries `vcpus` beside `reserved_bytes` over
+   the same rows. `capacity` error to the user if no host fits, with an
+   operator alert; the `schedule_fail` log line's `reason` is `no_cpu` when
+   the CPU term alone refused.
    No `Build` is sent when the chosen host already runs the closure: the
    applied revision of another live project there has the same fragment
    text on the same published base version. The revision is marked `built`

@@ -76,7 +76,8 @@ disk, network. *Rejected:* no benchmark; a second provider from day one.
 *If it fails:* hosts go to Hetzner metal, design unchanged (R3-20).
 
 **R3-2. Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1
-oversubscribed, memory never.** *Rejected:* one or two classes. *Why:* Docker-
+oversubscribed, memory never.** *Amended by I-734 (2026-10-15): the ratio
+is counted against physical cores, not the vendor's vCPUs, and it is 1.5.* *Rejected:* one or two classes. *Why:* Docker-
 heavy test suites are the XL case people pay for; a balloon reclaiming memory
 mid-build turns "slow" into OOM.
 
@@ -20649,6 +20650,348 @@ commit they describe.
   I-685); nothing here was run against host-01, whose apply, switch and
   live check are the conductor's.
 
+**I-734. The oversubscription ratio is counted against physical cores,
+not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15).** Amends
+R3-2, which is not rewritten. The classes and "memory never" are
+unchanged; what changes is the denominator, and with it what the fleet
+will accept.
+
+R3-2 said "CPU 2:1 oversubscribed" and every restatement of it since
+(DESIGN §4, `proposals/2026-10-11-pause-idle-machines.md` §9) computed it
+against the vCPU count the vendor sells. On Azure that number is SMT
+threads: host-01 is a `Standard_D16s_v7` whose 16 vCPUs `lscpu` reports as
+8 physical cores, 2 threads per core. So 2:1 against vendor vCPUs is 4
+guest vCPUs per core, and a full `D64s_v7` is 3.75:1 against its cores.
+The owner reported palpable typing latency in every guest; measurement on
+prod on 2026-10-14 found the whole of it here
+(`proposals/2026-10-14-host-cpu-capacity.md` §1, §2): with 20 committed
+guest vCPUs on 8 cores, a keystroke into a `small` guest *with nothing
+running inside it* took 17.0 ms p50 and 44.5 ms p90 against 2.7 and 4.3
+on the same host quiet, and an ssh session took 2.0 s against 0.2. The
+mechanism is scheduler wait, not shortage: steal inside the guests was
+1.2-3.7 percent and host and guest CPU accounting agreed, while
+`kanali`'s eight vCPU threads accumulated 5.94 s of scheduler wait per 5 s
+of wall clock. Throughput barely moves, which is why no capacity metric
+flagged it and the owner found it by feel.
+
+The boundary the measurement names is busy guest vCPUs at most the host's
+usable cores, nine tenths of them. A machine is busy 48 percent of its
+running time on the busiest account measured over 918 machine-hours and 33
+percent fleet-wide over 73,059 running minutes (pause-idle §5), so a
+committed ratio R puts R x 0.48 busy vCPUs per core at the worse figure:
+**1.5 committed guest vCPUs per physical core** gives 0.72 against the 0.9
+line, a fifth of headroom at the worst duty cycle anyone has measured, and
+does not reach the line until a machine is busy 60 percent of its time.
+It is also stricter than R3-2 as written on every host: 1.5 per core is
+0.75:1 against the threads R3-2 counted.
+
+*Rejected:* **2:1 against cores**, which reads as "the same number,
+honestly measured" and is the tempting answer. It would not have refused
+the guest that caused the incident -- two `xl` on 8 cores is exactly 16 --
+so it fails the only test available. *Rejected:* **the binomial seat
+figure as the placement ratio** (I-739's 1.375:1 at 32 cores, 1.71:1 at
+124): it is a function of host size, and a size-dependent admission
+ratio cannot be stated as a promise or held in a reader's head. The
+binomial governs how many seats are sold; this ratio governs what a host
+accepts, and I-739 caps the first by the second so the two cannot
+disagree. *Rejected:* **an environment variable.** Placement policy is a
+product promise, not an operational dial, and `SEATS_TOTAL`'s own warning
+in `ops/coolify/api-grpc.env.example` ("keep it equal to the http app's")
+is the evidence that a second numeric knob across two api apps drifts.
+
+What the product stands behind, in one line: a machine gets its class's
+vCPUs, and a host is never sold more than 1.5 of them per physical core.
+Nothing public states a ratio today and nothing should: a user cannot act
+on it, and `apps/web/src/content/docs/` says only what a class is.
+
+**I-735. Hosts report physical cores, and the api records them (cpu-weight,
+2026-10-15).** The number I-734 counts against did not exist anywhere in
+the system. `hostinfo.Collect` reported `runtime.NumCPU()`, which is SMT
+threads, so everything downstream was 2x optimistic before it was used --
+and nothing used it: `hosts.vcpus` was written once at registration and
+read by no decision (`store.Host.VCPUs` had no readers at all).
+
+- *The field.* `HostInfo.cores` (field 8) in
+  `interfaces/grpc-hostd.md`; `hostinfo.PhysicalCores()` counts distinct
+  (`physical_package_id`, `core_id`) pairs under
+  `/sys/devices/system/cpu/cpu[0-9]*/topology`, the kernel's own answer,
+  and falls back to `runtime.NumCPU()` when the topology cannot be read,
+  because 0 would read as "unknown" and leave a host unbounded. `vcpus`
+  stays recorded beside it: it is what Azure sells and what a quota is
+  counted in.
+- *The column.* `hosts.cores integer not null default 0` (migration 0027).
+  0 means unknown, and no CPU ratio is applied to such a host (I-736,
+  I-739): on a one-host fleet, refusing every create because a field is
+  missing is worse than what every release before this did.
+- *The one-release bridge, in the write path and nowhere else.* A hostd
+  older than this sends no cores, and Register records `vcpus / 2`
+  instead: every shape repose can run is two threads to a core (DESIGN
+  §4, and `proposals/2026-10-14-host-cpu-capacity.md` §4 -- of the Azure
+  SKUs that declare nested virtualisation, all are `vCPUsPerCore = 2`, and
+  the 1-thread-per-core `F64als_v7` line declares none). The derivation is
+  at the write, not in each reader, so one rule serves placement, the seat
+  count and `repose-admin`. Migration 0027 backfills the same way, which
+  is what makes this real on prod: Register runs once per host because the
+  join token is single use, so host-01 would otherwise have sat at 0 cores
+  for ever.
+- *Rotate now records host info.* It is an already-registered host's only
+  way to report what it has; hostd has always sent `HostInfo` on rotate
+  (`register.go`) and the api threw it away. A field the host sends as 0
+  keeps the recorded value, so an older hostd changes nothing, and the
+  real figure lands within 30 days of a host upgrade without anyone
+  touching the database. *Rejected:* carrying cores in every Heartbeat (a
+  number that changes only when a host is resized does not belong in a
+  10-second message), and re-registering host-01 by hand (`hosts add
+  --reissue` resets `registered_at`, which is a bigger lever than this
+  needs).
+
+**I-736. Placement counts committed guest vCPUs against the host's cores
+and refuses past I-734's ratio (cpu-weight, 2026-10-15).** `PickHost`
+filtered on memory, thin-pool room and guest slots and had **no CPU term
+at all**; `scheduler.ClassVCPU` existed and was read by one display field
+in `http/samples.go`. hostd's own admission checks memory and the pool and
+never CPU. So the policy in R3-2 was not implemented anywhere, and the
+implementation permitted more than the policy allowed.
+
+- *Where the number comes from.* The `host_reservations` view already sums
+  class RAM over the projects on a host in a state that holds it; it now
+  carries `vcpus` over the same rows (0027), so "committed" has one
+  definition for memory and CPU, both functions that join it get the
+  figure for free, and an operator can read it in psql. A host may have at
+  most `PlacementVCPUPct` (150) percent of `hosts.cores` committed with
+  the new guest's vCPUs included.
+- *Two escapes, both so the term refuses less rather than everything.* A
+  host that reports no cores is exempt (I-735). And an empty host always
+  takes one guest, so a staging or dev host with fewer cores than the
+  class asks for can still run something; the second guest there is
+  refused.
+- *`Freeing` subtracts a stopping guest's vCPUs*, as it already corrects
+  memory for them, so the three-minute window after a `repose rm` (I-408)
+  works the same way for both terms. A guest being *destroyed* frees
+  memory but was never counted in the view, so it frees no vCPUs -- the
+  test for this is the one that fails if the subtraction is written on the
+  wrong half.
+- *Every placement path, not just `PickHost`.* `FitsOn`, which places a
+  fork's copies on their source's host (I-701), landed in the same
+  release and asks the same two terms: copies that start are counted for
+  their memory and for their guest vCPUs, copies created stopped for
+  neither. Found at the merge with I-701, where a fork of five `xl`
+  copies would have committed 40 guest vCPUs against nothing. The
+  "an empty host takes one guest" escape is gated on the batch being a
+  single guest there, or an empty host would wave a whole fork through.
+- *What it does not do, stated plainly.* It is a placement gate. A project
+  keeps its host for life, so `repose start` of a stopped machine never
+  asks placement again; hostd's admission still checks memory and the pool
+  only; an operator placing by hand bypasses it. A host can therefore
+  still be driven past the ratio by the guests already on it, and I-738's
+  alert is the backstop that says so. The ratio is not enforced; placement
+  refuses past it.
+- *The refusal keeps one error code.* `capacity` -> exit 8 is a documented
+  contract and the user's lever is the same either way: stop a machine. A
+  second code would double six strings and buy the user nothing they can
+  act on. What is new is operator-facing: `ErrNoCPUCapacity` wraps
+  `ErrNoCapacity`, so every caller is untouched, and the `schedule_fail`
+  log line and `repose_api_schedule_total` now carry `reason=no_cpu` when
+  the CPU term alone refused. That is the difference between buying memory
+  and buying cores, and it costs one extra query on a create that has
+  already failed.
+- *What this does to prod the day it ships.* host-01 has 8 cores and 20
+  committed guest vCPUs (`kanali` xl, `toolbar` xl, one `large`), which is
+  2.5 per core. Until that falls to 12, **every new project placed on
+  host-01 is refused with `capacity`**, and on a one-host fleet that means
+  every `repose run` of a new project. Existing machines start, stop and
+  restore untouched. This is the honest reading of the measurement and it
+  is also the launch host's bill arriving early: the fix is the bigger
+  host LAUNCH §3 already calls for, not a looser ratio.
+
+**I-737. Each guest's cgroup weight is its class's (cpu-weight,
+2026-10-15).** `GuestUnitProps` set no `CPUWeight`, so every `guest@<id>`
+ran at cgroup v2's default `cpu.weight=100` whatever its class: under
+contention an `xl` and a `small` got equal shares rather than shares
+proportional to what the tenant paid for
+(`proposals/2026-10-14-host-cpu-capacity.md` §2, last paragraph).
+
+Weight is `class.VCPUs * CPUWeightPerVCPU`, one named constant set to 25:
+small 50, large 100, xl 200. The multiplier is anchored on the default
+class, not on 50 or 100, because `cpu.weight` is proportional among
+siblings and the siblings inside `guests.slice` are this guest's own
+`virtiofsd@<id>` and `virtiofsd-auth@<id>`, which carry no `CPUWeight` and
+so sit at 100 while serving the guest's `/nix/store` reads. Anchoring
+`large` at 100 leaves the majority of guests at exactly the weight they
+have today and virtiofsd's standing against the common class unchanged,
+and makes the deviation symmetric -- small halves, xl doubles -- instead
+of demoting every virtiofsd by four. The property is index 3, right after
+`CPUQuota`: two manager tests assert `Props[0..2]` by index.
+
+- *Named for a reviewer:* a `small` tenant's share now halves against
+  larges, xls and every virtiofsd on the host. That is the intended
+  product behaviour, not a side effect.
+- *It divides contention; it does not add capacity.* Typing on a host sold
+  past I-734's ratio is still bad after this alone. I-736 and I-739 are
+  what stop the overselling.
+- *The weight arrives at the unit's next start*, as `MemoryHigh` did under
+  I-230: `GuestUnitProps` is read only by a start, and reconcile never
+  restarts a unit. The freeze/restore path does re-render the properties,
+  and the freeze is on for host-01 (I-686), so the host switch that
+  deploys this applies the new weights without a tenant-visible stop.
+- *Rejected:* changing virtiofsd's weight (the worst case is an xl at 200
+  against a bursty virtiofsd at 100, which asks well under a core);
+  applying the weight to a running guest, which needs a `SetProperty` on
+  the `Systemd` interface and a reconcile that re-asserts it, and is real
+  scope for a gain the next start already delivers. `guests.slice` (100)
+  and `nix-daemon.service` (50) are a different cgroup level and are
+  unchanged.
+
+**I-738. A host CPU alert, on busy guest vCPUs per physical core
+(cpu-weight, 2026-10-15).** `ops/alerts.yaml` had `HostMemory80`,
+`PoolHigh`, `PoolFull` and nothing for CPU, which is why a fleet-wide
+latency problem was found by the owner's fingers rather than by a page.
+
+`HostCPUSaturated`, `warn`: `sum by (host_id)
+(rate(repose_host_guest_cpu_seconds_total[5m])) / sum by (host_id)
+(repose_host_cpu_cores) > 1` for 15 minutes. That is exactly the quantity
+§1 measured: on host-01, into a `small` guest with nothing running in it,
+0.5 busy guest vCPUs per core echoed a keystroke in 2.7 ms p50 and opened
+a session in 0.2 s, while 1.8 per core gave 17.0 ms p50, 44.5 ms p90, 2.0
+s to open a session, and two failed first boots. The sampler has p90 at
+42 ms by 1.2 per core, so `> 1` is the boundary the measurement names. It
+is below the 1.5 *committed* vCPUs per core placement allows (I-734)
+because commitments are not all busy at once. 15 minutes is PoolHigh's
+window: longer than one `nix build`, short enough that the hours-long
+state of 2026-10-14 is reported the same morning. It warns rather than
+pages because nothing is down and the remedy is a human apply.
+
+- *The proposal's summary was wrong about the series, and this is the
+  correction.* "hostd already reports load1 and per-guest CPU pressure
+  (I-493)" is true of Postgres and false of Prometheus: `load1` was only
+  the `hosts.load1` column and I-493's pressure only two `meter_samples`
+  columns. A rule naming either would have silently never fired, and
+  `promtool` would not have caught it, because the test feeds whatever
+  series the rule names. `hosts.cores` cannot be the denominator either:
+  Prometheus scrapes exporters, not the database. So hostd now exports
+  `repose_host_cpu_cores` (from `hostinfo.PhysicalCores()`, I-735) and
+  `repose_host_load1`, both unlabelled -- `host_id` arrives from the
+  scrape target, and the allowed-label list forbids anything per-project.
+- *Rejected:* `count(node_cpu_seconds_total{mode="idle"})` as the
+  denominator, which counts SMT threads and would hard-code two per core;
+  and anything on `node_pressure_cpu_waiting_seconds_total`, which is the
+  right physical quantity -- the mechanism is scheduler wait -- but whose
+  collector was not observed on the real host and for which no threshold
+  was ever measured. An alert with a guessed threshold is what
+  `ops/alerts_test.yaml` exists to prevent.
+- *Both sides of the division are `sum by (host_id)`* so the series match
+  on the one label they share; the cost is that this alert's labels differ
+  from `HostMemory80`'s, which the promtool case documents. It says
+  nothing about a host whose scrape is down -- both series vanish together
+  -- which is `HostdDown`'s and `HostScrapeDown`'s job, and their `equal:
+  [host_id]` inhibitions keep this quiet underneath them.
+- *Revisit when* two hosts have run for a week: one host is the whole
+  fleet today, so there is no base rate for `for: 15m`.
+
+**I-746. The validity pass stops eating the boot deadline and blaming
+`--load-db` for it (cpu-weight, 2026-10-15).** Extends I-705, which this
+branch set out to duplicate: the proposal's §8 item 2 asked for a
+deadline above the 30 s default on `RegisterPaths`, and I-705 had already
+shipped exactly that as `BootDeadline`, 3 minutes, covering
+`SetupProject` as well. This branch's own `RegisterPathsDeadline` of 5
+minutes was dropped at the merge rather than kept beside it: a second
+constant for one purpose is how a grep misses half the uses, and I-705's
+figure is the one in production with an incident behind it (three creates
+on host-01, 2026-10-13).
+
+What I-705 did not fix, and this does: `RegisterPaths` spends its budget
+on `nix-store --check-validity` over the shared store's lower, in chunks
+of 2,000 paths, before it loads the registration -- and it *swallowed*
+that call's error. So a context expiry inside the validity pass was
+discarded, `--load-db` then ran with a dead context and failed at once,
+and the error named `--load-db` for time the pass before it had spent.
+That is the message the owner saw twice on 2026-10-14: `register paths:
+run /run/current-system/sw/bin/nix-store: context deadline exceeded`,
+pointing at the wrong command.
+
+- It now returns early on `context.DeadlineExceeded`, and the wrapped
+  error names `nix-store --check-validity`. Every other error from the
+  pass stays swallowed, which is what makes the skip and the view's roots
+  best-effort.
+- *Rejected:* giving the load its own sub-deadline carved out of the
+  request with `context.WithoutCancel`, which would let a create exceed
+  the deadline its caller set and is a worse shape than failing with the
+  truth.
+- A reviewer should note that this makes no create succeed that failed
+  before: it changes which command a failure names. The deadline that
+  decides whether the create survives is I-705's, and if the 74-second
+  pass measured on a loaded host recurs inside 3 minutes, that is I-705's
+  number to revisit, not this entry's.
+
+**I-739. The seat count is the smaller of a host's memory and its CPU
+ceiling, per host and then summed (cpu-weight, 2026-10-15).** Amends
+I-290, whose arithmetic -- "as many seats as the ready, undrained hosts
+have usable 8 GB blocks" -- is the oversell `LAUNCH.md` §3 was warning
+about by hand. A seat is 8 GB of running memory and, since every class is
+2 GB per guest vCPU, also 4 guest vCPUs. Memory alone says a `D64s_v7`
+sells 30 seats; its 32 physical cores serve 11. host-01's 64 GB says 6;
+its 8 cores serve 1.
+
+- *The CPU ceiling is a peak, not a mean.* Seats are sold to accounts that
+  use them in bursts, so the question is how many may be sold before the
+  chance that more are busy at one moment than the host can serve passes 5
+  percent. With n seats each busy an independent `DutyCycle` of 0.4 of the
+  time (48 percent measured for the one active account over 918
+  machine-hours, 33 percent fleet-wide, `pause-idle` §5; the pitch selects
+  for the high end), the busy count is Binomial(n, 0.4) and the host
+  serves nine tenths of its cores divided by 4. That reproduces the
+  proposal's §3 table exactly at p = 0.3, 0.4 and 0.5, and the table test
+  pins the **published** figures rather than the code's own output,
+  because these numbers are the price floor.
+- *Capped by what placement accepts*, `cores x PlacementVCPUPct / 100 / 4`
+  (I-734, I-736): a seat whose machine placement would refuse is not a
+  seat. The burst figure binds up to 32 cores and the placement ratio from
+  64 up, so 64 cores sells 24 rather than the table's 25, 96 sells 36
+  rather than 40, and 124 sells 46 rather than 53. That is a deliberate
+  deviation from the proposal, which has no placement term; it is the one
+  place the two halves of this work could silently disagree about the same
+  host, and this is where they are made to agree.
+- *Per host, then summed, never the fleet's cores first.* A project is
+  pinned to its host for life (DESIGN §4), so there is no pooled burst to
+  sell: two `D128ls_v7` deliver 50 seats where one `D248ls_v7` of the same
+  size delivers 53. Fragmenting costs seats, and the honest number is the
+  smaller one.
+- *The tail is summed from k+1 upward, never as 1 - CDF.* The margins this
+  turns on are 0.0018 absolute -- a `D128ls_v7` is 25 seats at a tail of
+  0.0344 and 26 at 0.0518 -- and cancellation against 1 is the wrong place
+  to spend that. A test pins those two figures.
+- *`repose-admin seats` reports both ceilings as data* ("total from 1
+  ready, undrained host: memory allows 6, cores allow 1"), because the old
+  trailing sentence became false and because the one reader of that
+  command is an operator deciding whether to buy memory or cores -- the
+  $355 a month of stranded RAM the proposal found on the `D64s_v7`.
+  *Rejected:* a third `Source` value, since on a mixed fleet one host can
+  be memory-bound and another CPU-bound and a single enum would lie.
+- *Rejected: `p` as an environment variable.* Both the `api` and `api-grpc`
+  apps count seats, and a value that differed between them would have one
+  refusing a checkout the other is inviting someone into -- `SEATS_TOTAL`
+  already carries that warning in `ops/coolify/api-grpc.env.example`.
+  `SEATS_TOTAL` stays the operator's override, and a seat count is a
+  clearer thing to set than a probability.
+- *A host that reports no cores is bounded by memory alone*, which is what
+  the derivation did before this; the `vcpus / 2` bridge is in the write
+  path (I-735) so this reads one real number.
+- *What it does to prod the day it ships.* The derived total goes from 6 to
+  **1**. Plus (2 seats) and Pro (4 seats) become unbuyable, `/billing`
+  marks them unavailable, every new checkout waitlists, and the landing
+  page shows "1 seat left" and then "Full for now". That is the honest
+  number and the point of the change, and it is a launch-blocking business
+  fact: either the launch host lands first, or `SEATS_TOTAL` is set
+  deliberately above the derivation on both api apps with the owner
+  knowing that each seat past it buys 17-45 ms typing for every guest on
+  the host.
+- *`PRICING.md` "The cost floor" is left alone and is now wrong.* It
+  assumes $100 a seat at 30 seats per host; at 11 deliverable seats a
+  `D64s_v7` seat is about $281 and the best-shaped Azure host about $200,
+  so Solo's margin against an AX162 shrinks or inverts and
+  "break-even once 22 Solo seats are sold" needs re-deriving. That is
+  proposal §7 item 6 and a pricing call, which is the owner's; this entry
+  records that it is owed, and the seat derivation does not wait for it.
 **I-696. The launch gates only the owner can close live in
 `CHECKLIST.md`, not in a handoff file.** (conductor, 2026-10-12) The
 host-restart run left five things that need the owner's own hands, and

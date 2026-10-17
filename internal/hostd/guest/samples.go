@@ -7,6 +7,7 @@ import (
 	"time"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
@@ -260,6 +261,18 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 		}
 		m.d.Metrics.MemFreeBytes.Set(float64(m.FreeMemBytes()))
 		m.d.Metrics.MemReservedBytes.Set(float64(m.reservedBytes()))
+		// CPU's capacity figure and the load against it, the pair
+		// HostCPUSaturated reads (DECISIONS I-738). Cores are physical
+		// cores, the denominator the latency measurement is in; load1 is
+		// the figure hostSample already read, not a second pass over
+		// /proc/loadavg. Both are plain Sets on every tick, so a hostd
+		// restart has nothing to reconcile.
+		if cores := hostinfo.PhysicalCores(); cores > 0 {
+			m.d.Metrics.CPUCores.Set(float64(cores))
+		}
+		if m.d.Load1 != nil {
+			m.d.Metrics.Load1.Set(s.Host.GetLoad1())
+		}
 	}
 	m.sampleBlocked(ctx)
 	m.poolWarning()

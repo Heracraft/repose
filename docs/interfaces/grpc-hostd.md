@@ -17,13 +17,26 @@ RegisterResponse { string host_id; bytes client_cert; bytes client_key;
                    string guest_cidr; WireguardPeer edge; string wg_private_key;
                    string loki_url; string host_ca_pub; }
 HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
-           string nixos_system; string ch_version; uint64 pool_bytes; }
+           uint32 cores; string nixos_system; string ch_version;
+           uint64 pool_bytes; }
 ```
 
 `repose-admin hosts add` mints the join token, and cloud-init places it in
 the host's `/run/repose/join-token`. hostd calls Register once, stores the
 certificate at `/var/lib/repose/hostd/{cert,key}.pem` and rotates it with
 `Rotate` (unary, same shape) every 30 days.
+
+`cores` (field 8, I-735) is the host's physical cores, the number
+placement counts committed guest vCPUs against (I-736); `vcpus` is the
+SMT thread count `runtime.NumCPU()` reports and stays recorded beside
+it. A hostd older than I-735 sends 0, and the api records `vcpus / 2`
+instead, which is the exact core count on every shape repose can run
+(DESIGN.md §4); the old shape is accepted for one release. `Rotate`
+carries `HostInfo` too and records `vcpus` and `cores` from it, each
+only when the host sends it above 0, because `Register` runs once per
+host: the join token is single use, so a rotate is an already-registered
+host's only way to report what it now has. Not `Limits.cores`, which is
+a nix build's job count.
 
 `Rotate` and `Session` admit a certificate only when its serial is the
 host's `cert_serial`, or the serial the last rotate replaced until the host

@@ -66,10 +66,10 @@ func TestWaitlistCommands(t *testing.T) {
 		t.Fatalf("list after invitation:\n%s", out)
 	}
 	// seats: no ready host in this harness, so the total is 0 from the
-	// hosts and the three holds are held; with SEATS_TOTAL the source and
-	// the free count change.
+	// hosts, both ceilings are 0 with it (I-739) and the three holds are
+	// held; with SEATS_TOTAL the source and the free count change.
 	out, err = run(t, e, "seats")
-	if err != nil || !strings.Contains(out, "TOTAL") || !strings.Contains(out, "\n0 ") || !strings.Contains(out, "total from the ready, undrained hosts") {
+	if err != nil || !strings.Contains(out, "TOTAL") || !strings.Contains(out, "\n0 ") || !strings.Contains(out, "total from 0 ready, undrained hosts: memory allows 0, cores allow 0") {
 		t.Fatalf("seats:\n%s %v", out, err)
 	}
 	t.Setenv("SEATS_TOTAL", "30")

@@ -2,9 +2,11 @@ package guest
 
 import (
 	"context"
+	"fmt"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -24,6 +26,22 @@ func TestGuestUnitPropsGolden(t *testing.T) {
 	for _, forbidden := range []string{"AF_INET", "AmbientCapabilities", "User=root"} {
 		if strings.Contains(got, forbidden) {
 			t.Fatalf("unit properties contain %q", forbidden)
+		}
+	}
+}
+
+// Contention divides in proportion to the class, not equally (DECISIONS
+// I-737): every class's weight is its vCPUs times one multiplier, and
+// inside systemd's 1..10000.
+func TestCPUWeightIsProportionalToTheClass(t *testing.T) {
+	for name, c := range Classes {
+		props := GuestUnitProps(c, "hostd", "/var/lib/repose/guests", "/var/lib/repose/guests/"+gid1, "/dev/vg-guests/g-"+gid1)
+		w := c.VCPUs * CPUWeightPerVCPU
+		if want := fmt.Sprintf("CPUWeight=%d", w); !slices.Contains(props, want) {
+			t.Fatalf("class %s: properties lack %q: %v", name, want, props)
+		}
+		if w < 1 || w > 10000 {
+			t.Fatalf("class %s: CPUWeight %d outside systemd's 1..10000", name, w)
 		}
 	}
 }

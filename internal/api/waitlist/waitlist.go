@@ -1,7 +1,8 @@
 // Package waitlist is the seats waitlist (DECISIONS I-269, amended by
-// I-290). Memory is never oversubscribed, so the fleet has exactly as
-// many seats as its ready, undrained hosts have usable 8 GB blocks, or as
-// many as SEATS_TOTAL says. A seat is held by every live subscription
+// I-290 and I-739). The fleet has as many seats as its ready, undrained
+// hosts deliver, each host the smaller of what its memory divides into
+// and what its physical cores can serve (hostseats.go), or as many as
+// SEATS_TOTAL says. A seat is held by every live subscription
 // (its plan's seats) and by every invitation whose hold has not run out.
 // Checkout asks Reserve before it creates a Polar checkout; without a
 // free seat the user joins the list and gets `waitlisted`. Every minute
@@ -84,19 +85,36 @@ const (
 	SourceHosts  Source = "hosts"
 )
 
-// CountSource is Count with where Total came from, for repose-admin seats.
-func (s *Service) CountSource(ctx context.Context) (Count, Source, error) {
-	c, err := count(ctx, s.Pool, s.Total, s.now())
+// Derivation is how a derived total was reached, for repose-admin seats:
+// the ready, undrained hosts counted and what each ceiling allowed
+// across them. Total is the smaller of the two per host and then summed,
+// so on a mixed fleet neither figure need equal it. Zero when the total
+// came from SEATS_TOTAL.
+type Derivation struct {
+	Hosts  int
+	Memory int
+	CPU    int
+	// NoCores counts the hosts among them that reported no physical
+	// cores, whose CPU ceiling is therefore unknown and counted at their
+	// memory ceiling. After migration 0027 and I-735's write path that is
+	// only a host which reported no vcpus either.
+	NoCores int
+}
+
+// CountSource is Count with where Total came from and, when it came from
+// the hosts, how, for repose-admin seats.
+func (s *Service) CountSource(ctx context.Context) (Count, Source, Derivation, error) {
+	c, d, err := count(ctx, s.Pool, s.Total, s.now())
 	src := SourceHosts
 	if s.Total > 0 {
 		src = SourceConfig
 	}
-	return c, src, err
+	return c, src, d, err
 }
 
 // Count implements Seats.
 func (s *Service) Count(ctx context.Context) (Count, error) {
-	c, err := count(ctx, s.Pool, s.Total, s.now())
+	c, _, err := count(ctx, s.Pool, s.Total, s.now())
 	if err == nil {
 		s.gauges(c)
 	}
@@ -104,19 +122,46 @@ func (s *Service) Count(ctx context.Context) (Count, error) {
 }
 
 // count is the seat arithmetic of I-290 at now, on q (a pool or the
-// locked transaction).
-func count(ctx context.Context, q store.Querier, total int, now time.Time) (Count, error) {
+// locked transaction). The Derivation is empty when Total is SEATS_TOTAL.
+func count(ctx context.Context, q store.Querier, total int, now time.Time) (Count, Derivation, error) {
 	var c Count
+	var d Derivation
 	if total > 0 {
 		c.Total = total
 	} else {
-		// floor((RAM - reserve) / 8 GB) per ready, undrained host; the
-		// reserve is the scheduler's rule (16 GB from 128 GB of RAM, 8
-		// below), repeated in SQL as the scheduler repeats it.
-		err := q.QueryRow(ctx, `select coalesce(sum(greatest(0, (h.mem_bytes - case when h.mem_bytes >= (128::bigint<<30) then 16::bigint<<30 else 8::bigint<<30 end) / $1)), 0)::integer
-			from hosts h where h.state = 'ready' and not h.draining`, SeatBytes).Scan(&c.Total)
+		// The seats each ready, undrained host delivers, per host and
+		// then summed, never the fleet's memory and cores summed first:
+		// a project is pinned to its host for life (DESIGN §4), so a
+		// guest cannot borrow an idle core on a neighbour and the risk
+		// of a host being asked for more than it can serve is a fact
+		// about that host alone (I-739).
+		rows, err := q.Query(ctx, `select h.mem_bytes, h.cores
+			from hosts h where h.state = 'ready' and not h.draining`)
 		if err != nil {
-			return c, err
+			return c, d, err
+		}
+		// Drained fully before anything else runs on q: count is called
+		// inside the advisory-locked transaction (Reserve, Inviter.Run),
+		// where open rows would block the next query on it.
+		for rows.Next() {
+			var memBytes int64
+			var cores int
+			if err := rows.Scan(&memBytes, &cores); err != nil {
+				rows.Close()
+				return c, d, err
+			}
+			mem, cpu := HostCeilings(memBytes, cores)
+			d.Hosts++
+			if cores <= 0 {
+				d.NoCores++
+			}
+			d.Memory += mem
+			d.CPU += cpu
+			c.Total += min(mem, cpu)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return c, d, err
 		}
 	}
 	err := q.QueryRow(ctx, `select
@@ -125,10 +170,10 @@ func count(ctx context.Context, q store.Querier, total int, now time.Time) (Coun
 		(select count(*) from waitlist w join users u on u.id = w.user_id
 		  where w.invited_at is null and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null)::integer`, now).Scan(&c.Held, &c.Waiting)
 	if err != nil {
-		return c, err
+		return c, d, err
 	}
 	c.Free = max(0, c.Total-c.Held)
-	return c, nil
+	return c, d, nil
 }
 
 func (s *Service) gauges(c Count) {
@@ -170,7 +215,7 @@ func (s *Service) Reserve(ctx context.Context, userID string, seats int) (bool, 
 			return err
 		}
 		var err error
-		c, err = count(ctx, tx, s.Total, now)
+		c, _, err = count(ctx, tx, s.Total, now)
 		if err != nil {
 			return err
 		}
@@ -348,7 +393,7 @@ func (a *Inviter) Run(ctx context.Context, now time.Time) (invited, expired int,
 			if err := lock(ctx, tx); err != nil {
 				return err
 			}
-			c, err := count(ctx, tx, a.Total, now)
+			c, _, err := count(ctx, tx, a.Total, now)
 			if err != nil {
 				return err
 			}

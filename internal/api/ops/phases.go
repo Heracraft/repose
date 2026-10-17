@@ -571,10 +571,16 @@ func (e *Engine) buildBuild(ctx context.Context, op *store.Op, p *store.Project)
 			// docs/workstreams/10-observability.md §5 requires schedule_fail
 			// and counts placements by result; without these two lines a
 			// fleet that has run out of memory is invisible until a user
-			// complains.
-			e.m.ScheduleTotal.WithLabelValues("no_capacity").Inc()
+			// complains. The reason separates the two capacity walls: a
+			// fleet out of memory is bought differently from a fleet out
+			// of cores (DECISIONS I-736).
+			reason := "no_capacity"
+			if errors.Is(err, scheduler.ErrNoCPUCapacity) {
+				reason = "no_cpu"
+			}
+			e.m.ScheduleTotal.WithLabelValues(reason).Inc()
 			e.log.Warn("no host has capacity", "event", "schedule_fail",
-				"project_id", p.ID.String(), "class", p.Class, "reason", "no_capacity")
+				"project_id", p.ID.String(), "class", p.Class, "reason", reason)
 			return nil, uuid.Nil, false, errCapacity()
 		}
 		if err != nil {

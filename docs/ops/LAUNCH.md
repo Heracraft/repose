@@ -89,17 +89,17 @@ months, limited to 20 redemptions) can go in the tweet.
 **Before you size the host, read
 [../proposals/2026-10-14-host-cpu-capacity.md](../proposals/2026-10-14-host-cpu-capacity.md).**
 Measurement on prod on 2026-10-14 says a `D64s_v7` delivers about 11
-seats, not 30: its 64 Azure vCPUs are 32 physical cores, placement has no
-CPU term, and past roughly one busy guest vCPU per core typing in every
-guest on the host goes from 3 ms to 17-45 ms. Two consequences for the
-steps below: `SEATS_TOTAL` must be set by hand in step 2, because
-deriving it from memory oversells by about 2x; and the size in step 1 is
-now bounded by the Azure credit balance rather than by quota, since
-`Total Regional vCPUs` in East US was raised from 65 to **350** on
-2026-10-14 (40 used). Everything up to a `D248ls_v7` is creatable;
-only `D372s_v7` would need a further raise, of the regional total and of
-the `Dsv7` family. Nothing in that proposal is decided, but the seat
-count bites on launch day.
+seats, not 30: its 64 Azure vCPUs are 32 physical cores, and past roughly
+one busy guest vCPU per core typing in every guest on the host goes from
+3 ms to 17-45 ms. The api counts that now (I-739), so step 2 needs no
+hand-set number; what is left to you is the shape. The proposal argues
+for the `D<n>ls_v7` line, where a host's memory ceiling and its CPU
+ceiling nearly coincide, over step 1's `D64s_v7` (I-39), whose extra
+19 seats of RAM cannot be sold. The size is bounded by the Azure credit
+balance rather than by quota: `Total Regional vCPUs` in East US was
+raised from 65 to **350** on 2026-10-14 (40 used), so everything up to a
+`D248ls_v7` is creatable and only `D372s_v7` would need a further raise,
+of the regional total and of the `Dsv7` family.
 
 0. Before the launch host registers, give it a free WireGuard address.
    The api numbers hosts on the edge's WireGuard network by themselves:
@@ -127,15 +127,24 @@ count bites on launch day.
    `make -C infra apply ENV=prod`. About $3,000 a month while it runs
    (`AZURE-SETUP.md`). Existing guests move with `repose-admin projects
    move`.
-2. Until the host is up, or if you want to sell fewer seats than the fleet
-   has, set `SEATS_TOTAL` on both api apps (30 for one `D64s_v7`; `0`
-   derives it from the ready hosts, which is 6 on the `D16s_v7` today: its usable memory is a little under 64 GB minus the reserve).
-   Both figures are the memory ceiling, not what the host's CPU can
-   serve: set the value by hand (11 for a `D64s_v7`, 2 for the
-   `D16s_v7`) until a decision changes the derivation. Check:
-   `repose-admin seats` prints total, held, free and the source; the
-   landing page's pricing section shows "N seats left".
-3. Your own account and any tester's: `repose-admin users exempt <handle>`
+2. `SEATS_TOTAL` stays `0`, which derives the count from the ready hosts:
+   per host the smaller of its 8 GB memory blocks after the reserve and
+   what its physical cores can serve (I-739). That is **1** on the
+   `D16s_v7` today and 11 on a `D64s_v7`. Set it on both api apps only to
+   sell fewer than that; above the derivation it is an oversell, and what
+   it buys is every guest on the host typing at 17-45 ms. Check:
+   `repose-admin seats` prints total, held, free, waiting and the two
+   ceilings; the landing page's pricing section shows "N seats left".
+3. Expect host-01 to refuse new projects until the launch host is up.
+   Placement counts committed guest vCPUs against a host's physical cores
+   and refuses past 1.5 per core (I-736, I-734); host-01's 8 cores allow
+   12 and the guests already on it commit 20, so a create lands there only
+   once it is under 12. The refusal is `capacity`, and the api's
+   `schedule_fail` line says `reason=no_cpu`. Bring the launch host up
+   first, or move guests off with `repose-admin projects move`.
+   `repose-admin hosts list` and the `host_reservations` view show the
+   committed figure.
+4. Your own account and any tester's: `repose-admin users exempt <handle>`
    passes the gate without a plan and holds no seat.
 
 ## 4. Deploy order

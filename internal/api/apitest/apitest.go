@@ -202,7 +202,7 @@ func (h *Harness) ConnectHost(t *testing.T, name string, fo fakehostd.Options) {
 		t.Fatal(err)
 	}
 	conn := h.dial(t, nil)
-	resp, err := hostdv1.NewHostServiceClient(conn).Register(h.Ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: &hostdv1.HostInfo{Hostname: name, MemBytes: 256 << 30, Vcpus: 64, PoolBytes: 2 << 40}})
+	resp, err := hostdv1.NewHostServiceClient(conn).Register(h.Ctx, &hostdv1.RegisterRequest{JoinToken: token, Info: &hostdv1.HostInfo{Hostname: name, MemBytes: 256 << 30, Vcpus: 64, Cores: 32, PoolBytes: 2 << 40}})
 	if err != nil {
 		t.Fatal(err)
 	}

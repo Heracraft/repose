@@ -113,8 +113,11 @@ func (e *Env) waitlistCmd(ctx context.Context, args []string) error {
 
 // seatsCmd is `repose-admin seats`: the fleet's seat count as GET
 // /public/seats and the invite tick see it (DECISIONS I-290), and where
-// the total came from. SEATS_TOTAL in this process's environment is what
-// the api would use; with none set the count comes from the hosts.
+// the total came from -- for a derived total, the two ceilings it is the
+// smaller of per host, which is what tells an operator whether the next
+// host should bring memory or cores (I-739). SEATS_TOTAL in this
+// process's environment is what the api would use; with none set the
+// count comes from the hosts.
 func (e *Env) seatsCmd(ctx context.Context, args []string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("%w: seats takes no arguments", ErrUsage)
@@ -131,11 +134,21 @@ func (e *Env) seatsCmd(ctx context.Context, args []string) error {
 		total = n
 	}
 	svc := &waitlist.Service{Pool: e.pool, Total: total}
-	c, src, err := svc.CountSource(ctx)
+	c, src, d, err := svc.CountSource(ctx)
 	if err != nil {
 		return err
 	}
-	from := "the ready, undrained hosts (8 GB blocks after the host reserve)"
+	hosts := "hosts"
+	if d.Hosts == 1 {
+		hosts = "host"
+	}
+	from := fmt.Sprintf("%d ready, undrained %s: memory allows %d, cores allow %d", d.Hosts, hosts, d.Memory, d.CPU)
+	if d.NoCores > 0 {
+		// Without cores there is no CPU ceiling to report, and the
+		// number above counted such a host at its memory ceiling: say so
+		// rather than let it read as a CPU figure (I-735, I-739).
+		from = fmt.Sprintf("%s (%d reported no cores, counted by memory)", from, d.NoCores)
+	}
 	if src == waitlist.SourceConfig {
 		from = "SEATS_TOTAL"
 	}

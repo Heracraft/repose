@@ -327,9 +327,11 @@ func (s *Server) Register(ctx context.Context, req *hostdv1.RegisterRequest) (*h
 		}
 		if _, err := tx.Exec(ctx, `update hosts set registered_at = now(), join_token_hash = null, guest_cidr = $2, wg_ip = $3, wg_pubkey = $4,
 			hostname = $5, sku = coalesce(nullif($6, ''), sku), mem_bytes = $7, vcpus = $8, pool_bytes = $9, nixos_system = $10, ch_version = $11,
-			cert_serial = $12, prev_cert_serial = null, cert_expires_at = $13, state = 'registering' where id = $1`,
+			cert_serial = $12, prev_cert_serial = null, cert_expires_at = $13, state = 'registering',
+			cores = case when $14::int > 0 then $14::int when $8::int > 1 then $8::int / 2 else 0 end
+			where id = $1`,
 			h.ID, cidr, wgIP, wgPub, nilIfEmpty(info.Hostname), info.Sku, int64(info.MemBytes), int32(info.Vcpus), int64(info.PoolBytes), nilIfEmpty(info.NixosSystem), nilIfEmpty(info.ChVersion),
-			serial, time.Now().Add(pki.HostCertValidity)); err != nil {
+			serial, time.Now().Add(pki.HostCertValidity), int32(info.Cores)); err != nil {
 			return err
 		}
 		resp = &hostdv1.RegisterResponse{HostId: h.ID.String(), ClientCert: certPEM, ClientKey: keyPEM, GuestCidr: cidr.String(), HostCaPub: s.hostCAPubLine()}
@@ -375,9 +377,25 @@ func (s *Server) Rotate(ctx context.Context, req *hostdv1.RegisterRequest) (*hos
 	if err != nil {
 		return nil, status.Error(codes.Internal, "issue failed")
 	}
+	info := req.Info
+	if info == nil {
+		info = &hostdv1.HostInfo{}
+	}
 	// The presented certificate stays valid until the host connects with
 	// the new one; the state guard closes the race with mark-lost.
-	tag, err := s.pool.Exec(ctx, "update hosts set cert_serial = $2, prev_cert_serial = $4, cert_expires_at = $3 where id = $1 and state not in ('lost', 'retired')", h.ID, serial, time.Now().Add(pki.HostCertValidity), presented)
+	//
+	// A rotate is the only later chance to record what the host now
+	// reports: Register runs once per host, because the join token is
+	// single use, so an upgraded hostd's physical cores arrive here
+	// (DECISIONS I-735). A field the host sends as 0 keeps the recorded
+	// value, so an older hostd changes nothing, and a hostd that reports
+	// threads but no cores gets the same vcpus / 2 reading Register gives
+	// it.
+	tag, err := s.pool.Exec(ctx, `update hosts set cert_serial = $2, prev_cert_serial = $4, cert_expires_at = $3,
+		vcpus = case when $5::int > 0 then $5::int else hosts.vcpus end,
+		cores = case when $6::int > 0 then $6::int when $5::int > 1 then $5::int / 2 else hosts.cores end
+		where id = $1 and state not in ('lost', 'retired')`,
+		h.ID, serial, time.Now().Add(pki.HostCertValidity), presented, int32(info.Vcpus), int32(info.Cores))
 	if err != nil {
 		return nil, status.Error(codes.Internal, "rotate failed")
 	}
