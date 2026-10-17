@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,14 +41,15 @@ type Guest struct {
 	wg       sync.WaitGroup
 	conns    atomic.Int64
 
-	// sessions counts the commands running now; mu guards running, their
-	// process groups. Close ends and waits for both, so a test's cleanup
-	// never removes the fake guest's home while a command it started is
-	// still writing there (TestSyncRefusesAnUnrelatedCheckout on a loaded
-	// box, 2026-10-15).
+	// sessions counts the commands running now; mu guards groups, the
+	// process group of every command started. Close ends what is left in
+	// them, the background jobs a command left behind included (a first
+	// sync's backfill), so a test's cleanup never removes the fake guest's
+	// home while something is still writing there (CI on 4be06cbd,
+	// 2026-10-15).
 	sessions sync.WaitGroup
 	mu       sync.Mutex
-	running  map[int]struct{}
+	groups   map[int]struct{}
 	closed   bool
 }
 
@@ -132,15 +134,24 @@ func (g *Guest) Close() {
 	g.wg.Wait()
 	g.mu.Lock()
 	g.closed = true
-	for pgid := range g.running {
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	}
+	groups := g.groups
 	g.mu.Unlock()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		left := g.leftIn(groups)
+		for _, pid := range left {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		if len(left) == 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	done := make(chan struct{})
 	go func() { g.sessions.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Until(deadline)):
 	}
 	killTmux(g.sockDir)
 }
@@ -350,17 +361,13 @@ func (g *Guest) run(command string, channel ssh.Channel) int {
 		_, _ = fmt.Fprintln(channel.Stderr(), err)
 		return 1
 	}
-	pgid := cmd.Process.Pid
-	if g.running == nil {
-		g.running = map[int]struct{}{}
+	if g.groups == nil {
+		g.groups = map[int]struct{}{}
 	}
-	g.running[pgid] = struct{}{}
+	g.groups[cmd.Process.Pid] = struct{}{}
 	g.sessions.Add(1)
 	g.mu.Unlock()
 	err = cmd.Wait()
-	g.mu.Lock()
-	delete(g.running, pgid)
-	g.mu.Unlock()
 	g.sessions.Done()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -411,4 +418,42 @@ func killTmux(sockDir string) {
 	socket := filepath.Join(sockDir, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
 	cmd := exec.Command("tmux", "-S", socket, "kill-server")
 	_ = cmd.Run() // best effort; nothing to clean up if no server ever started
+}
+
+// leftIn lists the processes still alive in groups that work in the
+// guest's home: a group id, once its leader is gone, can be reused by an
+// unrelated process, which the home check keeps out.
+func (g *Guest) leftIn(groups map[int]struct{}) []int {
+	var pids []int
+	procs, _ := filepath.Glob("/proc/[0-9]*")
+	for _, p := range procs {
+		stat, err := os.ReadFile(p + "/stat")
+		if err != nil {
+			continue
+		}
+		// Field 5, after the parenthesised command name.
+		i := strings.LastIndexByte(string(stat), ')')
+		if i < 0 {
+			continue
+		}
+		f := strings.Fields(string(stat)[i+1:])
+		if len(f) < 3 {
+			continue
+		}
+		pgrp, err := strconv.Atoi(f[2])
+		if err != nil {
+			continue
+		}
+		if _, ok := groups[pgrp]; !ok {
+			continue
+		}
+		cwd, err := os.Readlink(p + "/cwd")
+		if err != nil || (cwd != g.Home && !strings.HasPrefix(cwd, g.Home+"/")) {
+			continue
+		}
+		if pid, err := strconv.Atoi(filepath.Base(p)); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
