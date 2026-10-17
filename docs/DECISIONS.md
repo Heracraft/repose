@@ -22657,3 +22657,40 @@ a closure was too big without saying what filled it.
   with the declarations it had merged from main. It now uses each pair's
   own merge-base and prints it, and a pair it cannot compare because a
   branch is not fetched says so instead of printing "ok", which it did.
+
+**I-769. The console stream is boots only; a failed build's log is served
+where the docs send you for it (console-stream, 2026-10-17).** *Made
+during implementation.* An end-user sweep of v0.1.36 found `repose logs
+--kind console` returning 592 lines of a nix evaluation trace on a
+machine that had booted cleanly, where cli.md says "a machine that booted
+cleanly has none" and the CLI's own empty-state line says repose "keeps a
+machine's console only from a boot that failed".
+- *What it was.* The console branch of `projectLogs` ends with a stand-in
+  for ops predating I-592, which captured no console: the op's error
+  message, emitted as one record with `kind` set to the op's own kind.
+  Nothing scoped it to boots, so any failed op stood in — and a failed
+  `build` carries the whole nix trace in `error.message`, which arrived as
+  a single record with 591 embedded newlines. Hence the three symptoms: a
+  clean boot with a non-empty console, content that is not console output
+  and is labelled `build`, and only the first of 592 lines carrying a time,
+  against cli.md's "Each line starts with its local time".
+- *What it is now.* The stand-in fires only for an op kind that boots the
+  guest (`bootsGuest`: create, start, restart, restore, resize, fork — a
+  build or a config apply switches a running machine and boots nothing),
+  and only with the message's first line, since the stand-in is a sentence
+  and the stream is one record per line of console.
+- *Where the trace went instead.* Nowhere, until this change: the eval
+  error never reaches hostd's stream, so `--kind build` held one line
+  ("evaluating configuration") while config.md and troubleshooting.md both
+  send a user to `--kind build` for "the full log". The build branch now
+  serves the failed op's message after its streamed lines, one record per
+  line with the op's finish time, and skips it when hostd already streamed
+  the same error so nothing is printed twice.
+- *Measured.* On a `small` with a clean boot: before, `--kind console` 592
+  lines and `--kind build` 1; after, `--kind console` empty and `--kind
+  build` the whole trace. `TestConsoleLogsSkipOpsThatBootNothing` covers
+  both halves and I-592's `TestConsoleLogsServeTheFailedBoot` still passes.
+- *Not fixed here.* `--kind ops` renders the same multi-line message
+  inside its one-line-per-operation table, so a failed build spills the
+  trace across it. That is the CLI's rendering of `error.message`, not the
+  api's record, and it belongs with a CLI change rather than an api one.

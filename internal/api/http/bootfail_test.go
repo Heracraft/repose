@@ -75,3 +75,73 @@ func TestConsoleLogsServeTheFailedBoot(t *testing.T) {
 		t.Fatalf("project after the fallback: %s", pr.raw)
 	}
 }
+
+// I-769: the console stream is what a boot printed. A failed op that
+// boots nothing — a build, a config apply — used to stand in for a
+// console with its error's message, which put a nix evaluation trace of
+// hundreds of lines into `repose logs --kind console` on a machine that
+// had booted cleanly. Only an op that boots the guest stands in, and
+// only with the message's first line.
+func TestConsoleLogsSkipOpsThatBootNothing(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.h.Ctx
+	tok := e.signIn(t, "sub-con", "con")
+	r := e.do(t, tok, "POST", "/projects", map[string]any{"name": "kanali", "class": "small"})
+	if r.status/100 != 2 {
+		t.Fatalf("create: %d %s", r.status, r.raw)
+	}
+	pid := r.body["id"].(string)
+	var createOp string
+	if err := e.h.Pool.QueryRow(ctx, "select id::text from ops where project_id = $1 and kind = 'create'", pid).Scan(&createOp); err != nil {
+		t.Fatal(err)
+	}
+	e.h.WaitOp(uuid.MustParse(createOp))
+	e.h.WaitIdle(uuid.MustParse(pid))
+
+	trace := `nixpkgs has no package "nope"; search https://search.nixos.org/packages` + "\n\n       … from call site\n         at «github:NixOS/nixpkgs»/lib/types.nix:969:11:\n          969|           value = v;\n"
+	fail := func(kind string) {
+		if _, err := e.h.Pool.Exec(ctx,
+			`insert into ops (id, project_id, kind, state, error, finished_at)
+			 values ($1, $2, $3, 'error', jsonb_build_object('code', 'eval_failed', 'message', $4::text), now())`,
+			store.NewID(), pid, kind, trace); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A failed build belongs in --kind build, not here.
+	fail("build")
+	if r := e.do(t, tok, "GET", "/projects/"+pid+"/logs?kind=console", nil); r.status != 200 || strings.TrimSpace(string(r.raw)) != "" {
+		t.Fatalf("a failed build reached the console stream: %d %s", r.status, r.raw)
+	}
+	// And it is served there, whole, one record per line: config.md and
+	// troubleshooting.md send a user to --kind build for the full log, and
+	// a build that fails while evaluating streams nothing of its own.
+	r = e.do(t, tok, "GET", "/projects/"+pid+"/logs?kind=build", nil)
+	build := strings.Split(strings.TrimSpace(string(r.raw)), "\n")
+	if r.status != 200 || len(build) != len(strings.Split(strings.TrimRight(trace, "\n"), "\n")) {
+		t.Fatalf("the failed build's log is not in --kind build: %d %d records %s", r.status, len(build), r.raw)
+	}
+	if !strings.Contains(build[0], "nixpkgs has no package") || !strings.Contains(build[len(build)-1], "value = v;") {
+		t.Fatalf("--kind build does not carry the whole trace: %s", r.raw)
+	}
+	for i, l := range build {
+		if !strings.Contains(l, `"ts":`) || !strings.Contains(l, `"kind":"build"`) {
+			t.Fatalf("build record %d has no time or wrong kind: %s", i, l)
+		}
+	}
+	fail("apply_config")
+	if r := e.do(t, tok, "GET", "/projects/"+pid+"/logs?kind=console", nil); r.status != 200 || strings.TrimSpace(string(r.raw)) != "" {
+		t.Fatalf("a failed config apply reached the console stream: %d %s", r.status, r.raw)
+	}
+
+	// A failed boot still stands in, as one line.
+	fail("start")
+	r = e.do(t, tok, "GET", "/projects/"+pid+"/logs?kind=console", nil)
+	lines := strings.Split(strings.TrimSpace(string(r.raw)), "\n")
+	if r.status != 200 || len(lines) != 1 {
+		t.Fatalf("a failed start should stand in with one line, got %d: %s", len(lines), r.raw)
+	}
+	if !strings.Contains(lines[0], "nixpkgs has no package") || strings.Contains(lines[0], "call site") {
+		t.Fatalf("the stand-in is not the message's first line: %s", lines[0])
+	}
+}

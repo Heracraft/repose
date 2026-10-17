@@ -151,11 +151,43 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 		}
 		// ts and kind since DECISIONS I-322; since= is then a cursor, as
 		// for ops: only lines that arrived after it.
+		var seq int64
 		for _, l := range lines {
+			if l.Seq > seq {
+				seq = l.Seq
+			}
 			if !since.IsZero() && !l.TS.After(since) {
 				continue
 			}
 			if err := enc.Encode(map[string]any{"ts": l.TS, "kind": "build", "op_id": opID.ID, "seq": l.Seq, "line": l.Line}); err != nil {
+				return nil
+			}
+		}
+		// A build that failed while evaluating prints nothing hostd can
+		// stream: the whole error, trace and all, is the op's. config.md
+		// and troubleshooting.md send a user here for "the full log", so
+		// it is served here, one record per line, rather than standing in
+		// for a console it has nothing to do with (I-769).
+		msg, _ := opID.Error["message"].(string)
+		if msg == "" {
+			return nil
+		}
+		// Nothing is repeated: a failure hostd did stream is already above.
+		for _, l := range lines {
+			if strings.Contains(l.Line, firstLine(msg)) {
+				return nil
+			}
+		}
+		ts := opID.FinishedAt
+		if ts == nil {
+			ts = &opID.UpdatedAt
+		}
+		if !since.IsZero() && !ts.After(since) {
+			return nil
+		}
+		for _, l := range strings.Split(strings.TrimRight(msg, "\n"), "\n") {
+			seq++
+			if err := enc.Encode(map[string]any{"ts": ts, "kind": "build", "op_id": opID.ID, "seq": seq, "line": l}); err != nil {
 				return nil
 			}
 		}
@@ -199,11 +231,18 @@ func (s *Server) projectLogs(w http.ResponseWriter, r *http.Request) error {
 				}
 				continue
 			}
-			if op.Error == nil {
+			// The stand-in is for a boot from before I-592, which
+			// captured no console. Only an op that boots the guest
+			// can have one, so only those stand in: a failed build
+			// or config apply belongs in `--kind build`, not here
+			// (I-769). Its sentence is the message's first line;
+			// a nix error's message runs to hundreds of lines and
+			// this stream is one line per line of console.
+			if op.Error == nil || !bootsGuest(op.Kind) {
 				continue
 			}
 			msg, _ := op.Error["message"].(string)
-			if msg == "" {
+			if msg = strings.TrimSpace(firstLine(msg)); msg == "" {
 				continue
 			}
 			if err := enc.Encode(map[string]any{"ts": ts, "op_id": op.ID, "kind": op.Kind, "line": msg}); err != nil {
@@ -267,6 +306,29 @@ func sinceParamNamed(r *http.Request, name string) time.Time {
 // opsLogLine is one line of logs?kind=ops: the op's kind, state, finish
 // time, duration once finished and error. TestOpsLogLineDecodes holds
 // the CLI's decoding to this shape (I-609).
+// bootsGuest is whether an op of this kind starts the guest, and so
+// whether a console could have been captured for it (I-592). `build`
+// and `apply_config` switch a running machine without booting it, and
+// `stop`, `snapshot` and `destroy` boot nothing, so none of them can
+// have a console and none stands in for one (I-769).
+func bootsGuest(kind string) bool {
+	switch kind {
+	case "create", "start", "restart", "restore", "resize", "fork":
+		return true
+	}
+	return false
+}
+
+// firstLine is s up to its first newline. A nix evaluation error's
+// message carries its whole trace; the console stream is one record
+// per line, so only the sentence stands in (I-769).
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
 func opsLogLine(op store.Op) map[string]any {
 	line := map[string]any{"ts": op.CreatedAt, "op_id": op.ID, "kind": op.Kind, "state": op.State, "finished_at": op.FinishedAt}
 	if op.FinishedAt != nil {
