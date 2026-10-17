@@ -153,7 +153,7 @@ test('a pending question shows in Waiting on you and on its row, and is answered
 		'href',
 		`/projects/${p.id}`
 	);
-	await expect(row(page, p.name).getByText('question', { exact: true })).toBeVisible();
+	await expect(row(page, p.name).getByText('1 question', { exact: true })).toBeVisible();
 
 	await item.getByRole('button', { name: 'yes', exact: true }).click();
 	await expect(item).toHaveText('Answered yes from the dashboard');
@@ -162,7 +162,7 @@ test('a pending question shows in Waiting on you and on its row, and is answered
 	});
 	const got = ((await res.json()).questions as { id: string }[]).find((x) => x.id === q.id);
 	expect(got).toMatchObject({ state: 'answered', answer: 'yes', answered_via: 'dashboard' });
-	await expect(row(page, p.name).getByText('question', { exact: true })).toHaveCount(0, {
+	await expect(row(page, p.name).getByText('1 question', { exact: true })).toHaveCount(0, {
 		timeout: 15_000
 	});
 });

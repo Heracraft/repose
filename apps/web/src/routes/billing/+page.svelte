@@ -29,7 +29,7 @@
 		timeUntil,
 		classMemoryGB
 	} from '$lib/format';
-	import { fromApi, ordinal, type PlanFigures } from '$lib/plans';
+	import { fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
@@ -93,8 +93,7 @@
 	let diskHeld = $derived(
 		billing ? (billing.usage.disk_held_gb ?? billing.usage.disk_allocated_gb) : 0
 	);
-	const RUNNING = new Set(['running', 'starting', 'restoring', 'creating', 'building']);
-	let running = $derived(projects.filter((p) => RUNNING.has(p.state)));
+	let running = $derived(projects.filter(holdsMemory));
 	let heaviest = $derived(
 		projects
 			.filter((p) => (p.root_used_bytes ?? 0) > 0)
@@ -369,7 +368,7 @@
 </script>
 
 <svelte:head>
-	<title>Billing · repose</title>
+	<title>Billing — repose</title>
 </svelte:head>
 
 <!-- A plan's button in the picker. Only the plan the visitor came for is

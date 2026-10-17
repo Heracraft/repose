@@ -30,12 +30,12 @@ test('resize grows the volume', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	const volume = page.getByTestId('disk-volume');
-	await expect(volume).toHaveText('20 GB volume');
+	await expect(volume).toHaveText('20 GB disk');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	await page.getByRole('combobox').selectOption('40');
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(volume).toHaveText('40 GB volume', { timeout: 10_000 });
+	await expect(volume).toHaveText('40 GB disk', { timeout: 10_000 });
 	// The panel closed and gave focus back to Resize….
 	await expect(page.getByRole('button', { name: 'Resize…' })).toBeVisible();
 });
@@ -56,14 +56,14 @@ test('resize opens on the next size up and offers only grows', async ({ page }) 
 		}
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByTestId('disk-volume')).toHaveText('20 GB volume');
+	await expect(page.getByTestId('disk-volume')).toHaveText('20 GB disk');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	const select = page.getByLabel('Grow to');
 	await expect(select).toHaveValue('40');
 	await expect(select.locator('option')).toHaveText(['40 GB', '80 GB', '160 GB', '320 GB']);
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume', { timeout: 10_000 });
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB disk', { timeout: 10_000 });
 	expect(asked).toEqual([40 * 2 ** 30]);
 });
 
@@ -79,13 +79,13 @@ test('a disk at the largest size has no Grow to offer', async ({ page }) => {
 		await route.fulfill({ response: res, json: { ...json, volume_bytes: 320 * 2 ** 30 } });
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB volume');
+	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB disk');
 	await expect(page.getByRole('button', { name: 'Resize…' })).toHaveCount(0);
 	await expect(page.getByText('320 GB is the largest size.')).toBeVisible();
 });
 
 // The disk meter is the guest's root filesystem, used of its size, and a
-// disk 90 percent full or more says so above Resize (I-567). The
+// disk 90% full or more says so above Resize (I-567). The
 // allocated disk_used_bytes, near full on kanali with 6 GB free, is not
 // shown.
 test('a nearly full disk says how full it is', async ({ page }) => {
@@ -115,8 +115,8 @@ test('a nearly full disk says how full it is', async ({ page }) => {
 	});
 	await page.reload();
 	await expect(disk).toHaveAttribute('aria-valuetext', '37 GB of 39 GB');
-	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume');
-	await expect(page.getByTestId('disk-full')).toHaveText('94 percent full');
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB disk');
+	await expect(page.getByTestId('disk-full')).toHaveText('94% full');
 	await expect(page.getByText('39.5 GB')).toHaveCount(0);
 });
 

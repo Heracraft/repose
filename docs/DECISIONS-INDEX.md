@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-756 entries.
+757 entries.
 
 ## Scope
 
@@ -788,3 +788,4 @@ pointer, not a summary.
 - **I-761** The projects list is ordered by what wants you, then what is up, then what is at rest; the api's order is not a reading order — 2026-10-17; L22613
 - **I-762** /projects has a search and a state filter, both in the URL, and the list is capped at 25 with "Show all N" — 2026-10-17; L22620
 - **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22627
+- **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L22675

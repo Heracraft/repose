@@ -59,12 +59,12 @@ test('Settings adds and deletes an account secret; a project page shows it', asy
 	await expect(fromAccount.getByRole('heading', { name: 'From your account' })).toBeVisible();
 	await expect(fromAccount.getByText('COOLIFY_BASE_URL')).toBeVisible();
 	await expect(
-		fromAccount.getByRole('row', { name: /STRIPE_KEY/ }).getByText("This project's own is used")
+		fromAccount.getByRole('row', { name: /STRIPE_KEY/ }).getByText('This project’s own is used')
 	).toBeVisible();
 	await expect(
 		fromAccount
 			.getByRole('row', { name: /COOLIFY_BASE_URL/ })
-			.getByText("This project's own is used")
+			.getByText('This project’s own is used')
 	).toHaveCount(0);
 
 	// Delete asks first; Keep it backs out.

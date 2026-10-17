@@ -4,10 +4,29 @@
 // docs/PRICING.md's; plans.test.ts parses plans.go and fails when one
 // differs. /billing maps the api's plans onto the same shape (fromApi),
 // so a figure the api changes shows there without a release of the web.
-import type { Plan as ApiPlan, PlanId } from '$lib/api/types';
+import type { Plan as ApiPlan, PlanId, Project } from '$lib/api/types';
 import { sizeGB } from '$lib/format';
 
 export type { PlanId };
+
+/**
+ * The states that hold a plan's memory: running, and the ones on their
+ * way to running. internal/billing/usage.go's `memoryStates` is what
+ * refuses a start, so a page that counts any other set shows a figure
+ * the api will not honour — /projects counted only `running` and so told
+ * the user they had room the api then refused. plans.test.ts parses
+ * usage.go and fails when the two differ.
+ */
+export const MEMORY_STATES: ReadonlySet<Project['state']> = new Set([
+	'running',
+	'starting',
+	'restoring',
+	'creating',
+	'building'
+]);
+
+/** Whether a machine is holding the plan's memory right now. */
+export const holdsMemory = (p: Pick<Project, 'state'>) => MEMORY_STATES.has(p.state);
 
 export interface PlanFigures {
 	id: PlanId;

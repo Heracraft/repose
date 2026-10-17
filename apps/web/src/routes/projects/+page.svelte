@@ -21,7 +21,7 @@
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
-	import { DISK_FULL_PERCENT } from '$lib/disk';
+	import { DISK_FULL_PERCENT, diskPercent } from '$lib/disk';
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -222,13 +222,23 @@
 		pending = rest;
 	}
 
-	/** The guest's root filesystem used, in percent, with its figures for a title. */
+	/**
+	 * The guest's root filesystem used, with its figures for a title.
+	 * The percentage is $lib/disk's, the one `repose status` and `repose
+	 * ls` print: this had its own copy that fell back to the volume's
+	 * allocated size when the guest sent no root figure, so the table
+	 * could call a machine 95% full whose own page said nothing.
+	 */
 	function disk(p: Project): { pct: number; used: string; title: string } | undefined {
-		const used = p.root_used_bytes;
-		const size = p.root_size_bytes ?? p.volume_bytes;
-		if (used === undefined || !size || size <= 0 || used < 0) return undefined;
-		const pct = Math.min(100, Math.floor((used * 100) / size));
-		return { pct, used: gb(used), title: `${gb(used)} of ${gb(size)}` };
+		const pct = diskPercent(p);
+		if (pct === null || p.root_used_bytes === undefined || p.root_size_bytes === undefined) {
+			return undefined;
+		}
+		return {
+			pct,
+			used: gb(p.root_used_bytes),
+			title: `${gb(p.root_used_bytes)} of ${gb(p.root_size_bytes)}`
+		};
 	}
 
 	let summary = $derived.by(() => {
@@ -352,8 +362,6 @@
 			class:text-ink-muted={!full}
 			title={d.title}>{full ? `${d.pct}% full` : d.used}</span
 		>
-	{:else}
-		<span class="font-mono text-compact text-ink-muted">{gb(p.volume_bytes)}</span>
 	{/if}
 {/snippet}
 
@@ -494,13 +502,13 @@
 				<table class="table ptable">
 					<thead>
 						<tr>
-							<th>Project</th>
-							<th>State</th>
-							<th class="hidden lg:table-cell">Size</th>
-							<th>Agents</th>
-							<th class="hidden md:table-cell">Disk</th>
-							<th class="hidden xl:table-cell">Last snapshot</th>
-							<th><span class="sr-only">Actions</span></th>
+							<th scope="col">Project</th>
+							<th scope="col">State</th>
+							<th scope="col" class="hidden lg:table-cell">Size</th>
+							<th scope="col">Agents</th>
+							<th scope="col" class="hidden md:table-cell">Disk</th>
+							<th scope="col" class="hidden xl:table-cell">Last snapshot</th>
+							<th scope="col"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -520,7 +528,8 @@
 											<span class="badge">temporary</span>
 										{/if}
 										{#if questionsFor.get(p.id)}
-											<span class="badge badge--warn">question</span>
+											{@const n = questionsFor.get(p.id)!}
+											<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
 										{/if}
 									</div>
 									{#if remote}
@@ -633,7 +642,8 @@
 							{#if agents.length > 0 || questionsFor.get(p.id) || (p.signals?.ssh_sessions ?? 0) > 0}
 								<span class="mt-2 flex flex-wrap items-center gap-1.5">
 									{#if questionsFor.get(p.id)}
-										<span class="badge badge--warn">question</span>
+										{@const n = questionsFor.get(p.id)!}
+										<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
 									{/if}
 									{#if agents.length > 0 || (p.signals?.ssh_sessions ?? 0) > 0}
 										<AgentChips {agents} ssh={p.signals?.ssh_sessions} />

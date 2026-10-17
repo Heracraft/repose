@@ -27,13 +27,14 @@
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible, pollUntilDone } from '$lib/poll';
 	import {
-		uptime,
+		bytes,
+		classMemoryGB,
+		dateOnly,
 		gb,
 		gbs,
-		dateOnly,
 		normalizeRemoteDisplay,
-		classMemoryGB,
-		tempLeft
+		tempLeft,
+		uptime
 	} from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
@@ -235,11 +236,6 @@
 	/** The memory in use now: the newest sample's, while the machine runs. */
 	let memNow = $derived(project?.state === 'running' ? latest(series.mem) : undefined);
 	const GIB = 1024 * 1024 * 1024;
-	/** A memory figure as "3.4 GB", or "410 MB" under a gigabyte. */
-	const memGb = (b: number) =>
-		b < GIB
-			? `${Math.round(b / (1024 * 1024))} MB`
-			: `${(b / GIB).toFixed(1).replace(/\.0$/, '')} GB`;
 
 	onMount(() => {
 		// The first tick of each poll is the first load's; snapshots and
@@ -459,7 +455,7 @@
 				await explainRefusal(err);
 				return true;
 			}
-			toastApiError(err, 'Could not resize the volume.');
+			toastApiError(err, 'Could not resize the disk.');
 			return false;
 		}
 	}
@@ -856,7 +852,7 @@
 						stepS={samples.step_s}
 						start={samplesAt - span}
 						end={samplesAt}
-						format={memGb}
+						format={bytes}
 						maxLabel={gb(samples.memory_bytes)}
 					/>
 					<UsageChart
@@ -905,7 +901,7 @@
 									<tr>
 										<td class="font-mono text-compact">{p.comm}</td>
 										<td class="text-right tabular-nums">{cpuTime(p.cpu_s)}</td>
-										<td class="text-right tabular-nums">{memGb(p.rss_max_bytes)}</td>
+										<td class="text-right tabular-nums">{bytes(p.rss_max_bytes)}</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -971,7 +967,7 @@
 						Destroy
 					</h2>
 					<p class="mt-1 text-sm text-ink-muted">
-						Deletes the volume. The last snapshot is kept 30 days.
+						Deletes the disk. The last snapshot is kept 30 days.
 					</p>
 				</div>
 				<div class="md:w-[26rem] md:shrink-0">
