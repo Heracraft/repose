@@ -539,3 +539,32 @@ test('invoices come six to a page, newest first, with Newer and Older', async ({
 	await expect(pages).toContainText('7–12 of 14');
 	await setBilling({ invoices: [] });
 });
+
+// A plan that was paid for and never arrived is the one state where help
+// is genuinely owed: the card is charged and no machine can start. The
+// line used to end on "support will sort it out", naming nobody the
+// reader could reach (I-767).
+test('a plan that never arrives points at the support address', async ({ page }) => {
+	await setBilling({ mode: 'none' });
+	await page.clock.install();
+	await page.goto('/billing?checkout=done');
+	await expect(page.getByTestId('setting-up')).toBeVisible();
+
+	// Thirty rounds of 2s, and the webhook never lands. Each round awaits
+	// a real GET /billing, so the clock is stepped a round at a time
+	// rather than jumped: one jump fires the timers and leaves thirty
+	// fetches unresolved.
+	for (let i = 0; i < 32; i++) {
+		await page.clock.runFor(2100);
+		await page.waitForTimeout(20);
+	}
+
+	const banner = page.getByText('The plan has not arrived.');
+	await expect(banner).toBeVisible();
+	await expect(page.getByTestId('support-link')).toHaveAttribute(
+		'href',
+		'mailto:support@herakraft.co'
+	);
+	// Not the feedback board, which is for feedback.
+	await expect(page.getByTestId('support-link')).not.toHaveAttribute('href', /fider/);
+});

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-759 entries.
+760 entries.
 
 ## Scope
 
@@ -791,3 +791,4 @@ pointer, not a summary.
 - **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L22675
 - **I-765** The dashboard asks before it ends an agent's turn, and can keep a temporary machine: parity with the CLI where the CLI has a rule — 2026-10-17; L22684
 - **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L22692
+- **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L22705

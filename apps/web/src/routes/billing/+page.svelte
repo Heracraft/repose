@@ -30,7 +30,7 @@
 		classMemoryGB
 	} from '$lib/format';
 	import { fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
-	import { FEEDBACK_URL } from '$lib/links';
+	import { SUPPORT_MAILTO } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
@@ -470,8 +470,8 @@
 		{#if setupTimedOut}
 			<div class="banner banner--warn">
 				The plan has not arrived. Your payment went through and nothing is charged twice.
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- FEEDBACK_URL is off-site -->
-				<a href={FEEDBACK_URL} class="link" target="_blank" rel="noreferrer">Tell us</a> and we will finish
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a mailto, not a route -->
+				<a href={SUPPORT_MAILTO} class="link" data-testid="support-link">Email us</a> and we will finish
 				it by hand.
 			</div>
 		{/if}
