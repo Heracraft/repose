@@ -211,7 +211,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   no id in one folder for one agent only the first opens. A row marked
   `exited` starts no agent: that window opens under its name in its
   folder with a login shell under the line `<agent> was no longer running
-  when the machine stopped.` (I-757), and is outside that dedupe, so a
+  when this window was last saved.` (I-757), and is outside that dedupe, so a
   live window for the agent in the folder still opens. The windows
   reopened are written at once as this boot's `agent-windows.live` (fifth
   field empty, or `exited`, so a crash reopens it as a shell), with the

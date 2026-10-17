@@ -177,7 +177,7 @@ let
               # prints. Dropping it instead lost the window with no line
               # anywhere, and `repose ps` and `repose attach -w` could
               # not find it.
-              wrapped="echo \"$agent was no longer running when the machine stopped.\"; exec bash -l"
+              wrapped="echo \"$agent was no longer running when this window was last saved.\"; exec bash -l"
             else
               # The window closes when the agent exits, as one `repose run`
               # opened does, except when the agent refuses to resume (a
@@ -307,6 +307,7 @@ let
         fi
       fi
       body=""
+      exited_body=""
       while IFS="$us" read -r name command state cwd sid; do
         base=''${name##*/}
         [[ $base =~ ^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$ ]] || continue
@@ -323,12 +324,28 @@ let
         # A stop's row is 4 fields, which a restore from before I-757
         # reads; an exited row carries the marker as a 5th, which such a
         # restore drops into the field it ignores.
+        #
+        # Exited rows are held back and appended after every live one, so
+        # that a restore from BEFORE I-757 is safe on a base rollback.
+        # That restore has no `exited` and dedupes a row with no session
+        # id by "$agent:$cwd", first row wins: an exited row written
+        # ahead of a live one in the same folder would take the key and
+        # the live window would be the one that did not come back --
+        # worse than the bug this entry fixes. Ordered this way the live
+        # row claims the key and the exited row is the one dropped, which
+        # is exactly the old behaviour.
         if [ -n "$periodic" ] || [ "$state" = exited ]; then
-          body+=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "$state")$'\n'
+          row=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "$state")$'\n'
         else
-          body+=$(printf '%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid")$'\n'
+          row=$(printf '%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid")$'\n'
+        fi
+        if [ "$state" = exited ]; then
+          exited_body+=$row
+        else
+          body+=$row
         fi
       done <<< "$rows"
+      body+=$exited_body
       if [ -n "$periodic" ]; then
         target="$live"
         body="#boot $boot''${project_id:+ $project_id}"$'\n'"$body"

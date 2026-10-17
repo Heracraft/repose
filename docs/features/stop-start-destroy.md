@@ -111,10 +111,10 @@ Stop:
   had already exited is recorded too and opens as the login shell it
   held, under a line saying the agent was no longer running (I-757); on a
   herdr project herdr resumes agents with an integration by itself
-  (I-501). A machine
-  that ends without a stop (its host crashed or restarted) reopens the
-  windows of the minute record a timer keeps, from at most a minute
-  before; herdr puts back what it saved a few seconds before (I-646).
+  (I-501). A machine that ends without a stop (its host crashed or
+  restarted) reopens the windows of the minute record a timer keeps,
+  from at most a minute before; herdr puts back what it saved a few
+  seconds before (I-646).
   When the project's newest sample shows agents working or
   waiting for an answer, the CLI asks before stopping (`api has claude
   (working). Stopping ends it. Stop api? [y/N]`); a no exits 1 and stops

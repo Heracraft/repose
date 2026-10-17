@@ -1399,12 +1399,28 @@ in
               ["pi", "pi", "/home/dev/w2", "", "exited"],
               ["pi-2", "pi", "/home/dev/w2", ""],
           ], repr(rows)
+          # I-757 rollback safety: a restore from BEFORE I-757 has no
+          # `exited` and dedupes a row with no session id by
+          # "$agent:$cwd", first row winning, so every exited row must
+          # come after every live one. Ordered the other way, exited
+          # `pi` would take pi:/home/dev/w2 and the LIVE pi-2 would be
+          # the window that did not come back. sorted() above cannot
+          # see this, which is why the order is asserted on its own.
+          def exited_rows_last(record):
+              seen_exited = None
+              for r in (x.split("\x1f") for x in record[1:]):
+                  is_exited = len(r) > 4 and r[4] == "exited"
+                  assert not (seen_exited and not is_exited), (
+                      f"live row {r} after exited {seen_exited}: {record!r}")
+                  seen_exited = r if is_exited else seen_exited
+
+          exited_rows_last(rows)
           restart_session()
           # The live agent resumes once, under its own name; each exited
           # window is back as a login shell under one line.
           guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w2/pi.args", timeout=60)
           for w in ["pi", "opencode"]:
-              guest.wait_until_succeeds(f"sudo -u dev tmux capture-pane -p -t =todo-app:{w} | grep -qF '{w} was no longer running when the machine stopped.'", timeout=60)
+              guest.wait_until_succeeds(f"sudo -u dev tmux capture-pane -p -t =todo-app:{w} | grep -qF '{w} was no longer running when this window was last saved.'", timeout=60)
               guest.wait_until_succeeds(f"[ \"$(sudo -u dev tmux display-message -p -t =todo-app:{w} '#{{pane_current_command}}')\" = bash ]", timeout=30)
           assert windows() == ["opencode", "pi", "pi-2", "shell"], windows()
           assert guest.succeed("wc -l < /home/dev/w2/pi.args").strip() == "1"
@@ -1417,6 +1433,7 @@ in
               ["pi", "pi", "/home/dev/w2", "", "exited"],
               ["pi-2", "pi", "/home/dev/w2", "", ""],
           ], repr(live)
+          exited_rows_last(live)
           for w in ["opencode", "pi", "pi-2"]:
               guest.succeed(f"sudo -u dev tmux kill-window -t =todo-app:{w}")
           assert windows() == ["shell"], windows()
