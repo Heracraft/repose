@@ -25,6 +25,8 @@ A seat is 8 GB of memory for running machines: Solo takes one, Plus two, Pro fou
 
 We let people in, in the order they joined, as seats free up or we add a server. You get one email when it's your turn, sent even if you've turned notification emails off, and the seat is held for you for 72 hours. Choose your plan within them; a hold that runs out moves you to the back of the queue, and the email says so.
 
+Upgrading to a plan with more seats needs a free seat too, and is refused while there is none: each seat that frees goes to the oldest account on the waitlist.
+
 ## Egress
 
 Data your machines send to the internet is counted against the month's allowance (250 GB on Solo, 500 GB on Plus, 1 TB on Pro), then $0.05 per GB. At four times the allowance your machines are stopped until the month turns, with an email. Incoming data, and your own SSH traffic through the gateway, don't count.

@@ -128,8 +128,9 @@ still has:
 - `payment_required` on Start (and on a resize) renders an inline banner
   with the api's sentence, a link to `/billing` named for `detail.reason`
   (§5.8), and for `plan_limit` a Stop for each machine `detail.projects`
-  names that is this user's; `capacity` renders "No capacity right now, try
-  again in a few minutes"; `rate_limited` waits and retries once.
+  names that is this user's; `capacity` renders "No capacity right now." and no
+  lever, since the code is all both clients see and its five producers do
+  not share one (I-756); `rate_limited` waits and retries once.
 
 A request that gets no answer raises a persistent bar, "Cannot reach the
 API. Retrying…"; a 5xx raises it as "The API is failing right now.

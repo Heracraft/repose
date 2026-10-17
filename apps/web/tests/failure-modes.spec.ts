@@ -203,7 +203,7 @@ test('capacity on Start shows the documented message', async ({ page }) => {
 	await stopIfRunning(page);
 	await failNext('POST', '/projects/:id/start', 'capacity');
 	await page.getByRole('button', { name: 'Start', exact: true }).click();
-	await expect(page.getByText('No capacity right now, try again in a few minutes.')).toBeVisible();
+	await expect(page.getByText('No capacity right now.')).toBeVisible();
 	// capacity is a 503 the api gives as an answer (api.md "Errors"), so
 	// the page's banner is the one report and no outage bar joins it (I-393).
 	await expect(page.locator('#outage')).toBeEmpty();

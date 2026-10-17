@@ -688,7 +688,7 @@
 				{/if}
 			</div>
 		{:else if startBanner === 'capacity'}
-			<div class="banner banner--warn mt-4">No capacity right now, try again in a few minutes.</div>
+			<div class="banner banner--warn mt-4">No capacity right now.</div>
 		{/if}
 
 		<!-- Questions run across the frame, and only while there are any:

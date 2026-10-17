@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-767 entries.
+768 entries.
 
 ## Scope
 
@@ -792,10 +792,11 @@ pointer, not a summary.
 - **I-743** A first sync checks out beside the rest of the carry, and the carry travels compressed — 2026-10-14; L22853
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22907
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22950
-- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22956
-- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23003
-- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23016
-- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23023
-- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23030
-- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23069
-- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23130
+- **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22956
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22970
+- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23017
+- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23030
+- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23037
+- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23044
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23083
+- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23144
