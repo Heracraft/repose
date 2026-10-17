@@ -22657,3 +22657,174 @@ a closure was too big without saying what filled it.
   with the declarations it had merged from main. It now uses each pair's
   own merge-base and prints it, and a pair it cannot compare because a
   branch is not fetched says so instead of printing "ok", which it did.
+
+**I-758. The queue's entry store has a schema (queue-revamp, 2026-10-17).**
+*Made during implementation.* Amends I-416's description of the entry
+files. Three ways `release-queue add` could take a branch out of the queue
+while printing a success line. None had fired: all 129 live entries on
+kanali were swept and were clean, so this is a guard, not a repair.
+- *Free text.* An entry is flat `key=value`, written as a block of
+  `echo "key=$value"`, and `field()` read the FIRST line matching a key
+  while `note=` is written before `state=`, `sha=` and `needs=`. A
+  `--note` containing a newline became orphan lines, and a line that
+  looked like a key won over the real field: a note whose second paragraph
+  was the word `state=released` made `add` report success and `ls` then
+  say the queue was empty, because `ls` drops a released entry. The same
+  path reaches `sha=`, where a cut would merge a different commit.
+  `--live` and `--note` are now folded onto one line, and say so;
+  `field()` reads the last match.
+- *The filename.* `key()` was `tr '/' '%'`, which is not injective, so
+  `ws/01` and `ws%01` shared a file and the second to queue erased the
+  first. 43 of the 212 branch names on woker-1 hold a slash, and `/` is
+  the documented shape (`ws/…`, `release/…`), so the colliding partner of
+  a normal name is one keystroke away; a tab-completion slip is likelier
+  than a deliberate `%`. The name is percent-encoded now (`%` first, then
+  `/`). `legacy_key()` keeps reading the old name, but only when that
+  file's own `branch=` matches, so no migration and no rename: one entry
+  on kanali is affected (`repose%fider`) and none on woker-1, and a
+  worktree running an older copy keeps working.
+- *Temp files beside entries.* `setfield` wrote `"$f.XXXX"` and `cmd_add`
+  wrote `"$f.new"`, and every reader globbed `entries/*`, so an `add`
+  killed between the write and the `mv` left a complete second entry: the
+  branch listed twice at two commits and the cut merging both. Both move
+  to `$state/tmp`, and `entries()` is the only reader of the directory. It
+  validates rather than filtering names — a file counts when its own
+  `branch=` encodes back to its own filename — because a name filter would
+  have to know both temp spellings and would rot when a third appeared,
+  and because a worktree on an older copy still writes the old one.
+*Rejected:* a different entry format (JSON, a directory per entry), which
+is more correct and not worth rewriting every reader for when refusing a
+newline closes the hole; quoting and unquoting the value, two more places
+to get wrong than refusing the input.
+
+**I-759. A branch's deploy targets are read against the integration tip,
+and confirmed against the built systems (queue-revamp, 2026-10-17).**
+*Made during implementation.* Amends I-416's `add`. The field said what a
+release had to do and lanes had started correcting it in prose: three of
+the five branches queued on woker-1 carried a note about their own
+`ships as` line, which is a field that has stopped being one.
+- *The base.* `needs`, the commit count and the conflict check read
+  `refs/heads/main`, which on woker-1 sat 132 commits behind `origin/main`
+  for weeks. A branch with no commits of its own was told it shipped
+  `api,base,cli,edge,host,web` across a 371-file diff. `integration_tip()`
+  takes `merge-base(HEAD, ref)` over `refs/heads/main`,
+  `origin/integrated` and `origin/main` and keeps the newest. On kanali
+  `refs/heads/main` IS integrated main (both `293a8dba` when this was
+  written) so it wins there; on woker-1 `origin/integrated` does; and local
+  main wins while a security batch is held back from the integrated branch
+  (I-651), without a special case. No common commit refuses rather than
+  computing against nothing. The conflict check uses the tip itself, which
+  is the tree a cut merges into. `cut` now refuses when main is behind that
+  tip: a cut from a stale main re-merges everything integrated since
+  through `--no-ff` merges, and nothing stopped it.
+  Worth stating because a fix could be written against the wrong reading:
+  `...` is not a symmetric difference. `git diff A...B` is
+  `merge-base(A,B)` to `B`, and with a stale main the merge-base IS that
+  stale main, since it is an ancestor of anything cut from something newer.
+  Spelling it `..` changes nothing.
+- *Gates install nothing.* `nix/guest/tests`, `nix/hosts/tests` and
+  `nix/guest/checks.nix` are evaluated and deployed nowhere. 37 commits
+  since 2026-09-15 changed only such paths and were charged a deploy
+  target, five of them `base,edge,host`.
+- *A package changed only in its tests reaches no binary.* `cpu-weight`
+  was charged `edge` — a switch the owner runs — because its only change
+  inside `cmd/gateway`'s dependencies was
+  `internal/obs/metrics/families_host_test.go`. 38 of the 542 non-merge Go
+  commits since 2026-09-15 changed only `_test.go` files. Nix cannot see
+  this: the source filter in `nix/packages.nix` includes test files, so a
+  test-only commit changes `repose-go-src` and every derivation reading
+  it. `go list -deps` is what knows about binaries, so both this rule and
+  the comparison below are needed.
+- *The systems decide.* `ops/dev/closure-equiv.py` compares two revisions'
+  derivation graphs for a target and `add` drops `base`, `host` or `edge`
+  when the system does not change. Paths decide whether to ask; this
+  answers. A plain `drvPath` comparison cannot: `self.shortRev` is stamped
+  into hostd, guestd and the guest's `baseVersion`, so every commit
+  changes every system's drvPath — for a docs-only branch, host-01 is 4,844
+  derivations a side with 4,826 byte-identical and all 18 differences the
+  stamp and what is downstream of it. The comparison hashes each
+  derivation over its builder, args, system, output names, sources and its
+  formal inputs' hashes, with the stamp replaced and store paths found in
+  text resolved to the producing derivation's *name* — by name, because
+  resolving by hash made the answer depend on where the walk started (the
+  same pair reported 18 changed bottom-up and 3,975 from the root). About
+  3 s a side. `dev-tool-guards` (I-745), queued as `base,edge,host`,
+  changes none of the three systems. `REPOSE_QUEUE_FAST=1`, and a box with
+  no nix (every repose guest), keep the path answer and record `exact=no`
+  on the entry: a wrong "nothing to deploy" is worse than a wide one.
+*Rejected:* extracting `checks` from `nix/flake.nix` (482 of its 707
+lines) as the fix for over-reporting — worth doing for readability, but the
+comparison sees through a checks-only change whatever the paths say, so it
+is no longer load-bearing; classifying `flake.nix` by line range, which a
+reformat breaks.
+
+**I-760. The queue answers where a branch is, records the live check, and
+carries a line to its author (queue-revamp, 2026-10-17).** *Made during
+implementation.* Amends I-416 and I-424 on what the queue reports, and
+I-745 on `id`.
+- *Where.* `ls` drops a released entry, so two agents read
+  `boot-real-addr` as unqueued work the day after it shipped, misled by a
+  leftover worktree. `where BRANCH` answers from refs rather than from one
+  machine's state: the local entry, else the merge subject `cut` writes
+  (`Merge <branch> (<release>)`), else the branch's own ref against
+  `origin/main` and `origin/integrated`, else that nothing here knows the
+  name. From woker-1, which has never had a ref for it, `where
+  test-hygiene` answers "merged in r20261015-4, on main, not released".
+  `worktrees` lists the worktrees whose branch is wholly on `origin/main`
+  (11 of 34 here) and deletes nothing: a session whose worktree is removed
+  cannot commit, and this cannot see panes.
+- *Whose queue.* An entry records `machine=`, and `ls` shows it, and
+  whether the commit is in this clone, as columns on the row rather than a
+  line under the table (I-484). An agent on kanali told the conductor its
+  branch was invisible from woker-1 and should be fetched; it had been
+  merged an hour earlier.
+- *Ids come from a band.* Every shareable input to the scan topped out at
+  I-746 on woker-1 while that machine's reservations held I-747 to I-749:
+  a window three numbers wide in which the other machine hands out one of
+  them, and six ids were taken twice in two days that way. `band
+  SLOT/TOTAL` gives each machine a disjoint residue class, so two machines
+  cannot take one number however stale their refs are, at the cost of gaps
+  in a sequence that already has them. It is set per machine and is not
+  set by default. *Rejected:* a shared ledger ref on GitHub, which is the
+  tidier answer and needs the owner's decision about a public ref and a
+  push this lane may not make; deriving the band from the hostname, which
+  can collide.
+- *The live check and the record.* `add --live` stored the text and
+  nothing stored the outcome, so three releases went out with "NOT DONE:
+  the --live checks" in their STATUS line. `live BRANCH --ran TEXT` or
+  `--not-done WHY` records it, `done` names the released branches whose
+  check has no result yet, and `record RELEASE` prints the STATUS line and
+  the detail from what the queue holds, including the decision ids the
+  branch adds. Five release lines in `STATUS.md` are 2,142 to 3,989
+  characters in a file whose header asks for 600; the evidence now goes to
+  `docs/releases/<id>.md` and the line points at it.
+- *A line for the author.* A session inside a guest has no native channel,
+  so it is reached with `repose-admin exec` plus a tmux paste and replies
+  come back through a relay file, which loses messages. `say BRANCH TEXT`
+  and `inbox` carry the traffic that is about a branch, which is most of
+  it; `ls` marks an entry with unread lines. The text stays after reading:
+  a message is a record, not a notification.
+- *The script's own age.* 44 of the 47 worktrees on woker-1 that had
+  `ops/dev/release-queue` carried an older copy, the main checkout among
+  them, and running one said nothing — the old `id` is what handed out a
+  used number six times. It now compares itself against
+  `origin/integrated:ops/dev/release-queue` and says so, silent when the
+  branch is itself changing the script and when that ref is not fetched.
+  This is a warning and not a fix: I-745's guard is on `origin/integrated`
+  and on no `main` (`origin/main` has no `ids_in_use` at all), and
+  CLAUDE.md says to cut a worktree from `main`, so the documented command
+  reproduces the old copy until main moves. Whether a fix to this tooling
+  should reach `main` ahead of the queue filling is the owner's call and is
+  open.
+- *The gateway's ban.* `ops/dev/operator-cert.sh --if-stale` renews only
+  under an hour of validity, so it can be the first line of anything that
+  reaches a host or a guest. woker-1 was banned from the gateway three
+  times in one night: I-599 exempts a refusal of the user's own current
+  certificate, but an expired one still counts, and the ttl is 8 hours, so
+  a retry loop is 20 counted failures in minutes (I-435). The failures
+  stop at the source. `ops/dev/guest-exec` is the vsock route the
+  conductor used from `/tmp` as `kx`, committed: `repose-admin exec`
+  through the control VM, base64 so the command survives two shells. The
+  ban itself is unchanged, and whether an expired certificate from a
+  source that has authenticated before should count towards it is the
+  owner's and is open.

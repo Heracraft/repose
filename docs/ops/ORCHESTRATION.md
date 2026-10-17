@@ -151,6 +151,36 @@ onto a `release/<id>` worktree, and ships it. Decision ids come from
 `docs/ops/RELEASE.md` is the procedure; where it differs from "Merging"
 and "Rounds" above, it wins.
 
+Since 2026-10-17 (DECISIONS I-758, I-759, I-760) the queue also answers
+the questions the conductor was answering by hand:
+
+- **"Where is this branch?"** `release-queue where <branch>`, from either
+  machine and for a branch this one has never had a ref for. The queue
+  state is one machine's; the refs are shared, and `cut` writes the batch
+  into the merge commit's subject. An agent reporting a branch as
+  invisible, and two agents reporting a released branch as unqueued, were
+  both this question going unanswered.
+- **"What does this batch really deploy?"** `release-queue ls` is narrower
+  than it was: a gate installs nothing, a package changed only in its
+  tests reaches no binary, and `base`, `host` and `edge` are confirmed
+  against the built systems with `ops/dev/closure-equiv.py`. Run that
+  before a switch or a base publish when the diff looks like it changes
+  nothing — it is the check r20261015-2 made by eye.
+- **"Which worktrees are finished?"** `release-queue worktrees`. Check the
+  pane before removing one: a session whose worktree is gone cannot commit.
+- **"Did the live checks run?"** `release-queue live <branch> --ran` or
+  `--not-done` records it, `done` says which are owed, and
+  `record <release>` prints the STATUS line and the release's detail.
+- **Reaching a lane.** `release-queue say <branch>` leaves a line where
+  that lane reads it, which is most of what the tmux-paste relay carried.
+  For a command inside a guest, `ops/dev/guest-exec`; run
+  `ops/dev/operator-cert.sh --if-stale` first so the gateway does not ban
+  the box for failed handshakes.
+- **Two machines, one id space.** `release-queue band 0/2` on woker-1 and
+  `band 1/2` on kanali, so a number taken on one can never be handed out
+  by the other. Without a band the reservations file is invisible across
+  machines, which is how six ids were taken twice.
+
 ## When a worker stalls
 
 - Its STATUS line says `progress` and its pane is idle: message it with the

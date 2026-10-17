@@ -35,11 +35,6 @@ filter=${1:-}
 
 # Each line: the test name, the problem it belongs to, one line of why.
 KNOWN_BAD="
-id_sees_other_machine_reservation  P1 the reservations file never leaves the machine
-where_is_released_branch           P3 no command answers 'did this branch ship'
-where_is_branch_on_the_other_box   P2 the queue state is per machine
-stale_script_warns                 P6 a worktree's old copy says nothing
-live_check_is_recorded             P7 nothing stores whether the check ran
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -499,17 +494,44 @@ t_id_refuses_used_number() {
   assert_eq "the next id skips the entry" "$(q "$wt" id)" "I-106"
 }
 
-# P1. The reservations file lives in each machine's own git dir, so an id
-# reserved on kanali is invisible on woker-1 until it reaches a shared
-# ref. I-718, I-719, I-732 and I-740 were each handed out twice this way.
-t_id_sees_other_machine_reservation() {
-  local there; there=$(branch kanali reserving)
-  local got_there; got_there=$(q "$there" id)
-  assert_eq "kanali reserves" "$got_there" "I-104" || return 1
-  local here; here=$(branch woker asking)
-  local got_here; got_here=$(q "$here" id)
-  [ "$got_here" != "$got_there" ] || { note "woker handed out $got_here, which kanali already holds"; return 1; }
-  assert_eq "woker's next id" "$got_here" "I-105"
+# P1. The reservations file lives in each machine's own git dir and never
+# leaves it, so an id reserved on one box is invisible on the other until
+# the branch is committed and integrated. Six ids were taken twice that way
+# in two days. A band gives each machine a disjoint residue class, so two
+# machines cannot take one number however stale their refs are.
+t_id_bands_cannot_collide_across_machines() {
+  local here there
+  there=$(branch kanali reserving)
+  here=$(branch woker asking)
+  q "$root/woker" band 0/2 >/dev/null
+  q "$root/kanali" band 1/2 >/dev/null
+  # neither machine can see the other's reservations at all
+  local a b
+  a=$(q "$here" id 3 | tr '\n' ' ')
+  b=$(q "$there" id 3 | tr '\n' ' ')
+  local overlap
+  overlap=$(comm -12 <(tr ' ' '\n' <<<"$a" | sort -u | grep .) \
+                     <(tr ' ' '\n' <<<"$b" | sort -u | grep .))
+  [ -z "$overlap" ] || { note "both machines handed out: $overlap"; return 1; }
+  # and each stays inside its own band
+  grep -qx 'I-104 I-106 I-108 ' <<<"$a" || { note "woker (0/2) gave: $a"; return 1; }
+  grep -qx 'I-105 I-107 I-109 ' <<<"$b" || { note "kanali (1/2) gave: $b"; return 1; }
+}
+
+# With no band the numbers stay dense, which is every release before this
+# and what a single-machine checkout wants.
+t_id_without_a_band_is_dense() {
+  local wt; wt=$(branch woker dense)
+  assert_eq "three dense ids" "$(q "$wt" id 3 | paste -sd' ')" "I-104 I-105 I-106"
+}
+
+# A band never hands out a number that is already an entry id (I-745).
+t_id_band_still_refuses_a_used_number() {
+  local wt; wt=$(branch woker banded-clash)
+  printf '\n**I-106. Already an entry.** (fixture) Text.\n' >> "$wt/docs/DECISIONS.md"
+  commit "$wt" "I-106"
+  q "$root/woker" band 0/2 >/dev/null
+  assert_eq "the next even id above the entry" "$(q "$wt" id)" "I-108"
 }
 
 # ------------------------------------------------------------------- add
@@ -761,6 +783,72 @@ t_live_check_is_recorded() {
   assert_has "the result is stored" "$o" "live-recorded" || return 1
   local s; s=$(state_of woker)/release-queue
   assert_has "and read back" "$(cat "$s/entries/live-recorded")" "started in 7.4 s"
+}
+
+# ----------------------------------------------------------- the channel
+
+# The traffic that is about a branch does not need a channel: the queue is
+# a thing both the conductor and the lane already read.
+t_say_reaches_the_branch_and_ls_marks_it() {
+  local wt; wt=$(branch woker spoken-to)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" say spoken-to "dropped from the cut; queue again after cpu-capacity lands" >/dev/null
+  assert_has "ls marks the unread line" "$(q "$root/woker" ls)" "unread" || return 1
+  local o; o=$(q "$wt" inbox)
+  assert_has "the author reads it" "$o" "dropped from the cut" || return 1
+  assert_not "and it is no longer unread" "$(q "$root/woker" ls)" "unread" || return 1
+  # the text stays: a message is a record, not a notification
+  assert_has "and it is still readable" "$(q "$wt" inbox)" "dropped from the cut"
+}
+
+t_say_refuses_a_branch_with_no_entry() {
+  local o; o=$(q "$root/woker" say nothing-here "hello")
+  assert_has "a branch with no entry is refused" "$o" "has no entry here"
+}
+
+# ------------------------------------------------------------ the record
+
+t_live_records_a_result_and_a_reason() {
+  local wt; wt=$(branch woker live-both)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add --live "repose start under 12 s" >/dev/null
+  q "$root/woker" live live-both --ran "started in 7.4 s on e2e-top" >/dev/null
+  local s; s=$(state_of woker)/release-queue
+  assert_has "the result is stored" "$(cat "$s/entries/live-both")" "started in 7.4 s" || return 1
+  assert_has "and its state" "$(cat "$s/entries/live-both")" "live_state=ran" || return 1
+  q "$root/woker" live live-both --not-done "writes into every running guest" >/dev/null
+  assert_has "a reason replaces it" "$(cat "$s/entries/live-both")" "live_state=not-done"
+}
+
+# record prints the STATUS line and the detail from what the queue already
+# holds, including the decision ids the branch adds, so neither is retyped.
+t_record_prints_the_line_and_the_detail() {
+  local wt; wt=$(branch woker recorded)
+  printf '\n**I-900. A decision this branch adds.** (fixture) Text.\n' >> "$wt/docs/DECISIONS.md"
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "a change with a decision"
+  q "$wt" add --live "the thing works" >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  q "$root/woker" live recorded --ran "it worked, 3 of 3" >/dev/null
+  local o; o=$(q "$root/woker" record "$rel")
+  assert_has "the STATUS line names the release" "$o" "release $rel" || return 1
+  assert_has "and the branch with its decision id" "$o" "recorded (I-900)" || return 1
+  assert_has "and what it ships as" "$o" "shipped as api,host" || return 1
+  assert_has "the detail carries the live evidence" "$o" "live: it worked, 3 of 3" || return 1
+  assert_has "and points at the per-release file" "$o" "docs/releases/$rel.md"
+}
+
+t_record_names_a_branch_with_no_live_result() {
+  local wt; wt=$(branch woker unrecorded)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"; commit "$wt" "shared"
+  q "$wt" add --live "something to check" >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  local o; o=$(q "$root/woker" record "$rel")
+  assert_has "an unrecorded check is named" "$o" "live: no result recorded" || return 1
+  assert_has "and counted" "$o" "have no live result"
 }
 
 # -------------------------------------------------------------------- run

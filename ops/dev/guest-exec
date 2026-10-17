@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Run a command inside a repose guest over the vsock route, when the ssh
+# gateway will not do.
+#
+#   ops/dev/guest-exec <guest-id> '<shell command>'
+#   ops/dev/guest-exec <guest-id>            # the command on stdin
+#
+# Why this exists. The gateway refuses a source /24 for 10 minutes after 20
+# failed handshakes in 10 minutes (DECISIONS I-435), and an expired operator
+# certificate counts towards that (I-599 exempts only the user's own current
+# certificate), so woker-1 was cut off from kanali three times in one night
+# mid-release. The way through is hostd and guestd over vsock, reached with
+# `repose-admin exec` in the api container on the control VM, which the
+# control VM's own operator sshd serves. Run
+# `ops/dev/operator-cert.sh --if-stale` first and the handshakes do not fail
+# in the first place.
+#
+# The command is base64-encoded on the way in, because it passes through
+# two shells (the control VM's and the guest's) and quoting does not
+# survive that twice. Audited: `repose-admin exec` writes an audit_log row
+# per call (docs/workstreams/14-*, "operator access").
+#
+# This was `/tmp/claude-1000/kx` on woker-1, which is to say it existed and
+# the next session had to be told about it.
+set -euo pipefail
+
+CONTROL=${REPOSE_CONTROL_IP:-20.121.138.150}
+# The `api` Coolify application's container name prefix; Coolify appends a
+# deploy suffix (same default as ops/dev/operator-cert.sh).
+API_PREFIX=${REPOSE_API_CONTAINER_PREFIX:-8kpqxzfejbbsgwjhooep2ymc}
+TIMEOUT=${REPOSE_GUEST_EXEC_TIMEOUT:-580}
+
+guest=${1:?usage: guest-exec <guest-id> [command]}
+shift || true
+if [ $# -gt 0 ]; then cmd="$*"; else cmd=$(cat); fi
+[ -n "$cmd" ] || { echo "guest-exec: no command" >&2; exit 2; }
+
+b=$(printf '%s' "$cmd" | base64 -w0)
+timeout "$TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout=20 "root@$CONTROL" \
+	"c=\$(docker ps --filter name=$API_PREFIX --format '{{.Names}}' | head -1)
+	 [ -n \"\$c\" ] || { echo 'guest-exec: no api container named $API_PREFIX*' >&2; exit 1; }
+	 docker exec \"\$c\" /usr/local/bin/repose-admin exec $guest -- \\
+	   bash -lc \"echo $b | base64 -d | bash\"" 2>&1 |
+	# repose-admin narrates each step of the op; the command's own output is
+	# what the caller asked for.
+	grep -v '^op [0-9a-f-]*: done step'
