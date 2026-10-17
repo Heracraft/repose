@@ -160,6 +160,10 @@ export const patchProject = (
 		hold_base_updates?: boolean;
 		agent_default?: string;
 		personal_opt_out?: boolean;
+		/** null keeps a temporary machine, as `repose keep` does (I-347, api.md). */
+		expires_at?: null;
+		/** Seconds from now, to make one temporary or move its end. */
+		expires_in_s?: number;
 	}
 ) => request<Project>(`/projects/${id}`, { method: 'PATCH', body });
 export const destroyProject = (id: string) =>
@@ -231,8 +235,10 @@ export const getSamples = (id: string, window: SampleWindow) =>
 export const listSnapshots = (id: string) => request<Snapshot[]>(`/projects/${id}/snapshots`);
 export const createSnapshot = (id: string) =>
 	request<{ op_id: string }>(`/projects/${id}/snapshots`, { method: 'POST' });
+/** → {op_id, project_id} (api.md): project_id is the restore's target,
+ *  which for an as-new restore is the project it just made. */
 export const restoreSnapshot = (id: string, snapshotId: string, asNewProject?: string) =>
-	request<{ op_id: string }>(`/projects/${id}/snapshots/${snapshotId}/restore`, {
+	request<{ op_id: string; project_id: string }>(`/projects/${id}/snapshots/${snapshotId}/restore`, {
 		method: 'POST',
 		body: asNewProject ? { as_new_project: asNewProject } : {}
 	});

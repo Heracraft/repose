@@ -10,7 +10,24 @@
 	import { dateTime, relativeTime } from '$lib/format';
 	import type { Project, Revision } from '$lib/api/types';
 
-	let { project, revision }: { project: Project; revision?: Revision } = $props();
+	let {
+		project,
+		revision,
+		/** Keeps a temporary machine; absent where the card is read-only. */
+		onkeep
+	}: { project: Project; revision?: Revision; onkeep?: () => Promise<void> } = $props();
+
+	let keeping = $state(false);
+
+	async function keep() {
+		if (keeping || !onkeep) return;
+		keeping = true;
+		try {
+			await onkeep();
+		} finally {
+			keeping = false;
+		}
+	}
 </script>
 
 <section class="card" aria-labelledby="details-title" data-testid="details-card">
@@ -48,9 +65,23 @@
 			<dd class="whitespace-nowrap tabular-nums">{dateTime(project.created_at)}</dd>
 		</div>
 		{#if project.expires_at}
+			<!-- A temporary machine is destroyed with no snapshot when this
+			     passes (I-347). Keep is the only escape from that timer, and
+			     until now it was in the CLI alone — including for the user
+			     who taps the hour-left notification on a phone. -->
 			<div class="row flex items-baseline justify-between gap-4 py-2" data-testid="details-expires">
 				<dt class="text-ink-muted">Expires</dt>
-				<dd class="whitespace-nowrap tabular-nums">{dateTime(project.expires_at)}</dd>
+				<dd class="flex items-baseline gap-3 whitespace-nowrap tabular-nums">
+					{dateTime(project.expires_at)}
+					{#if onkeep}
+						<button
+							type="button"
+							class="btn-ghost hit"
+							aria-disabled={keeping ? 'true' : undefined}
+							onclick={keep}>{keeping ? 'Keeping…' : 'Keep'}</button
+						>
+					{/if}
+				</dd>
 			</div>
 		{/if}
 		<div class="row flex items-baseline justify-between gap-4 py-2">

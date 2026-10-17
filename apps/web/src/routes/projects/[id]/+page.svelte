@@ -21,7 +21,8 @@
 		getSamples,
 		listProjectQuestions,
 		getBilling,
-		getUsage
+		getUsage,
+		patchProject
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
@@ -54,6 +55,7 @@
 	import { readEventsState } from '$lib/components/project/eventsUrl';
 	import MachineCard, { DISK_SIZES_GB } from '$lib/components/project/MachineCard.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
+	import { stopWarning } from '$lib/busyAgents';
 	import AgentsCard from '$lib/components/project/AgentsCard.svelte';
 	import DetailsList from '$lib/components/project/DetailsList.svelte';
 	import SnapshotsTable from '$lib/components/project/SnapshotsTable.svelte';
@@ -360,7 +362,24 @@
 		}
 	}
 
+	/**
+	 * The sentence `repose stop` asks before it ends an agent's turn, or
+	 * "" when nothing would be interrupted (I-614). The CLI refuses to do
+	 * this silently; the dashboard did it on one click.
+	 */
+	let stopEnds = $derived(stopWarning(project));
+	let askingStop = $state(false);
+
+	function onStopPressed() {
+		if (stopEnds) {
+			askingStop = true;
+			return;
+		}
+		void onStop();
+	}
+
 	async function onStop() {
+		askingStop = false;
 		opBusy = 'stop';
 		try {
 			const { op_id } = await stopProject(id, stopSnapshotFirst);
@@ -380,13 +399,38 @@
 			await destroyProject(id);
 			// The destroy runs on after this returns (I-166); the list shows it
 			// as destroying, then under "Recently destroyed" with a Restore.
+			// A temporary machine's destroy takes no snapshot, expires the
+			// ones it has and never reaches "Recently destroyed" (I-347), so
+			// the sentence that promises a restore is false for it.
 			toast.success(
-				`Destroying ${project?.name}. It can be restored from "Recently destroyed" for 30 days.`
+				temporary
+					? `Destroying ${project?.name}. It was temporary, so there is no snapshot to restore.`
+					: `Destroying ${project?.name}. It can be restored from "Recently destroyed" for 30 days.`
 			);
 			await goto(resolve('/projects'));
 		} catch (err) {
 			opBusy = undefined;
 			toastApiError(err, 'Could not destroy the project.');
+		}
+	}
+
+	/** Whether this machine is on the temporary timer (I-347). */
+	let temporary = $derived(!!project?.expires_at);
+
+	/**
+	 * Keeps a temporary machine, as `repose keep` does: PATCH with
+	 * expires_at null (api.md). The dashboard showed the countdown in
+	 * three places and offered no way off it, including to the user who
+	 * taps the hour-left notification on a phone.
+	 */
+	async function onKeep() {
+		if (!project) return;
+		try {
+			const kept = await patchProject(project.id, { expires_at: null });
+			project = kept;
+			toast.success(`${kept.slug} is no longer temporary.`);
+		} catch (err) {
+			toastApiError(err, 'Could not keep the machine.');
 		}
 	}
 
@@ -483,17 +527,31 @@
 	async function onRestore(snapshotId: string, asNew?: string): Promise<boolean | string> {
 		opBusy = 'restore';
 		try {
-			const { op_id } = await restoreSnapshot(id, snapshotId, asNew);
-			return await waitForOp(op_id, () => {
-				opBusy = undefined;
-				toast.success(
-					asNew
-						? `Created ${asNew} from the snapshot.`
-						: `Restored ${project?.name ?? 'the project'}.`
-				);
-				void refresh();
-				void refreshSnapshots();
-			});
+			const { op_id, project_id } = await restoreSnapshot(id, snapshotId, asNew);
+			// An as-new restore's op belongs to the project it created, not
+			// to this one, so it is polled there; under this id it never
+			// reached `done` and the success this reports never fired.
+			return await waitForOp(
+				op_id,
+				() => {
+					opBusy = undefined;
+					toast.success(
+						asNew
+							? `Created ${asNew} from the snapshot.`
+							: `Restored ${project?.name ?? 'the project'}.`
+					);
+					// An as-new restore made a project elsewhere; go to it, as
+					// restoring from "Recently destroyed" does. Telling the user
+					// it exists and leaving them on the source was a dead end.
+					if (asNew && project_id) {
+						void goto(resolve('/projects/[id]', { id: project_id }));
+						return;
+					}
+					void refresh();
+					void refreshSnapshots();
+				},
+				asNew && project_id ? project_id : id
+			);
 		} catch (err) {
 			opBusy = undefined;
 			// A refused name belongs under the field, like "Recently destroyed".
@@ -587,12 +645,29 @@
 						<input type="checkbox" bind:checked={stopSnapshotFirst} />
 						Snapshot on stop
 					</label>
-					<button type="button" class="btn-quiet" disabled={!!opBusy} onclick={onStop}>
+					<button type="button" class="btn-quiet" disabled={!!opBusy} onclick={onStopPressed}>
 						{opBusy === 'stop' ? 'Stopping…' : 'Stop'}
 					</button>
 				</div>
 			{/if}
 		{/snippet}
+
+		{#if askingStop}
+			<!-- The two-step the secrets page uses for Delete: the line in
+			     the CLI's words, and focus on the safe choice. -->
+			<div class="banner banner--warn mt-4" data-testid="confirm-stop">
+				<p>{stopEnds}</p>
+				<div class="mt-2 flex items-center gap-3">
+					<button type="button" class="btn-danger btn--sm" onclick={onStop}>Stop anyway</button>
+					<button
+						type="button"
+						class="btn-ghost hit"
+						use:focusOnMount
+						onclick={() => (askingStop = false)}>Keep it running</button
+					>
+				</div>
+			</div>
+		{/if}
 
 		<p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
 			<span class="text-ink" data-testid="project-state"
@@ -955,19 +1030,25 @@
 					</div>
 				{/if}
 				<div class="min-w-0 {running !== anySnapshot ? 'md:col-span-2 lg:col-span-1' : ''}">
-					<DetailsList {project} {revision} />
+					<DetailsList {project} {revision} onkeep={onKeep} />
 				</div>
 			</div>
 		</div>
 
-		<section class="danger mt-10 rounded-sm border p-5" aria-labelledby="destroy-title">
+		<section
+			class="danger mt-10 rounded-sm border p-5"
+			aria-labelledby="destroy-title"
+			data-testid="destroy-card"
+		>
 			<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-10">
 				<div>
 					<h2 id="destroy-title" class="text-xl font-semibold text-red-700 dark:text-red-400">
 						Destroy
 					</h2>
 					<p class="mt-1 text-sm text-ink-muted">
-						Deletes the disk. The last snapshot is kept 30 days.
+						{temporary
+							? 'Deletes the disk. It is temporary: destroying it keeps no snapshot and it cannot be restored.'
+							: 'Deletes the disk. The last snapshot is kept 30 days.'}
 					</p>
 				</div>
 				<div class="md:w-[26rem] md:shrink-0">

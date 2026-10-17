@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getBilling, getMe, listDestroyed, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
+	import { withoutBillingURL } from '$lib/refusal';
 	import { PollFailure } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
 	import {
@@ -50,6 +51,8 @@
 	} from '$lib/projectList';
 	import type { Billing, DestroyedProject, Me, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
+	import { stopWarning } from '$lib/busyAgents';
+	import { focusOnMount } from '$lib/focus';
 
 	let projects = $state<Project[] | undefined>(undefined);
 	/** The first load failed; the poll keeps trying, and Retry asks now. */
@@ -212,10 +215,62 @@
 		return undefined;
 	}
 
+	/**
+	 * The row whose Stop is waiting for an answer, because stopping it
+	 * would end an agent's turn (I-614). Stop here is revealed on hover
+	 * inside a row whose name link covers the whole row, so in a long
+	 * list the pointer crosses many of them on the way to the one the
+	 * user wants; a stray click had no undo.
+	 */
+	let askingStop = $state<string | undefined>(undefined);
+
+	/** `act` is shadowed inside the phone row by its own `{@const act}`. */
+	const stopNow = (p: Project) => void act(p, 'stop');
+
+	function pressed(p: Project, action: RowAction) {
+		if (action === 'stop' && stopWarning(p)) {
+			askingStop = p.id;
+			return;
+		}
+		void act(p, action);
+	}
+
+	/**
+	 * A plan or capacity refusal from a row, drawn as the banner the
+	 * project page draws: the api's sentence without its raw URL, a link
+	 * to /billing, and a Stop for each machine holding the memory. It was
+	 * a toast that took the sentence away before it could be acted on.
+	 */
+	let refusal = $state<
+		{ message: string; reason?: string; projects: { slug: string; id: string }[] } | undefined
+	>(undefined);
+
+	function explainRefusal(err: ApiError) {
+		const detail = err.detail ?? {};
+		const reason = typeof detail.reason === 'string' ? detail.reason : undefined;
+		const slugs = Array.isArray(detail.projects)
+			? detail.projects.filter((x): x is string => typeof x === 'string')
+			: [];
+		const named = slugs.flatMap((slug) => {
+			const q = (projects ?? []).find((x) => x.slug === slug);
+			return q ? [{ slug, id: q.id }] : [];
+		});
+		refusal = { message: err.message, reason, projects: named };
+	}
+
 	async function act(p: Project, action: RowAction) {
+		askingStop = undefined;
 		if (pending[p.id]) return;
 		pending = { ...pending, [p.id]: action };
-		await runRowAction(action, p);
+		try {
+			refusal = undefined;
+			await runRowAction(action, p);
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'payment_required') explainRefusal(err);
+			else if (err instanceof ApiError && err.code === 'capacity')
+				refusal = { message: 'No capacity right now, try again in a few minutes.', projects: [] };
+			else throw err;
+		}
 		await refresh();
 		const rest = { ...pending };
 		delete rest[p.id];
@@ -374,7 +429,7 @@
 			class:row-action--shown={always || !!pending[p.id]}
 			disabled={!!pending[p.id]}
 			aria-label="{a === 'stop' ? 'Stop' : 'Start'} {p.name}"
-			onclick={() => act(p, a)}
+			onclick={() => pressed(p, a)}
 			>{pending[p.id] === 'stop'
 				? 'Stopping…'
 				: pending[p.id] === 'start'
@@ -453,6 +508,31 @@
 			     need them. The filters are links with aria-current, drawn like
 			     the project's tabs (DESIGN-LANGUAGE "Tabs"), and both halves
 			     live in the URL. -->
+			{#if refusal}
+				<div class="banner banner--warn mt-6" data-testid="row-refusal">
+					<p>
+						{withoutBillingURL(refusal.message)}
+						{#if refusal.reason}
+							<a href={resolve('/billing')} class="link">See your plan</a>
+						{/if}
+					</p>
+					{#if refusal.projects.length > 0}
+						<div class="mt-2 flex flex-wrap gap-2">
+							{#each refusal.projects as named (named.id)}
+								<button
+									type="button"
+									class="btn-quiet btn--sm"
+									disabled={!!pending[named.id]}
+									onclick={() =>
+										stopNow((projects ?? []).find((q) => q.id === named.id) ?? ({} as Project))}
+									>Stop {named.slug}</button
+								>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			{#if toolbar}
 				<div class="ptools mt-8">
 					<input
@@ -584,6 +664,26 @@
 									</span>
 								</td>
 							</tr>
+							{#if askingStop === p.id}
+								<tr data-testid="confirm-stop">
+									<td colspan="7" class="pt-0">
+										<div class="banner banner--warn">
+											<p>{stopWarning(p)}</p>
+											<div class="mt-2 flex items-center gap-3">
+												<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
+													>Stop anyway</button
+												>
+												<button
+													type="button"
+													class="btn-ghost hit"
+													use:focusOnMount
+													onclick={() => (askingStop = undefined)}>Keep it running</button
+												>
+											</div>
+										</div>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>
@@ -656,6 +756,22 @@
 						</a>
 						{#if act}
 							<span class="mrow-action">{@render actionButton(p, true)}</span>
+						{/if}
+						{#if askingStop === p.id}
+							<div class="banner banner--warn mx-4 mb-4" data-testid="confirm-stop">
+								<p>{stopWarning(p)}</p>
+								<div class="mt-2 flex items-center gap-3">
+									<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
+										>Stop anyway</button
+									>
+									<button
+										type="button"
+										class="btn-ghost hit"
+										use:focusOnMount
+										onclick={() => (askingStop = undefined)}>Keep it running</button
+									>
+								</div>
+							</div>
 						{/if}
 					</li>
 				{/each}
