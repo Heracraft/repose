@@ -107,8 +107,11 @@ Stop:
   guestd first records each agent window (name, agent, folder,
   conversation id), and the next start opens those windows again under
   the same names, each agent on its conversation (`claude --resume ID`,
-  I-636), so `repose ps` and `attach -w` find them; on a herdr project
-  herdr resumes agents with an integration by itself (I-501). A machine
+  I-636), so `repose ps` and `attach -w` find them; a window whose agent
+  had already exited is recorded too and opens as the login shell it
+  held, under a line saying the agent was no longer running (I-757); on a
+  herdr project herdr resumes agents with an integration by itself
+  (I-501). A machine
   that ends without a stop (its host crashed or restarted) reopens the
   windows of the minute record a timer keeps, from at most a minute
   before; herdr puts back what it saved a few seconds before (I-646).

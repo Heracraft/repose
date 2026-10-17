@@ -79,8 +79,10 @@ let
         tmux set-environment -g TZ "$tz"
       fi
       # The agents' windows come back under the same names, each agent on
-      # its conversation (DECISIONS I-636, I-646). Only in a session this
-      # run created, and only from a record of an earlier boot:
+      # its conversation (DECISIONS I-636, I-646); a window whose agent
+      # had already exited comes back as a login shell (I-757). Only in
+      # a session this run created, and only from a record of an earlier
+      # boot:
       #   1. agent-windows, written at a stop, wins;
       #   2. agent-windows.live, the minute record of an earlier boot,
       #      with no stop marker for that boot: the machine ended without
@@ -136,17 +138,24 @@ let
           seen=" "
           us=$(printf '\037')
           reopened=""
-          # The stop record has 4 fields, the minute record 5 (the
-          # agent's state, unused here) after a `#boot` line. `#` lines
-          # are headers.
-          while IFS="$us" read -r name agent cwd sid _; do
+          # The stop record has 4 fields, 5 on a row whose agent had
+          # exited; the minute record always has 5 (the window's state),
+          # after a `#boot` line. `#` lines are headers. Of the state
+          # only `exited` is read here (I-757).
+          while IFS="$us" read -r name agent cwd sid state; do
             case "$name" in "#"*) continue ;; esac
             [ -n "$name" ] && [ -d "$cwd" ] || continue
             case "$sid" in *[!A-Za-z0-9_-]*) sid="" ;; esac
-            if [ -z "$sid" ]; then
+            exited=""
+            if [ "$state" = exited ]; then
+              exited=1
+            fi
+            if [ -z "$sid" ] && [ -z "$exited" ]; then
               # Without its own id an agent continues the folder's newest
               # conversation; a second such window there would continue
-              # the same one, so it is not reopened.
+              # the same one, so it is not reopened. An exited row resumes
+              # nothing, so it neither takes that key nor loses to it: a
+              # live window in the folder still opens (DECISIONS I-757).
               key="$agent:$cwd"
               case "$seen" in *" $key "*) continue ;; esac
               seen="$seen$key "
@@ -159,27 +168,42 @@ let
               gemini) cmd="gemini --resume latest" ;;
               *) continue ;;
             esac
-            # The window closes when the agent exits, as one `repose run`
-            # opened does, except when the agent refuses to resume (a
-            # conversation the crash cut mid-line, one that is gone): it
-            # exits non-zero within seconds, and the window keeps a login
-            # shell under a line that says so instead of vanishing. Ctrl-C
-            # (130) and a TERM (143) are the user's, not a refusal.
-            # `set -m` gives the agent its own process group, the
-            # terminal's foreground one, so tmux names the agent as the
-            # pane's command, which the save reads. It also makes a
-            # Ctrl-Z (the agent's own suspend, or the terminal's) stop the
-            # job and return 147 to 150 here: the job is put back in the
-            # foreground at once, so the window and the agent stay. A
-            # function, not a loop: bash leaves a loop whose foreground
-            # job stops, so a second Ctrl-Z would end it. `fg`'s stderr
-            # stays on the terminal, or it cannot hand the terminal over.
-            wrapped="set -m; s=\$SECONDS; r() { if [ \$rc -ge 147 ] && [ \$rc -le 150 ]; then fg >/dev/null; rc=\$?; r; fi; }; $cmd; rc=\$?; r; set +m; if [ \$rc -ne 0 ] && [ \$rc -ne 130 ] && [ \$rc -ne 143 ] && [ \$((SECONDS - s)) -lt 15 ]; then echo \"$agent could not continue its conversation (exit \$rc).\"; exec bash -l; fi; exit \$rc"
+            if [ -n "$exited" ]; then
+              # The agent had already exited when the record was written
+              # (the save's `exited`, DECISIONS I-757): nothing to
+              # resume, and the window is the user's all the same, so it
+              # opens under its name in its folder with the login shell
+              # it held, under one line in the shape the refusal below
+              # prints. Dropping it instead lost the window with no line
+              # anywhere, and `repose ps` and `repose attach -w` could
+              # not find it.
+              wrapped="echo \"$agent was no longer running when the machine stopped.\"; exec bash -l"
+            else
+              # The window closes when the agent exits, as one `repose run`
+              # opened does, except when the agent refuses to resume (a
+              # conversation the crash cut mid-line, one that is gone): it
+              # exits non-zero within seconds, and the window keeps a login
+              # shell under a line that says so instead of vanishing. Ctrl-C
+              # (130) and a TERM (143) are the user's, not a refusal.
+              # `set -m` gives the agent its own process group, the
+              # terminal's foreground one, so tmux names the agent as the
+              # pane's command, which the save reads. It also makes a
+              # Ctrl-Z (the agent's own suspend, or the terminal's) stop the
+              # job and return 147 to 150 here: the job is put back in the
+              # foreground at once, so the window and the agent stay. A
+              # function, not a loop: bash leaves a loop whose foreground
+              # job stops, so a second Ctrl-Z would end it. `fg`'s stderr
+              # stays on the terminal, or it cannot hand the terminal over.
+              wrapped="set -m; s=\$SECONDS; r() { if [ \$rc -ge 147 ] && [ \$rc -le 150 ]; then fg >/dev/null; rc=\$?; r; fi; }; $cmd; rc=\$?; r; set +m; if [ \$rc -ne 0 ] && [ \$rc -ne 130 ] && [ \$rc -ne 143 ] && [ \$((SECONDS - s)) -lt 15 ]; then echo \"$agent could not continue its conversation (exit \$rc).\"; exec bash -l; fi; exit \$rc"
+            fi
             # A client that is not attached gives the new window its own
             # PATH, not the server's: this unit's PATH has no agent on it
             # (the restored window exited 127, I-640). The login PATH it is.
             if PATH="$window_path" "$tmux_bin" new-window -d -t "=$slug:" -n "$name" -c "$cwd" "$wrapped"; then
-              reopened+=$(printf '%s\037%s\037%s\037%s\037' "$name" "$agent" "$cwd" "$sid")$'\n'
+              # The exited marker is carried over: a crash before the
+              # timer's first run reopens that window as a shell again,
+              # not as a resume. Every other row's 5th field is empty.
+              reopened+=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "''${exited:+exited}")$'\n'
             fi
           done < "$saved.restoring"
           if [ -n "$boot" ]; then
@@ -201,7 +225,10 @@ let
   # repose-tmux-save records the session's agent windows (DECISIONS
   # I-636, I-646). One line per window that runs an agent: name, agent,
   # folder, and the conversation id the agent's hook put in the pane's
-  # @repose-session, separated by \037.
+  # @repose-session, separated by \037. A window whose agent has already
+  # exited is recorded too, with `exited` in the state field, and comes
+  # back as the shell it held: the window is the user's either way
+  # (DECISIONS I-757).
   #
   # With no argument it is the stop's save: guestd runs it as dev when
   # hostd asks for the shutdown, while every agent still runs, after it
@@ -284,11 +311,19 @@ let
         base=''${name##*/}
         [[ $base =~ ^(claude|codex|opencode|gemini|pi)(-[0-9]+)?$ ]] || continue
         agent=''${base%-[0-9]*}
-        # A window whose agent exited holds a shell: nothing to resume.
+        # A window whose agent exited holds a shell: it has no
+        # conversation to resume, but the window is still the user's, so
+        # it is recorded with `exited` in the state field and the restore
+        # brings it back as the shell it held instead of dropping it
+        # (DECISIONS I-757). guestd unsets @repose-state on such a window
+        # (I-631), so the marker cannot be a state it announced.
         if [ -z "$state" ]; then
-          case "$command" in bash|sh|zsh|fish|"") continue ;; esac
+          case "$command" in bash|sh|zsh|fish|"") state=exited ;; esac
         fi
-        if [ -n "$periodic" ]; then
+        # A stop's row is 4 fields, which a restore from before I-757
+        # reads; an exited row carries the marker as a 5th, which such a
+        # restore drops into the field it ignores.
+        if [ -n "$periodic" ] || [ "$state" = exited ]; then
           body+=$(printf '%s\037%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid" "$state")$'\n'
         else
           body+=$(printf '%s\037%s\037%s\037%s' "$name" "$agent" "$cwd" "$sid")$'\n'
