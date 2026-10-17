@@ -104,7 +104,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 	// answer instead of after it (DECISIONS I-223).
 	var early *earlyProbe
 	if attachOnly {
-		if done, err := attachFast(ctx, e, e.resolveArg(opts.ProjectArg), opts.Bridge, opts.Window); done {
+		if done, err := attachFast(ctx, e, opts); done {
 			return err
 		}
 	} else {
