@@ -187,24 +187,52 @@ cmd_ls() {
   fi
 }
 
+# ids_in_use prints every I-<n> this checkout can see, one number per
+# line: main, every local branch, every remote-tracking branch, every
+# worktree's working copy, and the reservations. The remote-tracking
+# branches are what the old scan lacked, and what made the ids collide:
+# the conductor works on woker-1 and the agents on the kanali guest, each
+# with its own checkout and its own reservations file, so a number taken
+# on one was invisible to the other until it reached a shared ref.
+# I-718, I-719 and I-732 were each handed out twice that way
+# (2026-10-14). origin/integrated carries every integrated commit
+# (I-651), so after this it is one `git fetch` that keeps the two
+# machines apart.
+#
+# A range header ("**I-195..I-205.") names both ends, so both numbers
+# count; the old pattern read the first and left the rest free to hand
+# out again.
+ids_in_use() {
+  local ref wt
+  for ref in $(git for-each-ref --format='%(refname)' refs/heads refs/remotes); do
+    git show "$ref:docs/DECISIONS.md" 2>/dev/null |
+      grep -oE '^\*\*I-[0-9]+(\.\.I-[0-9]+)?' | grep -oE '[0-9]+' || true
+  done
+  for wt in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do
+    grep -oE '^\*\*I-[0-9]+(\.\.I-[0-9]+)?' "$wt/docs/DECISIONS.md" 2>/dev/null |
+      grep -oE '[0-9]+' || true
+  done
+  grep -oE '^I-[0-9]+' "$state/ids" 2>/dev/null | grep -oE '[0-9]+' || true
+}
+
 cmd_id() {
-  local n=${1:-1} branch max=0 i
+  local n=${1:-1} branch max used
   branch=$(git branch --show-current)
   locked
-  # The highest I-<n> anywhere: main, every local branch, and reservations.
-  for ref in $(git for-each-ref --format='%(refname)' refs/heads); do
-    i=$(git show "$ref:docs/DECISIONS.md" 2>/dev/null | grep -oE '^\*\*I-[0-9]+\.' | grep -oE '[0-9]+' | sort -n | tail -n1 || true)
-    [ -z "$i" ] || [ "$i" -le "$max" ] || max=$i
-  done
-  # Working copies too: an id written but not yet committed is taken.
-  for wt in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do
-    i=$(grep -oE '^\*\*I-[0-9]+\.' "$wt/docs/DECISIONS.md" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -n1 || true)
-    [ -z "$i" ] || [ "$i" -le "$max" ] || max=$i
-  done
-  i=$(grep -oE '^I-[0-9]+' "$state/ids" | grep -oE '[0-9]+' | sort -n | tail -n1 || true)
-  [ -z "$i" ] || [ "$i" -le "$max" ] || max=$i
+  used=$(ids_in_use | sort -n -u)
+  max=$(printf '%s\n' "$used" | tail -n1)
+  [ -n "$max" ] || max=0
   for _ in $(seq "$n"); do
     max=$((max + 1))
+    # A number already used as an entry header is never handed out. After
+    # the scan above this cannot happen, so if it does the scan is wrong
+    # and a loud failure here is worth more than a reservation that two
+    # branches write into DECISIONS.md.
+    if printf '%s\n' "$used" | grep -qx "$max"; then
+      die "id: I-$max is already an entry id; the scan is inconsistent, fix it before reserving"
+    fi
+    used="$used
+$max"
     echo "I-$max $branch $(date -u +%Y-%m-%d)" >> "$state/ids"
     echo "I-$max"
   done

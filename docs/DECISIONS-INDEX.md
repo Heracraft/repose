@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-754 entries.
+755 entries.
 
 ## Scope
 
@@ -480,7 +480,7 @@ pointer, not a summary.
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10756
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10785
 - **I-410** The command-not-found hint survives a command only one package has — 2026-10-03; L10829
-- **I-411** `repose exec` takes the command with or without `--` — 2026-10-03; L10841
+- **I-411** `repose exec` takes the command with or without `--` — 2026-10-03; partly amended by I-745; L10841
 - **I-412** The docs as markdown at /llms.txt, and the laptop's CLI version on the machine — 2026-10-03; L10858
 - **I-413** The tools carry reads Homebrew formulae and installs them from nixpkgs — 2026-10-03; superseded by I-423; L10874
 - **I-414** Events page back: `before` and `limit` on the api, Show older on the dashboard, and `repose events` reads the whole window — 2026-10-03; amended by I-662; L10894
@@ -786,3 +786,4 @@ pointer, not a summary.
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22569
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22612
 - **I-751** The bridge's allowlist survives the warm attach, and a `--allow` that names no host is refused; amends I-305, with I-311's enforcement — 2026-10-17; L22618
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22624
