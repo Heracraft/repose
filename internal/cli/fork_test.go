@@ -285,3 +285,43 @@ func TestForkTimesEachStep(t *testing.T) {
 		t.Fatalf("copy 2's disk step, which the CLI did not watch, got a line:\n%s", errOut.String())
 	}
 }
+
+// I-752: a fork whose agent started but never took the prompt is told
+// where the prompt is, not that the agent could not start. fork.go wraps
+// a failed start with "Could not start the agent in X" and "`repose run
+// X --no-sync -p PROMPT` tries again"; on this failure all three parts of
+// that are wrong -- the agent is running, the advice would start a second
+// one beside it, and the wrapper's own period doubles the sentence's.
+func TestForkSaysWhereThePromptIsWhenTheAgentDidNotTakeIt(t *testing.T) {
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	e := newLifecycleEnv(t, fake)
+	var out, errOut strings.Builder
+	e.Out, e.ErrOut = &out, &errOut
+	ctx := context.Background()
+	if _, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "izma", Class: "large", RemoteURL: "github.com/owner/izma"}); err != nil {
+		t.Fatal(err)
+	}
+	giveUp := &exitError{
+		code:  ExitGeneric,
+		msg:   "Claude Code did not take your prompt; it is in its input in the claude window. `repose attach izma-fork-1 -w claude`, then press Enter.",
+		cause: errPromptNotSubmitted,
+	}
+	defer func(f func(context.Context, *Env, string, string, string) error) { forkStartAgent = f }(forkStartAgent)
+	forkStartAgent = func(_ context.Context, _ *Env, _, _, _ string) error { return giveUp }
+
+	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "izma", Count: 1, Prompt: "make the tests pass", Agent: "claude"}); err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	said := errOut.String()
+	for _, want := range []string{"did not take your prompt", "`repose attach izma-fork-1 -w claude`"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("fork said:\n%s\nwant %q", said, want)
+		}
+	}
+	for _, unwanted := range []string{"Could not start the agent", "--no-sync -p PROMPT", "Enter.."} {
+		if strings.Contains(said, unwanted) {
+			t.Errorf("fork said:\n%s\nmust not contain %q", said, unwanted)
+		}
+	}
+}

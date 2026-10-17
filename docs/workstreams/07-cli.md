@@ -577,8 +577,10 @@ remote (I-172).
 
 ### 5.8 Build log rendering
 
-`GET /projects/:id/ops/:op/log` is SSE. Lines are printed as received with
-a dim `nix ›` prefix. On the `done` event with an error, print the error
+`GET /projects/:id/ops/:op/log` is SSE. Lines are printed as received:
+Nix's own with a dim `nix ›` prefix, and the step lines of api.md "Build
+log lines", which are repose's own, as they are (I-755). On the `done`
+event with an error, print the error
 block from the op (`build_failed` or `eval_failed`) verbatim, then if
 `fragment_line` is set, print the fragment with that line marked:
 

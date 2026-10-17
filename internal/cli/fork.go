@@ -278,7 +278,15 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 				continue
 			}
 			if err := forkStartAgent(ctx, e, f.Slug, opts.Agent, opts.Prompt); err != nil {
-				e.warn("Could not start the agent in %s: %s. `repose run %s --no-sync -p PROMPT` tries again.", f.Slug, oneLine(err.Error()), f.Slug)
+				if errors.Is(err, errPromptNotSubmitted) {
+					// The agent did start and the prompt is in its input
+					// (I-752): its own sentence says where and what to
+					// press, and `repose run -p` again would start a
+					// second agent beside it.
+					e.warn("%s", oneLine(err.Error()))
+				} else {
+					e.warn("Could not start the agent in %s: %s. `repose run %s --no-sync -p PROMPT` tries again.", f.Slug, oneLine(err.Error()), f.Slug)
+				}
 			}
 		}
 	}

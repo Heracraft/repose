@@ -349,8 +349,14 @@ func EventsCmd(ctx context.Context, e *Env, projectArg, since string, follow boo
 // eventsProjects is the projects `repose events` reads: the one named or
 // this checkout's, or, with neither (outside a checkout, or in the home
 // folder), every project. A checkout with a remote and no project is
-// still an error, as for every command.
+// still an error, as for every command, and PROJECT:CHECKOUT is the
+// usage error `repose logs` gives (requireProject's wholeMachineOnly).
 func eventsProjects(ctx context.Context, e *Env, projectArg string) ([]Project, bool, error) {
+	// Events are the machine's, as logs are: a checkout in the argument
+	// is refused with the syntax, not looked up as a project (I-618).
+	if err := wholeMachineOnly(e, projectArg); err != nil {
+		return nil, false, err
+	}
 	arg := e.resolveArg(projectArg)
 	res, err := resolveProject(ctx, e.Client, e.Dir, e.Cwd, arg, &e.Cache, defaultResolveDeps())
 	if err != nil {

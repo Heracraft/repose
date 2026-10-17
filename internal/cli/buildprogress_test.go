@@ -321,3 +321,41 @@ func TestCreateBuildWithNothingToFetch(t *testing.T) {
 		}
 	}
 }
+
+// I-755: repose's own step lines are the step and nothing else. Each was
+// also copied to the raw stream with the `nix › ` prefix, so without a
+// terminal every step showed twice — the copy first, labelled as Nix's
+// output, which it never was.
+func TestStepLinesAreNotPrintedAsNixOutput(t *testing.T) {
+	out := &discardWriter{}
+	pr := newProgress(out, false) // no terminal: one line per step
+	v := &buildView{pr: pr, raw: pr}
+	for _, l := range configBuildLines {
+		v.Line(l)
+	}
+	pr.End()
+	got := out.buf.String()
+	t.Logf("no terminal:\n%s", got)
+	// The step lines of docs/interfaces/api.md "Build log lines" that
+	// configBuildLines holds; none of them is Nix's output.
+	for _, l := range []string{
+		"waiting for a build slot",
+		"evaluating configuration",
+		"building nixos-system-todo-app",
+		"built /nix/store/ffff-nixos-system-todo-app",
+		"switching the machine",
+	} {
+		if strings.Contains(got, "nix › "+l) {
+			t.Errorf("step line %q printed as Nix's output:\n%s", l, got)
+		}
+	}
+	if n := strings.Count(got, "Evaluating your config"); n != 1 {
+		t.Errorf("the evaluate step shows %d times, want once:\n%s", n, got)
+	}
+	// Nix's own lines still go to raw, after the step they belong to.
+	step := strings.Index(got, "Fetching 0/3 paths")
+	nix := strings.Index(got, "nix › these 3 paths will be fetched")
+	if step < 0 || nix < step {
+		t.Errorf("Nix's fetch list does not follow its step:\n%s", got)
+	}
+}

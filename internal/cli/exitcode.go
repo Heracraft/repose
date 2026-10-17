@@ -44,6 +44,15 @@ func exitf(code int, format string, args ...any) *exitError {
 	return &exitError{code: code, msg: fmt.Sprintf(format, args...)}
 }
 
+// exitCausef is exitf with a cause the caller can match with errors.Is.
+// The cause is never printed (exitError.cause); it is how one command
+// tells another what kind of failure it got, instead of matching on the
+// message. Named rather than built inline so that the I-484 check in
+// quiet_success_test.go still sees these strings on a failure path.
+func exitCausef(code int, cause error, format string, args ...any) *exitError {
+	return &exitError{code: code, msg: fmt.Sprintf(format, args...), cause: cause}
+}
+
 // silent exits with code and no further message (the command already
 // printed one, e.g. streamed build log output).
 func silent(code int) *exitError { return &exitError{code: code} }

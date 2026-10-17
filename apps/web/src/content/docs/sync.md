@@ -87,7 +87,7 @@ Nothing new to sync. The machine has 3 commits on main your laptop
 doesn't have, and uncommitted changes to 2 files.
 ```
 
-Commits count from the last sync and stop counting once your laptop has fetched them with `git fetch repose`. Uncommitted files never travel back.
+A `.env` you changed is still copied: it isn't part of the checkout git tracks. Commits count from the last sync and stop counting once your laptop has fetched them with `git fetch repose`. Uncommitted files never travel back.
 
 When your laptop has new work, the sync writes only the files that work touches: the ones your new commits change, your uncommitted changes and your untracked files. The machine's changes to any other file stay where they are, and the summary counts them:
 

@@ -48,7 +48,8 @@ type muxer interface {
 	PasteScript(slug, window string) string
 	// TypeScript is shell that types text and Enter into the named
 	// window's (or herdr agent's) terminal, or exits typeExitNoWindow
-	// when there is none (`run -w`, I-639).
+	// when there is none (`run -w`, I-639). It checks the terminal took
+	// the Enter and exits typeExitNotSubmitted when it did not (I-752).
 	TypeScript(slug, window, text string) string
 	// CloseScript is shell that closes the named window (or herdr
 	// agent's pane), or exits typeExitNoWindow when there is none
@@ -62,8 +63,12 @@ type muxer interface {
 }
 
 // typeExitNoWindow is TypeScript's and CloseScript's exit when the
-// window is not there.
-const typeExitNoWindow = 3
+// window is not there; typeExitNotSubmitted is the submit script's when
+// the prompt was typed and the agent never took it (I-752).
+const (
+	typeExitNoWindow     = 3
+	typeExitNotSubmitted = 5
+)
 
 // agentStart is one `repose run -p PROMPT` agent.
 type agentStart struct {

@@ -55,12 +55,12 @@ tmux display-message -p -t "$p" '#{window_name}'
 }
 
 // TypeScript types text into the window's active pane as keys, then
-// Enter, as startAgentWindow types a prompt.
+// Enter, and makes sure the pane took it (submitPromptFor), as
+// startAgentWindow types a prompt.
 func (tmuxMux) TypeScript(slug, window, text string) string {
 	t := shQuote(tmuxWindowTarget(slug, window))
-	return fmt.Sprintf(`tmux has-session -t %[1]s 2>/dev/null || exit %[3]d
-tmux send-keys -t %[1]s -l %[2]s && tmux send-keys -t %[1]s Enter
-`, t, shQuote(text), typeExitNoWindow)
+	return fmt.Sprintf("tmux has-session -t %s 2>/dev/null || exit %d\n", t, typeExitNoWindow) +
+		submitPromptFor(tmuxSubmitShell(t), text)
 }
 
 // CloseScript kills the window and every process in it.
@@ -250,11 +250,18 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 	if err := waitPaneIdle(ctx, t, slug, windowName, binary, onLoading); err != nil {
 		return err
 	}
-	if _, err := runSSH(ctx, t, fmt.Sprintf("tmux send-keys -t %s:%s -l %s", slug, windowName, shQuote(prompt)), nil); err != nil {
+	// Typing and the check it was taken ride one ssh (I-752): the idle
+	// pane is as ready as it will be, and another round trip between the
+	// text and the Enter is what the check is for, not a cure.
+	script := submitPromptFor(tmuxSubmitShell(shQuote(tmuxWindowTarget(slug, windowName))), prompt)
+	if _, err := runSSH(ctx, t, script, nil); err != nil {
+		var se *sshError
+		if errors.As(err, &se) && se.ExitCode == typeExitNotSubmitted {
+			return &promptNotSubmittedError{agent: binary}
+		}
 		return err
 	}
-	_, err := runSSH(ctx, t, fmt.Sprintf("tmux send-keys -t %s:%s Enter", slug, windowName), nil)
-	return err
+	return nil
 }
 
 // agentWindowCommand is the shell startAgentWindow runs to open the

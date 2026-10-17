@@ -592,11 +592,9 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 2 {
-				if window != "" && window != args[1] {
-					return cobraUsageError{fmt.Errorf("%s and --window %s name two windows; pass one", args[1], window)}
-				}
-				window, args = args[1], args[:1]
+			var err error
+			if args, window, err = windowArgs(args, window, g.project); err != nil {
+				return err
 			}
 			if _, err := projectFrom(args, g); err != nil {
 				return err
