@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { getBilling, getMe, listDestroyed, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure } from '$lib/api/toast';
@@ -29,6 +31,23 @@
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
 	import { runRowAction, type RowAction } from '$lib/components/projects/actions';
+	import {
+		FILTERS,
+		FILTER_LABELS,
+		PROJECTS_SHOWN,
+		TOOLBAR_FROM,
+		atRest,
+		byHeldOrder,
+		holdsMemory,
+		idSetKey,
+		listSearch,
+		matchesFilter,
+		matchesQuery,
+		orderProjects,
+		readFilter,
+		readQuery,
+		type Filter
+	} from '$lib/projectList';
 	import type { Billing, DestroyedProject, Me, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 
@@ -214,11 +233,79 @@
 
 	let summary = $derived.by(() => {
 		if (!projects || projects.length === 0) return undefined;
-		const awake = projects.filter((p) => p.state === 'running').length;
-		return [awake > 0 ? `${awake} running` : 'No machines running', planName]
+		const awake = projects.filter(holdsMemory).length;
+		const n = projects.length;
+		return [
+			awake > 0 ? `${awake} running` : 'No machines running',
+			`${n} ${n === 1 ? 'project' : 'projects'}`,
+			planName
+		]
 			.filter(Boolean)
 			.join(' · ');
 	});
+
+	/** Whether an agent is waiting on an answer about this project. */
+	const waitingOn = (p: Project) => !!questionsFor.get(p.id);
+
+	// The filter and the search live in the URL, so Back steps between
+	// them and a reload keeps the list the user was reading.
+	let filter = $derived(readFilter(page.url.searchParams));
+	let query = $derived(readQuery(page.url.searchParams));
+	/** What the search box holds while the URL catches up with it. */
+	let typed = $state<string | undefined>(undefined);
+	let searchBox = $derived(typed ?? query);
+	let debounce: ReturnType<typeof setTimeout> | undefined;
+
+	// The api answers in `order by created_at`, which is the order they
+	// were made in; the list is read by what wants you, then what is up.
+	// The order is taken on arrival and whenever a project appears or
+	// disappears, then held: a machine the user stops keeps its place
+	// instead of sliding away under the pointer that pressed Stop.
+	let held = $state<string[]>([]);
+	// The key is a $derived so the effect runs again only when the set of
+	// projects actually changes; depending on `projects` itself would
+	// re-run it on every 10s poll, which is the whole point of holding.
+	let orderKey = $derived(idSetKey(projects ?? []));
+	$effect(() => {
+		void orderKey;
+		untrack(() => {
+			held = orderProjects(projects ?? [], waitingOn).map((p) => p.id);
+		});
+	});
+	// Filtered first, so "Show all N" counts what is on screen.
+	let matched = $derived(
+		(projects ?? [])
+			.filter((p) => matchesFilter(p, filter, waitingOn(p)) && matchesQuery(p, query))
+			.sort(byHeldOrder(held))
+	);
+	/** Rows drawn: the first PROJECTS_SHOWN until "Show all" is pressed. */
+	let showAll = $state(false);
+	let rows = $derived(showAll ? matched : matched.slice(0, PROJECTS_SHOWN));
+	let capped = $derived(matched.length - rows.length);
+	/** The toolbar is drawn once the list is long enough to need it. */
+	let toolbar = $derived((projects?.length ?? 0) > TOOLBAR_FROM);
+
+	function filterHref(f: Filter): string {
+		return `${resolve('/projects')}${listSearch(page.url.searchParams, f, searchBox)}`;
+	}
+
+	function onSearch(value: string) {
+		typed = value;
+		clearTimeout(debounce);
+		// 200ms: a URL write per keystroke fills the history and re-runs
+		// the page's load for a list that is already in memory.
+		debounce = setTimeout(() => {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve()
+			void goto(`${resolve('/projects')}${listSearch(page.url.searchParams, filter, value)}`, {
+				keepFocus: true,
+				noScroll: true,
+				replaceState: true
+			});
+			typed = undefined;
+		}, 200);
+	}
+
+	$effect(() => () => clearTimeout(debounce));
 </script>
 
 {#snippet stateCell(p: Project)}
@@ -236,6 +323,14 @@
 		</div>
 	{:else if p.state === 'running'}
 		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">up {uptime(p.started_at)}</div>
+	{:else if p.state === 'stopped'}
+		<!-- A stopped row carried no time at all, so thirty of them read
+		     the same and the order over them could not be seen. -->
+		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">
+			{p.started_at
+				? `last run ${relativeTime(p.started_at)}`
+				: `made ${relativeTime(p.created_at)}`}
+		</div>
 	{/if}
 	{#if p.expires_at}
 		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">{tempLeft(p.expires_at)}</div>
@@ -346,12 +441,52 @@
 				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
 			</div>
 
+			<!-- A search and the state filters, once the list is long enough to
+			     need them. The filters are links with aria-current, drawn like
+			     the project's tabs (DESIGN-LANGUAGE "Tabs"), and both halves
+			     live in the URL. -->
+			{#if toolbar}
+				<div class="ptools mt-8">
+					<input
+						type="search"
+						class="field pt-search"
+						aria-label="Search projects"
+						placeholder="Search"
+						value={searchBox}
+						oninput={(e) => onSearch(e.currentTarget.value)}
+					/>
+					<nav aria-label="Filter projects" class="flex gap-5 text-sm">
+						{#each FILTERS as f (f)}
+							{@const on = filter === f}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
+							<a
+								href={filterHref(f)}
+								aria-current={on ? 'page' : undefined}
+								data-sveltekit-noscroll
+								data-sveltekit-keepfocus
+								data-sveltekit-replacestate
+								class="-mb-px border-b py-2 transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {on
+									? 'border-ink text-ink'
+									: 'border-transparent text-ink-muted hover:text-ink'}">{FILTER_LABELS[f]}</a
+							>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/each}
+					</nav>
+				</div>
+			{/if}
+
+			{#if matched.length === 0}
+				<p class="mt-8 text-ink-muted" data-testid="no-matches">
+					No project matches. <a href={resolve('/projects')} class="link">Clear</a>
+				</p>
+			{/if}
+
 			<!-- From sm up, a table. A region with a name and a tab stop: between
 			     sm and lg the table can still run past the frame, and a keyboard
 			     can only scroll what it can focus. -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
-				class="mt-8 hidden overflow-x-auto sm:block"
+				class="mt-6 hidden overflow-x-auto sm:block"
 				role="region"
 				aria-label="Projects"
 				tabindex="0"
@@ -369,7 +504,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each projects as p (p.id)}
+						{#each rows as p (p.id)}
 							{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
 							<tr class="prow" class:prow--frozen={!!frozenSince(p)}>
 								<td class="pcell-name">
@@ -405,7 +540,11 @@
 									{/if}
 								</td>
 								<td>
-									<AgentChips agents={p.signals?.agents} ssh={p.signals?.ssh_sessions} />
+									<AgentChips
+										agents={p.signals?.agents}
+										ssh={p.signals?.ssh_sessions}
+										live={!atRest(p)}
+									/>
 								</td>
 								<td class="hidden whitespace-nowrap md:table-cell">{@render diskCell(p)}</td>
 								<td class="hidden whitespace-nowrap text-ink-muted xl:table-cell">
@@ -444,7 +583,7 @@
 			<!-- Below sm, a stacked list: each project one link, its action
 			     on its first line. -->
 			<ul class="mt-6 border-t border-rule-strong sm:hidden" aria-label="Projects">
-				{#each projects as p (p.id)}
+				{#each rows as p (p.id)}
 					{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
 					{@const agents = p.signals?.agents ?? []}
 					{@const act = actionFor(p)}
@@ -467,11 +606,30 @@
 								<span class="shrink-0 whitespace-nowrap">
 									{p.class}{#if frozenSince(p)}&nbsp;· frozen {uptime(
 											frozenSince(p)!
-										)}{:else if p.state === 'running'}&nbsp;· up {uptime(p.started_at)}{/if}
+										)}{:else if p.state === 'running'}&nbsp;· up {uptime(
+											p.started_at
+										)}{:else if p.state === 'stopped'}&nbsp;· {p.started_at
+											? `last run ${relativeTime(p.started_at)}`
+											: `made ${relativeTime(p.created_at)}`}{/if}
 								</span>
 								{#if remote}<span aria-hidden="true">·</span>
 									<span class="min-w-0 truncate">{remote}</span>{/if}
 							</span>
+							<!-- A temporary machine's countdown and the unused warning are
+							     losses the reader cannot undo, so the stacked row carries
+							     them as the table's state cell does. -->
+							{#if p.expires_at || (p.state === 'running' && p.idle)}
+								<span class="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs tabular-nums">
+									{#if p.state === 'running' && p.idle}
+										<span class="text-amber-700 dark:text-amber-400"
+											>unused {uptime(p.idle.since)}</span
+										>
+									{/if}
+									{#if p.expires_at}
+										<span class="text-ink-muted">{tempLeft(p.expires_at)}</span>
+									{/if}
+								</span>
+							{/if}
 							{#if agents.length > 0 || questionsFor.get(p.id) || (p.signals?.ssh_sessions ?? 0) > 0}
 								<span class="mt-2 flex flex-wrap items-center gap-1.5">
 									{#if questionsFor.get(p.id)}
@@ -492,6 +650,21 @@
 					</li>
 				{/each}
 			</ul>
+
+			<!-- The list is the one that grows to 100 (I-569), so it is capped
+			     like every other growing list on the dashboard. -->
+			{#if capped > 0 || showAll}
+				<div class="mt-4 flex items-baseline gap-3">
+					<button type="button" class="btn-ghost" onclick={() => (showAll = !showAll)}>
+						{showAll ? 'Show fewer' : `Show all ${matched.length}`}
+					</button>
+					{#if capped > 0}
+						<span class="text-sm text-ink-muted tabular-nums"
+							>{rows.length} of {matched.length}</span
+						>
+					{/if}
+				</div>
+			{/if}
 
 			<RecentActivity {projects} />
 		{/if}
@@ -523,6 +696,29 @@
 	}
 	.ptable :is(th, td):last-child {
 		padding-right: 0.75rem;
+	}
+	/* The search and the filters on one line, under the strip and over the
+	   list; on a phone the search takes the row and the filters sit under
+	   it, so neither is squeezed. */
+	.ptools {
+		display: flex;
+		flex-wrap: wrap;
+		/* Bottom-aligned, so the current filter's underline lands on the
+		   toolbar's own rule, as the project's tabs do. */
+		align-items: flex-end;
+		justify-content: space-between;
+		column-gap: 1.5rem;
+		border-bottom: 1px solid var(--rule);
+	}
+	.pt-search {
+		width: 100%;
+		max-width: 18rem;
+		margin-bottom: 0.5rem;
+	}
+	@media (width >= 40rem) {
+		.pt-search {
+			width: 16rem;
+		}
 	}
 	.prow {
 		position: relative;

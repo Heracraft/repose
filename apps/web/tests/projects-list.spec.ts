@@ -10,7 +10,9 @@ import {
 	closeQuestion,
 	setBilling,
 	resetBilling,
-	setAgents
+	setAgents,
+	stopProject,
+	destroyProject
 } from './helpers';
 
 test.beforeEach(async ({ page }) => {
@@ -292,4 +294,214 @@ test('an agent chip keeps its look after coming from the landing', async ({ page
 	});
 	expect(look).toEqual({ display: 'flex', fontSize: '11px' });
 	await setAgents(p.id, []);
+});
+
+// The list's order and the toolbar. The api answers GET /projects in
+// `order by created_at` (internal/api/store/store.go), so without these
+// the machines a user is working on sit wherever they were created —
+// with 100 projects to an account (I-569) that is the whole page.
+
+// Every project these tests make is destroyed again: the suite shares one
+// account with a 100-project cap (I-569), and a file that leaves fifty
+// behind breaks the files that run after it.
+const litter: string[] = [];
+
+async function make(
+	api: string,
+	name: string,
+	opts: { stopped?: boolean } = {}
+): Promise<{ id: string; name: string }> {
+	const p = await createProject(api, { name, remote_url: `github.com/h/${name}` });
+	litter.push(p.id);
+	if (opts.stopped) await stopProject(api, p.id);
+	return p;
+}
+
+test.afterEach(async () => {
+	const api = apiURLFromEnv();
+	while (litter.length) await destroyProject(api, litter.pop()!);
+});
+
+/**
+ * The project names in the table, in the order they are drawn.
+ * allInnerTexts() does not wait for anything, so the first row is waited
+ * for first: without that every read here races the first paint.
+ */
+async function names(page: Page): Promise<string[]> {
+	const cells = page.getByRole('region', { name: 'Projects' }).locator('tbody tr .pname');
+	await cells.first().waitFor({ state: 'attached' });
+	return cells.allInnerTexts();
+}
+
+test('the list leads with what is running, whatever order they were made in', async ({ page }) => {
+	const api = apiURLFromEnv();
+	// Made oldest first; the middle one is the one left running, so
+	// created_at order would bury it.
+	const first = await make(api, 'ord-a', { stopped: true });
+	const middle = await make(api, 'ord-b');
+	const last = await make(api, 'ord-c', { stopped: true });
+
+	await page.goto('/projects');
+	const shown = await names(page);
+	const seen = shown.filter((n) => [first.name, middle.name, last.name].includes(n));
+	expect(seen[0]).toBe(middle.name);
+});
+
+test('a project an agent is waiting on comes above the rest', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const busy = await make(api, 'ord-busy');
+	const asked = await make(api, 'ord-asked');
+	const q = await addQuestion(asked.id, { agent: 'claude', text: 'Run the migration?' });
+
+	await page.goto('/projects');
+	const shown = await names(page);
+	const iAsked = shown.indexOf(asked.name);
+	const iBusy = shown.indexOf(busy.name);
+	expect(iAsked).toBeGreaterThanOrEqual(0);
+	// The suite shares one account, so earlier tests' projects are in the
+	// list too and the cap may hold `busy` back entirely — which is the
+	// same claim, more strongly.
+	expect(iBusy === -1 || iAsked < iBusy).toBe(true);
+	await closeQuestion(q.id);
+});
+
+test('the search finds a project by name and by its remote', async ({ page }) => {
+	const api = apiURLFromEnv();
+	// The toolbar is drawn once the list is long enough to need it.
+	const wanted = await createProject(api, {
+		name: 'needle-app',
+		remote_url: 'github.com/findme/needle-app'
+	});
+	litter.push(wanted.id);
+	for (let i = 0; i < 9; i++) await make(api, `hay-${i}`, { stopped: true });
+	await page.goto('/projects');
+	const search = page.getByLabel('Search projects');
+	await expect(search).toBeVisible();
+
+	await search.fill('needle');
+	await expect(page).toHaveURL(/[?&]q=needle/);
+	expect(await names(page)).toEqual([wanted.name]);
+
+	// The remote matches too, so an org finds its projects.
+	await search.fill('findme');
+	await expect(page).toHaveURL(/[?&]q=findme/);
+	expect(await names(page)).toEqual([wanted.name]);
+
+	// A reload keeps the list the user was reading.
+	await page.reload();
+	await expect(page.getByLabel('Search projects')).toHaveValue('findme');
+	expect(await names(page)).toEqual([wanted.name]);
+
+	await search.fill('nothing-matches-this');
+	await expect(page.getByTestId('no-matches')).toBeVisible();
+});
+
+test('the state filter keeps its choice in the URL', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const up = await make(api, 'filt-up');
+	const down = await make(api, 'filt-off', { stopped: true });
+	for (let i = 0; i < 8; i++) await make(api, `filt-${i}`, { stopped: true });
+
+	await page.goto('/projects');
+	// The suite shares one account, so this test's own projects are
+	// narrowed to with the search; the cap would otherwise decide what is
+	// on screen.
+	await page.getByLabel('Search projects').fill('filt-');
+	await expect(page).toHaveURL(/[?&]q=filt-/);
+	const filters = page.getByRole('navigation', { name: 'Filter projects' });
+	await expect(filters.getByRole('link', { name: 'All' })).toHaveAttribute('aria-current', 'page');
+
+	await filters.getByRole('link', { name: 'Running' }).click();
+	await expect(page).toHaveURL(/[?&]state=up/);
+	const running = await names(page);
+	expect(running).toContain(up.name);
+	expect(running).not.toContain(down.name);
+
+	await filters.getByRole('link', { name: 'Stopped' }).click();
+	await expect(page).toHaveURL(/[?&]state=off/);
+	const stopped = await names(page);
+	expect(stopped).toContain(down.name);
+	expect(stopped).not.toContain(up.name);
+});
+
+test('the list is capped, and "Show all" opens it', async ({ page }) => {
+	const api = apiURLFromEnv();
+	for (let i = 0; i < 28; i++) await make(api, `cap-${i}`, { stopped: true });
+	await page.goto('/projects');
+	await page.getByLabel('Search projects').fill('cap-');
+	await expect(page).toHaveURL(/[?&]q=cap-/);
+	const capped = await names(page);
+	expect(capped.length).toBe(25);
+
+	const all = page.getByRole('button', { name: 'Show all 28' });
+	await expect(all).toBeVisible();
+	await all.click();
+	await expect(page.getByRole('button', { name: 'Show fewer' })).toBeVisible();
+	expect((await names(page)).length).toBe(28);
+	await page.getByRole('button', { name: 'Show fewer' }).click();
+	await expect(all).toBeVisible();
+	expect((await names(page)).length).toBe(25);
+});
+
+test('a stopped row says when it last ran, and shows no agent column filler', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await make(api, 'rest-app', { stopped: true });
+	await page.goto('/projects');
+	// Narrowed to this test's project: the suite shares one account and
+	// the list is capped at 25.
+	await page.getByLabel('Search projects').fill('rest-app');
+	await expect(page).toHaveURL(/[?&]q=rest-app/);
+	const r = row(page, p.name);
+	await expect(r).toContainText(/last run|made/);
+	// "none" belongs to a machine that is up and running nothing; a
+	// stopped one can run nothing, so the word said nothing. (The Last
+	// snapshot cell keeps its "none": a stopped machine can have one.)
+	await expect(r.locator('td').nth(3)).toHaveText('');
+});
+
+// A temporary machine is destroyed with no snapshot (I-347), so its
+// countdown is a loss the reader cannot undo: the stacked phone row has
+// to carry it, not only the table's state cell.
+test('the phone row carries a temporary machine’s countdown', async ({ page }) => {
+	const res = await fetch(`${apiURLFromEnv()}/projects`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			name: `phone-temp-${Math.random().toString(36).slice(2, 8)}`,
+			remote_url: '',
+			class: 'small',
+			expires_in_s: 7200
+		})
+	});
+	expect(res.ok).toBe(true);
+	const p = await res.json();
+	litter.push(p.id);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/projects');
+	const li = page.getByRole('list', { name: 'Projects' }).locator('li').filter({ hasText: p.name });
+	await expect(li).toContainText('temporary');
+	await expect(li).toContainText(/destroyed in|left/);
+});
+
+// Stopping a machine must not slide its row away from the pointer that
+// pressed Stop: with the list capped at 25 the row left the page
+// entirely. The order is taken on arrival and held while the page is open.
+test('a row the user stops keeps its place in the list', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const up = await make(api, 'hold-up');
+	for (let i = 0; i < 6; i++) await make(api, `hold-${i}`, { stopped: true });
+
+	await page.goto('/projects');
+	await page.getByLabel('Search projects').fill('hold-');
+	await expect(page).toHaveURL(/[?&]q=hold-/);
+	const before = await names(page);
+	expect(before[0]).toBe(up.name);
+
+	const r = row(page, up.name);
+	await r.hover();
+	await r.getByRole('button', { name: `Stop ${up.name}` }).click();
+	await expect(r).toContainText('stopped', { timeout: 15_000 });
+	// Same place, not sorted down among the stopped ones.
+	expect((await names(page))[0]).toBe(up.name);
 });

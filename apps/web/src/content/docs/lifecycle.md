@@ -25,7 +25,7 @@ this month
 
 `repose ls -q` prints only the names, for scripts: `repose stop $(repose ls -q)` stops everything.
 
-The dashboard's **Projects** page shows the same: your plan's memory, disk and egress above the list, the questions agents are waiting on, and each project's state, agents, disk and last snapshot, with **Start** or **Stop** on its row. Under the list, **Recent activity** has the newest events across your running projects. The **Projects** link in the dashboard counts the questions waiting.
+The dashboard's **Projects** page shows the same: your plan's memory, disk and egress above the list, the questions agents are waiting on, and each project's state, agents, disk and last snapshot, with **Start** or **Stop** on its row. The list leads with the projects an agent is waiting on or that failed, then the machines that are running, then the stopped ones, most recently used first; a stopped row says when it last ran. Past 8 projects a search box finds one by name or by its remote, and **All**, **Needs you**, **Running** and **Stopped** filter the list. Both stay in the page's address, so a reload keeps them. The list shows 25 and **Show all** lists the rest. Under it, **Recent activity** has the newest events across your running projects. The **Projects** link in the dashboard counts the questions waiting.
 
 For one project in detail, including each agent by its window, the commits on the machine your laptop doesn't have, and which processes are listening on ports:
 
