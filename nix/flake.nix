@@ -206,7 +206,16 @@
           limit=$((6 * 1024 * 1024 * 1024))
           echo "guest system closure: $size bytes (limit $limit)"
           if [ "$size" -gt "$limit" ]; then
-            echo "closure over 6 GB; largest paths:" >&2
+            echo "over the limit printed above; largest paths:" >&2
+            # closureInfo's registration is one record per path: the path,
+            # its hash, its NAR size, its deriver, then the number of
+            # references and that many lines. The sizes add up to
+            # total-nar-size, so the largest records are the paths to cut.
+            # It used to print the heading and exit, which named the
+            # problem and nothing to do about it (2026-10-15).
+            awk '{ p = $0; getline h; getline s; getline d; getline n; for (i = 0; i < n; i++) getline r; print s "\t" p }' \
+              "$closureInfo/registration" | sort -rn | head -20 |
+              awk -F'\t' '{ printf "  %8.1f MB  %s\n", $1 / 1048576, $2 }' >&2
             exit 1
           fi
           echo "$size" > $out

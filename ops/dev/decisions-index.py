@@ -9,8 +9,14 @@ line the entry starts on, so a reader opens DECISIONS.md at that line.
     python3 ops/dev/decisions-index.py            # write the index
     python3 ops/dev/decisions-index.py --check    # exit 1 if the index is stale
 
+Either way it exits 1 when two entries declare the same id, which is how
+one of them stays invisible: the index keeps the first and the second's
+title, date and status are never rendered, and a reader who follows a
+cross-reference lands on the wrong entry.
+
 Standard library only; run from anywhere.
 """
+import collections
 import re
 import sys
 from pathlib import Path
@@ -146,9 +152,39 @@ def render(entries):
     return "\n".join(out) + "\n"
 
 
+# KNOWN_DUPLICATES are the two collisions that were already in
+# DECISIONS.md when this check was added (2026-10-15): the staging-host
+# lane and the pricing lane each took I-642 and I-647 while working at the
+# same time. They are left as they are on purpose, since renumbering them
+# now would move the cross-references in four documents and in the code
+# that cites them; a new collision is what this check is for.
+KNOWN_DUPLICATES = {"I-642", "I-647"}
+
+
+def duplicates(entries):
+    """ids declared by more than one entry, as {id: [line, ...]}."""
+    where = collections.defaultdict(list)
+    for e in entries:
+        for a in e["aliases"]:
+            where[a].append(e["line"])
+    return {i: ls for i, ls in where.items() if len(ls) > 1 and i not in KNOWN_DUPLICATES}
+
+
 def main(argv):
     check = "--check" in argv
     entries = parse(SRC.read_text())
+    dups = duplicates(entries)
+    if dups:
+        src = SRC.relative_to(ROOT)
+        for i, lines in sorted(dups.items()):
+            at = ", ".join(str(n) for n in lines)
+            print(f"{src}: {i} is the id of {len(lines)} entries, at lines {at}", file=sys.stderr)
+        print(
+            "reserve ids with `ops/dev/release-queue id` and renumber the later entry; "
+            "the index would keep the first and hide the rest",
+            file=sys.stderr,
+        )
+        return 1
     statuses(entries)
     text = render(entries)
     if check:
