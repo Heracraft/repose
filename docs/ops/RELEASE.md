@@ -10,7 +10,9 @@ this file is the part between "a branch is done" and "it is live".
 ## For an agent building a change
 
 1. Start in a worktree, never in the main checkout:
-   `git worktree add ../kanali-<slug> -b <slug> main` and work there.
+   `git worktree add ../kanali-<slug> -b <slug> main` and work there. The
+   `kanali-` prefix is the historical name of the checkout, not the box:
+   the conductor's is woker-1 (I-763).
 2. Claim the work in `docs/workstreams/STATUS.md` (CLAUDE.md).
 3. Reserve decision ids before writing them:
    `ops/dev/release-queue id [N]`. It reads every local branch, every
@@ -123,7 +125,7 @@ Integrate whenever branches are queued; it needs no owner approval.
      `dry-activate` on the target before any switch.
    A failure is fixed in the batch worktree when it comes from the merge,
    or sent back to the branch's agent when it is the branch's own.
-5. **Move main, locally.** `git -C ~/kanali merge --ff-only
+5. **Move main, locally.** `git -C <the conductor checkout> merge --ff-only
    release/<batch>` (the main checkout must be clean), then
    `ops/dev/release-queue done <batch>`, which removes the batch
    worktree and pushes main to `origin integrated` (and nothing else). Do
@@ -169,9 +171,10 @@ else integrated with it.
 
 ## The integrated branch
 
-DECISIONS I-651. kanali, where integrated main lives, is a guest on
-host-01, so without a copy elsewhere the only integrated main stops with
-the host the conductor most needs to fix. `release-queue done` therefore
+DECISIONS I-651, as I-763 leaves it. The conductor's main lives on one
+box — woker-1 since 2026-10-17, the kanali guest on host-01 before it — so
+without a copy elsewhere the only integrated main stops with the machine
+the conductor most needs to fix. `release-queue done` therefore
 pushes main to the GitHub branch `integrated` after every integrate, as a
 fast-forward; a refusal is printed and means someone moved the branch by
 hand.
@@ -198,14 +201,15 @@ runs the vulnerable code. Queue such a branch only for the release that
 ships it: when the owner has asked for that release, integrate it with
 `REPOSE_INTEGRATED_REMOTE=none ops/dev/release-queue done <batch>` and ship
 at once. Until main is pushed, every later `done` also runs with
-`REPOSE_INTEGRATED_REMOTE=none`, and the copy off host-01 is a `git fetch`
-of kanali's main from woker-1 instead.
+`REPOSE_INTEGRATED_REMOTE=none`, and the copy off the conductor box is a
+`git fetch` of woker-1's main from kanali instead (I-763; it was the other
+way round while main lived on the guest).
 
-To work from it on another machine (woker-1 while host-01 is down, RUNBOOK
-"Operating while host-01 is down"): `git fetch origin integrated` and
-`git worktree add ../<checkout>-<slug> -b <slug> origin/integrated`. If
-kanali is gone, the conductor's queue state in `.git/release-queue/` is
-gone with it; the branches and their merges on `integrated` are not.
+To work from it on another machine (RUNBOOK "Operating while host-01 is
+down"): `git fetch origin integrated` and `git worktree add
+../<checkout>-<slug> -b <slug> origin/integrated`. If the conductor box is
+gone, its queue state in `.git/release-queue/` is gone with it; the
+branches and their merges on `integrated` are not.
 
 ## The release signing key
 
