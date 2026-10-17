@@ -6,6 +6,13 @@
 #   release-queue add [--live TEXT] [--note TEXT]  queue this worktree's branch
 #   release-queue ls [--all]                       the queue and what main holds unreleased
 #   release-queue id [N]                           reserve N decision ids (default 1)
+#   release-queue band [SLOT/TOTAL|none]           which ids this machine may reserve
+#   release-queue where BRANCH                     queued, merged, released, or unknown
+#   release-queue live BRANCH --ran TEXT|--not-done WHY   record the live check's outcome
+#   release-queue record RELEASE                   the STATUS line and the release's detail
+#   release-queue say BRANCH TEXT                  leave a line for the branch's author
+#   release-queue inbox [BRANCH]                   what was said about this branch
+#   release-queue worktrees                        worktrees whose branch is wholly released
 #   release-queue drop BRANCH                      take a branch off the queue
 #   release-queue cut                              release session: merge the queue
 #   release-queue resume RELEASE                   release session: after a conflict
@@ -20,7 +27,7 @@ set -euo pipefail
 
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 state=$common/release-queue
-mkdir -p "$state/entries" "$state/releases"
+mkdir -p "$state/entries" "$state/releases" "$state/tmp"
 touch "$state/ids"
 main_wt=$(git worktree list --porcelain | awk 'NR == 1 { print $2 }')
 
@@ -29,15 +36,137 @@ main_wt=$(git worktree list --porcelain | awk 'NR == 1 { print $2 }')
 index=docs/DECISIONS-INDEX.md
 
 die() { echo "release-queue: $*" >&2; exit 1; }
+
+# Every worktree has its own copy of this script, from whatever main it was
+# cut from, and they all write the same state. On 2026-10-15, 44 of the 47
+# worktrees on woker-1 that had this file carried an older one, the main
+# checkout among them, and running one said nothing -- the old `id` is what
+# handed out a used number six times.
+#
+# It is a steady state, not a backlog: I-745's guard is on
+# origin/integrated and on no main (origin/main has no ids_in_use at all),
+# and CLAUDE.md says to cut a worktree from main, so on this box the
+# documented command reproduces the old copy. A warning cannot fix that;
+# only main moving does. It can stop a lane trusting an answer the current
+# script would not give.
+#
+# Silent when this branch is itself changing the script -- its author is not
+# running a stale copy -- and when origin/integrated is not fetched, where
+# the line would be about a missing ref rather than about the script.
+own_version_check() {
+  local self ref mine theirs
+  self=$(git rev-parse --show-toplevel 2>/dev/null)/ops/dev/release-queue
+  [ -f "$self" ] || return 0
+  ref=refs/remotes/origin/integrated
+  theirs=$(git rev-parse -q --verify "$ref:ops/dev/release-queue" 2>/dev/null) || return 0
+  mine=$(git hash-object "$self" 2>/dev/null) || return 0
+  [ "$mine" != "$theirs" ] || return 0
+  # the author of a change to the tool: this branch's own diff touches it
+  local tip
+  tip=$(for r in refs/heads/main "$ref" refs/remotes/origin/main; do
+          git merge-base HEAD "$r" 2>/dev/null
+        done | tail -n1)
+  if [ -n "$tip" ] && git diff --name-only "$tip...HEAD" -- ops/dev/release-queue |
+       grep -q .; then
+    return 0
+  fi
+  echo "release-queue: this copy is not origin/integrated's (${mine:0:9} against ${theirs:0:9});" >&2
+  echo "  git fetch origin integrated and run it from a worktree cut from that, or merge main" >&2
+}
 locked() { exec 9>"$state/lock"; flock 9; }
-key() { printf '%s' "$1" | tr '/' '%'; }
-field() { sed -n "s/^$2=//p" "$1" | head -n1; }
+# An entry is one file per branch, named after it. The name has to decode
+# back to exactly one branch: `tr '/' '%'` did not, so `ws/01` and `ws%01`
+# shared a file and the second to queue erased the first silently (43 of the
+# 212 branch names on this box hold a slash). Percent-encoding does, and
+# `%` is encoded first or the escape is ambiguous.
+key() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's#/#%2F#g'; }
+# The name a pre-encoding script would have written, which is still on disk
+# for branches queued before this change (one on kanali, repose/fider).
+legacy_key() { printf '%s' "$1" | tr '/' '%'; }
+# entry_file BRANCH: where this branch's entry is, or where it goes. The
+# legacy name counts only when the file there is really this branch's, so
+# `ws%01` cannot claim the file `ws/01` wrote.
+entry_file() {
+  local b=$1 new legacy
+  new=$state/entries/$(key "$b")
+  [ -f "$new" ] && { echo "$new"; return; }
+  legacy=$state/entries/$(legacy_key "$b")
+  if [ -f "$legacy" ] && [ "$(field "$legacy" branch)" = "$b" ]; then
+    echo "$legacy"; return
+  fi
+  echo "$new"
+}
+# Every entry file, and nothing else in entries/. A file counts when its own
+# `branch=` field encodes back to its own name, under this encoding or the
+# legacy one. That is a validity check rather than a list of names to skip:
+# the writers here keep their temp files in $state/tmp, but a worktree
+# running an older copy still writes "<entry>.new" beside the entry, and such
+# a file is a complete entry -- the branch would be listed twice and a cut
+# would merge it twice, at two commits.
+entries() {
+  local f b
+  for f in "$state/entries"/*; do
+    [ -f "$f" ] || continue
+    b=$(field "$f" branch)
+    [ -n "$b" ] || continue
+    case $(basename "$f") in
+      "$(key "$b")" | "$(legacy_key "$b")") echo "$f" ;;
+    esac
+  done
+}
+# The LAST line that sets the key, not the first. Free text is written into
+# the entry before the fields the tool depends on (state, sha, needs), so a
+# note whose own text begins "state=released" used to win over the real
+# state and the branch left the queue with `add` reporting success.
+field() { sed -n "s/^$2=//p" "$1" | tail -n1; }
 setfield() { # file key value
   local f=$1 k=$2 v=$3 tmp
-  tmp=$(mktemp "$f.XXXX")
+  # outside entries/, so an interrupted write never reads as an entry
+  tmp=$(mktemp "$state/tmp/$(basename "$f").XXXX")
   grep -v "^$k=" "$f" > "$tmp" || true
   printf '%s=%s\n' "$k" "$v" >> "$tmp"
   mv "$tmp" "$f"
+}
+
+# integration_tip: the newest integrated commit this branch was cut from.
+#
+# Not refs/heads/main. On woker-1 that ref sat 132 commits behind
+# origin/main for weeks, and every `add` read its targets against it: a
+# branch with no commits of its own was told it shipped
+# api,base,cli,edge,host,web across a 371-file diff, and three of the
+# branches queued at the time carried a note correcting their own field.
+# The merge-base with a stale main is the stale main itself, because it is
+# an ancestor of anything cut from something newer -- so spelling the diff
+# `..` instead of `...` changes nothing, and the base is the bug.
+#
+# Each candidate contributes merge-base(HEAD, candidate); the newest of
+# those wins, which is the one the others are ancestors of. On kanali
+# refs/heads/main IS integrated main (checked: both 293a8dba) so it wins
+# there; on woker-1 origin/integrated does. Local main also wins while a
+# security batch is held back from the integrated branch
+# (REPOSE_INTEGRATED_REMOTE=none, DECISIONS I-651), which is the one case
+# where main is ahead of it.
+integration_tip() {
+  local ref b best=""
+  for ref in refs/heads/main refs/remotes/origin/integrated refs/remotes/origin/main; do
+    git rev-parse -q --verify "$ref" >/dev/null || continue
+    b=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
+    [ -n "$b" ] || continue
+    if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$b"; then best=$b; fi
+  done
+  [ -n "$best" ] || die "no common commit with main, origin/integrated or origin/main; fetch, or say what this branch was cut from"
+  echo "$best"
+}
+
+# The ref a cut will merge into, for the conflict check: the tip itself
+# rather than a merge-base with it.
+integration_ref() {
+  local ref best=""
+  for ref in refs/heads/main refs/remotes/origin/integrated refs/remotes/origin/main; do
+    git rev-parse -q --verify "$ref" >/dev/null || continue
+    if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$ref" 2>/dev/null; then best=$ref; fi
+  done
+  echo "$best"
 }
 
 # What a branch has to ship as: the deploy targets its changes reach.
@@ -49,8 +178,12 @@ setfield() { # file key value
 #   edge  a switch of the edge (the owner's)
 #   infra tofu apply (the owner's)
 needs_of() {
-  local range=$1 files t=() pkgs cmd target
-  files=$(git diff --name-only "$range")
+  local range=$1 files t=() pkgs cmd target all
+  all=$(git diff --name-only "$range")
+  # A gate is evaluated and installed on nothing: the VM tests and the
+  # fragment checks. 37 commits since 2026-09-15 changed only paths like
+  # these and were charged a deploy target, five of them base,edge,host.
+  files=$(grep -vE '^nix/(guest/tests/|hosts/tests/|guest/checks\.nix$)' <<<"$all" || true)
   grep -q '^apps/web/' <<<"$files" && t+=(web)
   grep -q '^nix/guest/' <<<"$files" && t+=(base)
   grep -q '^nix/hosts/' <<<"$files" && t+=(host)
@@ -60,6 +193,15 @@ needs_of() {
   # Go: a changed package ships in every binary that imports it.
   # A non-Go file under cmd/ or internal/ (an embedded email template, a
   # migration) ships with the nearest package above it.
+  # A package whose changed files are all _test.go reaches no binary: go
+  # does not compile a test file into one. cpu-weight was charged `edge`,
+  # the owner's switch, because its only change under cmd/gateway's deps
+  # was internal/obs/metrics/families_host_test.go. 38 of the 542 non-merge
+  # Go commits since 2026-09-15 changed only test files.
+  #
+  # Nix cannot see this: the source filter in nix/packages.nix includes
+  # test files, so a test-only commit changes repose-go-src and every
+  # derivation reading it. go list -deps is what knows about binaries.
   pkgs=$(
     while IFS= read -r p; do
       case $p in
@@ -71,6 +213,22 @@ needs_of() {
       esac
     done <<<"$files" | sort -u
   )
+  local keep=""
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case $d in
+      go.mod | go.sum) keep="$keep$d
+"; continue ;;
+    esac
+    # every changed file of this package, and whether any is not a test
+    if git diff --name-only "$range" -- "$d" | grep -qE '\.go$' &&
+       ! git diff --name-only "$range" -- "$d" | grep -E '\.go$' | grep -qv '_test\.go$'; then
+      continue
+    fi
+    keep="$keep$d
+"
+  done <<<"$pkgs"
+  pkgs=$(printf '%s' "$keep" | { grep -v '^$' || true; })
   if [ -n "$pkgs" ]; then
     local mod; mod=$(go list -m)
     for cmd in api repose-admin repose hostd guestd repose-hook gateway; do
@@ -91,6 +249,50 @@ needs_of() {
   fi
   [ ${#t[@]} -gt 0 ] || t=(none)
   printf '%s\n' "${t[@]}" | sort -u | paste -sd, -
+}
+
+# exact_nix narrows base, host and edge to the ones whose system really
+# changes, by comparing the derivation graphs at both ends of the range.
+#
+# Paths decide whether to ask; this answers. A plain drvPath comparison
+# cannot: self.shortRev is stamped into hostd, guestd and the guest's
+# baseVersion, so every commit changes every system's drvPath.
+# ops/dev/closure-equiv.py compares modulo that stamp. Measured on this
+# box: about 3 s a side, and dev-tool-guards (I-745) -- queued as
+# base,edge,host -- changes none of the three systems.
+#
+# Skipped by --fast, and skipped when nix is not on PATH, which is every
+# repose guest: the answer then stays the path-based one and the entry says
+# so, because a wrong "nothing to deploy" is worse than a wide one.
+exact_nix() {  # base-commit targets...
+  local base=$1; shift
+  local t out keep=() attr equiv
+  # REPOSE_QUEUE_EQUIV names the comparison command, so the wiring here can
+  # be tested against a scratch repository that nix cannot evaluate; the
+  # comparison itself is checked against this repository's own revisions
+  # (ops/dev/closure-equiv.py --self-test is not a thing; see the plan).
+  equiv=${REPOSE_QUEUE_EQUIV:-$(git rev-parse --show-toplevel)/ops/dev/closure-equiv.py}
+  if [ "${REPOSE_QUEUE_FAST:-}" = 1 ] || ! command -v nix >/dev/null || [ ! -x "$equiv" ]; then
+    printf '%s\n' "$@"; return 0
+  fi
+  for t in "$@"; do
+    case $t in
+      base) attr=packages.x86_64-linux.guest-system ;;
+      host) attr=nixosConfigurations.host-01.config.system.build.toplevel ;;
+      edge) attr=nixosConfigurations.edge.config.system.build.toplevel ;;
+      *) keep+=("$t"); continue ;;
+    esac
+    if out=$("$equiv" "$attr" "$base" HEAD 2>&1); then
+      echo "release-queue: $t: the system is unchanged from $(git rev-parse --short "$base"), so it is not a deploy target" >&2
+    else
+      case $out in
+        *"VERDICT: the system really changes"*) keep+=("$t") ;;
+        *) keep+=("$t")
+           echo "release-queue: $t: could not compare the systems, so it stays a target" >&2 ;;
+      esac
+    fi
+  done
+  [ ${#keep[@]} -eq 0 ] || printf '%s\n' "${keep[@]}"
 }
 
 # trust_reader runs the guards against help nobody asked for (DECISIONS
@@ -118,22 +320,49 @@ cmd_add() {
       *) die "add: unknown argument $1" ;;
     esac
   done
+  # A --live or --note value with a newline in it used to be written into the
+  # entry raw. The entry is flat key=value, so the lines after the first
+  # parsed as nothing -- and a line that looked like a key won over the real
+  # field, which took a branch out of the queue while this command printed
+  # success. One line, always.
+  local v
+  for v in live note; do
+    case ${!v} in *$'\n'*)
+      printf -v "$v" '%s' "$(tr '\n' ' ' <<<"${!v}" | tr -s ' ' | sed 's/ $//')"
+      echo "release-queue: the --$v text was folded onto one line (the entry file is one line per field)" >&2 ;;
+    esac
+  done
   local branch; branch=$(git branch --show-current)
   [ -n "$branch" ] || die "add: not on a branch"
   [ "$branch" != main ] || die "add: this is main; work in a worktree on its own branch (docs/ops/RELEASE.md)"
   [ -z "$(git status --porcelain --untracked-files=no)" ] || die "add: $branch has uncommitted changes; commit them first"
-  local ahead; ahead=$(git rev-list --count main..HEAD)
-  [ "$ahead" -gt 0 ] || die "add: $branch has no commits that main lacks"
+  local tip ref; tip=$(integration_tip); ref=$(integration_ref)
+  local ahead; ahead=$(git rev-list --count "$tip..HEAD")
+  [ "$ahead" -gt 0 ] || die "add: $branch has no commits that $(git rev-parse --short "$tip") lacks"
   local clash
-  if ! clash=$(git merge-tree --write-tree --name-only main HEAD 2>/dev/null); then
+  if ! clash=$(git merge-tree --write-tree --name-only "$ref" HEAD 2>/dev/null); then
     clash=$(sed -n '2,/^$/p' <<<"$clash" | grep -v -e '^$' -e "^$index\$" || true)
-    [ -z "$clash" ] || die "add: $branch conflicts with main in: $(paste -sd' ' <<<"$clash"); run 'git merge main' here, resolve, and queue again"
+    [ -z "$clash" ] || die "add: $branch conflicts with $ref in: $(paste -sd' ' <<<"$clash"); run 'git merge main' here, resolve, and queue again"
   fi
-  local needs; needs=$(needs_of main...HEAD)
+  local needs; needs=$(needs_of "$tip...HEAD")
+  # narrow base/host/edge to the systems that really change
+  local nix_t=() other=() x
+  for x in ${needs//,/ }; do
+    case $x in base | host | edge) nix_t+=("$x") ;; *) other+=("$x") ;; esac
+  done
+  if [ ${#nix_t[@]} -gt 0 ]; then
+    local kept; kept=$(exact_nix "$tip" "${nix_t[@]}")
+    needs=$(printf '%s\n%s\n' "$(printf '%s\n' "${other[@]:-}")" "$kept" |
+      { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
+    [ -n "$needs" ] || needs=none
+  fi
   trust_reader "$needs"
   locked
-  local f prev=""
-  f=$state/entries/$(key "$branch")
+  local f prev="" tmpf
+  f=$(entry_file "$branch")
+  # outside entries/, so an add killed before the mv leaves nothing a reader
+  # takes for a second entry of this branch
+  tmpf=$(mktemp "$state/tmp/$(basename "$f").XXXX")
   [ -f "$f" ] && prev=$(field "$f" state)
   # A branch already in a cut can take new commits: they wait as a new
   # entry, which `resume` merges into that release or the next cut takes.
@@ -144,13 +373,16 @@ cmd_add() {
     echo "sha=$(git rev-parse HEAD)"
     echo "worktree=$(git rev-parse --show-toplevel)"
     echo "needs=$needs"
+    echo "base=$(git rev-parse "$tip")"
+    echo "exact=$( { [ "${REPOSE_QUEUE_FAST:-}" = 1 ] || ! command -v nix >/dev/null; } && echo no || echo yes)"
     echo "live=$live"
     echo "note=$note"
+    echo "machine=$(hostname)"
     echo "queued=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "seq=$( [ -f "$f" ] && field "$f" seq || date +%s%N)"
     echo "state=queued"
-  } > "$f.new"
-  mv "$f.new" "$f"
+  } > "$tmpf"
+  mv "$tmpf" "$f"
   echo "queued $branch at $(git rev-parse --short HEAD) ($ahead commits; ships as: $needs)"
   [ -z "$held" ] || echo "  release $held holds an earlier commit of $branch; the conductor takes this one with 'release-queue resume $held', or the next cut does"
 }
@@ -162,28 +394,41 @@ released() { git merge-base --is-ancestor "$1" refs/remotes/origin/main 2>/dev/n
 cmd_ls() {
   local f all=0 out pending="" st
   [ "${1:-}" != --all ] || all=1
-  out=$(for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  out=$(entries | while IFS= read -r f; do
     st=$(field "$f" state)
     case $st in
       queued | cut:*) ;;
       merged:*) if released "$(field "$f" sha)"; then st=released:${st#merged:}; [ $all = 1 ] || continue; else st=on-main:${st#merged:}; fi ;;
       *) [ $all = 1 ] || continue ;;
     esac
-    local b sha now moved=""
+    local b sha now moved="" where="" m
     b=$(field "$f" branch); sha=$(field "$f" sha)
     now=$(git rev-parse -q --verify "refs/heads/$b" || echo gone)
     [ "$now" = "$sha" ] || [ "$st" != queued ] || moved="  (branch moved since queued: $( [ "$now" = gone ] && echo deleted || git rev-parse --short "$now"); queue again)"
-    printf '%s\t%-10s %-28s %s  ships as %-14s %s%s\n' "$(field "$f" seq)" "$st" "$b" "${sha:0:9}" "$(field "$f" needs)" "$(field "$f" queued)" "$moved"
+    # Which machine queued it, and whether its commit is here: the queue
+    # state is one machine's, and a cut cannot take a commit this clone does
+    # not hold. Columns on the row, not a line under the table (I-484).
+    m=$(field "$f" machine)
+    [ -z "$m" ] || [ "$m" = "$(hostname)" ] || where=" @$m"
+    git cat-file -e "$sha^{commit}" 2>/dev/null || where="$where (commit not in this clone)"
+    # unread when the newest line is newer than the last read, and a line
+    # read in the same second counts as read
+    local last read_t
+    last=$(sed -n 's/^said=\([^ ]*\).*/\1/p' "$f" | tail -n1)
+    read_t=$(field "$f" read_through)
+    if [ -n "$last" ] && { [ -z "$read_t" ] || [ "$last" \> "$read_t" ]; }; then
+      where="$where (unread: release-queue inbox $b)"
+    fi
+    printf '%s\t%-10s %-28s %s  ships as %-14s %s%s%s\n' "$(field "$f" seq)" "$st" "$b" "${sha:0:9}" "$(field "$f" needs)" "$(field "$f" queued)" "$where" "$moved"
   done | sort -n | cut -f2-)
   if [ -n "$out" ]; then echo "$out"; else echo "the queue is empty"; fi
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     case $(field "$f" state) in merged:*) released "$(field "$f" sha)" || pending="$pending,$(field "$f" needs)" ;; esac
-  done
+  done < <(entries)
   if [ -n "$pending" ]; then
     pending=$(tr ',' '\n' <<<"$pending" | { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
-    echo "on main, not released: $(git rev-list --count refs/remotes/origin/main..main) commits; the next release ships as: ${pending:-nothing to deploy}"
+    local held; held=$(git rev-list --count refs/remotes/origin/main..main 2>/dev/null || echo 0)
+    echo "on main, not released: $held commits; the next release ships as: ${pending:-nothing to deploy}"
   fi
 }
 
@@ -215,6 +460,49 @@ ids_in_use() {
   grep -oE '^I-[0-9]+' "$state/ids" 2>/dev/null | grep -oE '[0-9]+' || true
 }
 
+# A machine's band. The reservations file lives in each machine's own git
+# dir and never leaves it, so an id reserved here is invisible on the other
+# box until it reaches a shared ref -- which is after the branch is
+# committed and integrated. Measured on woker-1 on 2026-10-15: every
+# shareable input to the scan topped out at I-746 while this machine's
+# reservations held I-747, I-748 and I-749, a window three numbers wide in
+# which the other machine hands out one of them. Six ids were taken twice
+# in two days that way.
+#
+# With a band each machine draws from a disjoint residue class, so two
+# machines cannot take one number however stale their refs are. It costs
+# gaps in the sequence, which already has them. Set it once per machine
+# (docs/ops/RELEASE.md); with no band the numbers are dense and the window
+# is open, which is what every id before this behaved like.
+band_file=$state/band
+cmd_band() {
+  if [ $# -eq 0 ]; then
+    if [ -s "$band_file" ]; then echo "this machine reserves ids $(cat "$band_file")"
+    else echo "no band: ids are dense, and another machine can hand out the same number"; fi
+    return 0
+  fi
+  case $1 in
+    none) rm -f "$band_file"; echo "band cleared; ids are dense again" ;;
+    [0-9]*/[0-9]*)
+      local slot=${1%%/*} total=${1##*/}
+      [ "$total" -gt 0 ] 2>/dev/null || die "band: TOTAL must be above zero"
+      [ "$slot" -lt "$total" ] || die "band: SLOT must be below TOTAL ($1)"
+      printf '%s/%s\n' "$slot" "$total" > "$band_file"
+      echo "this machine reserves ids $slot/$total: every ${total}th number, from $slot" ;;
+    *) die "band: SLOT/TOTAL, or none (got $1)" ;;
+  esac
+}
+
+# next_in_band N: the smallest number above N that this machine may take.
+next_in_band() {
+  local n=$((${1} + 1)) slot total b
+  if [ -s "$band_file" ]; then
+    b=$(cat "$band_file"); slot=${b%%/*}; total=${b##*/}
+    while [ $((n % total)) -ne "$slot" ]; do n=$((n + 1)); done
+  fi
+  echo "$n"
+}
+
 cmd_id() {
   local n=${1:-1} branch max used
   branch=$(git branch --show-current)
@@ -223,7 +511,7 @@ cmd_id() {
   max=$(printf '%s\n' "$used" | tail -n1)
   [ -n "$max" ] || max=0
   for _ in $(seq "$n"); do
-    max=$((max + 1))
+    max=$(next_in_band "$max")
     # A number already used as an entry header is never handed out. After
     # the scan above this cannot happen, so if it does the scan is wrong
     # and a loud failure here is worth more than a reservation that two
@@ -238,11 +526,200 @@ $max"
   done
 }
 
+# where answers "is this branch queued, merged, released, or unknown here",
+# from refs rather than from this machine's queue, because the queue state
+# is one machine's and the refs are shared. `cut` writes the merge commit
+# subject "Merge <branch> (<release>)", so the batch a branch landed in is
+# on public main and needs no state at all: `where test-hygiene` answers
+# from woker-1, which has never had a ref for that branch.
+#
+# Two agents read a released branch as unqueued work on 2026-10-14, because
+# `ls` drops a released entry and its worktree was still on disk.
+cmd_where() {
+  local b=${1:?where: which branch}
+  local f sha merge rel wt
+  f=$(entry_file "$b")
+  if [ -f "$f" ]; then
+    sha=$(field "$f" sha)
+    local m; m=$(field "$f" machine)   # absent on an entry queued before I-7xx
+    printf '%s  %s at %s, ships as %s, queued %s%s\n' "$b" "$(field "$f" state)" \
+      "${sha:0:9}" "$(field "$f" needs)" "$(field "$f" queued)" "${m:+ on $m}"
+  fi
+  merge=$(git log --format='%h %s' --grep="Merge $b (" \
+    refs/remotes/origin/integrated 2>/dev/null | head -n1 || true)
+  if [ -n "$merge" ]; then
+    rel=$(sed -n 's/.*(\(r[0-9-]*\))$/\1/p' <<<"$merge")
+    if git merge-base --is-ancestor "${merge%% *}" refs/remotes/origin/main 2>/dev/null; then
+      echo "$b  released in ${rel:-an unnamed batch} (merge ${merge%% *}, on origin/main)"
+    else
+      echo "$b  merged in ${rel:-an unnamed batch} (merge ${merge%% *}), on main, not released"
+    fi
+  elif [ -z "${f:+x}" ] || [ ! -f "$f" ]; then
+    if git rev-parse -q --verify "refs/heads/$b" >/dev/null; then
+      if git merge-base --is-ancestor "$b" refs/remotes/origin/main 2>/dev/null; then
+        echo "$b  wholly on origin/main, with no entry and no merge commit of its own"
+      else
+        echo "$b  a local branch, not queued here and not on main"
+      fi
+    else
+      echo "$b  nothing here knows this name: no entry, no merge commit, no ref"
+      return 1
+    fi
+  fi
+  wt=$(git worktree list --porcelain | awk -v b="$b" '
+    /^worktree /{w=$2} /^branch /{ if ($2 == "refs/heads/" b) print w }')
+  [ -z "$wt" ] || echo "  worktree $wt"
+}
+
+# worktrees names the ones whose branch is wholly on origin/main, which is
+# finished work that reads like unfinished work. It deletes nothing: a
+# session whose worktree is removed keeps a dead working directory and
+# cannot commit, and this cannot see panes (ORCHESTRATION.md).
+cmd_worktrees() {
+  local wt b n=0 total=0 out=""
+  while IFS= read -r wt; do
+    total=$((total + 1))
+    b=$(git -C "$wt" branch --show-current 2>/dev/null || true)
+    [ -n "$b" ] || continue
+    [ "$b" != main ] || continue
+    git merge-base --is-ancestor "$b" refs/remotes/origin/main 2>/dev/null || continue
+    n=$((n + 1))
+    local rel
+    rel=$(git log --format='%s' --grep="Merge $b (" refs/remotes/origin/main 2>/dev/null |
+      head -n1 | sed -n 's/.*(\(r[0-9-]*\))$/\1/p')
+    out="$out$(printf '  %-34s %s%s' "$b" "$wt" "${rel:+  (released in $rel)}")"$'\n'
+  done < <(git worktree list --porcelain | sed -n 's/^worktree //p')
+  if [ "$n" = 0 ]; then
+    echo "none of the $total worktrees is on a branch wholly on origin/main"
+    return 0
+  fi
+  echo "$n of $total worktrees are on a branch wholly on origin/main:"
+  printf '%s' "$out"
+  echo "check the pane before removing one; a session whose worktree is gone cannot commit"
+}
+
+# live records what a --live check printed, or why it did not run. `add`
+# stored the text and nothing stored the outcome, so three releases went
+# out with "NOT DONE: the --live checks" in their STATUS line and the
+# evidence lived only in whatever the conductor remembered to type.
+cmd_live() {
+  local b=${1:?live: which branch}; shift
+  local what="" how=""
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --ran) how=ran; what=$2; shift 2 ;;
+      --not-done) how=not-done; what=$2; shift 2 ;;
+      *) die "live: unknown argument $1 (--ran TEXT, --not-done WHY)" ;;
+    esac
+  done
+  [ -n "$how" ] || die "live: --ran TEXT, or --not-done WHY"
+  case $what in *$'\n'*)
+    what=$(tr '\n' ' ' <<<"$what" | tr -s ' ' | sed 's/ $//')
+    echo "release-queue: the text was folded onto one line" >&2 ;;
+  esac
+  locked
+  local f; f=$(entry_file "$b")
+  [ -f "$f" ] || die "live: $b has no entry here; 'release-queue where $b' says what this machine knows"
+  setfield "$f" live_state "$how"
+  setfield "$f" live_result "$what"
+  setfield "$f" live_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "$b: live check $how"
+}
+
+# decisions_of BRANCH-SHA BASE: the entry ids the branch adds, so a record
+# does not retype them.
+decisions_of() {
+  git diff "$2".."$1" -- docs/DECISIONS.md 2>/dev/null |
+    sed -n 's/^+\*\*\(\(R[0-9]*\|I\)-[0-9]*[a-z]\{0,1\}\).*/\1/p' |
+    sort -u -t- -k2,2n | paste -sd, -
+}
+
+# record prints a release's line for docs/workstreams/STATUS.md and the
+# detail that does not fit in it. The queue already holds every fact but
+# the live evidence, which `live` now stores; the five release lines in
+# STATUS are 2,142 to 3,989 characters in a file whose header asks for 600,
+# and they were assembled by hand each time.
+cmd_record() {
+  local rel=${1:?record: which release}
+  local rf=$state/releases/$rel
+  [ -f "$rf" ] || die "record: no release $rel"
+  local base; base=$(field "$rf" base)
+  local branches="" targets="" detail="" n=0 b sha needs f
+  while read -r b sha needs; do
+    [ -n "$b" ] || continue
+    n=$((n + 1))
+    local ids; ids=$(decisions_of "$sha" "$base")
+    branches="$branches$b${ids:+ ($ids)}, "
+    targets="$targets,$needs"
+    f=$(entry_file "$b")
+    local lv="" lr="" ex=""
+    if [ -f "$f" ]; then
+      lv=$(field "$f" live_state); lr=$(field "$f" live_result)
+      [ "$(field "$f" exact)" = no ] && ex="  targets not checked against the built systems (--fast)"
+    fi
+    detail="$detail- $b ${sha:0:9}, ships as ${needs:-none}${ids:+; $ids}
+"
+    case $lv in
+      ran) detail="$detail  live: $lr
+" ;;
+      not-done) detail="$detail  live NOT DONE: $lr
+" ;;
+      *) detail="$detail  live: no result recorded
+" ;;
+    esac
+    [ -z "$ex" ] || detail="$detail $ex
+"
+  done < <(sed -n 's/^merged=//p' "$rf")
+  targets=$(tr ',' '\n' <<<"$targets" | { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
+  local missing; missing=$(grep -c 'live: no result recorded' <<<"$detail" || true)
+  printf 'STATUS line (%s characters):\n' "$(( ${#rel} + ${#branches} + ${#targets} + 80 ))"
+  printf '%s | release %s | conductor, %s | released | %s branches: %s shipped as %s. Evidence and what is not done: docs/releases/%s.md\n' \
+    "$(date -u +%Y-%m-%d)" "$rel" "$(hostname)" "$n" "${branches%, }" "${targets:-nothing to deploy}" "$rel"
+  printf '\ndocs/releases/%s.md:\n' "$rel"
+  printf '# Release %s\n\nBase %s, main %s.\n\n%s' "$rel" "${base:0:9}" \
+    "$(git rev-parse --short main)" "$detail"
+  [ "$missing" = 0 ] || printf '\n%s of the %s branches have no live result yet.\n' "$missing" "$n"
+}
+
+# say and inbox carry the traffic that is about a branch. A session inside a
+# repose guest has no native channel: it is reached with `repose-admin exec`
+# through the control VM plus a tmux paste, and replies come back through a
+# relay file or a pane capture, which loses messages. "your branch was
+# dropped from the cut", "queue again after X lands" and "the conflict is
+# yours" are most of what was being relayed, and they are all about a
+# branch the queue already knows.
+cmd_say() {
+  local b=${1:?say: which branch}; shift
+  local text="$*"
+  [ -n "$text" ] || die "say: what should the branch's author read?"
+  text=$(tr '\n' ' ' <<<"$text" | tr -s ' ' | sed 's/ $//')
+  locked
+  local f; f=$(entry_file "$b")
+  [ -f "$f" ] || die "say: $b has no entry here; 'release-queue where $b' says what this machine knows"
+  printf 'said=%s %s: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(hostname)" "$text" >> "$f"
+  echo "told $b"
+}
+
+cmd_inbox() {
+  local b=${1:-$(git branch --show-current)}
+  [ -n "$b" ] || die "inbox: not on a branch, and no branch named"
+  local f; f=$(entry_file "$b")
+  [ -f "$f" ] || die "inbox: $b has no entry here"
+  local said; said=$(sed -n 's/^said=//p' "$f")
+  if [ -z "$said" ]; then echo "nothing said about $b"; return 0; fi
+  printf '%s\n' "$said"
+  locked
+  # mark read, keeping the text: a message is a record, not a notification
+  grep -v '^read_through=' "$f" > "$state/tmp/$(basename "$f").read" || true
+  printf 'read_through=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$state/tmp/$(basename "$f").read"
+  mv "$state/tmp/$(basename "$f").read" "$f"
+}
+
 cmd_drop() {
   local b=${1:?drop: which branch}
   locked
   local f
-  f=$state/entries/$(key "$b")
+  f=$(entry_file "$b")
   [ -f "$f" ] || die "drop: $b is not queued"
   setfield "$f" state dropped
   echo "dropped $b"
@@ -253,7 +730,7 @@ cmd_drop() {
 # `release-queue resume RELEASE` for the rest.
 merge_queue() { # release worktree
   local rel=$1 wt=$2 f b sha
-  for f in $(for g in "$state/entries"/*; do [ -e "$g" ] && [ "$(field "$g" state)" = queued ] && echo "$(field "$g" seq) $g"; done | sort -n | cut -d' ' -f2); do
+  for f in $(entries | while IFS= read -r g; do [ "$(field "$g" state)" = queued ] && echo "$(field "$g" seq) $g"; done | sort -n | cut -d' ' -f2); do
     b=$(field "$f" branch); sha=$(field "$f" sha)
     setfield "$f" state "cut:$rel"
     echo "merged=$b $sha $(field "$f" needs)" >> "$state/releases/$rel"
@@ -282,8 +759,16 @@ summary() { # release
 
 cmd_cut() {
   locked
+  # A cut from a stale main re-merges everything integrated since, through
+  # --no-ff merges, which is how a release quietly loses a change. On
+  # woker-1 refs/heads/main sat 132 commits behind for weeks and nothing
+  # stopped this.
+  local newest; newest=$(integration_ref)
+  if [ "$newest" != refs/heads/main ] && ! git merge-base --is-ancestor "$newest" main 2>/dev/null; then
+    die "cut: main is behind $newest by $(git rev-list --count main.."$newest") commits; fast-forward it first: git -C $main_wt merge --ff-only $newest"
+  fi
   local any=0 f
-  for f in "$state/entries"/*; do [ -e "$f" ] && [ "$(field "$f" state)" = queued ] && any=1; done
+  while IFS= read -r f; do [ "$(field "$f" state)" = queued ] && any=1; done < <(entries)
   [ $any = 1 ] || die "cut: nothing is queued"
   local rel n=1
   while :; do rel=r$(date -u +%Y%m%d)-$n; [ -e "$state/releases/$rel" ] || break; n=$((n + 1)); done
@@ -312,10 +797,9 @@ cmd_abandon() {
   [ -f "$state/releases/$rel" ] || die "abandon: no release $rel"
   git merge-base --is-ancestor "release/$rel" main 2>/dev/null && die "abandon: main already holds release/$rel"
   local f wt
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     [ "$(field "$f" state)" = "cut:$rel" ] && setfield "$f" state queued
-  done
+  done < <(entries)
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove --force "$wt" && git branch -q -D "release/$rel"
   rm "$state/releases/$rel"
@@ -328,14 +812,23 @@ cmd_done() {
   [ -f "$state/releases/$rel" ] || die "done: no release $rel"
   git merge-base --is-ancestor "release/$rel" main || die "done: main does not hold release/$rel yet; fast-forward main to it first"
   local f wt
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     [ "$(field "$f" state)" = "cut:$rel" ] && setfield "$f" state "merged:$rel"
-  done
+  done < <(entries)
   echo "integrated=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$state/releases/$rel"
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove "$wt" && git branch -q -d "release/$rel" || echo "release-queue: left $wt in place (it has changes)" >&2
   echo "release $rel is on main; it is released when main is pushed (docs/ops/RELEASE.md)"
+  local b sha needs owed=""
+  while read -r b sha needs; do
+    [ -n "$b" ] || continue
+    local ef; ef=$(entry_file "$b")
+    [ -f "$ef" ] || continue
+    [ -n "$(field "$ef" live)" ] || continue
+    [ -z "$(field "$ef" live_state)" ] || continue
+    owed="$owed $b"
+  done < <(sed -n 's/^merged=//p' "$state/releases/$rel")
+  [ -z "$owed" ] || echo "  live checks with no result yet:$owed (release-queue live <branch> --ran ...)"
   push_integrated
 }
 
@@ -360,16 +853,24 @@ push_integrated() {
   fi
 }
 
+own_version_check
 sub=${1:-ls}
 [ $# -eq 0 ] || shift
 case $sub in
   add) cmd_add "$@" ;;
   ls) cmd_ls "$@" ;;
   id) cmd_id "$@" ;;
+  band) cmd_band "$@" ;;
   drop) cmd_drop "$@" ;;
+  where) cmd_where "$@" ;;
+  live) cmd_live "$@" ;;
+  say) cmd_say "$@" ;;
+  inbox) cmd_inbox "$@" ;;
+  record) cmd_record "$@" ;;
+  worktrees) cmd_worktrees ;;
   cut) cmd_cut ;;
   resume) cmd_resume "$@" ;;
   done) cmd_done "$@" ;;
   abandon) cmd_abandon "$@" ;;
-  *) die "unknown command $sub (add, ls, id, drop, cut, resume, done, abandon)" ;;
+  *) die "unknown command $sub (add, ls, id, band, where, worktrees, live, record, say, inbox, drop, cut, resume, done, abandon)" ;;
 esac

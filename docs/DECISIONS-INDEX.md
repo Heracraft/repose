@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-764 entries.
+767 entries.
 
 ## Scope
 
@@ -476,7 +476,7 @@ pointer, not a summary.
 - **I-408** Placement waits up to three minutes for a guest being stopped before it answers `capacity` — 2026-10-01; L10613
 - **I-409** hostd sends a heartbeat ahead of every command result — 2026-10-01; L10637
 - **I-422** The laptop chooses which logins `run` copies: `repose secrets choose` and `[logins] skip` in config.toml — 2026-10-03; L10653
-- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; L10718
+- **I-416** Work happens in worktrees and reaches main through a release queue — 2026-10-03; amended by I-651; partly amended by I-758; partly amended by I-759; amended by I-760; L10718
 - **I-415** The feedback board is Fider's hosted `repose.fider.io`, and you sign in there with your repose account through Logto — 2026-10-01; L10752
 - **I-417** A boot sets the old /tmp aside in one rename and deletes it after the boot — 2026-10-02; L10781
 - **I-410** The command-not-found hint survives a command only one package has — 2026-10-03; L10825
@@ -489,7 +489,7 @@ pointer, not a summary.
 - **I-420** The destroyed list pages: `before` and `limit`, Show more past the first 100, and the CLI reads every page — 2026-10-03; L10940
 - **I-421** A window counts as an agent window while an agent is its foreground program, whatever its name — 2026-10-03; L10956
 - **I-423** The tools carry does not read Homebrew; a curated list is the likely next step — 2026-10-03; L10973
-- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; amended by I-651; L10988
+- **I-424** Main is integrated often and released when the owner asks — 2026-10-03; amended by I-651; amended by I-760; L10988
 - **I-425** Claude Code in a guest starts with the fullscreen renderer unless the user chose one — 2026-10-03; L11005
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11026
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11046
@@ -796,3 +796,6 @@ pointer, not a summary.
 - **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23003
 - **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23016
 - **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23023
+- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23030
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23069
+- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23130

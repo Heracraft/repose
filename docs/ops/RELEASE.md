@@ -16,10 +16,16 @@ this file is the part between "a branch is done" and "it is live".
    `ops/dev/release-queue id [N]`. It reads every local branch, every
    remote-tracking branch, every worktree's uncommitted
    `docs/DECISIONS.md` and the reservations, under one lock, and refuses
-   to hand out a number that is already an entry id. The remote-tracking
-   branches are what keep the two machines apart, since each has its own
-   reservations file (DECISIONS I-745): `git fetch` before reserving, or
-   an id taken on the other machine is invisible here.
+   to hand out a number that is already an entry id. `git fetch` before
+   reserving (DECISIONS I-745).
+
+   That still leaves a window: the reservations file never leaves its
+   machine, so an id reserved on one box is invisible on the other until
+   the branch is integrated. Give each machine a band and the window
+   closes — `ops/dev/release-queue band 0/2` on woker-1,
+   `band 1/2` on kanali — at the cost of gaps in the sequence. `band` with
+   no argument says what this machine draws from, `band none` goes back to
+   dense numbering (DECISIONS I-760).
 4. Finish the change with the evidence its checklist names. Then commit,
    `git merge main`, rerun the checks the merge touches, and queue:
 
@@ -30,18 +36,47 @@ this file is the part between "a branch is done" and "it is live".
    `add` refuses a dirty tree, a branch whose CLI output or web text
    fails the trust-the-reader guards (DECISIONS I-484, I-485; it runs
    them for a branch that ships as `cli` or `web`), a branch with nothing
-   main lacks, and a branch
-   that conflicts with main anywhere but `docs/DECISIONS-INDEX.md`. It
-   records the commit, so later commits need another `add`; that works
-   while the branch is in a cut too, and the conductor takes the new
-   commits with `resume` or in the next cut. It prints what the branch
-   ships as (below).
-5. Stop there. Don't merge into `main`, push, tag, publish a base or switch
+   the integration tip lacks, and a branch that conflicts with the tip
+   anywhere but `docs/DECISIONS-INDEX.md`. It records the commit, so later
+   commits need another `add`; that works while the branch is in a cut too,
+   and the conductor takes the new commits with `resume` or in the next
+   cut. It prints what the branch ships as (below).
+
+   The **integration tip** is the newest integrated commit the branch was
+   cut from, not `refs/heads/main`: the merge-base of `HEAD` with each of
+   `refs/heads/main`, `origin/integrated` and `origin/main`, whichever is
+   newest. On kanali that is the local `main`, which is integrated main; on
+   woker-1 it is `origin/integrated`, whose `main` is usually behind.
+   `needs`, the commit count and the conflict check all read it, and `cut`
+   refuses while `main` is behind it (DECISIONS I-759).
+
+   A `--live` or `--note` value is folded onto one line, and says so: the
+   entry file is one line per field (I-758).
+5. When the release has gone out, record what the `--live` check printed:
+   `ops/dev/release-queue live <branch> --ran "<output>"`, or
+   `--not-done "<why>"`. Until then `done` and `record` say the result is
+   owed (I-760).
+6. Stop there. Don't merge into `main`, push, tag, publish a base or switch
    a host. If the conductor asks for a change, make it on the same branch
-   and `add` again.
+   and `add` again. `ops/dev/release-queue inbox` is where a message about
+   this branch arrives; `ls` marks an entry that has one unread.
 
 `ops/dev/release-queue ls` shows the queue. A branch that moved after it
 was queued is marked; queue it again or the release takes the old commit.
+A row also says which machine queued it, when that is not this one, and
+whether its commit is in this clone.
+
+**The queue state is one machine's.** It lives in that clone's common git
+dir, so a branch queued on woker-1 is queued nowhere kanali looks, and
+kanali's queue is the authoritative one. The cross-machine question is
+`ops/dev/release-queue where <branch>`, which answers from refs instead:
+the local entry, else the merge commit `cut` wrote, else the branch's own
+ref. It works for a branch this machine has never had — `where
+test-hygiene` from woker-1 answers "merged in r20261015-4, on main, not
+released". `where` is also the answer to "did this ship", which `ls` drops
+once a branch is released, and `ops/dev/release-queue worktrees` lists the
+worktrees whose branch is wholly released, which is finished work that
+reads like unfinished work (DECISIONS I-760).
 
 ## What a branch ships as
 
@@ -62,6 +97,35 @@ email edit ships as `api`.
 | `edge` | `nix/edge/`, `cmd/gateway`, shared nix files | a switch of the edge (RUNBOOK "Switch the edge") | the owner (open sessions stay since I-471; the first switch onto it drops them once) |
 | `infra` | `infra/` | `tofu apply` | the owner |
 | `none` | docs outside `apps/web`, ops notes, tests | nothing | |
+
+Three things narrow that list, because it used to name deploys a branch
+could not reach (DECISIONS I-759):
+
+- a **gate** installs nothing. `nix/guest/tests`, `nix/hosts/tests` and
+  `nix/guest/checks.nix` are evaluated and deployed nowhere, so a branch
+  that touches only those ships as `none`. **A batch that changes a VM
+  test or a flake check runs it, whatever the batch ships as** — that is
+  now the only thing keeping those gates honest, so it is a row in the
+  verification below;
+- a package whose changed Go files are all `_test.go` reaches no binary;
+- `base`, `host` and `edge` are confirmed against the built systems.
+  `add` runs `ops/dev/closure-equiv.py` for each and drops the ones whose
+  system does not change, which takes about three seconds each.
+  `REPOSE_QUEUE_FAST=1` skips it and the entry records `exact=no`; a box
+  with no nix, which is every repose guest, does the same. A comparison
+  that fails keeps the target.
+
+`ops/dev/closure-equiv.py <flake attr> <revA> <revB>` also answers the
+question on its own, which is what to run before a switch or a base
+publish when the diff looks like it changes nothing:
+
+```
+ops/dev/closure-equiv.py nixosConfigurations.host-01.config.system.build.toplevel main origin/main
+```
+
+A plain `drvPath` comparison cannot answer it: `self.shortRev` is stamped
+into hostd, guestd and the guest's base version, so every commit changes
+every system's drvPath.
 
 ## For the conductor: integrating into main
 
@@ -85,7 +149,10 @@ Integrate whenever branches are queued; it needs no owner approval.
    name, since their replies to an old one are lost.
 2. **Cut.** `ops/dev/release-queue cut` makes `~/kanali-r<date>-<n>` on
    branch `release/r<date>-<n>` from main and merges every queued branch
-   in queue order, each with `--no-ff`. A conflict that is only the
+   in queue order, each with `--no-ff`. It refuses while `main` is behind
+   the newest integration ref and names the fast-forward: a cut from a
+   stale main re-merges everything integrated since, which is how a
+   release loses a change quietly (DECISIONS I-759). A conflict that is only the
    decisions index is settled by regenerating it. Any other conflict
    stops the cut: resolve it in the batch worktree (or send it back to
    the branch's agent and `drop` the branch), commit, then
@@ -104,7 +171,11 @@ Integrate whenever branches are queued; it needs no owner approval.
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
-     `docs/CHECKLIST.md` greps. A batch that adds or changes CLI output:
+     `docs/CHECKLIST.md` greps. **A batch that changes a VM test, a flake
+     check or `nix/guest/checks.nix`: run that check, whatever the batch
+     ships as** — those paths install nothing, so they no longer put
+     `base`, `host` or `edge` in a branch's targets (DECISIONS I-759), and
+     this is the only thing left that runs them. A batch that adds or changes CLI output:
      read its success lines and listings as a user on the hundredth run
      would, and send back any that teach a command (DECISIONS I-484);
      the test misses commands assembled at run time. A batch that adds
@@ -161,11 +232,21 @@ else integrated with it.
 4. **Check it live.** Run each released branch's `--live` check on
    throwaway `e2e-*` projects, never on the owner's projects, at most two
    alive at once. Paste the output into the release record.
-5. **Record.** One line in `docs/workstreams/STATUS.md` per release: the
-   branches, the targets shipped with versions, the live evidence,
-   anything not done. It goes into main with the next batch, not as a
-   push of its own. Tell each agent whose branch shipped; it may then
-   delete its worktree, or the owner does.
+5. **Record.** `ops/dev/release-queue record <release>` prints the line for
+   `docs/workstreams/STATUS.md` and the detail that does not fit in it,
+   from what the queue already holds — the branches with the decision ids
+   they add, the targets, the base and main commits, and each `--live`
+   result recorded with `release-queue live`. The line goes in `STATUS.md`
+   and the detail in `docs/releases/<release>.md`, because five release
+   lines written by hand reached 2,142 to 3,989 characters in a file whose
+   header asks for 600 (DECISIONS I-760). Both go into main with the next
+   batch, not as a push of their own.
+
+   Tell each agent whose branch shipped — `ops/dev/release-queue say
+   <branch> "shipped in <release>"` leaves it where that lane will read it,
+   and `where <branch>` is what anyone can ask later. It may then delete
+   its worktree, or the owner does; `ops/dev/release-queue worktrees` lists
+   the ones whose branch is wholly released.
 
 ## The integrated branch
 
@@ -200,6 +281,14 @@ ships it: when the owner has asked for that release, integrate it with
 at once. Until main is pushed, every later `done` also runs with
 `REPOSE_INTEGRATED_REMOTE=none`, and the copy off host-01 is a `git fetch`
 of kanali's main from woker-1 instead.
+
+When the ssh gateway has banned this box — 20 failed handshakes from a /24
+in 10 minutes earns 10 minutes refused (DECISIONS I-435), and an expired
+operator certificate counts (I-599 exempts only the user's own current
+one) — run `ops/dev/operator-cert.sh --if-stale` before anything that
+sshes, which stops the failures at the source, and reach a guest with
+`ops/dev/guest-exec <guest-id> '<command>'`, the vsock route through the
+control VM (DECISIONS I-760).
 
 To work from it on another machine (woker-1 while host-01 is down, RUNBOOK
 "Operating while host-01 is down"): `git fetch origin integrated` and
@@ -238,7 +327,22 @@ v0.1.0 to v0.1.27 are pinned.
 
 In the repository's common git directory (`.git/release-queue/`), shared by
 every worktree of the checkout and by no branch: `entries/` (one file per
-branch), `releases/` (one per release: base commit, merged commits,
-targets), `ids` (reservations). Queueing never makes a commit on any
-branch, so it cannot conflict. The record that outlives the machine is the
-merge commits on main and the STATUS line.
+branch, named after it percent-encoded), `releases/` (one per release: base
+commit, merged commits, targets), `ids` (reservations), `band` (which ids
+this machine may reserve, when it is set), and `tmp/` (writes in progress —
+nothing in `entries/` is ever a temp file, because a reader took one for a
+second entry of the same branch). Queueing never makes a commit on any
+branch, so it cannot conflict.
+
+An entry is `key=value` lines, one line per field, and a reader takes the
+**last** line that sets a key: free text (`live=`, `note=`, `said=`) is
+written before the fields the tool depends on, and a note whose own text
+began `state=released` used to take the branch out of the queue
+(DECISIONS I-758). `entries()` in the script is the only reader of the
+directory and accepts a file when its own `branch=` encodes back to its
+name, so a stray left by an older copy of the script is ignored.
+
+This state is one machine's and does not cross to the other: `where` is
+the cross-machine question, and a band keeps the two machines' id
+reservations apart. The record that outlives the machine is the merge
+commits on main, the STATUS line and `docs/releases/<release>.md`.
