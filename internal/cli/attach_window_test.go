@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,14 +18,34 @@ import (
 )
 
 // `repose attach --bridge` over a live master (the no-api fast path)
-// dropped --bridge from the session helper (I-305).
-func TestFastAttachKeepsBridge(t *testing.T) {
+// dropped --bridge from the session helper (I-305), and then dropped
+// --bridge-allow the same way (I-751). I-305's test took a bare bool, so
+// it had no parameter the allowlist could be asserted through; this one
+// takes the same RunOptions the full path reads, and asserts both fields
+// against the full path's own derivation.
+func TestFastAttachKeepsBridgeAndItsAllowlist(t *testing.T) {
 	e := &Env{Cwd: t.TempDir(), HomeDir: t.TempDir()}
 	guess := &Project{ID: "p1", Slug: "izma"}
-	for _, bridge := range []bool{true, false} {
-		h := fastAttachHelper(e, guess, sshTarget{Args: []string{"izma.repose"}}, "UTC", "izma", bridge)
-		if h.Bridge != bridge || !h.Carry || h.Slug != "izma" || h.RepoDir != "" {
-			t.Fatalf("bridge=%v: %+v", bridge, h)
+	target := sshTarget{Args: []string{"izma.repose"}}
+	for _, c := range []struct {
+		name   string
+		opts   RunOptions
+		bridge bool
+		allow  []string
+	}{
+		{name: "no flag", opts: RunOptions{}},
+		{name: "--bridge", opts: RunOptions{Bridge: true}, bridge: true},
+		// An allowlist implies a bridge, as the full path has it: a nil
+		// allowlist is every target, not none (bridgePolicy.allowlisted).
+		{name: "--bridge-allow", opts: RunOptions{BridgeAllow: []string{"example.com"}}, bridge: true, allow: []string{"example.com"}},
+		{name: "both", opts: RunOptions{Bridge: true, BridgeAllow: []string{"example.com"}}, bridge: true, allow: []string{"example.com"}},
+	} {
+		h := fastAttachHelper(e, guess, target, "UTC", "izma", c.opts)
+		if h.Bridge != c.bridge || !slices.Equal(h.BridgeAllow, c.allow) {
+			t.Errorf("%s: Bridge=%v BridgeAllow=%v, want Bridge=%v BridgeAllow=%v", c.name, h.Bridge, h.BridgeAllow, c.bridge, c.allow)
+		}
+		if !h.Carry || h.Slug != "izma" || h.RepoDir != "" {
+			t.Errorf("%s: %+v", c.name, h)
 		}
 	}
 }

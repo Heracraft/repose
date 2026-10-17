@@ -52,10 +52,14 @@ import (
 // example.com and every subdomain.
 type bridgeAllow []string
 
-// parseBridgeAllow checks and normalises --allow's values.
+// parseBridgeAllow checks and normalises --allow's values. A value that
+// names no host at all is refused rather than dropped: no allowlist is
+// unrestricted (allowlisted), so `--allow ""` would otherwise read as
+// the whole of the user's Chrome (I-751).
 func parseBridgeAllow(vals []string) (bridgeAllow, error) {
 	var out bridgeAllow
 	for _, v := range vals {
+		named := len(out)
 		for _, p := range strings.Split(v, ",") {
 			p = strings.ToLower(strings.TrimSpace(p))
 			if p == "" {
@@ -69,6 +73,9 @@ func parseBridgeAllow(vals []string) (bridgeAllow, error) {
 				return nil, fmt.Errorf("takes a host, like github.com or *.github.com, not %q", v)
 			}
 			out = append(out, p)
+		}
+		if len(out) == named {
+			return nil, fmt.Errorf("takes a host, like github.com or *.github.com, not %q", v)
 		}
 	}
 	return out, nil

@@ -516,6 +516,31 @@ func TestParseBridgeAllow(t *testing.T) {
 	}
 }
 
+// A nil allowlist is unrestricted (bridgePolicy.allowlisted), so an
+// --allow that was given and names no host must be refused rather than
+// collapse to one: `--allow ""`, or --bridge-allow "$SITE" with SITE
+// unset, used to bridge the whole of the user's Chrome (I-751).
+func TestParseBridgeAllowRefusesAListThatNamesNoHost(t *testing.T) {
+	for _, bad := range []string{"", " ", ",", " , ", ",,"} {
+		if a, err := parseBridgeAllow([]string{bad}); err == nil {
+			t.Errorf("--allow %q: want an error, got %v", bad, a)
+		}
+	}
+	// One value per flag, so a repeated flag that names nothing is
+	// refused on that value, whatever the others said.
+	if a, err := parseBridgeAllow([]string{"github.com", ""}); err == nil {
+		t.Errorf(`--allow github.com --allow "": want an error, got %v`, a)
+	}
+	// An empty item beside a host still parses: the list is what it names.
+	if a, err := parseBridgeAllow([]string{"github.com,"}); err != nil || strings.Join(a, " ") != "github.com" {
+		t.Errorf("%v %v", a, err)
+	}
+	// No flag stays unrestricted: the documented default.
+	if a, err := parseBridgeAllow(nil); err != nil || a != nil {
+		t.Errorf("no --allow: %v %v", a, err)
+	}
+}
+
 func TestClassifyURLAndLogPlace(t *testing.T) {
 	cases := map[string]urlKind{
 		"https://a.example/x": urlWeb, "http://a.example": urlWeb, "about:blank": urlBlank, "": urlBlank,
