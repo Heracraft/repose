@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-782 entries.
+783 entries.
 
 ## Scope
 
@@ -814,3 +814,4 @@ pointer, not a summary.
 - **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L23330
 - **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23343
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23350
+- **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23394
