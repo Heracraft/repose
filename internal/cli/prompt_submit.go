@@ -21,6 +21,16 @@ import (
 // promptEnterTries is how many Enters the submit script presses before
 // it gives up; promptEnterPause is how long it waits before each check,
 // as a shell `sleep` argument. Variables so a test can shorten the wait.
+//
+// The span is NOT the variable, and this was measured rather than
+// reasoned (I-752, 2026-10-17). Live on a real `small` against prod:
+// 4 Enters over about two seconds submitted 2 prompts in 10, and 30
+// Enters over about a minute submitted 0 in 9, against a baseline of 1
+// in 10 with no retrying at all. Widening it bought nothing and cost a
+// minute of pressing Enter into a pane that was never going to take it,
+// so it stays narrow. What the retries cannot fix is in I-752: a fresh
+// agent satisfies the waiter's readiness gate while still not accepting
+// a submission.
 var (
 	promptEnterTries = 4
 	promptEnterPause = "0.5"

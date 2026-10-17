@@ -786,7 +786,7 @@ pointer, not a summary.
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607
 - **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; L22613
-- **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L22621
-- **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22626
-- **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L22631
-- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22635
+- **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L22629
+- **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22634
+- **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L22639
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22643
