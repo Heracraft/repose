@@ -18,13 +18,13 @@ Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init
 
 ## Which project
 
-Commands that act on a project use, in order: the `PROJECT` argument, `--project NAME`, the `REPOSE_PROJECT` environment variable, then the current checkout's git remote. In your home folder, or a folder above it, only the first three count ([From your home folder](/docs/lifecycle#from-your-home-folder)). `PROJECT:CHECKOUT` names a checkout that `run --on` added to the machine; `run`, `attach`, `sync`, `exec`, `ssh`, `code` and `rm` take it, and the other commands exit 2.
+Commands that act on a project take it from the `PROJECT` argument, `--project NAME`, then `REPOSE_PROJECT`; an argument and a `--project` that disagree exit 2. Otherwise it's the folder you're in: the project with this checkout's git remote, or the machine [last made there](/docs/lifecycle#a-second-machine-for-the-same-repository) in a folder with no remote. Your home folder, and every folder above it, belongs to no project, so a command there has to name one ([From your home folder](/docs/lifecycle#from-your-home-folder)).
 
-Global flags: `--project NAME`, `-v`/`--verbose` (one line on stderr for each API request, with its status, time and request ID and the body of a refusal, and one for each `ssh` the command runs; never a token), `--version`, and `--api-url URL`, which `--help` leaves out (see [Other servers](#other-servers)).
+A command whose usage names the project takes it there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
 
-If a newer release of the CLI is out, the next command says so once on stderr, with the install command that updates it. It says it again only for a later release.
+`PROJECT:CHECKOUT` names [another checkout](/docs/run-and-attach#several-repositories-on-one-machine) `run --on` added to the machine. `run`, `attach`, `sync`, `exec`, `ssh`, `code`, `rm`, `mcp list`, `mcp forward` and `browser bridge` take it; every other command refuses it with exit 2.
 
-A command whose usage shows `[PROJECT]` takes the project there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
+Global flags: `--project NAME`, `-v`/`--verbose` and `--version`. `-v` writes a line to stderr for each request, with its status, duration, request ID and the body of a refusal, and one for each `ssh` the command runs; never a token or a header.
 
 ## Working on a project
 
@@ -232,7 +232,7 @@ Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` fo
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running.
+Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running. It exits 1 with no image on the clipboard, and on Linux with no clipboard tool, where the message names `wl-clipboard` on Wayland or `xclip` on X11.
 
 | Flag            | What it does                                                                          |
 | --------------- | ------------------------------------------------------------------------------------- |
@@ -405,51 +405,51 @@ Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-q
 | Command                                          | What it does |
 | ------------------------------------------------ | ------------ |
 | `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
-| `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the Snapshot object. |
-| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after a question that says whether a snapshot keeps the disk as it is now. It ends with `Restored todo-app; it is running (large).` `--as NAME` restores into a new project instead, which starts too and ends as [`repose restore`](#repose-restore-name) does; `-y`/`--yes` skips the question. |
+| `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the snapshot as JSON. |
+| `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after [a question](/docs/lifecycle#snapshots) about whether the restore can be undone. `--as NAME` restores into a new project instead, which starts too and ends as [`repose restore`](#repose-restore-name) does; `-y`/`--yes` skips the question. |
 
 SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
 
 ## Secrets
 
-| Command                         | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose secrets set NAME`       | Asks for the value, or reads it from a pipe (`op read op://dev/stripe/key \| repose secrets set STRIPE_KEY`, one trailing newline dropped). `--from-file PATH` or `--from-env` instead. `NAME=VALUE` exits 2, since the value would stay in your shell history. `--global` sets it on your account, for [every project](/docs/secrets#secrets-for-every-project).                                                                                                                                                                                                                                      |
-| `repose secrets import [FILE]`  | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--mcp` sets the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config instead, for the project, and asks once before replacing secrets the project already has (`-y`/`--yes` replaces them without asking). `--global` sets them on your account, and with `--mcp` reads your user-scope servers alone. `--dry-run` lists the names and sends nothing.                                                                                                                     |
-| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`, and `repose secrets` alone. `--json` for JSON. `--global` lists your account's.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `repose secrets rm NAME`        | Delete it. Alias `remove`. `--global` deletes your account's.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `repose secrets choose`         | Choose which of your laptop's [logins and files](/docs/secrets#choose-what-is-copied) `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files), `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle (space toggles, Enter saves, `q` leaves); otherwise it prints the list. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again, `--reset` drops the list. |
+| Command                         | What it does |
+| ------------------------------- | ------------ |
+| `repose secrets set NAME`       | Asks for the value, or reads it from a pipe (`op read op://dev/stripe/key \| repose secrets set STRIPE_KEY`, one trailing newline dropped). `--from-file PATH` reads a file, `--from-env` reads `$NAME`. `NAME=VALUE` exits 2, since the value would stay in your shell history. `--global` sets it on your account, for [every project](/docs/secrets#secrets-for-every-project). |
+| `repose secrets import [FILE]`  | Set every `NAME=VALUE` in a `.env` file (default `./.env`, `-` for stdin). `--mcp` sets the secrets your carried MCP servers need from the tokens in your laptop's Claude Code config instead, and asks once before replacing secrets the project already has (`-y`/`--yes` replaces them without asking). `--global` sets them on your account, and with `--mcp` reads your user-scope servers alone. `--dry-run` lists the names and sends nothing. |
+| `repose secrets list [PROJECT]` | Names and dates, never values. Alias `ls`, and `repose secrets` alone. On a terminal your account's secrets follow, marked where the project's own wins, then the logins your laptop copies at each run; piped, each line is `NAME`, a tab and the date. `--json` for JSON. `--global` lists your account's. |
+| `repose secrets rm NAME`        | Delete it. Alias `remove`. `--global` deletes your account's. |
+| `repose secrets choose`         | Choose which of your laptop's [logins and files](/docs/secrets#choose-what-is-copied) `repose run` copies: `gh`, `codex`, `opencode`, `env` (gitignored `.env` files) and `mcp` (your Claude Code MCP servers). In a terminal, a list to toggle; otherwise it prints what is on and off. `--off NAME...` leaves them on your laptop and the next run removes the copies already on the machine, `--on NAME...` copies them again. `--project` sets one project's list; without it the list for every project changes, whatever folder you're in. `--reset` drops the list it would set: a project goes back to the shared one, and the shared one back to copying every login. |
 
-`secrets set` and `secrets rm` name the project they changed; with `--global` they take no project, and `set` names the projects whose own secret of that name wins. `secrets rm` without `--global` says when your account's secret of that name reaches the project. `secrets list` on a terminal also shows your account's secrets, marking one the project's own replaces, and what your laptop copies at each run, which lands on the machine's disk and so in its snapshots and forks. Piped, it prints only `NAME`, a tab and the date, one secret per line. Without `--project`, `secrets choose` sets the list for every project; with `--project NAME` it sets that project's own list, which replaces the shared one for it, and `--reset` sends the project back to the shared list.
+An account secret is for every project, so `--global` beside a project exits 2.
 
 ## Configuration
 
-| Command                             | What it does                                                                                                                                                                                                                                            |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repose config add PACKAGE...`      | Add menu entries or nixpkgs packages, build and apply. With no names, list the menu's entries by group.                                                                                                                                                                                                  |
-| `repose config remove PACKAGE...`   | Remove them again. Alias `rm`.                                                                                                                                                                                                                          |
-| `repose config show [PROJECT]`      | Print the project's `repose.nix`. `repose config` alone does the same.                                                                                                                                                                                  |
-| `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id, whether it built, and whether it carries your machine.nix. `--json` for JSON, `-q`/`--quiet` for whole ids.                                                                         |
-| `repose config edit [PROJECT]`      | Edit in `$EDITOR`, apply on save.                                                                                                                                                                                                                       |
-| `repose config apply [PATH]`        | Apply a file. Default `./repose.nix`; with neither, apply the current configuration again. `--revision ID` switches the running machine back to an earlier revision that built, by the id `revisions` shows, `Building revision` printed, or its start. |
-| `repose config on [PROJECT]`        | Give the project's machine your machine.nix again.                                                                                                                                                                                                      |
-| `repose config off [PROJECT]`       | Keep your machine.nix off the project's machine, as `repose run --no-personal` does. A running machine switches in the background; a stopped one starts with the change.                                                                                |
+| Command                             | What it does |
+| ----------------------------------- | ------------ |
+| `repose config add PACKAGE...`      | Add [menu entries](/docs/config#the-menu) or nixpkgs packages, build and apply. With no names, list the menu's entries by group. |
+| `repose config remove PACKAGE...`   | Remove them again. Alias `rm`. |
+| `repose config show [PROJECT]`      | Print the project's `repose.nix`. `repose config` alone does the same. |
+| `repose config revisions [PROJECT]` | Its revisions, newest first, with the last 8 characters of each id, whether it built, and whether it carries your machine.nix. `--json` for JSON, `-q`/`--quiet` for whole ids. |
+| `repose config edit [PROJECT]`      | Edit in `$VISUAL` or `$EDITOR`, apply on save. |
+| `repose config apply [PATH]`        | Apply a file, by default `./repose.nix`. With no PATH and no such file, apply the newest revision that built again, on a running machine. `--revision ID` switches the running machine back to an earlier revision instead; ID is a whole id or 4 or more characters of either end. |
+| `repose config on [PROJECT]`        | Give the project's machine your machine.nix again. |
+| `repose config off [PROJECT]`       | Keep your machine.nix off the project's machine. [`repose run --no-personal`](#repose-run-project) does it at a run. |
 
-With `--global`, the same commands act on your [machine.nix](/docs/config#your-machine-nix) instead of the project's file: a home-manager module every machine of your account gets, kept at `~/.config/repose/machine.nix` and on your account. `repose config --global add PACKAGE...` and `remove` edit its `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file (default `~/.config/repose/machine.nix`) over the account's copy; an empty file removes it. Each push rebuilds every machine that has not opted out: a running one switches in place, a stopped one at its next start. `--global` takes no project; `on` and `off` take one, with or without `--global`. `repose config show --revisions` is the old form of `revisions`. `repose run` pushes the file by itself when it changed since its last push, and refuses with one line when the account's copy changed since too.
+With `--global`, the same commands act on your [machine.nix](/docs/config#your-machine-nix) instead of the project's file. `--global` takes no project; `on` and `off` take one, with or without it. `add` and `remove` edit the file's `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default `~/.config/repose/machine.nix`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
 
-The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and says so.
+The CLI's own settings are keys in [config.toml](#config-toml), not here; `repose config set` exits 2 and names the file.
 
 ## Account
 
 | Command | What it does |
 | ------- | ------------ |
-| `repose login`                      | Log in with a code. The CLI prints a link with the code in it and opens it in this computer's browser when it has one; `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't. `--browser`, see [Other servers](#other-servers). There is no login without a browser for CI. |
-| `repose logout`                     | Log out and revoke your SSH certificates; connections they opened, on any device, close within 30 seconds. If the revoke fails, it logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` removes the CLI's files. |
-| `repose notify`                                 | Where notifications go: `email: on, to you@example.com`, `ntfy: off` or its URL, and `gchat: off`, `gchat: on, space AAAA...` or `gchat: broken since` a date. The Google Chat webhook URL is never shown. `--json` for JSON. |
-| `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook; quote it). Prints the settings.                     |
-| `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). A broken Google Chat webhook is tried too; if it gets through, it's on again. Six tests a minute. Exits 1 when a channel failed or none is on. |
-| `repose version`                                | Print the version.                                                                                                                                                                                |
-| `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. `--help` and [Install](/docs/install#shell-completion) have the line that loads it for each shell.                                                                                                                                                                  |
+| `repose login`                                  | Log in with a code: the CLI prints a link with the code in it, and opens it in this computer's browser when it has one. `--no-browser` only prints it. `--status` prints the account you're logged in as, its server and its plan, and exits 3 when you aren't. `--browser` is for a self-hosted login server ([Other servers](#other-servers)). No login works without a browser somewhere, so CI can't log in. |
+| `repose logout`                                 | Log out and revoke your SSH certificates; the connections they opened [close within 30 seconds, on any device](/docs/limits#ssh-connections). A failed revoke still logs out on this laptop, says so and exits 1; the certificates stop working within 24 hours. `--purge` also removes [the CLI's files](#files-on-your-laptop). |
+| `repose notify`                                 | Where notifications go: `email: on, to you@example.com`, `ntfy: off` or its URL, `gchat: on, space AAAA...`, `off`, or `broken since 2026-01-02 (Google refused the webhook)`. `--json` for JSON. |
+| `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook). |
+| `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). Six tests a minute. Exits 1 when a channel failed or none is on. |
+| `repose version`                                | Print the version, as `repose 0.1.36 (herakraft)`. |
+| `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. [Install](/docs/install#shell-completion) has the line that loads it for each shell. |
 | `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
 ## config.toml
@@ -516,37 +516,39 @@ forward = ["figma"]
 
 ## Other servers
 
-For a test or self-hosted repose server rather than the hosted one: `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml pick the API, and `logto_issuer` and `logto_client_id` the login server and the CLI's application there. `repose login --browser` logs in through a browser on this computer instead of a code, for a login application that allows local redirects; the hosted one doesn't.
+The CLI talks to the hosted repose until you point it somewhere else with `--api-url URL`, `REPOSE_API_URL` or `api_url` in config.toml, first of those wins. `--help` leaves `--api-url` out. The URL carries a version prefix, as the hosted `https://api.repose.herakraft.co/v1` does. `logto_issuer` picks the login server and `logto_client_id` the CLI's application there; it has to be a Logto, since the CLI reads OIDC discovery from `/oidc` under the issuer.
+
+`repose login --browser` logs in through a browser on this computer instead of a code, and needs a login application that registers a loopback redirect URI. The hosted one registers none, so `--browser` there, where a browser can be opened, waits 5 minutes and exits 3 with `Login failed: timed out waiting for the browser login (5 minutes).`
 
 ## Files on your laptop
 
-| Path                | What it holds                                                                                                                                                                                                                                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | Your login (mode 0600; on macOS the token is in the keychain), `config.toml`, your `machine.nix` with `machine.nix.state` (what the last push left on both sides), and caches that are safe to delete.                                                                                                                 |
-| `~/.ssh/repose/`    | The CLI's own SSH key and 24-hour certificate, `hosts` with one `Host` block per project, and `config`, which has `ssh` run `repose ssh-prepare` before connecting to a `.repose` host, so the certificate is renewed and a new project's block written first ([SSH and editors](/docs/ssh-and-editors#how-it-works)). |
-| `~/.ssh/config`     | One added line: `Include ~/.ssh/repose/config`.                                                                                                                                                                                                                                                                        |
-| `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                                                                                                 |
+| Path                | What it holds                                                                                                                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, and caches that are safe to delete. On macOS the refresh token is in the keychain, not the file.                     |
+| `~/.ssh/repose/`    | The CLI's own SSH key, its 24-hour certificate, `hosts` with one `Host` block per project, and the `config` that `~/.ssh/config` includes ([SSH and editors](/docs/ssh-and-editors#how-it-works)).                                                   |
+| `~/.ssh/config`     | The `Include ~/.ssh/repose/config` line at the top, under a `# added by repose` comment. No other line changes.                                                                                                                                      |
+| `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                              |
 
 `repose logout --purge` removes all of these but the `repose` remotes and `machine.nix`, which is yours; `git remote remove repose` removes one remote.
 
 ## Output
 
-Tables print local time to the minute (`2026-10-08 21:37`). `logs` and `events` print local RFC 3339 times with the offset. `--json` prints times in UTC. Progress lines go to stderr; without a terminal, each step prints a line when it starts, a line every 30 seconds while it runs, and a `✓` line with its time when it ends. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
+Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` print local RFC 3339; `--json` prints UTC. Progress lines go to stderr. Without a terminal each step prints a line when it starts, that line with its time every 30 seconds while it runs, and a `✓` line with its time when it ends, unless the command prints the step's result itself. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
-| 2    | Wrong usage.                                                                                                                                                                                |
-| 3    | Not logged in, or the login expired.                                                                                                                                                        |
-| 4    | No such project.                                                                                                                                                                            |
-| 5    | The machine isn't running.                                                                                                                                                                  |
-| 6    | The machine changed files the sync would write, is in the middle of a merge or rebase, or has a process working in a folder being removed; nothing changed.                                 |
-| 7    | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it.                                                                   |
-| 8    | No capacity, before or during a start: running machines hold the memory, so stopping one frees room. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
-| 10   | The configuration build failed.                                                                                                                                                             |
-| 130  | Interrupted with `Ctrl-C`, at a question too.                                                                                                                                                                  |
+| Code | Meaning |
+| ---- | ------- |
+| 0 | Worked. |
+| 1 | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
+| 2 | Wrong usage. |
+| 3 | Not logged in, or the login expired. |
+| 4 | No such project. |
+| 5 | The machine isn't running. |
+| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
+| 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
+| 8 | No capacity, before or during a start: running machines hold the memory, so stopping one frees room. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
+| 10 | The configuration build failed. |
+| 130 | Interrupted with `Ctrl-C`, at a question too. |
 
-Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s. Once `repose exec` has started the command, the exit code is the command's, whatever it is (a `4` from your test runner is the test runner's); the codes above come only from failures before it starts, which print a message first. `255` means `ssh` lost the connection and the command could not reconnect. `repose cp` returns `scp`'s. `repose paste` exits 1 when there is no image on the clipboard or no tool to read it, and says which tool to install.
+Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s; `255` means the connection dropped and the command could not reconnect. `repose cp` returns `scp`'s. `repose exec` returns the command's code once the command has started, so a `4` from your test runner is the test runner's; the codes above come only from failures before it starts, and each prints a message first.
