@@ -87,6 +87,14 @@ var (
 
 const sshRetryInterval = time.Second
 
+// errPromptNotSubmitted marks the give-up of I-752's submit loop: the
+// agent started and the prompt was typed, only the Enter was never
+// taken. A caller that wraps a failed start (`repose fork --prompt`,
+// fork.go) must not call this "could not start the agent" or answer it
+// with a command that starts a second one -- the prompt is sitting in
+// the input of the one that is already there.
+var errPromptNotSubmitted = errors.New("the agent started but did not take the prompt")
+
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.
 // attachOnly runs only steps 1 (resolve, no create), 3, 4, 8 — what
 // `repose attach` is (§5.5's last paragraph).
@@ -532,7 +540,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 				// Typed and not taken (I-752): the prompt is in the
 				// input, and saying nothing is the defect.
 				if opts.NoAttach {
-					return exitf(ExitGeneric, "The %s %s did not take your prompt; it is in its input. `repose attach %s -w %s`, then press Enter.", opts.Window, mux.Unit(), project.Slug, opts.Window)
+					return exitCausef(ExitGeneric, errPromptNotSubmitted, "The %s %s did not take your prompt; it is in its input. `repose attach %s -w %s`, then press Enter.", opts.Window, mux.Unit(), project.Slug, opts.Window)
 				}
 				_, _ = fmt.Fprintf(e.ErrOut, "The %s %s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", opts.Window, mux.Unit(), mux.Unit())
 			default:
@@ -620,7 +628,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			// it is in the input, waiting for an Enter.
 			pr.Fail()
 			if opts.NoAttach {
-				return exitf(ExitGeneric, "%s did not take your prompt; it is in its input in the %s %s. `repose attach %s -w %s`, then press Enter.", agentDisplayName(agent), name, mux.Unit(), project.Slug, name)
+				return exitCausef(ExitGeneric, errPromptNotSubmitted, "%s did not take your prompt; it is in its input in the %s %s. `repose attach %s -w %s`, then press Enter.", agentDisplayName(agent), name, mux.Unit(), project.Slug, name)
 			}
 			_, _ = fmt.Fprintf(e.ErrOut, "%s did not take your prompt; it is in its input. Press Enter in the %s that opens.\n", agentDisplayName(agent), mux.Unit())
 		} else if err != nil {

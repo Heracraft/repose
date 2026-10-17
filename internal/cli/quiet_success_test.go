@@ -68,7 +68,7 @@ var quietAllowed = map[string]string{
 // quietFailureCalls are the calls whose string arguments are a failure or
 // a refusal, where the next command belongs (I-153).
 var quietFailureCalls = map[string]bool{
-	"exitf": true, "opFailed": true, "withNext": true, "Errorf": true, "New": true,
+	"exitf": true, "exitCausef": true, "opFailed": true, "withNext": true, "Errorf": true, "New": true,
 }
 
 // quietFailureFuncs are functions whose every string is a failure, a

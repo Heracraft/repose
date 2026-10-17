@@ -191,8 +191,15 @@ case ":$PATH:" in
     # `set -eu` the failed append ended a finished install with exit 2
     # (I-754). The install stands and the line to add is printed, as
     # cert.go does for a read-only ~/.ssh/config.
-    if { [ -e "$shell_rc" ] && [ -w "$shell_rc" ]; } || { [ ! -e "$shell_rc" ] && [ -w "$HOME" ]; }; then
-      printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$shell_rc"
+    # The append is attempted rather than predicted: a test on the path
+    # cannot see every way it fails, and `-e` follows a link, so a
+    # dangling ~/.bashrc pointing into /nix/store reads as "no file
+    # here", takes the writable branch and dies exactly as before. An
+    # `if` condition is allowed to fail under `set -e`. stderr is closed
+    # inside the subshell before the redirection, because the shell
+    # reports a redirection it cannot open itself, and "Permission
+    # denied" on its own is the raw output this is here to remove.
+    if ( exec 2>/dev/null; printf '\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$shell_rc" ); then
       echo "Added $INSTALL_DIR to PATH in $shell_rc; restart your shell or run: export PATH=\"$INSTALL_DIR:\$PATH\""
     else
       echo "$shell_rc is not writable, so $INSTALL_DIR is not on your PATH. Add it where that file is generated (home-manager: home.sessionPath = [ \"$INSTALL_DIR\" ];), or run:"
