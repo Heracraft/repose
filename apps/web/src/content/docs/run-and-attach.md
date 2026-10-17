@@ -296,7 +296,7 @@ mosh doesn't work: it needs a UDP connection straight to the machine, and the on
 
 ## When the machine stops
 
-A stop ends every process, agents included. At the next start each agent's window opens again under its name and in its folder, with the agent continuing the conversation it was in: Claude Code and Codex by the conversation's id, opencode, pi and Gemini CLI with their newest one in that folder. `repose ps` and `repose attach -w claude-2` find them as before. Other windows and processes don't come back; the session starts with its `shell` window beside the agents.
+A stop ends every process, agents included. At the next start each agent's window opens again under its name and in its folder, with the agent continuing the conversation it was in: Claude Code and Codex by the conversation's id, opencode, pi and Gemini CLI with their newest one in that folder. `repose ps` and `repose attach -w claude-2` find them as before. A window whose agent had already exited comes back as a shell, under a line saying so. Other windows and processes don't come back; the session starts with its `shell` window beside the agents.
 
 On a herdr project, herdr puts its workspaces and tabs back at the start and resumes each agent that has herdr's integration (Claude Code, Codex, opencode and pi) in the conversation it was in.
 

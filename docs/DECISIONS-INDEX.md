@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-773 entries.
+774 entries.
 
 ## Scope
 
@@ -685,7 +685,7 @@ pointer, not a summary.
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17920
 - **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; L18018
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18081
-- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; L18113
+- **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; amended by I-757; L18113
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18155
 - **I-638** stop fetches and status counts in every laptop folder of the machine (cli-devx, 2026-10-09) — amended by I-641; L18178
 - **I-639** `run -w WINDOW -p TEXT` types into an agent's window, `stop -w WINDOW` closes one (cli-devx, 2026-10-09) — L18199
@@ -716,7 +716,7 @@ pointer, not a summary.
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19175
 - **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; L19279
 - **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19493
-- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — L19552
+- **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19552
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19678
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19736
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19768
@@ -797,11 +797,12 @@ pointer, not a summary.
 - **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L22986
 - **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22991
 - **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L22996
-- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23000
-- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23047
-- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23060
-- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23067
-- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23074
-- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23113
-- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23174
-- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23245
+- **I-757** An agent window whose agent had already exited comes back as the shell it held; amends I-636, I-646 — 2026-10-17; L23000
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L23005
+- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23052
+- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23065
+- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23072
+- **I-758** The queue's entry store has a schema (queue-revamp, 2026-10-17) — L23079
+- **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23118
+- **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23179
+- **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23250

@@ -1376,10 +1376,67 @@ in
           user("systemctl --user start repose-tmux-session.service")
           guest.wait_until_succeeds("sudo -u dev tmux capture-pane -p -t =todo-app:pi | grep -qF 'pi could not continue its conversation (exit 1).'", timeout=60)
           guest.wait_until_succeeds("[ \"$(sudo -u dev tmux display-message -p -t =todo-app:pi '#{pane_current_command}')\" = bash ]", timeout=30)
-          # A shell is not an agent: the next minute record leaves it out.
+          # The shell it left is recorded with the `exited` marker, not
+          # as an agent to resume (I-757).
           guest.succeed("systemctl start repose-tmux-save.service")
-          guest.succeed("! grep -q '^pi' /home/dev/.repose/agent-windows.live")
+          guest.succeed("grep -qF \"$(printf 'pi\\037pi\\037/home/dev/w2\\037\\037exited')\" /home/dev/.repose/agent-windows.live")
           guest.succeed("rm /home/dev/pi-refuses")
+
+      with subtest("I-757: a window whose agent had exited comes back as the shell it held"):
+          # The refusal above left `pi` holding a shell in w2: the shape
+          # of a window whose agent exited, with @repose-state unset
+          # (I-631). `pi-2` is a live agent in the same folder with no
+          # conversation id, which the exited row must not displace.
+          guest.succeed("rm -f /home/dev/w1/opencode.args /home/dev/w2/pi.args")
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n pi-2 -c /home/dev/w2 /home/dev/.local/bin/pi")
+          guest.wait_until_succeeds("test -e /home/dev/w2/pi.args", timeout=30)
+          guest.succeed("rm /home/dev/w2/pi.args")
+          guest.succeed("sudo -u dev tmux new-window -d -t =todo-app: -n opencode -c /home/dev/w1")
+          guest.succeed("env -i HOME=/home/dev USER=dev PATH=/run/current-system/sw/bin setpriv --reuid=dev --regid=users --init-groups repose-tmux-save")
+          rows = guest.succeed("cat /home/dev/.repose/agent-windows").rstrip("\n").split("\n")
+          assert sorted(r.split("\x1f") for r in rows[1:]) == [
+              ["opencode", "opencode", "/home/dev/w1", "", "exited"],
+              ["pi", "pi", "/home/dev/w2", "", "exited"],
+              ["pi-2", "pi", "/home/dev/w2", ""],
+          ], repr(rows)
+          # I-757 rollback safety: a restore from BEFORE I-757 has no
+          # `exited` and dedupes a row with no session id by
+          # "$agent:$cwd", first row winning, so every exited row must
+          # come after every live one. Ordered the other way, exited
+          # `pi` would take pi:/home/dev/w2 and the LIVE pi-2 would be
+          # the window that did not come back. sorted() above cannot
+          # see this, which is why the order is asserted on its own.
+          def exited_rows_last(record):
+              seen_exited = None
+              for r in (x.split("\x1f") for x in record[1:]):
+                  is_exited = len(r) > 4 and r[4] == "exited"
+                  assert not (seen_exited and not is_exited), (
+                      f"live row {r} after exited {seen_exited}: {record!r}")
+                  seen_exited = r if is_exited else seen_exited
+
+          exited_rows_last(rows)
+          restart_session()
+          # The live agent resumes once, under its own name; each exited
+          # window is back as a login shell under one line.
+          guest.wait_until_succeeds("grep -qx -- --continue /home/dev/w2/pi.args", timeout=60)
+          for w in ["pi", "opencode"]:
+              guest.wait_until_succeeds(f"sudo -u dev tmux capture-pane -p -t =todo-app:{w} | grep -qF '{w} was no longer running when this window was last saved.'", timeout=60)
+              guest.wait_until_succeeds(f"[ \"$(sudo -u dev tmux display-message -p -t =todo-app:{w} '#{{pane_current_command}}')\" = bash ]", timeout=30)
+          assert windows() == ["opencode", "pi", "pi-2", "shell"], windows()
+          assert guest.succeed("wc -l < /home/dev/w2/pi.args").strip() == "1"
+          guest.succeed("test ! -e /home/dev/w1/opencode.args")
+          # The marker is carried into this boot's minute record, so a
+          # crash before the timer's first run reopens shells again.
+          live = guest.succeed("cat /home/dev/.repose/agent-windows.live").rstrip("\n").split("\n")
+          assert sorted(r.split("\x1f") for r in live[1:]) == [
+              ["opencode", "opencode", "/home/dev/w1", "", "exited"],
+              ["pi", "pi", "/home/dev/w2", "", "exited"],
+              ["pi-2", "pi", "/home/dev/w2", "", ""],
+          ], repr(live)
+          exited_rows_last(live)
+          for w in ["opencode", "pi", "pi-2"]:
+              guest.succeed(f"sudo -u dev tmux kill-window -t =todo-app:{w}")
+          assert windows() == ["shell"], windows()
 
       with subtest("I-646: a switch starts the timer"):
           guest.succeed("systemctl stop repose-tmux-save.timer")
