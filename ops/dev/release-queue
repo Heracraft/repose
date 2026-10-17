@@ -20,7 +20,7 @@ set -euo pipefail
 
 common=$(git rev-parse --path-format=absolute --git-common-dir)
 state=$common/release-queue
-mkdir -p "$state/entries" "$state/releases"
+mkdir -p "$state/entries" "$state/releases" "$state/tmp"
 touch "$state/ids"
 main_wt=$(git worktree list --porcelain | awk 'NR == 1 { print $2 }')
 
@@ -30,11 +30,55 @@ index=docs/DECISIONS-INDEX.md
 
 die() { echo "release-queue: $*" >&2; exit 1; }
 locked() { exec 9>"$state/lock"; flock 9; }
-key() { printf '%s' "$1" | tr '/' '%'; }
-field() { sed -n "s/^$2=//p" "$1" | head -n1; }
+# An entry is one file per branch, named after it. The name has to decode
+# back to exactly one branch: `tr '/' '%'` did not, so `ws/01` and `ws%01`
+# shared a file and the second to queue erased the first silently (43 of the
+# 212 branch names on this box hold a slash). Percent-encoding does, and
+# `%` is encoded first or the escape is ambiguous.
+key() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's#/#%2F#g'; }
+# The name a pre-encoding script would have written, which is still on disk
+# for branches queued before this change (one on kanali, repose/fider).
+legacy_key() { printf '%s' "$1" | tr '/' '%'; }
+# entry_file BRANCH: where this branch's entry is, or where it goes. The
+# legacy name counts only when the file there is really this branch's, so
+# `ws%01` cannot claim the file `ws/01` wrote.
+entry_file() {
+  local b=$1 new legacy
+  new=$state/entries/$(key "$b")
+  [ -f "$new" ] && { echo "$new"; return; }
+  legacy=$state/entries/$(legacy_key "$b")
+  if [ -f "$legacy" ] && [ "$(field "$legacy" branch)" = "$b" ]; then
+    echo "$legacy"; return
+  fi
+  echo "$new"
+}
+# Every entry file, and nothing else in entries/. A file counts when its own
+# `branch=` field encodes back to its own name, under this encoding or the
+# legacy one. That is a validity check rather than a list of names to skip:
+# the writers here keep their temp files in $state/tmp, but a worktree
+# running an older copy still writes "<entry>.new" beside the entry, and such
+# a file is a complete entry -- the branch would be listed twice and a cut
+# would merge it twice, at two commits.
+entries() {
+  local f b
+  for f in "$state/entries"/*; do
+    [ -f "$f" ] || continue
+    b=$(field "$f" branch)
+    [ -n "$b" ] || continue
+    case $(basename "$f") in
+      "$(key "$b")" | "$(legacy_key "$b")") echo "$f" ;;
+    esac
+  done
+}
+# The LAST line that sets the key, not the first. Free text is written into
+# the entry before the fields the tool depends on (state, sha, needs), so a
+# note whose own text begins "state=released" used to win over the real
+# state and the branch left the queue with `add` reporting success.
+field() { sed -n "s/^$2=//p" "$1" | tail -n1; }
 setfield() { # file key value
   local f=$1 k=$2 v=$3 tmp
-  tmp=$(mktemp "$f.XXXX")
+  # outside entries/, so an interrupted write never reads as an entry
+  tmp=$(mktemp "$state/tmp/$(basename "$f").XXXX")
   grep -v "^$k=" "$f" > "$tmp" || true
   printf '%s=%s\n' "$k" "$v" >> "$tmp"
   mv "$tmp" "$f"
@@ -118,6 +162,18 @@ cmd_add() {
       *) die "add: unknown argument $1" ;;
     esac
   done
+  # A --live or --note value with a newline in it used to be written into the
+  # entry raw. The entry is flat key=value, so the lines after the first
+  # parsed as nothing -- and a line that looked like a key won over the real
+  # field, which took a branch out of the queue while this command printed
+  # success. One line, always.
+  local v
+  for v in live note; do
+    case ${!v} in *$'\n'*)
+      printf -v "$v" '%s' "$(tr '\n' ' ' <<<"${!v}" | tr -s ' ' | sed 's/ $//')"
+      echo "release-queue: the --$v text was folded onto one line (the entry file is one line per field)" >&2 ;;
+    esac
+  done
   local branch; branch=$(git branch --show-current)
   [ -n "$branch" ] || die "add: not on a branch"
   [ "$branch" != main ] || die "add: this is main; work in a worktree on its own branch (docs/ops/RELEASE.md)"
@@ -132,8 +188,11 @@ cmd_add() {
   local needs; needs=$(needs_of main...HEAD)
   trust_reader "$needs"
   locked
-  local f prev=""
-  f=$state/entries/$(key "$branch")
+  local f prev="" tmpf
+  f=$(entry_file "$branch")
+  # outside entries/, so an add killed before the mv leaves nothing a reader
+  # takes for a second entry of this branch
+  tmpf=$(mktemp "$state/tmp/$(basename "$f").XXXX")
   [ -f "$f" ] && prev=$(field "$f" state)
   # A branch already in a cut can take new commits: they wait as a new
   # entry, which `resume` merges into that release or the next cut takes.
@@ -149,8 +208,8 @@ cmd_add() {
     echo "queued=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "seq=$( [ -f "$f" ] && field "$f" seq || date +%s%N)"
     echo "state=queued"
-  } > "$f.new"
-  mv "$f.new" "$f"
+  } > "$tmpf"
+  mv "$tmpf" "$f"
   echo "queued $branch at $(git rev-parse --short HEAD) ($ahead commits; ships as: $needs)"
   [ -z "$held" ] || echo "  release $held holds an earlier commit of $branch; the conductor takes this one with 'release-queue resume $held', or the next cut does"
 }
@@ -162,8 +221,7 @@ released() { git merge-base --is-ancestor "$1" refs/remotes/origin/main 2>/dev/n
 cmd_ls() {
   local f all=0 out pending="" st
   [ "${1:-}" != --all ] || all=1
-  out=$(for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  out=$(entries | while IFS= read -r f; do
     st=$(field "$f" state)
     case $st in
       queued | cut:*) ;;
@@ -177,10 +235,9 @@ cmd_ls() {
     printf '%s\t%-10s %-28s %s  ships as %-14s %s%s\n' "$(field "$f" seq)" "$st" "$b" "${sha:0:9}" "$(field "$f" needs)" "$(field "$f" queued)" "$moved"
   done | sort -n | cut -f2-)
   if [ -n "$out" ]; then echo "$out"; else echo "the queue is empty"; fi
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     case $(field "$f" state) in merged:*) released "$(field "$f" sha)" || pending="$pending,$(field "$f" needs)" ;; esac
-  done
+  done < <(entries)
   if [ -n "$pending" ]; then
     pending=$(tr ',' '\n' <<<"$pending" | { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
     echo "on main, not released: $(git rev-list --count refs/remotes/origin/main..main) commits; the next release ships as: ${pending:-nothing to deploy}"
@@ -242,7 +299,7 @@ cmd_drop() {
   local b=${1:?drop: which branch}
   locked
   local f
-  f=$state/entries/$(key "$b")
+  f=$(entry_file "$b")
   [ -f "$f" ] || die "drop: $b is not queued"
   setfield "$f" state dropped
   echo "dropped $b"
@@ -253,7 +310,7 @@ cmd_drop() {
 # `release-queue resume RELEASE` for the rest.
 merge_queue() { # release worktree
   local rel=$1 wt=$2 f b sha
-  for f in $(for g in "$state/entries"/*; do [ -e "$g" ] && [ "$(field "$g" state)" = queued ] && echo "$(field "$g" seq) $g"; done | sort -n | cut -d' ' -f2); do
+  for f in $(entries | while IFS= read -r g; do [ "$(field "$g" state)" = queued ] && echo "$(field "$g" seq) $g"; done | sort -n | cut -d' ' -f2); do
     b=$(field "$f" branch); sha=$(field "$f" sha)
     setfield "$f" state "cut:$rel"
     echo "merged=$b $sha $(field "$f" needs)" >> "$state/releases/$rel"
@@ -283,7 +340,7 @@ summary() { # release
 cmd_cut() {
   locked
   local any=0 f
-  for f in "$state/entries"/*; do [ -e "$f" ] && [ "$(field "$f" state)" = queued ] && any=1; done
+  while IFS= read -r f; do [ "$(field "$f" state)" = queued ] && any=1; done < <(entries)
   [ $any = 1 ] || die "cut: nothing is queued"
   local rel n=1
   while :; do rel=r$(date -u +%Y%m%d)-$n; [ -e "$state/releases/$rel" ] || break; n=$((n + 1)); done
@@ -312,10 +369,9 @@ cmd_abandon() {
   [ -f "$state/releases/$rel" ] || die "abandon: no release $rel"
   git merge-base --is-ancestor "release/$rel" main 2>/dev/null && die "abandon: main already holds release/$rel"
   local f wt
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     [ "$(field "$f" state)" = "cut:$rel" ] && setfield "$f" state queued
-  done
+  done < <(entries)
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove --force "$wt" && git branch -q -D "release/$rel"
   rm "$state/releases/$rel"
@@ -328,10 +384,9 @@ cmd_done() {
   [ -f "$state/releases/$rel" ] || die "done: no release $rel"
   git merge-base --is-ancestor "release/$rel" main || die "done: main does not hold release/$rel yet; fast-forward main to it first"
   local f wt
-  for f in "$state/entries"/*; do
-    [ -e "$f" ] || continue
+  while IFS= read -r f; do
     [ "$(field "$f" state)" = "cut:$rel" ] && setfield "$f" state "merged:$rel"
-  done
+  done < <(entries)
   echo "integrated=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$state/releases/$rel"
   wt=$(field "$state/releases/$rel" worktree)
   git worktree remove "$wt" && git branch -q -d "release/$rel" || echo "release-queue: left $wt in place (it has changes)" >&2

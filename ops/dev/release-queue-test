@@ -42,11 +42,7 @@ where_is_released_branch           P3 no command answers 'did this branch ship'
 where_is_branch_on_the_other_box   P2 the queue state is per machine
 stale_script_warns                 P6 a worktree's old copy says nothing
 live_check_is_recorded             P7 nothing stores whether the check ran
-add_rejects_a_multiline_note       P10 a newline in --note is written raw
-add_note_cannot_forge_a_field      P10 a note line that looks like a key wins over the real one
 needs_ignores_a_test_only_change   P4 a _test.go change reaches no binary
-stray_temp_entry_is_not_a_branch   P10 an interrupted add leaves entries/<b>.new, which ls and cut read
-two_branches_keep_two_entries      P10 key() maps / to %, so a%b and a/b share one entry file
 "
 # KNOWN_BAD lines are indented in the heredoc above; strip the indent once.
 # shellcheck disable=SC2001  # a per-line strip, which ${v//x/y} cannot do
@@ -565,8 +561,10 @@ t_stray_temp_entry_is_not_a_branch() {
   local out; out=$(q "$root/woker" cut)
   local merged; merged=$(grep -c 'merged interrupted' <<<"$out")
   assert_eq "times the cut merges it" "$merged" "1" || { note "$out"; return 1; }
-  # and never at the commit the interrupted add had not committed to
-  assert_not "the cut takes only one commit of it" "$out" "${old_sha:0:9}"
+  # and at the commit the completed add recorded, not the stray's: the second
+  # add never finished, so the queue holds the older commit on purpose and
+  # `ls` marks the branch as moved since it was queued.
+  assert_has "the cut takes the queued commit" "$out" "${old_sha:0:9}"
 }
 
 # P10, third: key() is `tr '/' '%'`, which is not injective. A branch
