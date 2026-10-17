@@ -67,7 +67,7 @@ An agent on todo-app is in your Chrome.
 14:10:19  blocked  accounts.google.com/o/oauth2/v2/auth
 ```
 
-`github.com` is that host only; `*.vercel.app` is `vercel.app` and every name under it. An `--allow` that names no host — an unset variable, say — is refused rather than read as no list. On `run` and `attach` the same list is `--bridge-allow`, which turns the bridge on too:
+`github.com` is that host only; `*.vercel.app` is `vercel.app` and every name under it. An `--allow` that names no host, an unset variable for instance, is refused rather than read as no list. On `run` and `attach` the same list is `--bridge-allow`, which turns the bridge on too:
 
 ```
 repose run --bridge-allow github.com \
