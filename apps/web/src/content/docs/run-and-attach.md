@@ -30,23 +30,7 @@ If the agent already has a window, the new one is named `claude-2`, then `claude
 
 ## Several agents, separate trees
 
-<<<<<<< HEAD
 Two agents in one working tree edit the same files. `--worktree` gives an agent its own tree beside the checkout. No more memory comes off your plan; the agents share the one machine's. An agent that needs a machine of its own gets one from [`repose fork`](/docs/lifecycle#fork-a-project), which copies this machine's disk as it stands.
-=======
-Two agents in one working tree edit the same files. Give each its own tree on the same machine, or a [machine of its own](/docs/lifecycle#fork-a-project):
-
-|                      | `repose run -d --worktree -p "..."`        | `repose fork -n 3 --prompt "..."`                                           |
-| -------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
-| Runs on              | this project's machine                     | a new machine each, `todo-app-fork-1` and on                                |
-| Starts from          | the checkout's last commit                 | a copy of the disk as it is now: uncommitted work and dependencies included |
-| Memory               | the machine's own                          | each copy's size, toward your plan                                          |
-| Work comes back with | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`                      |
-| Clean up             | `repose stop -w claude-2`                  | `repose rm todo-app-fork-1`                                                 |
-
-`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a copy of the disk, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
-
-`--worktree` starts the agent in its own git worktree:
->>>>>>> d7fe8f20dc5a1cab0f60616aee03c93d68cd252a
 
 ```
 $ repose run --worktree -p "try the other approach"
@@ -230,11 +214,7 @@ mosh doesn't work: it needs a UDP connection straight to the machine, and the on
 
 ## When the machine stops
 
-<<<<<<< HEAD
 A stop ends every process, agents included. At the next start each agent's window opens again under its name and in its folder, with the agent continuing the conversation it was in: Claude Code and Codex by the conversation's id, opencode, pi and Gemini CLI with their newest one in that folder. `repose ps` and `repose attach -w claude-2` find them as before. A window whose agent had already exited comes back as a shell, under a line saying so. Other windows and processes don't come back; the session starts with its `shell` window beside the agents.
-=======
-Your agents come back from a [stop](/docs/lifecycle#stop-and-start), and nothing else on the machine does. At the next start each agent's window opens again under its name and in its folder, with the agent continuing the conversation it was in: Claude Code and Codex by the conversation's id, opencode, pi and Gemini CLI with their newest one in that folder. Those three have no id to go back to, so where one of them had two windows in one folder only the first reopens; both would resume the same conversation. The session starts with its `shell` window beside the agents.
->>>>>>> 602743729470d9887944dce821caba04ea759ecb
 
 An agent that can't resume (a conversation that's gone, or one cut mid-line) exits non-zero within 15 seconds, and its window keeps a login shell under `claude could not continue its conversation (exit N).`
 

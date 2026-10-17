@@ -537,7 +537,6 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 
 ## Exit codes
 
-<<<<<<< HEAD
 | Code | Meaning |
 | ---- | ------- |
 | 0 | Worked. |
@@ -548,23 +547,8 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 5 | The machine isn't running. |
 | 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
-| 8 | No capacity, before or during a start: running machines hold the memory, so stopping one frees room. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
+| 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10 | The configuration build failed. |
 | 130 | Interrupted with `Ctrl-C`, at a question too. |
-=======
-| Code | Meaning                                                                                                                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Worked.                                                                                                                                                                                     |
-| 1    | Failed, or you answered no to a question; the message says why. A network failure, the login server's included, exits 1 too. |
-| 2    | Wrong usage.                                                                                                                                                                                |
-| 3    | Not logged in, or the login expired.                                                                                                                                                        |
-| 4    | No such project.                                                                                                                                                                            |
-| 5    | The machine isn't running.                                                                                                                                                                  |
-| 6    | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped.                                                                                 |
-| 7    | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it.                                                                   |
-| 8    | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
-| 10   | The configuration build failed.                                                                                                                                                             |
-| 130  | Interrupted with `Ctrl-C`, at a question too.                                                                                                                                                                  |
->>>>>>> a5330d2b40be7680271e03a4915336375846c850
 
 Once `run`, `attach` or `ssh` has connected you, the exit code is `ssh`'s; `255` means the connection dropped and the command could not reconnect. `repose cp` returns `scp`'s. `repose exec` returns the command's code once the command has started, so a `4` from your test runner is the test runner's; the codes above come only from failures before it starts, and each prints a message first.
