@@ -238,10 +238,13 @@ export const createSnapshot = (id: string) =>
 /** → {op_id, project_id} (api.md): project_id is the restore's target,
  *  which for an as-new restore is the project it just made. */
 export const restoreSnapshot = (id: string, snapshotId: string, asNewProject?: string) =>
-	request<{ op_id: string; project_id: string }>(`/projects/${id}/snapshots/${snapshotId}/restore`, {
-		method: 'POST',
-		body: asNewProject ? { as_new_project: asNewProject } : {}
-	});
+	request<{ op_id: string; project_id: string }>(
+		`/projects/${id}/snapshots/${snapshotId}/restore`,
+		{
+			method: 'POST',
+			body: asNewProject ? { as_new_project: asNewProject } : {}
+		}
+	);
 
 // Events and logs.
 /** The newest 50 events, or with `before` (an event id) the `limit` before it (I-414). */
@@ -310,7 +313,8 @@ export const getUsage = (from: string, to: string) =>
 	request<Array<{ project_id: string; day: string } & UsageRow>>(
 		`/usage?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
 	);
-export const getBilling = () => request<Billing>('/billing');
+export const getBilling = (opts: { passive?: boolean } = {}) =>
+	request<Billing>('/billing', { passive: opts.passive });
 /** Opens a Polar checkout for the plan (I-604) and answers its URL; `waitlisted` when its seats are not free. */
 export const billingCheckout = (plan: PlanId) =>
 	request<Checkout>('/billing/checkout', { method: 'POST', body: { plan } });

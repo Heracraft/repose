@@ -30,6 +30,7 @@
 		classMemoryGB
 	} from '$lib/format';
 	import { fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
+	import { FEEDBACK_URL } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
@@ -468,8 +469,10 @@
 	{:else if !sub}
 		{#if setupTimedOut}
 			<div class="banner banner--warn">
-				The plan is taking longer than usual to arrive. Refresh in a minute; if it is still not
-				here, the payment went through and support will sort it out.
+				The plan has not arrived. Your payment went through and nothing is charged twice.
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- FEEDBACK_URL is off-site -->
+				<a href={FEEDBACK_URL} class="link" target="_blank" rel="noreferrer">Tell us</a> and we will finish
+				it by hand.
 			</div>
 		{/if}
 		{#if accountStatus === 'exempt'}
@@ -929,14 +932,16 @@
 						<button
 							type="button"
 							class="btn-quiet btn--sm"
-							disabled={invoicePage === 0}
-							onclick={() => (invoicePage -= 1)}>Newer</button
+							aria-disabled={invoicePage === 0 ? 'true' : undefined}
+							title={invoicePage === 0 ? 'This is the newest page' : undefined}
+							onclick={() => invoicePage > 0 && (invoicePage -= 1)}>Newer</button
 						>
 						<button
 							type="button"
 							class="btn-quiet btn--sm"
-							disabled={invoicePage >= invoicePages - 1}
-							onclick={() => (invoicePage += 1)}>Older</button
+							aria-disabled={invoicePage >= invoicePages - 1 ? 'true' : undefined}
+							title={invoicePage >= invoicePages - 1 ? 'No older invoices' : undefined}
+							onclick={() => invoicePage < invoicePages - 1 && (invoicePage += 1)}>Older</button
 						>
 					</nav>
 				{/if}

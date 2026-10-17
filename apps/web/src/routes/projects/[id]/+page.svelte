@@ -339,6 +339,7 @@
 	}
 
 	async function onStart() {
+		if (opBusy) return;
 		opBusy = 'start';
 		startBanner = undefined;
 		try {
@@ -371,6 +372,7 @@
 	let askingStop = $state(false);
 
 	function onStopPressed() {
+		if (opBusy) return;
 		if (stopEnds) {
 			askingStop = true;
 			return;
@@ -379,6 +381,7 @@
 	}
 
 	async function onStop() {
+		if (opBusy) return;
 		askingStop = false;
 		opBusy = 'stop';
 		try {
@@ -394,6 +397,7 @@
 	}
 
 	async function onDestroy() {
+		if (opBusy) return;
 		opBusy = 'destroy';
 		try {
 			await destroyProject(id);
@@ -629,13 +633,23 @@
 	>
 		{#snippet action()}
 			{#if project?.state === 'stopped'}
-				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
+				<button
+					type="button"
+					class="btn"
+					aria-disabled={opBusy ? 'true' : undefined}
+					onclick={onStart}
+				>
 					{opBusy === 'start' ? 'Starting…' : 'Start'}
 				</button>
 			{:else if project?.state === 'error'}
 				<!-- POST /start restarts a machine in error on its newest
 				     configuration (lifecycle.md). -->
-				<button type="button" class="btn" disabled={!!opBusy} onclick={onStart}>
+				<button
+					type="button"
+					class="btn"
+					aria-disabled={opBusy ? 'true' : undefined}
+					onclick={onStart}
+				>
 					{opBusy === 'start' ? 'Restarting…' : 'Restart'}
 				</button>
 			{:else if project?.state === 'running'}
@@ -645,7 +659,12 @@
 						<input type="checkbox" bind:checked={stopSnapshotFirst} />
 						Snapshot on stop
 					</label>
-					<button type="button" class="btn-quiet" disabled={!!opBusy} onclick={onStopPressed}>
+					<button
+						type="button"
+						class="btn-quiet"
+						aria-disabled={opBusy ? 'true' : undefined}
+						onclick={onStopPressed}
+					>
 						{opBusy === 'stop' ? 'Stopping…' : 'Stop'}
 					</button>
 				</div>
@@ -751,7 +770,7 @@
 							<button
 								type="button"
 								class="btn-quiet btn--sm"
-								disabled={!!opBusy}
+								aria-disabled={opBusy ? 'true' : undefined}
 								onclick={() => stopNamed(named)}>Stop {named.slug}</button
 							>
 						{/each}
@@ -906,7 +925,9 @@
 				</p>
 			{:else if samples.points.length === 0}
 				<p class="mt-3 text-sm text-ink-muted">
-					No samples in this window: the machine was not running.
+					{project.state === 'running'
+						? 'No usage reported in this window yet.'
+						: 'No samples in this window: the machine was not running.'}
 				</p>
 			{:else}
 				<div class="mt-5 grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">

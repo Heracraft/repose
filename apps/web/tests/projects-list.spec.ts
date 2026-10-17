@@ -505,3 +505,37 @@ test('a row the user stops keeps its place in the list', async ({ page }) => {
 	// Same place, not sorted down among the stopped ones.
 	expect((await names(page))[0]).toBe(up.name);
 });
+
+// A host going unreachable takes every machine on it, and the list drew
+// a green dot and a climbing uptime for a machine that cannot be started.
+test('a machine whose host is not answering says so on its row', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await make(api, 'unreachable-app');
+	await page.route('**/v1/projects', async (route) => {
+		const res = await route.fetch();
+		const list = (await res.json()) as { id: string; host_unreachable?: boolean }[];
+		for (const q of list) if (q.id === p.id) q.host_unreachable = true;
+		await route.fulfill({ response: res, json: list });
+	});
+	await page.goto('/projects');
+	await expect(row(page, p.name)).toContainText('server not answering');
+});
+
+// A machine in error was visible only as a red line inside its own row.
+test('the lede counts a machine in error', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await make(api, 'lede-error');
+	await page.route('**/v1/projects', async (route) => {
+		const res = await route.fetch();
+		const list = (await res.json()) as { id: string; state: string; last_error?: string }[];
+		for (const q of list) {
+			if (q.id === p.id) {
+				q.state = 'error';
+				q.last_error = 'start_failed: the guest did not boot';
+			}
+		}
+		await route.fulfill({ response: res, json: list });
+	});
+	await page.goto('/projects');
+	await expect(page.getByText(/\d+ in error/)).toBeVisible();
+});

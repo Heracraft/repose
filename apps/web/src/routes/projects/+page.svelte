@@ -63,6 +63,8 @@
 	let destroyedNewest = $state<DestroyedProject[]>([]);
 	let destroyedOlder = $state<DestroyedProject[]>([]);
 	let destroyedDone = $state(false);
+	/** When the destroyed list was last fetched; it is not on the 10s tick. */
+	let lastDestroyed = 0;
 	const destroyed = $derived.by(() => {
 		const byId = new Map([...destroyedOlder, ...destroyedNewest].map((d) => [d.id, d]));
 		return [...byId.values()].sort((a, b) =>
@@ -117,14 +119,23 @@
 			// side read, so passive: its answer must not clear the outage bar
 			// a failing list raises at the same time (I-393).
 			if (first) {
-				const [list, qs] = await Promise.all([
+				// Billing comes with the list: without it the strip paints as
+				// a row of stat cells and changes to squares and rings a few
+				// hundred ms later, pushing the table down under the pointer
+				// ("Nothing mounts above painted content", I-680).
+				const [list, qs, bill] = await Promise.all([
 					listProjects(),
-					listQuestions('pending', { passive: true }).catch(() => undefined)
+					listQuestions('pending', { passive: true }).catch(() => undefined),
+					getBilling({ passive: true }).catch((err: unknown) => {
+						if (err instanceof ApiError && err.code === 'billing_disabled') billingOff = true;
+						return undefined;
+					})
 				]);
 				if (qs) {
 					questions = qs;
 					pendingQuestions.set(qs.length);
 				}
+				if (bill) billing = bill;
 				projects = list;
 			} else {
 				projects = await listProjects();
@@ -147,13 +158,23 @@
 		}
 		// The strip's and the callout's calls go out once the list is in;
 		// each fails on its own and keeps what it showed last.
-		const side = Promise.all([first ? undefined : refreshQuestions(), refreshBilling()]);
+		const side = Promise.all([
+			first ? undefined : refreshQuestions(),
+			first ? undefined : refreshBilling()
+		]);
 		// Its own try: an api without the route (older than I-167) answers
 		// 404, and that must not hide the live list or raise a toast.
-		try {
-			destroyedNewest = await listDestroyed();
-		} catch {
-			destroyedNewest = [];
+		// Destroyed projects change a few times a week, and this is the
+		// heaviest query on the page: the api answers the newest 100 with a
+		// snapshot lookup each. It was on the 10s tick, 360 times an hour,
+		// for ten rows thousands of pixels below the fold.
+		if (first || Date.now() - lastDestroyed >= 60_000) {
+			try {
+				destroyedNewest = await listDestroyed();
+				lastDestroyed = Date.now();
+			} catch {
+				destroyedNewest = [];
+			}
 		}
 		if (projects.length === 0) {
 			try {
@@ -300,8 +321,12 @@
 		if (!projects || projects.length === 0) return undefined;
 		const awake = projects.filter(holdsMemory).length;
 		const n = projects.length;
+		// A machine in error is the state the user has to act on, and at 40
+		// projects it was visible only as a red line inside its own row.
+		const broken = projects.filter((p) => p.state === 'error').length;
 		return [
 			awake > 0 ? `${awake} running` : 'No machines running',
+			broken > 0 ? `${broken} in error` : '',
 			`${n} ${n === 1 ? 'project' : 'projects'}`,
 			planName
 		]
@@ -397,6 +422,13 @@
 				: `made ${relativeTime(p.created_at)}`}
 		</div>
 	{/if}
+	{#if p.host_unreachable}
+		<!-- A host going unreachable takes every machine on it, so this is
+		     a several-rows-at-once state; the project page had the banner
+		     and the list said nothing, showing a green dot and a climbing
+		     uptime for a machine that cannot be started. -->
+		<div class="mt-0.5 text-xs text-amber-700 dark:text-amber-400">server not answering</div>
+	{/if}
 	{#if p.expires_at}
 		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">{tempLeft(p.expires_at)}</div>
 	{/if}
@@ -423,20 +455,26 @@
 {#snippet actionButton(p: Project, always: boolean)}
 	{@const a = actionFor(p)}
 	{#if a}
-		<button
-			type="button"
-			class="row-action btn-quiet btn--sm"
-			class:row-action--shown={always || !!pending[p.id]}
-			disabled={!!pending[p.id]}
-			aria-label="{a === 'stop' ? 'Stop' : 'Start'} {p.name}"
-			onclick={() => pressed(p, a)}
-			>{pending[p.id] === 'stop'
+		<!-- One word for the face and the accessible name: they drifted, so
+		     mid-operation the button read "Stopping…" and was named "Stop",
+		     which breaks voice control (WCAG 2.5.3). aria-disabled, not
+		     disabled: a disabled element drops focus to <body> and a
+		     keyboard user lost their place for the whole op (I-391). -->
+		{@const word =
+			pending[p.id] === 'stop'
 				? 'Stopping…'
 				: pending[p.id] === 'start'
 					? 'Starting…'
 					: a === 'stop'
 						? 'Stop'
-						: 'Start'}</button
+						: 'Start'}
+		<button
+			type="button"
+			class="row-action btn-quiet btn--sm"
+			class:row-action--shown={always || !!pending[p.id]}
+			aria-disabled={pending[p.id] ? 'true' : undefined}
+			aria-label="{word} {p.name}"
+			onclick={() => pressed(p, a)}>{word}</button
 		>
 	{/if}
 {/snippet}
