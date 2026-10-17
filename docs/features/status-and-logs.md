@@ -160,9 +160,14 @@ Dashboard (as built; `workstreams/08-dashboard.md` §5.2 is the page list
 this describes, and it is narrower than an earlier draft of this section
 promised, DECISIONS I-96):
 
-- `/projects`: one row per project: name, class, state, uptime, agent
-  state, running hours today and this month. The same figures as `status`, from
-  the same `usage_hours` rows. Not sortable, and no sparkline.
+- `/projects`: one row per project: name and remote, state with its
+  uptime (or, for a stopped one, when it last ran), size, agents, disk
+  and last snapshot, with Start or Stop on the row. The running hours
+  this once promised are gone from the row, as from `status`: nothing is
+  priced by the hour (I-616, I-289). The rows are ordered by what wants
+  you, then what is up, then what is at rest (I-761), not by the api's
+  `created_at`; a search and the state filters sit above the table past
+  8 projects and the list is capped at 25 (I-762). No per-row sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
   signals, usage (running hours today and this month), disk (the guest's
   root filesystem used, of the volume's size, and `N percent full` at 90

@@ -30,7 +30,7 @@ repose status todo-app
 repose status todo-app -f
 ```
 
-The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. A project's own page has its agents, its snapshots and its events, which filter to agents, errors or the machine. It lists no listening ports.
+The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. It leads with the projects an agent is waiting on or that failed, then the running machines, then the stopped ones, most recently used first, and a stopped row says when it last ran. Past 8 projects, a search box finds one by name or remote and **All**, **Needs you**, **Running** and **Stopped** filter the list; both live in the page's address, so a reload keeps them. The list shows 25 and **Show all** lists the rest. A project's own page has its agents, its snapshots and its events, which filter to agents, errors or the machine. It lists no listening ports.
 
 ## Stop and start
 

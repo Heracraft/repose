@@ -3,14 +3,22 @@
   name, with an emerald dot while it works, amber "needs input" when it
   waits on you, muted when idle or only `running` (an agent without turn
   hooks: its process is alive, which says nothing of its work, I-694). SSH sessions follow as a count. With
-  neither, "none" in faint text. The state is also in each chip's name for
-  a screen reader, so the dot is never the only sign of it.
+  neither, "none" in faint text — but only for a machine that is up: a
+  machine at rest runs no agent, so the word said nothing and printed
+  itself once per stopped row down a list of up to 100. The state is also
+  in each chip's name for a screen reader, so the dot is never the only
+  sign of it.
 -->
 <script lang="ts">
 	import { agentStateLabel } from '$lib/format';
 	import type { AgentSignal } from '$lib/api/types';
 
-	let { agents = [], ssh = 0 }: { agents?: AgentSignal[]; ssh?: number } = $props();
+	let {
+		agents = [],
+		ssh = 0,
+		/** False for a machine at rest, which draws nothing rather than "none". */
+		live = true
+	}: { agents?: AgentSignal[]; ssh?: number; live?: boolean } = $props();
 
 	function waiting(a: AgentSignal): boolean {
 		return a.state === 'needs_input' || a.state === 'question';
@@ -18,7 +26,7 @@
 </script>
 
 {#if agents.length === 0 && ssh === 0}
-	<span class="text-ink-faint">none</span>
+	{#if live}<span class="text-ink-faint">none</span>{/if}
 {:else}
 	<span class="chips">
 		{#each agents as a, i (`${a.agent}-${a.window}-${i}`)}

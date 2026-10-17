@@ -296,7 +296,12 @@ or its first screen goes through a DECISIONS entry.
   you" card (I-693); a stat strip (`PlanStrip`) of memory running, disk held and
   egress against the plan, or, with no plan limits, four facts from the
   list (memory, machines running, agents needing input, disk in use);
-  the table; Recent activity; Recently destroyed. The table's name link
+  a toolbar past 8 projects (a search field and the All, Needs you,
+  Running, Stopped filters, both in the URL, I-762); the table, capped
+  at 25 behind "Show all N"; Recent activity; Recently destroyed. The
+  rows are ordered by what wants you, then what is up, then what is at
+  rest, most recently active first inside each (I-761) — never the
+  api's `created_at`. The table's name link
   covers the row, and its Start or Stop answers in place. Below `sm`
   rows stack, never scroll sideways. With no projects the empty state
   is one card across the frame: `repose run` on the left, the plan

@@ -212,3 +212,24 @@ export async function setResting(projectID: string, minutes: number): Promise<vo
 	});
 	if (!res.ok) throw new Error(`setResting: ${res.status}`);
 }
+
+/** Stops a project straight against the fake api (no CLI in this suite). */
+export async function stopProject(apiURL: string, id: string): Promise<void> {
+	const res = await fetch(`${apiURL}/projects/${id}/stop`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ snapshot: false })
+	});
+	if (!res.ok) throw new Error(`stopProject: ${res.status} ${await res.text()}`);
+}
+
+/** Destroys a project, so a test that makes many leaves the shared
+ *  account under its 100-project cap for the files that run after it. */
+export async function destroyProject(apiURL: string, id: string): Promise<void> {
+	const res = await fetch(`${apiURL}/projects/${id}`, {
+		method: 'DELETE',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ snapshot: false })
+	});
+	if (!res.ok && res.status !== 404) throw new Error(`destroyProject: ${res.status}`);
+}
