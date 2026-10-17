@@ -34,7 +34,7 @@ DATABASE_URL (replaced), STRIPE_SECRET_KEY, OPENAI_API_KEY
 
 Without a file name it reads `./.env`; `-` reads stdin, so a secrets manager can pipe into it. Each `NAME=VALUE` becomes a secret, replacing one of the same name, as `secrets set` does. `--dry-run` lists the names it would set and sends nothing. Only names are printed, never values.
 
-The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in, or with `--global` for [every project](#secrets-for-every-project). A server that starts with a command reads its secrets each time an agent starts it. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
+The MCP servers `run` copies from your laptop's Claude Code arrive with `${NAME}` where their tokens were ([Agents](/docs/agents#mcp-servers)). [`repose secrets import --mcp`](/docs/cli#secrets) sets those secrets from the tokens on your laptop, for the project of the folder you run it in, or with `--global` for [every project](#secrets-for-every-project). A server that starts with a command reads its secrets each time an agent starts it. In a server you add on the machine yourself, write the token by its secret's name and never its value: `${NAME}` for Claude Code, Gemini CLI and pi, `{env:NAME}` for opencode, and in Codex `env_vars = ["NAME"]` or `bearer_token_env_var = "NAME"`. An HTTP server whose secret is missing is left out of every agent, and arrives the next time an agent starts after you set it, so restart an agent that is already running.
 
 The file is read the way docker compose and the dotenv libraries read it: `#` comments and blank lines are skipped, `export ` in front of a name is ignored, `'single quotes'` keep a value exactly as written, `"double quotes"` understand `\n`, `\t`, `\"` and `\\` and can span lines (a PEM key, say), and an unquoted value ends at ` #`. `${VAR}` is not expanded. If any name isn't a valid secret name (below), nothing is imported and the error lists the lines to fix.
 
@@ -162,7 +162,7 @@ Add the public key to that one repository as a deploy key with write access. It 
 
 Your global git settings are copied, minus credential helpers, signing, URL rewrites, proxies, `core.sshCommand`, `core.hooksPath`, diff and merge tools, a pager, editor or diff filter the machine doesn't have, and anything that looks like a token. Settings you make on the machine win. Where neither sets a value, the machine's git starts new repositories on `main`, merges on `git pull`, and sets the upstream on the first `git push` of a branch. Commits made on the machine are unsigned, since the signing key stays on your laptop.
 
-Your [Claude Code setup](/docs/agents#your-claude-code-setup-comes-along) is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run.
+Your [agent setup](/docs/agents#your-agent-setup-comes-along) is copied too: `CLAUDE.md`, `settings.json` (with `env` and API key helpers removed), skills, agents, commands and the scripts your hooks run.
 
 ## What an agent on the machine can reach
 

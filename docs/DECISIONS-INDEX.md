@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-761 entries.
+764 entries.
 
 ## Scope
 
@@ -793,3 +793,6 @@ pointer, not a summary.
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22907
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22950
 - **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22956
+- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23003
+- **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23016
+- **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23023

@@ -4,10 +4,9 @@ description: Install the CLI, start a machine for your project and hand a task t
 section: Start here
 order: 1
 ---
+repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your daily driver and the private content inside it are out of its reach.
 
-repose gives each of your projects its own Linux machine in the cloud, with your code, tools and logins already on it. An agent there can run with full permissions for as long as the work takes. The worst it can do is wreck that one machine, and a snapshot puts it back. Your laptop, your SSH keys and your other projects are out of its reach.
-
-You need macOS or Linux (on Windows, use WSL) with `git` and `ssh`, a GitHub account, and a git checkout.
+You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not been tested enough. [Feedback](https://repose.fider.io) is appreciated.
 
 ## 1. Install and log in
 
@@ -16,17 +15,15 @@ curl -fsSL https://repose.herakraft.co/install.sh | sh
 repose login
 ```
 
-`repose login` prints a link and a code. Open the link on any device, check the code matches and sign in with your email or with GitHub.
-
 ## 2. Choose a plan
 
-Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), and the first week is free. Without one, `repose run` opens that page and waits until you choose. [Solo](/docs/billing) keeps 8 GB of machines running at the same time, around the clock: one `large`, or two `small`. Keep up to 100 projects on any plan; a stopped one uses no memory.
+Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory for machines running around the clock, not hours.
 
-## 3. Let it run without asking
+## 3. Skip permissions
 
-Claude Code on the machine starts in `bypassPermissions` mode, so it doesn't stop to ask before running a command. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#let-it-run-without-asking), the machine uses yours.
+Claude Code on the machine starts in `bypassPermissions` mode. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#permissions), the machine uses yours.
 
-## 4. Hand it a task
+## 4. Let it loose
 
 ```
 cd ~/code/your-project
@@ -42,41 +39,34 @@ Logins copied: gh
 Ready in 16s.
 ```
 
-The first run creates the machine and copies your checkout to `/home/dev/your-project` on it (the checkout takes your laptop folder's name), with your uncommitted changes and unpushed commits applied. Then the CLI starts Claude Code in a tmux window there, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
+The first `run` creates the machine and copies your folder to `/home/dev/your-project`, uncommitted changes and unpushed commits included. Then the CLI starts your default agent in a tmux window, types your prompt and attaches you. Detach with `Ctrl-b` then `d` (inside a tmux on your laptop, `Ctrl-b` `Ctrl-b` `d`) and close the laptop; the agent keeps working.
 
-Claude Code's login is never copied from your laptop, so the first time, the window opens on its login: open the URL it prints, approve, and paste the code back. Your prompt is typed once the login is done, and your other machines are logged in too. The Codex, opencode and GitHub CLI [logins](/docs/agents) your laptop has are copied.
+Claude Code you log into once, on the machine itself; its login is never copied from your laptop. The Codex, opencode and GitHub CLI [logins](/docs/agents) your laptop has are copied, unless you [opt out](/docs/secrets#choose-what-is-copied).
 
-`repose run` with no prompt attaches to a shell on the machine instead. If you use [herdr](https://herdr.dev), add `--multiplexer herdr` to the first run and the machine runs [herdr in place of tmux](/docs/tutorial-herdr).
+If you use [herdr](https://herdr.dev), add `--multiplexer herdr` to the first run.
 
-## 5. Show it a screenshot
+## 5. Paste in a screenshot
 
-With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the agent's window. Or drag a file onto the terminal. The file is [copied to the machine](/docs/run-and-attach#drop-a-file-or-paste-an-image) and its path lands in the prompt, where Claude Code shows it as an image:
+With a screenshot on your laptop's clipboard, press `Cmd+V` or `Ctrl+V` in the agent's window. Or drag a file onto the terminal. The file is [copied to the machine](/docs/run-and-attach#drop-a-file-or-paste-an-image) and its new path is pasted into the prompt, where Claude Code shows it as an image:
 
 ```text
 ❯ [Image #1] the button overlaps the footer on this screen
 ```
 
-## 6. Get a notification when it's done
+## 6. Come back and stop
 
-Email is on by default. For your phone, pick a long random [ntfy](https://ntfy.sh) topic, subscribe to it in the ntfy app, then:
-
-```
-repose notify set --ntfy https://ntfy.sh/repose-4f9c2a7e1b
-repose notify test
-```
-
-## 7. Come back and stop
-
-From any computer you're logged in on (`repose ls` lists your projects):
+From any computer you're logged in on (`repose ls`):
 
 ```
 repose attach your-project
 ```
 
-Once the agent has committed, `git fetch repose` in your checkout brings its commits to your laptop, and `git merge repose/main` takes them ([Getting work back](/docs/sync#getting-work-back)). Stop the machine when you're done:
+Once the agent has committed, `git fetch repose` on your laptop brings its commits over, and you merge or rebase them from there ([Getting work back](/docs/sync#getting-work-back)). Or leave `gh` credentials shared and let the agent push straight to GitHub.
+
+Stop the machine when you're done:
 
 ```
 repose stop
 ```
 
-Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. A stopped machine costs nothing; what its disk holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 10 seconds with your files where you left them. Agent windows open again on the conversations they were in; other running processes don't survive a stop.
+Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.
