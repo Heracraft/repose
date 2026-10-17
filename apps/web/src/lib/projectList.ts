@@ -7,22 +7,9 @@
 // a browser.
 import type { Project } from '$lib/api/types';
 
-/**
- * The states that hold the plan's memory: running, and the ones on their
- * way to running. The same five as internal/billing/usage.go's
- * memoryStates, which is what refuses a start, so a page that counts any
- * other set shows a figure the api will not honour.
- */
-export const MEMORY_STATES: ReadonlySet<Project['state']> = new Set([
-	'running',
-	'starting',
-	'restoring',
-	'creating',
-	'building'
-]);
-
-/** Whether a machine is holding the plan's memory right now. */
-export const holdsMemory = (p: Pick<Project, 'state'>) => MEMORY_STATES.has(p.state);
+// The plan's memory states live in $lib/plans.ts, beside the figures they
+// are counted against, and are pinned to internal/billing/usage.go there.
+export { MEMORY_STATES, holdsMemory } from '$lib/plans';
 
 /**
  * Whether a machine is down: nothing is running and nothing is on its

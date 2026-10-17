@@ -29,7 +29,8 @@
 		timeUntil,
 		classMemoryGB
 	} from '$lib/format';
-	import { fromApi, ordinal, type PlanFigures } from '$lib/plans';
+	import { fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
+	import { SUPPORT_MAILTO } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
@@ -93,8 +94,7 @@
 	let diskHeld = $derived(
 		billing ? (billing.usage.disk_held_gb ?? billing.usage.disk_allocated_gb) : 0
 	);
-	const RUNNING = new Set(['running', 'starting', 'restoring', 'creating', 'building']);
-	let running = $derived(projects.filter((p) => RUNNING.has(p.state)));
+	let running = $derived(projects.filter(holdsMemory));
 	let heaviest = $derived(
 		projects
 			.filter((p) => (p.root_used_bytes ?? 0) > 0)
@@ -369,7 +369,7 @@
 </script>
 
 <svelte:head>
-	<title>Billing · repose</title>
+	<title>Billing — repose</title>
 </svelte:head>
 
 <!-- A plan's button in the picker. Only the plan the visitor came for is
@@ -469,8 +469,10 @@
 	{:else if !sub}
 		{#if setupTimedOut}
 			<div class="banner banner--warn">
-				The plan is taking longer than usual to arrive. Refresh in a minute; if it is still not
-				here, the payment went through and support will sort it out.
+				The plan has not arrived. Your payment went through and nothing is charged twice.
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a mailto, not a route -->
+				<a href={SUPPORT_MAILTO} class="link" data-testid="support-link">Email us</a> and we will finish
+				it by hand.
 			</div>
 		{/if}
 		{#if accountStatus === 'exempt'}
@@ -930,14 +932,16 @@
 						<button
 							type="button"
 							class="btn-quiet btn--sm"
-							disabled={invoicePage === 0}
-							onclick={() => (invoicePage -= 1)}>Newer</button
+							aria-disabled={invoicePage === 0 ? 'true' : undefined}
+							title={invoicePage === 0 ? 'This is the newest page' : undefined}
+							onclick={() => invoicePage > 0 && (invoicePage -= 1)}>Newer</button
 						>
 						<button
 							type="button"
 							class="btn-quiet btn--sm"
-							disabled={invoicePage >= invoicePages - 1}
-							onclick={() => (invoicePage += 1)}>Older</button
+							aria-disabled={invoicePage >= invoicePages - 1 ? 'true' : undefined}
+							title={invoicePage >= invoicePages - 1 ? 'No older invoices' : undefined}
+							onclick={() => invoicePage < invoicePages - 1 && (invoicePage += 1)}>Older</button
 						>
 					</nav>
 				{/if}

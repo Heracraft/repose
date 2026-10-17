@@ -56,8 +56,9 @@ colour has one meaning:
 - **Zinc** is a neutral grey: text, rules, the primary button.
 - **Blue is the accent**, for links (`.link`, the docs' links), the focus
   ring and text selection. It may also draw a measure: a meter's fill
-  under its limit and the usage chart's line over a 12% accent area
-  (I-659). Nothing else is blue in the dashboard, the docs or the legal
+  under its limit (I-659). The usage chart's line is `--chart-line`,
+  which `layout.css` sets to `--ink`; the accent is one switch away
+  there and is not what ships (I-679). Nothing else is blue in the dashboard, the docs or the legal
   pages except the logo's big square (see Logo); a busy state, a current
   tab and code syntax are not (I-373, I-374, I-388). The landing's shapes
   and bar use it as `LANDING.md` says, and so do the plan cells on

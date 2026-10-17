@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getBilling, getMe, listDestroyed, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
+	import { withoutBillingURL } from '$lib/refusal';
 	import { PollFailure } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
 	import {
@@ -21,7 +22,7 @@
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
-	import { DISK_FULL_PERCENT } from '$lib/disk';
+	import { DISK_FULL_PERCENT, diskPercent } from '$lib/disk';
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
@@ -50,6 +51,8 @@
 	} from '$lib/projectList';
 	import type { Billing, DestroyedProject, Me, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
+	import { stopWarning } from '$lib/busyAgents';
+	import { focusOnMount } from '$lib/focus';
 
 	let projects = $state<Project[] | undefined>(undefined);
 	/** The first load failed; the poll keeps trying, and Retry asks now. */
@@ -60,6 +63,8 @@
 	let destroyedNewest = $state<DestroyedProject[]>([]);
 	let destroyedOlder = $state<DestroyedProject[]>([]);
 	let destroyedDone = $state(false);
+	/** When the destroyed list was last fetched; it is not on the 10s tick. */
+	let lastDestroyed = 0;
 	const destroyed = $derived.by(() => {
 		const byId = new Map([...destroyedOlder, ...destroyedNewest].map((d) => [d.id, d]));
 		return [...byId.values()].sort((a, b) =>
@@ -114,14 +119,23 @@
 			// side read, so passive: its answer must not clear the outage bar
 			// a failing list raises at the same time (I-393).
 			if (first) {
-				const [list, qs] = await Promise.all([
+				// Billing comes with the list: without it the strip paints as
+				// a row of stat cells and changes to squares and rings a few
+				// hundred ms later, pushing the table down under the pointer
+				// ("Nothing mounts above painted content", I-680).
+				const [list, qs, bill] = await Promise.all([
 					listProjects(),
-					listQuestions('pending', { passive: true }).catch(() => undefined)
+					listQuestions('pending', { passive: true }).catch(() => undefined),
+					getBilling({ passive: true }).catch((err: unknown) => {
+						if (err instanceof ApiError && err.code === 'billing_disabled') billingOff = true;
+						return undefined;
+					})
 				]);
 				if (qs) {
 					questions = qs;
 					pendingQuestions.set(qs.length);
 				}
+				if (bill) billing = bill;
 				projects = list;
 			} else {
 				projects = await listProjects();
@@ -144,13 +158,23 @@
 		}
 		// The strip's and the callout's calls go out once the list is in;
 		// each fails on its own and keeps what it showed last.
-		const side = Promise.all([first ? undefined : refreshQuestions(), refreshBilling()]);
+		const side = Promise.all([
+			first ? undefined : refreshQuestions(),
+			first ? undefined : refreshBilling()
+		]);
 		// Its own try: an api without the route (older than I-167) answers
 		// 404, and that must not hide the live list or raise a toast.
-		try {
-			destroyedNewest = await listDestroyed();
-		} catch {
-			destroyedNewest = [];
+		// Destroyed projects change a few times a week, and this is the
+		// heaviest query on the page: the api answers the newest 100 with a
+		// snapshot lookup each. It was on the 10s tick, 360 times an hour,
+		// for ten rows thousands of pixels below the fold.
+		if (first || Date.now() - lastDestroyed >= 60_000) {
+			try {
+				destroyedNewest = await listDestroyed();
+				lastDestroyed = Date.now();
+			} catch {
+				destroyedNewest = [];
+			}
 		}
 		if (projects.length === 0) {
 			try {
@@ -212,31 +236,97 @@
 		return undefined;
 	}
 
+	/**
+	 * The row whose Stop is waiting for an answer, because stopping it
+	 * would end an agent's turn (I-614). Stop here is revealed on hover
+	 * inside a row whose name link covers the whole row, so in a long
+	 * list the pointer crosses many of them on the way to the one the
+	 * user wants; a stray click had no undo.
+	 */
+	let askingStop = $state<string | undefined>(undefined);
+
+	/** `act` is shadowed inside the phone row by its own `{@const act}`. */
+	const stopNow = (p: Project) => void act(p, 'stop');
+
+	function pressed(p: Project, action: RowAction) {
+		if (action === 'stop' && stopWarning(p)) {
+			askingStop = p.id;
+			return;
+		}
+		void act(p, action);
+	}
+
+	/**
+	 * A plan or capacity refusal from a row, drawn as the banner the
+	 * project page draws: the api's sentence without its raw URL, a link
+	 * to /billing, and a Stop for each machine holding the memory. It was
+	 * a toast that took the sentence away before it could be acted on.
+	 */
+	let refusal = $state<
+		{ message: string; reason?: string; projects: { slug: string; id: string }[] } | undefined
+	>(undefined);
+
+	function explainRefusal(err: ApiError) {
+		const detail = err.detail ?? {};
+		const reason = typeof detail.reason === 'string' ? detail.reason : undefined;
+		const slugs = Array.isArray(detail.projects)
+			? detail.projects.filter((x): x is string => typeof x === 'string')
+			: [];
+		const named = slugs.flatMap((slug) => {
+			const q = (projects ?? []).find((x) => x.slug === slug);
+			return q ? [{ slug, id: q.id }] : [];
+		});
+		refusal = { message: err.message, reason, projects: named };
+	}
+
 	async function act(p: Project, action: RowAction) {
+		askingStop = undefined;
 		if (pending[p.id]) return;
 		pending = { ...pending, [p.id]: action };
-		await runRowAction(action, p);
+		try {
+			refusal = undefined;
+			await runRowAction(action, p);
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'payment_required') explainRefusal(err);
+			else if (err instanceof ApiError && err.code === 'capacity')
+				refusal = { message: 'No capacity right now, try again in a few minutes.', projects: [] };
+			else throw err;
+		}
 		await refresh();
 		const rest = { ...pending };
 		delete rest[p.id];
 		pending = rest;
 	}
 
-	/** The guest's root filesystem used, in percent, with its figures for a title. */
+	/**
+	 * The guest's root filesystem used, with its figures for a title.
+	 * The percentage is $lib/disk's, the one `repose status` and `repose
+	 * ls` print: this had its own copy that fell back to the volume's
+	 * allocated size when the guest sent no root figure, so the table
+	 * could call a machine 95% full whose own page said nothing.
+	 */
 	function disk(p: Project): { pct: number; used: string; title: string } | undefined {
-		const used = p.root_used_bytes;
-		const size = p.root_size_bytes ?? p.volume_bytes;
-		if (used === undefined || !size || size <= 0 || used < 0) return undefined;
-		const pct = Math.min(100, Math.floor((used * 100) / size));
-		return { pct, used: gb(used), title: `${gb(used)} of ${gb(size)}` };
+		const pct = diskPercent(p);
+		if (pct === null || p.root_used_bytes === undefined || p.root_size_bytes === undefined) {
+			return undefined;
+		}
+		return {
+			pct,
+			used: gb(p.root_used_bytes),
+			title: `${gb(p.root_used_bytes)} of ${gb(p.root_size_bytes)}`
+		};
 	}
 
 	let summary = $derived.by(() => {
 		if (!projects || projects.length === 0) return undefined;
 		const awake = projects.filter(holdsMemory).length;
 		const n = projects.length;
+		// A machine in error is the state the user has to act on, and at 40
+		// projects it was visible only as a red line inside its own row.
+		const broken = projects.filter((p) => p.state === 'error').length;
 		return [
 			awake > 0 ? `${awake} running` : 'No machines running',
+			broken > 0 ? `${broken} in error` : '',
 			`${n} ${n === 1 ? 'project' : 'projects'}`,
 			planName
 		]
@@ -332,6 +422,13 @@
 				: `made ${relativeTime(p.created_at)}`}
 		</div>
 	{/if}
+	{#if p.host_unreachable}
+		<!-- A host going unreachable takes every machine on it, so this is
+		     a several-rows-at-once state; the project page had the banner
+		     and the list said nothing, showing a green dot and a climbing
+		     uptime for a machine that cannot be started. -->
+		<div class="mt-0.5 text-xs text-amber-700 dark:text-amber-400">server not answering</div>
+	{/if}
 	{#if p.expires_at}
 		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">{tempLeft(p.expires_at)}</div>
 	{/if}
@@ -352,28 +449,32 @@
 			class:text-ink-muted={!full}
 			title={d.title}>{full ? `${d.pct}% full` : d.used}</span
 		>
-	{:else}
-		<span class="font-mono text-compact text-ink-muted">{gb(p.volume_bytes)}</span>
 	{/if}
 {/snippet}
 
 {#snippet actionButton(p: Project, always: boolean)}
 	{@const a = actionFor(p)}
 	{#if a}
-		<button
-			type="button"
-			class="row-action btn-quiet btn--sm"
-			class:row-action--shown={always || !!pending[p.id]}
-			disabled={!!pending[p.id]}
-			aria-label="{a === 'stop' ? 'Stop' : 'Start'} {p.name}"
-			onclick={() => act(p, a)}
-			>{pending[p.id] === 'stop'
+		<!-- One word for the face and the accessible name: they drifted, so
+		     mid-operation the button read "Stopping…" and was named "Stop",
+		     which breaks voice control (WCAG 2.5.3). aria-disabled, not
+		     disabled: a disabled element drops focus to <body> and a
+		     keyboard user lost their place for the whole op (I-391). -->
+		{@const word =
+			pending[p.id] === 'stop'
 				? 'Stopping…'
 				: pending[p.id] === 'start'
 					? 'Starting…'
 					: a === 'stop'
 						? 'Stop'
-						: 'Start'}</button
+						: 'Start'}
+		<button
+			type="button"
+			class="row-action btn-quiet btn--sm"
+			class:row-action--shown={always || !!pending[p.id]}
+			aria-disabled={pending[p.id] ? 'true' : undefined}
+			aria-label="{word} {p.name}"
+			onclick={() => pressed(p, a)}>{word}</button
 		>
 	{/if}
 {/snippet}
@@ -445,6 +546,31 @@
 			     need them. The filters are links with aria-current, drawn like
 			     the project's tabs (DESIGN-LANGUAGE "Tabs"), and both halves
 			     live in the URL. -->
+			{#if refusal}
+				<div class="banner banner--warn mt-6" data-testid="row-refusal">
+					<p>
+						{withoutBillingURL(refusal.message)}
+						{#if refusal.reason}
+							<a href={resolve('/billing')} class="link">See your plan</a>
+						{/if}
+					</p>
+					{#if refusal.projects.length > 0}
+						<div class="mt-2 flex flex-wrap gap-2">
+							{#each refusal.projects as named (named.id)}
+								<button
+									type="button"
+									class="btn-quiet btn--sm"
+									disabled={!!pending[named.id]}
+									onclick={() =>
+										stopNow((projects ?? []).find((q) => q.id === named.id) ?? ({} as Project))}
+									>Stop {named.slug}</button
+								>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			{#if toolbar}
 				<div class="ptools mt-8">
 					<input
@@ -494,13 +620,13 @@
 				<table class="table ptable">
 					<thead>
 						<tr>
-							<th>Project</th>
-							<th>State</th>
-							<th class="hidden lg:table-cell">Size</th>
-							<th>Agents</th>
-							<th class="hidden md:table-cell">Disk</th>
-							<th class="hidden xl:table-cell">Last snapshot</th>
-							<th><span class="sr-only">Actions</span></th>
+							<th scope="col">Project</th>
+							<th scope="col">State</th>
+							<th scope="col" class="hidden lg:table-cell">Size</th>
+							<th scope="col">Agents</th>
+							<th scope="col" class="hidden md:table-cell">Disk</th>
+							<th scope="col" class="hidden xl:table-cell">Last snapshot</th>
+							<th scope="col"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -520,7 +646,8 @@
 											<span class="badge">temporary</span>
 										{/if}
 										{#if questionsFor.get(p.id)}
-											<span class="badge badge--warn">question</span>
+											{@const n = questionsFor.get(p.id)!}
+											<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
 										{/if}
 									</div>
 									{#if remote}
@@ -575,6 +702,26 @@
 									</span>
 								</td>
 							</tr>
+							{#if askingStop === p.id}
+								<tr data-testid="confirm-stop">
+									<td colspan="7" class="pt-0">
+										<div class="banner banner--warn">
+											<p>{stopWarning(p)}</p>
+											<div class="mt-2 flex items-center gap-3">
+												<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
+													>Stop anyway</button
+												>
+												<button
+													type="button"
+													class="btn-ghost hit"
+													use:focusOnMount
+													onclick={() => (askingStop = undefined)}>Keep it running</button
+												>
+											</div>
+										</div>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>
@@ -633,7 +780,8 @@
 							{#if agents.length > 0 || questionsFor.get(p.id) || (p.signals?.ssh_sessions ?? 0) > 0}
 								<span class="mt-2 flex flex-wrap items-center gap-1.5">
 									{#if questionsFor.get(p.id)}
-										<span class="badge badge--warn">question</span>
+										{@const n = questionsFor.get(p.id)!}
+										<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
 									{/if}
 									{#if agents.length > 0 || (p.signals?.ssh_sessions ?? 0) > 0}
 										<AgentChips {agents} ssh={p.signals?.ssh_sessions} />
@@ -646,6 +794,22 @@
 						</a>
 						{#if act}
 							<span class="mrow-action">{@render actionButton(p, true)}</span>
+						{/if}
+						{#if askingStop === p.id}
+							<div class="banner banner--warn mx-4 mb-4" data-testid="confirm-stop">
+								<p>{stopWarning(p)}</p>
+								<div class="mt-2 flex items-center gap-3">
+									<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
+										>Stop anyway</button
+									>
+									<button
+										type="button"
+										class="btn-ghost hit"
+										use:focusOnMount
+										onclick={() => (askingStop = undefined)}>Keep it running</button
+									>
+								</div>
+							</div>
 						{/if}
 					</li>
 				{/each}

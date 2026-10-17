@@ -10,7 +10,7 @@
 	import { restoreProject } from '$lib/api/client';
 	import { ApiError, projectLimitText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
-	import { dateTime, gb, relativeTime } from '$lib/format';
+	import { bytes, dateOnly, dateTime, gb, relativeTime } from '$lib/format';
 	import {
 		DESTROYED_FIRST,
 		DESTROYED_STEP,
@@ -78,12 +78,6 @@
 		void focusAfterRender(`restore-open-${d.id}`);
 	}
 
-	function mb(bytes: number): string {
-		if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-		if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-		return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-	}
-
 	async function restore(d: DestroyedProject, restoreName: string) {
 		busy = true;
 		nameError = undefined;
@@ -123,16 +117,16 @@
 		<table class="table dtable mt-4">
 			<thead class="max-sm:sr-only">
 				<tr>
-					<th>Project</th>
-					<th class="hidden md:table-cell">Size</th>
-					<th class="hidden sm:table-cell">Destroyed</th>
-					<th class="hidden lg:table-cell">Snapshot</th>
-					<th class="hidden sm:table-cell">Kept</th>
-					<th><span class="sr-only">Actions</span></th>
+					<th scope="col">Project</th>
+					<th scope="col" class="hidden md:table-cell">Size</th>
+					<th scope="col" class="hidden sm:table-cell">Destroyed</th>
+					<th scope="col" class="hidden lg:table-cell">Snapshot</th>
+					<th scope="col" class="hidden sm:table-cell">Kept</th>
+					<th scope="col"><span class="sr-only">Actions</span></th>
 				</tr>
 			</thead>
 			{#each visible as d (d.id)}
-				{@const until = d.restorable_until ? dateTime(d.restorable_until).slice(0, 10) : ''}
+				{@const until = d.restorable_until ? dateOnly(d.restorable_until) : ''}
 				<tbody data-testid="destroyed-row">
 					<tr class:dopen={openFor === d.id}>
 						<td class="dname">
@@ -166,7 +160,7 @@
 						<td class="hidden whitespace-nowrap text-ink-muted tabular-nums lg:table-cell">
 							{dateTime(d.snapshot.created_at)}
 							<span aria-hidden="true">·</span>
-							<span class="font-mono text-compact">{mb(d.snapshot.bytes)}</span>
+							<span class="font-mono text-compact">{bytes(d.snapshot.bytes)}</span>
 						</td>
 						<td class="hidden whitespace-nowrap tabular-nums sm:table-cell">
 							{#if until}

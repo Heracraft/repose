@@ -17,9 +17,23 @@ export function uptime(startedAt?: string): string {
 
 const GB = 1024 * 1024 * 1024;
 
-/** "40 GB" from a byte count, the unit every size class is quoted in. */
-export function gb(bytes: number): string {
-	return `${(bytes / GB).toFixed(bytes % GB === 0 ? 0 : 1)} GB`;
+/** "40 GB" from a byte count, the unit every size class and volume is
+ * quoted in. For a figure that can be smaller than a gigabyte — a
+ * snapshot, memory in use, a process's RSS — use `bytes`. */
+export function gb(n: number): string {
+	return `${(n / GB).toFixed(n % GB === 0 ? 0 : 1)} GB`;
+}
+
+/**
+ * A byte count that may be small: "812 MB", "3.4 GB", "8 GB", "7 KB".
+ * The dashboard had four of these — two copies of the same `memGb`, a
+ * `mb` in Recently destroyed and `gb` itself — so one snapshot read
+ * "812.3 MB" in one place and "0.8 GB" in another.
+ */
+export function bytes(n: number): string {
+	if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+	if (n < GB) return `${Math.round(n / (1024 * 1024))} MB`;
+	return `${(n / GB).toFixed(1).replace(/\.0$/, '')} GB`;
 }
 
 /** "2026-09-20 14:02" in the browser's local time, for timestamps that are
@@ -30,18 +44,15 @@ export function dateTime(iso: string): string {
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** "3 minutes ago" for events and logs. */
+/**
+ * "3m ago" for events, logs and rows. The same words as `ageShort`, and
+ * for its reason: this had a seconds bucket, but every caller is redrawn
+ * by a 10-second poll or a 30-second clock, so "3s ago" stayed on screen
+ * for up to a minute. One screen said ages in two dialects, and the one
+ * that counted seconds was the one that could not keep them.
+ */
 export function relativeTime(iso: string): string {
-	const ms = Date.now() - new Date(iso).getTime();
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 5) return 'just now';
-	if (seconds < 60) return `${seconds}s ago`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.floor(hours / 24);
-	return `${days}d ago`;
+	return ageShort(iso);
 }
 
 /**

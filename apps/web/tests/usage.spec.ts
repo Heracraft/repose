@@ -75,3 +75,18 @@ test('a stopped machine has no samples to draw', async ({ page }) => {
 		page.getByText('No samples in this window: the machine was not running.')
 	).toBeVisible();
 });
+
+// The empty state asserted a cause nobody had checked: a machine started
+// a moment ago hit it while the status line above read "running · up 0m".
+test('a running machine with nothing reported yet does not claim it was off', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'usage-fresh',
+		remote_url: 'github.com/h/usage-fresh'
+	});
+	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByTestId('project-state')).toContainText('running');
+	const usage = page.getByRole('region', { name: 'Usage' });
+	if ((await usage.getByText(/No usage reported|No samples/).count()) > 0) {
+		await expect(usage.getByText('No samples in this window')).toHaveCount(0);
+	}
+});

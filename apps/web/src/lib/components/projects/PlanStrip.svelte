@@ -12,6 +12,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { classMemoryGB, gb, money, sizeGB } from '$lib/format';
+	import { holdsMemory } from '$lib/plans';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
 	import { frozenSince } from '$lib/frozen';
 	import UsageRing from '$lib/components/UsageRing.svelte';
@@ -56,20 +57,28 @@
 	/** An agent waiting on you, as AgentChips marks it. */
 	const waiting = (state: string) => state === 'needs_input' || state === 'question';
 
+	// The five states that hold the plan's memory, not `running` alone:
+	// a machine that is building, starting, creating or restoring is
+	// charged against the limit that refuses the next start
+	// (internal/billing/usage.go, pinned by plans.test.ts). Counting one
+	// state told the user they had room the api then refused, and printed
+	// a different figure from /billing for the same instant.
 	let segments = $derived(
 		projects
-			.filter((p) => p.state === 'running')
+			.filter(holdsMemory)
 			.map((p) => ({ name: p.name, gb: classMemoryGB(p.class), frozen: !!frozenSince(p) }))
 	);
 	let memoryRunning = $derived(
-		projects.filter((p) => p.state === 'running').reduce((n, p) => n + classMemoryGB(p.class), 0)
+		projects.filter(holdsMemory).reduce((n, p) => n + classMemoryGB(p.class), 0)
 	);
 
 	/** Cells from the list alone, for when billing gives no usage. */
 	function listCells(): Cell[] {
 		const out: Cell[] = [];
-		const running = projects.filter((p) => p.state === 'running').length;
-		out.push({ label: 'Machines running', used: running, limit: projects.length, format: count });
+		const running = projects.filter(holdsMemory).length;
+		// No denominator: a plan sells no project count (I-569), so "3 of
+		// 40" read as a limit on what may run, which is false on every plan.
+		out.push({ label: 'Machines running', used: running, format: count });
 
 		// One agent once, whether its signal, its question or both say so.
 		const signalled = projects.flatMap((p) =>

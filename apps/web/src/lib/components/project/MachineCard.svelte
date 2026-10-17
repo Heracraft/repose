@@ -16,7 +16,7 @@
 	import UsageRing from '$lib/components/UsageRing.svelte';
 	import Snowflake from '$lib/components/Snowflake.svelte';
 	import { diskFullPercent } from '$lib/disk';
-	import { gb, classMemoryGB } from '$lib/format';
+	import { bytes, classMemoryGB, gb } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 
 	let {
@@ -47,11 +47,6 @@
 
 	let ownGB = $derived(classMemoryGB(project.class));
 	let memBytes = $derived(memTotal ?? ownGB * GIB);
-	/** A memory figure as "3.4 GB", or "410 MB" under a gigabyte. */
-	const memGb = (b: number) =>
-		b < GIB
-			? `${Math.round(b / (1024 * 1024))} MB`
-			: `${(b / GIB).toFixed(1).replace(/\.0$/, '')} GB`;
 
 	// Used is the guest's root filesystem, what its writes run out of; the
 	// volume's allocated figure keeps deleted files until the daily fstrim
@@ -80,14 +75,14 @@
 
 	<div class="m-row mt-4">
 		{#if memUsed !== undefined}
-			<UsageRing label="Memory in use" used={memUsed} limit={memBytes} format={memGb} />
+			<UsageRing label="Memory in use" used={memUsed} limit={memBytes} format={bytes} />
 		{:else}
 			<span class="m-ring-gap" aria-hidden="true"></span>
 		{/if}
 		<span class="m-label">Memory in use</span>
 		<span class="m-fig">
-			{#if memUsed !== undefined}<span class="m-n">{memGb(memUsed)}</span>
-				<span class="m-of"> of {memGb(memBytes)}</span>{:else}
+			{#if memUsed !== undefined}<span class="m-n">{bytes(memUsed)}</span>
+				<span class="m-of"> of {bytes(memBytes)}</span>{:else}
 				<span class="m-of">not running</span>{/if}
 		</span>
 	</div>
@@ -110,12 +105,12 @@
 				class="mt-2 text-xs text-amber-800 tabular-nums dark:text-amber-300"
 				data-testid="disk-full"
 			>
-				{full} percent full
+				{full}% full
 			</p>
 		{/if}
 		<div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-4">
 			<span class="text-xs text-ink-muted tabular-nums" data-testid="disk-volume"
-				>{gb(project.volume_bytes)} volume</span
+				>{gb(project.volume_bytes)} disk</span
 			>
 			{#if canGrow}
 				<button

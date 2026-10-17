@@ -1,7 +1,7 @@
 // Checklist: "Start, Stop, Destroy, Resize call the right routes and show
 // op progress."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -30,12 +30,12 @@ test('resize grows the volume', async ({ page }) => {
 	});
 	await page.goto(`/projects/${p.id}`);
 	const volume = page.getByTestId('disk-volume');
-	await expect(volume).toHaveText('20 GB volume');
+	await expect(volume).toHaveText('20 GB disk');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	await page.getByRole('combobox').selectOption('40');
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(volume).toHaveText('40 GB volume', { timeout: 10_000 });
+	await expect(volume).toHaveText('40 GB disk', { timeout: 10_000 });
 	// The panel closed and gave focus back to Resize….
 	await expect(page.getByRole('button', { name: 'Resize…' })).toBeVisible();
 });
@@ -56,14 +56,14 @@ test('resize opens on the next size up and offers only grows', async ({ page }) 
 		}
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByTestId('disk-volume')).toHaveText('20 GB volume');
+	await expect(page.getByTestId('disk-volume')).toHaveText('20 GB disk');
 
 	await page.getByRole('button', { name: 'Resize…' }).click();
 	const select = page.getByLabel('Grow to');
 	await expect(select).toHaveValue('40');
 	await expect(select.locator('option')).toHaveText(['40 GB', '80 GB', '160 GB', '320 GB']);
 	await page.getByRole('button', { name: 'Grow' }).click();
-	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume', { timeout: 10_000 });
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB disk', { timeout: 10_000 });
 	expect(asked).toEqual([40 * 2 ** 30]);
 });
 
@@ -79,13 +79,13 @@ test('a disk at the largest size has no Grow to offer', async ({ page }) => {
 		await route.fulfill({ response: res, json: { ...json, volume_bytes: 320 * 2 ** 30 } });
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB volume');
+	await expect(page.getByTestId('disk-volume')).toHaveText('320 GB disk');
 	await expect(page.getByRole('button', { name: 'Resize…' })).toHaveCount(0);
 	await expect(page.getByText('320 GB is the largest size.')).toBeVisible();
 });
 
 // The disk meter is the guest's root filesystem, used of its size, and a
-// disk 90 percent full or more says so above Resize (I-567). The
+// disk 90% full or more says so above Resize (I-567). The
 // allocated disk_used_bytes, near full on kanali with 6 GB free, is not
 // shown.
 test('a nearly full disk says how full it is', async ({ page }) => {
@@ -115,8 +115,8 @@ test('a nearly full disk says how full it is', async ({ page }) => {
 	});
 	await page.reload();
 	await expect(disk).toHaveAttribute('aria-valuetext', '37 GB of 39 GB');
-	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB volume');
-	await expect(page.getByTestId('disk-full')).toHaveText('94 percent full');
+	await expect(page.getByTestId('disk-volume')).toHaveText('40 GB disk');
+	await expect(page.getByTestId('disk-full')).toHaveText('94% full');
 	await expect(page.getByText('39.5 GB')).toHaveCount(0);
 });
 
@@ -327,4 +327,121 @@ test('recently destroyed pages past the first hundred', async ({ page }) => {
 	await expect(shown.last()).toContainText('old-130');
 	await expect(section.getByRole('button', { name: /Show/ })).toHaveCount(0);
 	expect(asked.some((q) => q.includes('before=00000000-0000-4000-8000-000000000099'))).toBe(true);
+});
+
+// The five the audit found, each a loss or a dead end the CLI does not
+// have. Parity with the CLI is the specification where one exists.
+
+test('Keep takes a temporary machine off its timer, as `repose keep` does', async ({ page }) => {
+	const res = await fetch(`${apiURLFromEnv()}/projects`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			name: `keep-me-${Math.random().toString(36).slice(2, 8)}`,
+			remote_url: '',
+			class: 'small',
+			expires_in_s: 7200
+		})
+	});
+	expect(res.ok).toBe(true);
+	const p = await res.json();
+
+	await page.goto(`/projects/${p.id}`);
+	const expires = page.getByTestId('details-expires');
+	await expect(expires).toBeVisible();
+	await expires.getByRole('button', { name: 'Keep' }).click();
+
+	// The CLI's sentence, and the row goes with the timer.
+	await expect(page.getByText(`${p.slug} is no longer temporary.`)).toBeVisible();
+	await expect(page.getByTestId('details-expires')).toHaveCount(0);
+});
+
+test('Destroy does not promise a snapshot a temporary machine never gets', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const temp = await fetch(`${api}/projects`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			name: `temp-destroy-${Math.random().toString(36).slice(2, 8)}`,
+			remote_url: '',
+			class: 'small',
+			expires_in_s: 7200
+		})
+	}).then((r) => r.json());
+
+	await page.goto(`/projects/${temp.id}`);
+	const panel = page.getByTestId('destroy-card');
+	await expect(panel).toContainText('keeps no snapshot and it cannot be restored');
+	await expect(panel).not.toContainText('kept 30 days');
+
+	// An ordinary project keeps the usual words.
+	const normal = await createProject(api, {
+		name: 'normal-destroy',
+		remote_url: 'github.com/h/normal-destroy'
+	});
+	await page.goto(`/projects/${normal.id}`);
+	await expect(page.getByTestId('destroy-card')).toContainText('kept 30 days');
+});
+
+test('Stop asks before it ends an agent’s turn, in the CLI’s words', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'stop-busy',
+		remote_url: 'github.com/h/stop-busy'
+	});
+	await setAgents(p.id, [{ agent: 'claude', window: '', state: 'working' }]);
+
+	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: 'Stop', exact: true }).click();
+	const ask = page.getByTestId('confirm-stop');
+	await expect(ask).toContainText(`${p.slug} has claude (working). Stopping ends it.`);
+
+	// Keep it running closes the question and stops nothing.
+	await ask.getByRole('button', { name: 'Keep it running' }).click();
+	await expect(page.getByTestId('confirm-stop')).toHaveCount(0);
+	await expect(page.getByTestId('project-state')).toContainText('running');
+
+	// Stop anyway goes through.
+	await page.getByRole('button', { name: 'Stop', exact: true }).click();
+	await page.getByTestId('confirm-stop').getByRole('button', { name: 'Stop anyway' }).click();
+	await expect(page.getByTestId('project-state')).toContainText('stopped', { timeout: 15_000 });
+});
+
+test('Stop with no busy agent does not ask', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'stop-idle',
+		remote_url: 'github.com/h/stop-idle'
+	});
+	await setAgents(p.id, [{ agent: 'claude', window: '', state: 'idle' }]);
+	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: 'Stop', exact: true }).click();
+	await expect(page.getByTestId('confirm-stop')).toHaveCount(0);
+	await expect(page.getByTestId('project-state')).toContainText('stopped', { timeout: 15_000 });
+});
+
+test('Restore as new opens the project it made', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'restore-src',
+		remote_url: 'github.com/h/restore-src'
+	});
+	await fetch(`${api}/projects/${p.id}/snapshots`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: '{}'
+	});
+	await page.goto(`/projects/${p.id}`);
+	await page
+		.getByRole('button', { name: /Restore as new/ })
+		.first()
+		.click();
+	const name = `restored-${Math.random().toString(36).slice(2, 8)}`;
+	await page.getByLabel('Name for the restored project').fill(name);
+	await page.getByRole('button', { name: 'Restore as new', exact: true }).click();
+
+	// Not left on the source with a toast and no link: the page is the
+	// project the restore made.
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+	await expect(page).not.toHaveURL(new RegExp(`/projects/${p.id}$`));
+	await expect(page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
 });

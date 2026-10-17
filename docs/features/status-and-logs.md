@@ -169,8 +169,9 @@ promised, DECISIONS I-96):
   `created_at`; a search and the state filters sit above the table past
   8 projects and the list is capped at 25 (I-762). No per-row sparkline.
 - `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
-  signals, usage (running hours today and this month), disk (the guest's
-  root filesystem used, of the volume's size, and `N percent full` at 90
+  signals, usage (CPU, memory and the two waits as charts over an hour,
+  a day or a week — not running hours, which I-616 removed), disk (the
+  guest's root filesystem used, of its size, and `N% full` at 90
   or more, I-567) with a resize control, events newest first, the
   last build with a link to the config page, and snapshots with restore
   and restore-as-new. Start, Stop, Resize and Destroy are the header
@@ -179,10 +180,14 @@ promised, DECISIONS I-96):
   pages, not cards: the config page carries the menu, the Nix editor, the
   streaming build log and the revision list, and the secrets page the
   names and their dates.
-- `/billing`: card on file, invoices, usage for the month by class.
+- `/billing`: the plan and its status, memory running as squares beside
+  disk held and egress as rings, the period band, the plan picker and
+  the invoice table. Not usage for the month by class: `UsageRow`'s
+  `guest_hours` is declared and never drawn, and nothing on the
+  dashboard is priced by the hour (I-616, I-289).
   `/settings`: the account (handle, email, GitHub login), timezone,
-  email toggle, ntfy URL and its test button, machine.nix, and deletion
-  last; `/account` redirects there (I-578).
+  email toggle, ntfy URL and its test button, machine.nix, account
+  secrets, and deletion last; `/account` redirects there (I-578).
 
 Usage on the dashboard (DECISIONS I-492, I-493):
 

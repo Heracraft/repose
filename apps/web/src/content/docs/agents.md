@@ -7,13 +7,13 @@ order: 15
 
 Every machine has five coding agents installed, unmodified:
 
-| Agent       | `--agent`  | Login                                      | States                       |
-| ----------- | ---------- | ------------------------------------------ | ---------------------------- |
-| Claude Code | `claude`   | Log in once, or a setup token              | working, needs input, idle   |
-| Codex CLI   | `codex`    | Copied from your laptop                    | working, idle                |
-| opencode    | `opencode` | Copied from your laptop                    | working, needs input, idle   |
-| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | working, idle                |
-| pi          | `pi`       | A provider's API key as a secret           | working, idle                |
+| Agent       | `--agent`  | Login                                      | States                     |
+| ----------- | ---------- | ------------------------------------------ | -------------------------- |
+| Claude Code | `claude`   | Log in once, or a setup token              | working, needs input, idle |
+| Codex CLI   | `codex`    | Copied from your laptop                    | working, idle              |
+| opencode    | `opencode` | Copied from your laptop                    | working, needs input, idle |
+| Gemini CLI  | `gemini`   | `GEMINI_API_KEY` secret, or on the machine | working, idle              |
+| pi          | `pi`       | A provider's API key as a secret           | working, idle              |
 
 `repose run -p "prompt"` uses Claude Code. To use another agent for one prompt:
 

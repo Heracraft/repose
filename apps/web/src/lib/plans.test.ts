@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PLANS, fromApi, memoryLine, ordinal } from './plans';
+import { MEMORY_STATES, PLANS, fromApi, memoryLine, ordinal } from './plans';
 
 // The landing is prerendered, so its plans are figures in the web's own
 // source (lib/plans.ts). plans.go is where a price changes (PRICING.md
@@ -9,6 +9,11 @@ import { PLANS, fromApi, memoryLine, ordinal } from './plans';
 // landing cannot go on selling an old price.
 const goSource = readFileSync(
 	join(__dirname, '..', '..', '..', '..', 'internal', 'billing', 'plans.go'),
+	'utf8'
+);
+
+const usageSource = readFileSync(
+	join(__dirname, '..', '..', '..', '..', 'internal', 'billing', 'usage.go'),
 	'utf8'
 );
 
@@ -125,5 +130,18 @@ describe('plans', () => {
 			'41st',
 			'103rd'
 		]);
+	});
+});
+
+// The figure /projects prints over the plan's memory limit has to be the
+// one the api refuses a start by, or the page offers room that is not
+// there. /projects counted only `running` and disagreed with /billing
+// for the same account at the same moment.
+describe('the states that hold a plan memory', () => {
+	it('are internal/billing/usage.go memoryStates, exactly', () => {
+		const m = usageSource.match(/const\s+memoryStates\s*=\s*"([^"]*)"/);
+		if (!m) throw new Error('usage.go: no `const memoryStates = "..."`');
+		const go = m[1].split(',').map((s) => s.trim().replace(/'/g, ''));
+		expect([...MEMORY_STATES].sort()).toEqual([...go].sort());
 	});
 });

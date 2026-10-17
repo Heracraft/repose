@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-777 entries.
+781 entries.
 
 ## Scope
 
@@ -809,3 +809,7 @@ pointer, not a summary.
 - **I-759** A branch's deploy targets are read against the integration tip, and confirmed against the built systems (queue-revamp, 2026-10-17) — L23142
 - **I-760** The queue answers where a branch is, records the live check, and carries a line to its author (queue-revamp, 2026-10-17) — L23203
 - **I-763** The conductor's main and the release queue live on woker-1; kanali keeps only its own history (book-of-record, 2026-10-17) — L23274
+- **I-764** One source for every fact the dashboard prints twice, and a test against the Go source where the figure is the api's — 2026-10-17; L23313
+- **I-765** The dashboard asks before it ends an agent's turn, and can keep a temporary machine: parity with the CLI where the CLI has a rule — 2026-10-17; L23322
+- **I-766** Every line on the dashboard says what is true, and the pages that poll stop paying for what nobody reads — 2026-10-17; L23330
+- **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23343

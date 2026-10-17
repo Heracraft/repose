@@ -52,6 +52,10 @@ The day-3 email's subject is `Your machines were stopped: a payment failed`.
 
 A payment unblocks starts. It doesn't start your machines again; `repose start` does. Your card, billing address and receipts are in Polar's customer portal, behind **Manage card and receipts** on the **Billing** page.
 
+## If the plan never arrives
+
+Checkout happens on Polar's page, and the plan reaches your account a moment later. If **Billing** still shows no plan a minute after you paid, your payment went through and nothing is charged twice. Email [support@herakraft.co](mailto:support@herakraft.co) and we'll finish it by hand. The banner on the page links the same address.
+
 ## Refunds
 
 Under the [refund policy](/refunds), the first charge after the free week is refunded on request within 14 days of it. Renewals aren't refunded for a part month; cancelling stops the next renewal.

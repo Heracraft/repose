@@ -1,21 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import {
-	money,
+	ageShort,
+	agentStateLabel,
+	bytes,
+	classMemoryGB,
+	clockTime,
+	dateOnly,
+	dayLabel,
 	gb,
 	gbs,
-	price,
-	dateOnly,
-	timeUntil,
-	tempLeft,
-	share,
+	minutesLeft,
+	money,
 	normalizeRemoteDisplay,
+	price,
+	relativeTime,
+	share,
 	sizeGB,
-	agentStateLabel,
-	clockTime,
-	dayLabel,
-	classMemoryGB,
-	ageShort,
-	minutesLeft
+	tempLeft,
+	timeUntil
 } from './format';
 
 describe('money', () => {
@@ -193,5 +195,45 @@ describe('classMemoryGB', () => {
 		expect(classMemoryGB('large')).toBe(8);
 		expect(classMemoryGB('xl')).toBe(16);
 		expect(classMemoryGB('huge')).toBe(0);
+	});
+});
+
+// Four formatters printed byte counts before: two copies of the same
+// `memGb`, a `mb` in Recently destroyed, and `gb` itself, so one snapshot
+// read "812.3 MB" in one place and "0.8 GB" in another.
+describe('bytes', () => {
+	it('drops to MB under a gigabyte and KB under a megabyte', () => {
+		expect(bytes(812 * 1024 * 1024)).toBe('812 MB');
+		expect(bytes(7 * 1024)).toBe('7 KB');
+		expect(bytes(10)).toBe('1 KB');
+	});
+
+	it('gives a gigabyte figure one decimal, and drops a trailing zero', () => {
+		expect(bytes(3.4 * 1024 ** 3)).toBe('3.4 GB');
+		expect(bytes(8 * 1024 ** 3)).toBe('8 GB');
+	});
+
+	it('is the same figure wherever it is printed', () => {
+		const snapshot = 812 * 1024 * 1024;
+		expect(bytes(snapshot)).toBe(bytes(snapshot));
+		// gb() stays the size-class unit and is deliberately different.
+		expect(gb(40 * 1024 ** 3)).toBe('40 GB');
+	});
+});
+
+// relativeTime had a seconds bucket its callers could not keep current:
+// every one is redrawn by a 10s poll or a 30s clock, so "3s ago" sat on
+// screen for up to a minute while ageShort beside it said "just now".
+describe('relativeTime', () => {
+	it('says the same words as ageShort, with no seconds bucket', () => {
+		const now = Date.now();
+		for (const ms of [0, 3_000, 59_000, 90_000, 3 * 3600_000, 26 * 3600_000]) {
+			const iso = new Date(now - ms).toISOString();
+			expect(relativeTime(iso)).toBe(ageShort(iso, now));
+		}
+	});
+
+	it('never counts seconds', () => {
+		expect(relativeTime(new Date(Date.now() - 3_000).toISOString())).toBe('just now');
 	});
 });

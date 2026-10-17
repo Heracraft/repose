@@ -73,7 +73,7 @@
 	onMount(load);
 
 	function validateName(n: string): string | undefined {
-		if (RESERVED.has(n)) return "This name is reserved for the guest's SSH host material.";
+		if (RESERVED.has(n)) return 'This name is reserved for the guest’s SSH host material.';
 		if (!NAME_RE.test(n))
 			return 'Must match [A-Z][A-Z0-9_]{0,63}: uppercase letters, digits and underscores, starting with a letter.';
 		return undefined;
@@ -314,7 +314,7 @@
 												: ''}"><span>{@render secretName(s.name)}</span></td
 										>
 										<td class="align-middle text-sm whitespace-nowrap text-ink-muted">
-											{own.has(s.name) ? "This project's own is used" : ''}
+											{own.has(s.name) ? 'This project’s own is used' : ''}
 										</td>
 									</tr>
 								{/each}

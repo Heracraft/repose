@@ -30,7 +30,23 @@ If the agent already has a window, the new one is named `claude-2`, then `claude
 
 ## Several agents, separate trees
 
+<<<<<<< HEAD
 Two agents in one working tree edit the same files. `--worktree` gives an agent its own tree beside the checkout. No more memory comes off your plan; the agents share the one machine's. An agent that needs a machine of its own gets one from [`repose fork`](/docs/lifecycle#fork-a-project), which copies this machine's disk as it stands.
+=======
+Two agents in one working tree edit the same files. Give each its own tree on the same machine, or a [machine of its own](/docs/lifecycle#fork-a-project):
+
+|                      | `repose run -d --worktree -p "..."`        | `repose fork -n 3 --prompt "..."`                                           |
+| -------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| Runs on              | this project's machine                     | a new machine each, `todo-app-fork-1` and on                                |
+| Starts from          | the checkout's last commit                 | a copy of the disk as it is now: uncommitted work and dependencies included |
+| Memory               | the machine's own                          | each copy's size, toward your plan                                          |
+| Work comes back with | `git fetch repose`, as `repose/worktree-1` | `git fetch todo-app-fork-1`, as `todo-app-fork-1/main`                      |
+| Clean up             | `repose stop -w claude-2`                  | `repose rm todo-app-fork-1`                                                 |
+
+`repose run NAME` also makes a machine of its own, from your laptop's checkout rather than a copy of the disk, and `--temp` makes one that is destroyed after a time; [A second machine for the same repository](/docs/lifecycle#a-second-machine-for-the-same-repository) and [Temporary machines](/docs/lifecycle#temporary-machines) say how their work comes back.
+
+`--worktree` starts the agent in its own git worktree:
+>>>>>>> d7fe8f20dc5a1cab0f60616aee03c93d68cd252a
 
 ```
 $ repose run --worktree -p "try the other approach"

@@ -216,7 +216,7 @@
 		deleting = true;
 		try {
 			await deleteMe();
-			toast.success('Account cancellation started. Everything is deleted in 30 days.');
+			toast.success('Account deletion started. Everything is deleted in 30 days.');
 			await signOut();
 		} catch (err) {
 			deleting = false;
@@ -469,8 +469,7 @@
 			<div>
 				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
 				<p class={FACT}>
-					Stops every environment at once. Everything, including snapshots, is deleted 30 days
-					later.
+					Stops every machine at once. Everything, including snapshots, is deleted 30 days later.
 				</p>
 			</div>
 			<div class={BODY}>

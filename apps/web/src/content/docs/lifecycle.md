@@ -44,6 +44,8 @@ Stopping todo-app; 1 file not committed.
 
 A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
 
+The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
+
 The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
 
 Your plan's memory is given back the moment the project reads `stopping`. The disk is kept, and a stopped project keeps counting toward [your plan's disk](/docs/billing#what-a-plan-means) until `repose rm`.
@@ -132,7 +134,7 @@ repose snapshots restore SNAPSHOT_ID --as todo-app-old
 
 The new project boots with its `shell` window alone; agent windows reopen only in the project they were recorded in.
 
-The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…**, and shows the newest 8 with **Show all** for the rest. **Restore…** wants the project stopped and asks you to type its name, as **Destroy** does.
+The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…**, which opens the project it makes, and shows the newest 8 with **Show all** for the rest. **Restore…** wants the project stopped and asks you to type its name, as **Destroy** does.
 
 A restore checks what it reads against the SHA-256 recorded when the snapshot was taken. If they differ it stops with `snapshot checksum mismatch` and deletes the disk it was writing, so nothing boots on it. A snapshot taken before 2026-10-03 has no digest and restores unchecked.
 
@@ -236,7 +238,7 @@ Not a git repository, so nothing was synced.
 - You get a [notification](/docs/notifications) an hour before the end (for a machine made with more than an hour), and another when it's destroyed.
 - On tmux, exiting the last window of its session destroys it at once: `tmp-k3f9 is temporary and its session has ended; destroying it.` Detaching (`Ctrl-b` `d`) doesn't. Before the destroy the CLI checks the machine's checkout, and keeps the machine until its time runs out when it holds work your laptop doesn't: changed or new files beyond what the sync wrote, in the checkout or one of its worktrees, or commits on any branch that are neither what the sync sent nor pushed. It says `tmp-k3f9 has 2 commits and 1 changed file your laptop does not; it stays until 14:02.` If the check can't run, the machine stays too. With `REPOSE_NO_INPUT_PROXY=1`, the CLI can't see the session end, and the machine waits for its time to run out.
 - On herdr, closing its tabs doesn't destroy it. It goes when its time runs out.
-- `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored.
+- `repose rm` on it asks `tmp-k3f9 is temporary: destroying it keeps no snapshot and it cannot be restored. Destroy tmp-k3f9?` A temporary machine never appears in `repose ls --destroyed` and can't be restored. The dashboard's **Destroy** says the same for a temporary machine, in place of its usual line about the last snapshot being kept 30 days.
 
 To keep one after all:
 
@@ -245,7 +247,7 @@ $ repose keep tmp-k3f9
 tmp-k3f9 is no longer temporary.
 ```
 
-It's then a normal project, and its snapshots stop expiring with it. To give it more time and keep it temporary, add a duration, from `10m` to `24h`, counted from now:
+It's then a normal project, and its snapshots stop expiring with it. The dashboard has **Keep** beside **Expires** in the project's Details, which does the same thing. To give it more time and keep it temporary, add a duration, from `10m` to `24h`, counted from now:
 
 ```
 $ repose keep tmp-k3f9 3h

@@ -36,6 +36,7 @@
 			.slice(0, FAN_OUT)
 	);
 	let key = $derived(asked.map((p) => p.id).join(','));
+	let running = $derived(projects.filter((p) => p.state === 'running').length);
 
 	let seq = 0;
 	async function load() {
@@ -79,6 +80,15 @@
 {#if rows.length > 0}
 	<section class="mt-14" aria-labelledby="recent-activity" data-testid="recent-activity">
 		<h2 id="recent-activity" class="text-xl font-semibold">Recent activity</h2>
+		<!-- There is no cross-project events route, so this asks the ten
+		     machines started most recently. Said only when it bites: with
+		     more running than that, a heading reading "Recent activity"
+		     over a sample of ten is a false claim about what happened. -->
+		{#if running > FAN_OUT}
+			<p class="mt-1 text-sm text-ink-muted">
+				Across the {FAN_OUT} machines started most recently, of {running} running.
+			</p>
+		{/if}
 		<ol class="ra mt-4">
 			{#each rows as e (`${e.project.id}-${e.id}`)}
 				{@const k = eventKind(e.kind, e.agent)}
