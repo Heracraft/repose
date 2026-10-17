@@ -14,8 +14,12 @@ this file is the part between "a branch is done" and "it is live".
 2. Claim the work in `docs/workstreams/STATUS.md` (CLAUDE.md).
 3. Reserve decision ids before writing them:
    `ops/dev/release-queue id [N]`. It reads every local branch, every
-   worktree's uncommitted `docs/DECISIONS.md` and the reservations, under
-   one lock, so two agents never write the same `I-<n>`.
+   remote-tracking branch, every worktree's uncommitted
+   `docs/DECISIONS.md` and the reservations, under one lock, and refuses
+   to hand out a number that is already an entry id. The remote-tracking
+   branches are what keep the two machines apart, since each has its own
+   reservations file (DECISIONS I-745): `git fetch` before reserving, or
+   an id taken on the other machine is invisible here.
 4. Finish the change with the evidence its checklist names. Then commit,
    `git merge main`, rerun the checks the merge touches, and queue:
 

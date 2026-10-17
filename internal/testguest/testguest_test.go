@@ -100,3 +100,33 @@ func TestGitAutoMaintenanceIsOff(t *testing.T) {
 		t.Fatalf("git's maintenance.auto and gc.auto in the guest: %q", out)
 	}
 }
+
+// What a command leaves running in the background when it exits (a
+// first sync's backfill, `nohup ... &`) is ended by Close too (CI on
+// 4be06cbd: TestPrefetchResendCarriesOnlyBundles and
+// TestFirstSyncChecksOutBesideTheCarry).
+func TestCloseEndsWhatACommandLeftRunning(t *testing.T) {
+	home := t.TempDir()
+	priv, pub, err := GenerateClientKey(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(home, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := dial(t, g, priv)
+	s, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run("nohup sh -c 'sleep 2; touch late' </dev/null >/dev/null 2>&1 &"); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+	g.Close()
+	time.Sleep(3 * time.Second)
+	if _, err := os.Stat(filepath.Join(home, "late")); err == nil {
+		t.Fatal("a job the command left behind ran on after Close and wrote into the guest's home")
+	}
+}
