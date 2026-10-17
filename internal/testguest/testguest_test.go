@@ -2,6 +2,7 @@ package testguest
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -128,5 +129,64 @@ func TestCloseEndsWhatACommandLeftRunning(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	if _, err := os.Stat(filepath.Join(home, "late")); err == nil {
 		t.Fatal("a job the command left behind ran on after Close and wrote into the guest's home")
+	}
+}
+
+// The socket path a tmux server gets must fit a unix socket's 108 bytes
+// however long the test's own name is. It used to be
+// `<home>/.tmux-sockets`, and a home under a Go test's temporary
+// directory carries that name: with TMPDIR=/tmp/rt, three sync tests
+// failed with `error connecting to .../default (File name too long)`,
+// a different two or three per package run, which is why it read as
+// flakiness rather than as the fixture (2026-10-17).
+func TestTheTmuxSocketFitsWhateverTheTestIsCalled(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("no tmux")
+	}
+	// 44 characters, the length of a real failing test's name.
+	long := filepath.Join(t.TempDir(), "TestSyncInterruptedBeforeTheCreateLandedSays")
+	if err := os.MkdirAll(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	priv, pub, err := GenerateClientKey(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := New(long, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+
+	socket := filepath.Join(g.sockDir, "tmux-4294967295", "default")
+	if len(socket) >= 108 {
+		t.Errorf("tmux socket path is %d bytes, over the 108 a unix socket allows:\n%s", len(socket), socket)
+	}
+	if strings.HasPrefix(g.sockDir, g.Home) {
+		t.Errorf("socket dir %s is under the guest's home, so its length follows the test's name", g.sockDir)
+	}
+
+	// The fake guest must still find the server one exec started from the
+	// next, which is what TMUX_TMPDIR pins; prove it rather than trust the
+	// path's length alone.
+	c := dial(t, g, priv)
+	defer c.Close()
+	sess, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Run("tmux new-session -d -s s1 'sleep 60'"); err != nil {
+		t.Fatalf("tmux could not start a server through the guest: %v", err)
+	}
+	sess2, err := c.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := sess2.CombinedOutput("tmux list-sessions")
+	if err != nil {
+		t.Fatalf("a second exec did not find the first exec's server: %v %s", err, out)
+	}
+	if !strings.Contains(string(out), "s1") {
+		t.Errorf("tmux list-sessions did not name the session the previous exec started: %q", out)
 	}
 }

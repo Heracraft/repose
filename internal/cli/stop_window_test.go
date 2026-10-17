@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/heracraft/repose/internal/testguest"
 )
 
 // The probe finds a window's `-worktree-N` folder, its branch, tip and
@@ -18,7 +20,7 @@ func TestStopWindowScripts(t *testing.T) {
 	}
 	base := t.TempDir()
 	base, _ = filepath.EvalSymlinks(base)
-	sock := t.TempDir()
+	sock := tmuxTmpdir(t)
 	env := append(os.Environ(), "TMUX=", "TMUX_PANE=", "TMUX_TMPDIR="+sock, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_CONFIG_GLOBAL=/dev/null")
 	sh := func(script string) (string, int) {
 		t.Helper()
@@ -102,4 +104,18 @@ func TestKeptBecause(t *testing.T) {
 	if got := keptBecause(w, true); got != "3 files not committed" {
 		t.Fatal(got)
 	}
+}
+
+// tmuxTmpdir is a $TMUX_TMPDIR whose path is short whatever this test is
+// called: t.TempDir() carries the test's name, and tmux's socket under it
+// can overrun the 108-byte unix-socket limit (testguest.TmuxTmpdir has the
+// full account). Removed when the test ends.
+func tmuxTmpdir(t *testing.T) string {
+	t.Helper()
+	dir, err := testguest.TmuxTmpdir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

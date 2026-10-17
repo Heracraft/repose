@@ -411,7 +411,7 @@ func TestForwardPublishWithNoTmuxServer(t *testing.T) {
 	}
 	home := t.TempDir()
 	cmd := exec.Command("bash", "-c", f.publishScript())
-	cmd.Env = append(os.Environ(), "HOME="+home, "TMUX_TMPDIR="+t.TempDir(), "TMUX=")
+	cmd.Env = append(os.Environ(), "HOME="+home, "TMUX_TMPDIR="+tmuxTmpdir(t), "TMUX=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("publish with no tmux server: %v %s", err, out)
 	}

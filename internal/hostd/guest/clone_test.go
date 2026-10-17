@@ -157,7 +157,15 @@ func TestForkCloneFailureLeavesNoVolume(t *testing.T) {
 // ForkPointTTL, and one left by a hostd that died is swept at start.
 func TestForkPointExpiresAndIsSweptAtStart(t *testing.T) {
 	old := ForkPointTTL
-	ForkPointTTL = 50 * time.Millisecond
+	// A second, not 50 ms. The drop is scheduled by time.AfterFunc at
+	// clone time, so a TTL shorter than this test's own next few lines
+	// races them: the point was gone before the "a sibling has not
+	// arrived" check could see it, deterministically on a loaded box and
+	// on an idle one too (main at 293a8dba, 2026-10-17). A second is far
+	// longer than the harness takes to clone and far shorter than the
+	// three-second deadline the expiry is waited for below, so both
+	// halves of this test have room.
+	ForkPointTTL = time.Second
 	defer func() { ForkPointTTL = old }()
 	h := newHarness(t, nil)
 	h.create(gid1)
