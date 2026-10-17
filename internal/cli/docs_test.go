@@ -490,7 +490,10 @@ var quotedRE = regexp.MustCompile(`"[^"]*"|'[^']*'`)
 
 // docsNotCommands are spans that start with "repose " and are output,
 // not a command: messages, a typo shown on purpose, a git remote line.
-var docsNotCommands = []string{"repose lss", "repose is ", "repose gateway:", "repose run: ", "repose  "}
+var docsNotCommands = []string{"repose lss", "repose is ", "repose gateway:", "repose run: ", "repose  ",
+	// The api's sentence for a full fleet, which troubleshooting.md and
+	// the dashboard both quote (I-771 gave each cause its own sentence).
+	"repose has no room"}
 
 // TestEveryDocsPageNamesRealCommands holds every docs page, not only
 // cli.md, to the CLI (review C7): a `repose X` must be a command, and a
