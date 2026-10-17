@@ -786,4 +786,4 @@ pointer, not a summary.
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22564
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22607
 - **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22613
-- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22622
+- **I-745** The dev tools catch what let two lanes take one id, and the closure check names the paths it refuses (dev-tool-guards, 2026-10-15) — L22627
