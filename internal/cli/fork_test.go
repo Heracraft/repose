@@ -271,14 +271,24 @@ func TestForkTimesEachStep(t *testing.T) {
 		t.Fatalf("fork's progress:\n%s\nwant a line %q", errOut.String(), prefix)
 		return 0
 	}
-	if v := took("✓ Copied izma's disk into izma-fork-1"); v < d-50*time.Millisecond || v > 2*d {
+	// The bounds are loose on purpose. What this test is for is that a
+	// step's line carries ITS OWN time and copy 2's carries its whole
+	// op's -- d against 3d -- so anything that separates those two will
+	// do. A tight lower bound does not: on a loaded box the measured
+	// time comes in UNDER the fake's own sleep, because the timer starts
+	// late, and `v < d-50ms` failed at 300ms against a 400ms step while
+	// the same test passed alone on the same tree (2026-10-17). A test
+	// that fails when the box is busy is a test nobody can read.
+	if v := took("✓ Copied izma's disk into izma-fork-1"); v < d/2 || v > 2*d {
 		t.Fatalf("copy 1's disk step took %v, want about %v", v, d)
 	}
-	if v := took("✓ Started izma-fork-1"); v < d-50*time.Millisecond || v > 2*d {
+	if v := took("✓ Started izma-fork-1"); v < d/2 || v > 2*d {
 		t.Fatalf("copy 1's start took %v, want about %v", v, d)
 	}
 	// Copy 2: restore d, start 2d; the CLI reaches it a d into its start.
-	if v := took("✓ Started izma-fork-2"); v < 3*d-50*time.Millisecond {
+	// Still well clear of copy 1's 2d ceiling, so the two cannot be
+	// confused for one another.
+	if v := took("✓ Started izma-fork-2"); v < 5*d/2 {
 		t.Fatalf("copy 2's line says %v, want its whole op's time, about %v:\n%s", v, 3*d, errOut.String())
 	}
 	if strings.Contains(errOut.String(), "into izma-fork-2") {
