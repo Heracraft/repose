@@ -128,7 +128,7 @@ A question can be answered in five places:
 
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
 
-The first answer wins. A link or button used after that says the question was already answered, and what the answer was. **Dismiss** on the dashboard ends a question without answering.
+The first answer wins. A link or button used after that says the question was already answered, and what the answer was. The dashboard says where an answer came from, such as `Answered yes by email` or `Answered in the terminal`. **Dismiss** on the dashboard ends a question without answering.
 
 A question whose `repose-ask` was killed closes 90 seconds after it last checked for an answer.
 
@@ -160,4 +160,4 @@ Messages and questions are capped at 1 KB and count toward the [hourly cap](#lim
 
 Repeats of the same event from the same agent within 60 seconds become one event, with both summaries in it; what an agent sends with `repose-notify` or `repose-ask` never collapses. A project sends at most 30 notifications in any hour; past that, one message says when they resume, and its events still show in `repose events`. Google Chat takes one message a second per space, so a burst arrives a second apart.
 
-Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped before it becomes an event, so it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A question's first close is free of that rate, so a question never sits open because the machine was too noisy. A project's event history keeps at most 600 of these an hour. Window names are cut to 64 bytes.
+Each machine can raise 30 agent events, messages and questions at once, then one every 2 seconds. Anything over that rate is dropped before it becomes an event, so it never shows in `repose events`, and a question dropped this way ends with exit code 3 at its timeout. A question's first close is free of that rate, so a question never sits open because the machine was too noisy. A project's event history keeps at most 600 of these an hour. An agent's name is cut to 32 bytes and a window's to 64.

@@ -58,7 +58,7 @@ Gateway brings its own SSH client instead of yours, so it renews no certificate 
 
 The prepare never prompts, so an editor can't hang on it. An editor that reconnects runs it again, so the certificate is renewed without you. A renewal that fails doesn't end the connection as long as the certificate on disk is good for another minute: ssh connects on that one, and the prepare prints `repose: could not renew the SSH certificate (...); using the one on disk.`
 
-It only writes those files, so a plain `ssh todo-app.repose` never starts a stopped machine. `repose ssh`, `attach`, `run` and `code` do ([Stop and start](/docs/lifecycle#stop-and-start)).
+It only writes those files, so a plain `ssh todo-app.repose` never starts a stopped machine, while `repose ssh` [does](/docs/lifecycle#stop-and-start).
 
 ## When it doesn't connect
 
@@ -76,7 +76,7 @@ Your laptop's ssh-agent is never forwarded to the machine, and `ssh -A` is refus
 
 repose connects with a key it generated for itself and never reads or certifies your own keys in `~/.ssh`, so connecting never asks for your key's passphrase.
 
-So the machine has no key of yours to push with. GitHub works anyway, over HTTPS with the `gh` login [copied from your laptop](/docs/secrets#logins-copied-from-your-laptop); other git hosts need [their own token or deploy key](/docs/secrets#other-git-hosts).
+So the machine has no key of yours to push with. [Pushing from the machine](/docs/sync#pushing-from-the-machine) has what git uses instead.
 
 ## Windows
 

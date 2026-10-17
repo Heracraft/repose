@@ -21,7 +21,7 @@ Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing),
 
 ## 3. Skip permissions
 
-Claude Code on the machine starts in `bypassPermissions` mode: it runs commands and edits files without asking. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#permissions), the machine uses yours.
+Claude Code on the machine starts in `bypassPermissions` mode. If your laptop's `~/.claude/settings.json` sets [another `defaultMode`](/docs/agents#permissions), the machine uses yours.
 
 ## 4. Let it loose
 
@@ -69,4 +69,4 @@ Stop the machine when you're done:
 repose stop
 ```
 
-Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward your plan's disk. The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.
+Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward [your plan's disk](/docs/billing#what-a-plan-means). The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.

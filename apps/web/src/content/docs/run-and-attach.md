@@ -104,7 +104,7 @@ A window whose agent waits for your input has `?` after its name in the status l
 
 Inside a tmux on your laptop, `Ctrl-b` goes to that tmux. Press it twice to reach the machine's: `Ctrl-b` `Ctrl-b` `d` detaches from the machine.
 
-Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later; on a [temporary](/docs/lifecycle#temporary-machines) machine it destroys the machine instead.
+Exiting the last window ends the session, and a new one with a `shell` window starts 5 seconds later, except on a [temporary](/docs/lifecycle#temporary-machines) machine.
 
 The mouse stays with your laptop's terminal, so selecting and copying text work as they do outside tmux. For tmux's own mouse (click a window name to switch, scroll with the wheel), run `echo 'set -g mouse on' >> ~/.tmux.conf` on the machine, then `tmux source-file ~/.tmux.conf`.
 
@@ -151,7 +151,7 @@ herdr machine disable "$id"
 
 ## See what's running, run one command
 
-`repose ps` lists the machine's tmux windows without attaching: what runs in each, the agent's state ([Agent states](/docs/agents#agent-states)), the folder it works in and when it last printed something. `*` is the window `attach` opens on.
+`repose ps` lists the machine's tmux windows without attaching ([what each column means](/docs/cli#repose-ps-project-window)).
 
 ```
 $ repose ps
@@ -163,7 +163,7 @@ WINDOW      COMMAND  STATE        TREE        ACTIVE
 
 To read what an agent printed without attaching, name its window: `repose ps todo-app claude-2` prints its last 20 lines, `-n 50` more. `repose ps -n 5` prints the last 5 lines of every window. `repose attach -w claude-2` opens that window. `repose run -w claude-2 -p 1` types `1` and Enter into it, which answers a permission prompt; any other text is a follow-up for the agent.
 
-`repose exec` runs one command in the checkout on the machine and gives you its output and exit code, the way `docker exec` does. The command gets what an agent there gets: your [secrets](/docs/secrets) as environment variables and the project's [dev shell](/docs/machine#projects-with-a-flake-nix).
+`repose exec` runs one command in the checkout on the machine and gives you its output and exit code, the way `docker exec` does.
 
 ```
 $ repose exec npm test
@@ -204,7 +204,7 @@ With nobody attached, the link is only [printed on the machine](/docs/machine#br
 
 ## SSH and editors
 
-Every project is also an SSH host called `<project>.repose`, so `ssh`, `scp`, `rsync`, git and editors reach it with no `repose` command first. `repose code` opens the checkout in VS Code, Cursor or Zed. [SSH and editors](/docs/ssh-and-editors) has each editor by hand, JetBrains Gateway, and what to do when a connection fails.
+`ssh`, `scp`, `rsync`, git and editors reach a project with no `repose` command first ([Every project is an SSH host](/docs/ssh-and-editors#every-project-is-an-ssh-host)). `repose code` opens the checkout in VS Code, Cursor or Zed. [SSH and editors](/docs/ssh-and-editors) has each editor by hand, JetBrains Gateway, and what to do when a connection fails.
 
 mosh doesn't work: it needs a UDP connection straight to the machine, and the only way in is SSH through repose.
 

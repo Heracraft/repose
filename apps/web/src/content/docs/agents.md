@@ -23,7 +23,7 @@ repose run --agent codex -p "port the build scripts to bun"
 
 All five get new versions with platform updates.
 
-To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. Started by `repose run`, or by hand in a tmux window, an agent runs in the project's dev environment: its `.envrc`, or [its flake's dev shell](/docs/machine#projects-with-a-flake-nix).
+To change the default for projects you create from now on, set `default_agent = "codex"` in `~/.config/repose/config.toml`. `repose run --agent codex`, without `-p`, changes it for this project. An agent gets the checkout's [dev environment](/docs/machine#projects-with-a-flake-nix) however it was started.
 
 ## Permissions
 
@@ -85,7 +85,7 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 
 - `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
 - `needs input`: waiting for your permission (Claude Code and opencode).
-- `idle`: at its prompt. A finished turn sends no notification; an agent says its work is done with `repose-notify --done`.
+- `idle`: at its prompt.
 - `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
@@ -96,7 +96,7 @@ A window with another name counts as an agent's while the agent is its foregroun
 
 ## Let it ask you
 
-Any agent can message you or ask you a question from the machine. `repose-notify "text"` sends a notification, and `repose-notify --done "text"` says the work you asked for is finished. `repose-ask --options yes,no "question"` waits for [your answer](/docs/notifications#agents-can-message-you-and-ask-questions) and prints it; if you answer the agent in its own terminal instead, the question closes by itself. The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
+Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
 
 ## Log in
 
@@ -113,7 +113,7 @@ repose secrets set CLAUDE_CODE_OAUTH_TOKEN
 
 An API key works the same way: `repose secrets set ANTHROPIC_API_KEY`.
 
-**Codex and opencode.** Your laptop's login is copied at each `run`. A login you made on the machine is never overwritten by an older one.
+**Codex and opencode.** Your laptop's login is [copied at each `run`](/docs/secrets#logins-copied-from-your-laptop).
 
 **Gemini CLI.** Store `GEMINI_API_KEY` as a secret, or run `gemini` on the machine and log in there.
 

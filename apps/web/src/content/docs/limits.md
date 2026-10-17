@@ -9,7 +9,7 @@ order: 31
 
 Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. An `xl` takes 16 GB on its own, so it needs Plus or Pro.
 
-Starting a machine, or growing one, that would pass the total is refused with exit code 7, naming the projects using the memory. On a terminal `repose run`, `start` and `attach` [ask to stop one](/docs/billing#what-a-plan-means) instead.
+Starting a machine, or growing one, that would pass the total is refused with exit code 7. On a terminal `repose run`, `start` and `attach` [ask to stop one](/docs/billing#what-a-plan-means) instead.
 
 ## Projects
 
@@ -17,9 +17,9 @@ An account can have 100 projects, running or stopped, on every plan. Past that, 
 
 Destroyed projects don't count, for the 100 or for disk, and neither does one still being destroyed. A project whose destroy failed counts until `repose rm` succeeds. Each copy [`repose fork`](/docs/lifecycle#fork-a-project) makes is a project, and so is a [temporary machine](/docs/lifecycle#temporary-machines) until it's destroyed.
 
-Your plan's disk counts the data your projects hold, running or stopped ([what a plan has](/docs/billing#what-a-plan-means)). A project's own [disk](/docs/machine) is how far that project can grow.
+A project's own [disk](/docs/machine) is how far that project can grow.
 
-While your projects hold more than the plan's disk, creating, restoring or forking a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Nothing stops. Your machines keep running, and a stopped one still starts, since starting it is how you delete the files that put you over. `repose ls`, `repose status` and the Billing page say you're over before anything refuses you.
+While your projects hold more than [the plan's disk](/docs/billing#what-a-plan-means), creating, restoring or forking a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Your machines keep running, and a stopped one still starts, since starting it is how you delete the files that put you over. `repose ls`, `repose status` and the Billing page say you're over before anything refuses you.
 
 ## When repose is full
 
@@ -29,7 +29,7 @@ We let people in, in the order they joined, one seat each, as plans end and as w
 
 ## Egress
 
-Data your machines send to the internet counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Every GB past it is $0.05 on your next invoice. At four times the allowance your machines are stopped for the rest of the period, and starting one is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.herakraft.co/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
+Data your machines send to the internet counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.herakraft.co/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
 
 ## Network
 

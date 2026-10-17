@@ -49,7 +49,7 @@ WINDOW       COMMAND  STATE        TREE        ACTIVE
 
 `repose ps todo-app claude-2` prints that agent's last lines without attaching.
 
-A [notification](/docs/notifications#what-youll-get) reaches you when an agent asks you something, waits for permission, or reports its work done. `repose questions` lists what's waiting on you; `repose reply` answers without attaching.
+A [notification](/docs/notifications#what-youll-get) reaches you when an agent asks you something, waits for permission, or reports its work done. [`repose questions` and `repose reply`](/docs/notifications#agents-can-message-you-and-ask-questions) handle the asking without an attach.
 
 ## 3. Fetch and review on your laptop
 
@@ -84,7 +84,7 @@ git merge repose/worktree-1
 git merge repose/worktree-3
 ```
 
-A branch that isn't good enough gets a second round. `repose attach -w claude` opens the agent of that worktree, and you tell it what to change. It commits on the same branch; you fetch again. Or ask for a pull request and review on GitHub: the machine has [your `gh` login](/docs/secrets#logins-copied-from-your-laptop), so "push the branch and open a PR" works in a prompt.
+A branch that isn't good enough gets a second round. `repose attach -w claude` opens the agent of that worktree, and you tell it what to change. It commits on the same branch; you fetch again. Or ask for a pull request and review on GitHub: ["push the branch and open a PR"](/docs/sync#pushing-from-the-machine) works in a prompt.
 
 ## 5. Send the merged result back up
 
@@ -92,7 +92,7 @@ A branch that isn't good enough gets a second round. `repose attach -w claude` o
 repose sync
 ```
 
-The third agent, still working, isn't touched: `repose sync` leaves a worktree alone.
+The third agent, still working, isn't touched ([Several agents, separate trees](/docs/run-and-attach#several-agents-separate-trees)).
 
 ## 6. Tidy
 

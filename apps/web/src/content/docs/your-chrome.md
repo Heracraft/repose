@@ -91,7 +91,7 @@ The list is printed in your terminal and nowhere else: repose stores none of it,
 
 ## What the agents can and can't do in your Chrome
 
-With the bridge open, the agents do in your Chrome what the browser tools do on the machine: open pages, click, type, read a page, screenshot it, run JavaScript in it. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so while a bridge is open, any program on the machine can drive your Chrome.
+With the bridge open, the agents do in your Chrome what [the browser tools](/docs/machine#browser) do on the machine. They're logged in wherever you are. Anything running on the machine can reach the browser tools' endpoint, so while a bridge is open, any program on the machine can drive your Chrome.
 
 The bridge never lets them, whatever you pass:
 

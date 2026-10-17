@@ -17,21 +17,17 @@ Your plan buys memory for running machines, disk for what your projects hold, an
 
 <!-- /plans -->
 
-The $39 is the founding price: the first 30 subscribers to Solo pay it for Solo's first 12 months, then $49, on their first subscription only. The 12 months start after the free week, and the pricing page shows the founding price while places are left. If you had a subscription before, or you upgrade to Plus or Pro, you pay the list price.
+The $39 is the founding price: the first 30 subscribers to Solo pay it for Solo's first 12 months, then $49, on their first subscription only. The 12 months start after the free week, and the pricing page shows the founding price while places are left. If you had a subscription before, or you upgrade to Plus or Pro, you pay the list price. A price change reaches you by email at least 30 days ahead. A subscription keeps the list price it started on for 12 months ([terms](/terms)).
 
-Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its memory and vCPU:
-
-- `small`: 2 vCPU and 4 GB
-- `large`: 4 vCPU and 8 GB
-- `xl`: 8 vCPU and 16 GB
+Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its [memory and vCPU](/docs/machine).
 
 Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page does.
 
 ## What a plan means
 
 - **Memory.** Starting a machine that would put your running machines past the plan is refused: `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` From a terminal, `repose run`, `start` and `attach` ask instead: `Stop todo-app to start api? [y/N]`. A yes stops it, fetching its commits first, and starts yours; a no, or no terminal, exits 7 with that refusal.
-- **Disk.** Counts the data your projects hold, running or stopped. A new `large` has a 40 GB disk and counts the gigabyte or so it holds at first; a disk's size is only how far that project can grow, and one project's disk can be at most the plan's whole disk. While your projects hold more than the plan's disk, creating, restoring and forking projects, and growing a disk, are refused, with one email; your machines keep running and starting. A file you delete stops counting within a day, or when its machine stops. Snapshots are free.
-- **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice. At four times the allowance (1 TB on Solo, 2 TB on Plus, 4 TB on Pro) your machines stop until the month turns, and you get an email. The total is rolled up a few minutes past each hour, so it can trail by up to an hour.
+- **Disk.** Counts the data your projects hold, running or stopped. A new `large` has a 40 GB disk and counts the gigabyte or so it holds at first; a disk's size is only how far that project can grow, and one project's disk can be at most the plan's whole disk. Past the plan's disk, [anything that would add data is refused](/docs/limits#projects). You get one email about it. A file you delete stops counting within a day, or when its machine stops. Snapshots are free.
+- **Egress.** Data your machines send to the internet, over the month. Incoming data and your own SSH traffic, port forwards included, don't count. Past the allowance, $0.05 per GB is added to your next invoice. At four times the allowance (1 TB on Solo, 2 TB on Plus, 4 TB on Pro) your machines stop until the period ends, and you get an email. The total is rolled up a few minutes past each hour, so it can trail by up to an hour.
 
 ## The free week
 

@@ -5,7 +5,7 @@ section: Reference
 order: 41
 ---
 
-For more detail on any command, add `-v`: each API request with its status and request ID, which support can look up, and each `ssh` it runs. `REPOSE_TIMING=1` shows where the time in `run` and `attach` went, and `repose logs --kind ops` lists every operation on the project with its result.
+For more detail on any command, add `-v`; its request IDs are what support looks up. [`REPOSE_TIMING=1`](/docs/cli#environment-variables) and [`repose logs --kind ops`](/docs/cli#repose-logs-project) are the other two places to look.
 
 ## Logging in and connecting
 
@@ -97,7 +97,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **`Not sent: web/node_modules (dependencies and caches)`.** [Dependency directories and build caches](/docs/sync#what-doesnt) never travel, ignored or not. Run your install command on the machine.
 
-**`Skipped video.mp4: over 100 MB`** or **`Skipped 12 untracked files past the 500 MB limit for one sync`.** Both caps are on untracked files: one over 100 MB is skipped by itself, and any that doesn't fit under a sync's 500 MB total is skipped too. A tracked file travels whatever its size, so commit what matters, or add large directories to `.gitignore` or `sync.exclude`.
+**`Skipped video.mp4: over 100 MB`** or **`Skipped 12 untracked files past the 500 MB limit for one sync`.** [Both caps are on untracked files](/docs/sync#what-doesnt), so commit what matters, or add large directories to `.gitignore` or `sync.exclude`.
 
 ## On the machine
 
@@ -148,7 +148,7 @@ For more detail on any command, add `-v`: each API request with its status and r
 
 **Your dev server isn't on your laptop's `localhost`.** Forwarding runs only while you're attached, and `repose status todo-app` lists the ports it will forward and no others. A server up on the machine and missing from that list doesn't meet [the conditions for a forward](/docs/machine#ports). [`repose open 3000`](/docs/cli#repose-open-local-port) forwards one port without attaching.
 
-**`localhost:5173` answers, but it's your laptop's server.** That port was taken when the forward was made, so repose took the next free one within 20 of it and said which: `⇄ localhost:5174 → :5173 (5173 is taken on your laptop)`. Use the port that line names, or stop your laptop's server and attach again. With all 20 taken there's no forward and no message at all; it's tried again every 30 seconds, and `repose open 8080:5173` puts the port on a laptop port you name.
+**`localhost:5173` answers, but it's your laptop's server.** That port was taken when the forward was made, so repose [used the next free one](/docs/machine#ports) and said which: `⇄ localhost:5174 → :5173 (5173 is taken on your laptop)`. Use the port that line names, or stop your laptop's server and attach again. With no free port in that range there's no forward and no message at all; it's tried again every 30 seconds, and `repose open 8080:5173` puts the port on a laptop port you name.
 
 ## Notifications
 

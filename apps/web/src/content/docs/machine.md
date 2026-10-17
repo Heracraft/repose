@@ -5,7 +5,7 @@ section: Using repose
 order: 12
 ---
 
-Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, named after the folder on your laptop it was first synced from, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
+Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
 | Size    | vCPU | Memory | Disk  |
 | ------- | ---- | ------ | ----- |
@@ -89,7 +89,7 @@ repose scan
 
 Agents start in the checkout's dev environment, and so does every command they run. That holds for every window, `--worktree` ones and an agent you type in a shell included, and for `repose exec`:
 
-- With an `.envrc`, agents get what it sets. repose runs `direnv allow` on it the first time an agent starts in that checkout, and again after you edit the file. It doesn't ask, because the agent is about to run this checkout's code anyway; the window says `repose: allowed /home/dev/todo-app/.envrc (direnv allow) so claude starts in its environment`. One you ran `direnv deny` on stays out, and no flake is loaded in its place.
+- With an `.envrc`, agents get what it sets. repose runs `direnv allow` on it the first time an agent starts in that checkout, and again after you edit the file. It doesn't ask, because the agent is about to run this checkout's code anyway; the window says `repose: allowed /home/dev/todo-app/.envrc (direnv allow) so claude starts in its environment`. One you ran `direnv deny` on stays out, and no flake is loaded in its place. An `.envrc` of your own that says `use flake` keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
 - With a `flake.nix` whose text names a dev shell and no `.envrc`, agents get `devShells.x86_64-linux.default`, from the nearest such flake at or above the folder and below your home folder. Nothing is written to your checkout: when the repository has no `flake.lock`, the one Nix writes is kept outside it.
 
 The first load builds the dev shell, and the window says `repose: loading the dev shell from /home/dev/todo-app/flake.nix (the first load can take minutes)`. Anything nixpkgs has to compile takes longer still. `repose run` shows `Loading the project's dev shell` and waits, up to 30 minutes, so your prompt isn't typed into a window whose agent hasn't started. Later loads come from the cache in under a second, until `flake.nix` or `flake.lock` changes.
@@ -143,7 +143,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now backup.timer
 ```
 
-`bash -lc` makes it a login shell, so the job gets the same `PATH`, secrets and variables you get in a terminal. `Persistent=true` catches up a run the machine was stopped for, at its next start. Nothing on the machine sends mail, so the job's output is in the journal: `journalctl --user -u backup`.
+`bash -lc` makes it a login shell, so the job gets the same `PATH`, secrets and variables you get in a terminal. `Persistent=true` catches up a run the machine was stopped for, at its next start. Nothing on the machine sends mail, so the job's output is in the journal: `journalctl --user -u backup`. `systemctl --user list-timers` shows when each job runs next.
 
 ## Ports
 
@@ -199,7 +199,7 @@ Playwright test suites (`pnpm exec playwright test` and the like) still run head
 
 ### Use your own Chrome
 
-For a job that needs your logged-in browser (an internal tool behind SSO, an account with a hardware key, an extension), [lend the agents your laptop's Chrome](/docs/your-chrome) instead: `repose run --bridge`, or `repose browser bridge` in a second terminal.
+For a job that needs your logged-in browser, [lend the agents your laptop's Chrome](/docs/your-chrome) instead.
 
 ## Network
 
@@ -238,6 +238,6 @@ Your SSH sessions and the tmux or herdr server get the CPU before the programs i
 
 `repose resize --size small|large|xl` changes a project's size. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.
 
-The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then stops it, changes it and starts it again. The stop ends every process on the machine, agents included, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
+The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 
-While the machine runs, its size counts toward [the memory your plan runs at once](/docs/limits#your-plan). A bigger size your plan can't run beside the machines running now is refused before the question, and nothing stops.
+While the machine runs, its size counts toward [the memory your plan runs at once](/docs/limits#your-plan).

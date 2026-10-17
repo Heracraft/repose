@@ -59,7 +59,7 @@ Each agent's window opens again with the conversation it was in ([When the machi
 
 ## When a machine's server restarts
 
-Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server and removed once the machine is back.
+Servers restart for maintenance and after faults. A machine whose server restarts comes back as it was, usually in a couple of minutes: programs, tmux windows and agents carry on where they were. An attached terminal reconnects itself; connections that were open drop, SSH sessions and forwarded ports included. The machine's clock is set when it comes back. While the server restarts, the machine's memory, [secrets](/docs/secrets) included, is kept as an encrypted image on that server. The image is removed once the machine is back, and after 6 hours either way.
 
 A machine that can't come back that way stops instead. Its disk is kept; processes and memory are lost, the agent's turn with them ([When the machine ends without a stop](/docs/run-and-attach#when-the-machine-ends-without-a-stop)). That's what happens if the server loses power or crashes, if there isn't time or room to keep the memory, or if the machine is changed while the server is down.
 

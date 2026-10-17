@@ -18,7 +18,7 @@ Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init
 
 ## Which project
 
-Commands that act on a project take it from the `PROJECT` argument, `--project NAME`, then `REPOSE_PROJECT`; an argument and a `--project` that disagree exit 2. Otherwise it's the folder you're in: the project with this checkout's git remote, or the machine [last made there](/docs/lifecycle#a-second-machine-for-the-same-repository) in a folder with no remote. Your home folder, and every folder above it, belongs to no project, so a command there has to name one ([From your home folder](/docs/lifecycle#from-your-home-folder)).
+Commands that act on a project take it from the `PROJECT` argument, `--project NAME`, then `REPOSE_PROJECT`; an argument and a `--project` that disagree exit 2. Otherwise it's the folder you're in: the project with this checkout's git remote, or the machine [last made there](/docs/lifecycle#a-second-machine-for-the-same-repository) in a folder with no remote. [A home folder belongs to no project](/docs/lifecycle#from-your-home-folder), so a command there has to name one.
 
 A command whose usage names the project takes it there or as `--project`. A few take other words in that place, so the project is `--project` alone: `open`, `secrets set`, `secrets rm`, `secrets import`, `secrets choose`, `config add`, `config remove`, `config apply`, `mcp forward` and `mcp rm`; `cp` names it in `PROJECT:PATH` or `--project`. `ls`, `login`, `logout`, `notify`, `version` and `completion` act on no project and exit 2 when given `--project`.
 
@@ -58,7 +58,7 @@ A machine that isn't running comes up first, as [`repose start`](#repose-start-p
 
 A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist.
 
-If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and attach again once the machine answers, for up to 2 minutes. Keys you type while it waits are dropped. With `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead.
+If the connection drops while you're attached, `run` and `attach` print `repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.` and [come back on their own](/docs/run-and-attach#detach-and-come-back). Keys you type while it waits are dropped. With `REPOSE_NO_INPUT_PROXY=1`, the command ends with exit code 255 instead.
 
 ### `repose sync [PROJECT]`
 
@@ -171,7 +171,7 @@ An agent on todo-app is in your Chrome.
 14:03:21  admin.internal.example/signups
 ```
 
-Needs the machine running, and Chrome 144 or newer with remote debugging on at `chrome://inspect/#remote-debugging`. With that off, it opens that page and waits up to 5 minutes for you to turn it on.
+Needs the machine running, and Chrome 144 or newer with [its remote debugging switch](/docs/your-chrome#once-turn-chromes-switch-on) on.
 
 | Flag                  | What it does                                                                                                                                                                  |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -180,7 +180,7 @@ Needs the machine running, and Chrome 144 or newer with remote debugging on at `
 | `--user-data-dir DIR` | The profile directory of a Chrome that isn't Google Chrome's default one (Chromium, Brave, Edge, a second profile).                                                           |
 | `--no-inspect`        | Don't open `chrome://inspect` when remote debugging is off; print what to do and wait. `--no-browser` is its old name.                                                        |
 
-Only one bridge to a machine at a time. A laptop that goes to sleep keeps its bridge for up to 2 minutes; a new bridge takes over from it. With `--allow`, the bridge also closes if its own connection to Chrome ends.
+[Stop it](/docs/your-chrome#stop-it) has what ends a bridge, and why only one reaches a machine at a time.
 
 ### `repose mcp forward NAME...`
 
@@ -241,7 +241,7 @@ Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the ma
 
 ### `repose scan [DIR]`
 
-List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. A [machine.nix](/docs/config#your-machine-nix) on your account takes over the laptop half, and a `repose.nix` at the checkout root the project half; a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads `~/.config/repose/machine.nix` and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
+List what the next `repose run` would install on the machine, and why. Installs nothing. DIR defaults to this checkout's root. The list comes in two halves: your laptop's global tools, and the commands the project's scripts call that neither the machine's base nor the project's own dependencies provide. The project half ends with the version pins it found: Node, Ruby and Java with the version the machine gets. A `machine.nix` or a `repose.nix` [takes over a half](/docs/machine#your-laptops-tools-come-along); a `skipped:` line says which half and why. Logged out, or when the server doesn't answer, it reads `~/.config/repose/machine.nix` and says the account wasn't checked. `--json` prints `laptop`, `project`, `node`, `ruby`, `java` and `skipped`.
 
 ## Projects
 
@@ -437,7 +437,7 @@ An account secret is for every project, so `--global` beside a project exits 2.
 
 With `--global`, the same commands act on your [machine.nix](/docs/config#your-machine-nix) instead of the project's file. `--global` takes no project; `on` and `off` take one, with or without it. `add` and `remove` edit the file's `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default `~/.config/repose/machine.nix`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
 
-The CLI's own settings are keys in [config.toml](#config-toml), not here; `repose config set` exits 2 and names the file.
+The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and names the file.
 
 ## Account
 
@@ -524,7 +524,7 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 | Path                | What it holds                                                                                                                                                                                                                                       |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, and caches that are safe to delete. On macOS the refresh token is in the keychain, not the file.                     |
+| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, and caches that are safe to delete. On macOS the refresh token is in the keychain.                     |
 | `~/.ssh/repose/`    | The CLI's own SSH key, its 24-hour certificate, `hosts` with one `Host` block per project, and the `config` that `~/.ssh/config` includes ([SSH and editors](/docs/ssh-and-editors#how-it-works)).                                                   |
 | `~/.ssh/config`     | The `Include ~/.ssh/repose/config` line at the top, under a `# added by repose` comment. No other line changes.                                                                                                                                      |
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                              |
