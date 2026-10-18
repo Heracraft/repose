@@ -52,6 +52,15 @@
       enable = true;
       keyVaultUrl = "https://repose-frz-3912.vault.azure.net/";
       keyName = "freeze-wrap";
+      # Measured on this host at /var/lib/repose (nvme0n1p2, the root
+      # disk), 2 GiB each: 126 MB/s with `dd oflag=direct`, 123 MB/s with
+      # `conv=fdatasync`; rounded down to 120 so the estimate errs long
+      # (DECISIONS I-796). The image is a thin volume on the guest pool's
+      # disk, which has not been measured yet, so this is the root disk's
+      # figure standing in for it; the freeze replaces it with the rate
+      # its own first snapshot achieves. Re-measure on the pool's disk,
+      # and whenever a disk changes (RUNBOOK "Guest freeze").
+      writeRateMBs = 120;
     };
 
     # infra outputs `snapshots.blob_endpoint` and `snapshots.identity_client_id`

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-786 entries.
+787 entries.
 
 ## Scope
 
@@ -714,7 +714,7 @@ pointer, not a summary.
 - **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19113
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19161
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19180
-- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; L19284
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19284
 - **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19498
 - **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19557
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19683
@@ -818,3 +818,4 @@ pointer, not a summary.
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23405
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23525
+- **I-796** The freeze deadline is set from the host's measured write rate and the classes repose sells, and a guest it leaves unfrozen alerts (freeze-limits, 2026-10-18) — L23591

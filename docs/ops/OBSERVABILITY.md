@@ -58,6 +58,24 @@ its SMT threads, because busy guest vCPUs per physical core is what
 `load1` is the same number the heartbeat puts in the `hosts.load1` column,
 exported because Prometheus scrapes exporters, not the database.
 
+The guest freeze (DECISIONS I-652, I-796): a freeze that leaves a running
+guest unfrozen costs that guest everything it was running, because a host
+restart then boots it cold. Every path that does so counts
+`repose_host_guest_freeze_unfrozen_total{reason}` and logs at Error with
+the event `guest_freeze`. `reason` is `estimate` (the snapshot would have
+outlasted `repose.host.freeze.deadline` at the host's
+`writeRateMBs`), `deadline` (the deadline passed before the snapshot
+started), `no_room` (the thin pool), `failed`, `no_key` (Key Vault) or
+`busy` (another freeze or thaw held the lock). `GuestLeftUnfrozen` reads
+it over 6 hours and names the reason; the runbook's section is the
+arithmetic to check before raising the deadline. A shutdown freeze's own
+counter is never scraped, because the host goes down behind it, so hostd
+writes the tally beside its freeze records
+(`/var/lib/repose/hostd/freeze/.unfrozen.json`) and counts it again at the
+next start: the rise is usually in the first minutes of the new boot. The
+`guests frozen` line carries `frozen`, `unfrozen`, `guests` and
+`duration_ms`, which is what says whether the deadline was the limit.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),

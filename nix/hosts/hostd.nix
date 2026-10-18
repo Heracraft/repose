@@ -24,7 +24,7 @@ let
   stateDir = "/var/lib/repose/hostd";
   # The guest freeze (freeze.nix, DECISIONS I-652); nothing when it is off.
   freezeFlags = lib.optionalString cfg.freeze.enable (
-    "--freeze --freeze-deadline ${toString cfg.freeze.deadline}s"
+    "--freeze --freeze-deadline ${toString cfg.freeze.deadline}s --freeze-write-rate ${toString cfg.freeze.writeRateMBs}"
     + (if cfg.freeze.keyFile != "" then " --freeze-key-file ${lib.escapeShellArg cfg.freeze.keyFile}"
        else " --freeze-key-vault ${lib.escapeShellArg cfg.freeze.keyVaultUrl} --freeze-key-name ${lib.escapeShellArg cfg.freeze.keyName}")
     + lib.optionalString cfg.freeze.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")

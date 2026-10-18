@@ -13,10 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/fakeguestd"
 	"github.com/heracraft/repose/internal/hostd/freeze"
+	"github.com/heracraft/repose/internal/hostd/systemd"
 )
 
 // fakeImage is the image volume: it remembers each guest's key check and
@@ -986,5 +989,220 @@ func TestImageVolumeHasRoomForAnIncompressibleImage(t *testing.T) {
 		if got < need {
 			t.Fatalf("%s: image volume %d bytes, an incompressible image needs %d", class, got, need)
 		}
+	}
+}
+
+// The deadline must hold the classes repose sells. On 2026-10-18 host-01
+// was rebooted with a 120 s deadline and its xl guest was skipped:
+// "snapshot would outlast the deadline". It cold-booted and every
+// agent session in it was lost (DECISIONS I-796). The estimate is the
+// guest's resident memory at the host's write rate, so this is the table
+// the deadline has to pass: each class at the memory its unit can hold,
+// against the 120 MB/s host-01 is configured with (it measured 123 to
+// 126).
+func TestFreezeTakesEveryClassAtItsResidentSize(t *testing.T) {
+	const hostRate = 120_000_000 // host-01's configured rate (I-796)
+	for _, c := range []struct {
+		name     string
+		class    string
+		resident uint64
+		deadline time.Duration // 0 is the shipped default
+		want     string
+	}{
+		{"small", "small", 4 << 30, 0, "frozen"},
+		{"large", "large", 8 << 30, 0, "frozen"},
+		{"xl", "xl", 16 << 30, 0, "frozen"},
+		// What the owner lost: the deadline that shipped before I-796
+		// cannot hold an xl at any load.
+		{"xl at the old 120 s deadline", "xl", 16 << 30, 120 * time.Second, "skipped"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fh := newFreezeHarness(t, func(f *FreezeConfig) {
+				f.WriteRate = hostRate
+				f.Deadline = c.deadline
+			})
+			req := createReq(gid1)
+			req.SystemClosure, req.Class = fh.closure, c.class
+			fh.mustOK(cmd(req))
+			fh.sd.Units[GuestUnit(gid1)].MemBytes = c.resident
+			res := fh.freezeOne(gid1)
+			if res.Outcome != c.want {
+				t.Fatalf("a %s guest with %d GiB resident: %+v, want %s", c.class, c.resident>>30, res, c.want)
+			}
+			if c.want == "frozen" && !res.OK {
+				t.Fatalf("%+v", res)
+			}
+		})
+	}
+}
+
+// unfrozenReason is what turns a result into the counter GuestLeftUnfrozen
+// reads, so every outcome a freeze can produce is named here: the three
+// that leave a running guest without its memory, and the ones that cost
+// nothing.
+func TestUnfrozenReasonNamesEveryResult(t *testing.T) {
+	for _, c := range []struct {
+		res  FreezeResult
+		want string
+	}{
+		{FreezeResult{OK: true, Outcome: "frozen"}, ""},
+		{FreezeResult{Outcome: "skipped", Reason: "pool has no room for the image"}, "no_room"},
+		{FreezeResult{Outcome: "skipped", Reason: "deadline passed"}, "deadline"},
+		{FreezeResult{Outcome: "skipped", Reason: "snapshot would outlast the deadline"}, "estimate"},
+		{FreezeResult{Outcome: "failed", Reason: "snapshot failed"}, "failed"},
+		{FreezeResult{Outcome: "failed", Reason: "snapshot failed; guest still paused"}, "failed"},
+		// Nothing was lost: the guest had no memory to keep, or its
+		// image was already written.
+		{FreezeResult{Outcome: "skipped", Reason: "guest is not running"}, ""},
+		{FreezeResult{Outcome: "skipped", Reason: "guest already frozen"}, ""},
+	} {
+		if got := unfrozenReason(c.res); got != c.want {
+			t.Errorf("%+v: reason %q, want %q", c.res, got, c.want)
+		}
+	}
+}
+
+// Every path that leaves a running guest unfrozen counts it: the skip was
+// a Warn line and a row in a table nobody read, so nothing alerted when
+// host-01 lost its xl guest (I-796).
+func TestFreezeCountsEveryGuestItLeavesUnfrozen(t *testing.T) {
+	unfrozen := func(fh *freezeHarness, why string) float64 {
+		return testutil.ToFloat64(fh.metrics.GuestFreezeUnfrozen.WithLabelValues(why))
+	}
+
+	t.Run("estimate", func(t *testing.T) {
+		fh := newFreezeHarness(t, func(c *FreezeConfig) { c.WriteRate = 10 << 20; c.Deadline = 30 * time.Second })
+		fh.create(gid1)
+		fh.sd.Units[GuestUnit(gid1)].MemBytes = 2 << 30 // 205 s at 10 MiB/s
+		if r := fh.freezeOne(gid1); r.Reason != "snapshot would outlast the deadline" {
+			t.Fatalf("freeze: %+v", r)
+		}
+		if n := unfrozen(fh, "estimate"); n != 1 {
+			t.Fatalf("estimate counter %v, want 1", n)
+		}
+	})
+
+	t.Run("deadline passed", func(t *testing.T) {
+		// The deadline passes while the guests write back their caches,
+		// so no snapshot is started at all.
+		fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Deadline = 150 * time.Millisecond })
+		fh.gopts.Delay = map[string]time.Duration{"Exec": 400 * time.Millisecond}
+		fh.create(gid1)
+		if r := fh.freezeOne(gid1); r.Reason != "deadline passed" {
+			t.Fatalf("freeze: %+v", r)
+		}
+		if n := unfrozen(fh, "deadline"); n != 1 {
+			t.Fatalf("deadline counter %v, want 1", n)
+		}
+	})
+
+	t.Run("no room in the pool", func(t *testing.T) {
+		fh := newFreezeHarness(t, nil)
+		fh.create(gid1)
+		fh.lvm.PoolSize, fh.lvm.PoolFree = 100<<30, 21<<30 // 6 GiB of room, 8 needed
+		if r := fh.freezeOne(gid1); r.Reason != "pool has no room for the image" {
+			t.Fatalf("freeze: %+v", r)
+		}
+		if n := unfrozen(fh, "no_room"); n != 1 {
+			t.Fatalf("no_room counter %v, want 1", n)
+		}
+	})
+
+	t.Run("failed after it started", func(t *testing.T) {
+		fh := newFreezeHarness(t, nil)
+		fh.create(gid1)
+		fh.chc.Fail = map[string]error{"snapshot": errors.New("No space left on device")}
+		if r := fh.freezeOne(gid1); r.Outcome != "failed" {
+			t.Fatalf("freeze: %+v", r)
+		}
+		if n := unfrozen(fh, "failed"); n != 1 {
+			t.Fatalf("failed counter %v, want 1", n)
+		}
+	})
+
+	t.Run("no image key", func(t *testing.T) {
+		fh := newFreezeHarness(t, nil)
+		fh.create(gid1)
+		fh.sealer.notReady = errors.New("key vault public key not fetched yet")
+		if res := fh.m.FreezeAll(context.Background(), FreezeShutdown); len(res) != 0 {
+			t.Fatalf("results without a key: %+v", res)
+		}
+		if n := unfrozen(fh, "no_key"); n != 1 {
+			t.Fatalf("no_key counter %v, want 1", n)
+		}
+	})
+}
+
+// A shutdown freeze's counter is never scraped: the host goes down behind
+// it. Its tally is kept beside the records and counted again at the next
+// start, which is where Prometheus can see it (I-796).
+func TestTheUnfrozenTallyIsCountedAtTheNextStart(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.WriteRate = 10 << 20; c.Deadline = 30 * time.Second })
+	fh.create(gid1)
+	fh.sd.Units[GuestUnit(gid1)].MemBytes = 2 << 30
+	if r := fh.m.FreezeAll(context.Background(), FreezeShutdown); len(r) != 1 || r[0].OK {
+		t.Fatalf("freeze: %+v", r)
+	}
+	count := func() float64 {
+		return testutil.ToFloat64(fh.metrics.GuestFreezeUnfrozen.WithLabelValues("estimate"))
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("counter after the freeze %v, want 1", n)
+	}
+	// The host restarted: a new boot id, and the process's counter would
+	// have started at zero.
+	fh.m.d.Freeze.BootID = func() string { return "boot-b" }
+	fh.m.ThawAll(context.Background())
+	if n := count(); n != 2 {
+		t.Fatalf("counter after the next start %v, want the tally counted again", n)
+	}
+	// Reported once: the tally is gone.
+	fh.m.ThawAll(context.Background())
+	if n := count(); n != 2 {
+		t.Fatalf("counter after a second start %v, want the tally reported once", n)
+	}
+}
+
+// A freeze for an event that was then called off leaves its tally behind,
+// but the host never restarted: counting it at the next start would report
+// a loss that did not happen.
+func TestATallyFromThisBootIsNotCountedAgain(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.WriteRate = 10 << 20; c.Deadline = 30 * time.Second })
+	fh.create(gid1)
+	fh.sd.Units[GuestUnit(gid1)].MemBytes = 2 << 30
+	fh.m.FreezeAll(context.Background(), FreezeScheduledEvent)
+	fh.m.ThawAll(context.Background())
+	if n := testutil.ToFloat64(fh.metrics.GuestFreezeUnfrozen.WithLabelValues("estimate")); n != 1 {
+		t.Fatalf("counter %v, want the one count the freeze made", n)
+	}
+}
+
+// ctxSystemd refuses once its context is done, as the real one does over
+// dbus. The fake ignores the context, so a count taken on a deadline that
+// has already passed looks right there and finds nothing on a host.
+type ctxSystemd struct{ systemd.Systemd }
+
+func (c ctxSystemd) IsActive(ctx context.Context, unit string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return c.Systemd.IsActive(ctx, unit)
+}
+
+// A freeze that never gets the lock (a thaw or an operator's freeze still
+// running) leaves every running guest unfrozen, and lists them itself to
+// say how many. Its own deadline has passed by then, so the listing needs
+// a context of its own.
+func TestAFreezeThatCannotStartCountsTheGuestsItLeaves(t *testing.T) {
+	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Deadline = 50 * time.Millisecond })
+	fh.create(gid1)
+	fh.m.d.Systemd = ctxSystemd{fh.sd}
+	fh.m.freezeMu <- struct{}{} // held by something else
+	defer func() { <-fh.m.freezeMu }()
+	if res := fh.m.FreezeAll(context.Background(), FreezeShutdown); len(res) != 0 {
+		t.Fatalf("results: %+v", res)
+	}
+	if n := testutil.ToFloat64(fh.metrics.GuestFreezeUnfrozen.WithLabelValues("busy")); n != 1 {
+		t.Fatalf("busy counter %v, want 1", n)
 	}
 }

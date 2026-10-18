@@ -52,6 +52,10 @@
       enable = true;
       keyVaultUrl = "https://repose-frz-stg-3912.vault.azure.net/";
       keyName = "freeze-wrap";
+      # 125 MB/s measured here during I-652, on the pool itself (a 4.1 GB
+      # image in 36 s with a second snapshot beside it); rounded down
+      # like host-01's (I-796).
+      writeRateMBs = 120;
     };
 
     # Staging's own account and identity (`make output ENV=staging`), so a

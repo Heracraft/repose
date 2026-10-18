@@ -790,6 +790,43 @@ pass.
    Hello: check the api-grpc app and the host's stream (`hostd status`
    shows `connected`).
 
+## GuestLeftUnfrozen
+
+A freeze left a running guest's memory unsaved (DECISIONS I-652, I-796).
+A host restart then boots that machine cold: its agents, tmux windows and
+open files are gone, and its owner sees the machine come back empty. The
+loss has already happened by the time this fires; what is left is to stop
+it happening again.
+
+1. `reason` on the alert says which path left the guest:
+   - `estimate`: its snapshot would have outlasted
+     `repose.host.freeze.deadline`. The usual cause is a guest with more
+     resident memory than the deadline can write at
+     `repose.host.freeze.writeRateMBs`. Check the rate against the disk
+     (the recipe in "Guest freeze" step 3) and the deadline against the
+     host's worst case, the sum of its running guests' resident memory.
+   - `deadline`: the freeze ran out of time before this guest's snapshot
+     started. Same arithmetic; the `guests frozen` line's `duration_ms`
+     says how long the freeze took.
+   - `no_room`: the thin pool had no room for the image. See PoolHigh.
+   - `failed`: the snapshot or the image failed. The `freeze failed` line
+     has the error; the guest kept running.
+   - `no_key`: hostd had no image key (Key Vault). See "Guest freeze".
+   - `busy`: another freeze or thaw held the lock past the deadline.
+2. The journal of the boot that did it: `journalctl -b -1 -u
+   repose-guest-freeze -u hostd | grep '"event":"guest_freeze"'`. The
+   `guest left unfrozen` and `guest not frozen` lines name each guest;
+   `guests frozen` carries `frozen`, `unfrozen`, `guests` and
+   `duration_ms`.
+3. Raising the deadline is a host config change
+   (`repose.host.freeze.deadline`, at most 420 s) and a switch. It costs
+   shutdown time: the freeze unit holds the shutdown for up to the
+   deadline, and systemd cuts its ExecStop at the deadline plus 150 s,
+   which must stay inside the about 600 s Azure waits for a graceful
+   shutdown.
+4. A host whose worst case cannot fit the deadline needs fewer or smaller
+   guests on it, not a longer deadline.
+
 ## MinerStopped
 
 The api stopped a guest because its process sample named a cryptocurrency
@@ -1524,9 +1561,19 @@ Turning it on for a host:
    `freeze-wrap`). Switch (RUNBOOK "Switch a host to main"). The journal
    shows `image key fetched; guests can be frozen` (event `guest_freeze`); until
    it does, a shutdown freezes nothing.
-3. Guests get free page reporting at their next start; running ones are
+3. `repose.host.freeze.writeRateMBs`: it decides whether a guest's
+   snapshot is started at all, and the default (100) is a guess (I-796).
+   An image is a thin volume, so measure the pool, not the root
+   filesystem, and only when the pool is not near its threshold
+   (PoolHigh):
+   `lvcreate -V 4G -T vg-guests/thin -n rate-test`,
+   `dd if=/dev/zero of=/dev/vg-guests/rate-test bs=1M count=2048
+   oflag=direct`, `lvremove -y vg-guests/rate-test`. Round down. host-01
+   is set from its root disk for now (126 MB/s), which I-796 records as
+   owed on the pool's disk.
+4. Guests get free page reporting at their next start; running ones are
    frozen without it (bigger images).
-4. Add the user docs the I-652 entry lists in the same commit.
+5. Add the user docs the I-652 entry lists in the same commit.
 
 Checks:
 - `hostd freeze` freezes every running guest now and prints each one's
@@ -1541,11 +1588,14 @@ Checks:
   key unavailable, restore failed, ...). Those go on as after any reboot
   ("Host rebooted").
 - Shutdown side: `journalctl -b -1 -u repose-guest-freeze -u hostd | grep
-  '"event":"guest_freeze"'`: `guests frozen` with `frozen`, `guests` and
-  `duration_ms`. A guest left out (`skipped`: deadline passed, its
-  snapshot would outlast the deadline, or the pool had no room) was
-  stopped by the shutdown as before. The freeze unit holds the shutdown
-  for at most twice `deadline` plus 60 s (300 s at the default 120).
+  '"event":"guest_freeze"'`: `guests frozen` with `frozen`, `unfrozen`,
+  `guests` and `duration_ms`. A guest left out (`skipped`: deadline
+  passed, its snapshot would outlast the deadline, or the pool had no
+  room) was stopped by the shutdown as before and lost everything it was
+  running; each one is an Error line and a count in
+  `repose_host_guest_freeze_unfrozen_total`, which GuestLeftUnfrozen
+  alerts on (DECISIONS I-796). The freeze unit holds the shutdown for at
+  most `deadline` plus 150 s (550 s at the default 400).
 - A guest still paused after a freeze that did not finish (hostd killed
   mid-freeze, or `freeze failed and the guest did not resume` in the
   journal): the image and its `writing` record are kept; `hostd thaw`, or

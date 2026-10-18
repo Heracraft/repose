@@ -43,7 +43,11 @@ type FreezeConfig struct {
 	// and leaves any image alone.
 	RecordDir string
 	// Deadline bounds a FreezeAll; guests not frozen by then are left to
-	// the shutdown as before. Default 120 s.
+	// the shutdown as before. Default 400 s: host-01's data disk writes
+	// 120 MB/s (measured, I-796) and its worst case is about 40 GiB of
+	// guest memory, which is 358 s of writing plus the sync and the
+	// settle. A deadline under that skips the guests it cannot finish,
+	// and a skipped guest loses everything it was running (I-796).
 	Deadline time.Duration
 	// Concurrency is how many snapshots write at once. Default 4: a
 	// snapshot of a compressed image (I-685) spends its time in one core
@@ -77,7 +81,10 @@ type FreezeConfig struct {
 	// WriteRate is the rate in bytes per second a FreezeAll assumes one
 	// snapshot writes at, until its first finished snapshot shows the
 	// real one. Default 100 MB/s (host-stg-01's 125 MB/s disk wrote a
-	// 4.1 GB image in 36 s with a second snapshot beside it).
+	// 4.1 GB image in 36 s with a second snapshot beside it);
+	// `--freeze-write-rate` (repose.host.freeze.writeRateMBs) sets it
+	// from a host's own measurement, which is the only other lever on
+	// what the estimate skips (I-796).
 	WriteRate uint64
 	// ResumeWait bounds how long a guest left paused by a freeze that did
 	// not finish (a failed snapshot, or hostd restarted mid-freeze) is
@@ -87,7 +94,7 @@ type FreezeConfig struct {
 
 func (c FreezeConfig) withDefaults() FreezeConfig {
 	if c.Deadline == 0 {
-		c.Deadline = 120 * time.Second
+		c.Deadline = 400 * time.Second
 	}
 	if c.Concurrency == 0 {
 		c.Concurrency = 4
@@ -211,17 +218,19 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 	ctx, cancel := context.WithTimeout(ctx, fc.Deadline)
 	defer cancel()
 	if !m.lockFreeze(ctx) {
-		m.d.Log.Warn("freeze skipped: another freeze or thaw outlasted the deadline", "event", "guest_freeze", "reason", reason)
+		m.d.Log.Error("freeze skipped: another freeze or thaw outlasted the deadline", "event", "guest_freeze", "reason", reason)
+		m.countUnfrozen(ctx, reason, "busy", nil)
 		return nil
 	}
 	defer m.unlockFreeze()
-	if err := m.d.Freeze.Sealer.Ready(); err != nil {
-		m.d.Log.Warn("freeze skipped: no image key", "event", "guest_freeze", "reason", reason, "err", err.Error())
-		return nil
-	}
+	// Listed before the key is checked, so a freeze that cannot run still
+	// counts the guests it leaves unfrozen (I-796).
 	gs, err := m.d.State.ListGuests()
 	if err != nil {
-		m.d.Log.Warn("freeze skipped: list guests", "event", "guest_freeze", "err", err.Error())
+		// Nothing is counted here: without the list there is no telling
+		// whether a running guest exists. HostdDown and the journal are
+		// what report this one.
+		m.d.Log.Error("freeze skipped: list guests", "event", "guest_freeze", "err", err.Error())
 		return nil
 	}
 	var run []*state.Guest
@@ -233,6 +242,11 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 			continue
 		}
 		run = append(run, g)
+	}
+	if err := m.d.Freeze.Sealer.Ready(); err != nil {
+		m.d.Log.Error("freeze skipped: no image key", "event", "guest_freeze", "reason", reason, "err", err.Error())
+		m.countUnfrozen(ctx, reason, "no_key", run)
+		return nil
 	}
 	sort.SliceStable(run, func(i, j int) bool { return Classes[run[i].Class].MemMiB < Classes[run[j].Class].MemMiB })
 	m.d.Log.Info("freezing guests", "event", "guest_freeze", "reason", reason, "guests", len(run))
@@ -342,8 +356,8 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 				}
 				if dl, ok := ctx.Deadline(); ok {
 					if est := rate.estimate(m.memoryBytes(ctx, g)); est > time.Until(dl) {
-						m.log(g).Warn("guest not frozen: its snapshot would outlast the deadline", "event", "guest_freeze",
-							"reason", reason, "estimate_ms", est.Milliseconds())
+						m.log(g).Error("guest not frozen: its snapshot would outlast the deadline", "event", "guest_freeze",
+							"reason", reason, "estimate_ms", est.Milliseconds(), "left_ms", time.Until(dl).Milliseconds())
 						done <- FreezeResult{GuestID: id, Outcome: "skipped", Reason: "snapshot would outlast the deadline"}
 						return
 					}
@@ -374,9 +388,141 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 			n++
 		}
 	}
+	left := m.reportUnfrozen(reason, run, results)
 	m.d.Log.Info("guests frozen", "event", "guest_freeze", "reason", reason, "frozen", n, "guests", len(run),
-		"duration_ms", m.d.Now().Sub(start).Milliseconds())
+		"unfrozen", left, "duration_ms", m.d.Now().Sub(start).Milliseconds())
 	return results
+}
+
+// A freeze that leaves a running guest unfrozen costs that guest
+// everything it was running: a host restart then boots it cold, and no
+// agent, process or tmux window survives. It used to be a Warn line and a
+// row in a table nobody reads, and on 2026-10-18 host-01's xl guest was
+// skipped and nobody was told (DECISIONS I-796). Every such path now
+// counts repose_host_guest_freeze_unfrozen_total, which GuestLeftUnfrozen
+// alerts on, and logs at Error.
+
+// unfrozenReason maps one result to the counter's reason, or "" when the
+// guest kept its memory (frozen) or had none to keep (not running, or
+// already frozen with an image of its own).
+func unfrozenReason(r FreezeResult) string {
+	if r.OK {
+		return ""
+	}
+	switch r.Outcome {
+	case "failed":
+		return "failed"
+	case "skipped":
+		switch r.Reason {
+		case "pool has no room for the image":
+			return "no_room"
+		case "deadline passed":
+			return "deadline"
+		case "snapshot would outlast the deadline":
+			return "estimate"
+		}
+	}
+	return ""
+}
+
+// reportUnfrozen counts and logs the guests a finished FreezeAll left
+// unfrozen, and returns how many there were. The sites that already log
+// their own line (the estimate, a failure) are not logged twice.
+func (m *Manager) reportUnfrozen(freezeReason string, run []*state.Guest, results []FreezeResult) int {
+	logged := map[string]bool{"estimate": true, "failed": true}
+	counts := map[string]int{}
+	left := 0
+	for i, r := range results {
+		why := unfrozenReason(r)
+		if why == "" {
+			continue
+		}
+		counts[why]++
+		left++
+		if !logged[why] && i < len(run) {
+			m.log(run[i]).Error("guest left unfrozen; it starts cold and loses what it was running",
+				"event", "guest_freeze", "reason", freezeReason, "cause", why)
+		}
+	}
+	m.count(freezeReason, counts)
+	return left
+}
+
+// countUnfrozen counts one reason for every guest in run (all of them,
+// for a freeze that could not start at all). With run nil it lists the
+// running guests itself, which is what the bail before the list needs.
+func (m *Manager) countUnfrozen(ctx context.Context, freezeReason, why string, run []*state.Guest) {
+	if run == nil {
+		// The bail that needs this is the one where the deadline passed
+		// before the lock was taken, so ctx is already done and would
+		// fail every IsActive: the listing gets its own short window.
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		gs, err := m.d.State.ListGuests()
+		if err != nil {
+			return
+		}
+		for _, g := range gs {
+			if g.State != StateRunning {
+				continue
+			}
+			if a, _ := m.d.Systemd.IsActive(lctx, GuestUnit(g.GuestID)); !a {
+				continue
+			}
+			run = append(run, g)
+		}
+	}
+	if len(run) == 0 {
+		return
+	}
+	m.count(freezeReason, map[string]int{why: len(run)})
+}
+
+// count adds the tally to hostd's counter and, for a freeze the host goes
+// down after, keeps it beside the records: that counter never reaches a
+// scrape, so the next start adds it again (freeze.Unfrozen).
+func (m *Manager) count(freezeReason string, counts map[string]int) {
+	if len(counts) == 0 {
+		return
+	}
+	if m.d.Metrics != nil {
+		for why, n := range counts {
+			m.d.Metrics.GuestFreezeUnfrozen.WithLabelValues(why).Add(float64(n))
+		}
+	}
+	if freezeReason == FreezeOperator {
+		return // scraped like anything else; a tally would be counted twice
+	}
+	u := &freeze.Unfrozen{HostBootID: m.bootID(), At: m.d.Now().UTC(), Reason: freezeReason, Counts: counts}
+	if err := m.records().PutUnfrozen(u); err != nil {
+		m.d.Log.Warn("unfrozen tally not written", "event", "guest_freeze", "err", err.Error())
+	}
+}
+
+// replayUnfrozen adds the tally of the freeze this host went down after,
+// which no scrape saw, and removes it. A tally from this same boot is
+// dropped without counting: the host did not restart after that freeze
+// (a called-off scheduled event), so nothing was lost and this process
+// has already counted it.
+func (m *Manager) replayUnfrozen() {
+	u, err := m.records().TakeUnfrozen()
+	if err != nil {
+		m.d.Log.Warn("unfrozen tally not read", "event", "guest_freeze", "err", err.Error())
+		return
+	}
+	if u == nil || u.HostBootID == m.bootID() {
+		return
+	}
+	for why, n := range u.Counts {
+		if n <= 0 {
+			continue
+		}
+		if m.d.Metrics != nil {
+			m.d.Metrics.GuestFreezeUnfrozen.WithLabelValues(why).Add(float64(n))
+		}
+		m.d.Log.Error("guests the last freeze left unfrozen started cold after the host restarted",
+			"event", "guest_freeze", "reason", u.Reason, "cause", why, "guests", n)
+	}
 }
 
 // lockFreeze takes the manager's freeze lock, or gives up when ctx ends.
@@ -527,7 +673,7 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string) FreezeResu
 		if err != nil {
 			attrs = append(attrs, "err", err.Error())
 		}
-		m.log(g).Warn("freeze failed; guest keeps running", attrs...)
+		m.log(g).Error("freeze failed; guest keeps running", attrs...)
 		return res
 	}
 	lookup := m.cfg.Lookup
@@ -758,6 +904,7 @@ func (m *Manager) ThawAll(ctx context.Context) []FreezeResult {
 		return nil
 	}
 	defer m.unlockFreeze()
+	m.replayUnfrozen()
 	fc := m.fcfg()
 	begin := time.Now()
 	recs := m.records()

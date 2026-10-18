@@ -30,6 +30,10 @@ type FreezeOptions struct {
 	KeyFile string
 	// Deadline bounds one FreezeAll.
 	Deadline time.Duration
+	// WriteRateMBs is the write rate in MB/s a freeze estimates a
+	// snapshot at before one of its own has finished (I-796). 0 keeps
+	// the freeze's own default, 100 MB/s.
+	WriteRateMBs uint64
 	// FreePageReporting gives guests started from now on a balloon with
 	// free page reporting.
 	FreePageReporting bool
@@ -43,7 +47,10 @@ type FreezeOptions struct {
 // off it still returns the image volume, so images a host left behind
 // when the freeze was turned off are removed at the next start.
 func freezeSetup(o Options, r shell.Runner, l lvm.LVM, log *slog.Logger) (guest.FreezeConfig, guest.FreezeDeps) {
-	cfg := guest.FreezeConfig{Enabled: o.Freeze.Enabled, RecordDir: filepath.Join(o.StateDir, "freeze"), Deadline: o.Freeze.Deadline}
+	cfg := guest.FreezeConfig{
+		Enabled: o.Freeze.Enabled, RecordDir: filepath.Join(o.StateDir, "freeze"),
+		Deadline: o.Freeze.Deadline, WriteRate: o.Freeze.WriteRateMBs * 1_000_000,
+	}
 	deps := guest.FreezeDeps{
 		Image:       &freeze.Image{R: r, LVM: l, Mount: &mount.Real{R: r}},
 		Fingerprint: freeze.Fingerprint,

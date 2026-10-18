@@ -869,6 +869,32 @@ tests:
               description: "`hostd guests --json | jq '.[] | select(.interrupted_boot_id)'` on the host lists them; compare with guest_resumes for that boot."
               runbook: "docs/ops/RUNBOOK.md#resumenotstarted"
 
+  # --- GuestLeftUnfrozen --------------------------------------------------
+  - interval: 1m
+    name: GuestLeftUnfrozen warns when a freeze leaves a running guest unfrozen
+    input_series:
+      # The series exists at 0 from hostd's start, so the rise at the next
+      # boot is an increase and not a new series.
+      - series: 'repose_host_guest_freeze_unfrozen_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="estimate"}'
+        values: "0+0x10 1+0x30"
+      - series: 'repose_host_guest_freeze_unfrozen_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="deadline"}'
+        values: "0+0x41"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GuestLeftUnfrozen
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GuestLeftUnfrozen
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+              reason: estimate
+            exp_annotations:
+              summary: "1 guest(s) on host-01 were left unfrozen (estimate) and lost what they were running"
+              description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
+              runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+
   # --- MinerStopped -------------------------------------------------------
   - interval: 1m
     name: MinerStopped fires on the first automatic stop, summed over replicas

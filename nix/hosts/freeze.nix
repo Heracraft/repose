@@ -52,14 +52,30 @@ in
       description = "An RSA private key (PEM) on a path outside the host's disks, instead of Key Vault: staging and tests only.";
     };
     deadline = lib.mkOption {
-      type = lib.types.ints.between 10 240;
-      default = 120;
+      type = lib.types.ints.between 10 420;
+      default = 400;
       description = ''
         Seconds a freeze of every guest may take; a snapshot that would
         not finish by then is not started, and guests not frozen are
-        stopped by the shutdown as before. At most 240: the freeze unit
-        may hold the shutdown for twice this plus 60 s, which must stay
-        inside the about 600 s Azure waits for a graceful shutdown.
+        stopped by the shutdown as before, losing everything they were
+        running. 400 covers host-01's worst case, about 40 GiB of guest
+        memory at the 120 MB/s its data disk writes: 358 s plus the sync
+        and the settle (DECISIONS I-796). The cost is a host restart that
+        holds the shutdown this long. At most 420: the freeze unit may
+        hold the shutdown for this plus 150 s, which must stay inside the
+        about 600 s Azure waits for a graceful shutdown.
+      '';
+    };
+    writeRateMBs = lib.mkOption {
+      type = lib.types.ints.between 10 5000;
+      default = 100;
+      description = ''
+        MB/s one snapshot is assumed to write at, until this freeze's own
+        first finished snapshot shows the real rate. It is what decides
+        whether a guest's snapshot is started at all, so it is measured
+        per host on the disk the guest thin pool is on, where the images
+        are written, and rounded down so the estimate errs long (RUNBOOK
+        "Guest freeze", DECISIONS I-796).
       '';
     };
     freePageReporting = lib.mkOption {
@@ -106,11 +122,15 @@ in
         RemainAfterExit = true;
         ExecStart = "${pkgs.coreutils}/bin/true";
         ExecStop = "${hostd}/bin/hostd freeze --shutdown";
-        # A snapshot cannot be interrupted, and hostd starts one only when
-        # its estimate fits the deadline; twice the deadline leaves room
-        # for an estimate that was off by half, and 60 s for the rest of
-        # the freeze. 2 x 240 + 60 = 540 s, inside Azure's ~600 s wait.
-        TimeoutStopSec = 2 * fz.deadline + 60;
+        # A snapshot cannot be interrupted, and hostd starts one only
+        # when its estimate fits the deadline, so what can still be
+        # running when the deadline passes is a snapshot already started:
+        # at most one class's memory, 145 s for an xl at 16.25 GiB and
+        # 120 MB/s. 150 s of margin covers one of those having started at
+        # the deadline's edge, and the deadline itself bounds the rest.
+        # 420 + 150 = 570 s at most, inside Azure's ~600 s wait; at the
+        # default, 550 s (DECISIONS I-796).
+        TimeoutStopSec = fz.deadline + 150;
       };
     };
 
