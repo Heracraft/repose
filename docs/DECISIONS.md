@@ -23579,3 +23579,68 @@ renumbering the monitoring server; the owner chose this one).
   needs the server's own `wg-repose.conf`, the edge configuration, a
   `repose-admin edge loki` call and an edge switch, all before the launch
   host registers, and none of that is work the launch needs.
+**I-778. The host kernel is pinned apart from `nixpkgs`, and the host
+refuses to build below the patched version (cve-2026-99999,
+2026-10-18).** A guest-to-host escape, fixed by a version pin and an
+assertion that outlives whoever remembers why the pin is there.
+
+- *The defect.* CVE-2026-99999 is an out-of-bounds write in the host
+  kernel's IPv4 output path: a guest supplies the checksum metadata
+  (`csum_start`, `csum_offset`, `CHECKSUM_PARTIAL`), the kernel validates a
+  20-byte IPv4 header, then the fragmenter re-reads a guest-mutable IHL
+  field as up to 60 bytes and completes the checksum past what it
+  validated. Every precondition is something hostd configures on purpose.
+  Taps are created `vnet_hdr` (`internal/hostd/net/net.go:123`), which is
+  the channel the guest's `virtio_net_hdr` travels; Cloud Hypervisor gets
+  `--net tap=,mac=` with no offload option (`internal/hostd/ch/ch.go:138`);
+  the host runs the IPv4 output path on the packet, since
+  `net.ipv4.ip_forward = 1` with `iifname "br-guests" oifname "<uplink>"
+  accept` and `masquerade`; and that path fragments, because a `vnet_hdr`
+  tap hands the host GSO packets of up to 64 KB and the `wg0` leg has a
+  lower MTU than the bridge. The attacker position the CVE asks for, "an
+  untrusted guest VM", is what we sell.
+- *Why none of the existing containment covers it.* It never reaches Cloud
+  Hypervisor's device emulation, so `--seccomp true`, the unprivileged
+  `hostd` user, the unit's `DeviceAllow`, the per-guest volume ownership
+  and the bridge's `isolated on` bound nothing here. The write happens in
+  kernel mode on the host, above the `hostd` a guest@ unit runs as.
+  SECURITY.md's boundary 1 reasoned about an escape landing *as* `hostd`;
+  this lands above it, which is why boundary 1 now names the kernel.
+- *What ships.* `nixpkgs` is at 6.18.56 and the backport
+  (`6785011f8b16`, "ipv4: validate checksum_start before completing
+  checksum") first appears in 6.18.57, so a second input,
+  `nixpkgs-host-kernel`, pins **only** the host kernel, by rev
+  (`f0b687e`, `nixos-unstable-small` at 2026-10-17) so it cannot drift.
+  `repose.host.kernelPackages` carries it from `hostModules`, so the host
+  VM tests boot the kernel the hosts run, and `nix/hosts/kernel.nix` sets
+  `boot.kernelPackages` from it.
+- *The assertion is the point of the entry.* A version pin is a comment
+  that a tidying session deletes. `kernel.nix` asserts
+  `versionAtLeast kernel.version "6.18.57"` and names the CVE in the
+  failure, so removing the input, or `nixpkgs` moving `linuxPackages` back
+  to an older LTS, fails the host build instead of quietly shipping a
+  vulnerable kernel. Proved by forcing the old kernel back in: host-01
+  refuses to evaluate with "Host kernel 6.18.52 is older than 6.18.57".
+- *Why not bump `nixpkgs` itself.* It would be the first bump since the
+  repo was scaffolded (three commits have ever touched `nix/flake.lock`,
+  all of them feature work) and it moves the host, the edge and every
+  guest's base closure at once. That is a world rebuild to carry one
+  kernel patch. The narrow pin is removed, with `repose.host.kernelPackages`
+  and the assertion's special case, when `nixpkgs` reaches 6.18.57; the
+  assertion is what makes "remove it later" safe to write down.
+- *The guest kernel is deliberately not bumped.* The guest's own kernel is
+  not a boundary we hold: the tenant has passwordless sudo in their guest
+  by design, so a guest-local kernel bug costs them nothing they do not
+  already have. Bumping it would change every guest's closure for no
+  boundary. The edge is not exposed either: it has no tap and no untrusted
+  guest adjacent to it, and the metadata path exists only at a tap.
+- *Evidence.* `host`, `host-bench`, `host-01` and `host-stg-01` all
+  evaluate to `6.18.57`; host-01's closure builds and its
+  `kernel-modules/lib/modules` holds `6.18.57`; the kernel is fetched from
+  the cache (143.3 MiB, no local kernel build), which is why the pin is a
+  Hydra channel rev and not a `src` override. The fix is in 6.18.57 and no
+  earlier 6.18: the stable ChangeLogs for 6.18.53 through 6.18.56 do not
+  carry it and 6.18.57 names `commit 6785011f8b16abf40b1e9d8b2e332232b3e68822
+  upstream`. Host VM tests and the closure comparison that shows the guest
+  and the edge unchanged are in the commit message.
+  `docs/security/cve-2026-99999.md` is the assessment.

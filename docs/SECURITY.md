@@ -57,6 +57,13 @@ they stop an actor the component map does not draw.
    (its own nix database lists them as valid). Guests running when a host
    switches to I-463 are restarted at the switch (RUNBOOK, "Switch a host
    to main").
+   The host kernel is part of this boundary and not a dependency like any
+   other: a guest hands it checksum metadata through its tap's `vnet_hdr`
+   and the host runs the IPv4 output path on the packet, which is a write
+   past a validated header in kernel mode before CVE-2026-99999 was fixed,
+   above the unprivileged `hostd` everything else here is measured against.
+   So the kernel is pinned to a patched version and the host refuses to
+   build below it (I-778, `docs/security/cve-2026-99999.md`).
 2. **The bridge and nftables between guests.** Per-guest tap attached
    `isolated on learning off flood off` with a static FDB entry; the
    `bridge repose` table drops every switched frame and admits ARP and

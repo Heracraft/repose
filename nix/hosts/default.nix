@@ -163,6 +163,19 @@ in
       '';
     };
 
+    kernelPackages = lib.mkOption {
+      type = lib.types.raw;
+      default = pkgs.linuxPackages;
+      defaultText = lib.literalExpression "pkgs.linuxPackages";
+      description = ''
+        The host kernel. The flake sets it from its own nixpkgs pin while
+        `nixpkgs` carries no host kernel with the CVE-2026-99999 fix
+        (DECISIONS I-778). kernel.nix asserts the version either way, so this
+        default is a build failure until that channel catches up rather than
+        a host that boots the vulnerable kernel.
+      '';
+    };
+
     baseRepo = {
       url = lib.mkOption {
         type = lib.types.str;
