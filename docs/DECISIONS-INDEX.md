@@ -817,4 +817,4 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23361
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23405
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
-- **I-779** The logo is a block at rest in the crook of an L; it replaces the traced sketch — 2026-10-18; L23525
+- **I-779** The logo is a copy being made, caught just before it finishes — 2026-10-18; L23525

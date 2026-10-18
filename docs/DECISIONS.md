@@ -23522,39 +23522,53 @@ The public docs under `content/docs/` are untouched: the owner asked for
 the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
 user-visible outside the landing changed, so no page there needs one.
 
-**I-779. The logo is a block at rest in the crook of an L; it replaces
-the traced sketch.** (owner, 2026-10-18: "our logo is shit, go crazy and
-design something new and simple", then "kinda looks like opencode" of the
-first answer; supersedes I-363, amends I-393) The mark is two flat shapes
-on a 100 grid: a wall and a floor 22 thick in the text's ink, drawn as
-one L, and a block of 38 in `--sh-accent` sitting on the floor with 16 of
-daylight between it and the wall. Something set down and held, which is
-what the name says and what the product does with a machine's state.
-Nothing in the drawing is thinner than an arm, which is what I-363's
-traced cross could not say: its 4-unit stems fell under a pixel by 24px
-and needed a second, heavier drawing for the tab. So the favicon is now
-the same geometry as the header's (`static/favicon.svg`, and
-`favicon.png` rendered from it at 128px on transparent in the light
-colours), and `Logo.svelte` keeps its `size`, `mark` and `word` props
-unchanged. The mark's two greys go with the sketch, and with them I-393's
-grey floor: the L is `currentColor` and the block `--sh-accent`, and both
-hold 3:1 in both schemes with no cut of their own. The icon links carry
-`?v=3` so browsers drop the cached sketch; the Logto sign-in page and the
-sign-in emails take the new drawing with the next deploy
-(`ops/logto/logo-mark.svg`, `favicon.png`).
-*Rejected, and why it matters:* the first answer under this id was a
-square ring with the accent block astride its corner. The owner: "kinda
-looks like opencode". It does, and opencode is the nearest neighbour this
-product has: its mark is a thick square-cornered O whose lower counter is
-filled. Every enclosure went with it, so no frame, no counter, nothing
-that reads as a letter O. Also rejected: the block tucked inside a box or
-set on its floor (the same collision); a square with a bite out of it and
-the bite set down beside it (two objects, and thin in a header row); two
-halves of one square interlocking on a step seam (the best idea of the
-round, and muddy at 16px); crop-mark corners (a selection tool, not a
-thing); twin offset squares (the copy icon); bars, stacks and steps (a
-menu, a rack, a bar chart); a diagonal split (off the grammar of flat
-rectangles).
-The studies are in `docs/reviews/2026-10-18-logo.md`, judged at 16, 24
-and 28px and on the 16px pixel grid in both schemes, which is how each
-round was cut.
+**I-779. The logo is a copy being made, caught just before it finishes.**
+(owner, 2026-10-18, over four reviews: "our logo is shit, go crazy and
+design something new and simple", "kinda looks like opencode", "the first
+one was the only real one in terms of quality", "quality is a bad metric,
+lets create something beautiful and distinct", then the brief this one
+answers: duplication, shadows, mirrors, cells replicating, a clone formed
+from a body's own material — "we want to show the duplication still
+happening but almost perfect"; supersedes I-363, amends I-393) The mark is
+two flat shapes on a 100 grid: a disc of 34 at 38,38 in the text's ink is
+the original, and in `--sh-accent` is the part of a second disc, 32 at
+63,63, that has cleared it — the copy, caught with a seam of 5 still open
+all the way round, and a little smaller because it is not finished. A
+machine replicating your working state, in the act. The disc is the
+landing's sphere, so the mark is drawn in the page's own vocabulary; its
+curve is the one the system allows the logo, the way the landing keeps a
+sphere (the radius scale stops at 4px, and nothing else takes a curve
+from this).
+The crescent is 20 wide at its widest and the seam is 5, so at 16px they
+are 3.2 and 0.8 pixels: both survive, which I-363's traced cross could
+not manage (its 4-unit stems fell under a pixel by 24px and needed a
+second, heavier drawing for the tab). So the favicon is the same geometry
+as the header's (`static/favicon.svg`, and `favicon.png` rendered from it
+at 128px on transparent in the light colours), and `Logo.svelte` keeps
+its `size`, `mark` and `word` props unchanged. The mark's two greys go
+with the sketch, and with them I-393's grey floor: the disc is
+`currentColor` and the copy `--sh-accent`, and both hold 3:1 in both
+schemes. The icon links carry `?v=3` so browsers drop the cached sketch;
+the Logto sign-in page and the sign-in emails take the new drawing with
+the next deploy (`ops/logto/logo-mark.svg`, `favicon.png`).
+*The four answers before it, and what each one settled.* A square ring
+with the accent block astride its corner: the owner read it as opencode,
+whose mark is a thick square-cornered O with a filled lower counter, so
+**the mark encloses nothing**. A block at rest in the crook of an L: it
+cleared that bar and lost the first one's presence, and a grid of 56 peer
+marks rendered at 56 and 16px says why — what holds at a tab's size is
+one silhouette with mass, what falls apart is a mark in separate pieces —
+so **one silhouette, the accent a region of it**. A square block with a
+square slot: it obeyed both rules and read as a diagram of them. A
+round-ended slot with the piece that came out of it: beautiful, and about
+nothing the product does. The brief that followed named the subject
+instead of the form, which is what produced this one.
+*Also drawn from that brief and rejected:* two discs in mitosis with a
+neck between them (a Venn diagram at any size below 48px); a bud growing
+off a larger disc (a planet and its moon); a mirror pair across a seam
+(the landing's halves sign, already spoken for); the copy with a quarter
+still missing (it reads as damage, not as progress); the same device in
+squares, the copy a step behind (clean, and it is a drop shadow on a
+card).
+The studies are in `docs/reviews/2026-10-18-logo.md`, judged at 120, 28,
+24 and 16px and on the 16px pixel grid in both schemes.

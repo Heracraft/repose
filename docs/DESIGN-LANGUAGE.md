@@ -194,8 +194,9 @@ it or swaps in the native control.
 
 ## Logo
 
-`Logo.svelte` is the I-779 mark (a block in the accent at rest in the
-crook of an L in the text's ink) followed by "repose" in Noto Serif 600.
+`Logo.svelte` is the I-779 mark (a disc in the text's ink, and in the
+accent the part of a second disc that has cleared it: a copy being made,
+caught just before it finishes) followed by "repose" in Noto Serif 600.
 The mark is in every header (I-381):
 
 - It links to `/` from every page, the dashboard included, named
@@ -205,19 +206,27 @@ The mark is in every header (I-381):
 - Below `sm`: the 24px `sm` cut alone, so the header row fits 320px. The
   link carries the name. The footer shows the `sm` mark with the word at
   every width.
-- One drawing at every size. On a 100 grid the wall and floor are 22
-  thick and the block is 38, sitting on the floor with 16 of daylight
-  between it and the wall. Nothing in it is thinner than an arm, so it
-  holds at 16px and the tab (`static/favicon.svg`, `favicon.png`) carries
-  the same geometry rather than a heavier cut of it, as the traced mark
-  needed (I-779).
-- The L is `currentColor`, the text's ink in both schemes; the block is
+- One drawing at every size. On a 100 grid the original is a disc of 34
+  at 38,38; the copy is a disc of 32 at 63,63, and the accent shape is
+  what the copy has cleared of the original grown by the seam of 5. The
+  crescent is 20 at its widest, so at 16px it is 3.2 pixels and the seam
+  is 0.8: both survive, and the tab (`static/favicon.svg`, `favicon.png`)
+  carries the same geometry rather than a heavier cut of it, as the
+  traced mark needed (I-779).
+- The copy is smaller than the original on purpose. It is not finished:
+  that is the whole mark. Do not even them up.
+- The disc is `currentColor`, the text's ink in both schemes; the copy is
   `--sh-accent`, the one `--sh-*` token that appears off `/` (I-393).
   There are no greys in it to hold a floor for, and both shapes hold 3:1
   on `--page`, `--surface` and `--sunken` in both schemes.
-- The mark encloses nothing. opencode's is a thick square-cornered O with
-  a filled lower counter, so a ring, a frame or a block inside a box reads
-  as that product, not this one (I-779).
+- **The curve is the exception to "Corners".** The radius scale stops at
+  4px and the pages draw rectangles; the mark is drawn with the landing's
+  sphere, and nothing else in the system takes a curve from it (I-779).
+- Two rules the mark is built on, both paid for (I-779). It encloses
+  nothing: opencode's mark is a thick square-cornered O with a filled
+  lower counter, so a ring, a frame or a block inside a box reads as that
+  product. And it is one silhouette with the accent as a region of it: a
+  mark in separate pieces falls apart at a tab's size.
 
 ## Page frame and header
 

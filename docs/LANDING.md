@@ -437,16 +437,17 @@ and underlined every heading. The page is one system:
   the balance on viewport captures at 1x in both themes, one per section,
   as "Process" says; a full-page capture only shows the page's rhythm.
 - **The logo** (`Logo.svelte`, and `static/favicon.png` from the same
-  drawing) is a block at rest in the crook of an L (DECISIONS I-779): the
-  wall and floor in the text's ink, and the block in `--sh-accent` sitting
-  on the floor, clear of the wall. Two flat shapes and no grey, so one
-  drawing serves the header and the 16px tab; the favicon is not a heavier
-  cut. It encloses nothing, on purpose: a ring or a box with a block in it
-  reads as opencode. It replaced the owner's traced cross-and-blocks
-  sketch (I-363), which turned to mush under 24px, and that had replaced
-  the r. The mark is in every page's header, not only this one's (I-381);
-  where it appears and its minimum size are in `DESIGN-LANGUAGE.md`,
-  "Logo".
+  drawing) is a copy being made, caught just before it finishes (DECISIONS
+  I-779): a disc in the text's ink, and in `--sh-accent` the part of a
+  second, slightly smaller disc that has cleared it, with the seam still
+  open. It is drawn with this page's sphere, and its curve is the one the
+  system allows the mark. One drawing serves the header and the 16px tab;
+  the favicon is not a heavier cut. It encloses nothing, on purpose: a
+  ring or a box with a block in it reads as opencode. It replaced the
+  owner's traced cross-and-blocks sketch (I-363), which turned to mush
+  under 24px, and that had replaced the r. The mark is in every page's
+  header, not only this one's (I-381); where it appears and its minimum
+  size are in `DESIGN-LANGUAGE.md`, "Logo".
 - The shapes live in `landing/Shape.svelte` and draw only from the `--sh-*`
   tokens. The app's own pages never use them, with one exception: the
   logo's block is `--sh-accent`, and the logo is in every header
