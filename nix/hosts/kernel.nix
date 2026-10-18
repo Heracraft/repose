@@ -1,8 +1,41 @@
-# Kernel modules, parameters and sysctls a host needs before hostd starts.
+# The host kernel: which one, and the modules, parameters and sysctls a host
+# needs before hostd starts.
 # The module list is fixed here instead of locking modules (hardening.nix)
 # because hostd creates taps and Cloud Hypervisor opens /dev/kvm after boot.
-{ ... }:
+{ config, lib, ... }:
+let
+  # CVE-2026-99999: the first stable kernel carrying the backport of
+  # 6785011f8b16, "ipv4: validate checksum_start before completing checksum".
+  patchedKernel = "6.18.57";
+in
 {
+  # Not `pkgs.linuxPackages`: the flake pins the host kernel separately until
+  # `nixpkgs` reaches patchedKernel (DECISIONS I-778).
+  boot.kernelPackages = config.repose.host.kernelPackages;
+
+  # A host's kernel is the guest-to-host boundary, not a dependency like any
+  # other. A guest hands the host kernel its own checksum metadata through
+  # its tap's `vnet_hdr` (net.go's AddTap) and the host runs the IPv4 output
+  # path on the packet (ip_forward below, the forward and masquerade rules in
+  # nftables.nix), so before CVE-2026-99999 was fixed any tenant could write
+  # past a validated IPv4 header in the host kernel. None of the containment
+  # around the hypervisor applies to that path: it is kernel mode on the
+  # host, above the unprivileged `hostd` the guest@ unit runs as. This is an
+  # assertion rather than a comment because the fix is a version pin, and a
+  # pin is removed by whoever is tidying up months later.
+  assertions = [
+    {
+      assertion = lib.versionAtLeast config.boot.kernelPackages.kernel.version patchedKernel;
+      message = ''
+        Host kernel ${config.boot.kernelPackages.kernel.version} is older than
+        ${patchedKernel} and so has no fix for CVE-2026-99999, a guest-to-host
+        escape through the tap's checksum metadata (docs/security/cve-2026-99999.md).
+        Repoint `repose.host.kernelPackages` at a patched kernel; do not relax
+        this assertion to ship a host.
+      '';
+    }
+  ];
+
   boot.kernelModules = [
     "kvm-intel"
     "vhost_vsock"
