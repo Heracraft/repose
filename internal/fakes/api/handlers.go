@@ -16,6 +16,7 @@ import (
 	_ "time/tzdata" // PATCH /me validates tz without depending on the host's zoneinfo
 
 	"github.com/heracraft/repose/internal/api/notify"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/menu"
 	"github.com/heracraft/repose/internal/multiplexer"
@@ -1028,8 +1029,11 @@ func (f *Fake) projectSamples(w http.ResponseWriter, r *http.Request) *apiError 
 	if !ok {
 		return errf("invalid", "window must be 1h, 24h or 7d")
 	}
-	vcpus := map[string]int{"small": 2, "large": 4, "xl": 8}[p.Class]
-	mem := map[string]int64{"small": 4 << 30, "large": 8 << 30, "xl": 16 << 30}[p.Class]
+	// The real route answers from the same two functions
+	// (internal/api/http/samples.go), so the fake cannot drift from the
+	// class table the way its own copy of it did before I-784.
+	vcpus := scheduler.ClassVCPU(p.Class)
+	mem := scheduler.ClassRAM(p.Class)
 	points := []map[string]any{}
 	procs := []map[string]any{}
 	if p.State == "running" {

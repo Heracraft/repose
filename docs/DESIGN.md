@@ -117,9 +117,9 @@ disks are resolved at install time from their namespace ids, because which
 controller enumerates first is not fixed (DECISIONS I-41, I-647). CPU is
 oversubscribed at most 1.5 committed guest vCPUs per **physical core** --
 half of a `D64s_v7`'s 64 Azure vCPUs are SMT threads of the other half --
-which that `D64s_v7` reaches at 48 guest vCPUs, so its CPU allows 12 large
-guests where its memory allows 30 (I-734, I-736). Capacity is added by
-hand: an alert fires at 80 percent reserved memory, another past one busy
+which that `D64s_v7` reaches at 48 guest vCPUs, so its CPU allows 24 large
+guests where its memory allows 30 (I-734, I-736, I-784). Capacity is added
+by hand: an alert fires at 80 percent reserved memory, another past one busy
 guest vCPU per core (I-738), and a human runs the OpenTofu apply for the
 next host.
 
@@ -171,9 +171,14 @@ result.
 
 | Class | vCPU | RAM | Default volume | Monthly cap (see PRICING) |
 |---|---|---|---|---|
-| small | 2 | 4 GB | 20 GB | $49 |
-| large | 4 | 8 GB | 40 GB | $99 |
-| xl | 8 | 16 GB | 80 GB | $199 |
+| small | 1 | 4 GB | 20 GB | $49 |
+| large | 2 | 8 GB | 40 GB | $99 |
+| xl | 4 | 16 GB | 80 GB | $199 |
+
+Every class is 4 GB of memory per guest vCPU, uniformly (DECISIONS I-784,
+amending R3-2's 2 GB). The ratio is uniform so that a host's placeable
+memory fixes its guest-vCPU count whatever mix of classes is sold: two
+`small` commit the vCPUs of one `large`, as they already took its memory.
 
 Volumes are thin-provisioned, resizable upward from the CLI. The plan's
 disk counts the bytes a volume holds (the thin volume's allocated blocks),

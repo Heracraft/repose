@@ -7,10 +7,11 @@ import (
 )
 
 // classSpec is what a size class gives and which plan runs it, as
-// docs/PRICING.md and apps/web/src/content/docs/billing.md list it. The
-// CLI keeps its own copy rather than importing internal/billing (which
-// pulls in the api's database code); TestClassSpecsMatchBillingAndHost
-// pins it to both sources.
+// docs/DESIGN.md §5 and apps/web/src/content/docs/machine.md list it:
+// 4 GB of memory per guest vCPU (DECISIONS I-784). The CLI keeps its own
+// copy rather than importing internal/billing (which pulls in the api's
+// database code); TestClassSpecsMatchBillingAndHost pins it to billing,
+// to hostd's own table and to scheduler.ClassVCPU.
 type classSpec struct {
 	VCPUs int
 	MemGB int
@@ -20,9 +21,9 @@ type classSpec struct {
 }
 
 var classSpecs = map[string]classSpec{
-	"small": {VCPUs: 2, MemGB: 4, Plan: "Solo"},
-	"large": {VCPUs: 4, MemGB: 8, Plan: "Solo"},
-	"xl":    {VCPUs: 8, MemGB: 16, Plan: "Plus"},
+	"small": {VCPUs: 1, MemGB: 4, Plan: "Solo"},
+	"large": {VCPUs: 2, MemGB: 8, Plan: "Solo"},
+	"xl":    {VCPUs: 4, MemGB: 16, Plan: "Plus"},
 }
 
 // planSpecs is each plan's memory for running machines, smallest first,
@@ -147,7 +148,7 @@ func fixOr(fix string, slugs []string) string {
 	return fmt.Sprintf("`repose stop %s` frees it", strings.Join(slugs, " "))
 }
 
-// classSummary is "4 vCPU, 8 GB memory; fits the Solo plan" or "8 vCPU,
+// classSummary is "2 vCPU, 8 GB memory; fits the Solo plan" or "4 vCPU,
 // 16 GB memory; needs the Plus plan".
 func classSummary(class string) string {
 	c, ok := classSpecs[class]

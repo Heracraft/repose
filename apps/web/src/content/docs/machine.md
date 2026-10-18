@@ -9,9 +9,13 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 | Size    | vCPU | Memory | Disk  |
 | ------- | ---- | ------ | ----- |
-| `small` | 2    | 4 GB   | 20 GB |
-| `large` | 4    | 8 GB   | 40 GB |
-| `xl`    | 8    | 16 GB  | 80 GB |
+| `small` | 1    | 4 GB   | 20 GB |
+| `large` | 2    | 8 GB   | 40 GB |
+| `xl`    | 4    | 16 GB  | 80 GB |
+
+A machine that has been running since before the sizes changed keeps the
+vCPUs it started with until its next stop, so `nproc` on it can say more
+than the table.
 
 ## What's installed
 
@@ -225,7 +229,7 @@ The dashboard's **Usage** card draws four charts over the last hour, day or week
 
 - **CPU**: the share of the machine's vCPUs in use.
 - **Memory**: memory in use without the page cache, of the size's memory.
-- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than vCPUs, several builds or test runs at once. Run fewer at a time, or [give the machine more vCPUs](#changing-the-size).
+- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than vCPUs: a build running more jobs than the size has, or several test runs at once. Run fewer jobs at a time, or [give the machine more vCPUs](#changing-the-size).
 - **Waiting for the server**: the time the machine's vCPUs waited for a CPU on the server. A slow minute with your own CPU low came from the server.
 
 The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap.

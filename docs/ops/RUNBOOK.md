@@ -224,6 +224,17 @@ core the same keystroke took 17.0 ms p50 and 44.5 ms p90, the session took
 2.0 s, and a new guest's first boot failed twice. Steal inside the guests
 was 1.2-3.7 percent throughout, so this is queueing, not shortage.
 
+That measurement was taken when a class was 2 GB of memory per guest
+vCPU, so its 20 committed vCPUs were three guests. Since I-784 the same
+three guests commit 10, and **nobody has run the latency probe against a
+host filled with 2-vCPU guests**: if the boundary tracks guest count
+rather than guest vCPUs, this rule fires later than it should on such a
+host. The probe is §1 and §9 of
+`docs/proposals/2026-10-14-host-cpu-capacity.md`; running it is owed
+(I-784). Until it is run, treat a warn on a host full of post-I-784
+guests as the real thing and read the keystroke latency yourself before
+deciding otherwise.
+
 1. How far over, and whose: Grafana "Host capacity" with `host_id` set to
    the host, "Guest CPU seconds by class" against
    `repose_host_cpu_cores`. `repose-admin projects list --host host-NN`

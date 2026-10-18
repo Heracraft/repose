@@ -30,6 +30,7 @@
 	import {
 		bytes,
 		classMemoryGB,
+		classVCPUs,
 		dateOnly,
 		gb,
 		gbs,
@@ -571,9 +572,12 @@
 
 	let revision = $derived(revisions.find((r) => r.revision_id === project?.config_revision_id));
 
-	// The sizes as /docs/machine's table has them (DECISIONS R3-2).
-	const VCPUS: Record<string, number> = { small: 2, large: 4, xl: 8 };
-	let vcpus = $derived(project ? VCPUS[project.class] : undefined);
+	// The size's vCPUs, for the status line, which has to say them for a
+	// stopped machine too: a stopped machine is not sampled, so the
+	// samples payload's own `vcpus` is not there to read (I-492). The
+	// figure lives in format.ts, pinned to scheduler.ClassVCPU by
+	// plans.test.ts (DECISIONS I-784, amending R3-2).
+	let vcpus = $derived(project ? classVCPUs(project.class) || undefined : undefined);
 
 	/** The sentence after "code: " in last_error, as the projects list shows it. */
 	/** When the machine was frozen while idle, behind the flag (I-683). */

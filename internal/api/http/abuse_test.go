@@ -12,6 +12,7 @@ import (
 
 	"github.com/heracraft/repose/internal/admin"
 	"github.com/heracraft/repose/internal/api/abuse"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
@@ -207,12 +208,16 @@ func TestBusyUnattendedGauge(t *testing.T) {
 			}
 		}
 	}
-	full := func(vcpus int64) int64 { return vcpus * 60e9 * 98 / 100 }
-	fill("miner-like", "small", 370, full(2), "[]", 0)
-	fill("agent-at-work", "large", 370, full(4), `[{"agent":"claude","window":"0","state":"working"}]`, 0)
-	fill("someone-attached", "xl", 370, full(8), "[]", 1)
-	fill("half-busy", "large", 370, full(4)/2, "[]", 0)
-	fill("only-two-hours", "small", 120, full(2), "[]", 0)
+	// 98 percent of every vCPU the class has, which is what the signal
+	// divides by (scheduler.ClassVCPUSQL): written from the class rather
+	// than as a figure, so the vCPUs can move without the fixture
+	// claiming a busy machine is a tenth busy (DECISIONS I-784).
+	full := func(class string) int64 { return int64(scheduler.ClassVCPU(class)) * 60e9 * 98 / 100 }
+	fill("miner-like", "small", 370, full("small"), "[]", 0)
+	fill("agent-at-work", "large", 370, full("large"), `[{"agent":"claude","window":"0","state":"working"}]`, 0)
+	fill("someone-attached", "xl", 370, full("xl"), "[]", 1)
+	fill("half-busy", "large", 370, full("large")/2, "[]", 0)
+	fill("only-two-hours", "small", 120, full("small"), "[]", 0)
 	g := abuse.New(e.h.Pool, e.h.Engine, e.h.Events, e.h.Metrics, e.h.Log)
 	if err := g.Refresh(ctx); err != nil {
 		t.Fatal(err)

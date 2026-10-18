@@ -111,8 +111,8 @@ Codex `notify`) running `repose-hook`, which posts to guestd's socket. For
 agents without one, guestd's pane-idle heuristic stands in and is labelled
 as such.
 
-**class**, a guest size: `small` (2 vCPU, 4 GB), `large` (4, 8), `xl`
-(8, 16). Fixed per project while running; changeable when stopped.
+**class**, a guest size: `small` (1 vCPU, 4 GB), `large` (2, 8), `xl`
+(4, 16). Fixed per project while running; changeable when stopped.
 
 **cap**, the monthly maximum a project of a class is billed for guest-
 hours: $49, $99, $199. Hourly rate is the cap divided by 720, so running

@@ -56,9 +56,11 @@ seat count (DECISIONS I-362).
 
 Prices are in USD and exclude tax; Polar adds and remits the tax for the
 buyer's country as merchant of record, which is why billing goes through a
-merchant of record (DECISIONS I-289, I-604). Size classes keep their shapes (`small` 2 vCPU 4 GB,
-`large` 4 vCPU 8 GB, `xl` 8 vCPU 16 GB, `docs/interfaces/README.md`); a
-plan says how much of them may run at the same time.
+merchant of record (DECISIONS I-289, I-604). Size classes keep their memory
+and disk; their vCPUs halved with I-784, to 4 GB of memory per guest vCPU
+(`small` 1 vCPU 4 GB, `large` 2 vCPU 8 GB, `xl` 4 vCPU 16 GB, `DESIGN.md`
+§5). No price moved with them. A plan says how much of them may run at the
+same time.
 
 A plan's rules:
 
@@ -125,14 +127,15 @@ needs that changed first.
 ## Seats and the waitlist
 
 A seat is 8 GB of memory that may run at once on the fleet: Solo holds one,
-Plus two, Pro four. A seat is also 4 guest vCPUs, since every class is 2 GB
-per vCPU, so a host delivers the smaller of two ceilings: the usable 8 GB
-blocks its memory divides into (RAM minus the host reserve) and the seats
-its physical cores can serve while typing still feels immediate. The fleet
-has as many seats as its `ready`, undrained hosts deliver, counted per host
-and summed, or `SEATS_TOTAL` when the operator sets it (DECISIONS I-739;
-the launch host, a `D64s_v7`, is 11 seats, and host-01 today is 1). Seats
-are held by every subscription that is `trialing`, `active` or `past_due`,
+Plus two, Pro four. A seat is also 2 guest vCPUs, since every class is 4 GB
+per vCPU (I-784), so a host delivers the smaller of two ceilings: the usable
+8 GB blocks its memory divides into (RAM minus the host reserve) and the
+seats its physical cores can serve while typing still feels immediate. The
+fleet has as many seats as its `ready`, undrained hosts deliver, counted per
+host and summed, or `SEATS_TOTAL` when the operator sets it (DECISIONS
+I-739, I-784; the launch host, a `D64s_v7`, is 24 seats, and host-01's
+shape is 4). Seats are held by every subscription that is `trialing`,
+`active` or `past_due`,
 and by every waitlist invitation that has not expired. Checkout for a plan needs that many free seats; without
 them the user joins the waitlist, and the waitlist invites the oldest
 waiting user whenever a seat is free, holding it 72 hours for them
@@ -178,15 +181,17 @@ chargeback, which cancels the subscription. The public statement is
 
 **Every figure in this section is owed a re-derivation and is wrong until
 it gets one** (I-739, `proposals/2026-10-14-host-cpu-capacity.md` §7 item
-6). It is computed at 30 seats a host; measurement on 2026-10-14 puts a
-`D64s_v7` at 11, so a seat costs about $281 rather than $100 and the
-margin against Hetzner shrinks or inverts. The prices themselves are the
-owner's call, so nothing below has been changed.
+6). It is computed at 30 seats a host; the seat derivation puts a
+`D64s_v7` at 24 (11 between I-739 and I-784), so a seat costs about $129
+rather than $100. I-784 recovered most of the gap and none of the
+arithmetic below: the prices themselves are the owner's call, so nothing
+below has been changed.
 
 The plans have to cover an always-on seat on the chosen host. Memory is the
 binding constraint at 30 seats per host (256 GB minus 16 GB reserve, no
-memory oversubscription; CPU is oversubscribed 2:1). The launch host is a
-`D64s_v7` (DECISIONS I-39) at about $3,000 a month on demand, so a seat
+memory oversubscription; CPU is oversubscribed at most 1.5 committed
+guest vCPUs per physical core, I-734). The launch host is a `D64s_v7`
+(DECISIONS I-39) at about $3,000 a month on demand, so a seat
 that runs around the clock costs about $100 in compute before storage, the
 control plane and the edge, and Solo at $49 loses about $54 a month on such
 a user ($63 at the founding $39); a Pro user running four seats all month
