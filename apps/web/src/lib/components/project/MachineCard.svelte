@@ -1,7 +1,7 @@
 <!--
   The machine behind a project: the memory in use now (the newest
   sample, I-492) and the disk (the guest's root filesystem, I-567), each
-  a figure with a small ring (I-674). The size's vCPUs and memory are on
+  a figure with a small ring (I-674). The size's cores and memory are on
   the page's status line, so the card does not repeat them. The disk grows in
   place: Resize… under the disk opens the page's resize panel, which
   runs the frame's width under this row, since a form needs room and this

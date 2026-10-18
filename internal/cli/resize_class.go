@@ -148,8 +148,10 @@ func fixOr(fix string, slugs []string) string {
 	return fmt.Sprintf("`repose stop %s` frees it", strings.Join(slugs, " "))
 }
 
-// classSummary is "2 vCPU, 8 GB memory; fits the Solo plan" or "4 vCPU,
-// 16 GB memory; needs the Plus plan".
+// classSummary is "2 cores, 8 GB memory; fits the Solo plan" or "4 cores,
+// 16 GB memory; needs the Plus plan". The unit a user reads is "core", not
+// "vCPU": the count is the same number, and a vCPU elsewhere in the market
+// is one SMT thread (DECISIONS I-784).
 func classSummary(class string) string {
 	c, ok := classSpecs[class]
 	if !ok {
@@ -159,7 +161,11 @@ func classSummary(class string) string {
 	if c.Plan != "Solo" {
 		verb = "needs the"
 	}
-	return fmt.Sprintf("%d vCPU, %d GB memory; %s %s plan", c.VCPUs, c.MemGB, verb, c.Plan)
+	unit := "cores"
+	if c.VCPUs == 1 {
+		unit = "core"
+	}
+	return fmt.Sprintf("%d %s, %d GB memory; %s %s plan", c.VCPUs, unit, c.MemGB, verb, c.Plan)
 }
 
 // classChangePrompt is asked before a running project is stopped to change

@@ -7,15 +7,15 @@ order: 12
 
 Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
-| Size    | vCPU | Memory | Disk  |
-| ------- | ---- | ------ | ----- |
-| `small` | 1    | 4 GB   | 20 GB |
-| `large` | 2    | 8 GB   | 40 GB |
-| `xl`    | 4    | 16 GB  | 80 GB |
+| Size    | Cores | Memory | Disk  |
+| ------- | ----- | ------ | ----- |
+| `small` | 1     | 4 GB   | 20 GB |
+| `large` | 2     | 8 GB   | 40 GB |
+| `xl`    | 4     | 16 GB  | 80 GB |
 
-A machine that has been running since before the sizes changed keeps the
-vCPUs it started with until its next stop, so `nproc` on it can say more
-than the table.
+A core is a physical core, not a hyperthread. `nproc` says the same
+number, and a machine running since before 18 October 2026 keeps the
+count it started with until its next stop.
 
 ## What's installed
 
@@ -227,20 +227,20 @@ Once a week the machine deletes the nix store paths it downloaded or built itsel
 
 The dashboard's **Usage** card draws four charts over the last hour, day or week:
 
-- **CPU**: the share of the machine's vCPUs in use.
+- **CPU**: the share of the machine's cores in use.
 - **Memory**: memory in use without the page cache, of the size's memory.
-- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than vCPUs: a build running more jobs than the size has, or several test runs at once. Run fewer jobs at a time, or [give the machine more vCPUs](#changing-the-size).
-- **Waiting for the server**: the time the machine's vCPUs waited for a CPU on the server. A slow minute with your own CPU low came from the server.
+- **Waiting for a core**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than cores: a build running more jobs than the size has, or several test runs at once. Run fewer jobs at a time, or [give the machine more cores](#changing-the-size).
+- **Waiting for the server**: the time the machine's cores waited for a CPU on the server. A slow minute with your own CPU low came from the server.
 
 The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap.
 
 Under the charts, folded, are the eight busiest processes of the window: name, CPU time, peak memory. repose records process names and numbers, never their arguments or anything you type ([what repose stores](/docs/secrets#what-repose-stores)). For a live view, run `htop` on the machine.
 
-Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every vCPU is busy, so what you type keeps showing up at once. Nothing is capped: on an idle machine a build gets everything.
+Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every core is busy, so what you type keeps showing up at once. Nothing is capped: on an idle machine a build gets everything.
 
 ## Changing the size
 
-`repose resize --size small|large|xl` changes a project's size. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 
