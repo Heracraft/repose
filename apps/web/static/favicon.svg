@@ -1,24 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 4 92 92">
-	<!-- The logo (Logo.svelte, DECISIONS I-363) cut heavier for a browser
-	     tab: stems 10 instead of 4, blocks a little larger, so it holds at
-	     16px. Colours are the landing's --sh-* values; the cross takes the
-	     page ink, and flips with the scheme so it shows on a dark tab bar.
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="6 6 88 88">
+	<!-- The logo (Logo.svelte, DECISIONS I-779) at its own weight: the mark
+	     holds at 16px, so the tab shows the same drawing the header does.
+	     Colours are the landing's --sh-* values; the L takes the page ink,
+	     and flips with the scheme so it shows on a dark tab bar.
 	     favicon.png is this drawing in the light colours. -->
 	<style>
-		.g { fill: #a2a29d; }
-		.l { fill: #cfcfcb; }
-		.a { fill: #4d6fb3; }
 		.i { fill: #181817; }
+		.a { fill: #4d6fb3; }
 		@media (prefers-color-scheme: dark) {
-			.g { fill: #767671; }
-			.l { fill: #595955; }
-			.a { fill: #8aa4d8; }
 			.i { fill: #f3f3f1; }
+			.a { fill: #8aa4d8; }
 		}
 	</style>
-	<rect class="g" x="31" y="15" width="9" height="32" />
-	<rect class="l" x="50" y="31" width="14" height="16" />
-	<rect class="a" x="50" y="57" width="24" height="21" />
-	<rect class="i" x="40" y="4" width="10" height="92" />
-	<rect class="i" x="13" y="47" width="74" height="10" />
+	<path class="i" d="M6 6h22v66h66v22H6Z" />
+	<rect class="a" x="44" y="34" width="38" height="38" />
 </svg>

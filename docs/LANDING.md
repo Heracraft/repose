@@ -437,22 +437,20 @@ and underlined every heading. The page is one system:
   the balance on viewport captures at 1x in both themes, one per section,
   as "Process" says; a full-page capture only shows the page's rhythm.
 - **The logo** (`Logo.svelte`, and `static/favicon.png` from the same
-  drawing) is the owner's notebook sketch, traced (DECISIONS I-363): a
-  thin cross in the text's ink, its crossing left of centre and low, and
-  three flat blocks hugging the crossing: a skinny one in grey above-left,
-  a middle square in a fainter grey above-right on the arm, and the big
-  square in `--sh-accent` below-right. The two greys are the mark's own,
-  not `--sh-grey` and `--sh-light`, which vanish at header size; their
-  values are in `DESIGN-LANGUAGE.md`, "Logo" (I-393). The favicon
-  (`favicon.svg`, `favicon.png`) is a heavier cut of it, stems 10 instead
-  of 4, so it holds at 16px. It replaced the r (a stem and a blue quarter
-  disc), which had replaced the quartered ring. The mark is in every
-  page's header, not only this one's (I-381); where it appears and its
-  minimum size are in `DESIGN-LANGUAGE.md`, "Logo".
+  drawing) is a block at rest in the crook of an L (DECISIONS I-779): the
+  wall and floor in the text's ink, and the block in `--sh-accent` sitting
+  on the floor, clear of the wall. Two flat shapes and no grey, so one
+  drawing serves the header and the 16px tab; the favicon is not a heavier
+  cut. It encloses nothing, on purpose: a ring or a box with a block in it
+  reads as opencode. It replaced the owner's traced cross-and-blocks
+  sketch (I-363), which turned to mush under 24px, and that had replaced
+  the r. The mark is in every page's header, not only this one's (I-381);
+  where it appears and its minimum size are in `DESIGN-LANGUAGE.md`,
+  "Logo".
 - The shapes live in `landing/Shape.svelte` and draw only from the `--sh-*`
   tokens. The app's own pages never use them, with one exception: the
-  logo's big square is `--sh-accent`, and the logo is in every header
-  (I-363, I-381, I-393).
+  logo's block is `--sh-accent`, and the logo is in every header
+  (I-381, I-393, I-779).
 
 ## Since the owner's notes (implementation, awaiting the owner)
 

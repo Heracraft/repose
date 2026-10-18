@@ -59,7 +59,7 @@ colour has one meaning:
   under its limit (I-659). The usage chart's line is `--chart-line`,
   which `layout.css` sets to `--ink`; the accent is one switch away
   there and is not what ships (I-679). Nothing else is blue in the dashboard, the docs or the legal
-  pages except the logo's big square (see Logo); a busy state, a current
+  pages except the logo's accent block (see Logo); a busy state, a current
   tab and code syntax are not (I-373, I-374, I-388). The landing's shapes
   and bar use it as `LANDING.md` says, and so do the plan cells on
   `/billing` (I-663).
@@ -194,8 +194,8 @@ it or swaps in the native control.
 
 ## Logo
 
-`Logo.svelte` is the I-363 mark (a thin cross in ink, three blocks in
-grey, light grey and the accent) followed by "repose" in Noto Serif 600.
+`Logo.svelte` is the I-779 mark (a block in the accent at rest in the
+crook of an L in the text's ink) followed by "repose" in Noto Serif 600.
 The mark is in every header (I-381):
 
 - It links to `/` from every page, the dashboard included, named
@@ -205,13 +205,19 @@ The mark is in every header (I-381):
 - Below `sm`: the 24px `sm` cut alone, so the header row fits 320px. The
   link carries the name. The footer shows the `sm` mark with the word at
   every width.
-- Never under 24px. At 16px (the tab) use the favicon, a heavier cut of
-  the same drawing (`static/favicon.svg`, `favicon.png`).
-- The mark's grey blocks have their own greys so they hold 3:1 at header
-  size: zinc-500 and `--control-edge` in the light, zinc-400 and
-  `--control-edge` in the dark. The landing's large shapes keep
-  `--sh-grey` and `--sh-light`. The big square is `--sh-accent`, the one
-  `--sh-*` token that appears off `/` (I-363, I-393).
+- One drawing at every size. On a 100 grid the wall and floor are 22
+  thick and the block is 38, sitting on the floor with 16 of daylight
+  between it and the wall. Nothing in it is thinner than an arm, so it
+  holds at 16px and the tab (`static/favicon.svg`, `favicon.png`) carries
+  the same geometry rather than a heavier cut of it, as the traced mark
+  needed (I-779).
+- The L is `currentColor`, the text's ink in both schemes; the block is
+  `--sh-accent`, the one `--sh-*` token that appears off `/` (I-393).
+  There are no greys in it to hold a floor for, and both shapes hold 3:1
+  on `--page`, `--surface` and `--sunken` in both schemes.
+- The mark encloses nothing. opencode's is a thick square-cornered O with
+  a filled lower counter, so a ring, a frame or a block inside a box reads
+  as that product, not this one (I-779).
 
 ## Page frame and header
 
