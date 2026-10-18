@@ -17,7 +17,7 @@ test('the status line says what the size gives and the machine card reads memory
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('project-class')).toHaveText('small');
-	await expect(page.getByText('2 vCPU', { exact: true })).toBeVisible();
+	await expect(page.getByText('1 core', { exact: true })).toBeVisible();
 	const card = page.getByTestId('machine-card');
 	// The newest sample's memory, of the size's 4 GB.
 	await expect(card.getByRole('meter', { name: 'Memory in use' })).toHaveAttribute(
@@ -43,13 +43,13 @@ test('usage draws the samples and switches window', async ({ page }) => {
 	// The fake's hour ends idle at 15% and held every core for a while.
 	await expect(card.getByTestId('chart-cpu')).toContainText('now 15%, peak 100%');
 	await expect(card.getByTestId('chart-memory')).toContainText('now 3.6 GB');
-	await expect(card.getByTestId('chart-waiting-for-a-vcpu')).toContainText('peak 62%');
+	await expect(card.getByTestId('chart-waiting-for-a-core')).toContainText('peak 62%');
 	await expect(card.getByTestId('chart-waiting-for-the-server')).toContainText('now 2%');
 	// The processes are folded until opened.
 	await expect(card.getByRole('cell', { name: 'cc1plus' })).toBeHidden();
 	await card.getByText('Busiest processes').click();
 	await expect(card.getByRole('cell', { name: 'cc1plus' })).toBeVisible();
-	await expect(card.getByText('100% of 4 vCPUs')).toBeVisible();
+	await expect(card.getByText('100% of 2 cores')).toBeVisible();
 
 	// The arrow keys read one point.
 	await card.getByTestId('chart-cpu').locator('svg').focus();

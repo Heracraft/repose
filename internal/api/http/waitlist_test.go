@@ -293,14 +293,15 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 		t.Fatalf("count from config %+v %s %+v %v", c, src, der, err)
 	}
 	// The CPU ceiling binds below the memory ceiling (I-739): 64 GB is
-	// seven 8 GB blocks, but eight physical cores serve one busy seat, so
-	// the fleet is one seat and `repose-admin seats` has both figures.
+	// seven 8 GB blocks, but eight physical cores serve four busy seats
+	// at two vCPUs each (I-784), so the fleet is four seats and
+	// `repose-admin seats` has both figures.
 	exec("update hosts set mem_bytes = 64::bigint<<30, cores = 8 where name = 'host-wl'")
 	c, src, der, err = svc.CountSource(ctx)
-	// Both hosts are counted: the harness host's 32 cores could serve 11
+	// Both hosts are counted: the harness host's 32 cores could serve 24
 	// seats and its memory none, which is why one enum could not say
 	// which ceiling bound the fleet.
-	if err != nil || src != waitlist.SourceHosts || c.Total != 1 || der != (waitlist.Derivation{Hosts: 2, Memory: 7, CPU: 12}) {
+	if err != nil || src != waitlist.SourceHosts || c.Total != 4 || der != (waitlist.Derivation{Hosts: 2, Memory: 7, CPU: 28}) {
 		t.Fatalf("CPU-bound host: %+v %s %+v %v", c, src, der, err)
 	}
 	// A seat count with no ready host at all is zero, not an error.

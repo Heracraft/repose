@@ -7,11 +7,15 @@ order: 12
 
 Each project gets its own virtual machine running NixOS, with its own kernel, disk, memory and Docker. Its hostname is the project's name as `ssh` uses it: `todo-app` for `todo-app.repose`. A machine running since before hostnames came in keeps `repose-guest` until its next start. You log in as `dev`, which has passwordless `sudo`. [Your checkout](/docs/sync#where-the-checkout-is) is `/home/dev/<folder>`, and everything under `/home/dev` survives a stop and is in snapshots; `/tmp` starts empty at each boot.
 
-| Size    | vCPU | Memory | Disk  |
-| ------- | ---- | ------ | ----- |
-| `small` | 2    | 4 GB   | 20 GB |
-| `large` | 4    | 8 GB   | 40 GB |
-| `xl`    | 8    | 16 GB  | 80 GB |
+| Size    | Cores | Memory | Disk  |
+| ------- | ----- | ------ | ----- |
+| `small` | 1     | 4 GB   | 20 GB |
+| `large` | 2     | 8 GB   | 40 GB |
+| `xl`    | 4     | 16 GB  | 80 GB |
+
+A core is a physical core, not a hyperthread. `nproc` says the same
+number, and a machine running since before 18 October 2026 keeps the
+count it started with until its next stop.
 
 ## What's installed
 
@@ -92,7 +96,7 @@ Agents start in the checkout's dev environment, and so does every command they r
 - With an `.envrc`, agents get what it sets. repose runs `direnv allow` on it the first time an agent starts in that checkout, and again after you edit the file. It doesn't ask, because the agent is about to run this checkout's code anyway; the window says `repose: allowed /home/dev/todo-app/.envrc (direnv allow) so claude starts in its environment`. One you ran `direnv deny` on stays out, and no flake is loaded in its place. An `.envrc` of your own that says `use flake` keeps a `.direnv` directory in the checkout, so add `.direnv/` to `.gitignore`.
 - With a `flake.nix` whose text names a dev shell and no `.envrc`, agents get `devShells.x86_64-linux.default`, from the nearest such flake at or above the folder and below your home folder. Nothing is written to your checkout: when the repository has no `flake.lock`, the one Nix writes is kept outside it.
 
-The first load builds the dev shell, and the window says `repose: loading the dev shell from /home/dev/todo-app/flake.nix (the first load can take minutes)`. Anything nixpkgs has to compile takes longer still. `repose run` shows `Loading the project's dev shell` and waits, up to 30 minutes, so your prompt isn't typed into a window whose agent hasn't started. Later loads come from the cache in under a second, until `flake.nix` or `flake.lock` changes.
+The first load builds the dev shell, and the window says `repose: loading the dev shell from /home/dev/todo-app/flake.nix (the first load can take minutes)`. Anything nixpkgs has to compile takes longer still. `repose run -p` doesn't wait for it: your prompt is on the agent's command line, so the agent takes it when the load finishes. On a herdr project `run` waits for the agent, up to 30 minutes, and shows `Loading the project's dev shell`. Later loads come from the cache in under a second, until `flake.nix` or `flake.lock` changes.
 
 A load that fails prints Nix's error and then `repose: the dev shell from /home/dev/todo-app/flake.nix did not load (the error is above); starting claude without it`. A flake that stopped evaluating ends `starting claude with the last one that did, if any`: nix-direnv keeps the last dev shell it built and doesn't say whether there was one, so the line can't either. `repose exec` prints none of this unless the load takes more than 2 seconds or fails.
 
@@ -223,20 +227,20 @@ Once a week the machine deletes the nix store paths it downloaded or built itsel
 
 The dashboard's **Usage** card draws four charts over the last hour, day or week:
 
-- **CPU**: the share of the machine's vCPUs in use.
+- **CPU**: the share of the machine's cores in use.
 - **Memory**: memory in use without the page cache, of the size's memory.
-- **Waiting for a vCPU**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than vCPUs, several builds or test runs at once. Run fewer at a time, or [give the machine more vCPUs](#changing-the-size).
-- **Waiting for the server**: the time the machine's vCPUs waited for a CPU on the server. A slow minute with your own CPU low came from the server.
+- **Waiting for a core**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than cores: a build running more jobs than the size has, or several test runs at once. Run fewer jobs at a time, or [give the machine more cores](#changing-the-size).
+- **Waiting for the server**: the time the machine's cores waited for a CPU on the server. A slow minute with your own CPU low came from the server.
 
 The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap.
 
 Under the charts, folded, are the eight busiest processes of the window: name, CPU time, peak memory. repose records process names and numbers, never their arguments or anything you type ([what repose stores](/docs/secrets#what-repose-stores)). For a live view, run `htop` on the machine.
 
-Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every vCPU is busy, so what you type keeps showing up at once. Nothing is capped: on an idle machine a build gets everything.
+Your SSH sessions and the tmux or herdr server get the CPU before the programs in your panes when every core is busy, so what you type keeps showing up at once. Nothing is capped: on an idle machine a build gets everything.
 
 ## Changing the size
 
-`repose resize --size small|large|xl` changes a project's size. Only the vCPUs and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 

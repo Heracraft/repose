@@ -83,6 +83,20 @@ jobs:
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: dist/repose_*.tar.gz
+      - name: the release has notes
+        run: |
+          # A tag published with an empty body ships a release nobody can
+          # read: it happened to v0.1.37 and v0.1.38, and the owner found
+          # both (DECISIONS I-798). The notes are written before the tag is
+          # pushed, so this job only has to refuse to publish without them.
+          body=$(gh release view "$TAG" --json body --jq .body --repo "$GITHUB_REPOSITORY")
+          n=$(printf '%s' "$body" | wc -c)
+          if [ "$n" -lt 400 ]; then
+            echo "::error::$TAG has $n bytes of release notes, under the 400 this check wants."
+            echo "Write them first: docs/ops/RELEASE.md, step 4 of the deploy order."
+            exit 1
+          fi
+          echo "$TAG has $n bytes of release notes."
       - name: upload the signature and publish
         run: |
           gh release upload "$TAG" dist/checksums.txt.sig --repo "$GITHUB_REPOSITORY"

@@ -1319,7 +1319,10 @@ func startToWork(ctx context.Context, e *Env, project *Project, pr *progress) er
 // hostWaitTimeout is how long a command waits for a machine's server
 // to answer again: the api's own wait for a silent host
 // (ops.HostUnreachableGrace), well past a restart with its machines
-// frozen (I-652, about 2 minutes on host-01).
+// frozen and restored. The server answers for the whole freeze (hostd
+// stops after it), so what this has to cover is the power-off, the boot
+// and the restore: about a minute plus the images' read, bounded by the
+// thaw's window, which is under 6 minutes on host-01 (I-652, I-796).
 var hostWaitTimeout = 10 * time.Minute
 
 // waitHost waits while the api marks project's server unreachable

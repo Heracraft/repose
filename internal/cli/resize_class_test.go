@@ -6,17 +6,38 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/billing"
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 	"github.com/heracraft/repose/internal/hostd/guest"
 )
 
 // TestClassSpecsMatchBillingAndHost pins the CLI's copy of the class table
-// to the memory billing's plans count and the vCPUs and memory hostd boots.
+// to the memory billing's plans count, the vCPUs and memory hostd boots,
+// and what the api places and bills by (scheduler.ClassVCPU and
+// ClassRAM). Four layers hold the table, and this is the test that fails
+// when one of them moves alone: I-784 halved the vCPUs and the fifth
+// copy, the host_reservations view, is held by
+// TestHostReservationsVCPUsMatchClassVCPU instead because Go cannot read
+// it.
 func TestClassSpecsMatchBillingAndHost(t *testing.T) {
 	for class, c := range classSpecs {
 		if c.MemGB != billing.ClassMemoryGB(class) {
 			t.Errorf("%s: cli %d GB, billing %d GB", class, c.MemGB, billing.ClassMemoryGB(class))
+		}
+		if c.VCPUs != scheduler.ClassVCPU(class) {
+			t.Errorf("%s: cli %d vCPU, the api places %d", class, c.VCPUs, scheduler.ClassVCPU(class))
+		}
+		if int64(c.MemGB)<<30 != scheduler.ClassRAM(class) {
+			t.Errorf("%s: cli %d GB, the api reserves %d bytes", class, c.MemGB, scheduler.ClassRAM(class))
+		}
+		// The ratio is uniform across the classes, and that uniformity is
+		// the whole of I-784: a host's placeable memory fixes its guest
+		// vCPU count whatever mix of classes is sold. Two `small` on one
+		// 8 GB seat committing more vCPUs than one `large` is the hole
+		// this closes.
+		if got := c.MemGB / c.VCPUs; got != 4 || c.MemGB%c.VCPUs != 0 {
+			t.Errorf("%s: %d GB over %d vCPU is %d GB per vCPU, want 4 (DECISIONS I-784)", class, c.MemGB, c.VCPUs, got)
 		}
 		wantPlan := billing.Solo
 		if c.MemGB > billing.Solo.MemoryGB {
@@ -33,8 +54,19 @@ func TestClassSpecsMatchBillingAndHost(t *testing.T) {
 	if len(classSpecs) != len(guest.Classes) {
 		t.Errorf("cli has %d classes, hostd %d", len(classSpecs), len(guest.Classes))
 	}
-	if got := classSummary("large"); got != "4 vCPU, 8 GB memory; fits the Solo plan" {
-		t.Errorf("summary %q", got)
+	// The summary is quoted verbatim in apps/web/src/content/docs/cli.md
+	// (`repose resize --size`). docs_test.go holds the CLI's commands,
+	// flags, config keys and exit codes to that page but not the text of
+	// an output line, so this is the only test that fails when the page
+	// goes on quoting the old core count.
+	for _, c := range []struct{ class, want string }{
+		{"small", "1 core, 4 GB memory; fits the Solo plan"},
+		{"large", "2 cores, 8 GB memory; fits the Solo plan"},
+		{"xl", "4 cores, 16 GB memory; needs the Plus plan"},
+	} {
+		if got := classSummary(c.class); got != c.want {
+			t.Errorf("summary(%s) = %q, want %q", c.class, got, c.want)
+		}
 	}
 }
 
@@ -74,7 +106,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "xl" || got.State != "stopped" {
 			t.Fatalf("after: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "from large to xl: 8 vCPU, 16 GB memory; needs the Plus plan. It starts at the new size.\n") || strings.Contains(out.String(), "`repose ") {
+		if !strings.Contains(out.String(), "from large to xl: 4 cores, 16 GB memory; needs the Plus plan. It starts at the new size.\n") || strings.Contains(out.String(), "`repose ") {
 			t.Fatalf("output %q", out.String())
 		}
 	})
@@ -118,7 +150,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "small" || got.State != "running" {
 			t.Fatalf("after: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "Changed todo-app from large to small: 2 vCPU, 4 GB memory; fits the Solo plan. Running again") {
+		if !strings.Contains(out.String(), "Changed todo-app from large to small: 1 core, 4 GB memory; fits the Solo plan. Running again") {
 			t.Fatalf("output %q", out.String())
 		}
 		// The disk stays on the host, untouched; a snapshot was most of

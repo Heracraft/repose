@@ -142,7 +142,7 @@ func TestCodexTrustScript(t *testing.T) {
 func TestAgentWindowCommandTrustsPerAgent(t *testing.T) {
 	files := map[string]string{"claude": ".claude.json", "codex": "config.toml"}
 	for _, a := range []string{"claude", "gemini", "codex", "opencode", "pi", "cat"} {
-		c := agentWindowCommand("proj", "", a, "~/proj-worktree-1", a, mcpApprovals{})
+		c := agentWindowCommand("proj", "", a, "~/proj-worktree-1", a, "", mcpApprovals{})
 		if !strings.HasSuffix(c, "tmux new-window -t proj -n "+a+" -c ~/proj-worktree-1 -d '"+a+"'") {
 			t.Fatalf("%s: %s", a, c)
 		}
@@ -154,7 +154,7 @@ func TestAgentWindowCommandTrustsPerAgent(t *testing.T) {
 		if _, ok := files[a]; ok && !strings.Contains(c, "cd ~/proj-worktree-1 ") {
 			t.Fatalf("%s trusts another folder: %s", a, c)
 		}
-		c = agentWindowCommand("proj", "", a, "", a, mcpApprovals{})
+		c = agentWindowCommand("proj", "", a, "", a, "", mcpApprovals{})
 		if _, ok := files[a]; ok && (!strings.Contains(c, `cd "$repose_co" `) || strings.Index(c, "repose_co=") > strings.Index(c, files[a])) {
 			t.Fatalf("%s in the guest's checkout: %s", a, c)
 		}

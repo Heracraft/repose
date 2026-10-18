@@ -77,7 +77,11 @@ disk, network. *Rejected:* no benchmark; a second provider from day one.
 
 **R3-2. Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1
 oversubscribed, memory never.** *Amended by I-734 (2026-10-15): the ratio
-is counted against physical cores, not the vendor's vCPUs, and it is 1.5.* *Rejected:* one or two classes. *Why:* Docker-
+is counted against physical cores, not the vendor's vCPUs, and it is 1.5.*
+*Amended by I-784 (2026-10-18): the classes are small 1/4, large 2/8, xl
+4/16 -- 4 GB of memory per guest vCPU, not 2. The memory, the disk and
+the prices are unchanged; only the vCPUs halve.*
+*Rejected:* one or two classes. *Why:* Docker-
 heavy test suites are the XL case people pay for; a balloon reclaiming memory
 mid-build turns "slow" into OOM.
 
@@ -20656,8 +20660,11 @@ commit they describe.
   live check are the conductor's.
 
 **I-734. The oversubscription ratio is counted against physical cores,
-not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15).** Amends
-R3-2, which is not rewritten. The classes and "memory never" are
+not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15).**
+*Amended by I-784 (2026-10-18): the ratio and its derivation stand, but a
+class gets half the vCPUs, so 1.5 per core now admits twice the memory --
+24 `large` guests on a `D64s_v7` where this entry's arithmetic gave 12.*
+Amends R3-2, which is not rewritten. The classes and "memory never" are
 unchanged; what changes is the denominator, and with it what the fleet
 will accept.
 
@@ -20929,7 +20936,11 @@ pointing at the wrong command.
   number to revisit, not this entry's.
 
 **I-739. The seat count is the smaller of a host's memory and its CPU
-ceiling, per host and then summed (cpu-weight, 2026-10-15).** Amends
+ceiling, per host and then summed (cpu-weight, 2026-10-15).** *Amended by
+I-784 (2026-10-18): a seat is 2 guest vCPUs, not 4, so every figure below
+doubles where the CPU ceiling bound it. A `D64s_v7` delivers 24 and
+host-01's shape 4; the memory ceiling binds on the `ls` line and the
+placement ratio on the `s` line.* Amends
 I-290, whose arithmetic -- "as many seats as the ready, undrained hosts
 have usable 8 GB blocks" -- is the oversell `LAUNCH.md` §3 was warning
 about by hand. A seat is 8 GB of running memory and, since every class is
@@ -23572,3 +23583,640 @@ squares, the copy a step behind (clean, and it is a drop shadow on a
 card).
 The studies are in `docs/reviews/2026-10-18-logo.md`, judged at 120, 28,
 24 and 16px and on the 16px pixel grid in both schemes.
+**I-781. The quickstart does not promise that other projects are out of
+an agent's reach (launch-truth, 2026-10-18).** Amends I-747 and the
+quickstart's opening paragraph. *Made during implementation* (the owner,
+2026-10-18, on the launch review: "just remove that line completely").
+- `/docs` opened with "Your laptop, your SSH keys and your other projects
+  are out of its reach." The first two clauses hold: SSH private keys are
+  never copied and nothing on the machine reaches back to the laptop. The
+  third does not. `repose run` copies the GitHub CLI login by default, and
+  `secrets.md` says what that login is: git on the machine sends every
+  GitHub URL with it, so an agent can read, push to or delete any
+  repository the user can reach. The same page refuses to copy the Vercel
+  login for exactly this reason, "it reaches your whole Vercel account".
+- The sentence is removed rather than corrected. A correct version would
+  be a safety caveat in the first paragraph of the quickstart, which is
+  where a reader decides whether to install; the caveat belongs on
+  `secrets.md`, which already carries it, and `repose secrets choose`
+  already lets a user keep the `gh` login off the machine (I-422).
+- The paragraph now ends at the snapshot, which is the real answer to an
+  agent with full permissions. Nothing else on the page changes, and
+  `SECURITY.md` already lists a tenant's agent misusing the tenant's own
+  tool logins as accepted, with the exposure named.
+- What this does not do: change any default. Whether `gh` should be
+  minted per-run and single-repo instead of copied whole is
+  `proposals/2026-09-27-credentials-convenience-first.md` layer 1, and is
+  still the owner's call.
+
+**I-782. `hostmgr.allocate` steps over 10.255.0.3, so the launch host
+gets .4 (launch-truth, 2026-10-18).** Amends I-359. *Made during
+implementation* (the launch review found the collision live in
+`LAUNCH.md` §3 step 0, which asked the owner to choose between this and
+renumbering the monitoring server; the owner chose this one).
+- The api numbered hosts on the edge's WireGuard network as
+  10.255.0.(n+1), so the second host to register took 10.255.0.3. The
+  monitoring server has held that address since I-170, picked by hand
+  when nothing had taken it. A host given it takes Grafana's scrapes and
+  every host's Loki writes, and the next edge rebuild takes the address
+  back and leaves the host with no metrics and no operator SSH.
+- `wgReservedOffsets` is the ascending list of offsets the allocator
+  steps over, `{3}` today. The nth host gets the nth address after the
+  edge's that the list does not hold: host-01 keeps .2, the next host
+  gets .4, the one after .5. The guest /22 stays a plain function of the
+  sequence number and does not move.
+- Stepping over, not skipping. A bare skip gives sequence 2 the address
+  sequence 3 was already going to get; `TestAllocateHandsOutEachAddressOnce`
+  walks all 1,000 sequence numbers and fails on that, and failed on it
+  before the fix.
+- `TestEdgeStaticPeersAreReserved` reads `nix/edge/edge-01.nix` and fails
+  when the edge hands a 10.255.0.x to a peer of its own that the list
+  does not hold. The failure this prevents is the collision coming back
+  the next time the monitoring server is renumbered, which is a change on
+  the edge with no reason to look at the api.
+- The alternative that lost: moving the monitoring server into the
+  operator range at 10.255.254.2. It is the tidier plan, since that range
+  exists for peers the allocator does not own, and it stays available. It
+  needs the server's own `wg-repose.conf`, the edge configuration, a
+  `repose-admin edge loki` call and an edge switch, all before the launch
+  host registers, and none of that is work the launch needs.
+**I-780. The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752.** (prompt-argv, 2026-10-18) I-752 shipped a check and retries and then measured them on a real `small` against prod: **1 of 10** prompts submitted at the committed constants, **2 of 10** with a wider retry span, **0 of 9** at a 60-second span. Its own note names the fault — "a fresh agent satisfies the waiter's readiness gate while still not accepting a submission" — so no amount of typing fixes it. The window now starts the agent with the prompt as its own argument: `tmux new-window -t <slug> -n <agent> -c <dir> -d '<agent> <its initial-prompt argument>'`, and the agent's own startup is what consumes it. Nothing is sent to a TUI on that path: `waitPaneIdle`, `submitPromptScript` and `promptEnterTries` are not reached. **This entry does not close I-752.** It changes the mechanism and says what was verified about the mechanism; the number that closes I-752 is a live submission rate, which nothing on this box can produce (the OWED below).
+- *The forms, one place, one comment each.* `agentPromptArgs` (internal/cli/mux_tmux.go, beside `agentNames`) maps an agent to the words after its binary, and may refuse a particular prompt, which keeps the typing path. Each form was read out of the release `nix/overlay/agents/versions.json` pins and exercised on the dev box: `claude -- PROMPT` ("Arguments: prompt  Your prompt"); `codex -- PROMPT` ("[PROMPT] Optional user prompt to start the session", and clap itself says "to pass '-l' as a value, use '-- -l'"); `gemini --prompt-interactive=PROMPT` ("Execute the provided prompt and continue in interactive mode"; `-p` is headless and is never used); `opencode --prompt=PROMPT` ("prompt to use"; `opencode run` is headless and the positional is a project path); `pi -- PROMPT` ("message  Provide an initial prompt", "`--` Stop option parsing so a prompt can begin with `-`"). Each is one shell word per argument, and `--` or `=` is not decoration: `gemini -i '-dash first'` is "Not enough arguments following: i", `opencode --prompt '-lead'` falls out of yargs into the help banner, `codex '-lead'` and `pi '-lead'` are parse errors. An agent whose form is not verified, or that is added to `agentNames` without an entry, keeps the typing path and loses nothing.
+- *Two of the five were seen taking the argument on the dev box; three were not.* Claude Code 2.1.266 and opencode 1.18.30 were run with the argument in a tmux window there: the prompt is the first turn in the transcript, the input is empty after it, and the pane still runs the agent. Claude Code's folder-trust dialog showed first in that test and was answered by hand; Claude Code then submitted the argument itself, so a dialog costs a round trip and not the prompt -- seen once, by hand, on Claude Code only. Codex, Gemini CLI and pi have no login on this box, so what is verified for them is that their own parsers take the argument and what their own help says it means. **Those windows were made by hand with `tmux new-window`, not by `repose run`**, which I-752 warns is worthless for diagnosing the submit *script* — there `capture-pane` comes back empty on a hand-made window. It does not touch this evidence: nothing here reads a pane to decide anything, the capture was non-empty, and the claim is only that the agent consumed its argv. The live rate on a repose window is still owed.
+- *What is still typed, and why each one is.* An agent with no form, or a prompt its form refuses. The warm path, `repose run -w WINDOW -p TEXT` (I-639) and `tmuxMux.TypeScript`: the window exists and its agent is running, so there is no command line to put the prompt on. The Claude Code login waiter (I-607): the window opens on the login, and a prompt in the login's argv is not something anything has measured. `pendingPromptTmux`, `pendingPromptHerdr`, `submitPromptScript`, its constants and its tests are all unchanged, and still carry I-752's retries and its exit 5 for the paths that need them.
+- *Quoting, which is the whole attack surface this adds.* The prompt is arbitrary tenant text going into a shell word. `agentStartCommand` quotes each word with `shQuote` and then quotes the whole command line again, because tmux hands a single-argument command to the session's `default-shell` (bash, nix/guest/base/tmux.nix). `TestHostilePromptReachesTheAgentAsOneArgument` runs the real `agentWindowCommand` through a real tmux at a stand-in agent that records its argv, with a prompt holding a leading `-`, both quote characters, a newline, `$PATH`, a backtick `id` and a `$(touch ...)`: the agent gets exactly `--` and the prompt, byte for byte, and neither the substitution nor the backtick ran.
+- *A prompt that begins with `@` keeps the typing path on pi.* `--` stops pi's option parsing but not its `@file` include, so `pi -- '@nope.txt hello'` exits "Error: File not found" — the window would be left with no agent and no prompt, which is worse than the 1-in-10 it replaces. `@` elsewhere in the prompt is text, and no other agent reads an argument as a path.
+- *The prompt is now in the guest's own process table, and nothing of repose's reads it.* `ps` in the guest shows `claude -- '<prompt>'` where before the text only ever reached the TUI's input. That is the tenant's own machine, and the two places it could have leaked from are both already closed by tests and checked here: guestd never opens `/proc/<pid>/cmdline` (`TestStraceNeverOpensCmdlineOrEnviron`, R5-3 and the privacy policy's own sentence), and the CLI never prints a remote command — `verboseSSH` and the timing line pass it through `sshLabel`, which answers `script(NB)` for anything over 40 bytes or holding a newline, and this command line is always both. No new log field carries the prompt.
+- *What the cold path gives up, said plainly.* It no longer waits for the pane, so two things it used to say are gone for an agent with a form. A trust or `.mcp.json` dialog the pre-trust did not cover (I-486, I-556) is no longer detected, so `run` does not name it and `-d` does not exit 1 for it; the dialog waits for the user in the window and the prompt waits in the agent's argv behind it (verified on Claude Code only). On `-d` that is I-752's silence moved to a rarer trigger, and it has to be said rather than assumed rare: the walk-away case returns success and prints nothing, so a first screen nobody answers holds the prompt until someone attaches and answers it. The pre-trust covers the trust and `.mcp.json` dialogs for claude and codex, not every screen an agent might show on a first run. run-and-attach.md says so in a sentence. The dev-shell wait (I-259) is also gone from this path: the wrapper loads the dev shell and then execs the agent with its argument, so there is nothing to lose by not waiting, and `repose run -p` returns while the load runs instead of holding the terminal for up to 30 minutes. `agentDialogError`, `waitPaneIdle` and `OnLoading` stay for the typing path and for herdr. That trade is the right way round: a dialog cost the user a round trip, and the unsubmitted prompt cost them the night.
+- *The alternatives that lost.* (a) A wider retry span: already measured and rejected in I-752 — 2 of 10 at two seconds, 0 of 9 at a minute, against 1 of 10 with no retrying. (b) A readiness signal meaning "the input accepts a submission", which is what I-752 said it was waiting for: every form of it is a screen read of a TUI, and I-752 disproves the two obvious ones on captures (a submitted prompt is echoed into the transcript, so `promptHead` never leaves the screen, and the `❯` prefix appears in that echo too). The positional form that survives is "the `❯` line after the last `────` rule and above the `⏵⏵` mode line", which is Claude Code 2.1.283's frame and nobody else's, and a new frame breaks it silently. (c) Gemini's positional `[query..]`, which also becomes `promptInteractive` when not headless, lost to the explicit flag because it pushes a "Positional arguments now default to interactive mode" line into the user's pane.
+- *herdr is left as it is, and this is not an oversight.* herdr's cold path does not type: `herdr agent start NAME --kind A --pane P` then `herdr agent prompt NAME TEXT --wait --until working`, whose answer carries the agent's state, so a prompt that was not taken is already an error (I-752 says so). herdr 0.9.3 does have the slot — `herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS] [-- [AGENT_ARG]...]`, read from its own `--help` — but `agent start` is documented as "Success means the expected agent was detected in the same terminal and is ready for input", and an agent that starts mid-turn on an argument may never show that. Moving herdr onto the argument would risk the one prompt path with a verified answer, and this box has no herdr guest to measure it on. Whoever takes it needs `REPOSE_TEST_HERDR` and a real agent, not the stand-in.
+- *What the tests prove, and only that: the command line is built correctly.* `TestAgentWindowCommandCarriesThePrompt` holds the exact `new-window` command line for all five agents and for a stand-in binary with no form, which keeps `-d 'cat'` as before; `TestHostilePromptReachesTheAgentAsOneArgument` runs that line through a real tmux and asserts the words the started program receives; `TestPiRefusesAnAtPromptAsAnArgument` and `TestNoPromptNoArgument` hold the two refusals. All four fail with the table's lookup forced to "no form" (the before state: `argv = [], want ["--" "-n it's \"the $PATH\"...]`) and pass after. None of them is evidence that a prompt is submitted: no agent runs in them, only a stand-in that records its argv. `TestAgentWindowCommandTrustsOnlyForClaude` and `TestAgentWindowCommandTrustsPerAgent` were updated for the new parameter and still assert the old bare `-d '<agent>'` line for a window with no prompt. The typing path's own tests are untouched and still pass: `TestSubmitPromptPressesEnterAgainAndGivesUp`, `TestTypeAndEnterAloneLosesADroppedEnter`, `TestTypePromptResendsEnterIntoATmuxWindow`, `TestPendingPromptTypesAfterLogin`, `TestPromptSendAndSecondWindowNaming`, `TestPromptNotTypedIntoTrustDialog`.
+- *The pane must still report the agent, and two tests hold it.* The window now runs a shell command line instead of a bare word, so bash `-c` has to exec the agent rather than sit in front of it: `pane_current_command` is what `repose ps`, `windowNameFor` and guestd's detection read, and a `bash` there would make a working agent look like a shell. Started this way on the dev box, a real `claude` and a real `opencode` both report their own name, which is bash's exec of a simple command; both windows were made by hand, so that is the evidence the premise holds and the live check still looks at `repose ps`. The first draft of this entry said no Go test could cover it, because every test agent is a stand-in whose comm is its interpreter. That was wrong: the invariant lives in the string `agentStartCommand` returns, not in the running process. `TestWindowRunsASimpleCommand` asserts that whole string against the shape it must have, for every agent and for a binary with no form, across nine prompts including a leading `-`, a newline, a `$(...)` and 10 kB; `TestBashExecsTheAgent` asserts the same thing on a real bash by pid, a stand-in printing `$$` where a simple command makes that pid bash's own. Which catches what was measured: a subshell and a `;` list fail the pid test for all five agents, and so does a pipeline, but `cd . && <line>` does not, since bash still execs the last command of an `&&` list -- the string test is what catches that, and is therefore the regression guard while the pid test states the premise.
+- OWED, two numbers, neither of them run here. A live submission rate on a real `small` against prod, by I-752's own protocol, reported as two arms: **the pane idle at the moment the window is created**, and **the pane busy at that moment**, each over at least 20 trials, with a poll that outlasts the start. An idle 20 of 20 proves nothing on its own — it can pass by waiting rather than by fixing, which is how the two-second budget reached the queue and then did not hold. This box has no guest and no fleet, so neither arm exists yet, and I-752 stays open until both do.
+**I-784. The size classes go to 4 GB of memory per guest vCPU: small 1,
+large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739:
+R3-2's class table, the arithmetic I-734 read it with, and I-739's seat
+derivation, and with them PRICING.md's class shapes.** The memory,
+the disk and the price of every class are unchanged. Only the vCPU count
+halves, and it halves on all three, uniformly.
+
+A seat is 8 GB of running memory. That is what the plans sell, what the
+landing says and what billing meters. At 2 GB per vCPU an 8 GB seat also
+dragged 4 guest vCPUs behind it, and the measurement on prod on
+2026-10-14 (`proposals/2026-10-14-host-cpu-capacity.md` §1) put the
+smooth/not-smooth typing boundary at roughly *busy guest vCPUs ≈ physical
+cores*. So the vCPUs, not the memory, were what capped a host: a
+`D64s_v7` delivered 11 seats where its memory allowed 30, and $355 a
+month of its RAM was unsellable (proposal §3, item 1). At 4 GB per vCPU
+the two ceilings move back together. A `D64s_v7` delivers **24** seats
+instead of 11, a `D16s_v7` 4 instead of 1, and a Hetzner AX162-2 (48
+cores, 240 placeable GB) **30** instead of 17, all at *p* = 0.4 from
+`waitlist.HostSeats`. Those are the shipped figures, which are the
+proposal's §3 model *capped by I-739's placement term*, and the cap is
+why a `D64s_v7` is 24 and not the 25 the bare model gives: 32 cores x
+150 percent / 2 vCPUs a seat is 24, below the burst figure of 25. The
+proposal's table has no placement term and so reads one seat high on
+that shape, exactly as I-739 already recorded for a `D248ls_v7` (46
+shipped against 53 modelled).
+
+*The ratio is uniform, and that is why `small` goes to 1 vCPU.* The whole
+point is that a host's placeable memory fixes its guest-vCPU count
+whatever mix of classes is sold (proposal §3): placeable GB ÷ 4. If
+`small` kept 2 vCPU, a user running two `small` machines would commit 4
+vCPU for one 8 GB seat, twice what one `large` commits for the same
+memory, and the seat count would overstate that host's capacity by 2x for
+anyone who sells smalls. A seat count that is right only for one mix of
+classes is not a seat count. `TestClassVCPUIsFourGBPerVCPU` and the
+`are 4 GB of memory per vCPU, uniformly` case in `plans.test.ts` assert
+the ratio itself, not the three numbers.
+
+*What a user loses.* `-j2` where they had `-j4` on a `large`, `-j4` where
+they had `-j8` on an `xl`, and a `small` that is now a single vCPU. A
+heavy Rust or C++ compile roughly doubles. Against that, the measured
+fleet has guests 36-89 percent idle with steal at 1.2-3.7 percent and
+mean consumption around 0.05 cores, and the thing the owner reported was
+not slow builds but palpable typing latency in every guest, which is what
+the vCPU count caused (I-734). The trade is taken knowingly: a slower
+worst-case compile for a machine that types at 3 ms instead of 17-45, and
+a fleet that can sell twice the seats per host.
+
+*What this does the day it ships, stated plainly.* The seat derivation
+goes from 1 to 4 on host-01, so Plus (2 seats) becomes buyable again and
+the landing stops saying "Full for now" -- I-739's launch-blocking
+business fact is substantially undone, which is the point. host-01 also
+starts taking new projects again: its two `xl` and one `large` commit 10
+guest vCPUs where they committed 20, against the 12 its 8 cores allow
+(I-736). Read that honestly. The guests already running still have the
+vCPUs they were started with, so the host is carrying 20 while placement
+reads 10, until each of them next stops.
+
+*A running guest's vCPU count changes only at a cold start, and nothing
+restarts one.* `guest.Classes` is read by `create.go` (the `ch.Spec`
+whose `--cpus boot=` is the hypervisor's vCPU count) and by
+`GuestUnitProps`, both on the start path; reconcile reads
+`systemctl list-units 'guest@*'`, LVM and bbolt and never restarts a
+unit, as I-737's own weights and I-230's `MemoryHigh` also waited for a
+start. `repose resize --size <its current class>` stays the no-op it is
+-- the api changes `projects.class` and there is nothing to change -- so
+it is not a way to pick the new count up; `repose stop && repose start`
+is.
+
+*The freeze does not deliver it either, and that is the one thing a
+reviewer should check.* A host restart under I-652/I-686 re-renders
+`GuestUnitProps`, so the restored unit does get the new `CPUQuota` and
+`CPUWeight`, but `ch.RestoreArgs` is `--restore source_url=...` with no
+`--cpus`: the vCPU count comes from the saved VM state, and Cloud
+Hypervisor cannot change it across a restore. So on host-01, after the
+switch and restart that ship this, an `xl` that was never stopped has
+**8 vCPU threads inside a unit capped at `CPUQuota=400%`**. The capacity
+promise holds -- the class buys four cores and the cgroup is what
+enforces it -- but it is delivered by throttling eight threads to four
+cores rather than by giving the guest four, so the guest's load average
+can sit near 8 while four cores' worth runs, and that is a different
+symptom from a cold-started guest at 4 vCPUs. It resolves at the first
+stop/start of each machine, and only there.
+
+A user can see the gap meanwhile: `nproc` in a machine that has been
+running since before the deploy says 8 where the dashboard's Machine
+card and `/docs/machine` say 4, and the Usage CPU chart, which divides by
+the class (`samples.go`), reads such an `xl` at 100 percent whenever it
+uses more than four cores' worth, which it no longer can.
+`machine.md` says so for one release, in the sentence that already does
+the same job for pre-hostname machines.
+
+*The numbers are not renumbered where they follow.* `PlacementVCPUPct`
+stays 150, `UsableCoreFraction` 0.9, `DutyCycle` 0.4, `SeatTail` 0.05 and
+hostd's own admission unchanged. All of those are denominated in guest
+vCPUs, so halving the vCPUs a class gets doubles the memory each admits
+without moving a constant: 1.5 committed vCPUs per core on a `D64s_v7` is
+24 `large` guests where it was 12, against the 30 its memory allows
+(DESIGN §4). `CPUQuota` and `CPUWeight` are derived from `class.VCPUs`,
+so the quota halves with the class, which is what it is for.
+`CPUWeightPerVCPU` is the one constant that did move, 25 to 50: I-737
+chose the *weights* (small 50, large 100, xl 200), anchored on large
+sitting at the same 100 as the `virtiofsd@<id>` serving it, and letting
+the multiplier stand would have put every guest at half the weight of its
+own virtiofsd, a change to who wins contention that no entry asked for.
+`SeatVCPUs` did move, 4 to 2: a seat is one `large`, and
+`TestSeatVCPUsIsALarge` now pins it to `scheduler.ClassVCPU("large")` so
+the two cannot be set apart again.
+
+*Which ceiling binds flipped, and the seat count does not rise
+everywhere.* At 4 vCPUs to a seat the CPU side bound nearly every shape.
+At 2 it is memory on the `D<n>ls_v7` line (a `D64ls_v7` delivers 14 where
+its cores could place 24), the placement ratio on the memory-rich
+`D<n>s_v7` line (a `D64s_v7`, 24 against a burst figure of 25), and the
+burst figure only on the smallest hosts. A 4-core staging host served one
+seat before and serves one now. That reverses the proposal's "buy the
+low-memory line" (§3 item 1): the stranded resource on the `ls` line is
+now cores, and LAUNCH.md §3 says so.
+
+**OWED, and this is the limitation to read before trusting the figures
+above: the new seat counts are an inference from the proposal's §3 model,
+not a measurement.** The boundary was measured once, on 2026-10-14, at 20
+committed guest vCPUs on 8 physical cores, which was three guests. Nobody
+has run the latency probe against a host packed with 2-vCPU guests, and
+if the boundary tracks guest *count* rather than guest *vCPUs* -- each
+guest costs the host a virtiofsd, a tap, timer interrupts and a share of
+WireGuard crypt whatever its vCPU count -- then a host sold to 24 seats
+under this entry is sold past it and `HostCPUSaturated` fires later than
+it should. Owed: **run the §1 latency probe on a host filled with 2-vCPU
+guests and confirm the boundary tracks guest vCPUs rather than guest
+count** (§9 has the commands). RUNBOOK's `HostCPUSaturated` section
+carries the same warning for whoever is paged.
+
+- *Rejected: raise each class's memory instead*, keeping 2 GB per vCPU by
+  making `small` 2/8, `large` 4/16, `xl` 8/32. It balances the ceilings
+  the same way and needs no new reasoning about what a machine gets. It
+  also doubles the memory a class consumes, so a host holds half as many
+  customers at the same revenue per customer, and the seat -- 8 GB
+  running at once -- stops being a `large`, which is the unit the plans,
+  the landing, billing's gate and `SeatBytes` are all written in. Better
+  machines for fewer customers at the same price is a price cut taken
+  sideways; this entry's trade is the one the measurement argues for.
+- *Rejected: keep `small` at 2 vCPU*, on the grounds that a single vCPU
+  is a mean thing to sell. It reopens the hole above: two `small` would
+  commit 4 vCPU for one 8 GB seat and every seat figure would be a
+  function of the class mix. `small` at 1 vCPU is the cost of uniformity
+  and is recorded here as a cost, not as a feature.
+- *Rejected for now: per-class CPU weight deep enough that a batch guest
+  yields to an interactive one*, which is the proposal's open item 3 and
+  the thing that would let 4 vCPUs be sold again later. I-737 put the
+  weights in, but weight divides contention between guests; it does not
+  tell a guest's own build to get out of the way of its own keystrokes,
+  and nothing has measured how much latency that would buy. An unmeasured
+  mechanism cannot carry a price today.
+- *Rejected: an environment variable for the ratio*, for I-734's reason:
+  placement policy is a product promise, not an operational dial, and two
+  api apps with a numeric knob between them drift (`SEATS_TOTAL`'s own
+  warning in `ops/coolify/api-grpc.env.example`).
+- *Not done: PRICING.md "The cost floor" is still owed its
+  re-derivation* (I-739, proposal §7 item 6). Its warning now names the
+  right figure -- about $129 a seat on a `D64s_v7` rather than $281 --
+  but the arithmetic under it is still at 30 seats, and the prices are
+  the owner's call.
+- *The two signals that divide by the class's vCPUs, and why following
+  the constant is what keeps them honest.* The Usage card's CPU chart
+  (`samples.go`) and the `BusyUnattended` signal (`abuse.go`,
+  `repose_api_abuse_busy_unattended_projects`) both express "the share of
+  this machine's vCPUs that is busy", and both held their own inline copy
+  of the class table as the denominator. Both now call
+  `scheduler.ClassVCPUSQL`. Left alone, each would have divided a guest's
+  CPU seconds by twice the vCPUs the guest has: the chart would read a
+  flat-out machine at 50 percent, and `BusyUnattended`'s 90 percent
+  threshold would have become **unreachable for every class** -- a
+  1-vCPU `small` can accrue at most one core-second a second, which is 50
+  percent of the old denominator of 2 -- so a signal the owner relies on
+  to find a miner under another name would have gone permanently silent
+  with nothing failing. Following the constant keeps the trip point where
+  it was calibrated: a machine pinning every vCPU it has for six hours
+  with no SSH session, no tmux client and no agent in any sample. In
+  absolute cores the trip point does halve with the class, which is the
+  same halving the tenant's quota took; what a tenant must do to trip it
+  is unchanged, and the alert is an alert (`ops/alerts.yaml`: "Alert
+  only, nothing is stopped"), not a stop. The automatic stop is the
+  miner-name detector, which reads process names and no CPU figure at
+  all.
+- *Nine spellings of the class vCPU figure across eight files before
+  this; six across five after.* `scheduler.ClassVCPU` is the api's only Go copy and
+  `scheduler.ClassVCPUSQL` its only SQL one; `internal/api/http/samples.go`
+  and `internal/api/abuse` each had their own inline `case class when
+  'small' then 2 ...` and now call it, and `internal/fakes/api` had a
+  third and now calls `ClassVCPU` and `ClassRAM` as the real route does.
+  The project page's own table moved out of `+page.svelte` into
+  `format.ts` beside `classMemoryGB`. What is left is one copy per layer
+  that cannot import the others: the api's (`ClassVCPU` and the
+  `ClassVCPUSQL` beside it, the same figure in the one file), hostd's
+  `guest.Classes`, the CLI's `classSpecs`, the web's `classVCPUs`, and
+  the `host_reservations` view (migration 0028), which no Go can read. `TestClassSpecsMatchBillingAndHost` now pins the CLI's to
+  billing, hostd and `ClassVCPU`; `plans.test.ts` parses `ClassVCPU` out
+  of `scheduler.go` and checks the web's copy and the published
+  `/docs/machine` table against it; and
+  `TestHostReservationsVCPUsMatchClassVCPU` inserts one project of each
+  class and reads the view back, which is the only way the migration can
+  be held to the constant.
+- *The unit a user reads is "core", not "vCPU" (owner, 2026-10-18).* The
+  owner's first point was that "1 vCPU" reads as weak and that a user
+  "gotta know its a physical core". The first attempt answered that with
+  three paragraphs under the size table: what a vCPU is, the 1.5-per-core
+  placement rule, and the arithmetic that the count fell while the CPU
+  rose. The owner cut it: "even with the truth, presentation still
+  matters, it doesn't matter that at the core we are giving a real core,
+  it matters more how the user will think", then "avoid handholding in
+  both website and docs". So the word carries the fact and the prose goes.
+  `/docs/machine`'s column is **Cores**, the CLI prints "2 cores, 8 GB
+  memory", and the dashboard says "2 cores" and "100% of 2 cores". The
+  numbers do not change. One line stays under the table, because it
+  answers a question the page itself raises rather than one nobody asked:
+  a core is a physical core and not a hyperthread, `nproc` says the same
+  number, and a machine running since before this date keeps its old
+  count until it stops.
+- *Why "core" is a fair word here, in one place, for the next reader.*
+  `CPUQuota` is `VCPUs * 100%`, so the quota is one full core of CPU time
+  per unit, and `PlacementVCPUPct` never commits more than 1.5 units to a
+  physical core, so the floor is about two thirds of a core when every
+  machine on the host works at once. A cloud vCPU is one SMT thread. On a
+  `D64s_v7`'s 32 physical cores the old ratio let memory sell 30 `large`
+  machines, 120 guest vCPUs at 3.75 per core, so a busy machine held about
+  0.27 of a core per vCPU and 1.07 cores in total; the new ratio sells 24
+  and a busy `large` holds 1.33 cores. The 4 vCPUs were a number on a
+  page, not capacity.
+- *No comparison with another vendor's vCPU is published, and no "about
+  2x".* What an SMT thread delivers against a core depends on whether its
+  sibling is busy, which repose has not measured. The pages state repose's
+  own numbers and stop.
+- *What the user loses is not written on the page.* A build defaults to one
+  job per core, so a long compile on `large` takes about twice as long as
+  it did on 4 vCPU. The Usage card already tells a user whose build is
+  queueing that there is "more work than cores" and what to do, which is
+  the moment they need it; a sentence in the size table would be the
+  handholding the owner cut.
+
+**I-778. The host kernel is pinned apart from `nixpkgs`, and the host
+refuses to build below the patched version (cve-2026-99999,
+2026-10-18).** A guest-to-host escape, fixed by a version pin and an
+assertion that outlives whoever remembers why the pin is there.
+
+- *The defect.* CVE-2026-99999 is an out-of-bounds write in the host
+  kernel's IPv4 output path: a guest supplies the checksum metadata
+  (`csum_start`, `csum_offset`, `CHECKSUM_PARTIAL`), the kernel validates a
+  20-byte IPv4 header, then the fragmenter re-reads a guest-mutable IHL
+  field as up to 60 bytes and completes the checksum past what it
+  validated. Every precondition is something hostd configures on purpose.
+  Taps are created `vnet_hdr` (`internal/hostd/net/net.go:123`), which is
+  the channel the guest's `virtio_net_hdr` travels; Cloud Hypervisor gets
+  `--net tap=,mac=` with no offload option (`internal/hostd/ch/ch.go:138`);
+  the host runs the IPv4 output path on the packet, since
+  `net.ipv4.ip_forward = 1` with `iifname "br-guests" oifname "<uplink>"
+  accept` and `masquerade`; and that path fragments, because a `vnet_hdr`
+  tap hands the host GSO packets of up to 64 KB and the `wg0` leg has a
+  lower MTU than the bridge. The attacker position the CVE asks for, "an
+  untrusted guest VM", is what we sell.
+- *Why none of the existing containment covers it.* It never reaches Cloud
+  Hypervisor's device emulation, so `--seccomp true`, the unprivileged
+  `hostd` user, the unit's `DeviceAllow`, the per-guest volume ownership
+  and the bridge's `isolated on` bound nothing here. The write happens in
+  kernel mode on the host, above the `hostd` a guest@ unit runs as.
+  SECURITY.md's boundary 1 reasoned about an escape landing *as* `hostd`;
+  this lands above it, which is why boundary 1 now names the kernel.
+- *What ships.* `nixpkgs` is at 6.18.56 and the backport
+  (`6785011f8b16`, "ipv4: validate checksum_start before completing
+  checksum") first appears in 6.18.57, so a second input,
+  `nixpkgs-host-kernel`, pins **only** the host kernel, by rev
+  (`f0b687e`, `nixos-unstable-small` at 2026-10-17) so it cannot drift.
+  `repose.host.kernelPackages` carries it from `hostModules`, so the host
+  VM tests boot the kernel the hosts run, and `nix/hosts/kernel.nix` sets
+  `boot.kernelPackages` from it.
+- *The assertion is the point of the entry.* A version pin is a comment
+  that a tidying session deletes. `kernel.nix` asserts
+  `versionAtLeast kernel.version "6.18.57"` and names the CVE in the
+  failure, so removing the input, or `nixpkgs` moving `linuxPackages` back
+  to an older LTS, fails the host build instead of quietly shipping a
+  vulnerable kernel. Proved by forcing the old kernel back in: host-01
+  refuses to evaluate with "Host kernel 6.18.52 is older than 6.18.57".
+- *Why not bump `nixpkgs` itself.* It would be the first bump since the
+  repo was scaffolded (three commits have ever touched `nix/flake.lock`,
+  all of them feature work) and it moves the host, the edge and every
+  guest's base closure at once. That is a world rebuild to carry one
+  kernel patch. The narrow pin is removed, with `repose.host.kernelPackages`
+  and the assertion's special case, when `nixpkgs` reaches 6.18.57; the
+  assertion is what makes "remove it later" safe to write down.
+- *The guest kernel is deliberately not bumped.* The guest's own kernel is
+  not a boundary we hold: the tenant has passwordless sudo in their guest
+  by design, so a guest-local kernel bug costs them nothing they do not
+  already have. Bumping it would change every guest's closure for no
+  boundary. The edge is not exposed either: it has no tap and no untrusted
+  guest adjacent to it, and the metadata path exists only at a tap.
+- *Evidence.* `host`, `host-bench`, `host-01` and `host-stg-01` all
+  evaluate to `6.18.57`; host-01's closure builds and its
+  `kernel-modules/lib/modules` holds `6.18.57`; the kernel is fetched from
+  the cache (143.3 MiB, no local kernel build), which is why the pin is a
+  Hydra channel rev and not a `src` override. The fix is in 6.18.57 and no
+  earlier 6.18: the stable ChangeLogs for 6.18.53 through 6.18.56 do not
+  carry it and 6.18.57 names `commit 6785011f8b16abf40b1e9d8b2e332232b3e68822
+  upstream`. Host VM tests and the closure comparison that shows the guest
+  and the edge unchanged are in the commit message.
+  `docs/security/cve-2026-99999.md` is the assessment.
+
+**I-796. The freeze deadline and write rate come from the disk the images
+are written to, a freeze admits snapshots against all of them at once,
+and a guest that loses its memory at either end alerts (freeze-limits,
+2026-10-18).** Amends I-652 (the 120 s deadline, the `2 x deadline + 60 s`
+stop timeout, and the write rate with no flag) and I-686 (what the freeze
+promises on host-01). *Made during implementation*: host-01 lost an xl
+guest's memory at a planned restart and nothing said so.
+
+- *What happened.* host-01 was switched to main `f5cba9bc` and rebooted at
+  17:03 UTC on 2026-10-18. The freeze printed one row: `01a11778  skipped
+  0  0  snapshot would outlast the deadline`. The xl guest (kanali) cold
+  booted: boot id `08e4e7d2` to `16f07ac5`, uptime 698622 s to 27 s, 4
+  claude processes to 0, tmux 2 windows to 1. Every agent session in it
+  was lost. The disk was intact (I-650's clean stop pressed the power
+  button and waited), so this cost memory only. The owner found out
+  because the conductor's test happened to have a probe inside the guest.
+- *Why it was always going to happen.* The estimate is the guest's
+  resident memory (the `guest@` unit's `MemoryCurrent`, capped at the
+  class's memory plus 256 MiB) divided by an assumed write rate of
+  100 MB/s, and a guest whose estimate passes the remaining deadline is
+  not started. At 100 MB/s a 120 s deadline cannot hold anything over
+  about 12 GB resident, so **a busy xl was skipped every time**, on every
+  host, since I-686 turned the freeze on. The three sizes repose sells are
+  4, 8 and 16 GiB; the deadline was set for none of them.
+- *The rate was measured on the wrong disk, and understating it is the
+  dangerous direction.* An image is a thin volume `frz-<id>` in
+  `vg-guests`, and `vg-guests` is the PV of the **data** disk
+  (`disko-layout.nix`). Measured there on host-01 on 2026-10-18, with two
+  guests running, to a scratch thin volume with `dd oflag=direct`:
+  **450 and 460 MB/s** for 2 GiB, **456 MB/s for 8 GiB in one go** (so it
+  is sustained, not a burst), **197 MB/s each with four at once**
+  (786 MB/s together), and **484 MB/s** reading back. That disk takes no
+  host cache -- Premium SSD v2 does not support it
+  (`modules/host/main.tf`) -- and `prod.tfvars` provisions it at
+  600 MB/s. The host's **root** disk, where the first version of this
+  entry took its figure, does **126 MB/s** -- and no image goes there. So I-652's "host-01's 600 MB/s" was right and this
+  entry's first draft was wrong to call it a guess: 600 is what the disk
+  is bought at and 450 is what one stream of `dd` gets out of it.
+  host-01 is configured at **400 MB/s**, the single-stream figure rounded
+  down; host-stg-01 stays at 120, measured on its own pool during I-652,
+  which `staging.tfvars` provisions at 125 MB/s -- staging can rehearse
+  the shape of a freeze and never host-01's timing.
+  - The direction of safety is the opposite of what the first draft
+    claimed. An **understated** rate makes every estimate longer, and a
+    long estimate is what **skips a guest** -- the defect being fixed
+    here. An overstated one risks a freeze that outruns its deadline,
+    which the admission below bounds, the wall below reports, and the
+    `writing` record recovers. "Rounded down so the estimate errs long"
+    was a reason to lose a tenant's session. The default of 100 MB/s
+    stays, named for what it is: a floor for a host nobody has measured.
+  - The estimate is uncompressed memory while the image is compressed
+    btrfs (I-685, about a fifth), so it is an upper bound by design, and
+    the rate a freeze learns from its own first finished snapshot is now
+    taken in the same units -- memory bytes over the snapshot's whole
+    duration. Taken from image bytes, as it was, it taught a fifth of the
+    truth and would have skipped every guest after the first. It only ever
+    *lowers* the rate: the host's own measurement is the ceiling, and a
+    snapshot that beat it usually only means that guest's memory
+    compressed well, which says nothing about the next guest's.
+- *A snapshot is admitted against every snapshot already running, not
+  against itself.* Four run at once (I-685), they share one disk, and the
+  gate compared each one's estimate with the whole remaining deadline on
+  its own. Up to four take their slot at the same instant with the whole
+  deadline ahead, so the rate a finished snapshot teaches cannot correct
+  that first batch: on a host with no more running guests than the
+  concurrency -- which is every host repose runs -- nothing corrected it
+  at all, and the deadline was enforced by systemd's SIGKILL rather than
+  by this code. A freeze now reserves its estimate before it starts and
+  gives it back when it finishes, and admits a snapshot only when
+  everything outstanding plus its own still fits the time left. The
+  deadline is therefore self-enforcing: it is *how much memory a restart
+  saves*, not an arithmetic claim about today's guests, and a host with
+  more than it can write skips its largest and says so.
+- *The arithmetic for the new numbers.* At 400 MB/s, with the per-guest
+  cap of class memory plus 256 MiB:
+  - One xl: 16 GiB + 256 MiB = 17.45 GB / 400 MB/s = **44 s**.
+  - host-01's worst case today, the two xl and one large its placement
+    allows: 2 x 16.25 + 8.25 = 40.75 GiB = 43.75 GB = **109 s**. (The
+    first draft said
+    42.95 GB and 358 s; it dropped the per-guest headroom and used the
+    root disk's rate.)
+  - Everything 64 GiB can place, after the eighth the host reserves: 56
+    GiB plus headroom, about 60 GB = **150 s**.
+  - The sync and the 5 s settle come out of the same deadline: 20 s.
+  - The deadline is **240 s** (`--freeze-deadline`,
+    `repose.host.freeze.deadline`, at most 300 in nix): 96 GB of guest
+    memory, more than host-01 can hold, with the host's full capacity
+    leaving 70 s of margin.
+  - `repose-guest-freeze.service` is `TimeoutStopSec = deadline + 150`
+    (**390 s** at the default), not `2 x deadline + 60`. The margin is
+    not a guess about snapshot sizes: a FreezeAll waits for nothing past
+    its deadline plus a 120 s grace -- not a started snapshot, not a
+    resume, not the record-marking tail -- and then counts what it left
+    and returns. 150 s leaves 30 s for it to get there. At the cap that
+    is 450 s of the about 600 s Azure waits for a graceful shutdown,
+    which leaves the rest of the shutdown (the guests' clean stops,
+    virtiofsd, the unmounts, LVM, the kernel) the share it had before.
+  - Why the wall matters more than the arithmetic: hostd killed by
+    systemd mid-ExecStop counts nothing, writes no tally and leaves its
+    guests paused with `writing` records. That is the one failure mode in
+    which a guest loses its memory *and* nothing says so -- exactly what
+    this entry exists to end -- so it is bounded by construction rather
+    than by a claim about how big a snapshot can be.
+- *The cost, plainly.* A host restart with busy guests holds the shutdown
+  for as long as the freeze takes, up to 240 s, where it used to give up
+  at 120 and lose the guest. At the measured rate host-01's own guests
+  take about 110 s. The host answers for the whole freeze (hostd and the
+  pool stop after the freeze unit), so what the api sees as absence is the
+  power-off, the boot and the restore: about a minute plus the images'
+  read, under 6 minutes, inside the CLI's 10-minute `hostWaitTimeout`.
+  `HostUnreachable` (2m) and `HostdDown` (3m) both page inside that, so a
+  planned restart is silenced first; the runbook's "Host rebooted" says so.
+- *The read side is budgeted from the same arithmetic as the write side.*
+  A thaw used to have one fixed 180 s per guest for the image read *and*
+  guestd's first answer, with no option to change it, while the freeze's
+  budget grew: a host could spend its whole shutdown writing images the
+  next boot discarded, and the guest would cold-boot anyway after a
+  longer restart instead of a shorter one. `restoreTimeout`
+  (`--freeze-restore-timeout`, default 180 s) now bounds a restore's
+  *surroundings*, and each image's own read time at `writeRateMBs` is
+  added to it, per guest and for the thaw's whole window. At I-685's
+  compression, about a fifth, host-01's worst case is 9 GB of image to
+  read: 22 s, inside the 180 s the surroundings already had.
+- *A loss alerts at either end.* It used to be a `Warn` line and a row in
+  a table nobody reads.
+  - Every path that leaves a *running* guest unfrozen counts
+    `repose_host_guest_freeze_unfrozen_total{reason}` and logs at `Error`:
+    `estimate`, `deadline`, `no_room` (the thin pool), `failed` (after the
+    job started; the guest keeps running), `no_key` and `busy`.
+    `GuestLeftUnfrozen` (warn, `increase(...[6h]) > 0` for 5m, 6 h being
+    I-645's window) reads it, the pattern HostCPUSaturated set in I-738.
+  - A guest the freeze *did* save, whose image the next start could not
+    give back, loses exactly the same thing, and that half had no metric
+    at all. `repose_host_guest_thaw_discarded_total{reason}` counts it --
+    `incomplete`, `too_old`, `changed`, `no_key`, `failed`, `window` --
+    with `GuestImageDiscarded` and a runbook section. A guest that
+    stopped, moved host or came back running on its own is not counted:
+    nothing was owed to it.
+  - `class` is not a label on either: the log line names the guest and its
+    class, and `reason` is what an alert has to say.
+  - A running guest whose `guest@` unit cannot be asked (dbus under a
+    shutdown's load) is taken as running rather than dropped. Dropping it,
+    which is what discarding `IsActive`'s error did, left it out of the
+    freeze, out of the results and out of the tally: the operator saw one
+    fewer guest and no loss.
+- *The counts are running totals, because neither half is ever scraped
+  where it happens.* A shutdown freeze's counter goes down with the host,
+  and a thaw's is raised before the metrics listener is up. hostd keeps
+  both totals beside its records as `freeze/.tally.json` (a dot file,
+  which `Store.List` skips) and publishes them at its first thaw, which is
+  its start; every freeze and thaw adds to the counter and to the file
+  together, so the series only ever rises. **A per-boot count does not
+  work**, and the first version of this change shipped one: the same guest
+  skipped at every reboot reads 1, 1, 1, and `increase()` sees a repeat as
+  no rise, so the first restart alerts and no later one ever does -- the
+  exact silence this entry exists to end. Only a decrease looks like a
+  reset to Prometheus, and the replay happens before any scrape, so there
+  is never a zero in between. The last freeze's own counts are kept beside
+  the totals for the `started cold after the host restarted` line, and
+  written by every non-operator freeze including one that saved
+  everything, so a called-off scheduled event's counts cannot be reported
+  as a later reboot's loss. An operator's `hostd freeze` only moves the
+  counter: it is scraped like anything else. One path counts nothing: a
+  freeze whose `ListGuests` fails cannot know whether a running guest
+  exists; it logs at Error and HostdDown is what covers it.
+- *The tenant was told; the operator was not.* A guest the freeze leaves
+  behind is stopped by the shutdown, marked interrupted and started cold
+  by the api (I-645, I-652's L6), so its owner gets the
+  `machines_restarted` notice and `repose status` shows the restart. What
+  was missing was the operator's side: nothing said that the freeze had
+  been *able* to save that machine and did not. That is what the counters
+  and the alerts are for, and why neither pages.
+- *What I-652 and I-686 promised that this changes.* I-652's "within a
+  deadline (120 s, at most 240 in nix)" and "the freeze unit's
+  TimeoutStopSec is twice the deadline plus 60 s" are replaced by the
+  numbers above; its "two snapshots at a time" was already four (I-685);
+  its *Still owed* asked for the pool measurement, which is above.
+  I-686's claim that the freeze was "proved on staging at host-01's
+  shape" held for two guests of 0.76 and 4.1 GB, not for a busy xl.
+  Nothing in I-653's or I-686's secrets exception changes: the image is
+  the same encrypted volume, removed once read and after 6 h.
+- *What is still not promised.* A host whose running guests hold more
+  memory than the deadline can write still leaves some of them unfrozen,
+  and the alert is how the owner learns it rather than a tenant. 300 s is
+  a hard cap because of Azure's wait, so the limit is about 111 GiB of
+  resident guest memory per host at 400 MB/s; past that the answer is
+  fewer or smaller guests on the host, which the runbook says. The launch
+  size (`Standard_D64s_v7`, 256 GiB) can place more than that, so a host
+  that large will be freezing a subset by design and the alert will say
+  which.
+- *User docs.* No command, flag, config key or message a tenant sees
+  changes: the deadline, the rate and the restore timeout are host config
+  and the metrics and alerts are the operator's. The one user-visible fact
+  is how long a machine takes to come back, so `lifecycle.md`'s "When a
+  machine's server restarts" says it takes a few minutes, longer on a
+  server with a lot of memory in use however much the reader's own machine
+  holds -- the freeze holds the whole host's shutdown, so an idle small
+  machine beside a busy xl waits the same. The page already said a machine
+  stops instead "if there isn't time or room to keep the memory", which
+  stays true and is now rarer.
+- *Proof here.* `internal/hostd/guest/freeze_test.go`:
+  `TestFreezeTakesEveryClassAtItsResidentSize` (small, large and xl
+  against the shipped deadline at both 400 and 100 MB/s, all frozen; the
+  xl as it shipped before, 120 s at 100 MB/s, skipped, which is the
+  defect), `TestAdmissionCountsTheSnapshotsAlreadyRunning` and
+  `TestAFreezeAdmitsOnlyWhatTheDeadlineHolds` (three snapshots that each
+  fit the deadline alone and not together, held so they really are in
+  flight: two frozen, one counted),
+  `TestAFreezeStopsWaitingAtItsWall` (a hypervisor that never answers the
+  snapshot: the freeze returns and counts instead of waiting out
+  `snapshotTimeout`), `TestAGuestWhoseUnitCannotBeAskedIsNotDropped`,
+  `TestFreezeCountsEveryGuestItLeavesUnfrozen` (estimate, deadline,
+  no_room, failed, no_key), `TestAFreezeThatCannotStartCountsTheGuestsItLeaves`
+  (busy), `TestUnfrozenReasonNamesEveryResult`,
+  `TestThawDiscardedReasonNamesEveryResult`,
+  `TestAThawThatDiscardsAnImageCountsTheGuest`,
+  `TestTheUnfrozenTallyRisesAtEveryStart` (two restarts losing the same
+  guest, each start a second Manager with a registry at zero, as a new
+  hostd has: 1 then 2),
+  `TestATallyFromThisBootIsNotReportedAsALoss` and
+  `TestAFreezeThatSavesEveryGuestClearsTheLastTally`;
+  `promtool test rules` for `GuestLeftUnfrozen` (including a second
+  reboot's loss counted on top of the first, which the per-boot count
+  failed) and `GuestImageDiscarded`; the host VM test `host-freeze`
+  asserts the three flags reach hostd and that the unit's stop timeout is
+  the deadline plus 150 s. *Still owed:* the matrix on a real host, small
+  and xl, idle and busy, frozen and thawed, compared on boot id, uptime,
+  process list and tmux windows; a re-measurement of the write rate
+  whenever a host's data disk changes; and the pool measurement on
+  host-stg-01, whose 120 is I-652's and whose disk is provisioned at 125.
+
+**I-798. A release's notes are written before its tag, and `release.yml`
+refuses to publish without them; the notes read as Simplified Technical
+English.** (release-notes-gate, 2026-10-18) The owner's instruction, after
+finding two releases with no notes at all.
+- *What happened twice.* v0.1.37 and v0.1.38 were tagged, GoReleaser
+  published them, and both bodies were empty. The owner found each one. The
+  procedure said "notes are added after the tag as before", which makes the
+  notes an afterthought that a conductor finishing a long release forgets,
+  and nothing failed when they were missing.
+- *The guard.* `release.yml`'s `sign` job reads the release body and exits 1
+  below 400 bytes, before the step that clears the draft flag. A tag with no
+  notes therefore stays a draft, which `install.sh` never sees, so the
+  failure is loud and costs nothing: write the notes and re-run the job. 400
+  bytes is about a lead paragraph; it catches "empty" and "a commit list",
+  not a short release.
+- *How they read.* About 80 percent of the way to ASD-STE100: the active
+  voice, the simple present, one idea to a sentence, short sentences, no
+  idioms, no metaphors, with product terms, command names and numbers exact.
+  The remaining 20 percent is ordinary English prose; the full controlled
+  vocabulary is not the goal. The owner asked for this of the notes first
+  and then of every output, on 2026-10-18.
+- *What they contain.* Every user-visible change since the last tag; what
+  the release does NOT fix where a reader would assume it does, with the
+  numbers; what a change costs where it costs something; and measured
+  figures rather than adjectives. v0.1.37 names the prompt race as unfixed
+  at 1 of 10, 2 of 10 and 0 of 9. v0.1.38 says a server shutdown now waits
+  up to four minutes.
+- *Why not generate them.* A commit list is not a release note: it names
+  branches and decision ids, which no user reads, and it cannot say what a
+  release fails to fix. The guard checks that notes exist; a person writes
+  them.

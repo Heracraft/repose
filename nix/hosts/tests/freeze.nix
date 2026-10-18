@@ -46,6 +46,16 @@ pkgs.testers.runNixOSTest {
         cmdline = host.succeed("systemctl show hostd -p ExecStart --value")
         assert "--freeze " in cmdline and "--freeze-key-file /run/repose-freeze/key.pem" in cmdline, cmdline
         assert "--free-page-reporting" in cmdline, cmdline
+        # The deadline and the write rate reach hostd, and the freeze
+        # unit's stop timeout moves with the deadline: systemd would
+        # otherwise cut the ExecStop before the deadline it was given
+        # (DECISIONS I-796). 30 + 150 = 180 s.
+        assert "--freeze-deadline 30s" in cmdline, cmdline
+        assert "--freeze-write-rate 100" in cmdline, cmdline
+        assert "--freeze-restore-timeout 180s" in cmdline, cmdline
+        stop = host.succeed(
+            "systemctl show repose-guest-freeze -p TimeoutStopUSec --value").strip()
+        assert "3min" in stop, stop
         host.succeed("systemctl is-active repose-guest-freeze.service")
         # hostd's own path for cryptsetup and btrfs-progs.
         path = host.succeed(

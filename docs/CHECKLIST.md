@@ -120,6 +120,11 @@ DECISIONS entry and this list with it. Counts as of 2026-10-01.
       Evidence: `rg -n 'max-w-(5xl|7xl)|HeaderFrame' apps/web/src --glob
       '*.svelte'` prints 0 lines; `pnpm test:integration
       tests/design.spec.ts -g 'logo stands'` passes.
+- [ ] A release's notes exist before its tag and read as Simplified
+      Technical English (I-798). Evidence: `gh release view <tag> --json body
+      --jq '.body | length'` is over 400, and the notes name every
+      user-visible change, what the release does not fix with its numbers,
+      and what it costs. `release.yml` fails the publish below 400 bytes.
 - [ ] Toasts are house banners. Evidence: `rg -n 'richColors' apps/web/src
       --glob '*.svelte' | rg -v '<!--'` prints 0 lines.
 - [ ] No page asks a third party for a font, and the CSP allows none.
@@ -384,10 +389,11 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       release archives match `checksums.txt`; the Linux arm64 binary runs
       under `qemu-aarch64` and prints the same; the two macOS archives are
       valid Mach-O for their architectures. `repose --version` was
-      `unknown flag` in v0.1.4 and is fixed on `main` for the next tag.
-      Still owed: the install on a real macOS arm64, macOS x86_64 and Linux
-      arm64 machine (the second human, M5 step 3), and a tag carrying
-      `--version`.
+      `unknown flag` in v0.1.4. That half is closed: `cli.go` sets the
+      version template and `repose --version` prints `repose 0.1.37
+      (herakraft)` from the v0.1.37 tag. Still owed: the install on a real
+      macOS arm64, macOS x86_64 and Linux arm64 machine (the second human,
+      M5 step 3).
 - [x] `ops/RUNBOOK.md` has entries for every alert above. Evidence:
       `ops/check.sh` fails when an alert in `ops/alerts.yaml` has no
       RUNBOOK heading and passes on `main` (17 rules, 17 headings,

@@ -66,13 +66,53 @@ type M struct {
 	// 6 h and not running since (DECISIONS I-645): above 0 for long, the
 	// api has not started them (ResumeNotStarted).
 	GuestsInterrupted prometheus.Gauge
+	// GuestFreezeUnfrozen counts the running guests a freeze left with
+	// their memory unsaved, by reason (DECISIONS I-796). Every such guest
+	// loses what it was running when the host goes down, so this is the
+	// series GuestLeftUnfrozen alerts on; the guest_freeze log line at
+	// Error names the guest and its class, which is why class is not a
+	// label here.
+	//
+	// GuestThawDiscarded is the other half of the same loss: a guest that
+	// was frozen and whose image the next start could not give back loses
+	// exactly what an unfrozen one loses. GuestImageDiscarded alerts on
+	// it.
+	//
+	// Both are running totals read from freeze.Tally at each start, not
+	// this process's own count: a shutdown freeze's counter is never
+	// scraped (the host is going down behind it) and a thaw's is raised
+	// before the metrics listener is up, so a per-process count would
+	// publish the same number after every reboot and increase() would see
+	// nothing.
+	GuestFreezeUnfrozen *prometheus.CounterVec
+	GuestThawDiscarded  *prometheus.CounterVec
 }
 
-// BlockedReasons is the `reason` enum of the two series above.
+// BlockedReasons is the `reason` enum of repose_host_egress_blocked_total
+// and repose_host_egress_blocked_guests.
 var BlockedReasons = []string{"smtp", "stratum", "flows"}
 
 // NotifyDropReasons is the `reason` enum of repose_host_guest_notify_dropped_total.
 var NotifyDropReasons = []string{"rate_limited", "invalid", "queue_full"}
+
+// FreezeUnfrozenReasons is the `reason` enum of
+// repose_host_guest_freeze_unfrozen_total: no_room (the thin pool has no
+// room for the image), estimate (the snapshot would have outlasted the
+// deadline), deadline (the deadline passed before the snapshot started),
+// failed (the freeze failed after it started; the guest keeps running),
+// no_key (the image key was not available), busy (another freeze or thaw
+// held the lock past the deadline).
+var FreezeUnfrozenReasons = []string{"no_room", "estimate", "deadline", "failed", "no_key", "busy"}
+
+// ThawDiscardedReasons is the `reason` enum of
+// repose_host_guest_thaw_discarded_total: incomplete (the image was never
+// finished, so hostd was killed mid-snapshot), too_old (older than the
+// restore window), changed (the guest's closure, class, volume or the
+// hypervisor moved under the image), no_key (the image key was not
+// available), failed (the restore itself failed) and window (the thaw ran
+// out of time before this image was read). A guest that stopped, moved
+// host or came back running on its own is not counted: it lost nothing.
+var ThawDiscardedReasons = []string{"incomplete", "too_old", "changed", "no_key", "failed", "window"}
 
 // New registers every instrument on a fresh registry.
 func New() *M { return NewVersion("dev") }
@@ -109,6 +149,8 @@ func NewVersion(version string) *M {
 		Load1:                 f.gauge("load1", "Host one-minute load average."),
 		GuestdLost:            f.gauge("guestd_lost", "Count of guests with guestd_ok=false."),
 		GuestsInterrupted:     f.gauge("guests_interrupted", "Guests a host restart took down in the last 6 h that have not run since (I-645)."),
+		GuestFreezeUnfrozen:   f.counterVec("guest_freeze_unfrozen_total", "Running guests a freeze left unfrozen, so their memory is lost when the host goes down, by reason: no_room, estimate, deadline, failed, no_key, busy (I-796).", "reason"),
+		GuestThawDiscarded:    f.counterVec("guest_thaw_discarded_total", "Frozen guests whose memory image a thaw discarded, so they started cold and lost what they were running, by reason: incomplete, too_old, changed, no_key, failed, window (I-796).", "reason"),
 		GuestCPUSecondsTotal:  f.counterVec("guest_cpu_seconds_total", "Guest CPU time summed by class.", "class"),
 		GuestNetBytesTotal:    f.counterVec("guest_net_bytes_total", "Guest network bytes by direction.", "direction"),
 		EventsPending:         f.gauge("events_pending", "Events awaiting an api ack."),
@@ -120,6 +162,15 @@ func NewVersion(version string) *M {
 	// nothing on a host where no guest was ever blocked.
 	for _, r := range NotifyDropReasons {
 		m.GuestNotifyDropped.WithLabelValues(r)
+	}
+	// The same from startup for the freeze: GuestLeftUnfrozen reads an
+	// increase, which needs a point before the rise, and a host that
+	// froze nothing yet has none.
+	for _, r := range FreezeUnfrozenReasons {
+		m.GuestFreezeUnfrozen.WithLabelValues(r)
+	}
+	for _, r := range ThawDiscardedReasons {
+		m.GuestThawDiscarded.WithLabelValues(r)
 	}
 	for _, r := range BlockedReasons {
 		m.EgressBlockedTotal.WithLabelValues(r)

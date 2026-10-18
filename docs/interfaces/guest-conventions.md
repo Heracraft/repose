@@ -240,9 +240,12 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   it, so the sync's status, stash, fingerprint and tar never see them;
   nothing removes them but the user (`git worktree remove`).
 - `repose attach` = `tmux attach -t <slug> -c <checkout>`; `repose run
-  "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> '<agent> ...'`
-  then `tmux send-keys -t <slug>:<agent> '<prompt>' Enter` after the TUI is
-  up (guestd waits for the pane to be idle 1 s).
+  "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> -d
+  '<agent> <the prompt's argument form>'`, the agent's own initial-prompt
+  argument, which its startup takes (DECISIONS I-780), so nothing is typed
+  into the pane. An agent with no such form keeps the old shape: the bare
+  `'<agent>'`, then `tmux send-keys -t <slug>:<agent> '<prompt>' Enter`
+  once the pane has been idle 1 s.
 - Claude Code's folder trust (DECISIONS I-486): in the same SSH command,
   before `tmux new-window` starts `claude` in a folder (the checkout, a
   worktree, another checkout), the CLI sets
@@ -582,7 +585,9 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    so Nix never writes one into the checkout, I-483), else nothing. A failed load prints a `repose:` line
    and the agent starts without it. While it loads inside tmux, the pane
    option `@repose-devshell` is `loading`; `repose run` waits (up to 30
-   minutes) while it is set before typing the prompt. The option is new;
+   minutes) while it is set before typing a prompt it has to type. A prompt
+   on the agent's command line (I-780) waits for nothing: the wrapper loads
+   the dev shell and then execs the agent with it. The option is new;
    a CLI that does not read it waits 30 s as before. The same loader is
    installed as `/etc/repose/devshell.sh` (I-275): sourcing it defines
    `_repose_devshell NAME`, which `repose exec` calls in the checkout

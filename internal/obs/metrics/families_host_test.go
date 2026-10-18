@@ -47,6 +47,8 @@ func TestHostFamily(t *testing.T) {
 		`repose_host_guest_cpu_seconds_total{class="large"}`,
 		`repose_host_guest_net_bytes_total{direction="tx"}`,
 		`repose_host_guest_notify_dropped_total{reason="rate_limited"}`,
+		`repose_host_guest_freeze_unfrozen_total{reason="estimate"}`,
+		`repose_host_guest_thaw_discarded_total{reason="window"}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("host metrics do not contain %s", want)

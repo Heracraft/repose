@@ -184,8 +184,19 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
+// wgReservedOffsets are the host offsets in 10.255.0.0/16 that allocate
+// steps over, ascending. The monitoring server has held 10.255.0.3 since
+// I-170, picked by hand when nothing had taken it; a host handed that
+// address takes Grafana's scrapes and every host's Loki writes with it,
+// and the next edge rebuild takes it back and leaves the host without
+// metrics or operator SSH (DECISIONS I-359, I-782). Operator peers sit in
+// 10.255.254.0/24, outside this plan, and need no entry here.
+var wgReservedOffsets = []uint32{3}
+
 // allocate derives a host's guest /22 from 10.64.0.0/12 and its WireGuard
-// address from 10.255.0.0/16 (the edge is 10.255.0.1) by sequence number.
+// address from 10.255.0.0/16 (the edge is 10.255.0.1) by sequence number:
+// the nth host registered gets the nth address after the edge's that
+// wgReservedOffsets does not hold. The /22 stays a plain function of n.
 func allocate(n int64) (netip.Prefix, netip.Addr, error) {
 	if n < 1 || n > 1000 {
 		return netip.Prefix{}, netip.Addr{}, fmt.Errorf("host sequence %d out of range", n)
@@ -193,7 +204,13 @@ func allocate(n int64) (netip.Prefix, netip.Addr, error) {
 	base := uint32(10)<<24 | uint32(64)<<16
 	cidrInt := base + uint32(n-1)*1024
 	cidr := netip.AddrFrom4([4]byte{byte(cidrInt >> 24), byte(cidrInt >> 16), byte(cidrInt >> 8), byte(cidrInt)})
-	wgInt := uint32(10)<<24 | uint32(255)<<16 | uint32(n+1)
+	off := uint32(n + 1)
+	for _, r := range wgReservedOffsets {
+		if r <= off {
+			off++
+		}
+	}
+	wgInt := uint32(10)<<24 | uint32(255)<<16 | off
 	wg := netip.AddrFrom4([4]byte{byte(wgInt >> 24), byte(wgInt >> 16), byte(wgInt >> 8), byte(wgInt)})
 	return netip.PrefixFrom(cidr, 22), wg, nil
 }

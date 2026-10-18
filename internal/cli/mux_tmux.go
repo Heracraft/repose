@@ -99,6 +99,122 @@ func isAgent(name string) bool {
 	return slices.Contains(agentNames, name)
 }
 
+// agentPromptArgs is each agent's initial-prompt argument form: the words
+// that go after the binary on the command line tmux starts it with, so
+// the agent's own startup takes the prompt and stays interactive
+// (DECISIONS I-780, amending I-752). The agent's own startup is what
+// consumes it: nothing is typed, nothing is read back off the screen, and
+// there is no readiness to judge. The live submission rate on a real
+// guest is owed either way (I-780's OWED); I-752 is not closed by this. An agent with no entry here, or one whose entry
+// refuses this particular prompt, keeps the typing path
+// (submitPromptScript), as do the warm path (an agent window that is
+// already open) and the Claude Code login waiter (I-607).
+//
+// Each form was verified against the release nix/overlay/agents/versions.json
+// pins, in its own words, on the dev box; what was NOT verified is said so.
+// A form must survive a prompt that begins with `-`, since every one of
+// these parsers would otherwise read it as a flag.
+var agentPromptArgs = map[string]func(prompt string) ([]string, bool){
+	// Claude Code: `claude [options] [command] [prompt]`, "Arguments:
+	// prompt  Your prompt" (`claude --help`; read on 2.1.266, the dev
+	// box's own copy, where the guest pins 2.1.283). `--` first because
+	// its parser reads a leading `-` as a flag: `claude -- '--help'`
+	// answered the prompt "--help" instead of printing the help.
+	// Seen taking the argument in a tmux window on the dev box (a window
+	// made by hand, NOT one repose created): the prompt is the first turn
+	// in the transcript, the input is empty after it, and the pane still
+	// runs claude. It also survives the folder-trust dialog, which showed
+	// first and was answered by hand: Claude Code then submitted the
+	// argument itself.
+	"claude": func(p string) ([]string, bool) { return []string{"--", p}, true },
+	// Codex: "If no subcommand is specified, options will be forwarded to
+	// the interactive CLI", `codex [OPTIONS] [PROMPT]`, "[PROMPT]
+	// Optional user prompt to start the session" (`codex --help` from the
+	// pinned 0.157.1 binary, run on the dev box). `--` because clap
+	// refuses a leading `-` and says so itself: `codex '-lead prompt'` is
+	// "error: unexpected argument '-l' found / tip: to pass '-l' as a
+	// value, use '-- -l'", and `codex -- '-lead prompt'` gets past the
+	// argv to "stdin is not a terminal". The wrapper's daemon check
+	// (nix/overlay/agents/wrap.nix) reads a first word that is no
+	// subcommand as an interactive start, which `--` is. NOT verified
+	// live: there is no Codex login on this box.
+	"codex": func(p string) ([]string, bool) { return []string{"--", p}, true },
+	// Gemini CLI: `-i/--prompt-interactive`, "Execute the provided prompt
+	// and continue in interactive mode"; `-p/--prompt` is headless and is
+	// never used here. Read in the pinned 0.61.0 bundle's own yargs
+	// options (gemini-NPCD6A4N.js) and exercised with node on the dev
+	// box. One word, joined with `=`, because the separate-word form
+	// loses a leading `-`: `gemini -i '-dash first'` is "Not enough
+	// arguments following: i", while `--prompt-interactive=-dash first`
+	// parses. The positional `[query..]` would also work (it becomes
+	// promptInteractive when not headless) but pushes a "Positional
+	// arguments now default to interactive mode" line into the user's
+	// pane, so the flag is used. NOT verified live: no Gemini auth here.
+	"gemini": func(p string) ([]string, bool) { return []string{"--prompt-interactive=" + p}, true },
+	// opencode: the TUI's `--prompt`, "prompt to use" (`opencode --help`).
+	// Joined with `=`: `opencode --prompt '-lead'` falls out of yargs into
+	// the help banner, `--prompt=-lead` starts the TUI. The positional is
+	// a project path and `opencode run` is headless, so neither is used.
+	// Seen taking the argument in a tmux window on the dev box (again a
+	// hand-made window) on 1.18.30, where the guest pins 1.18.34: the
+	// prompt appears as the submitted user message, the model answered
+	// it, and the TUI stayed interactive.
+	"opencode": func(p string) ([]string, bool) { return []string{"--prompt=" + p}, true },
+	// pi: `pi [options] [--] [@files...] [messages...]`, "message
+	// Provide an initial prompt", "`--` Stop option parsing so a prompt
+	// can begin with `-`", and "With terminal stdin and stdout, Pi opens
+	// the terminal UI unless --print, --mode json, or --mode rpc"
+	// (`pi --help` and docs/cli.md in the pinned 1.0.4 tree, run and read
+	// on the dev box). `pi '-lead prompt'` is "Error: Unknown option";
+	// `pi -- '-lead prompt'` reaches the no-API-key message.
+	//
+	// A prompt that begins with "@" keeps the typing path: `--` stops
+	// option parsing but not pi's `@file` include, so `pi -- '@nope.txt
+	// hello'` exits with "Error: File not found" and the window would be
+	// left with no agent and no prompt — worse than typing it. NOT
+	// verified live otherwise: there is no pi login here.
+	"pi": func(p string) ([]string, bool) {
+		if strings.HasPrefix(p, "@") {
+			return nil, false
+		}
+		return []string{"--", p}, true
+	},
+}
+
+// agentPromptArgv is binary's form for this prompt: the words to put
+// after it, and whether the prompt travels that way at all. An empty
+// prompt never does.
+func agentPromptArgv(binary, prompt string) ([]string, bool) {
+	if prompt == "" {
+		return nil, false
+	}
+	form, ok := agentPromptArgs[binary]
+	if !ok {
+		return nil, false
+	}
+	return form(prompt)
+}
+
+// agentStartCommand is `tmux new-window`'s command argument for the
+// agent's window: the binary's name alone, as every window had before
+// I-780, or a whole shell command line — the binary and the prompt as
+// its own word — quoted a second time, so the bash tmux runs it in (the
+// session's default-shell, nix/guest/base/tmux.nix) splits it back into
+// exactly those words. Both levels go through shQuote, which is why a
+// prompt holding single quotes, double quotes, newlines, `$`, a backtick
+// or a leading `-` reaches the agent as one argv word and runs nothing.
+func agentStartCommand(binary, prompt string) string {
+	args, ok := agentPromptArgv(binary, prompt)
+	if !ok {
+		return shQuote(binary)
+	}
+	line := shQuote(binary)
+	for _, a := range args {
+		line += " " + shQuote(a)
+	}
+	return shQuote(line)
+}
+
 const paneIdleWait = 1 * time.Second
 const paneIdlePoll = 100 * time.Millisecond
 
@@ -222,21 +338,36 @@ func needsClaudeLogin(ctx context.Context, t sshTarget, hasOAuthSecret bool) (bo
 	return err != nil, nil // a non-zero test means no login yet
 }
 
-// startAgentWindow opens the tmux window and, unless the caller says to
-// attach instead, waits for the pane to go idle and sends the prompt.
-// binary is the process tmux launches and the name pane_current_command
-// must settle on before the prompt is sent; production passes the agent's
-// real binary name, tests substitute a stand-in. dir is the window's
+// startAgentWindow opens the tmux window with the agent in it, and the
+// prompt as the agent's own argument when it has a form for one
+// (agentPromptArgs, I-780): the window is then all there is to do, since
+// the agent's startup consumes the prompt. Without such a form it waits
+// for the pane to go idle and types the prompt (submitPromptFor, I-752).
+// binary is the process tmux launches and, on the typing path, the name
+// pane_current_command must settle on before the prompt is sent;
+// production passes the agent's real binary name, tests substitute a
+// stand-in. dir is the window's
 // working directory as the guest's shell spells it: the checkout's
 // "~/<name>", a worktree's "~/<name>-worktree-<N>" (I-253), or "" to find
 // the checkout in the guest (checkoutVar, I-368). onLoading, when not nil, is
-// called once if the wrapper says it is loading the dev environment.
+// called once if the wrapper says it is loading the dev environment, which
+// only the typing path waits for.
 // For claude and codex, the same ssh first marks that folder trusted in
-// the agent's own file (agentTrustScript, I-486, I-544), and a trust
-// dialog that shows anyway is never typed into: the error is an
-// *agentDialogError.
+// the agent's own file (agentTrustScript, I-486, I-544). On the typing
+// path a trust dialog that shows anyway is never typed into: the error is
+// an *agentDialogError. With the prompt on the command line there is
+// nothing to type into it, so the dialog is not looked for: it waits for
+// the user in the window, with the prompt behind it.
 func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, binary, prompt string, attachOnly bool, onLoading func(), appr mcpApprovals) error {
-	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary, appr), nil); err != nil {
+	// The login path opens the window on Claude Code's login and types
+	// the prompt after it (I-607), so that window starts the agent with
+	// nothing on its command line.
+	argv := prompt
+	if attachOnly {
+		argv = ""
+	}
+	_, carried := agentPromptArgv(binary, argv)
+	if _, err := runSSH(ctx, t, agentWindowCommand(slug, t.Checkout, windowName, dir, binary, argv, appr), nil); err != nil {
 		return err
 	}
 	if attachOnly {
@@ -245,6 +376,14 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 			_, err := runSSH(ctx, t, pendingPromptTmux(slug, windowName, prompt), nil)
 			return err
 		}
+		return nil
+	}
+	if carried {
+		// The prompt is the agent's own first argument (I-780): the
+		// agent's startup takes it, so there is nothing to wait for and
+		// nothing to type. A dialog the pre-trust did not cover is the
+		// user's to answer in the window, and the prompt waits in the
+		// agent's argv while they do.
 		return nil
 	}
 	if err := waitPaneIdle(ctx, t, slug, windowName, binary, onLoading); err != nil {
@@ -265,14 +404,17 @@ func startAgentWindow(ctx context.Context, t sshTarget, slug, windowName, dir, b
 }
 
 // agentWindowCommand is the shell startAgentWindow runs to open the
-// window, with the agent's folder trust set first.
-func agentWindowCommand(slug, extra, windowName, dir, binary string, appr mcpApprovals) string {
+// window, with the agent's folder trust set first. prompt is "" for a
+// window that is not given the prompt on the command line (an agent with
+// no form for it, the login path); otherwise it is one argument of the
+// command tmux starts (agentStartCommand, I-780).
+func agentWindowCommand(slug, extra, windowName, dir, binary, prompt string, appr mcpApprovals) string {
 	prefix, cdir := "", dir
 	if dir == "" {
 		prefix, cdir = checkoutVar(slug, extra), `"$repose_co"`
 	}
 	prefix += agentTrustScript(binary, cdir, appr)
-	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, shQuote(binary))
+	return prefix + fmt.Sprintf("tmux new-window -t %s -n %s -c %s -d %s", slug, windowName, cdir, agentStartCommand(binary, prompt))
 }
 
 // claudeTrustScript is shell, run before tmux starts claude in dir (a

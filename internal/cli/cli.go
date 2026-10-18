@@ -537,7 +537,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
-	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent and type this prompt into it")
+	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent on this prompt")
 	// Before I-603 the name was --name and PROJECT was the prompt; kept
 	// hidden for a release.
 	cmd.Flags().StringVar(&opts.Name, "name", "", "the project with this name (repose run NAME)")

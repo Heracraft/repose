@@ -23,6 +23,7 @@ import (
 	miners "github.com/heracraft/repose/internal/abuse"
 	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/ops"
+	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -246,12 +247,12 @@ func Clear(ctx context.Context, q store.Querier, projectID uuid.UUID, actor stri
 // guestd down says nothing about who is attached). An agent running for
 // hours unattended is the product, so a present agent excludes a project.
 // cpu_ns is the guest unit's CPU per sample, about 60 s apart.
-const busyUnattendedSQL = `select count(*) from (
+var busyUnattendedSQL = `select count(*) from (
 	select project_id from meter_samples
 	where ts > $1 and state = 'running'
 	group by project_id
 	having min(ts) < $2 and count(*) >= $3
-	   and sum(cpu_ns)::float8 / (count(*) * 60e9 * max(case class when 'small' then 2 when 'xl' then 8 else 4 end)) >= 0.9
+	   and sum(cpu_ns)::float8 / (count(*) * 60e9 * max(` + scheduler.ClassVCPUSQL("class") + `)) >= 0.9
 	   and max(ssh_sessions) = 0 and max(tmux_clients) = 0
 	   and max(jsonb_array_length(coalesce(agents, '[]'::jsonb))) = 0
 	   and bool_and(guestd_ok)
