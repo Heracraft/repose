@@ -19,7 +19,7 @@ Your plan buys memory for running machines, disk for what your projects hold, an
 
 The $39 is the founding price: the first 30 subscribers to Solo pay it for Solo's first 12 months, then $49, on their first subscription only. The 12 months start after the free week, and the pricing page shows the founding price while places are left. If you had a subscription before, or you upgrade to Plus or Pro, you pay the list price. A price change reaches you by email at least 30 days ahead. A subscription keeps the list price it started on for 12 months ([terms](/terms)).
 
-Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its [memory and vCPU](/docs/machine).
+Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its [memory and cores](/docs/machine).
 
 Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page does.
 

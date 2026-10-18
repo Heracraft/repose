@@ -572,7 +572,8 @@
 
 	let revision = $derived(revisions.find((r) => r.revision_id === project?.config_revision_id));
 
-	// The size's vCPUs, for the status line, which has to say them for a
+	// The size's cores (the api calls the field vcpus), for the status
+	// line, which has to say them for a
 	// stopped machine too: a stopped machine is not sampled, so the
 	// samples payload's own `vcpus` is not there to read (I-492). The
 	// figure lives in format.ts, pinned to scheduler.ClassVCPU by
@@ -700,7 +701,7 @@
 			<span class="font-mono text-compact" data-testid="project-class">{project.class}</span>
 			{#if vcpus}
 				<span aria-hidden="true">·</span>
-				<span class="tabular-nums">{vcpus} vCPU</span>
+				<span class="tabular-nums">{vcpus} {vcpus === 1 ? 'core' : 'cores'}</span>
 				<span aria-hidden="true">·</span>
 				<span class="tabular-nums">{classMemoryGB(project.class)} GB</span>
 			{/if}
@@ -943,7 +944,7 @@
 						start={samplesAt - span}
 						end={samplesAt}
 						format={pct}
-						maxLabel="100% of {samples.vcpus} vCPUs"
+						maxLabel="100% of {samples.vcpus} {samples.vcpus === 1 ? 'core' : 'cores'}"
 					/>
 					<UsageChart
 						label="Memory"
@@ -956,7 +957,7 @@
 						maxLabel={gb(samples.memory_bytes)}
 					/>
 					<UsageChart
-						label="Waiting for a vCPU"
+						label="Waiting for a core"
 						points={series.pressure}
 						max={1}
 						stepS={samples.step_s}

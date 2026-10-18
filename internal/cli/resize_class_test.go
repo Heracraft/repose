@@ -58,11 +58,11 @@ func TestClassSpecsMatchBillingAndHost(t *testing.T) {
 	// (`repose resize --size`). docs_test.go holds the CLI's commands,
 	// flags, config keys and exit codes to that page but not the text of
 	// an output line, so this is the only test that fails when the page
-	// goes on quoting the old vCPU count.
+	// goes on quoting the old core count.
 	for _, c := range []struct{ class, want string }{
-		{"small", "1 vCPU, 4 GB memory; fits the Solo plan"},
-		{"large", "2 vCPU, 8 GB memory; fits the Solo plan"},
-		{"xl", "4 vCPU, 16 GB memory; needs the Plus plan"},
+		{"small", "1 core, 4 GB memory; fits the Solo plan"},
+		{"large", "2 cores, 8 GB memory; fits the Solo plan"},
+		{"xl", "4 cores, 16 GB memory; needs the Plus plan"},
 	} {
 		if got := classSummary(c.class); got != c.want {
 			t.Errorf("summary(%s) = %q, want %q", c.class, got, c.want)
@@ -106,7 +106,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "xl" || got.State != "stopped" {
 			t.Fatalf("after: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "from large to xl: 4 vCPU, 16 GB memory; needs the Plus plan. It starts at the new size.\n") || strings.Contains(out.String(), "`repose ") {
+		if !strings.Contains(out.String(), "from large to xl: 4 cores, 16 GB memory; needs the Plus plan. It starts at the new size.\n") || strings.Contains(out.String(), "`repose ") {
 			t.Fatalf("output %q", out.String())
 		}
 	})
@@ -150,7 +150,7 @@ func TestResizeClass(t *testing.T) {
 		if got := get(t, e, p.ID); got.Class != "small" || got.State != "running" {
 			t.Fatalf("after: %s %s", got.Class, got.State)
 		}
-		if !strings.Contains(out.String(), "Changed todo-app from large to small: 1 vCPU, 4 GB memory; fits the Solo plan. Running again") {
+		if !strings.Contains(out.String(), "Changed todo-app from large to small: 1 core, 4 GB memory; fits the Solo plan. Running again") {
 			t.Fatalf("output %q", out.String())
 		}
 		// The disk stays on the host, untouched; a snapshot was most of
