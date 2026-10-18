@@ -23521,3 +23521,61 @@ the copy above is the second.
 The public docs under `content/docs/` are untouched: the owner asked for
 the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
 user-visible outside the landing changed, so no page there needs one.
+
+**I-781. The quickstart does not promise that other projects are out of
+an agent's reach (launch-truth, 2026-10-18).** Amends I-747 and the
+quickstart's opening paragraph. *Made during implementation* (the owner,
+2026-10-18, on the launch review: "just remove that line completely").
+- `/docs` opened with "Your laptop, your SSH keys and your other projects
+  are out of its reach." The first two clauses hold: SSH private keys are
+  never copied and nothing on the machine reaches back to the laptop. The
+  third does not. `repose run` copies the GitHub CLI login by default, and
+  `secrets.md` says what that login is: git on the machine sends every
+  GitHub URL with it, so an agent can read, push to or delete any
+  repository the user can reach. The same page refuses to copy the Vercel
+  login for exactly this reason, "it reaches your whole Vercel account".
+- The sentence is removed rather than corrected. A correct version would
+  be a safety caveat in the first paragraph of the quickstart, which is
+  where a reader decides whether to install; the caveat belongs on
+  `secrets.md`, which already carries it, and `repose secrets choose`
+  already lets a user keep the `gh` login off the machine (I-422).
+- The paragraph now ends at the snapshot, which is the real answer to an
+  agent with full permissions. Nothing else on the page changes, and
+  `SECURITY.md` already lists a tenant's agent misusing the tenant's own
+  tool logins as accepted, with the exposure named.
+- What this does not do: change any default. Whether `gh` should be
+  minted per-run and single-repo instead of copied whole is
+  `proposals/2026-09-27-credentials-convenience-first.md` layer 1, and is
+  still the owner's call.
+
+**I-782. `hostmgr.allocate` steps over 10.255.0.3, so the launch host
+gets .4 (launch-truth, 2026-10-18).** Amends I-359. *Made during
+implementation* (the launch review found the collision live in
+`LAUNCH.md` §3 step 0, which asked the owner to choose between this and
+renumbering the monitoring server; the owner chose this one).
+- The api numbered hosts on the edge's WireGuard network as
+  10.255.0.(n+1), so the second host to register took 10.255.0.3. The
+  monitoring server has held that address since I-170, picked by hand
+  when nothing had taken it. A host given it takes Grafana's scrapes and
+  every host's Loki writes, and the next edge rebuild takes the address
+  back and leaves the host with no metrics and no operator SSH.
+- `wgReservedOffsets` is the ascending list of offsets the allocator
+  steps over, `{3}` today. The nth host gets the nth address after the
+  edge's that the list does not hold: host-01 keeps .2, the next host
+  gets .4, the one after .5. The guest /22 stays a plain function of the
+  sequence number and does not move.
+- Stepping over, not skipping. A bare skip gives sequence 2 the address
+  sequence 3 was already going to get; `TestAllocateHandsOutEachAddressOnce`
+  walks all 1,000 sequence numbers and fails on that, and failed on it
+  before the fix.
+- `TestEdgeStaticPeersAreReserved` reads `nix/edge/edge-01.nix` and fails
+  when the edge hands a 10.255.0.x to a peer of its own that the list
+  does not hold. The failure this prevents is the collision coming back
+  the next time the monitoring server is renumbered, which is a change on
+  the edge with no reason to look at the api.
+- The alternative that lost: moving the monitoring server into the
+  operator range at 10.255.254.2. It is the tidier plan, since that range
+  exists for peers the allocator does not own, and it stays available. It
+  needs the server's own `wg-repose.conf`, the edge configuration, a
+  `repose-admin edge loki` call and an edge switch, all before the launch
+  host registers, and none of that is work the launch needs.

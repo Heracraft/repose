@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-785 entries.
+787 entries.
 
 ## Scope
 
@@ -424,7 +424,7 @@ pointer, not a summary.
 - **I-356** `run` reports a create that failed at once, instead of starting the project it left behind — 2026-09-29; amended by I-728; L9100
 - **I-357** The waitlist's minute tick runs under its own lock, `LockWaitlistTick` (1012), not `LockWaitlist` — 2026-09-29; L9116
 - **I-358** A plain `repose run` in a directory with no git remote creates a project named after the directory; outside a repository it skips the sync — 2026-09-29; amended by I-575; amended by I-601; L9135
-- **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; L9158
+- **I-359** kanali, the owner's coordinator guest, is WireGuard peer 10.255.254.1 on the edge hub, with no forward rule — 2026-09-29; amended by I-360; amended by I-782; L9158
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9185
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9206
 - **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; partly superseded by I-672; L9229
@@ -798,7 +798,7 @@ pointer, not a summary.
 - **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22996
 - **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L23001
 - **I-757** An agent window whose agent had already exited comes back as the shell it held; amends I-636, I-646 — 2026-10-17; L23005
-- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; L23010
+- **I-747** Placement before completeness, and the quickstart is a marketing surface; narrows I-485 — 2026-10-15; amended by I-781; L23010
 - **I-748** Notifications come off the quickstart and stay everywhere else — 2026-10-15; L23023
 - **I-749** `install.md` says "Update command coming soon" — 2026-10-15; L23030
 - **I-750** A word after `--temp` that is not a duration is the project's name, and the docs stop promising otherwise; amends I-631 — 2026-10-16; L23038
@@ -817,3 +817,5 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23361
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23405
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
+- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23525
+- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23551
