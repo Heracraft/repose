@@ -24101,3 +24101,35 @@ guest's memory at a planned restart and nothing said so.
   process list and tmux windows; a re-measurement of the write rate
   whenever a host's data disk changes; and the pool measurement on
   host-stg-01, whose 120 is I-652's and whose disk is provisioned at 125.
+
+**I-798. A release's notes are written before its tag, and `release.yml`
+refuses to publish without them; the notes read as Simplified Technical
+English.** (release-notes-gate, 2026-10-18) The owner's instruction, after
+finding two releases with no notes at all.
+- *What happened twice.* v0.1.37 and v0.1.38 were tagged, GoReleaser
+  published them, and both bodies were empty. The owner found each one. The
+  procedure said "notes are added after the tag as before", which makes the
+  notes an afterthought that a conductor finishing a long release forgets,
+  and nothing failed when they were missing.
+- *The guard.* `release.yml`'s `sign` job reads the release body and exits 1
+  below 400 bytes, before the step that clears the draft flag. A tag with no
+  notes therefore stays a draft, which `install.sh` never sees, so the
+  failure is loud and costs nothing: write the notes and re-run the job. 400
+  bytes is about a lead paragraph; it catches "empty" and "a commit list",
+  not a short release.
+- *How they read.* About 80 percent of the way to ASD-STE100: the active
+  voice, the simple present, one idea to a sentence, short sentences, no
+  idioms, no metaphors, with product terms, command names and numbers exact.
+  The remaining 20 percent is ordinary English prose; the full controlled
+  vocabulary is not the goal. The owner asked for this of the notes first
+  and then of every output, on 2026-10-18.
+- *What they contain.* Every user-visible change since the last tag; what
+  the release does NOT fix where a reader would assume it does, with the
+  numbers; what a change costs where it costs something; and measured
+  figures rather than adjectives. v0.1.37 names the prompt race as unfixed
+  at 1 of 10, 2 of 10 and 0 of 9. v0.1.38 says a server shutdown now waits
+  up to four minutes.
+- *Why not generate them.* A commit list is not a release note: it names
+  branches and decision ids, which no user reads, and it cannot say what a
+  release fails to fix. The guard checks that notes exist; a person writes
+  them.

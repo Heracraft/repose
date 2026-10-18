@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-791 entries.
+792 entries.
 
 ## Scope
 
@@ -823,3 +823,4 @@ pointer, not a summary.
 - **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23606
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23808
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23874
+- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24105

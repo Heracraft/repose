@@ -120,6 +120,11 @@ DECISIONS entry and this list with it. Counts as of 2026-10-01.
       Evidence: `rg -n 'max-w-(5xl|7xl)|HeaderFrame' apps/web/src --glob
       '*.svelte'` prints 0 lines; `pnpm test:integration
       tests/design.spec.ts -g 'logo stands'` passes.
+- [ ] A release's notes exist before its tag and read as Simplified
+      Technical English (I-798). Evidence: `gh release view <tag> --json body
+      --jq '.body | length'` is over 400, and the notes name every
+      user-visible change, what the release does not fix with its numbers,
+      and what it costs. `release.yml` fails the publish below 400 bytes.
 - [ ] Toasts are house banners. Evidence: `rg -n 'richColors' apps/web/src
       --glob '*.svelte' | rg -v '<!--'` prints 0 lines.
 - [ ] No page asks a third party for a font, and the CSP allows none.
