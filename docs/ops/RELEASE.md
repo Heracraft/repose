@@ -222,8 +222,7 @@ else integrated with it.
    `web` whether CI passes or not, so a red run is fixed at once (as its
    own small batch, integrated and pushed).
 3. **Ship the rest**, in this order when present: `base` publish (the rev
-   is the pushed main commit), `cli` tag (the next `v0.1.N`, with notes
-   from every branch since the last tag, in the release-notes style), `host`
+   is the pushed main commit), `cli` tag (the next `v0.1.N`), `host`
    switches (RUNBOOK "Switch a host to main") and the `edge` switch.
    When the base sends a guest kind or field the running hostd refuses
    (`agent_done`, I-688), switch the hosts first and publish the base
@@ -306,7 +305,31 @@ A `v*` tag runs `release.yml`: GoReleaser uploads a draft, and the `sign`
 job signs `checksums.txt`, attests the archives and publishes the draft
 (DECISIONS I-430). A tag whose `sign` job fails leaves a draft that
 install.sh never sees; fix the cause and re-run the job from the Actions
-page. Notes are added after the tag as before (`gh release edit`).
+page.
+
+**The notes are written before the tag is pushed** (DECISIONS I-798).
+`release.yml` refuses to publish a release whose body is under 400 bytes,
+so a tag with no notes stays a draft and `install.sh` never sees it. Write
+them with `gh release create <tag> --draft --notes-file <file>` before the
+push, or `gh release edit <tag> --notes-file <file>` between the tag and
+the `sign` job, and re-run the job.
+
+What the notes say, and how they read:
+
+- Every change since the last tag that a user can see: a command, a flag,
+  a message, a limit, a price, a default, a dashboard action, guest
+  behaviour. A change nobody can see is left out.
+- What a release does NOT fix, when a user would otherwise assume it does,
+  with the numbers. v0.1.37's notes say the prompt race is not fixed and
+  give 1 of 10, 2 of 10 and 0 of 9.
+- What a change costs, when it costs something. v0.1.38's notes say a
+  server shutdown now waits up to four minutes.
+- Measured figures, never adjectives. "9.1 s for a 1.0 GB image", not
+  "much faster".
+- About 80 percent of the way to ASD-STE100, Simplified Technical English:
+  the active voice, the simple present tense, one idea to a sentence,
+  short sentences, no idioms and no metaphors. Product terms, command
+  names and numbers stay exact. The owner asked for this on 2026-10-18.
 
 The private key is `REPOSE_RELEASE_SIGNING_KEY`, a secret of the GitHub
 environment `release`, which only `v*` tags may deploy to. The public half
