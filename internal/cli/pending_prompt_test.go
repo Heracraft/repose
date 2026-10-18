@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,16 +62,51 @@ func pendingTmux(t *testing.T, screen string) (run func(string) (string, error),
 	return run, home
 }
 
+// pendingNonce is a prompt unique to this run. The waiter polls for up to
+// pendingReadySecs (half an hour) and the only thing pgrep can match it on
+// is its prompt, so a fixed prompt made one run's leftover waiter fail the
+// NEXT run of the same test: "the waiter outlived its window: <pid>", with
+// nothing to do with the code under test. A waiter is left behind whenever
+// the test binary dies without running its cleanups, which a `go test`
+// timeout does. The nonce scopes both the pgrep and the kill to this run;
+// the cleanup kills this run's waiter whatever the test did (2026-10-18).
+func pendingNonce(t *testing.T, run func(string) (string, error), base string) string {
+	t.Helper()
+	prompt := fmt.Sprintf("%s %s-%d", base, t.Name(), time.Now().UnixNano())
+	t.Cleanup(func() { _, _ = run("pkill -f " + shQuote(prompt) + " || true") })
+	return prompt
+}
+
+// pendingGone polls for the waiter to be gone rather than assuming one
+// wait is enough: the waiter checks its window once per loop and sleeps a
+// second or two between checks, so a flat sleep races it.
+func pendingGone(t *testing.T, run func(string) (string, error), prompt string) string {
+	t.Helper()
+	needle := "[" + prompt[:1] + "]" + prompt[1:]
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out, _ := run("pgrep -f " + shQuote(needle) + " || true")
+		if strings.TrimSpace(out) == "" {
+			return ""
+		}
+		if time.Now().After(deadline) {
+			return strings.TrimSpace(out)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
 // I-607: the waiter types nothing before the login, then types the
 // prompt once the credentials file is there and the screen is still.
 func TestPendingPromptTypesAfterLogin(t *testing.T) {
 	t.Parallel()
 	run, home := pendingTmux(t, "Welcome to Claude Code")
-	if out, err := run(pendingPromptTmux("todo", "claude", "fix the 'flaky' test")); err != nil {
+	prompt := pendingNonce(t, run, "fix the 'flaky' test")
+	if out, err := run(pendingPromptTmux("todo", "claude", prompt)); err != nil {
 		t.Fatalf("waiter: %v %s", err, out)
 	}
 	time.Sleep(3 * time.Second)
-	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, "flaky") {
+	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, prompt) {
 		t.Fatalf("typed before the login:\n%s", pane)
 	}
 	if err := os.WriteFile(filepath.Join(home, ".claude", ".credentials.json"), []byte("{}"), 0o600); err != nil {
@@ -79,7 +115,7 @@ func TestPendingPromptTypesAfterLogin(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	for {
 		pane, _ := run("tmux capture-pane -p -t =todo:=claude")
-		if strings.Count(pane, "fix the 'flaky' test") >= 1 {
+		if strings.Count(pane, prompt) >= 1 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -96,19 +132,19 @@ func TestPendingPromptWaitsOnBlockers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".claude", ".credentials.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := run(pendingPromptTmux("todo", "claude", "do the thing")); err != nil {
+	prompt := pendingNonce(t, run, "do the thing")
+	if out, err := run(pendingPromptTmux("todo", "claude", prompt)); err != nil {
 		t.Fatalf("waiter: %v %s", err, out)
 	}
 	time.Sleep(7 * time.Second)
-	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, "do the thing") {
+	if pane, _ := run("tmux capture-pane -p -t =todo:=claude"); strings.Contains(pane, prompt) {
 		t.Fatalf("typed into the login's Enter screen:\n%s", pane)
 	}
 	// The window closes: the waiter ends with it.
 	if _, err := run("tmux kill-window -t =todo:=claude"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1500 * time.Millisecond)
-	if out, _ := run("pgrep -f '[d]o the thing' || true"); strings.TrimSpace(out) != "" {
+	if out := pendingGone(t, run, prompt); out != "" {
 		t.Fatalf("the waiter outlived its window: %s", out)
 	}
 }
