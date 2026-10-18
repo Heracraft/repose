@@ -162,3 +162,106 @@ sleep 30
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// innerLine undoes shQuote's outer level: the command line the guest's
+// bash is handed, which is the single argument tmux passes it.
+func innerLine(t *testing.T, s string) string {
+	t.Helper()
+	inner, ok := strings.CutPrefix(s, "'")
+	if !ok {
+		t.Fatalf("agentStartCommand did not return a single-quoted word: %s", s)
+	}
+	inner, ok = strings.CutSuffix(inner, "'")
+	if !ok {
+		t.Fatalf("agentStartCommand did not return a single-quoted word: %s", s)
+	}
+	return strings.ReplaceAll(inner, `'\''`, "'")
+}
+
+// TestWindowRunsASimpleCommand holds the one invariant the agent's window
+// depends on: the line tmux starts is a *simple command* -- one quoted
+// word per argv word and nothing else -- so the guest's bash execs the
+// agent instead of staying in front of it, and `pane_current_command` is
+// the agent's own name. Three readers depend on that field: `repose ps`,
+// windowNameFor, and guestd's agent detection. A pipeline, a
+// `cd X && ...`, a `;` or a trailing `&` in agentStartCommand would make
+// a working agent read as a shell in all three, silently, and no running
+// process in a test can show it because every test agent is a stand-in
+// whose comm is its interpreter. Asserting the whole string is what
+// catches an edit to that function, which is the only moment this can
+// regress; TestBashExecsTheAgent is the same invariant on a real bash.
+func TestWindowRunsASimpleCommand(t *testing.T) {
+	prompts := []string{
+		"fix the flaky test",
+		"",
+		"   ",
+		`-n it's "the $PATH" and ` + "`id`",
+		"first\nsecond",
+		"read @notes.md",
+		"$(touch /tmp/repose-should-not-exist)",
+		"h\u00e9llo \u00fcnicode \u2705",
+		strings.Repeat("long ", 2048),
+	}
+	for _, binary := range append(slices.Clone(agentNames), "cat") {
+		for _, p := range prompts {
+			// The line the window must run: the binary, then each word
+			// of the agent's form, each one shQuote'd, joined by one
+			// space -- and the whole line shQuote'd again, because tmux
+			// hands its command to bash as a single argument.
+			want := shQuote(binary)
+			if args, carried := agentPromptArgv(binary, p); carried {
+				for _, a := range args {
+					want += " " + shQuote(a)
+				}
+				want = shQuote(want)
+			}
+			if got := agentStartCommand(binary, p); got != want {
+				t.Errorf("agentStartCommand(%q, %.24q)\n got %s\nwant %s", binary, p, got, want)
+			}
+		}
+	}
+}
+
+// TestBashExecsTheAgent is the same invariant seen from the other side,
+// on a real bash: when the line is a simple command bash replaces itself
+// with the program, so the program's pid IS the shell's pid, which is
+// what makes pane_current_command the agent's name.
+//
+// It is a statement of the premise, not the regression guard, and the
+// difference was measured rather than assumed. Forcing agentStartCommand
+// to return a subshell (`( line )`) or a list (`line ; true`) fails this
+// test for all five agents, and a pipeline fails it too. But `cd . && line`
+// does NOT: bash still execs the last command of an && list, so the pids
+// still match while the line is no longer simple. TestWindowRunsASimpleCommand
+// is what catches that one, by asserting the whole string.
+func TestBashExecsTheAgent(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skipf("no bash: %v", err)
+	}
+	dir := t.TempDir()
+	for _, binary := range agentNames {
+		stand := filepath.Join(dir, binary)
+		if err := os.WriteFile(stand, []byte("#!/bin/sh\necho $$\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, binary := range agentNames {
+		t.Run(binary, func(t *testing.T) {
+			line := agentStartCommand(binary, "fix the flaky test")
+			// What the guest's bash is handed: the one argument tmux
+			// gives it, with the outer quoting undone by the shell that
+			// ran the tmux command.
+			inner := innerLine(t, line)
+			cmd := exec.Command(bash, "-c", inner)
+			cmd.Env = append(os.Environ(), "PATH="+dir)
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("bash -c %s: %v", inner, err)
+			}
+			if got, want := strings.TrimSpace(string(out)), fmt.Sprint(cmd.Process.Pid); got != want {
+				t.Errorf("the agent ran as pid %s, bash was pid %s: bash did not exec it, so pane_current_command would read the shell", got, want)
+			}
+		})
+	}
+}
