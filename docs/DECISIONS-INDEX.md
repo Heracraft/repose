@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-790 entries.
+791 entries.
 
 ## Scope
 
@@ -714,7 +714,7 @@ pointer, not a summary.
 - **I-650** A host shutdown powers its guests off cleanly, and hostd records nothing as failed while the host goes down (host-pool, 2026-10-11) — L19117
 - **I-654** The root password is for the serial console only, from a file placed by hand (host-pool, 2026-10-11) — L19165
 - **I-645** Running machines start again after a host reboot (host-resume, 2026-10-11) — L19184
-- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; L19288
+- **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19288
 - **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19502
 - **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19561
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19687
@@ -822,3 +822,4 @@ pointer, not a summary.
 - **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23593
 - **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23606
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23808
+- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23874
