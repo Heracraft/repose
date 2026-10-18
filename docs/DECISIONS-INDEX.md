@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-785 entries.
+786 entries.
 
 ## Scope
 
@@ -817,3 +817,4 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23361
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23405
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23525

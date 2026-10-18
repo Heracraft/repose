@@ -3,6 +3,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The host kernel alone, pinned away from `nixpkgs` until that channel
+    # carries the CVE-2026-99999 fix (DECISIONS I-778). A guest reaches the
+    # host kernel's IPv4 output path through its own tap, so an unpatched
+    # host kernel is a guest-to-host escape; `nixos-unstable` is at 6.18.56
+    # and the backport (6785011f8b16) is in 6.18.57. This is
+    # `nixos-unstable-small` at 2026-10-17, by rev so it cannot drift, and
+    # it is a Hydra channel so the kernel comes from the cache.
+    #
+    # Delete this input, and `repose.host.kernelPackages` with it, once
+    # `nixpkgs` is at 6.18.57 or later. `nix/hosts/kernel.nix` asserts the
+    # version, so removing it early fails the build rather than quietly
+    # shipping the vulnerable kernel.
+    nixpkgs-host-kernel.url = "github:NixOS/nixpkgs/f0b687e10c0c5b2f199ca57127071ef922c0f92d";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -32,7 +45,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, microvm, disko, nix-index-database, fragment }:
+  outputs = { self, nixpkgs, nixpkgs-host-kernel, home-manager, microvm, disko, nix-index-database, fragment }:
     let
       system = "x86_64-linux";
       lib = nixpkgs.lib;
@@ -79,6 +92,9 @@
         disko.nixosModules.disko
         ./hosts
         { repose.host.hostdPackage = goPkgs.hostd; }
+        # The host kernel from its own pin (I-778), not from `nixpkgs`. In
+        # hostModules so the host VM tests boot the kernel the hosts run.
+        { repose.host.kernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages; }
       ];
       mkHost = { hostName, provider ? "azure", modules ? [ ] }:
         lib.nixosSystem {
