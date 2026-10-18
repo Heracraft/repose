@@ -101,23 +101,13 @@ raised from 65 to **350** on 2026-10-14 (40 used), so everything up to a
 `D248ls_v7` is creatable and only `D372s_v7` would need a further raise,
 of the regional total and of the `Dsv7` family.
 
-0. Before the launch host registers, give it a free WireGuard address.
-   The api numbers hosts on the edge's WireGuard network by themselves:
-   the nth host registered gets 10.255.0.(n+1) (`hostmgr.allocate`), so
-   host-01 has .2 and the next host gets .3. Your monitoring server
-   already has .3 (`wg-repose`, I-170); it was picked by hand because it
-   was free then. Once the new host registers, the edge hands .3 to it:
-   Grafana loses every scrape, and the hosts' logs to Loki on
-   `10.255.0.3:3100` reach the new host instead. The next edge rebuild
-   takes .3 back, and the new host loses its metrics and operator SSH
-   (DECISIONS I-359). Do one of these first:
-   - Preferred, nothing on your server changes: make `hostmgr.allocate`
-     skip 10.255.0.3, so the new host gets .4. host-01 keeps .2.
-   - Or move the monitoring server to 10.255.254.2, in the operator
-     range: the `Address` in its `wg-repose.conf`, its entry in
-     `nix/edge/edge-01.nix` (`staticPeers`, `monitoring.peerCIDRs`,
-     `lokiUrl`), `repose-admin edge loki http://10.255.254.2:3100`, then
-     an edge switch.
+0. Nothing to do: the launch host gets 10.255.0.4. The api numbers hosts
+   on the edge's WireGuard network itself, and the second host would have
+   taken 10.255.0.3, which your monitoring server has held since I-170 —
+   Grafana would have lost every scrape and the hosts' Loki writes would
+   have gone to the new host. `hostmgr.allocate` now steps over that
+   address (I-782, amending I-359), host-01 keeps .2, and nothing on your
+   server changes.
 
    Check after the host registers: `wg show wg0 allowed-ips` on the edge
    lists no address twice, and Grafana still shows host-01 `up`.

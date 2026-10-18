@@ -384,10 +384,11 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       release archives match `checksums.txt`; the Linux arm64 binary runs
       under `qemu-aarch64` and prints the same; the two macOS archives are
       valid Mach-O for their architectures. `repose --version` was
-      `unknown flag` in v0.1.4 and is fixed on `main` for the next tag.
-      Still owed: the install on a real macOS arm64, macOS x86_64 and Linux
-      arm64 machine (the second human, M5 step 3), and a tag carrying
-      `--version`.
+      `unknown flag` in v0.1.4. That half is closed: `cli.go` sets the
+      version template and `repose --version` prints `repose 0.1.37
+      (herakraft)` from the v0.1.37 tag. Still owed: the install on a real
+      macOS arm64, macOS x86_64 and Linux arm64 machine (the second human,
+      M5 step 3).
 - [x] `ops/RUNBOOK.md` has entries for every alert above. Evidence:
       `ops/check.sh` fails when an alert in `ops/alerts.yaml` has no
       RUNBOOK heading and passes on `main` (17 rules, 17 headings,

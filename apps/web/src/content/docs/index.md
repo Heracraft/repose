@@ -4,7 +4,7 @@ description: Install the CLI, start a machine for your project and hand a task t
 section: Start here
 order: 1
 ---
-repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots). Your laptop, your SSH keys and your other projects are out of its reach.
+repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots).
 
 You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not been tested enough. [Feedback](https://repose.fider.io) is appreciated.
 
