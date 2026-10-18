@@ -68,13 +68,26 @@ outlasted `repose.host.freeze.deadline` at the host's
 started), `no_room` (the thin pool), `failed`, `no_key` (Key Vault) or
 `busy` (another freeze or thaw held the lock). `GuestLeftUnfrozen` reads
 it over 6 hours and names the reason; the runbook's section is the
-arithmetic to check before raising the deadline. A shutdown freeze's own
-counter is never scraped, because the host goes down behind it, so hostd
-writes the tally beside its freeze records
-(`/var/lib/repose/hostd/freeze/.unfrozen.json`) and counts it again at the
-next start: the rise is usually in the first minutes of the new boot. The
+arithmetic to check before raising the deadline. The
 `guests frozen` line carries `frozen`, `unfrozen`, `guests` and
 `duration_ms`, which is what says whether the deadline was the limit.
+
+`repose_host_guest_thaw_discarded_total{reason}` is the other half of the
+same loss: a guest the freeze saved whose image the next start could not
+give back cold boots with its agents gone exactly as an unfrozen one
+does. `reason` is `incomplete`, `too_old`, `changed`, `no_key`, `failed`
+or `window`; `GuestImageDiscarded` reads it and the event is
+`guest_thaw`. A guest that stopped, moved host or came back running on
+its own is not counted: nothing was owed to it.
+
+Both are *running totals*, not what one hostd saw. A shutdown freeze's
+counter is never scraped, because the host goes down behind it, and a
+thaw's is raised before the metrics listener is up, so either one counted
+per process would publish the same number after every reboot -- and
+`increase()` reads a repeat as no rise, which is how the same guest lost
+at every restart alerts once and then never again. hostd keeps the totals
+beside its freeze records (`/var/lib/repose/hostd/freeze/.tally.json`)
+and publishes them at each start, so the series only ever rises.
 
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an

@@ -52,15 +52,21 @@
       enable = true;
       keyVaultUrl = "https://repose-frz-3912.vault.azure.net/";
       keyName = "freeze-wrap";
-      # Measured on this host at /var/lib/repose (nvme0n1p2, the root
-      # disk), 2 GiB each: 126 MB/s with `dd oflag=direct`, 123 MB/s with
-      # `conv=fdatasync`; rounded down to 120 so the estimate errs long
-      # (DECISIONS I-796). The image is a thin volume on the guest pool's
-      # disk, which has not been measured yet, so this is the root disk's
-      # figure standing in for it; the freeze replaces it with the rate
-      # its own first snapshot achieves. Re-measure on the pool's disk,
-      # and whenever a disk changes (RUNBOOK "Guest freeze").
-      writeRateMBs = 120;
+      # Measured on the disk the images are written to, this host's data
+      # disk (nvme1n1, the PV of vg-guests), on 2026-10-18 with two
+      # guests running: a scratch thin volume written 2 GiB at a time
+      # with `dd oflag=direct` took 450 and 460 MB/s, 8 GiB in one go
+      # took 456 MB/s (so it is not a burst), four at once took 197 MB/s
+      # each (786 MB/s together), and it reads back at 484 MB/s. The
+      # disk takes no host cache (Premium SSD v2) and prod.tfvars
+      # provisions it at 600 MB/s. 400 is the single-stream figure
+      # rounded down (DECISIONS I-796).
+      #
+      # The root disk, where the earlier figure came from, does
+      # 126 MB/s: under a third of this, and not where any image goes.
+      # Re-measure on the pool whenever a disk changes (RUNBOOK "Guest
+      # freeze").
+      writeRateMBs = 400;
     };
 
     # infra outputs `snapshots.blob_endpoint` and `snapshots.identity_client_id`

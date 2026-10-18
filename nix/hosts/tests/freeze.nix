@@ -52,6 +52,7 @@ pkgs.testers.runNixOSTest {
         # (DECISIONS I-796). 30 + 150 = 180 s.
         assert "--freeze-deadline 30s" in cmdline, cmdline
         assert "--freeze-write-rate 100" in cmdline, cmdline
+        assert "--freeze-restore-timeout 180s" in cmdline, cmdline
         stop = host.succeed(
             "systemctl show repose-guest-freeze -p TimeoutStopUSec --value").strip()
         assert "3min" in stop, stop

@@ -54,7 +54,8 @@
       keyName = "freeze-wrap";
       # 125 MB/s measured here during I-652, on the pool itself (a 4.1 GB
       # image in 36 s with a second snapshot beside it); rounded down
-      # like host-01's (I-796).
+      # to 120. staging.tfvars provisions this disk at 125 MB/s, so it
+      # cannot rehearse host-01's timing -- only the shape (I-796).
       writeRateMBs = 120;
     };
 

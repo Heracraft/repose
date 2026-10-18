@@ -34,6 +34,9 @@ type FreezeOptions struct {
 	// snapshot at before one of its own has finished (I-796). 0 keeps
 	// the freeze's own default, 100 MB/s.
 	WriteRateMBs uint64
+	// RestoreTimeout bounds one restore's surroundings; the image's own
+	// read is added from WriteRateMBs. 0 keeps the default, 180 s.
+	RestoreTimeout time.Duration
 	// FreePageReporting gives guests started from now on a balloon with
 	// free page reporting.
 	FreePageReporting bool
@@ -50,6 +53,7 @@ func freezeSetup(o Options, r shell.Runner, l lvm.LVM, log *slog.Logger) (guest.
 	cfg := guest.FreezeConfig{
 		Enabled: o.Freeze.Enabled, RecordDir: filepath.Join(o.StateDir, "freeze"),
 		Deadline: o.Freeze.Deadline, WriteRate: o.Freeze.WriteRateMBs * 1_000_000,
+		RestoreTimeout: o.Freeze.RestoreTimeout,
 	}
 	deps := guest.FreezeDeps{
 		Image:       &freeze.Image{R: r, LVM: l, Mount: &mount.Real{R: r}},

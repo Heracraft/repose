@@ -23588,13 +23588,13 @@ assertion that outlives whoever remembers why the pin is there.
   and the edge unchanged are in the commit message.
   `docs/security/cve-2026-99999.md` is the assessment.
 
-**I-796. The freeze deadline is set from the host's measured write rate
-and the classes repose sells, and a guest it leaves unfrozen alerts
-(freeze-limits, 2026-10-18).** Amends I-652 (the 120 s deadline, the
-`2 x deadline + 60 s` stop timeout, and the write rate with no flag) and
-I-686 (what the freeze promises on host-01). *Made during
-implementation*: host-01 lost an xl guest's memory at a planned restart
-and nothing said so.
+**I-796. The freeze deadline and write rate come from the disk the images
+are written to, a freeze admits snapshots against all of them at once,
+and a guest that loses its memory at either end alerts (freeze-limits,
+2026-10-18).** Amends I-652 (the 120 s deadline, the `2 x deadline + 60 s`
+stop timeout, and the write rate with no flag) and I-686 (what the freeze
+promises on host-01). *Made during implementation*: host-01 lost an xl
+guest's memory at a planned restart and nothing said so.
 
 - *What happened.* host-01 was switched to main `f5cba9bc` and rebooted at
   17:03 UTC on 2026-10-18. The freeze printed one row: `01a11778  skipped
@@ -23612,139 +23612,209 @@ and nothing said so.
   about 12 GB resident, so **a busy xl was skipped every time**, on every
   host, since I-686 turned the freeze on. The three sizes repose sells are
   4, 8 and 16 GiB; the deadline was set for none of them.
-- *The rate is honest; the deadline was the wrong number.* Measured on
-  host-01 at `/var/lib/repose` (nvme0n1p2, the root disk), 2 GiB each:
-  **126 MB/s** with `dd oflag=direct` and **123 MB/s** with
-  `conv=fdatasync`. That is the root disk, and an image is a thin volume
-  on the guest pool's disk, which has not been measured: the figure
-  stands in for it, which is safe in the direction that matters (a disk
-  faster than the estimate assumes skips nothing; a slower one overruns
-  the deadline, which is now counted and alerted instead of silent), and
-  the measurement on the pool is owed below. The freeze replaces the
-  assumption with the rate its own first finished snapshot achieves
-  either way. I-652's time budget guessed "host-01's 600 MB/s",
-  which was never measured and is wrong by a factor of five; its *Still
-  owed* line asked for exactly this measurement. Concurrency does not
-  raise it: the images share one disk, which is why the rate the freeze
-  learns is the slowest its own snapshots achieved.
-- *The arithmetic for the new numbers.* Write rate configured at
-  **120 MB/s**, the slower measurement rounded down so the estimate errs
-  long. The estimate is uncompressed memory while the image is compressed
-  btrfs (I-685, about a fifth), so it is an upper bound by design.
-  - One xl: 16 GiB + 256 MiB = 17.45 GB / 120 MB/s = **145 s**. The old
-    deadline could not hold one guest of the largest class.
-  - host-01's worst case today, two xl and one large, about 40 GiB
-    resident: 42.95 GB / 120 MB/s = **358 s**.
+- *The rate was measured on the wrong disk, and understating it is the
+  dangerous direction.* An image is a thin volume `frz-<id>` in
+  `vg-guests`, and `vg-guests` is the PV of the **data** disk
+  (`disko-layout.nix`). Measured there on host-01 on 2026-10-18, with two
+  guests running, to a scratch thin volume with `dd oflag=direct`:
+  **450 and 460 MB/s** for 2 GiB, **456 MB/s for 8 GiB in one go** (so it
+  is sustained, not a burst), **197 MB/s each with four at once**
+  (786 MB/s together), and **484 MB/s** reading back. That disk takes no
+  host cache -- Premium SSD v2 does not support it
+  (`modules/host/main.tf`) -- and `prod.tfvars` provisions it at
+  600 MB/s. The host's **root** disk, where the first version of this
+  entry took its figure, does **126 MB/s** -- and no image goes there. So I-652's "host-01's 600 MB/s" was right and this
+  entry's first draft was wrong to call it a guess: 600 is what the disk
+  is bought at and 450 is what one stream of `dd` gets out of it.
+  host-01 is configured at **400 MB/s**, the single-stream figure rounded
+  down; host-stg-01 stays at 120, measured on its own pool during I-652,
+  which `staging.tfvars` provisions at 125 MB/s -- staging can rehearse
+  the shape of a freeze and never host-01's timing.
+  - The direction of safety is the opposite of what the first draft
+    claimed. An **understated** rate makes every estimate longer, and a
+    long estimate is what **skips a guest** -- the defect being fixed
+    here. An overstated one risks a freeze that outruns its deadline,
+    which the admission below bounds, the wall below reports, and the
+    `writing` record recovers. "Rounded down so the estimate errs long"
+    was a reason to lose a tenant's session. The default of 100 MB/s
+    stays, named for what it is: a floor for a host nobody has measured.
+  - The estimate is uncompressed memory while the image is compressed
+    btrfs (I-685, about a fifth), so it is an upper bound by design, and
+    the rate a freeze learns from its own first finished snapshot is now
+    taken in the same units -- memory bytes over the snapshot's whole
+    duration. Taken from image bytes, as it was, it taught a fifth of the
+    truth and would have skipped every guest after the first. It only ever
+    *lowers* the rate: the host's own measurement is the ceiling, and a
+    snapshot that beat it usually only means that guest's memory
+    compressed well, which says nothing about the next guest's.
+- *A snapshot is admitted against every snapshot already running, not
+  against itself.* Four run at once (I-685), they share one disk, and the
+  gate compared each one's estimate with the whole remaining deadline on
+  its own. Up to four take their slot at the same instant with the whole
+  deadline ahead, so the rate a finished snapshot teaches cannot correct
+  that first batch: on a host with no more running guests than the
+  concurrency -- which is every host repose runs -- nothing corrected it
+  at all, and the deadline was enforced by systemd's SIGKILL rather than
+  by this code. A freeze now reserves its estimate before it starts and
+  gives it back when it finishes, and admits a snapshot only when
+  everything outstanding plus its own still fits the time left. The
+  deadline is therefore self-enforcing: it is *how much memory a restart
+  saves*, not an arithmetic claim about today's guests, and a host with
+  more than it can write skips its largest and says so.
+- *The arithmetic for the new numbers.* At 400 MB/s, with the per-guest
+  cap of class memory plus 256 MiB:
+  - One xl: 16 GiB + 256 MiB = 17.45 GB / 400 MB/s = **44 s**.
+  - host-01's worst case today, the two xl and one large its placement
+    allows: 2 x 16.25 + 8.25 = 40.75 GiB = 43.75 GB = **109 s**. (The
+    first draft said
+    42.95 GB and 358 s; it dropped the per-guest headroom and used the
+    root disk's rate.)
+  - Everything 64 GiB can place, after the eighth the host reserves: 56
+    GiB plus headroom, about 60 GB = **150 s**.
   - The sync and the 5 s settle come out of the same deadline: 20 s.
-  - 358 + 20 = 378, so the deadline is **400 s** (`--freeze-deadline`,
-    `repose.host.freeze.deadline`, at most 420 in nix).
+  - The deadline is **240 s** (`--freeze-deadline`,
+    `repose.host.freeze.deadline`, at most 300 in nix): 96 GB of guest
+    memory, more than host-01 can hold, with the host's full capacity
+    leaving 70 s of margin.
   - `repose-guest-freeze.service` is `TimeoutStopSec = deadline + 150`
-    (**550 s** at the default), not `2 x deadline + 60`: systemd cuts the
-    ExecStop at that timeout, so a deadline above it cannot finish. Once
-    the deadline passes, what can still be running is a snapshot already
-    started, and one is started only when its estimate fits the time
-    left, so the overshoot is bounded by one class's snapshot: 145 s for
-    an xl. 150 s covers one that started at the deadline's edge. The cap
-    of 420 keeps the worst case at 570 s, inside the about 600 s Azure
-    waits for a graceful shutdown (measured on host-stg-01, I-652).
-  - Four snapshots run at once, so one of them can take longer than its
-    own estimate: they share the disk. What stops that from compounding
-    is that the rate a freeze uses becomes the slowest its own snapshots
-    achieved, so a guest whose slot comes free late is estimated at the
-    real contended rate and skipped rather than started. If systemd does
-    cut the ExecStop anyway, the guest is left paused with a `writing`
-    record and I-652's "freeze cut short" path finishes or resumes it at
-    the next start; its disk was never written past the pause.
-- *The cost, plainly.* A host restart with busy xl guests on it now holds
-  the shutdown for as long as the freeze takes, up to 400 s, where it used
-  to give up at 120 and lose the guest. A reboot that took about two
-  minutes of freeze can take close to seven, and `az vm restart` may wait
-  that long before the host comes back. That is the price of not losing a
-  tenant's agent sessions, and it is the owner's trade: the alternative is
-  the machine coming back empty. `lifecycle.md` now says a machine with a
-  lot in memory takes longer to come back, which is the user-visible half
-  of this. What does not move: hostd and the pool stop *after* the freeze
-  unit (I-652's triggers), so the api sees the host alive for the whole
-  freeze; the 90 s `host_unreachable` mark and the CLI's 10-minute
-  `hostWaitTimeout` start when hostd stops, as before.
-- *The write rate gets a flag.* `--freeze-write-rate <MB/s>`
-  (`repose.host.freeze.writeRateMBs`, default 100) is set per host from a
-  measurement; host-01 and host-stg-01 are at 120. It is the only other
-  lever on what the estimate skips, and before this the only way to move
-  it was the deadline. Not measured at hostd start: the useful measurement
-  is a 2 GiB O_DIRECT write, which costs seconds of start time and a GiB
-  of writes on every hostd restart, and a cheap one is a worse guess than
-  the operator's `dd`. The freeze still learns the real rate from its own
-  first finished snapshot, which is what matters when the disk is busy.
-- *A skip is an incident, so it alerts.* It used to be a `Warn` line and a
-  row in a table nobody reads. Every path that leaves a running guest
-  unfrozen now counts `repose_host_guest_freeze_unfrozen_total{reason}`
-  and logs at `Error`: `estimate`, `deadline`, `no_room` (the thin pool),
-  `failed` (after the job started; the guest keeps running), `no_key` and
-  `busy`. `GuestLeftUnfrozen` (warn, `increase(...[6h]) > 0` for 5m,
-  6 h being I-645's window) reads it, the pattern HostCPUSaturated set in
-  I-738. `class` is not a label: the `guest_freeze` log line names the
-  guest and its class, and `reason` is what the alert has to say.
+    (**390 s** at the default), not `2 x deadline + 60`. The margin is
+    not a guess about snapshot sizes: a FreezeAll waits for nothing past
+    its deadline plus a 120 s grace -- not a started snapshot, not a
+    resume, not the record-marking tail -- and then counts what it left
+    and returns. 150 s leaves 30 s for it to get there. At the cap that
+    is 450 s of the about 600 s Azure waits for a graceful shutdown,
+    which leaves the rest of the shutdown (the guests' clean stops,
+    virtiofsd, the unmounts, LVM, the kernel) the share it had before.
+  - Why the wall matters more than the arithmetic: hostd killed by
+    systemd mid-ExecStop counts nothing, writes no tally and leaves its
+    guests paused with `writing` records. That is the one failure mode in
+    which a guest loses its memory *and* nothing says so -- exactly what
+    this entry exists to end -- so it is bounded by construction rather
+    than by a claim about how big a snapshot can be.
+- *The cost, plainly.* A host restart with busy guests holds the shutdown
+  for as long as the freeze takes, up to 240 s, where it used to give up
+  at 120 and lose the guest. At the measured rate host-01's own guests
+  take about 110 s. The host answers for the whole freeze (hostd and the
+  pool stop after the freeze unit), so what the api sees as absence is the
+  power-off, the boot and the restore: about a minute plus the images'
+  read, under 6 minutes, inside the CLI's 10-minute `hostWaitTimeout`.
+  `HostUnreachable` (2m) and `HostdDown` (3m) both page inside that, so a
+  planned restart is silenced first; the runbook's "Host rebooted" says so.
+- *The read side is budgeted from the same arithmetic as the write side.*
+  A thaw used to have one fixed 180 s per guest for the image read *and*
+  guestd's first answer, with no option to change it, while the freeze's
+  budget grew: a host could spend its whole shutdown writing images the
+  next boot discarded, and the guest would cold-boot anyway after a
+  longer restart instead of a shorter one. `restoreTimeout`
+  (`--freeze-restore-timeout`, default 180 s) now bounds a restore's
+  *surroundings*, and each image's own read time at `writeRateMBs` is
+  added to it, per guest and for the thaw's whole window. At I-685's
+  compression, about a fifth, host-01's worst case is 9 GB of image to
+  read: 22 s, inside the 180 s the surroundings already had.
+- *A loss alerts at either end.* It used to be a `Warn` line and a row in
+  a table nobody reads.
+  - Every path that leaves a *running* guest unfrozen counts
+    `repose_host_guest_freeze_unfrozen_total{reason}` and logs at `Error`:
+    `estimate`, `deadline`, `no_room` (the thin pool), `failed` (after the
+    job started; the guest keeps running), `no_key` and `busy`.
+    `GuestLeftUnfrozen` (warn, `increase(...[6h]) > 0` for 5m, 6 h being
+    I-645's window) reads it, the pattern HostCPUSaturated set in I-738.
+  - A guest the freeze *did* save, whose image the next start could not
+    give back, loses exactly the same thing, and that half had no metric
+    at all. `repose_host_guest_thaw_discarded_total{reason}` counts it --
+    `incomplete`, `too_old`, `changed`, `no_key`, `failed`, `window` --
+    with `GuestImageDiscarded` and a runbook section. A guest that
+    stopped, moved host or came back running on its own is not counted:
+    nothing was owed to it.
+  - `class` is not a label on either: the log line names the guest and its
+    class, and `reason` is what an alert has to say.
+  - A running guest whose `guest@` unit cannot be asked (dbus under a
+    shutdown's load) is taken as running rather than dropped. Dropping it,
+    which is what discarding `IsActive`'s error did, left it out of the
+    freeze, out of the results and out of the tally: the operator saw one
+    fewer guest and no loss.
+- *The counts are running totals, because neither half is ever scraped
+  where it happens.* A shutdown freeze's counter goes down with the host,
+  and a thaw's is raised before the metrics listener is up. hostd keeps
+  both totals beside its records as `freeze/.tally.json` (a dot file,
+  which `Store.List` skips) and publishes them at its first thaw, which is
+  its start; every freeze and thaw adds to the counter and to the file
+  together, so the series only ever rises. **A per-boot count does not
+  work**, and the first version of this change shipped one: the same guest
+  skipped at every reboot reads 1, 1, 1, and `increase()` sees a repeat as
+  no rise, so the first restart alerts and no later one ever does -- the
+  exact silence this entry exists to end. Only a decrease looks like a
+  reset to Prometheus, and the replay happens before any scrape, so there
+  is never a zero in between. The last freeze's own counts are kept beside
+  the totals for the `started cold after the host restarted` line, and
+  written by every non-operator freeze including one that saved
+  everything, so a called-off scheduled event's counts cannot be reported
+  as a later reboot's loss. An operator's `hostd freeze` only moves the
+  counter: it is scraped like anything else. One path counts nothing: a
+  freeze whose `ListGuests` fails cannot know whether a running guest
+  exists; it logs at Error and HostdDown is what covers it.
 - *The tenant was told; the operator was not.* A guest the freeze leaves
   behind is stopped by the shutdown, marked interrupted and started cold
   by the api (I-645, I-652's L6), so its owner gets the
   `machines_restarted` notice and `repose status` shows the restart. What
   was missing was the operator's side: nothing said that the freeze had
-  been *able* to save that machine and did not. That is what the counter
-  and the alert are for, and why the alert is not a page.
-- *A shutdown freeze's counter is never scraped,* because the host goes
-  down behind it; that is the whole difficulty of alerting on this. hostd
-  writes the tally beside its records as
-  `freeze/.unfrozen.json` (a dot file, which `Store.List` skips) and
-  counts it again at the next start, where Prometheus sees it. A tally
-  whose boot id is the current one is dropped without counting: the host
-  did not restart after that freeze (a called-off scheduled event), so
-  nothing was lost. Reasons are pre-registered at 0 so the rise is an
-  increase and not a new series. One path counts nothing: a freeze whose
-  `ListGuests` fails cannot know whether a running guest exists; it logs
-  at Error and HostdDown is what covers it.
+  been *able* to save that machine and did not. That is what the counters
+  and the alerts are for, and why neither pages.
 - *What I-652 and I-686 promised that this changes.* I-652's "within a
   deadline (120 s, at most 240 in nix)" and "the freeze unit's
   TimeoutStopSec is twice the deadline plus 60 s" are replaced by the
-  numbers above; its "two snapshots at a time" was already four (I-685).
+  numbers above; its "two snapshots at a time" was already four (I-685);
+  its *Still owed* asked for the pool measurement, which is above.
   I-686's claim that the freeze was "proved on staging at host-01's
-  shape" held for two guests of 0.76 and 4.1 GB, not for a busy xl, and
-  I-652's *Still owed* already said so ("a host with more than two
-  guests", "timings on a 600 MB/s disk"). Nothing in I-653's or I-686's
-  secrets exception changes: the image is the same encrypted volume,
-  removed once read and after 6 h.
+  shape" held for two guests of 0.76 and 4.1 GB, not for a busy xl.
+  Nothing in I-653's or I-686's secrets exception changes: the image is
+  the same encrypted volume, removed once read and after 6 h.
 - *What is still not promised.* A host whose running guests hold more
-  memory than the deadline can write will still leave some of them
-  unfrozen, and the alert is how the owner learns it rather than a
-  tenant. 420 s is a hard cap because of Azure's wait, so the real limit
-  is about 42 GiB of resident guest memory per host at 120 MB/s; past
-  that the answer is fewer or smaller guests on the host, which the
-  runbook says.
-- *Still owed, named here so it is not lost.* The write rate on the disk
-  the guest pool is on, measured the way the runbook now says (a scratch
-  thin volume, `dd oflag=direct`, removed after), on host-01 and
-  host-stg-01; and the live matrix below.
+  memory than the deadline can write still leaves some of them unfrozen,
+  and the alert is how the owner learns it rather than a tenant. 300 s is
+  a hard cap because of Azure's wait, so the limit is about 111 GiB of
+  resident guest memory per host at 400 MB/s; past that the answer is
+  fewer or smaller guests on the host, which the runbook says. The launch
+  size (`Standard_D64s_v7`, 256 GiB) can place more than that, so a host
+  that large will be freezing a subset by design and the alert will say
+  which.
 - *User docs.* No command, flag, config key or message a tenant sees
-  changes: the deadline and the rate are host config and the metric and
-  alert are the operator's. The one user-visible fact is how long a
-  machine takes to come back, so `lifecycle.md`'s "When a machine's
-  server restarts" says it takes longer for a machine with a lot in
-  memory. The page already said a machine stops instead "if there isn't
-  time or room to keep the memory", which stays true and is now rarer.
+  changes: the deadline, the rate and the restore timeout are host config
+  and the metrics and alerts are the operator's. The one user-visible fact
+  is how long a machine takes to come back, so `lifecycle.md`'s "When a
+  machine's server restarts" says it takes a few minutes, longer on a
+  server with a lot of memory in use however much the reader's own machine
+  holds -- the freeze holds the whole host's shutdown, so an idle small
+  machine beside a busy xl waits the same. The page already said a machine
+  stops instead "if there isn't time or room to keep the memory", which
+  stays true and is now rarer.
 - *Proof here.* `internal/hostd/guest/freeze_test.go`:
-  `TestFreezeTakesEveryClassAtItsResidentSize` (small at 4 GiB, large at
-  8, xl at 16 against the shipped deadline at 120 MB/s, all frozen; the
-  same xl at the old 120 s deadline skipped, which is the defect),
+  `TestFreezeTakesEveryClassAtItsResidentSize` (small, large and xl
+  against the shipped deadline at both 400 and 100 MB/s, all frozen; the
+  xl as it shipped before, 120 s at 100 MB/s, skipped, which is the
+  defect), `TestAdmissionCountsTheSnapshotsAlreadyRunning` and
+  `TestAFreezeAdmitsOnlyWhatTheDeadlineHolds` (three snapshots that each
+  fit the deadline alone and not together, held so they really are in
+  flight: two frozen, one counted),
+  `TestAFreezeStopsWaitingAtItsWall` (a hypervisor that never answers the
+  snapshot: the freeze returns and counts instead of waiting out
+  `snapshotTimeout`), `TestAGuestWhoseUnitCannotBeAskedIsNotDropped`,
   `TestFreezeCountsEveryGuestItLeavesUnfrozen` (estimate, deadline,
-  no_room, failed, no_key),
-  `TestAFreezeThatCannotStartCountsTheGuestsItLeaves` (busy),
-  `TestUnfrozenReasonNamesEveryResult` (every outcome a freeze produces,
-  including the two that cost nothing),
-  `TestTheUnfrozenTallyIsCountedAtTheNextStart` and
-  `TestATallyFromThisBootIsNotCountedAgain`; `promtool test rules` for
-  `GuestLeftUnfrozen`; the host VM test `host-freeze` asserts the flags
-  reach hostd and that the unit's stop timeout is the deadline plus
-  150 s. *Still owed:* the matrix on a real host, small and xl, idle and
-  busy, frozen and thawed, compared on boot id, uptime, process list and
-  tmux windows; and a re-measurement of the write rate whenever a host's
-  data disk changes.
+  no_room, failed, no_key), `TestAFreezeThatCannotStartCountsTheGuestsItLeaves`
+  (busy), `TestUnfrozenReasonNamesEveryResult`,
+  `TestThawDiscardedReasonNamesEveryResult`,
+  `TestAThawThatDiscardsAnImageCountsTheGuest`,
+  `TestTheUnfrozenTallyRisesAtEveryStart` (two restarts losing the same
+  guest, each start a second Manager with a registry at zero, as a new
+  hostd has: 1 then 2),
+  `TestATallyFromThisBootIsNotReportedAsALoss` and
+  `TestAFreezeThatSavesEveryGuestClearsTheLastTally`;
+  `promtool test rules` for `GuestLeftUnfrozen` (including a second
+  reboot's loss counted on top of the first, which the per-boot count
+  failed) and `GuestImageDiscarded`; the host VM test `host-freeze`
+  asserts the three flags reach hostd and that the unit's stop timeout is
+  the deadline plus 150 s. *Still owed:* the matrix on a real host, small
+  and xl, idle and busy, frozen and thawed, compared on boot id, uptime,
+  process list and tmux windows; a re-measurement of the write rate
+  whenever a host's data disk changes; and the pool measurement on
+  host-stg-01, whose 120 is I-652's and whose disk is provisioned at 125.

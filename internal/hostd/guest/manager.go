@@ -465,6 +465,11 @@ type Manager struct {
 	// lets one FreezeAll, ThawAll or SyncClocks run at a time (freeze.go,
 	// I-652).
 	freezeMu chan struct{}
+	// tallyOnce publishes the host's freeze and thaw totals at the first
+	// thaw of this process, which is hostd's start: adding them again at
+	// a later `hostd thaw` would count what this process has already
+	// counted (freeze.go, I-796).
+	tallyOnce sync.Once
 }
 
 // New builds a Manager; Run must be called before commands are dispatched.

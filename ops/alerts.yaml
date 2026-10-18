@@ -541,14 +541,18 @@ groups:
         # writeRateMBs again), deadline, no_room (the thin pool), failed,
         # no_key (Key Vault) or busy.
         #
-        # A shutdown freeze's own counter is never scraped, so hostd
-        # writes the tally beside its freeze records and counts it again
-        # at the next start: the rise this alert sees is usually the first
-        # minutes of the new boot. 6 h is I-645's window, which is also
-        # how long the image would have been kept, and it is what makes
-        # the alert clear by itself. Not a page: the loss has already
-        # happened and the remedy is a human decision (a longer deadline,
-        # a less loaded host, another host).
+        # A shutdown freeze's own counter is never scraped, because the
+        # host goes down behind it, so the count hostd publishes is the
+        # host's running total, read at each start from the tally beside
+        # its freeze records: the rise this alert sees is usually in the
+        # first minutes of the new boot. The total has to be cumulative
+        # for this expression to work at all -- a per-boot count would
+        # read 1, 1, 1 for the same guest skipped at every reboot, and
+        # increase() sees a repeat as no rise (I-796). 6 h is I-645's
+        # window, which is also how long the image would have been kept,
+        # and it is what makes the alert clear by itself. Not a page: the
+        # loss has already happened and the remedy is a human decision
+        # (a longer deadline, a less loaded host, another host).
         expr: |
           sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h])) > 0
         for: 5m
@@ -558,6 +562,32 @@ groups:
           summary: "{{ $value }} guest(s) on {{ $labels.host_id }} were left unfrozen ({{ $labels.reason }}) and lost what they were running"
           description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
           runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+
+      - alert: GuestImageDiscarded
+        # The other half of the same loss (DECISIONS I-652, I-796). A
+        # guest the freeze did save, whose image the next start could not
+        # give back, cold boots with its agents gone exactly as an
+        # unfrozen one does. `reason` says what the image ran into:
+        # incomplete (never finished, so hostd was killed mid-snapshot --
+        # check GuestLeftUnfrozen and the freeze unit's stop timeout),
+        # too_old (the host was down past the 6 h window), changed (the
+        # guest's closure, class or volume moved under the image while
+        # the host was down, so it could not be trusted), no_key (Key
+        # Vault), failed (the restore itself) or window (the thaw ran out
+        # of time; raise repose.host.freeze.restoreTimeout).
+        #
+        # Published as a running total for the same reason as the freeze
+        # half: a thaw runs before the metrics listener is up, so the
+        # first scrape of a boot already has the loss in it.
+        expr: |
+          sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} guest(s) on {{ $labels.host_id }} lost their frozen memory at the thaw ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
+          runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
 
   # Anti-abuse (DECISIONS I-238..I-240). Nothing here pages: the guest is
   # already blocked or stopped when these fire, and what remains is a
