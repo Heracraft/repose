@@ -165,16 +165,16 @@ func TestClaudeTrustScript(t *testing.T) {
 // front of claude's new-window, in the folder the window gets, and in
 // front of no other agent's.
 func TestAgentWindowCommandTrustsOnlyForClaude(t *testing.T) {
-	c := agentWindowCommand("proj", "", "claude-2", "~/proj-worktree-1", "claude", mcpApprovals{})
+	c := agentWindowCommand("proj", "", "claude-2", "~/proj-worktree-1", "claude", "", mcpApprovals{})
 	if !strings.Contains(c, "cd ~/proj-worktree-1 ") || !strings.Contains(c, "hasTrustDialogAccepted") || !strings.HasSuffix(c, "tmux new-window -t proj -n claude-2 -c ~/proj-worktree-1 -d 'claude'") {
 		t.Fatalf("claude in a worktree: %s", c)
 	}
-	c = agentWindowCommand("proj", "", "claude", "", "claude", mcpApprovals{})
+	c = agentWindowCommand("proj", "", "claude", "", "claude", "", mcpApprovals{})
 	if !strings.Contains(c, `cd "$repose_co" `) || strings.Index(c, "repose_co=") > strings.Index(c, "hasTrustDialogAccepted") {
 		t.Fatalf("claude in the guest's checkout: %s", c)
 	}
 	for _, a := range []string{"codex", "opencode", "gemini", "pi", "cat"} {
-		if c := agentWindowCommand("proj", "", a, "~/proj", a, mcpApprovals{}); strings.Contains(c, ".claude.json") {
+		if c := agentWindowCommand("proj", "", a, "~/proj", a, "", mcpApprovals{}); strings.Contains(c, ".claude.json") {
 			t.Fatalf("%s touches ~/.claude.json: %s", a, c)
 		}
 	}

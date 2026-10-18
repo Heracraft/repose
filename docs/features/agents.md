@@ -219,8 +219,9 @@ guest, and never its login or its history:
 ## Behaviour that must hold
 
 - Every agent starts in its own tmux window named after it, in the
-  checkout (guest-conventions "The checkout"), with the prompt typed once the TUI is ready
-  (run-and-attach.md).
+  checkout (guest-conventions "The checkout"), with the prompt as the
+  agent's own first argument where the agent takes one and typed into the
+  TUI where it does not (run-and-attach.md, DECISIONS I-780).
 - Every agent's completion and needs-input reach the API as events within
   10 seconds of the hook firing, or within 90 seconds for heuristic agents.
   A finished turn notifies nobody (I-688); the agent says it is done with
@@ -418,9 +419,10 @@ The agent window's trust write (I-486) also copies the laptop's
 `enabledMcpjsonServers` and `disabledMcpjsonServers` for the repository,
 adding each server the guest's entry answers in neither list (Claude Code
 writes both lists empty into every project it opens, so an empty list is
-no answer), and Claude Code's "New MCP server found
-in this project" dialog stops `run` from typing its prompt (outside
-`bypassPermissions` that dialog would otherwise take the Enter).
+no answer), so Claude Code's "New MCP server found
+in this project" dialog does not stand in front of the agent's first turn
+(outside `bypassPermissions`; before I-780 that dialog would have taken
+the Enter `run` typed).
 
 ### Forward: `repose mcp forward NAME...` (DECISIONS I-557)
 

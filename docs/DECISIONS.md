@@ -23533,6 +23533,76 @@ The public docs under `content/docs/` are untouched: the owner asked for
 the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
 user-visible outside the landing changed, so no page there needs one.
 
+**I-781. The quickstart does not promise that other projects are out of
+an agent's reach (launch-truth, 2026-10-18).** Amends I-747 and the
+quickstart's opening paragraph. *Made during implementation* (the owner,
+2026-10-18, on the launch review: "just remove that line completely").
+- `/docs` opened with "Your laptop, your SSH keys and your other projects
+  are out of its reach." The first two clauses hold: SSH private keys are
+  never copied and nothing on the machine reaches back to the laptop. The
+  third does not. `repose run` copies the GitHub CLI login by default, and
+  `secrets.md` says what that login is: git on the machine sends every
+  GitHub URL with it, so an agent can read, push to or delete any
+  repository the user can reach. The same page refuses to copy the Vercel
+  login for exactly this reason, "it reaches your whole Vercel account".
+- The sentence is removed rather than corrected. A correct version would
+  be a safety caveat in the first paragraph of the quickstart, which is
+  where a reader decides whether to install; the caveat belongs on
+  `secrets.md`, which already carries it, and `repose secrets choose`
+  already lets a user keep the `gh` login off the machine (I-422).
+- The paragraph now ends at the snapshot, which is the real answer to an
+  agent with full permissions. Nothing else on the page changes, and
+  `SECURITY.md` already lists a tenant's agent misusing the tenant's own
+  tool logins as accepted, with the exposure named.
+- What this does not do: change any default. Whether `gh` should be
+  minted per-run and single-repo instead of copied whole is
+  `proposals/2026-09-27-credentials-convenience-first.md` layer 1, and is
+  still the owner's call.
+
+**I-782. `hostmgr.allocate` steps over 10.255.0.3, so the launch host
+gets .4 (launch-truth, 2026-10-18).** Amends I-359. *Made during
+implementation* (the launch review found the collision live in
+`LAUNCH.md` §3 step 0, which asked the owner to choose between this and
+renumbering the monitoring server; the owner chose this one).
+- The api numbered hosts on the edge's WireGuard network as
+  10.255.0.(n+1), so the second host to register took 10.255.0.3. The
+  monitoring server has held that address since I-170, picked by hand
+  when nothing had taken it. A host given it takes Grafana's scrapes and
+  every host's Loki writes, and the next edge rebuild takes the address
+  back and leaves the host with no metrics and no operator SSH.
+- `wgReservedOffsets` is the ascending list of offsets the allocator
+  steps over, `{3}` today. The nth host gets the nth address after the
+  edge's that the list does not hold: host-01 keeps .2, the next host
+  gets .4, the one after .5. The guest /22 stays a plain function of the
+  sequence number and does not move.
+- Stepping over, not skipping. A bare skip gives sequence 2 the address
+  sequence 3 was already going to get; `TestAllocateHandsOutEachAddressOnce`
+  walks all 1,000 sequence numbers and fails on that, and failed on it
+  before the fix.
+- `TestEdgeStaticPeersAreReserved` reads `nix/edge/edge-01.nix` and fails
+  when the edge hands a 10.255.0.x to a peer of its own that the list
+  does not hold. The failure this prevents is the collision coming back
+  the next time the monitoring server is renumbered, which is a change on
+  the edge with no reason to look at the api.
+- The alternative that lost: moving the monitoring server into the
+  operator range at 10.255.254.2. It is the tidier plan, since that range
+  exists for peers the allocator does not own, and it stays available. It
+  needs the server's own `wg-repose.conf`, the edge configuration, a
+  `repose-admin edge loki` call and an edge switch, all before the launch
+  host registers, and none of that is work the launch needs.
+**I-780. The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752.** (prompt-argv, 2026-10-18) I-752 shipped a check and retries and then measured them on a real `small` against prod: **1 of 10** prompts submitted at the committed constants, **2 of 10** with a wider retry span, **0 of 9** at a 60-second span. Its own note names the fault — "a fresh agent satisfies the waiter's readiness gate while still not accepting a submission" — so no amount of typing fixes it. The window now starts the agent with the prompt as its own argument: `tmux new-window -t <slug> -n <agent> -c <dir> -d '<agent> <its initial-prompt argument>'`, and the agent's own startup is what consumes it. Nothing is sent to a TUI on that path: `waitPaneIdle`, `submitPromptScript` and `promptEnterTries` are not reached. **This entry does not close I-752.** It changes the mechanism and says what was verified about the mechanism; the number that closes I-752 is a live submission rate, which nothing on this box can produce (the OWED below).
+- *The forms, one place, one comment each.* `agentPromptArgs` (internal/cli/mux_tmux.go, beside `agentNames`) maps an agent to the words after its binary, and may refuse a particular prompt, which keeps the typing path. Each form was read out of the release `nix/overlay/agents/versions.json` pins and exercised on the dev box: `claude -- PROMPT` ("Arguments: prompt  Your prompt"); `codex -- PROMPT` ("[PROMPT] Optional user prompt to start the session", and clap itself says "to pass '-l' as a value, use '-- -l'"); `gemini --prompt-interactive=PROMPT` ("Execute the provided prompt and continue in interactive mode"; `-p` is headless and is never used); `opencode --prompt=PROMPT` ("prompt to use"; `opencode run` is headless and the positional is a project path); `pi -- PROMPT` ("message  Provide an initial prompt", "`--` Stop option parsing so a prompt can begin with `-`"). Each is one shell word per argument, and `--` or `=` is not decoration: `gemini -i '-dash first'` is "Not enough arguments following: i", `opencode --prompt '-lead'` falls out of yargs into the help banner, `codex '-lead'` and `pi '-lead'` are parse errors. An agent whose form is not verified, or that is added to `agentNames` without an entry, keeps the typing path and loses nothing.
+- *Two of the five were seen taking the argument on the dev box; three were not.* Claude Code 2.1.266 and opencode 1.18.30 were run with the argument in a tmux window there: the prompt is the first turn in the transcript, the input is empty after it, and the pane still runs the agent. Claude Code's folder-trust dialog showed first in that test and was answered by hand; Claude Code then submitted the argument itself, so a dialog costs a round trip and not the prompt -- seen once, by hand, on Claude Code only. Codex, Gemini CLI and pi have no login on this box, so what is verified for them is that their own parsers take the argument and what their own help says it means. **Those windows were made by hand with `tmux new-window`, not by `repose run`**, which I-752 warns is worthless for diagnosing the submit *script* — there `capture-pane` comes back empty on a hand-made window. It does not touch this evidence: nothing here reads a pane to decide anything, the capture was non-empty, and the claim is only that the agent consumed its argv. The live rate on a repose window is still owed.
+- *What is still typed, and why each one is.* An agent with no form, or a prompt its form refuses. The warm path, `repose run -w WINDOW -p TEXT` (I-639) and `tmuxMux.TypeScript`: the window exists and its agent is running, so there is no command line to put the prompt on. The Claude Code login waiter (I-607): the window opens on the login, and a prompt in the login's argv is not something anything has measured. `pendingPromptTmux`, `pendingPromptHerdr`, `submitPromptScript`, its constants and its tests are all unchanged, and still carry I-752's retries and its exit 5 for the paths that need them.
+- *Quoting, which is the whole attack surface this adds.* The prompt is arbitrary tenant text going into a shell word. `agentStartCommand` quotes each word with `shQuote` and then quotes the whole command line again, because tmux hands a single-argument command to the session's `default-shell` (bash, nix/guest/base/tmux.nix). `TestHostilePromptReachesTheAgentAsOneArgument` runs the real `agentWindowCommand` through a real tmux at a stand-in agent that records its argv, with a prompt holding a leading `-`, both quote characters, a newline, `$PATH`, a backtick `id` and a `$(touch ...)`: the agent gets exactly `--` and the prompt, byte for byte, and neither the substitution nor the backtick ran.
+- *A prompt that begins with `@` keeps the typing path on pi.* `--` stops pi's option parsing but not its `@file` include, so `pi -- '@nope.txt hello'` exits "Error: File not found" — the window would be left with no agent and no prompt, which is worse than the 1-in-10 it replaces. `@` elsewhere in the prompt is text, and no other agent reads an argument as a path.
+- *The prompt is now in the guest's own process table, and nothing of repose's reads it.* `ps` in the guest shows `claude -- '<prompt>'` where before the text only ever reached the TUI's input. That is the tenant's own machine, and the two places it could have leaked from are both already closed by tests and checked here: guestd never opens `/proc/<pid>/cmdline` (`TestStraceNeverOpensCmdlineOrEnviron`, R5-3 and the privacy policy's own sentence), and the CLI never prints a remote command — `verboseSSH` and the timing line pass it through `sshLabel`, which answers `script(NB)` for anything over 40 bytes or holding a newline, and this command line is always both. No new log field carries the prompt.
+- *What the cold path gives up, said plainly.* It no longer waits for the pane, so two things it used to say are gone for an agent with a form. A trust or `.mcp.json` dialog the pre-trust did not cover (I-486, I-556) is no longer detected, so `run` does not name it and `-d` does not exit 1 for it; the dialog waits for the user in the window and the prompt waits in the agent's argv behind it (verified on Claude Code only). On `-d` that is I-752's silence moved to a rarer trigger, and it has to be said rather than assumed rare: the walk-away case returns success and prints nothing, so a first screen nobody answers holds the prompt until someone attaches and answers it. The pre-trust covers the trust and `.mcp.json` dialogs for claude and codex, not every screen an agent might show on a first run. run-and-attach.md says so in a sentence. The dev-shell wait (I-259) is also gone from this path: the wrapper loads the dev shell and then execs the agent with its argument, so there is nothing to lose by not waiting, and `repose run -p` returns while the load runs instead of holding the terminal for up to 30 minutes. `agentDialogError`, `waitPaneIdle` and `OnLoading` stay for the typing path and for herdr. That trade is the right way round: a dialog cost the user a round trip, and the unsubmitted prompt cost them the night.
+- *The alternatives that lost.* (a) A wider retry span: already measured and rejected in I-752 — 2 of 10 at two seconds, 0 of 9 at a minute, against 1 of 10 with no retrying. (b) A readiness signal meaning "the input accepts a submission", which is what I-752 said it was waiting for: every form of it is a screen read of a TUI, and I-752 disproves the two obvious ones on captures (a submitted prompt is echoed into the transcript, so `promptHead` never leaves the screen, and the `❯` prefix appears in that echo too). The positional form that survives is "the `❯` line after the last `────` rule and above the `⏵⏵` mode line", which is Claude Code 2.1.283's frame and nobody else's, and a new frame breaks it silently. (c) Gemini's positional `[query..]`, which also becomes `promptInteractive` when not headless, lost to the explicit flag because it pushes a "Positional arguments now default to interactive mode" line into the user's pane.
+- *herdr is left as it is, and this is not an oversight.* herdr's cold path does not type: `herdr agent start NAME --kind A --pane P` then `herdr agent prompt NAME TEXT --wait --until working`, whose answer carries the agent's state, so a prompt that was not taken is already an error (I-752 says so). herdr 0.9.3 does have the slot — `herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS] [-- [AGENT_ARG]...]`, read from its own `--help` — but `agent start` is documented as "Success means the expected agent was detected in the same terminal and is ready for input", and an agent that starts mid-turn on an argument may never show that. Moving herdr onto the argument would risk the one prompt path with a verified answer, and this box has no herdr guest to measure it on. Whoever takes it needs `REPOSE_TEST_HERDR` and a real agent, not the stand-in.
+- *What the tests prove, and only that: the command line is built correctly.* `TestAgentWindowCommandCarriesThePrompt` holds the exact `new-window` command line for all five agents and for a stand-in binary with no form, which keeps `-d 'cat'` as before; `TestHostilePromptReachesTheAgentAsOneArgument` runs that line through a real tmux and asserts the words the started program receives; `TestPiRefusesAnAtPromptAsAnArgument` and `TestNoPromptNoArgument` hold the two refusals. All four fail with the table's lookup forced to "no form" (the before state: `argv = [], want ["--" "-n it's \"the $PATH\"...]`) and pass after. None of them is evidence that a prompt is submitted: no agent runs in them, only a stand-in that records its argv. `TestAgentWindowCommandTrustsOnlyForClaude` and `TestAgentWindowCommandTrustsPerAgent` were updated for the new parameter and still assert the old bare `-d '<agent>'` line for a window with no prompt. The typing path's own tests are untouched and still pass: `TestSubmitPromptPressesEnterAgainAndGivesUp`, `TestTypeAndEnterAloneLosesADroppedEnter`, `TestTypePromptResendsEnterIntoATmuxWindow`, `TestPendingPromptTypesAfterLogin`, `TestPromptSendAndSecondWindowNaming`, `TestPromptNotTypedIntoTrustDialog`.
+- *The pane must still report the agent, and two tests hold it.* The window now runs a shell command line instead of a bare word, so bash `-c` has to exec the agent rather than sit in front of it: `pane_current_command` is what `repose ps`, `windowNameFor` and guestd's detection read, and a `bash` there would make a working agent look like a shell. Started this way on the dev box, a real `claude` and a real `opencode` both report their own name, which is bash's exec of a simple command; both windows were made by hand, so that is the evidence the premise holds and the live check still looks at `repose ps`. The first draft of this entry said no Go test could cover it, because every test agent is a stand-in whose comm is its interpreter. That was wrong: the invariant lives in the string `agentStartCommand` returns, not in the running process. `TestWindowRunsASimpleCommand` asserts that whole string against the shape it must have, for every agent and for a binary with no form, across nine prompts including a leading `-`, a newline, a `$(...)` and 10 kB; `TestBashExecsTheAgent` asserts the same thing on a real bash by pid, a stand-in printing `$$` where a simple command makes that pid bash's own. Which catches what was measured: a subshell and a `;` list fail the pid test for all five agents, and so does a pipeline, but `cd . && <line>` does not, since bash still execs the last command of an `&&` list -- the string test is what catches that, and is therefore the regression guard while the pid test states the premise.
+- OWED, two numbers, neither of them run here. A live submission rate on a real `small` against prod, by I-752's own protocol, reported as two arms: **the pane idle at the moment the window is created**, and **the pane busy at that moment**, each over at least 20 trials, with a poll that outlasts the start. An idle 20 of 20 proves nothing on its own — it can pass by waiting rather than by fixing, which is how the two-second budget reached the queue and then did not hold. This box has no guest and no fleet, so neither arm exists yet, and I-752 stays open until both do.
 **I-784. The size classes go to 4 GB of memory per guest vCPU: small 1,
 large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739:
 R3-2's class table, the arithmetic I-734 read it with, and I-739's seat
@@ -23837,3 +23907,234 @@ assertion that outlives whoever remembers why the pin is there.
   upstream`. Host VM tests and the closure comparison that shows the guest
   and the edge unchanged are in the commit message.
   `docs/security/cve-2026-99999.md` is the assessment.
+
+**I-796. The freeze deadline and write rate come from the disk the images
+are written to, a freeze admits snapshots against all of them at once,
+and a guest that loses its memory at either end alerts (freeze-limits,
+2026-10-18).** Amends I-652 (the 120 s deadline, the `2 x deadline + 60 s`
+stop timeout, and the write rate with no flag) and I-686 (what the freeze
+promises on host-01). *Made during implementation*: host-01 lost an xl
+guest's memory at a planned restart and nothing said so.
+
+- *What happened.* host-01 was switched to main `f5cba9bc` and rebooted at
+  17:03 UTC on 2026-10-18. The freeze printed one row: `01a11778  skipped
+  0  0  snapshot would outlast the deadline`. The xl guest (kanali) cold
+  booted: boot id `08e4e7d2` to `16f07ac5`, uptime 698622 s to 27 s, 4
+  claude processes to 0, tmux 2 windows to 1. Every agent session in it
+  was lost. The disk was intact (I-650's clean stop pressed the power
+  button and waited), so this cost memory only. The owner found out
+  because the conductor's test happened to have a probe inside the guest.
+- *Why it was always going to happen.* The estimate is the guest's
+  resident memory (the `guest@` unit's `MemoryCurrent`, capped at the
+  class's memory plus 256 MiB) divided by an assumed write rate of
+  100 MB/s, and a guest whose estimate passes the remaining deadline is
+  not started. At 100 MB/s a 120 s deadline cannot hold anything over
+  about 12 GB resident, so **a busy xl was skipped every time**, on every
+  host, since I-686 turned the freeze on. The three sizes repose sells are
+  4, 8 and 16 GiB; the deadline was set for none of them.
+- *The rate was measured on the wrong disk, and understating it is the
+  dangerous direction.* An image is a thin volume `frz-<id>` in
+  `vg-guests`, and `vg-guests` is the PV of the **data** disk
+  (`disko-layout.nix`). Measured there on host-01 on 2026-10-18, with two
+  guests running, to a scratch thin volume with `dd oflag=direct`:
+  **450 and 460 MB/s** for 2 GiB, **456 MB/s for 8 GiB in one go** (so it
+  is sustained, not a burst), **197 MB/s each with four at once**
+  (786 MB/s together), and **484 MB/s** reading back. That disk takes no
+  host cache -- Premium SSD v2 does not support it
+  (`modules/host/main.tf`) -- and `prod.tfvars` provisions it at
+  600 MB/s. The host's **root** disk, where the first version of this
+  entry took its figure, does **126 MB/s** -- and no image goes there. So I-652's "host-01's 600 MB/s" was right and this
+  entry's first draft was wrong to call it a guess: 600 is what the disk
+  is bought at and 450 is what one stream of `dd` gets out of it.
+  host-01 is configured at **400 MB/s**, the single-stream figure rounded
+  down; host-stg-01 stays at 120, measured on its own pool during I-652,
+  which `staging.tfvars` provisions at 125 MB/s -- staging can rehearse
+  the shape of a freeze and never host-01's timing.
+  - The direction of safety is the opposite of what the first draft
+    claimed. An **understated** rate makes every estimate longer, and a
+    long estimate is what **skips a guest** -- the defect being fixed
+    here. An overstated one risks a freeze that outruns its deadline,
+    which the admission below bounds, the wall below reports, and the
+    `writing` record recovers. "Rounded down so the estimate errs long"
+    was a reason to lose a tenant's session. The default of 100 MB/s
+    stays, named for what it is: a floor for a host nobody has measured.
+  - The estimate is uncompressed memory while the image is compressed
+    btrfs (I-685, about a fifth), so it is an upper bound by design, and
+    the rate a freeze learns from its own first finished snapshot is now
+    taken in the same units -- memory bytes over the snapshot's whole
+    duration. Taken from image bytes, as it was, it taught a fifth of the
+    truth and would have skipped every guest after the first. It only ever
+    *lowers* the rate: the host's own measurement is the ceiling, and a
+    snapshot that beat it usually only means that guest's memory
+    compressed well, which says nothing about the next guest's.
+- *A snapshot is admitted against every snapshot already running, not
+  against itself.* Four run at once (I-685), they share one disk, and the
+  gate compared each one's estimate with the whole remaining deadline on
+  its own. Up to four take their slot at the same instant with the whole
+  deadline ahead, so the rate a finished snapshot teaches cannot correct
+  that first batch: on a host with no more running guests than the
+  concurrency -- which is every host repose runs -- nothing corrected it
+  at all, and the deadline was enforced by systemd's SIGKILL rather than
+  by this code. A freeze now reserves its estimate before it starts and
+  gives it back when it finishes, and admits a snapshot only when
+  everything outstanding plus its own still fits the time left. The
+  deadline is therefore self-enforcing: it is *how much memory a restart
+  saves*, not an arithmetic claim about today's guests, and a host with
+  more than it can write skips its largest and says so.
+- *The arithmetic for the new numbers.* At 400 MB/s, with the per-guest
+  cap of class memory plus 256 MiB:
+  - One xl: 16 GiB + 256 MiB = 17.45 GB / 400 MB/s = **44 s**.
+  - host-01's worst case today, the two xl and one large its placement
+    allows: 2 x 16.25 + 8.25 = 40.75 GiB = 43.75 GB = **109 s**. (The
+    first draft said
+    42.95 GB and 358 s; it dropped the per-guest headroom and used the
+    root disk's rate.)
+  - Everything 64 GiB can place, after the eighth the host reserves: 56
+    GiB plus headroom, about 60 GB = **150 s**.
+  - The sync and the 5 s settle come out of the same deadline: 20 s.
+  - The deadline is **240 s** (`--freeze-deadline`,
+    `repose.host.freeze.deadline`, at most 300 in nix): 96 GB of guest
+    memory, more than host-01 can hold, with the host's full capacity
+    leaving 70 s of margin.
+  - `repose-guest-freeze.service` is `TimeoutStopSec = deadline + 150`
+    (**390 s** at the default), not `2 x deadline + 60`. The margin is
+    not a guess about snapshot sizes: a FreezeAll waits for nothing past
+    its deadline plus a 120 s grace -- not a started snapshot, not a
+    resume, not the record-marking tail -- and then counts what it left
+    and returns. 150 s leaves 30 s for it to get there. At the cap that
+    is 450 s of the about 600 s Azure waits for a graceful shutdown,
+    which leaves the rest of the shutdown (the guests' clean stops,
+    virtiofsd, the unmounts, LVM, the kernel) the share it had before.
+  - Why the wall matters more than the arithmetic: hostd killed by
+    systemd mid-ExecStop counts nothing, writes no tally and leaves its
+    guests paused with `writing` records. That is the one failure mode in
+    which a guest loses its memory *and* nothing says so -- exactly what
+    this entry exists to end -- so it is bounded by construction rather
+    than by a claim about how big a snapshot can be.
+- *The cost, plainly.* A host restart with busy guests holds the shutdown
+  for as long as the freeze takes, up to 240 s, where it used to give up
+  at 120 and lose the guest. At the measured rate host-01's own guests
+  take about 110 s. The host answers for the whole freeze (hostd and the
+  pool stop after the freeze unit), so what the api sees as absence is the
+  power-off, the boot and the restore: about a minute plus the images'
+  read, under 6 minutes, inside the CLI's 10-minute `hostWaitTimeout`.
+  `HostUnreachable` (2m) and `HostdDown` (3m) both page inside that, so a
+  planned restart is silenced first; the runbook's "Host rebooted" says so.
+- *The read side is budgeted from the same arithmetic as the write side.*
+  A thaw used to have one fixed 180 s per guest for the image read *and*
+  guestd's first answer, with no option to change it, while the freeze's
+  budget grew: a host could spend its whole shutdown writing images the
+  next boot discarded, and the guest would cold-boot anyway after a
+  longer restart instead of a shorter one. `restoreTimeout`
+  (`--freeze-restore-timeout`, default 180 s) now bounds a restore's
+  *surroundings*, and each image's own read time at `writeRateMBs` is
+  added to it, per guest and for the thaw's whole window. At I-685's
+  compression, about a fifth, host-01's worst case is 9 GB of image to
+  read: 22 s, inside the 180 s the surroundings already had.
+- *A loss alerts at either end.* It used to be a `Warn` line and a row in
+  a table nobody reads.
+  - Every path that leaves a *running* guest unfrozen counts
+    `repose_host_guest_freeze_unfrozen_total{reason}` and logs at `Error`:
+    `estimate`, `deadline`, `no_room` (the thin pool), `failed` (after the
+    job started; the guest keeps running), `no_key` and `busy`.
+    `GuestLeftUnfrozen` (warn, `increase(...[6h]) > 0` for 5m, 6 h being
+    I-645's window) reads it, the pattern HostCPUSaturated set in I-738.
+  - A guest the freeze *did* save, whose image the next start could not
+    give back, loses exactly the same thing, and that half had no metric
+    at all. `repose_host_guest_thaw_discarded_total{reason}` counts it --
+    `incomplete`, `too_old`, `changed`, `no_key`, `failed`, `window` --
+    with `GuestImageDiscarded` and a runbook section. A guest that
+    stopped, moved host or came back running on its own is not counted:
+    nothing was owed to it.
+  - `class` is not a label on either: the log line names the guest and its
+    class, and `reason` is what an alert has to say.
+  - A running guest whose `guest@` unit cannot be asked (dbus under a
+    shutdown's load) is taken as running rather than dropped. Dropping it,
+    which is what discarding `IsActive`'s error did, left it out of the
+    freeze, out of the results and out of the tally: the operator saw one
+    fewer guest and no loss.
+- *The counts are running totals, because neither half is ever scraped
+  where it happens.* A shutdown freeze's counter goes down with the host,
+  and a thaw's is raised before the metrics listener is up. hostd keeps
+  both totals beside its records as `freeze/.tally.json` (a dot file,
+  which `Store.List` skips) and publishes them at its first thaw, which is
+  its start; every freeze and thaw adds to the counter and to the file
+  together, so the series only ever rises. **A per-boot count does not
+  work**, and the first version of this change shipped one: the same guest
+  skipped at every reboot reads 1, 1, 1, and `increase()` sees a repeat as
+  no rise, so the first restart alerts and no later one ever does -- the
+  exact silence this entry exists to end. Only a decrease looks like a
+  reset to Prometheus, and the replay happens before any scrape, so there
+  is never a zero in between. The last freeze's own counts are kept beside
+  the totals for the `started cold after the host restarted` line, and
+  written by every non-operator freeze including one that saved
+  everything, so a called-off scheduled event's counts cannot be reported
+  as a later reboot's loss. An operator's `hostd freeze` only moves the
+  counter: it is scraped like anything else. One path counts nothing: a
+  freeze whose `ListGuests` fails cannot know whether a running guest
+  exists; it logs at Error and HostdDown is what covers it.
+- *The tenant was told; the operator was not.* A guest the freeze leaves
+  behind is stopped by the shutdown, marked interrupted and started cold
+  by the api (I-645, I-652's L6), so its owner gets the
+  `machines_restarted` notice and `repose status` shows the restart. What
+  was missing was the operator's side: nothing said that the freeze had
+  been *able* to save that machine and did not. That is what the counters
+  and the alerts are for, and why neither pages.
+- *What I-652 and I-686 promised that this changes.* I-652's "within a
+  deadline (120 s, at most 240 in nix)" and "the freeze unit's
+  TimeoutStopSec is twice the deadline plus 60 s" are replaced by the
+  numbers above; its "two snapshots at a time" was already four (I-685);
+  its *Still owed* asked for the pool measurement, which is above.
+  I-686's claim that the freeze was "proved on staging at host-01's
+  shape" held for two guests of 0.76 and 4.1 GB, not for a busy xl.
+  Nothing in I-653's or I-686's secrets exception changes: the image is
+  the same encrypted volume, removed once read and after 6 h.
+- *What is still not promised.* A host whose running guests hold more
+  memory than the deadline can write still leaves some of them unfrozen,
+  and the alert is how the owner learns it rather than a tenant. 300 s is
+  a hard cap because of Azure's wait, so the limit is about 111 GiB of
+  resident guest memory per host at 400 MB/s; past that the answer is
+  fewer or smaller guests on the host, which the runbook says. The launch
+  size (`Standard_D64s_v7`, 256 GiB) can place more than that, so a host
+  that large will be freezing a subset by design and the alert will say
+  which.
+- *User docs.* No command, flag, config key or message a tenant sees
+  changes: the deadline, the rate and the restore timeout are host config
+  and the metrics and alerts are the operator's. The one user-visible fact
+  is how long a machine takes to come back, so `lifecycle.md`'s "When a
+  machine's server restarts" says it takes a few minutes, longer on a
+  server with a lot of memory in use however much the reader's own machine
+  holds -- the freeze holds the whole host's shutdown, so an idle small
+  machine beside a busy xl waits the same. The page already said a machine
+  stops instead "if there isn't time or room to keep the memory", which
+  stays true and is now rarer.
+- *Proof here.* `internal/hostd/guest/freeze_test.go`:
+  `TestFreezeTakesEveryClassAtItsResidentSize` (small, large and xl
+  against the shipped deadline at both 400 and 100 MB/s, all frozen; the
+  xl as it shipped before, 120 s at 100 MB/s, skipped, which is the
+  defect), `TestAdmissionCountsTheSnapshotsAlreadyRunning` and
+  `TestAFreezeAdmitsOnlyWhatTheDeadlineHolds` (three snapshots that each
+  fit the deadline alone and not together, held so they really are in
+  flight: two frozen, one counted),
+  `TestAFreezeStopsWaitingAtItsWall` (a hypervisor that never answers the
+  snapshot: the freeze returns and counts instead of waiting out
+  `snapshotTimeout`), `TestAGuestWhoseUnitCannotBeAskedIsNotDropped`,
+  `TestFreezeCountsEveryGuestItLeavesUnfrozen` (estimate, deadline,
+  no_room, failed, no_key), `TestAFreezeThatCannotStartCountsTheGuestsItLeaves`
+  (busy), `TestUnfrozenReasonNamesEveryResult`,
+  `TestThawDiscardedReasonNamesEveryResult`,
+  `TestAThawThatDiscardsAnImageCountsTheGuest`,
+  `TestTheUnfrozenTallyRisesAtEveryStart` (two restarts losing the same
+  guest, each start a second Manager with a registry at zero, as a new
+  hostd has: 1 then 2),
+  `TestATallyFromThisBootIsNotReportedAsALoss` and
+  `TestAFreezeThatSavesEveryGuestClearsTheLastTally`;
+  `promtool test rules` for `GuestLeftUnfrozen` (including a second
+  reboot's loss counted on top of the first, which the per-boot count
+  failed) and `GuestImageDiscarded`; the host VM test `host-freeze`
+  asserts the three flags reach hostd and that the unit's stop timeout is
+  the deadline plus 150 s. *Still owed:* the matrix on a real host, small
+  and xl, idle and busy, frozen and thawed, compared on boot id, uptime,
+  process list and tmux windows; a re-measurement of the write rate
+  whenever a host's data disk changes; and the pool measurement on
+  host-stg-01, whose 120 is I-652's and whose disk is provisioned at 125.
