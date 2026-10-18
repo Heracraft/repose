@@ -13,6 +13,20 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 | `large` | 2    | 8 GB   | 40 GB |
 | `xl`    | 4    | 16 GB  | 80 GB |
 
+A vCPU here is a share of a physical core on the server, not a
+hyperthread. repose counts a server's capacity in physical cores and puts
+at most 1.5 machine vCPUs on each, so a vCPU gets about two thirds of a
+core when every machine on that server works at once, and a whole one the
+rest of the time.
+
+`large` held 4 vCPU until 18 October 2026 and holds 2. The 4 were not
+deliverable: a 32-core server has the memory for 30 `large` machines,
+which is 120 vCPUs, so a busy machine got about a quarter of a core for
+each one. At 2 vCPU the same server sells 24 machines, and a busy `large`
+gets about 1.33 cores where it got 1.07. The count went down and the CPU
+went up. What you lose is peak parallelism: a build defaults to 2 jobs,
+so a long compile takes about twice as long as it did on 4.
+
 A machine that has been running since before the sizes changed keeps the
 vCPUs it started with until its next stop, so `nproc` on it can say more
 than the table.

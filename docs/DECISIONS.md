@@ -23735,6 +23735,30 @@ carries the same warning for whoever is paged.
   `TestHostReservationsVCPUsMatchClassVCPU` inserts one project of each
   class and reads the view back, which is the only way the migration can
   be held to the constant.
+- *The docs say what a vCPU is, because the number on its own reads as a
+  downgrade (owner, 2026-10-18: "users might look at 1vcpu ... and think
+  that's weak!! they gotta know its a physical core").* `machine.md` now
+  states three things under the size table, all derived from the shipped
+  constants rather than asserted: a vCPU is a share of a physical core and
+  not a hyperthread; `PlacementVCPUPct` puts at most 1.5 machine vCPUs on
+  each physical core, so a vCPU gets about two thirds of a core when every
+  machine on the server works at once; and the count fell while the CPU
+  rose. The arithmetic, on a `D64s_v7`'s 32 cores: 30 `large` machines fit
+  its memory at the old ratio, which is 120 guest vCPUs, 3.75 per core, so
+  a busy machine held about 0.27 of a core per vCPU and 1.07 cores in
+  total; at the new ratio the same host sells 24 and a busy `large` holds
+  0.67 per vCPU and **1.33 cores in total**. The 4 vCPUs were a number on a
+  page, not capacity.
+- *What the user loses is named in the same paragraph, not left out.* A
+  build defaults to one job per vCPU, so a long compile on `large` takes
+  about twice as long as it did on 4 vCPU. The page says so. Hiding it
+  would make the next sentence about more CPU read as marketing.
+- *No comparison with another vendor's "vCPU" is published.* One cloud
+  vCPU is one SMT thread, and what a thread delivers against a core
+  depends on whether its sibling is busy, which repose has not measured. A
+  claim of "worth two of theirs" would not be checkable, so the page
+  states only what repose's own placement rule enforces.
+
 **I-778. The host kernel is pinned apart from `nixpkgs`, and the host
 refuses to build below the patched version (cve-2026-99999,
 2026-10-18).** A guest-to-host escape, fixed by a version pin and an
