@@ -40,15 +40,20 @@ func ClassRAM(class string) int64 {
 	}
 }
 
-// ClassVCPU is the vCPU count of a class.
+// ClassVCPU is the vCPU count of a class: 4 GB of the class's memory per
+// guest vCPU, uniformly across the three (DESIGN.md §5, DECISIONS I-784
+// amending R3-2). It is the api's only Go copy of the figure;
+// ClassVCPUSQL is the only SQL one, and internal/cli and
+// internal/hostd/guest keep their own, pinned to this by
+// TestClassSpecsMatchBillingAndHost.
 func ClassVCPU(class string) int {
 	switch class {
 	case "small":
-		return 2
+		return 1
 	case "xl":
-		return 8
-	default:
 		return 4
+	default:
+		return 2
 	}
 }
 
@@ -267,7 +272,7 @@ func Freeing(ctx context.Context, q interface {
 		  join lateral (
 		        select coalesce(sum(case when p.state = 'stopping' then `+classRAMSQL+` else 0 end), 0)::bigint as stopping,
 		               coalesce(sum(`+classRAMSQL+`), 0)::bigint as going,
-		               coalesce(sum(case when p.state = 'stopping' then `+classVCPUSQL+` else 0 end), 0)::integer as stopping_vcpu
+		               coalesce(sum(case when p.state = 'stopping' then `+ClassVCPUSQL("p.class")+` else 0 end), 0)::integer as stopping_vcpu
 		          from projects p
 		         where p.host_id = h.id and p.state in ('stopping', 'destroying')) g on true
 		 where h.state = 'ready'
@@ -287,8 +292,19 @@ func Freeing(ctx context.Context, q interface {
 // classRAMSQL is ClassRAM for a projects row aliased p.
 const classRAMSQL = `(case p.class when 'small' then 4::bigint<<30 when 'xl' then 16::bigint<<30 else 8::bigint<<30 end)`
 
-// classVCPUSQL is ClassVCPU for a projects row aliased p.
-const classVCPUSQL = `(case p.class when 'small' then 2 when 'xl' then 8 else 4 end)`
+// ClassVCPUSQL is ClassVCPU in SQL, over the class column named by col
+// ("p.class" for a projects row aliased p, "class" for an unaliased one).
+// Every query that divides by or sums a class's vCPUs calls this, so the
+// figure has one SQL home as well as one Go home: placement here, the
+// Usage charts in internal/api/http/samples.go and the busy-unattended
+// signal in internal/api/abuse each held their own copy until I-784, and
+// a copy that kept the old 2-GB-per-vCPU numbers would have divided a
+// guest's CPU by twice the vCPUs it has. The one copy this cannot reach
+// is the host_reservations view (migration 0028);
+// TestHostReservationsVCPUsMatchClassVCPU is what holds that to this.
+func ClassVCPUSQL(col string) string {
+	return `(case ` + col + ` when 'small' then 1 when 'xl' then 4 else 2 end)`
+}
 
 // PlacementVCPUPct is how many guest vCPUs a host may have committed, as
 // a percentage of its physical cores, for a new project to be placed

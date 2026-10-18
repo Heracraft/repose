@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -297,20 +298,29 @@ func commit(t *testing.T, pool *db.Pool, hostID uuid.UUID, class, slug string) {
 	}
 }
 
-// The incident of 2026-10-14, reproduced: host-01 is a D16s_v7, 8
-// physical cores, with memory to spare. PlacementVCPUPct allows 12
-// committed guest vCPUs there, so the second xl -- the 16 guest vCPUs on
-// 8 cores that took keystrokes from 2.7 ms to 17 ms -- is refused, and
-// the refusal says it was CPU and not memory (DECISIONS I-736).
+// host-01 is a D16s_v7, 8 physical cores, with memory to spare.
+// PlacementVCPUPct allows 12 committed guest vCPUs there, so the fourth
+// xl is refused and the refusal says it was CPU and not memory
+// (DECISIONS I-736).
+//
+// The three guests of the 2026-10-14 incident -- two xl and a large --
+// committed 20 vCPUs here and are 10 since I-784, so that exact host
+// now accepts another large. That is the change, not a bug in it: the
+// ratio is against the vCPUs a class gets, and a class gets half as
+// many for the same memory. What has not been measured is whether the
+// latency boundary tracks guest vCPUs or guest count (I-784, OWED).
 func TestPickCountsCommittedVCPUsAgainstCores(t *testing.T) {
 	pool := testdb.Open(t)
 	h := addHostCores(t, pool, host{"host-01", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 8)
 
-	commit(t, pool, h, "xl", "kanali") // 8 of 12
+	commit(t, pool, h, "xl", "kanali")  // 4 of 12
+	commit(t, pool, h, "xl", "toolbar") // 8 of 12
 	if p, err := pick(t, pool, "large", 1<<30, 40<<30); err != nil || p.Name != "host-01" {
 		t.Fatalf("a large on 8 of 12 committed vCPUs: %+v %v, want host-01", p, err)
 	}
-	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	commit(t, pool, h, "large", "s2-sync") // 10 of 12
+	commit(t, pool, h, "small", "lat")     // 11 of 12
+	commit(t, pool, h, "small", "probe")   // 12 of 12, the ceiling
 	if p, err := pick(t, pool, "small", 1<<30, 20<<30); !errors.Is(err, scheduler.ErrNoCPUCapacity) {
 		t.Fatalf("a small at the ceiling: %+v %v, want ErrNoCPUCapacity", p, err)
 	}
@@ -330,10 +340,12 @@ func TestPickCountsCommittedVCPUsAgainstCores(t *testing.T) {
 // than placing on it (DECISIONS I-736).
 func TestPickIgnoresCPUWhenAHostReportsNoCores(t *testing.T) {
 	pool := testdb.Open(t)
-	h := addHostCores(t, pool, host{"a", "ready", false, 64 << 30, 56 << 30, 1 << 40, time.Now()}, 0)
+	// Memory is never the reason here: 256 GB, 240 free, against four xl.
+	h := addHostCores(t, pool, host{"a", "ready", false, 256 << 30, 240 << 30, 1 << 40, time.Now()}, 0)
 	commit(t, pool, h, "xl", "one")
 	commit(t, pool, h, "xl", "two")
-	commit(t, pool, h, "large", "three") // 20 vCPUs, past any ratio
+	commit(t, pool, h, "xl", "three")
+	commit(t, pool, h, "xl", "four") // 16 vCPUs, past the ratio of any core count a D16s has
 	if p, err := pick(t, pool, "small", 1<<30, 20<<30); err != nil || p.Name != "a" {
 		t.Fatalf("host with unknown cores: %+v %v, want a placement", p, err)
 	}
@@ -366,8 +378,11 @@ func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
 	if _, err := pool.Exec(ctx, "insert into users (id, handle) values ($1, 'u')", uid); err != nil {
 		t.Fatal(err)
 	}
-	commit(t, pool, h, "xl", "kanali")     // 8 of the 12 cores allow
-	commit(t, pool, h, "large", "s2-sync") // 12 of 12, the ceiling
+	commit(t, pool, h, "xl", "kanali")     // 4 of the 12 the cores allow
+	commit(t, pool, h, "xl", "toolbar")    // 8 of 12
+	commit(t, pool, h, "large", "s2-sync") // 10 of 12
+	commit(t, pool, h, "small", "probe")   // 11 of 12
+	commit(t, pool, h, "small", "lat")     // 12 of 12, the ceiling
 	// A guest being destroyed frees memory -- hostd still counts it, so
 	// Freeing is asked at all -- but the reservation view never counted
 	// its vCPUs, so nothing is freed on the CPU side and a create that
@@ -379,7 +394,7 @@ func TestFreeingCountsTheVCPUsOfAGuestBeingStopped(t *testing.T) {
 	if ok, err := scheduler.Freeing(ctx, pool, "small", 1<<30, 20<<30, now); err != nil || ok {
 		t.Fatalf("freeing %v %v at the CPU ceiling, want false: memory frees, cores do not", ok, err)
 	}
-	// Stop the xl instead: its 8 vCPUs are in the view and come back, so
+	// Stop the xl instead: its 4 vCPUs are in the view and come back, so
 	// the small fits and the create waits rather than failing.
 	if _, err := pool.Exec(ctx, "update projects set state = 'stopping' where slug = 'kanali'"); err != nil {
 		t.Fatal(err)
@@ -443,14 +458,14 @@ func TestFitsOnCountsTheCopiesVCPUs(t *testing.T) {
 	}
 	// 8 cores allow 12 committed guest vCPUs. Memory is never the
 	// constraint here: the host has 240 GB free.
-	if !fits("large", 3, true) {
-		t.Fatal("three large copies that start (12 vCPUs) do not fit on 8 cores, want 12 of 12")
+	if !fits("large", 6, true) {
+		t.Fatal("six large copies that start (12 vCPUs) do not fit on 8 cores, want 12 of 12")
 	}
-	if fits("large", 4, true) {
-		t.Fatal("four large copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	if fits("large", 7, true) {
+		t.Fatal("seven large copies that start (14 vCPUs) fit on 8 cores, want a refusal")
 	}
-	if fits("xl", 2, true) {
-		t.Fatal("two xl copies that start (16 vCPUs) fit on 8 cores, want a refusal")
+	if fits("xl", 4, true) {
+		t.Fatal("four xl copies that start (16 vCPUs) fit on 8 cores, want a refusal")
 	}
 	// Created stopped, they commit nothing and the CPU term must not
 	// refuse them, exactly as the memory term does not.
@@ -460,11 +475,88 @@ func TestFitsOnCountsTheCopiesVCPUs(t *testing.T) {
 	// With the host already at its ceiling, a copy that starts is refused
 	// and a copy created stopped is still fine.
 	commit(t, pool, h, "xl", "kanali")
+	commit(t, pool, h, "xl", "toolbar")
 	commit(t, pool, h, "large", "s2-sync")
+	commit(t, pool, h, "small", "probe")
+	commit(t, pool, h, "small", "lat")
 	if fits("small", 1, true) {
 		t.Fatal("a copy that starts fits a host at its CPU ceiling, want a refusal")
 	}
 	if !fits("small", 1, false) {
 		t.Fatal("a copy created stopped is refused on a host at its CPU ceiling, want it placed")
+	}
+}
+
+// The class table, in the one Go place the api holds it: 4 GB of the
+// class's memory per guest vCPU, uniformly across the three (DECISIONS
+// I-784 amending R3-2). The uniformity is the point of the figure, not a
+// tidiness: a host's placeable memory fixes its guest-vCPU count
+// whatever mix of classes is sold, so two `small` on one 8 GB seat
+// commit exactly what one `large` does. An unknown class is a large, as
+// every other class function treats it.
+func TestClassVCPUIsFourGBPerVCPU(t *testing.T) {
+	for _, c := range []struct {
+		class string
+		vcpu  int
+		gb    int64
+	}{
+		{"small", 1, 4},
+		{"large", 2, 8},
+		{"xl", 4, 16},
+		{"", 2, 8},
+	} {
+		if got := scheduler.ClassVCPU(c.class); got != c.vcpu {
+			t.Errorf("ClassVCPU(%q) = %d, want %d", c.class, got, c.vcpu)
+		}
+		if got := scheduler.ClassRAM(c.class); got != c.gb<<30 {
+			t.Errorf("ClassRAM(%q) = %d, want %d GB", c.class, got, c.gb)
+		}
+		if gbPer := c.gb / int64(c.vcpu); gbPer != 4 {
+			t.Errorf("%q: %d GB over %d vCPU is %d GB per vCPU, want 4", c.class, c.gb, c.vcpu, gbPer)
+		}
+	}
+	// Two `small` are one seat of memory and one seat of vCPUs. The hole
+	// I-784 closes is this not holding: at 2 GB per vCPU two `small`
+	// committed 4 vCPUs against a `large`'s 4 for half the memory, so a
+	// seat count derived from memory overstated a host by 2x for anyone
+	// running smalls.
+	if 2*scheduler.ClassVCPU("small") != scheduler.ClassVCPU("large") {
+		t.Error("two small are not one large in vCPUs: the seat count overstates a host that sells smalls")
+	}
+}
+
+// The ClassVCPU figure in SQL, and that the view in migration 0028 sums
+// the same numbers. The view is the one copy of the table that Go cannot
+// reach, which is how it would have been left at 0027's 2-GB-per-vCPU
+// figures while placement used the new ones: committed vCPUs would then
+// read double on every host.
+func TestHostReservationsVCPUsMatchClassVCPU(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	h := addHostCores(t, pool, host{"a", "ready", false, 256 << 30, 240 << 30, 1 << 40, time.Now()}, 32)
+	want := 0
+	for i, class := range []string{"small", "large", "xl", "large"} {
+		commit(t, pool, h, class, "p"+strconv.Itoa(i))
+		want += scheduler.ClassVCPU(class)
+	}
+	var got, guests int
+	if err := pool.QueryRow(ctx, "select vcpus, guests from host_reservations where host_id = $1", h).Scan(&got, &guests); err != nil {
+		t.Fatal(err)
+	}
+	if guests != 4 || got != want {
+		t.Fatalf("host_reservations: %d guests, %d vcpus; want 4 and %d from scheduler.ClassVCPU", guests, got, want)
+	}
+	// And the exported SQL agrees with the Go function class by class,
+	// which is what internal/api/http/samples.go and internal/api/abuse
+	// divide a guest's CPU by: a chart drawn against the wrong
+	// denominator shows half or double the CPU the machine used.
+	for _, class := range []string{"small", "large", "xl", "unknown"} {
+		var n int
+		if err := pool.QueryRow(ctx, "select "+scheduler.ClassVCPUSQL("$1::text"), class).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != scheduler.ClassVCPU(class) {
+			t.Errorf("ClassVCPUSQL(%q) = %d, ClassVCPU = %d", class, n, scheduler.ClassVCPU(class))
+		}
 	}
 }

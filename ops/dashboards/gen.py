@@ -355,7 +355,7 @@ def per_guest() -> dict:
             panel(
                 "timeseries", "CPU busy fraction",
                 [sql(f"select ts as time, cpu_ns / 60e9 as cpu from meter_samples {where} order by ts")],
-                desc="cpu_ns is the delta since the previous sample, 60 seconds apart, so this is cores busy. A small guest has 2.",
+                desc="cpu_ns is the delta since the previous sample, 60 seconds apart, so this is cores busy. A small guest has 1 vCPU, a large 2, an xl 4 (DECISIONS I-784).",
                 unit="none",
             ),
             panel(

@@ -40,7 +40,7 @@
     {
       "type": "timeseries",
       "title": "CPU busy fraction",
-      "description": "cpu_ns is the delta since the previous sample, 60 seconds apart, so this is cores busy. A small guest has 2.",
+      "description": "cpu_ns is the delta since the previous sample, 60 seconds apart, so this is cores busy. A small guest has 1 vCPU, a large 2, an xl 4 (DECISIONS I-784).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "repose-postgres"

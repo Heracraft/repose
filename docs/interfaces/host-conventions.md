@@ -247,8 +247,10 @@ stops until the freeze is done (DECISIONS I-652).
 
 `guests.slice` has `CPUWeight=100`; `nix-daemon.service` (tenant builds)
 has `CPUWeight=50`. Inside the slice each `guest@<id>` carries
-`CPUWeight=<vcpus*25>` (50, 100, 200 by class, DECISIONS I-737), so
-contention between guests divides in proportion to the class;
+`CPUWeight=<vcpus*50>` (50, 100, 200 by class, DECISIONS I-737; the
+multiplier doubled with I-784, which halved the classes' vCPUs, so the
+three weights are unchanged), so contention between guests divides in
+proportion to the class;
 `virtiofsd@<id>` and `virtiofsd-auth@<id>` stay at the default 100. Nix:
 `max-jobs 2`, `cores 8`, `min-free 50G`, `max-free 100G`, sandboxed,
 `trusted-users root` only.
@@ -288,7 +290,7 @@ hostd renders the `cloud-hypervisor` argv from the guest's system closure
 (`kernel`, `initrd`, `init`, `kernel-params`) and its record (DECISIONS
 I-27) and runs it with `systemd-run --unit guest@<id> --property
 MemoryMax=<class RAM + 512M> --property MemoryHigh=<class RAM + 384M>
---property CPUQuota=<vcpus*100>% --property CPUWeight=<vcpus*25>
+--property CPUQuota=<vcpus*100>% --property CPUWeight=<vcpus*50>
 --property Slice=guests.slice --property User=hostd` (MemoryHigh since
 I-230; a unit started earlier has only MemoryMax until its next start.
 CPUWeight since I-737; a unit started earlier keeps `cpu.weight=100`

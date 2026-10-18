@@ -6,12 +6,13 @@ import (
 	"github.com/heracraft/repose/internal/api/scheduler"
 )
 
-// How many seats one host can deliver (DECISIONS I-739). A seat is 8 GB
-// of running memory, and every class is 2 GB per guest vCPU (R3-2), so a
-// seat is also 4 guest vCPUs. The memory ceiling is what the host's
-// placeable memory divides into; the CPU ceiling is what its physical
-// cores can serve while typing still feels immediate, measured on prod
-// on 2026-10-14 (docs/proposals/2026-10-14-host-cpu-capacity.md §1 and
+// How many seats one host can deliver (DECISIONS I-739, I-784). A seat is
+// 8 GB of running memory, and every class is 4 GB per guest vCPU (I-784
+// amending R3-2), so a seat is also 2 guest vCPUs. The memory ceiling is
+// what the host's placeable memory divides into; the CPU ceiling is what
+// its physical cores can serve while typing still feels immediate,
+// measured on prod on 2026-10-14
+// (docs/proposals/2026-10-14-host-cpu-capacity.md §1 and
 // §3: past roughly one busy guest vCPU per physical core, keystroke
 // latency in every guest on the host goes from 2.7 ms to 17-45 ms). The
 // host delivers the smaller of the two, and the memory ceiling alone --
@@ -23,20 +24,28 @@ import (
 // chance that more than the host can serve are busy at the same moment
 // passes 5 percent. With n seats each busy an independent DutyCycle of
 // the time, the busy count is Binomial(n, DutyCycle), and the host can
-// serve UsableCoreFraction of its cores divided by a seat's 4 vCPUs.
+// serve UsableCoreFraction of its cores divided by a seat's SeatVCPUs.
 //
 // A seat whose machine placement would refuse is not a seat, so the CPU
 // ceiling is also never more than scheduler.PlacementVCPUPct allows --
 // 1.5 committed guest vCPUs per physical core (I-734, enforced by
-// placement in I-736), which is cores * 1.5 / 4 seats; capping the one by
-// the other is what keeps the two from disagreeing about the same host.
-// The burst figure binds on small hosts and the placement ratio on large
-// ones, so a `D248ls_v7` sells 46 seats where the proposal's table, which
-// has no placement term, says 53.
+// placement in I-736), which is cores * 1.5 / SeatVCPUs seats; capping
+// the one by the other is what keeps the two from disagreeing about the
+// same host.
+//
+// Which of the three ceilings binds moved with I-784. At 4 vCPUs to a
+// seat the CPU side bound nearly every shape; at 2 it is the host's
+// memory on the `D<n>ls_v7` line and the placement ratio on the
+// memory-rich `D<n>s_v7` line, and the burst figure only on the smallest
+// hosts. A `D64s_v7` sells 24 seats rather than 11, a `D16s_v7` 4 rather
+// than 1, and a 4-core staging host still sells the one seat it sold
+// before -- the change is not a uniform rise.
 
 const (
-	// SeatVCPUs is a seat's guest vCPUs: 8 GB at 2 GB per vCPU (R3-2).
-	SeatVCPUs = 4
+	// SeatVCPUs is a seat's guest vCPUs: 8 GB at 4 GB per vCPU, which is
+	// scheduler.ClassVCPU("large"), the class a seat is one of
+	// (SeatBytes). TestSeatVCPUsIsALarge pins the two together.
+	SeatVCPUs = 2
 
 	// DutyCycle is the share of its running time a seat is actually
 	// consuming its allocation. Measured on prod over 14 days to

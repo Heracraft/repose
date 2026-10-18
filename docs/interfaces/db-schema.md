@@ -64,7 +64,7 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
                 -- relay two users' logins to one guest. Destroyed rows keep
                 -- their history and are outside it.
 
-host_reservations (view: host_id, reserved_bytes, guests, vcpus)  -- class RAM, and class guest vCPUs, summed over projects placed on the host in a state that holds memory (vcpus: 0027, I-736)
+host_reservations (view: host_id, reserved_bytes, guests, vcpus)  -- class RAM, and class guest vCPUs, summed over projects placed on the host in a state that holds memory (vcpus: 0027, I-736; its per-class figures are 4 GB of class RAM per vCPU since 0028, I-784)
 
 config_revisions (id pk, project_id fk, fragment text, menu jsonb null,
               base_version text, status text,  -- building|built|applied|failed

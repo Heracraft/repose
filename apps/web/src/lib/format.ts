@@ -195,3 +195,15 @@ export function dayLabel(iso: string, now = new Date()): string {
 export function classMemoryGB(size: string): number {
 	return ({ small: 4, large: 8, xl: 16 } as Record<string, number>)[size] ?? 0;
 }
+
+/**
+ * A size class's vCPUs (DESIGN.md §5: small 1, large 2, xl 4 — 4 GB of
+ * the class's memory each, DECISIONS I-784); 0 for an unknown class.
+ * `scheduler.ClassVCPU` is where the figure changes: plans.test.ts, the
+ * test that reads Go source, parses it out of scheduler.go and out of
+ * the published table in content/docs/machine.md and fails when any of
+ * the three differ.
+ */
+export function classVCPUs(size: string): number {
+	return ({ small: 1, large: 2, xl: 4 } as Record<string, number>)[size] ?? 0;
+}

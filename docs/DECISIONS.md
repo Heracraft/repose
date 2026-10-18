@@ -77,7 +77,11 @@ disk, network. *Rejected:* no benchmark; a second provider from day one.
 
 **R3-2. Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1
 oversubscribed, memory never.** *Amended by I-734 (2026-10-15): the ratio
-is counted against physical cores, not the vendor's vCPUs, and it is 1.5.* *Rejected:* one or two classes. *Why:* Docker-
+is counted against physical cores, not the vendor's vCPUs, and it is 1.5.*
+*Amended by I-784 (2026-10-18): the classes are small 1/4, large 2/8, xl
+4/16 -- 4 GB of memory per guest vCPU, not 2. The memory, the disk and
+the prices are unchanged; only the vCPUs halve.*
+*Rejected:* one or two classes. *Why:* Docker-
 heavy test suites are the XL case people pay for; a balloon reclaiming memory
 mid-build turns "slow" into OOM.
 
@@ -20656,8 +20660,11 @@ commit they describe.
   live check are the conductor's.
 
 **I-734. The oversubscription ratio is counted against physical cores,
-not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15).** Amends
-R3-2, which is not rewritten. The classes and "memory never" are
+not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15).**
+*Amended by I-784 (2026-10-18): the ratio and its derivation stand, but a
+class gets half the vCPUs, so 1.5 per core now admits twice the memory --
+24 `large` guests on a `D64s_v7` where this entry's arithmetic gave 12.*
+Amends R3-2, which is not rewritten. The classes and "memory never" are
 unchanged; what changes is the denominator, and with it what the fleet
 will accept.
 
@@ -20929,7 +20936,11 @@ pointing at the wrong command.
   number to revisit, not this entry's.
 
 **I-739. The seat count is the smaller of a host's memory and its CPU
-ceiling, per host and then summed (cpu-weight, 2026-10-15).** Amends
+ceiling, per host and then summed (cpu-weight, 2026-10-15).** *Amended by
+I-784 (2026-10-18): a seat is 2 guest vCPUs, not 4, so every figure below
+doubles where the CPU ceiling bound it. A `D64s_v7` delivers 24 and
+host-01's shape 4; the memory ceiling binds on the `ls` line and the
+placement ratio on the `s` line.* Amends
 I-290, whose arithmetic -- "as many seats as the ready, undrained hosts
 have usable 8 GB blocks" -- is the oversell `LAUNCH.md` §3 was warning
 about by hand. A seat is 8 GB of running memory and, since every class is
@@ -23592,6 +23603,208 @@ renumbering the monitoring server; the owner chose this one).
 - *What the tests prove, and only that: the command line is built correctly.* `TestAgentWindowCommandCarriesThePrompt` holds the exact `new-window` command line for all five agents and for a stand-in binary with no form, which keeps `-d 'cat'` as before; `TestHostilePromptReachesTheAgentAsOneArgument` runs that line through a real tmux and asserts the words the started program receives; `TestPiRefusesAnAtPromptAsAnArgument` and `TestNoPromptNoArgument` hold the two refusals. All four fail with the table's lookup forced to "no form" (the before state: `argv = [], want ["--" "-n it's \"the $PATH\"...]`) and pass after. None of them is evidence that a prompt is submitted: no agent runs in them, only a stand-in that records its argv. `TestAgentWindowCommandTrustsOnlyForClaude` and `TestAgentWindowCommandTrustsPerAgent` were updated for the new parameter and still assert the old bare `-d '<agent>'` line for a window with no prompt. The typing path's own tests are untouched and still pass: `TestSubmitPromptPressesEnterAgainAndGivesUp`, `TestTypeAndEnterAloneLosesADroppedEnter`, `TestTypePromptResendsEnterIntoATmuxWindow`, `TestPendingPromptTypesAfterLogin`, `TestPromptSendAndSecondWindowNaming`, `TestPromptNotTypedIntoTrustDialog`.
 - *The pane must still report the agent, and two tests hold it.* The window now runs a shell command line instead of a bare word, so bash `-c` has to exec the agent rather than sit in front of it: `pane_current_command` is what `repose ps`, `windowNameFor` and guestd's detection read, and a `bash` there would make a working agent look like a shell. Started this way on the dev box, a real `claude` and a real `opencode` both report their own name, which is bash's exec of a simple command; both windows were made by hand, so that is the evidence the premise holds and the live check still looks at `repose ps`. The first draft of this entry said no Go test could cover it, because every test agent is a stand-in whose comm is its interpreter. That was wrong: the invariant lives in the string `agentStartCommand` returns, not in the running process. `TestWindowRunsASimpleCommand` asserts that whole string against the shape it must have, for every agent and for a binary with no form, across nine prompts including a leading `-`, a newline, a `$(...)` and 10 kB; `TestBashExecsTheAgent` asserts the same thing on a real bash by pid, a stand-in printing `$$` where a simple command makes that pid bash's own. Which catches what was measured: a subshell and a `;` list fail the pid test for all five agents, and so does a pipeline, but `cd . && <line>` does not, since bash still execs the last command of an `&&` list -- the string test is what catches that, and is therefore the regression guard while the pid test states the premise.
 - OWED, two numbers, neither of them run here. A live submission rate on a real `small` against prod, by I-752's own protocol, reported as two arms: **the pane idle at the moment the window is created**, and **the pane busy at that moment**, each over at least 20 trials, with a poll that outlasts the start. An idle 20 of 20 proves nothing on its own — it can pass by waiting rather than by fixing, which is how the two-second budget reached the queue and then did not hold. This box has no guest and no fleet, so neither arm exists yet, and I-752 stays open until both do.
+**I-784. The size classes go to 4 GB of memory per guest vCPU: small 1,
+large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739:
+R3-2's class table, the arithmetic I-734 read it with, and I-739's seat
+derivation, and with them PRICING.md's class shapes.** The memory,
+the disk and the price of every class are unchanged. Only the vCPU count
+halves, and it halves on all three, uniformly.
+
+A seat is 8 GB of running memory. That is what the plans sell, what the
+landing says and what billing meters. At 2 GB per vCPU an 8 GB seat also
+dragged 4 guest vCPUs behind it, and the measurement on prod on
+2026-10-14 (`proposals/2026-10-14-host-cpu-capacity.md` §1) put the
+smooth/not-smooth typing boundary at roughly *busy guest vCPUs ≈ physical
+cores*. So the vCPUs, not the memory, were what capped a host: a
+`D64s_v7` delivered 11 seats where its memory allowed 30, and $355 a
+month of its RAM was unsellable (proposal §3, item 1). At 4 GB per vCPU
+the two ceilings move back together. A `D64s_v7` delivers **24** seats
+instead of 11, a `D16s_v7` 4 instead of 1, and a Hetzner AX162-2 (48
+cores, 240 placeable GB) **30** instead of 17, all at *p* = 0.4 from
+`waitlist.HostSeats`. Those are the shipped figures, which are the
+proposal's §3 model *capped by I-739's placement term*, and the cap is
+why a `D64s_v7` is 24 and not the 25 the bare model gives: 32 cores x
+150 percent / 2 vCPUs a seat is 24, below the burst figure of 25. The
+proposal's table has no placement term and so reads one seat high on
+that shape, exactly as I-739 already recorded for a `D248ls_v7` (46
+shipped against 53 modelled).
+
+*The ratio is uniform, and that is why `small` goes to 1 vCPU.* The whole
+point is that a host's placeable memory fixes its guest-vCPU count
+whatever mix of classes is sold (proposal §3): placeable GB ÷ 4. If
+`small` kept 2 vCPU, a user running two `small` machines would commit 4
+vCPU for one 8 GB seat, twice what one `large` commits for the same
+memory, and the seat count would overstate that host's capacity by 2x for
+anyone who sells smalls. A seat count that is right only for one mix of
+classes is not a seat count. `TestClassVCPUIsFourGBPerVCPU` and the
+`are 4 GB of memory per vCPU, uniformly` case in `plans.test.ts` assert
+the ratio itself, not the three numbers.
+
+*What a user loses.* `-j2` where they had `-j4` on a `large`, `-j4` where
+they had `-j8` on an `xl`, and a `small` that is now a single vCPU. A
+heavy Rust or C++ compile roughly doubles. Against that, the measured
+fleet has guests 36-89 percent idle with steal at 1.2-3.7 percent and
+mean consumption around 0.05 cores, and the thing the owner reported was
+not slow builds but palpable typing latency in every guest, which is what
+the vCPU count caused (I-734). The trade is taken knowingly: a slower
+worst-case compile for a machine that types at 3 ms instead of 17-45, and
+a fleet that can sell twice the seats per host.
+
+*What this does the day it ships, stated plainly.* The seat derivation
+goes from 1 to 4 on host-01, so Plus (2 seats) becomes buyable again and
+the landing stops saying "Full for now" -- I-739's launch-blocking
+business fact is substantially undone, which is the point. host-01 also
+starts taking new projects again: its two `xl` and one `large` commit 10
+guest vCPUs where they committed 20, against the 12 its 8 cores allow
+(I-736). Read that honestly. The guests already running still have the
+vCPUs they were started with, so the host is carrying 20 while placement
+reads 10, until each of them next stops.
+
+*A running guest's vCPU count changes only at a cold start, and nothing
+restarts one.* `guest.Classes` is read by `create.go` (the `ch.Spec`
+whose `--cpus boot=` is the hypervisor's vCPU count) and by
+`GuestUnitProps`, both on the start path; reconcile reads
+`systemctl list-units 'guest@*'`, LVM and bbolt and never restarts a
+unit, as I-737's own weights and I-230's `MemoryHigh` also waited for a
+start. `repose resize --size <its current class>` stays the no-op it is
+-- the api changes `projects.class` and there is nothing to change -- so
+it is not a way to pick the new count up; `repose stop && repose start`
+is.
+
+*The freeze does not deliver it either, and that is the one thing a
+reviewer should check.* A host restart under I-652/I-686 re-renders
+`GuestUnitProps`, so the restored unit does get the new `CPUQuota` and
+`CPUWeight`, but `ch.RestoreArgs` is `--restore source_url=...` with no
+`--cpus`: the vCPU count comes from the saved VM state, and Cloud
+Hypervisor cannot change it across a restore. So on host-01, after the
+switch and restart that ship this, an `xl` that was never stopped has
+**8 vCPU threads inside a unit capped at `CPUQuota=400%`**. The capacity
+promise holds -- the class buys four cores and the cgroup is what
+enforces it -- but it is delivered by throttling eight threads to four
+cores rather than by giving the guest four, so the guest's load average
+can sit near 8 while four cores' worth runs, and that is a different
+symptom from a cold-started guest at 4 vCPUs. It resolves at the first
+stop/start of each machine, and only there.
+
+A user can see the gap meanwhile: `nproc` in a machine that has been
+running since before the deploy says 8 where the dashboard's Machine
+card and `/docs/machine` say 4, and the Usage CPU chart, which divides by
+the class (`samples.go`), reads such an `xl` at 100 percent whenever it
+uses more than four cores' worth, which it no longer can.
+`machine.md` says so for one release, in the sentence that already does
+the same job for pre-hostname machines.
+
+*The numbers are not renumbered where they follow.* `PlacementVCPUPct`
+stays 150, `UsableCoreFraction` 0.9, `DutyCycle` 0.4, `SeatTail` 0.05 and
+hostd's own admission unchanged. All of those are denominated in guest
+vCPUs, so halving the vCPUs a class gets doubles the memory each admits
+without moving a constant: 1.5 committed vCPUs per core on a `D64s_v7` is
+24 `large` guests where it was 12, against the 30 its memory allows
+(DESIGN §4). `CPUQuota` and `CPUWeight` are derived from `class.VCPUs`,
+so the quota halves with the class, which is what it is for.
+`CPUWeightPerVCPU` is the one constant that did move, 25 to 50: I-737
+chose the *weights* (small 50, large 100, xl 200), anchored on large
+sitting at the same 100 as the `virtiofsd@<id>` serving it, and letting
+the multiplier stand would have put every guest at half the weight of its
+own virtiofsd, a change to who wins contention that no entry asked for.
+`SeatVCPUs` did move, 4 to 2: a seat is one `large`, and
+`TestSeatVCPUsIsALarge` now pins it to `scheduler.ClassVCPU("large")` so
+the two cannot be set apart again.
+
+*Which ceiling binds flipped, and the seat count does not rise
+everywhere.* At 4 vCPUs to a seat the CPU side bound nearly every shape.
+At 2 it is memory on the `D<n>ls_v7` line (a `D64ls_v7` delivers 14 where
+its cores could place 24), the placement ratio on the memory-rich
+`D<n>s_v7` line (a `D64s_v7`, 24 against a burst figure of 25), and the
+burst figure only on the smallest hosts. A 4-core staging host served one
+seat before and serves one now. That reverses the proposal's "buy the
+low-memory line" (§3 item 1): the stranded resource on the `ls` line is
+now cores, and LAUNCH.md §3 says so.
+
+**OWED, and this is the limitation to read before trusting the figures
+above: the new seat counts are an inference from the proposal's §3 model,
+not a measurement.** The boundary was measured once, on 2026-10-14, at 20
+committed guest vCPUs on 8 physical cores, which was three guests. Nobody
+has run the latency probe against a host packed with 2-vCPU guests, and
+if the boundary tracks guest *count* rather than guest *vCPUs* -- each
+guest costs the host a virtiofsd, a tap, timer interrupts and a share of
+WireGuard crypt whatever its vCPU count -- then a host sold to 24 seats
+under this entry is sold past it and `HostCPUSaturated` fires later than
+it should. Owed: **run the §1 latency probe on a host filled with 2-vCPU
+guests and confirm the boundary tracks guest vCPUs rather than guest
+count** (§9 has the commands). RUNBOOK's `HostCPUSaturated` section
+carries the same warning for whoever is paged.
+
+- *Rejected: raise each class's memory instead*, keeping 2 GB per vCPU by
+  making `small` 2/8, `large` 4/16, `xl` 8/32. It balances the ceilings
+  the same way and needs no new reasoning about what a machine gets. It
+  also doubles the memory a class consumes, so a host holds half as many
+  customers at the same revenue per customer, and the seat -- 8 GB
+  running at once -- stops being a `large`, which is the unit the plans,
+  the landing, billing's gate and `SeatBytes` are all written in. Better
+  machines for fewer customers at the same price is a price cut taken
+  sideways; this entry's trade is the one the measurement argues for.
+- *Rejected: keep `small` at 2 vCPU*, on the grounds that a single vCPU
+  is a mean thing to sell. It reopens the hole above: two `small` would
+  commit 4 vCPU for one 8 GB seat and every seat figure would be a
+  function of the class mix. `small` at 1 vCPU is the cost of uniformity
+  and is recorded here as a cost, not as a feature.
+- *Rejected for now: per-class CPU weight deep enough that a batch guest
+  yields to an interactive one*, which is the proposal's open item 3 and
+  the thing that would let 4 vCPUs be sold again later. I-737 put the
+  weights in, but weight divides contention between guests; it does not
+  tell a guest's own build to get out of the way of its own keystrokes,
+  and nothing has measured how much latency that would buy. An unmeasured
+  mechanism cannot carry a price today.
+- *Rejected: an environment variable for the ratio*, for I-734's reason:
+  placement policy is a product promise, not an operational dial, and two
+  api apps with a numeric knob between them drift (`SEATS_TOTAL`'s own
+  warning in `ops/coolify/api-grpc.env.example`).
+- *Not done: PRICING.md "The cost floor" is still owed its
+  re-derivation* (I-739, proposal §7 item 6). Its warning now names the
+  right figure -- about $129 a seat on a `D64s_v7` rather than $281 --
+  but the arithmetic under it is still at 30 seats, and the prices are
+  the owner's call.
+- *The two signals that divide by the class's vCPUs, and why following
+  the constant is what keeps them honest.* The Usage card's CPU chart
+  (`samples.go`) and the `BusyUnattended` signal (`abuse.go`,
+  `repose_api_abuse_busy_unattended_projects`) both express "the share of
+  this machine's vCPUs that is busy", and both held their own inline copy
+  of the class table as the denominator. Both now call
+  `scheduler.ClassVCPUSQL`. Left alone, each would have divided a guest's
+  CPU seconds by twice the vCPUs the guest has: the chart would read a
+  flat-out machine at 50 percent, and `BusyUnattended`'s 90 percent
+  threshold would have become **unreachable for every class** -- a
+  1-vCPU `small` can accrue at most one core-second a second, which is 50
+  percent of the old denominator of 2 -- so a signal the owner relies on
+  to find a miner under another name would have gone permanently silent
+  with nothing failing. Following the constant keeps the trip point where
+  it was calibrated: a machine pinning every vCPU it has for six hours
+  with no SSH session, no tmux client and no agent in any sample. In
+  absolute cores the trip point does halve with the class, which is the
+  same halving the tenant's quota took; what a tenant must do to trip it
+  is unchanged, and the alert is an alert (`ops/alerts.yaml`: "Alert
+  only, nothing is stopped"), not a stop. The automatic stop is the
+  miner-name detector, which reads process names and no CPU figure at
+  all.
+- *Nine spellings of the class vCPU figure across eight files before
+  this; six across five after.* `scheduler.ClassVCPU` is the api's only Go copy and
+  `scheduler.ClassVCPUSQL` its only SQL one; `internal/api/http/samples.go`
+  and `internal/api/abuse` each had their own inline `case class when
+  'small' then 2 ...` and now call it, and `internal/fakes/api` had a
+  third and now calls `ClassVCPU` and `ClassRAM` as the real route does.
+  The project page's own table moved out of `+page.svelte` into
+  `format.ts` beside `classMemoryGB`. What is left is one copy per layer
+  that cannot import the others: the api's (`ClassVCPU` and the
+  `ClassVCPUSQL` beside it, the same figure in the one file), hostd's
+  `guest.Classes`, the CLI's `classSpecs`, the web's `classVCPUs`, and
+  the `host_reservations` view (migration 0028), which no Go can read. `TestClassSpecsMatchBillingAndHost` now pins the CLI's to
+  billing, hostd and `ClassVCPU`; `plans.test.ts` parses `ClassVCPU` out
+  of `scheduler.go` and checks the web's copy and the published
+  `/docs/machine` table against it; and
+  `TestHostReservationsVCPUsMatchClassVCPU` inserts one project of each
+  class and reads the view back, which is the only way the migration can
+  be held to the constant.
 **I-778. The host kernel is pinned apart from `nixpkgs`, and the host
 refuses to build below the patched version (cve-2026-99999,
 2026-10-18).** A guest-to-host escape, fixed by a version pin and an

@@ -216,7 +216,7 @@ Inputs: `project_id`, `guest_id`, `class`, `volume_bytes`, `system_closure`,
    directory (host-conventions.md "Filesystem").
 9. Cloud Hypervisor: `systemd-run --unit guest@<id> --property
    MemoryMax=<RAM+512M> --property CPUQuota=<vcpus*100>% --property
-   CPUWeight=<vcpus*25> --property
+   CPUWeight=<vcpus*50> --property
    Restart=no --property User=hostd` plus the sandbox properties of
    DECISIONS I-51 (`DevicePolicy=closed` with `/dev/kvm`, `/dev/net/tun`
    and the guest's volume allowed, a private view of the guests directory,

@@ -30,15 +30,40 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0027 (hosts.cores and host_reservations.vcpus, I-735, I-736) is the
-	// newest: its column and the view's column go, and nothing older
-	// does.
+	// 0028 (the class vCPU figures in host_reservations, I-784) is the
+	// newest, and it only replaces the view: hosts.cores and the view's
+	// own vcpus column, which 0027 added, survive its down. Then 0027's
+	// down takes both.
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
+	if n != 1 {
+		t.Fatal("0028's down took hosts.cores, which belongs to 0027")
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'host_reservations' and column_name = 'vcpus'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatal("0028's down dropped host_reservations.vcpus, which belongs to 0027")
+	}
+	// The reverted view sums 0027's own 2-GB-per-vCPU figures again: an
+	// xl is 8 there and 4 in 0028.
+	var viewdef string
+	if err := pool.QueryRow(ctx, "select pg_get_viewdef('host_reservations'::regclass)").Scan(&viewdef); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(viewdef, "ELSE 8") {
+		t.Fatalf("after 0028's down the view is not 0027's:\n%s", viewdef)
+	}
+	if down, err = db.MigrateDown(ctx, pool, 1); err != nil || len(down) != 1 {
+		t.Fatalf("down 1 again: %v %v", down, err)
+	}
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
 	if n != 0 {
-		t.Fatal("hosts.cores is still there after down 1")
+		t.Fatal("hosts.cores is still there after 0027's down")
 	}
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'host_reservations' and column_name = 'vcpus'").Scan(&n); err != nil {
 		t.Fatal(err)

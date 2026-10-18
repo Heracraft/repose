@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MEMORY_STATES, PLANS, fromApi, memoryLine, ordinal } from './plans';
+import { classMemoryGB, classVCPUs } from './format';
 
 // The landing is prerendered, so its plans are figures in the web's own
 // source (lib/plans.ts). plans.go is where a price changes (PRICING.md
@@ -14,6 +15,11 @@ const goSource = readFileSync(
 
 const usageSource = readFileSync(
 	join(__dirname, '..', '..', '..', '..', 'internal', 'billing', 'usage.go'),
+	'utf8'
+);
+
+const schedulerSource = readFileSync(
+	join(__dirname, '..', '..', '..', '..', 'internal', 'api', 'scheduler', 'scheduler.go'),
 	'utf8'
 );
 
@@ -143,5 +149,62 @@ describe('the states that hold a plan memory', () => {
 		if (!m) throw new Error('usage.go: no `const memoryStates = "..."`');
 		const go = m[1].split(',').map((s) => s.trim().replace(/'/g, ''));
 		expect([...MEMORY_STATES].sort()).toEqual([...go].sort());
+	});
+});
+
+// A size class's vCPUs live in four places a release can move apart: the
+// api's scheduler.ClassVCPU (where the figure changes), the project
+// page's own table through format.ts, the table published in
+// /docs/machine, and hostd's boot arguments, which the Go test
+// TestClassSpecsMatchBillingAndHost holds. This is the three the web can
+// read. I-784 halved them, from 2 GB of the class's memory per vCPU to
+// 4 GB; a page left at the old figure draws a machine's CPU against
+// twice the vCPUs it has.
+describe('the size classes', () => {
+	const CLASSES = ['small', 'large', 'xl'];
+
+	/** `case "small": return 1` out of a Go function body. */
+	function goClassFunc(name: string): Record<string, number> {
+		const body = schedulerSource.match(
+			new RegExp(`func ${name}\\(class string\\) int \\{([\\s\\S]*?)\\n\\}`)
+		);
+		if (!body) throw new Error(`scheduler.go: no func ${name}(class string) int`);
+		const out: Record<string, number> = {};
+		for (const [, cls, n] of body[1].matchAll(/case "(\w+)":\s*\n\s*return (\d+)/g)) {
+			out[cls] = Number(n);
+		}
+		const dflt = body[1].match(/default:\s*\n\s*return (\d+)/);
+		if (!dflt) throw new Error('scheduler.go: ClassVCPU has no default');
+		out.large = Number(dflt[1]);
+		return out;
+	}
+
+	it('take their vCPUs from scheduler.ClassVCPU', () => {
+		const go = goClassFunc('ClassVCPU');
+		expect(Object.keys(go).sort()).toEqual([...CLASSES].sort());
+		for (const c of CLASSES) expect(classVCPUs(c), c).toBe(go[c]);
+		expect(classVCPUs('nonesuch')).toBe(0);
+	});
+
+	// The ratio is uniform across the three, which is the whole of I-784:
+	// a host's placeable memory then fixes its guest-vCPU count whatever
+	// mix of classes is sold, so two `small` commit what one `large` does.
+	it('are 4 GB of memory per vCPU, uniformly', () => {
+		for (const c of CLASSES) {
+			expect(classMemoryGB(c) / classVCPUs(c), c).toBe(4);
+		}
+	});
+
+	// /docs/machine is the table a user reads, and agents read the
+	// markdown itself through llms.txt (I-660).
+	it('match the table published in /docs/machine', () => {
+		const md = readFileSync(join(__dirname, '..', 'content', 'docs', 'machine.md'), 'utf8');
+		for (const c of CLASSES) {
+			const row = md.split('\n').find((l) => l.startsWith(`| \`${c}\``));
+			expect(row, `${c} row`).toBeDefined();
+			const [, , vcpu, memory] = row!.split('|').map((x) => x.trim());
+			expect(Number(vcpu), `${c} vCPU`).toBe(classVCPUs(c));
+			expect(memory, `${c} memory`).toBe(`${classMemoryGB(c)} GB`);
+		}
 	});
 });

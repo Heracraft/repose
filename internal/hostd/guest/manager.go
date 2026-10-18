@@ -89,12 +89,20 @@ type Class struct {
 	DiskMBps uint64
 }
 
-// Classes are the three size classes from DESIGN.md §5. The disk caps are
-// each at most a quarter of a host data disk's 16,000 IOPS and 600 MB/s.
+// Classes are the three size classes from DESIGN.md §5: 4 GB of memory
+// per guest vCPU, uniformly across the three (DECISIONS I-784 amending
+// R3-2). The disk caps are each at most a quarter of a host data disk's
+// 16,000 IOPS and 600 MB/s. A running guest keeps the vCPUs it was
+// started with: VCPUs reaches the hypervisor only through create.go's
+// ch.Spec (--cpus boot=), and a freeze/restore does not carry it --
+// ch.RestoreArgs has no --cpus and the count comes from the saved VM
+// state -- so after a host restart a guest kept from before I-784 runs
+// its old vCPU threads inside the new, halved CPUQuota until its first
+// cold start. MemMiB and the disk caps are unchanged by I-784.
 var Classes = map[string]Class{
-	"small": {VCPUs: 2, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
-	"large": {VCPUs: 4, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
-	"xl":    {VCPUs: 8, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
+	"small": {VCPUs: 1, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
+	"large": {VCPUs: 2, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
+	"xl":    {VCPUs: 4, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
 }
 
 // OverheadMiB is what guest@<id> may hold beyond the guest's RAM. The RAM
@@ -124,7 +132,14 @@ const HighMarginMiB = 128
 // guests.slice and sit on its store-read path, so no guest is given more
 // than twice their weight. It divides contention; it does not add
 // capacity.
-const CPUWeightPerVCPU = 25
+//
+// The multiplier doubled with I-784, from 25 to 50, because the classes'
+// vCPUs halved and the three weights are the thing I-737 chose, not the
+// multiplier: the classes are still 1:2:4 to each other, and large still
+// sits at virtiofsd's own 100. Letting the multiplier stand would have
+// moved every guest to half the weight of the virtiofsd serving it,
+// which is a change to who wins contention that no entry asked for.
+const CPUWeightPerVCPU = 50
 
 // Error is a command failure with its documented code.
 type Error struct {

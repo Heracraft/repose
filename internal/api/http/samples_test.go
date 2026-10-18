@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"testing"
 	"time"
+
+	"github.com/heracraft/repose/internal/api/scheduler"
 )
 
 // TestProjectSamples: the samples route draws the rows hostd sends, as
@@ -26,7 +28,7 @@ func TestProjectSamples(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Two minutes in one bucket: a large (4 vCPU) machine at full CPU for
+	// Two minutes in one bucket: a large (2 vCPU) machine at full CPU for
 	// one minute and half for the next; the newer row carries pressure,
 	// the older one predates I-493 (mem_used 0). A third, stopped, row and
 	// a row older than the window are left out.
@@ -38,10 +40,14 @@ func TestProjectSamples(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ins(base.Add(5*time.Second), "running", 240e9, 0, 0, 6e6, 1<<30)
-	ins(base.Add(50*time.Second), "running", 120e9, 2<<30, 30e6, 0, 2<<30)
+	// A minute of every vCPU the class has, derived rather than written
+	// out, so the bucket stays "full, then half" when the class's vCPUs
+	// move (DECISIONS I-784) instead of reading as a tenth of a machine.
+	busy := int64(scheduler.ClassVCPU("large")) * 60e9
+	ins(base.Add(5*time.Second), "running", busy, 0, 0, 6e6, 1<<30)
+	ins(base.Add(50*time.Second), "running", busy/2, 2<<30, 30e6, 0, 2<<30)
 	ins(base.Add(55*time.Second), "stopped", 999e9, 9<<30, 60e6, 60e6, 9<<30)
-	ins(time.Now().Add(-2*time.Hour), "running", 240e9, 1<<30, 60e6, 60e6, 1<<30)
+	ins(time.Now().Add(-2*time.Hour), "running", busy, 1<<30, 60e6, 60e6, 1<<30)
 	for _, p := range []struct {
 		comm string
 		cpu  int64
@@ -58,7 +64,7 @@ func TestProjectSamples(t *testing.T) {
 	if r.status != 200 {
 		t.Fatalf("samples: %d %s", r.status, r.raw)
 	}
-	if r.body["window"] != "1h" || r.body["step_s"].(float64) != 60 || r.body["vcpus"].(float64) != 4 || r.body["memory_bytes"].(float64) != 8<<30 {
+	if r.body["window"] != "1h" || r.body["step_s"].(float64) != 60 || r.body["vcpus"].(float64) != 2 || r.body["memory_bytes"].(float64) != 8<<30 {
 		t.Fatalf("header: %s", r.raw)
 	}
 	pts := r.body["points"].([]any)

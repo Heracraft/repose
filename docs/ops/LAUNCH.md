@@ -88,18 +88,19 @@ months, limited to 20 redemptions) can go in the tweet.
 
 **Before you size the host, read
 [../proposals/2026-10-14-host-cpu-capacity.md](../proposals/2026-10-14-host-cpu-capacity.md).**
-Measurement on prod on 2026-10-14 says a `D64s_v7` delivers about 11
+Measurement on prod on 2026-10-14 says a `D64s_v7` delivers about 24
 seats, not 30: its 64 Azure vCPUs are 32 physical cores, and past roughly
 one busy guest vCPU per core typing in every guest on the host goes from
-3 ms to 17-45 ms. The api counts that now (I-739), so step 2 needs no
-hand-set number; what is left to you is the shape. The proposal argues
+3 ms to 17-45 ms. The api counts that now (I-739, I-784), so step 2 needs
+no hand-set number; what is left to you is the shape. The proposal argues
 for the `D<n>ls_v7` line, where a host's memory ceiling and its CPU
-ceiling nearly coincide, over step 1's `D64s_v7` (I-39), whose extra
-19 seats of RAM cannot be sold. The size is bounded by the Azure credit
-balance rather than by quota: `Total Regional vCPUs` in East US was
-raised from 65 to **350** on 2026-10-14 (40 used), so everything up to a
-`D248ls_v7` is creatable and only `D372s_v7` would need a further raise,
-of the regional total and of the `Dsv7` family.
+ceiling nearly coincide, over step 1's `D64s_v7` (I-39); I-784 inverted
+that, and the `D64s_v7` now delivers all 24 seats its cores can place
+while a `D64ls_v7` delivers 14 of the same 24. The size is bounded by the
+Azure credit balance rather than by quota: `Total Regional vCPUs` in East
+US was raised from 65 to **350** on 2026-10-14 (40 used), so everything
+up to a `D248ls_v7` is creatable and only `D372s_v7` would need a further
+raise, of the regional total and of the `Dsv7` family.
 
 0. Nothing to do: the launch host gets 10.255.0.4. The api numbers hosts
    on the edge's WireGuard network itself, and the second host would have
@@ -119,19 +120,26 @@ of the regional total and of the `Dsv7` family.
    move`.
 2. `SEATS_TOTAL` stays `0`, which derives the count from the ready hosts:
    per host the smaller of its 8 GB memory blocks after the reserve and
-   what its physical cores can serve (I-739). That is **1** on the
-   `D16s_v7` today and 11 on a `D64s_v7`. Set it on both api apps only to
+   what its physical cores can serve (I-739, I-784). That is **4** on the
+   `D16s_v7` today and 24 on a `D64s_v7`. Set it on both api apps only to
    sell fewer than that; above the derivation it is an oversell, and what
    it buys is every guest on the host typing at 17-45 ms. Check:
    `repose-admin seats` prints total, held, free, waiting and the two
    ceilings; the landing page's pricing section shows "N seats left".
-3. Expect host-01 to refuse new projects until the launch host is up.
-   Placement counts committed guest vCPUs against a host's physical cores
-   and refuses past 1.5 per core (I-736, I-734); host-01's 8 cores allow
-   12 and the guests already on it commit 20, so a create lands there only
-   once it is under 12. The refusal is `capacity`, and the api's
-   `schedule_fail` line says `reason=no_cpu`. Bring the launch host up
-   first, or move guests off with `repose-admin projects move`.
+3. host-01 takes new projects again, which it did not between I-736 and
+   I-784. Placement counts committed guest vCPUs against a host's
+   physical cores and refuses past 1.5 per core (I-736, I-734);
+   host-01's 8 cores allow 12 and the two `xl` and one `large` on it now
+   commit 10 rather than 20, so a create lands there. Read that as the
+   change it is and not as room found: those guests are still running
+   with the vCPUs they were started with (I-784), so the host is carrying
+   20 while placement reads 10 until each one next stops. A restart under
+   the freeze does not fix that: the restore carries the saved vCPU
+   count, only the cgroup quota is re-rendered. Watch
+   `HostCPUSaturated` (I-738) before putting a fourth project there. When
+   a create is refused the error is `capacity` and the api's
+   `schedule_fail` line says `reason=no_cpu`; move guests off with
+   `repose-admin projects move`.
    `repose-admin hosts list` and the `host_reservations` view show the
    committed figure.
 4. Your own account and any tester's: `repose-admin users exempt <handle>`
