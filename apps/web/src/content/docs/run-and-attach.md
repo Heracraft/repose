@@ -24,7 +24,7 @@ Window: claude-2
 
 `--agent` picks [another agent](/docs/agents) for this prompt.
 
-`run` types the prompt in as you would, so a question waiting on the agent's first screen would take it as the answer. Claude Code and Codex don't ask whether you trust the folder they start in: `run` marks it trusted before the agent starts, and hands Claude Code the `.mcp.json` answers you gave on your laptop for this repository. A question that shows up anyway is never typed into: `run` names it, leaves your prompt untyped and attaches you to answer it, and with `-d` exits 1 instead of attaching. An agent you start yourself in another folder asks you as usual.
+`run` starts the agent with your prompt on its command line, so the agent itself takes it as the first turn and nothing is typed into the terminal. Claude Code and Codex don't ask whether you trust the folder they start in: `run` marks it trusted before the agent starts, and hands Claude Code the `.mcp.json` answers you gave on your laptop for this repository. A question that shows up anyway waits for you in the window, and your prompt is not typed into it: Claude Code takes the prompt once you have answered. With `-d` the command still succeeds and says nothing about it, so a first screen nobody answers leaves your prompt waiting in the window until someone attaches and answers it. An agent you start yourself in another folder asks you as usual.
 
 If the agent already has a window, the new one is named `claude-2`, then `claude-3`. The CLI warns you then that the two agents share one working tree, and warns the same way when that agent is already running in a window of another name, such as `claude` typed in the `shell` window.
 

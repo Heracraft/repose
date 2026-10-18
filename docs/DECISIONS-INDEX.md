@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-788 entries.
+789 entries.
 
 ## Scope
 
@@ -793,7 +793,7 @@ pointer, not a summary.
 - **I-732** UpdateSecrets with no secrets is the empty set, and it keeps the sshd material (secrets-empty-push, 2026-10-14; amends I-26) — L22912
 - **I-744** A project with no remote of its own fetches from the checkout's origin; amends I-713 — 2026-10-15; L22955
 - **I-756** A full host says only that it is full, an upgrade refused for want of a seat names the waitlist, and the per-cause advice stays open because one code carries five causes — 2026-10-17; L22961
-- **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; L22975
+- **I-752** A typed prompt is checked and the Enter is pressed again; an unsubmitted prompt is said out loud — 2026-10-17; amended by I-780; L22975
 - **I-753** GuestAhead is about the checkout, not the .env files; amends I-248 — 2026-10-17; L22991
 - **I-754** A shell rc that cannot be appended to ends the install at exit 0, with the line to add — 2026-10-17; L22996
 - **I-755** `nix › ` is Nix's output and nothing else — 2026-10-17; L23001
@@ -819,4 +819,5 @@ pointer, not a summary.
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23442
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23525
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23551
-- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23582
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23582
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23595

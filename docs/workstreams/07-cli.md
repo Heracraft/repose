@@ -421,15 +421,21 @@ $ repose run
       deletion committed on the laptop is a deletion in the guest.
    Print one line `Credentials: gh, opencode` naming what step 5 copied.
 7. If `-p PROMPT` given: agent = `--agent` or project `agent_default`. Over SSH:
-   `tmux new-window -t <slug> -n <agent> -c <checkout> -d '<agent>'` (name
+   `tmux new-window -t <slug> -n <agent> -c <checkout> -d '<agent> <the
+   prompt's argument form>'` (name
    becomes the lowest free `<agent>-N`, N >= 2, if the window exists,
    DECISIONS I-253; with `--worktree`, which needs `-p`, the directory
    is a new `git worktree add -b worktree-<N> ~/<checkout>-worktree-<N> HEAD`
    and the name also skips any N whose worktree path or branch exists; a
-   checkout with no `.git` or no commit is refused with exit 2), wait until the pane has been
+   checkout with no `.git` or no commit is refused with exit 2). The prompt
+   is the agent's own initial-prompt argument, which its startup takes, so
+   nothing waits for the pane and nothing is typed (DECISIONS I-780,
+   amending I-752; the form per agent is `agentPromptArgs` in
+   internal/cli/mux_tmux.go). For an agent with no such form, the window
+   starts the bare `'<agent>'` and the CLI waits until the pane has been
    idle 1 second (`tmux display -p '#{pane_current_command}'` is the agent
    and no output for 1 s), then `tmux send-keys -t <slug>:<window> -l
-   '<prompt>'` and `send-keys Enter`. If the agent is `claude` and
+   '<prompt>'` and `send-keys Enter`, checking that it was taken (I-752). If the agent is `claude` and
    `~/.claude/.credentials.json` is missing or empty in the guest (`test -s`;
    the login share keeps an empty file there until the first login,
    DECISIONS I-278) and no
@@ -837,6 +843,10 @@ removes all of them including the `Include` line.
       opens `cat`, `cat-2`, `cat-3` and hands out a closed `cat-2` again;
       `TestPickWindowHasNoCap` (claude-10), `TestRunWorktree`,
       `TestRunWorktreeRefusals`, `TestRunWorktreeThenPlainRun`
+      I-780: a real agent's prompt now rides its own command line, so the
+      typed path those tests exercise is the stand-in's; the command line
+      itself is held by `TestAgentWindowCommandCarriesThePrompt` and
+      `TestHostilePromptReachesTheAgentAsOneArgument` (internal/cli)
 - [x] Claude not-logged-in path attaches instead of sending. Evidence:
       integration test. Closed: `TestRunClaudeNotLoggedInAttachesInstead`
       in internal/cli/run_e2e_test.go (commit d61bf56)

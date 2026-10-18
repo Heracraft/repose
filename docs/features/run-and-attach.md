@@ -3,7 +3,7 @@
 With no arguments, `repose run` puts you inside your project's session:
 tmux, or herdr on a project that chose it (DECISIONS I-501, I-502; "herdr projects" below). `repose run NAME`
 does that for the machine called NAME, created if there is none (I-603).
-With `-p PROMPT` it starts an agent in a new window (a tab on herdr), types the prompt, and
+With `-p PROMPT` it starts an agent in a new window (a tab on herdr) on that prompt, and
 leaves it running whether or not you stay attached. Everything above
 "herdr projects" describes tmux.
 
@@ -137,12 +137,21 @@ Session and windows (see `interfaces/guest-conventions.md`):
   checkout. The agent's interactive TUI runs in that window,
   never a headless or print mode, so the user can attach and see the live
   session with its history.
-- The prompt is typed into the TUI only once the TUI is up. The CLI polls
+- The prompt is the agent's own first argument: the window is created as
+  `tmux new-window ... -d '<agent> <the prompt's argument form>'`, and the
+  agent's own startup is what takes it (DECISIONS I-780). Nothing waits for
+  the TUI and nothing is sent to it.
+  The form per agent is `agentPromptArgs` (internal/cli/mux_tmux.go), one
+  comment each saying what was verified and how.
+- A prompt that cannot ride a command line is typed in instead, as it was
+  before I-780: an agent with no verified form, a prompt for a window that
+  is already open (`-w`, I-639), and the prompt the Claude Code login
+  waiter types after a login (I-607). The CLI then polls
   `tmux display -p '#{pane_current_command}'` and `tmux capture-pane`
   until the pane's process matches the agent and its content has been
   unchanged for 1 second, then `tmux send-keys -l '<prompt>'` followed by
-  a separate `Enter`, exactly as 07-cli.md §5.5 step 7 specifies (a single
-  `-l` send, not a bracketed paste).
+  a separate `Enter` (a single `-l` send, not a bracketed paste) and the
+  check that it was taken (I-752).
 - After starting the agent the CLI attaches to that window unless
   `--no-attach` was given. Detaching (`C-b d`) never stops anything.
 - `repose attach` attaches to the project's current window; there is no
