@@ -141,9 +141,11 @@ webhook, an email, a card or an amount a tenant typed.
 
 `repose_api_subscriptions{plan,status}` is the live subscriptions and
 `repose_api_mrr_cents{status}` the plan revenue a month they stand for
-(I-802). Both are set from the minute tick on every api replica and take
-no lock, so read them with `max()`, never `sum()`: the scrape lands on one
-replica of two. MRR is the api's reading of the `subscriptions` table at
+(I-802). Both are set from the minute tick, which runs in `api-grpc` alone (the
+ticks live in the grpc arm of `App.Run`), so they are scraped on its
+published port and not through the HTTP process's Traefik route. Read
+them with `max()`, never `sum()`, so a second instance cannot double
+them. MRR is the api's reading of the `subscriptions` table at
 the plan table's prices, with the founding discount taken off while it
 runs; Polar is the ledger of what was actually charged, and the two are
 reconciled by hand. It is right only while one list price per plan is

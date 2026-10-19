@@ -24212,13 +24212,16 @@ the things that end a launch quietly.
   nowhere and every check passed. The new step resolves each annotation
   against the headings. `repose-overview`, the largest dashboard, was also
   missing from the `--grafana` uid list.
-- *A release gate for the scrape.* Every new series here lives on `api`
-  or `api-grpc`, and `api`'s `/metrics` is served by a Traefik router
-  configured with ten labels pasted into Coolify by hand (I-133). Nothing
-  asserted that anyone had pasted them, so the whole money row and seven
-  of these rules could be silently unreadable. `CHECKLIST.md` now has the
-  gate, with `up{job="api"}`, the 403 from outside and a real MRR reading
-  as its evidence.
+- *A release gate for the HTTP scrape.* `api`'s `/metrics` is served by a
+  Traefik router configured with ten labels pasted into Coolify by hand
+  (I-133), and nothing asserted that anyone had pasted them, so
+  `ApiErrors`, the gate-refusal panel and `BillingWebhookErrors` could be
+  silently unreadable. `CHECKLIST.md` now has the gate. It covers the
+  HTTP process alone: `a.loops` runs inside the grpc arm of `App.Run`, so
+  the ticks and every gauge they set are in `api-grpc`, which publishes a
+  host port and is scraped without Traefik. The first draft of this gate
+  claimed the money row depended on the labels too; it does not, and the
+  mistake was reading an audit's summary instead of `app.go`.
 - *Not built.* A digest as an always-firing alert: a rule's annotation
   template sees only its own `$value`, so one alert carries exactly one
   number. The digest is I-810.

@@ -14,8 +14,11 @@ import (
 // figure's numerator; `repose_api_seats_total` and `_held` are its
 // denominator.
 //
-// They are set from the minute tick on every replica and take no
-// advisory lock. The seat gauges are set by the waitlist tick, which runs
+// They are set from the minute tick and take no advisory lock. That tick
+// runs in the grpc process alone (`App.Run` starts `loops` inside its
+// grpc arm), which is the single-instance one and is scraped directly on
+// its published port, so these gauges do not depend on the HTTP process's
+// Traefik-routed /metrics. The seat gauges are set by the waitlist tick, which runs
 // under a lock, so only the leader publishes them; a gauge that one
 // replica of two publishes is a gauge that is absent half the time it is
 // scraped, and a scrape that lands on the quiet replica reads nothing.
