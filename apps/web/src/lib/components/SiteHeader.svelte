@@ -17,6 +17,10 @@
 	/** A signed-in page with its own places beside the logo (I-679). */
 	let dash = $derived(dashboard && authState.authenticated);
 	let onDocs = $derived(page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/'));
+	/** The landing plays the mark's division once, where a visitor meets the
+	    brand; every other page shows it still, and a pointer or keyboard
+	    focus replays it anywhere (DECISIONS I-779). */
+	let onLanding = $derived(page.url.pathname === '/');
 
 	// The links' one look, as the dashboard's row and a project's tabs draw
 	// it: full height, so the current one's 1px ink edge lies on the
@@ -49,9 +53,9 @@
 				href={resolve('/')}
 				aria-label="repose, home"
 				class="-m-2 flex shrink-0 items-center self-center p-2 focus-visible:-outline-offset-2"
-				><span class="sm:hidden"><Logo size="sm" mark word={false} /></span><span
-					class="hidden sm:inline"><Logo mark /></span
-				></a
+				><span class="sm:hidden"
+					><Logo size="sm" mark word={false} divide={onLanding} /></span
+				><span class="hidden sm:inline"><Logo mark divide={onLanding} /></span></a
 			>
 			{#if dashboard && authState.authenticated}
 				<DashNav />

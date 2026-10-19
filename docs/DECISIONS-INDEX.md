@@ -817,11 +817,11 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23372
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23416
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23453
-- **I-779** The logo is a copy being made, caught just before it finishes — 2026-10-18; L23536
-- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23586
-- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23612
-- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23643
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23656
-- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23895
-- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23961
-- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24192
+- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; L23536
+- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23603
+- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23629
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23660
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23673
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23912
+- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23978
+- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24209
