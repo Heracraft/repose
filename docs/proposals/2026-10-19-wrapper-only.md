@@ -186,7 +186,51 @@ own:
 If those four do not justify the price, the hosted host was not saving
 the product either.
 
-## 6. Work in order, if it goes ahead
+## 6. The model: single digit hosted, identical self-hosted
+
+Coolify's shape, and the owner's call on 2026-10-19: the control plane
+hosted for a single-digit monthly price, on hardware the user brings,
+and the identical software fully self-hostable for nothing.
+
+It is closer than it looks. `snapshot.Blob` and `secrets.KeyVault` are
+already interfaces with file backends beside the Azure ones, the control
+plane already ships as a compose file on Coolify, and hosts already dial
+out for everything, so nothing in the design assumes our cloud is on the
+other end.
+
+Four things the model demands:
+
+- **No feature gates.** Every feature works with no hosted control plane.
+  That rules out anything that depends on us holding something — hosted
+  snapshot keys, api-side magic — and it is also what makes the
+  self-hosted version trustworthy enough to be the funnel.
+- **The licence is decided before the first public tag**, because it
+  cannot be taken back. AGPL on the server with a permissive CLI stops
+  someone reselling the control plane; Apache-2.0 is what Coolify chose
+  and lives with. Either way the price is capped forever at "run it
+  yourself for free".
+- **Distribution becomes the job.** $9 times 30 users is $270, where the
+  $49 ladder cleared about $1,400. The same money needs roughly 160
+  subscribers, and most people who install it will never be one. The open
+  repository is the growth engine, not a gift on the side.
+- **Write the target down first.** At $9 and the few percent of
+  self-hosters who convert, thousands of installs are the floor, not the
+  ambition. That number decides whether this is a business or a hobby
+  with users, and it should be on paper before the paid half is built.
+
+**Order: self-host first.** No billing, no seats, no relay, no card. It
+is the cheapest validation the product has ever had access to, and it
+answers "will anyone install this" before anything is charged for.
+
+What stays on our side is the whole of what the subscription buys: the
+account and project registry, so `repose ls` spans every machine they
+own; notification ingest and delivery; the agent wrappers and the
+environment base kept current as five agents change weekly; and
+**reachability** — brokering a connection to a box behind a home NAT.
+That last one is the piece that must not be handed to Tailscale. Hand it
+over and the hosted version has nothing left to sell.
+
+## 7. Work in order, if it goes ahead
 
 1. **Decide and build undo** (M, 5-8 days). The mechanism above, on one
    box, with the rewind-stops-the-project rule and a guard that deletes
@@ -217,14 +261,19 @@ the product either.
 Steps 1 and 2 are enough to use it yourself and to put it in front of
 users. Steps 5 to 7 are what make it sellable.
 
-## 7. What this does not answer
+## 8. What this does not answer
 
 Each of these is its own `DECISIONS.md` entry when it is settled, and
 none should be answered in code first:
 
+- The licence, and whether the CLI and the server carry the same one.
+- The install count and conversion rate that make the single-digit price
+  a business, written down before the paid half is built.
+- Whether the relay is ours or the user brings Tailscale — the one
+  question that decides whether a subscription exists at all.
+- The price of a hosted account, and whether the plan table is replaced
+  or dropped.
 - Whether the hosted host stays as the no-hardware option, or goes.
-- The price of a wrapper-only account, and whether the plan table is
-  replaced or dropped.
 - Where the project's Nix store lives, and so whether a rewind undoes an
   environment change.
 - Whether rewind points ever leave the user's box, and if so to whose
