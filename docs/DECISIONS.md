@@ -24170,3 +24170,134 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-812. A project may live on a plain machine the user owns, reached by
+ordinary SSH, with no guest, no gateway and no control plane
+(wrapper-spine, 2026-10-19).** Extends I-647, which chose shape A (the
+hosted control plane with hosts the user owns). Scopes DESIGN.md §3's
+isolation rule rather than changing it. *Made during implementation*
+(owner, 2026-10-19, in conversation: "maybe we can provide value with just
+the repose wrapper on top of machines people own without being a hardware
+provider. no ssh gateway, no kvm stuff").
+- *Why the microVM goes.* DESIGN.md §3 says isolation between users "is
+  the hypervisor boundary (Cloud Hypervisor on KVM), never a container
+  boundary". That rule is correct and it binds only where strangers share
+  one machine. A box the user owns has one tenant, so the microVM is not
+  a feature being removed — it was the price of multi-tenancy, and the
+  price is not owed. The rule stands unchanged for host-01 and every
+  shared host.
+- *Why the gateway goes.* It exists because a guest has no address of its
+  own on our host (`interfaces/ssh-gateway.md`). A machine the user owns
+  has one. Reaching a box behind NAT is the user's own arrangement in this
+  shape, Tailscale included; see I-816 for why that is the one piece worth
+  selling later.
+- *What the spine is.* `repose machine add` installs an agent on the box
+  over SSH; the CLI holds the machine registry and the project map in
+  `~/.config/repose/`; `repose run`, `attach`, `sync` and `rewind` reach
+  the box as an ordinary SSH host. No api, no billing, no seats, no
+  scheduler, no class. `docs/workstreams/SPINE.md` is the contract and
+  `proposals/2026-10-19-wrapper-only.md` is the reasoning.
+- *The login user is the box's own owner, not `dev`.* CLAUDE.md fixes
+  `dev` as the guest user, and that is unchanged for guests. A machine the
+  user owns already has an owner, and creating a second account on
+  somebody's workstation to run their own agents is an imposition with no
+  isolation benefit: there is one tenant either way.
+- *What is deliberately untouched.* hostd, the guests, guestd, the
+  gateway, the api, billing and the `small|large|xl` classes. The hosted
+  product keeps working byte-identically. The api's own change is the
+  widest blast radius in the repo — the class enum is pinned by
+  migrations, protos, the dashboard and the landing; `billing/gate.go`'s
+  memory and disk terms are the whole of what a subscription buys today;
+  and `projects_guest_ip_live` was added after an incident — so none of it
+  moves before a user has walked the spine once.
+- *Rejected:* shape A's own route first (NixOS over the user's disk, KVM,
+  the WireGuard hub), which keeps hostd and six work items, and whose own
+  proposal names "NixOS takes over the disk" as the biggest product risk;
+  a container per project (it covers system packages too, but it moves the
+  whole runtime off systemd-on-NixOS and replaces the environment story,
+  three to five weeks for a shape nobody has yet asked for).
+
+**I-814. Undo on a machine we do not own is a btrfs subvolume, and a
+rewind stops the project first (wrapper-spine, 2026-10-19).** Scopes
+R3-6 (snapshots streamed to Blob) to hosts we own. *Made during
+implementation*, on measurements taken before the code was written:
+`research/wrapper-undo.md`.
+- *Why it had to be measured.* Undo is what the 2026-09-26 research
+  narrowed the product to, with the demand written down (openai/codex#9203,
+  513 reactions; anthropics/claude-code#87575; HN 45505879). It is also
+  the one feature that dies with the microVM, so the shape of I-812 is
+  only sound if undo survives it.
+- *The numbers*, on a 37,218-file project with a 200 MB incompressible
+  database, on btrfs with `compress=zstd:1` in a sparse file on ext4: a
+  point costs **0.13 s and 32 KiB**, a fork **0 s**, and a rewind of a
+  wrecked project **2.19 s**, with all 37,218 files back, the database
+  byte-identical and `git status` clean. Keeping a point costs only the
+  blocks that change afterwards: 100 MiB when 100 MB of the database is
+  rewritten.
+- *The loopback file is the product decision.* btrfs in a file on the
+  filesystem the box already has costs 3 percent on a sequential write and
+  nothing measurable on 5,000 small files, so the install asks for an SSH
+  login and a package rather than a disk or a repartition. That is the
+  answer to the ask that I-647's proposal named as its biggest risk.
+- *A rewind stops the project's processes first.* Measured: with a writer
+  running inside the subvolume the swap succeeds anyway, the writer stays
+  alive, and it goes on writing into a subvolume no path reaches. So the
+  backend verifies quiescence (nothing holding a cwd or an fd under the
+  live area) and refuses with `busy` rather than trusting the caller, and
+  `repose-agent quiesce` is what the CLI calls first. A rewind that
+  forgets this loses the agent's last writes silently, which is worse than
+  refusing.
+- *A rewind is itself undoable.* It takes a point of the current state
+  before it swaps, and swaps by rename, so a failure leaves the
+  pre-rewind state live. This is I-461's "a failed restore leaves no
+  half-written volume" restated for subvolumes.
+- *Points are not a backup.* They live on the user's disk and that disk
+  dying takes them. git is the offsite copy; `btrfs send` to the user's
+  own bucket is a later option, not a promise, and the docs say so.
+- *Rejected: ZFS*, whose `snapshot`, `rollback`, `clone` and `diff` are a
+  better fit on paper, because it is an out-of-tree module that breaks on
+  a kernel upgrade of a machine nobody on the team can log into. It is
+  worth using where a pool already exists; it is not worth requiring.
+  *Rejected: file-level checkpoints* (a shadow git repository, the shape
+  of `/rewind`-class tools): 0.09 s when two source files changed, but
+  2.48 s and 447 MB when 20 MB of the database did, and it cannot bring
+  back a database or `node_modules` the way a block-level point does —
+  which is precisely what the codex and claude-code issues complain about.
+  *Rejected: a container overlay*, which covers system packages too but
+  commits layers in seconds and replaces the environment story.
+
+**I-816. The model is a single-digit hosted control plane on hardware the
+user brings, plus an identical self-hostable version, self-host first
+(wrapper-spine, 2026-10-19).** Sets the direction for I-672's price
+ladder; I-672's prices stand until something ships under this one. *Made
+during implementation* (owner, 2026-10-19: "i think coolify is a good role
+model, charge single digit for a byo hardware hosted version at single
+digits and have an identical version that is fully selfhostable").
+- *Why.* Every hosted seat loses $5 to $10 a month even on Hetzner
+  (I-642), and the funnel was capped by hardware: fifty users meant a
+  second host and a bigger loss. With the user's own hardware the cost of
+  serving one more user is a row in Postgres, so repose can be put in
+  front of fifty people in a week. The 2026-09-27 demand evidence already
+  put the ceiling at $10 a month.
+- *No feature gates.* Every feature works with no hosted control plane.
+  That rules out anything that depends on us holding something, and it is
+  what makes the self-hosted version trustworthy enough to be the funnel.
+- *The licence is settled before the first public tag*, because it cannot
+  be taken back: once the self-hostable version is out, the price is
+  capped forever at "run it yourself for free". AGPL on the server with a
+  permissive CLI, or Apache-2.0 as Coolify chose, is still open and is its
+  own entry.
+- *What a subscription buys*, and the only things left on our side: the
+  account and project registry so `repose ls` spans every machine they
+  own, notification ingest and delivery, the agent wrappers and the
+  environment base kept current as five agents change weekly, and
+  reachability — brokering a connection to a box behind a home NAT. Hand
+  reachability to Tailscale and the hosted version has nothing left to
+  sell.
+- *Distribution becomes the job.* $9 times 30 users is $270 where I-672's
+  ladder cleared about $1,400, so the same money needs roughly 160
+  subscribers and most installs will never be one. The install count and
+  conversion rate that make this a business go on paper before the paid
+  half is built; that number is its own entry.
+- *Order:* self-host first — no billing, no seats, no relay, no card.
+  I-812's spine is that first half.
