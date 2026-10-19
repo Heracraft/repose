@@ -81,6 +81,27 @@ other end of those.
    tables' partitions itself. `sql/partitions.sql` is the same maintenance as
    SQL functions, for an operator whose api is down (`psql -f
    sql/partitions.sql`, then `select * from repose_partitions_maintain();`).
+   `sql/launch.sql` is the launch window's twelve per-account questions
+   (DECISIONS I-804); run it as `grafana_ro`, the same role step 5 creates:
+   `psql "$DATABASE_URL" -f sql/launch.sql`.
+7. **The daily digest** (DECISIONS I-810). One Chat message at 08:00 with
+   the launch numbers, from the box that can reach Prometheus and Postgres
+   at once.
+
+   ```
+   install -m 0755 -D digest/digest.py /opt/repose/ops/digest/digest.py
+   install -m 0644 digest/repose-digest.service digest/repose-digest.timer        /etc/systemd/system/
+   printf 'DATABASE_URL=postgres://grafana_ro:...@.../repose
+'        >/etc/repose-digest.env && chmod 0600 /etc/repose-digest.env
+   systemctl daemon-reload && systemctl enable --now repose-digest.timer
+   ```
+
+   It needs `psql` on PATH and reads the Chat webhook from the file calert
+   already holds (`CHAT_WEBHOOK_FILE` in the unit), so it adds no secret.
+   Check it before enabling the timer: `DATABASE_URL=... /opt/repose/ops/digest/digest.py --dry-run`
+   prints the message and sends nothing. A source it cannot reach prints
+   `?` for its own numbers and the rest still goes, so question marks in
+   the first message are an exporter to fix, not a broken digest.
 
 ## Locally
 
@@ -93,8 +114,8 @@ ops/dev/pgcheck.sh                    # schema, synthetic samples, every panel's
 
 Grafana is then on `http://<this box's Tailscale address>:3000` (anonymous
 admin, folder `repose`); Prometheus on `:9090`. `ops/check.sh --grafana` does
-the same thing non-interactively and asserts that seven of the eight
-dashboards loaded (it does not check the overview).
+the same thing non-interactively and asserts that all eight dashboards
+loaded (the overview was missing from the list until I-800).
 
 `docker compose -f ops/dev/docker-compose.yml down -v` removes it, volumes
 included.

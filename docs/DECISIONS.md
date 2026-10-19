@@ -24170,3 +24170,186 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-800. Seven alert rules on counters that already incremented, the
+rollup's lag gauge rises on its own, and `ops/check.sh` checks that a
+rule's runbook anchor resolves.** (launch-metrics, 2026-10-19) An audit of
+the launch's metrics found the fleet instrumented for liveness and blind to
+the things that end a launch quietly.
+- *The shape of the gap.* Five counter families incremented and no alert
+  read them: `repose_api_requests_total` by status, `repose_api_ops_total`
+  at `state="error"`, `repose_api_schedule_total` at `no_capacity` and
+  `no_cpu`, `repose_gateway_dial_fail_total`, and
+  `repose_host_snapshot_duration_seconds` at a result other than `ok`.
+  Instrumentation nobody reads costs what no instrumentation costs. The
+  rules are `ApiErrors`, `OpsFailing`, `ScheduleRefused`,
+  `GatewayDialFailing`, `SnapshotFailing`, plus `BillingWebhookErrors` and
+  `BillingGap` on the two money paths that fail silently.
+- *Why `BillingWebhookErrors` is absolute, not an `increase()`.* The first
+  error of a kind arrives as a brand-new series at 1, and `increase()` over
+  a window that the series appears in can read that as no rise. The rule
+  counts the total, so it fires once and stays firing until an operator
+  reconciles the account and silences it with a comment. A dropped
+  subscription event does not heal by itself, so an alert that clears by
+  itself would be wrong.
+- *`RollupLag` could not fire.* `repose_api_rollup_lag_seconds` was `Set`
+  only at the end of `Rollup.Hour`, which is reached by the replica that
+  wins the advisory lock and only after the hour was written. A rollup that
+  errored every hour, or never won the lock, left the gauge at its zero
+  value, which reads as perfectly fresh. `Rollup.Lag` now reads `max(hour)`
+  from `usage_hours` and publishes the age on every replica's minute tick,
+  outside the lock. The alert and its promtool case were correct all along
+  and had nothing to read.
+- *Thresholds for tens of projects, not thousands.* `OpsFailing` and
+  `ScheduleRefused` fire on one event. Each runbook heading says to raise
+  the threshold rather than widen the window when the fleet grows, because
+  a share hides a failure that hits one user from a failure that hits
+  every user.
+- *The anchor check.* `ops/check.sh` asserted that every alert name is a
+  heading in `RUNBOOK.md`, which `FluentBitStuck` satisfied while its own
+  `runbook:` annotation pointed at `#observability`, a heading that has
+  never existed. The one link an operator follows mid-incident went
+  nowhere and every check passed. The new step resolves each annotation
+  against the headings. `repose-overview`, the largest dashboard, was also
+  missing from the `--grafana` uid list.
+- *A release gate for the scrape.* Every new series here lives on `api`
+  or `api-grpc`, and `api`'s `/metrics` is served by a Traefik router
+  configured with ten labels pasted into Coolify by hand (I-133). Nothing
+  asserted that anyone had pasted them, so the whole money row and seven
+  of these rules could be silently unreadable. `CHECKLIST.md` now has the
+  gate, with `up{job="api"}`, the 403 from outside and a real MRR reading
+  as its evidence.
+- *Not built.* A digest as an always-firing alert: a rule's annotation
+  template sees only its own `$value`, so one alert carries exactly one
+  number. The digest is I-810.
+
+**I-802. The api publishes what the fleet earns:
+`repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`,
+and a gate refusal carries the plan it was refused on.**
+(launch-metrics, 2026-10-19)
+- *Why.* Seats were counted and what they earn was not. No dashboard read
+  `repose_api_seats_total` or `_held`, and no revenue figure existed in any
+  form, so the one number that says whether a sold seat covers its host --
+  fill against the cost floor -- could not be read anywhere. The fleet pays
+  for every seat a host delivers around the clock and earns only on the
+  sold ones (PRICING.md "Seats and the waitlist").
+- *Where they are set.* `billing.Fleet.Refresh`, from the minute tick, on
+  every replica, under no advisory lock. The seat gauges are set by the
+  waitlist tick, which does hold a lock, so only the leader publishes them
+  and a scrape landing on the other replica reads nothing; these cost one
+  grouped count over a table of tens of rows, so every replica can afford
+  the truth. Read them with `max()`, never `sum()`.
+- *Every pair, including the zeroes.* `Reset()` on a GaugeVec drops a
+  series Prometheus has seen, and a panel dividing by a dropped series
+  renders blank where it should render zero. The nine plan-status pairs are
+  enumerated and set.
+- *What MRR is, and is not.* The api's reading of the `subscriptions` table
+  at the plan table's prices, with the founding discount subtracted while
+  `intro_until` has not passed. Polar is the ledger of what was charged.
+  The figure is right only while one list price per plan is live, because
+  no price is stored per subscription; the same gap stops the api holding a
+  subscription's price for 12 months (`proposals/2026-10-11-price-level.md`
+  §6), and the metric's help string says so.
+- *The `plan` label on refusals.* `repose_api_billing_gate_refused_total`
+  gained `plan` ("none" for an account without one). A `plan_limit`
+  refusal on Solo is an upgrade worth $40 a month; the same refusal across
+  every plan says the 8 GB entry seat is too small for the work. Without
+  the label the two are one number. The plan was already extracted for the
+  log line beside it.
+- *Not built.* `repose_api_seats_running` as its own gauge: the numerator
+  is already scraped as `repose_host_guests{state,class}`, so running
+  memory is a PromQL expression over class memory, and a second source for
+  one number is a second source to disagree with the first.
+
+**I-804. `ops/sql/launch.sql`: the launch's per-account questions as
+twelve queries, not as metrics.** (launch-metrics, 2026-10-19)
+- *Why not Prometheus.* `internal/obs/metrics` refuses `project_id` and
+  `user_id` as labels at registration and stops the binary at startup, and
+  every question here is per-account or per-cohort: who converted, who went
+  quiet, which cohort is still paying, whose disk is near the cap. Postgres
+  already holds the answers, and `usage_hours`, `events` and `audit_log`
+  are kept for ever.
+- *What it costs.* No Go, no migration, no deploy. The `repose-postgres`
+  Grafana datasource already exists; what the server still needs is the
+  `grafana_ro` role and two environment variables.
+- *Two of the audit's questions had no source and were replaced.* A plan
+  change writes no `audit_log` row and `subscriptions` keeps no history of
+  the plan a row was on, so the direction of past changes is only in
+  Polar's dashboard; Q7 reports the mix as it stands with the downgrades
+  already scheduled in `scheduled_plan`, which is churn with a date on it.
+  "Ever ran a machine" reads `projects.started_at`, not an event kind,
+  because `started_at` survives the machine being stopped again.
+- *Evidence.* Every query was run against a Postgres with all 29
+  migrations applied, empty and then seeded; the activation,
+  founding-burn and disk-against-plan arithmetic was checked against the
+  seeded figures by hand.
+
+**I-806. `usage_hours` records `attended_seconds` and
+`unattended_agent_seconds`.** (launch-metrics, 2026-10-19)
+- *The claim, measured.* The product is sold on the agent working after the
+  laptop closes, and nothing counted whether it did. A sample is attended
+  when `ssh_sessions > 0` or `tmux_clients > 0`, and unattended-agent when
+  nobody is attached and an agent's state is neither `idle` nor
+  `needs_input` -- the same test `idle.usedSQL` makes. The two are disjoint
+  by construction.
+- *Why before launch and not after.* It cannot be backfilled.
+  `meter_samples` is kept 90 days and `usage_hours` for ever, so a launch
+  cohort's activation would be unanswerable by month four. The columns are
+  two `count(*) filter (...)` terms in the group-by the rollup already
+  runs.
+- *What they do not carry.* Seconds only. Never what the agent did, its
+  prompt, its output, or a window title (OBSERVABILITY.md "Log field
+  rules").
+- *One test was coupled to being last.* `TestMigrateUpDownUp` stepped down
+  once and then asserted the state after 0028's down, which held only
+  while 0028 was the newest migration: adding 0029 failed it, and the
+  failure said nothing about either migration. It now counts the
+  migrations after 0028 and reverts them first, so the next migration adds
+  a step and changes nothing else.
+
+**I-808. `repose-admin projects show` no longer prints "cost today"; what
+a destroy keeps is owed a decision.** (launch-metrics, 2026-10-19)
+- *The row that was always $0.00.* `cost today` summed `usage_hours.cost_cents`,
+  which the rollup writes as zero by design since plan-v1 (`billing/plans.go`),
+  so the figure was `$0.00` for every project, always, and
+  `OBSERVABILITY.md` told the operator to start there. It is the first
+  thing anyone reaches for to ask whether a tenant is profitable, and it
+  answered with a constant. The row and the words are gone; what an
+  account owes is its plan, its egress against the allowance and its disk,
+  which `repose-admin billing show` prints. This is the doc being wrong
+  rather than the code: `08-dashboard.md`'s table still lists a cost
+  column, and the dashboard has never rendered one.
+- *The snapshots, left alone and owed a decision.* `markDestroyed` sets
+  `expires_at = now() + 30 days` on every live snapshot of the destroyed
+  project. R4-11, `features/snapshots.md` and every public line
+  ("A final snapshot is kept for 30 days") say the LAST one, and a project
+  may hold seven dailies, so a destroy keeps up to seven times the bytes
+  those lines promise. The fix was written and then reverted, because
+  `apps/web/src/content/docs/lifecycle.md` ("Destroy and restore") and
+  `cli.md`'s `restore` row promise the other half: "`--snapshot ID` picks
+  an older snapshot" of a destroyed project, which works only while the
+  older ones are kept. Two user-visible promises disagree, and which one
+  goes is the owner's call, not an implementation detail: keeping them all
+  costs blob bytes nobody has measured, and keeping one removes a
+  documented restore path in launch week. A test asserts today's behaviour
+  precisely (`ops_test.go`, "keep the snapshot 30 days"), so this was
+  deliberate once. Whichever way it goes, it ships with the docs edit in
+  the same commit.
+
+**I-810. A daily digest to Google Chat, from a timer on the personal
+server.** (launch-metrics, 2026-10-19)
+- *Why not alerts.* Seat fill, MRR, trial conversion and activation are
+  read once a day and acted on over a week. An alert on them either
+  repeats every 12 hours or never clears, and a Prometheus annotation can
+  carry one number, because the template sees only its own `$value`.
+- *Where it runs.* `ops/digest/digest.py` with a systemd timer at 08:00,
+  on the personal server: the one host that reaches both Prometheus and
+  Postgres, where calert's Chat webhook already is. It adds no secret and
+  reads the webhook from calert's own file.
+- *Through `psql`, not a driver.* A digest that needs a Python package
+  installed on that box is a digest that stops working after the next
+  rebuild. Every runbook step reads this database with `psql` already.
+- *It degrades.* A source that cannot be reached prints `?` for its own
+  numbers and the message still goes. A digest that fails whenever one
+  exporter is down is a digest nobody trusts, and the eight numbers are
+  independent.

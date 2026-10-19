@@ -335,7 +335,7 @@ tests:
             exp_annotations:
               summary: "Fluent Bit on host-01 cannot ship to Loki"
               description: "Retries have been failing for 30 minutes. Chunks buffer to /var/lib/fluent-bit up to 1 GB, then the oldest are dropped."
-              runbook: "docs/ops/RUNBOOK.md#observability"
+              runbook: "docs/ops/RUNBOOK.md#fluentbitstuck"
 
   - interval: 1m
     name: FluentBitStuck stays quiet while retries succeed
@@ -1184,3 +1184,197 @@ tests:
       - eval_time: 5m
         alertname: MonitoringPathDown
         exp_alerts: []
+
+  # --- the launch window's rules (I-800) ----------------------------------
+  - interval: 1m
+    name: ApiErrors fires on the route over 5 percent and leaves the healthy one alone
+    input_series:
+      - series: 'repose_api_requests_total{job="api",route="POST /projects",method="POST",status="500"}'
+        values: "0+1x30"
+      - series: 'repose_api_requests_total{job="api",route="POST /projects",method="POST",status="200"}'
+        values: "0+1x30"
+      - series: 'repose_api_requests_total{job="api",route="GET /projects",method="GET",status="200"}'
+        values: "0+10x30"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ApiErrors
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ApiErrors
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              route: "POST /projects"
+            exp_annotations:
+              summary: "api route POST /projects is answering 50% 5xx"
+              description: "Loki `{component=\"api\"} | json | status >= 500` has the request_id and the route. /healthz answering 503 is Postgres or a migration, not the route."
+              runbook: "docs/ops/RUNBOOK.md#apierrors"
+
+  - interval: 1m
+    name: OpsFailing fires on one errored op and stays quiet while every op is done
+    input_series:
+      - series: 'repose_api_ops_total{job="api",kind="create",state="error"}'
+        values: "0x10 1x30"
+      - series: 'repose_api_ops_total{job="api",kind="create",state="done"}'
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: OpsFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: OpsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              kind: create
+            exp_annotations:
+              summary: "1 create op(s) ended in error"
+              description: "`repose-admin ops list --state error` then `ops log <id>`; the op's error field carries the phase that failed. A create failing after CreateGuest leaves a volume the destroy path reclaims."
+              runbook: "docs/ops/RUNBOOK.md#opsfailing"
+
+  - interval: 1m
+    name: ScheduleRefused names the ceiling and ignores a placement that succeeded
+    input_series:
+      - series: 'repose_api_schedule_total{job="api",result="no_cpu"}'
+        values: "0x5 1x30"
+      - series: 'repose_api_schedule_total{job="api",result="ok"}'
+        values: "0+5x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ScheduleRefused
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ScheduleRefused
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              result: no_cpu
+            exp_annotations:
+              summary: "1 placement(s) refused: no_cpu"
+              description: "A paying user cannot start a machine. `repose-admin seats` says which ceiling the fleet is against and the Host capacity dashboard says which host; the OpenTofu apply for another host is the owner's. Capacity, not a crash: the api answered 503 with capacity, and the op can be retried once a host is ready."
+              runbook: "docs/ops/RUNBOOK.md#schedulerefused"
+
+  - interval: 1m
+    name: GatewayDialFailing fires over three dials in ten minutes, not on one
+    input_series:
+      - series: 'repose_gateway_dial_fail_total{job="gateway",instance="10.255.0.1:9102"}'
+        values: "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GatewayDialFailing
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: GatewayDialFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: gateway
+            exp_annotations:
+              summary: "the gateway failed 10 dials to guest sshd in ten minutes"
+              description: "Loki `{component=\"gateway\"} | json | event=\"dial_fail\"` has the project. All projects at once is the WireGuard path or wgsync (check repose_gateway_wgsync_errors_total); one project is its guest's sshd."
+              runbook: "docs/ops/RUNBOOK.md#gatewaydialfailing"
+
+  - interval: 1m
+    name: SnapshotFailing fires on a failed snapshot and not on a slow one that worked
+    input_series:
+      - series: 'repose_host_snapshot_duration_seconds_count{job="hostd",host_id="host-01",reason="stop",result="upload"}'
+        values: "0x5 1x30"
+      - series: 'repose_host_snapshot_duration_seconds_count{job="hostd",host_id="host-01",reason="scheduled",result="ok"}'
+        values: "0+3x40"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SnapshotFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SnapshotFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+              result: upload
+            exp_annotations:
+              summary: "1 snapshot(s) on host-01 failed (upload)"
+              description: "A stop with no snapshot is a user's work left only on the volume. Loki `{component=\"hostd\"} | json | event=\"snapshot\"` names the guest and the code; `repose-admin ops list --kind snapshot` has the op."
+              runbook: "docs/ops/RUNBOOK.md#snapshotfailing"
+
+  - interval: 1m
+    name: BillingWebhookErrors fires on a total that is already standing, as a restarted api publishes it
+    input_series:
+      - series: 'repose_api_billing_webhook_total{job="api",kind="subscription.updated",result="error"}'
+        values: "1x20"
+      - series: 'repose_api_billing_webhook_total{job="api",kind="subscription.updated",result="ok"}'
+        values: "5+1x20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BillingWebhookErrors
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BillingWebhookErrors
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "1 Polar webhook deliver(ies) failed to apply"
+              description: "Loki `{component=\"api\"} | json | event=\"webhook_received\" | result=\"error\"` has the kind, never the body. Reconcile the account against Polar's dashboard with `repose-admin billing show <handle>`, then silence this with a comment: it is absolute and will not clear by itself."
+              runbook: "docs/ops/RUNBOOK.md#billingwebhookerrors"
+
+  - interval: 1m
+    name: BillingWebhookErrors stays quiet while every delivery applies
+    input_series:
+      - series: 'repose_api_billing_webhook_total{job="api",kind="subscription.updated",result="ok"}'
+        values: "0+1x20"
+      - series: 'repose_api_billing_webhook_total{job="api",kind="order.paid",result="duplicate"}'
+        values: "0+1x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BillingWebhookErrors
+        exp_alerts: []
+
+  - interval: 1m
+    name: BillingGap fires over an hour of unsampled minutes and not under it
+    input_series:
+      - series: 'repose_api_billing_gap_minutes_total{job="api"}'
+        values: "0+6x90"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BillingGap
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: BillingGap
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+            exp_annotations:
+              summary: "360 project-minutes of the last hour had no meter sample"
+              description: "Loki `{component=\"api\"} | json | event=\"billing_gap\"` names the project and the hour. One project is its guestd (check repose_host_guestd_lost); every project on a host is the host's stream (repose_host_stream_connected)."
+              runbook: "docs/ops/RUNBOOK.md#billinggap"
+
+  - interval: 1m
+    name: ControlDiskFull fires over 85 percent on the control VM and ignores the hosts job
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="control-node",role="control-plane",instance="10.255.255.1:9100",mountpoint="/",fstype="ext4"}'
+        values: "10+0x20"
+      - series: 'node_filesystem_size_bytes{job="control-node",role="control-plane",instance="10.255.255.1:9100",mountpoint="/",fstype="ext4"}'
+        values: "100+0x20"
+      - series: 'node_filesystem_avail_bytes{job="hosts",host_id="host-01",instance="10.255.0.7:9100",mountpoint="/",fstype="ext4"}'
+        values: "5+0x20"
+      - series: 'node_filesystem_size_bytes{job="hosts",host_id="host-01",instance="10.255.0.7:9100",mountpoint="/",fstype="ext4"}'
+        values: "100+0x20"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ControlDiskFull
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: ControlDiskFull
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: control-node
+              role: control-plane
+              instance: 10.255.255.1:9100
+              mountpoint: /
+              fstype: ext4
+            exp_annotations:
+              summary: "the control VM's / is over 85 percent full"
+              description: "Postgres, the api images and Coolify's build cache share this disk. `docker system prune` and the sample tables' partitions (repose_partitions_maintain) are the two things that free space; the partitions are dropped hourly by the api, so a disk filling with them means PartitionDropFail is also firing."
+              runbook: "docs/ops/RUNBOOK.md#controldiskfull"

@@ -29,7 +29,11 @@ ship goes over the edge's WireGuard.
 ## Looking at one project
 
 1. `repose-admin projects show <id-or-slug>`: state, host, class, last
-   snapshot, current signals, cost today. Start here.
+   snapshot, current signals. Start here. It prints no cost: plan-v1
+   prices nothing, so every cents column in `usage_hours` is zero, and
+   the row that read them printed `$0.00` for every project (I-808). What
+   an account owes is its plan, its egress against the allowance, and the
+   disk its projects hold: `repose-admin billing show <handle>`.
 2. Grafana "Per-guest resources", variable `project_id`: CPU, memory, net,
    disk, and the signals timeline (sessions, tmux clients, agent state)
    from `meter_samples`.
@@ -89,18 +93,62 @@ at every restart alerts once and then never again. hostd keeps the totals
 beside its freeze records (`/var/lib/repose/hostd/freeze/.tally.json`)
 and publishes them at each start, so the series only ever rises.
 
+## The launch numbers
+
+Liveness was instrumented and margin was not: before I-800 no dashboard
+and no alert read `repose_api_seats_total`, and no revenue figure existed
+anywhere. Three places answer the money questions now.
+
+1. Grafana "Billing", row **The money**. MRR and what is in trial; seat
+   **fill** (`seats_held / seats_total`, the margin number: ladder C
+   clears an AX162-2 at 22 of its 30 Solo seats, so 75 percent is break
+   even) and seat **use** (the memory actually running over the memory the
+   sold seats may run, which is capacity bought and idle); and the three
+   seat lines, delivered, sold and running.
+2. `ops/sql/launch.sql` (I-804). Twelve queries for what cannot be a
+   Prometheus series because it is per-account: signups and how many ever
+   ran a machine, the trial funnel by plan, activation in the product's own
+   terms, the subscribers who have gone quiet, cohort retention, the
+   founding offer's burn, the plan mix with its waiting downgrades, MRR
+   that left, the dunning list, the waitlist's throughput and what it
+   wasted, disk against the plan, and the ops still open. Run them with
+   `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as `grafana_ro`.
+3. The daily digest (I-810): `ops/digest/digest.py`, a timer on the
+   personal server, one Chat message at 08:00 with the eight numbers worth
+   reading every day in the launch window. It reuses calert's webhook and
+   needs no new secret. A source that is down prints `?` and the rest of
+   the message still goes.
+
+Activation is the one of these the product is sold on: `usage_hours` keeps
+`attended_seconds` and `unattended_agent_seconds` per project-hour (I-806),
+so "the agent kept working after the laptop closed" is a number. It cannot
+be backfilled -- `meter_samples` is kept 90 days and `usage_hours` for
+ever -- which is why it shipped before launch rather than after.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),
 `bad_signature`, `error`), `repose_api_billing_overage_charges_total{result}` the egress
-overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason}` the
-`payment_required` refusals, `repose_api_billing_subscriptions_total{plan,status}`
+overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason,plan}` the
+`payment_required` refusals (the plan since I-802, which separates an
+upgrade from a plan shape that is wrong), `repose_api_billing_subscriptions_total{plan,status}`
 the subscription events applied and `repose_api_billing_stops_total{reason}`
 the machines the api stopped for billing. The log lines are
 `webhook_received` (kind, result), `overage_charged` (user_id, result,
 cents, gb), `gate_refused` (user_id, reason, plan) and `disk_over_plan`
 (user_id, plan; once a period, with its email, I-585): never the body of a
 webhook, an email, a card or an amount a tenant typed.
+
+`repose_api_subscriptions{plan,status}` is the live subscriptions and
+`repose_api_mrr_cents{status}` the plan revenue a month they stand for
+(I-802). Both are set from the minute tick on every api replica and take
+no lock, so read them with `max()`, never `sum()`: the scrape lands on one
+replica of two. MRR is the api's reading of the `subscriptions` table at
+the plan table's prices, with the founding discount taken off while it
+runs; Polar is the ledger of what was actually charged, and the two are
+reconciled by hand. It is right only while one list price per plan is
+live, because no price is stored per subscription
+(`proposals/2026-10-11-price-level.md` §6).
 
 The fleet as a whole: `repose_api_seats_total` and `repose_api_seats_held`
 are the seats (8 GB running at once each, DECISIONS I-290; per ready host

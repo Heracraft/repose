@@ -1,0 +1,33 @@
+# The launch digest (DECISIONS I-810). One Chat message a day with the
+# numbers of docs/ops/OBSERVABILITY.md "The launch digest". Install on the
+# personal server beside Prometheus and calert; ops/README.md step 3 has
+# the order.
+#
+# It needs psql on PATH and read-only Postgres credentials. The Chat
+# webhook is the one calert already holds, read from a file so it is not
+# in this unit or in the process table.
+[Unit]
+Description=repose launch digest to Google Chat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Nothing here is secret. DATABASE_URL carries a password, so it is in the
+# environment file, mode 0600, not in this unit.
+EnvironmentFile=/etc/repose-digest.env
+Environment=PROM_URL=http://127.0.0.1:9090
+Environment=CHAT_WEBHOOK_FILE=/etc/alertmanager/secrets/repose-chat-url
+ExecStart=/opt/repose/ops/digest/digest.py
+# A digest that cannot reach anything prints question marks and still
+# sends, so a non-zero exit is the webhook itself failing. Do not retry:
+# tomorrow's message carries the same numbers.
+Restart=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/alertmanager/secrets
+
+[Install]
+WantedBy=multi-user.target

@@ -271,6 +271,18 @@ apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
       page, including the host-down ones, reaches nobody: the 2026-10-10
       outage paged no one because `ntfy.herakraft.co` answered 503 on every
       path (DECISIONS I-648).
+- [ ] **Prometheus scrapes both api processes.** The money row, every
+      billing alert and the ops and placement alerts are series on `api`
+      and `api-grpc`; a scrape that is down renders them as empty panels
+      and alerts that never fire, which reads exactly like a quiet system
+      (DECISIONS I-800, I-802). `api` is reached through the Traefik
+      router, which needs ten custom labels pasted into Coolify by hand
+      (`ops/coolify/README.md` "The api's metrics", I-133), and nothing
+      else asserts that anyone pasted them. Evidence: `up{job="api"}` and
+      `up{job="api-grpc"}` are both 1 in Prometheus, `curl` of
+      `https://api.repose.herakraft.co/metrics` from outside the tunnel
+      answers 403, and `max(repose_api_mrr_cents{status="active"})`
+      returns a number.
 - [ ] **The Azure alert path is proven**, not just created. Evidence: the
       portal's **Test** on action group `repose-prod` delivers to
       `alert_email`. `az monitor action-group test-notifications create`

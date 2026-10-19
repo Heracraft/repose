@@ -115,3 +115,19 @@ scrape_configs:
         labels:
           role: control-plane
           app: api-grpc
+
+  # The control VM's own machine: its filesystems, memory and CPU
+  # (DECISIONS I-800). Nothing watched this disk, and Postgres is on it: a
+  # full disk there stops every start, every sample and every invoice at
+  # once, and the api answers 503 for a reason no host alert explains.
+  #
+  # Its own job, not the `hosts` file: `HostServiceDown` asserts
+  # hostd.service on the `hosts` job, and the control VM runs no hostd, so
+  # adding it there would fire that alert for ever. node_exporter is
+  # installed on the VM itself and published on its WireGuard address only
+  # (ops/coolify/README.md).
+  - job_name: control-node
+    static_configs:
+      - targets: ["10.255.255.1:9100"]
+        labels:
+          role: control-plane

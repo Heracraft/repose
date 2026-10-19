@@ -30,10 +30,26 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0028 (the class vCPU figures in host_reservations, I-784) is the
-	// newest, and it only replaces the view: hosts.cores and the view's
-	// own vcpus column, which 0027 added, survive its down. Then 0027's
-	// down takes both.
+	// This test is about 0028's and 0027's downs, so every migration after
+	// them is reverted first to reach them. Counted rather than written out,
+	// because the version this read as a constant (0028 was the newest when
+	// it was written) made the test fail on the next migration added, which
+	// says nothing about either down (I-806).
+	const classVCPU = 28 // 0028_class_vcpu_ratio, I-784
+	steps := 0
+	for i := len(st.Applied) - 1; i >= 0 && st.Applied[i] > classVCPU; i-- {
+		steps++
+	}
+	// The down above reverted the newest; these revert the rest of the
+	// migrations after 0028, and 0028 itself.
+	if steps > 0 {
+		if _, err := db.MigrateDown(ctx, pool, steps); err != nil {
+			t.Fatalf("down to %04d: %v", classVCPU, err)
+		}
+	}
+	// 0028 (the class vCPU figures in host_reservations, I-784) only
+	// replaces the view: hosts.cores and the view's own vcpus column,
+	// which 0027 added, survive its down. Then 0027's down takes both.
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)

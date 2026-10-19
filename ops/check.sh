@@ -54,6 +54,30 @@ promtool check rules "$ops/alerts.yaml" || fail=1
 say "alert rule tests"
 (cd "$ops" && promtool test rules alerts_test.yaml) || fail=1
 
+say "every alert's runbook anchor resolves"
+# A heading that exists is not the same as the anchor the rule points at:
+# FluentBitStuck pointed at #observability, a heading this file has never
+# had, so the one link an operator follows mid-incident went nowhere and
+# the heading check below still passed (I-800).
+python3 - <<'ANCHORS' || fail=1
+import re, sys
+rules = open("ops/alerts.yaml").read()
+anchors = {re.sub(r"[^a-z0-9 -]", "", line[3:].strip().lower()).replace(" ", "-")
+           for line in open("docs/ops/RUNBOOK.md").read().splitlines() if line.startswith("## ")}
+bad, cur = [], None
+for line in rules.splitlines():
+    m = re.match(r"\s*- alert: (\w+)", line)
+    if m:
+        cur = m.group(1)
+    m = re.search(r'runbook: "docs/ops/RUNBOOK\.md#([^"]+)"', line)
+    if m and m.group(1) not in anchors:
+        bad.append(f"{cur} -> #{m.group(1)}")
+if bad:
+    print("runbook anchor goes nowhere: " + ", ".join(bad), file=sys.stderr)
+    sys.exit(1)
+print("all anchors resolve")
+ANCHORS
+
 say "every alert has a runbook heading"
 # docs/CHECKLIST.md: an alert with no runbook entry is a notification nobody
 # knows what to do with. The heading is the alert name, lowercased by
@@ -114,7 +138,7 @@ if [ "${1:-}" = "--grafana" ]; then
   # Provisioning is asynchronous; the provider polls every 30 s but loads
   # once at start.
   sleep 5
-  for uid in repose-host-capacity repose-per-guest repose-builds repose-gateway \
+  for uid in repose-overview repose-host-capacity repose-per-guest repose-builds repose-gateway \
              repose-snapshots repose-billing repose-abuse; do
     if out=$(curl -sf "http://127.0.0.1:3000/api/dashboards/uid/$uid"); then
       title=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["dashboard"]["title"])')
