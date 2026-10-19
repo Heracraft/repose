@@ -13,11 +13,12 @@ in one sitting.
 
 The owner provides exactly this:
 
-1. **A Polar sandbox organization** (sandbox.polar.sh; production runs
-   the organization `repose` there until launch) with an **organization
-   access token** (Settings > Developers; `polar_oat_…`). Nothing else:
-   the product, discount and meter ids and the webhook secret come out of
-   the bootstrap.
+1. **A Polar sandbox organization** (sandbox.polar.sh; prod's api ran that
+   organization until 2026-10-19 and runs the production one now, so a
+   sandbox run of this page needs the api's `POLAR_*` put back) with an
+   **organization access token** (Settings > Developers; `polar_oat_…`).
+   Nothing else: the product, discount and meter ids and the webhook
+   secret come out of the bootstrap.
 2. For step 6 only: **the production organization** at polar.sh, its
    token, and the owner's own card, on a day they choose. Anything that
    costs money is announced to the conductor first.
