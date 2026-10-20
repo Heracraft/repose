@@ -6,6 +6,8 @@ order: 1
 ---
 repose gives each project a fresh Linux machine with your code, tools and logins already on it. An agent there runs for hours with full permissions, on a task you handed it and walked away from. If it fucks up, restore from a [snapshot](/docs/lifecycle#snapshots).
 
+The steps below use a machine repose runs for you. The same CLI does all of it on [a Linux box you own](/docs/hosted-or-your-own), with no account.
+
 You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not been tested enough. [Feedback](https://repose.fider.io) is appreciated.
 
 ## 1. Install and log in

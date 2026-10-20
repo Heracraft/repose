@@ -123,6 +123,16 @@ func SpineRunCmd(ctx context.Context, e *Env, opts SpineRunOptions) error {
 		}
 	}
 
+	// The environment the agent will work in, before the point that is
+	// its way back: the project's repose.nix applied on the box, and
+	// then whatever the project needs that the box has not got
+	// (I-832). A sync sends work and takes a point; applying an
+	// environment and installing a toolchain is a run's.
+	if !opts.SyncOnly {
+		e.spineApplyEnv(ctx, t, m, place, root, tick)
+		e.spineInstallTools(ctx, t, m, place, tick)
+	}
+
 	// The point the agent starts from, so a rewind has somewhere to go
 	// back to. Taking one costs milliseconds (research/wrapper-undo.md),
 	// which is why it is every run and not a nightly job.

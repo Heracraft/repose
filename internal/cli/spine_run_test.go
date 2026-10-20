@@ -29,6 +29,8 @@ func spineRunAnswers() map[string]string {
 	return map[string]string{
 		"project init":      `{"path":"/var/lib/repose/undo/projects/todo-app","created":true}`,
 		"point take":        `{"point":{"name":"r-0199a1c2","project":"todo-app","reason":"run","taken_at":"2026-10-19T10:00:00Z","bytes":0}}`,
+		"env apply":         `{"profile":"/var/lib/repose/undo/projects/todo-app/.repose/profile","added":[],"present":[],"skipped":[],"ms":30}`,
+		"tools plan":        `{"hash":"","missing":[],"runtimes":[],"failed":[]}`,
 		"tmux list-windows": "claude\n",
 	}
 }

@@ -8,14 +8,14 @@ status: experimental
 
 A machine you own is a Linux box you can reach with `ssh`: the desktop at home, a VPS, the box under the stairs. [`repose machine add`](/docs/cli#machines-you-own) installs repose on it over that same `ssh`, and your projects run there with no account and no server of ours in the path.
 
-What repose adds to a box you could already `ssh` into is undo. The project's files on the machine sit in a btrfs subvolume, and [`repose rewind`](/docs/cli#repose-rewind-project) puts them back as they were at a rewind point: the code, the untracked files and the dev database together.
+What repose adds to a box you could already `ssh` into is undo, and the project's own tools from its `repose.nix`. The project's files on the machine sit in a btrfs subvolume, and [`repose rewind`](/docs/cli#repose-rewind-project) puts them back as they were at a rewind point: the code, the untracked files, the dev database and the packages the project had then, together.
 
 ## What the box needs
 
 - x86-64, systemd, and the btrfs module, which Debian, Ubuntu, Fedora and Arch all ship.
 - `apt`, `dnf` or `pacman`.
 - A login you can `ssh` into whose `sudo` needs no password. That login is your own account on the box; repose makes no user of its own, and nothing on this path is the `dev` user a [hosted machine](/docs/machine) has.
-- Room for the undo store: 40 GB by default, `--undo-gb N` for another size.
+- Room for the undo store: 40 GB by default, `--undo-gb N` for another size, and about 2 GB more for the Nix store the project's tools come from.
 
 The install stops at the first of these that is missing and names it.
 
@@ -36,8 +36,10 @@ me ALL=(ALL) NOPASSWD:ALL
 $ repose machine add homebox --ssh me@192.168.1.40
 Installing on me@192.168.1.40 ...
 ✓ Checked the box (Ubuntu 24.04, x86_64, systemd, btrfs)  1.2s
+✓ Installed Nix 2.34.9 (single-user, store at /nix)  48.1s
 ✓ Provisioned 40G of undo space (btrfs at /var/lib/repose/undo)  0.4s
 ✓ Installed claude-code 2.1.283  31.3s
+✓ claude starts without permission prompts  0.1s
 Added homebox.
 ```
 
@@ -58,10 +60,11 @@ Four coding agents go on the box, from the same versions and the same checksums 
 | [`repose sync`](/docs/cli#repose-sync-project) | sends your current work without starting an agent |
 | [`repose ps`](/docs/cli#repose-ps-project-window) | the project's windows and the agents in them |
 | [`repose rewind`](/docs/cli#repose-rewind-project) | the rewind points, and the swap back to one |
+| [`repose config`](/docs/cli#configuration) | the project's `repose.nix`: add packages, remove them, edit it, print it |
 | [`repose machine`](/docs/cli#machines-you-own) | add a box, list the ones you have, forget one |
 | [`repose ls`](/docs/cli#repose-ls) | your projects, the ones on machines you own among them |
 
-`repose snapshots`, `resize`, `stop`, `start`, `rm`, `config`, `secrets`, `browser`, `logs` and `reply` do not work on such a machine: each acts on a machine repose creates, holds state for and bills you for. A box you own is none of those things: it is already running, it is your disk, and no server of ours holds its secrets or its logs.
+`repose snapshots`, `resize`, `stop`, `start`, `rm`, `secrets`, `browser`, `logs` and `reply` do not work on such a machine: each acts on a machine repose creates, holds state for and bills you for. A box you own is none of those things: it is already running, it is your disk, and no server of ours holds its secrets or its logs.
 
 ## Run on it
 
@@ -70,6 +73,8 @@ $ cd ~/code/todo-app
 $ repose run --machine homebox -p "finish the auth flow"
 ✓ Prepared todo-app on homebox  0.4s
 ✓ Synced 3 files and 1 commit  1.1s
+Logins copied: gh, git
+✓ Installed nodejs_22  0.2s
 ✓ Took a rewind point  0.0s
 ```
 
@@ -86,18 +91,25 @@ The sync is the same one a [hosted machine](/docs/run-and-attach) gets: the comm
 | `/etc/repose/machine.json` | the machine's name and id |
 | `/etc/repose/agents.json` | which agent version is installed |
 | `/etc/profile.d/repose.sh` | puts `/opt/repose/bin` on your `PATH` |
+| `/nix` | the Nix store the projects' packages come from, shared by every project on the box |
 
 The store is a file rather than a disk of its own because it costs almost nothing to be one: btrfs in a sparse file on the filesystem the box already has is 3 percent slower on a long sequential write and no slower on small ones, measured.
 
 `repose machine rm` forgets the machine on the laptop and leaves all of this where it is.
 
+## The project's tools
+
+The project's tools come from the project, from the same file a hosted machine builds from: `repose.nix` at the root of your checkout ([Installing software](/docs/config)). The install puts Nix on the box in single-user mode, owned by the login you added the machine with, and a box that already has Nix is used as it is. Every `repose run` applies the file after the sync and before it takes a rewind point, so the point holds the packages the agent is given. `repose config add bun` adds to the file and applies it there and then.
+
+Where the packages land is the difference on this path. The store they are built or downloaded into, `/nix`, is shared by every project on the box, so the second project that asks for the same version of Node waits for no download. The profile that puts them on the project's `PATH` sits inside the project's own btrfs subvolume, which means it is in every rewind point: a package added is undone by a `repose rewind` the way an edit to a file is.
+
+A menu entry that sets up and starts a service on a hosted machine installs only the package here. Nor does repose install your project's own dependencies: it runs no `npm ci` and no `uv sync`, here or on a hosted machine. The agent does that, or you do.
+
 ## What the box does not get
 
 From the distribution the install takes what repose's own agent and the coding agents need, and nothing else: `btrfs-progs`, `tmux`, `git`, `curl`, `jq`, `rsync`, `ripgrep`, `python3`, `tar`, `openssl` and `gawk`. It also installs `gh` where the distribution has it, and names it and carries on where it does not, as Debian 12 does not; without `gh` the carried GitHub login still lets git push, and `gh` commands do not work.
 
-It brings no language runtime, no package manager for your project and no database. `repose run` sends your checkout, takes a point and starts an agent in it; it does not read your `package.json`, `Gemfile` or `pyproject.toml`, installs nothing from them and builds nothing. Node, Python and its packages, Postgres, Redis, Docker: whatever your project needs to run, you install on the box yourself, once, as you would on any machine you own, and it stays there for every project after.
-
-A [hosted machine](/docs/machine) reads the project and brings its toolchain; this path does not. Where it goes next is Nix as a single user on the box, with a profile per project, so a project's tools come from the project.
+Running services are yours. A hosted machine has systemd units and Docker from its configuration; here `repose.nix` brings the `postgresql` and `redis` packages, and starting them, giving them a data directory and keeping them up is work you do on the box, once, as you would on any machine you own. Docker is the same: the install does not add it, and a rewind does not reach its images or its volumes.
 
 ## What an agent on it can reach
 
@@ -112,7 +124,7 @@ So the box is the boundary, and choosing it is the decision: a box whose content
 
 ## What a rewind brings back
 
-A rewind point is a read-only snapshot of the project's whole directory on the machine: the files git tracks, the files it ignores, the dev database, `node_modules`, and whatever else was written there. A rewind puts that directory back as the point holds it, so all of it comes back at once.
+A rewind point is a read-only snapshot of the project's whole directory on the machine: the files git tracks, the files it ignores, the dev database, `node_modules`, the Nix profile its tools come from, and whatever else was written there. A rewind puts that directory back as the point holds it, so all of it comes back at once.
 
 **A point is taken on every `repose run` and every `repose sync`, and every 30 minutes while the project is on the box.** The state a rewind returns to is the one the agent was given, not an hour-old copy.
 
@@ -128,7 +140,7 @@ The rewind is itself undoable. Before the swap it takes a point of the files as 
 
 ## What a rewind does not bring back
 
-- Anything outside the project's directory: packages installed with `apt`, edits to `/etc`, another project's files, Docker's images and volumes.
+- Anything outside the project's directory: packages installed with `apt` or with `nix profile add` outside the project, edits to `/etc`, another project's files, Docker's images and volumes.
 - Memory. The processes the rewind stopped do not come back where they were; an agent starts again from the files.
 
 ## Points are not a backup

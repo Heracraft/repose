@@ -83,6 +83,7 @@ func cmdProjectInit(ctx context.Context, env *Env, args []string) error {
 	if err := ensureSession(ctx, env, *project, path); err != nil {
 		return err
 	}
+	excludeRecords(path)
 	return emit(env.Stdout, wireInit{Path: path, Created: created})
 }
 
@@ -108,6 +109,38 @@ func ensureSession(ctx context.Context, env *Env, slug, dir string) error {
 	// 2026-10-19). The installer puts the agents on the default PATH
 	// with a symlink in /usr/local/bin instead.
 	return nil
+}
+
+// excludeRecords keeps repose's own records out of the user's git status.
+// The live area IS the checkout, and the records have to live inside it to
+// be inside the rewind point, so `.repose/` would otherwise show as
+// untracked in the project the user works in -- and could be committed.
+// .git/info/exclude is the right place: it is the repository's own
+// private ignore list, it is not a tracked file, and it never travels.
+// Best effort: a project that is not a git repository has nowhere to
+// write this, which costs nothing.
+func excludeRecords(live string) {
+	git := filepath.Join(live, ".git")
+	if fi, err := os.Stat(git); err != nil || !fi.IsDir() {
+		return
+	}
+	path := filepath.Join(git, "info", "exclude")
+	if b, err := os.ReadFile(path); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.TrimSpace(line) == "/.repose/" {
+				return
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	_, _ = f.WriteString("\n# repose's own records for this project.\n/.repose/\n")
 }
 
 // linkHome points ~/<slug> at the live area. A second run changes nothing. A
@@ -186,6 +219,11 @@ func cmdPointTake(ctx context.Context, env *Env, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Before the point, not after: a point that holds the records should
+	// hold the line that hides them too. `project init` also writes it,
+	// but it runs before the sync has made the checkout's .git, so on a
+	// project's first run this is where it lands.
+	excludeRecords(liveDir(env.Store, *project))
 	p, err := b.Take(ctx, *project, *name, *reason)
 	if err != nil {
 		return env.fromBackend(err, "take a point")

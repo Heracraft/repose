@@ -9,7 +9,7 @@
 #                      [--agent PATH | --agent-url URL] [--agent-sha256 HEX]
 #                      [--versions PATH]
 #
-# The seven steps of the contract, in order, each idempotent: a second run
+# The steps of the contract, in order, each idempotent: a second run
 # against the same box changes nothing and says so. Each step prints one
 # line to stderr (step 5 one per agent, since it is the minute-long one);
 # the last line on stdout is the JSON result, and nothing else goes there.
@@ -138,6 +138,14 @@ if [ "$(id -u)" = 0 ]; then
   am_root=1
 fi
 login=${SUDO_USER:-$(id -un)}
+# The login user's home and primary group: the Nix store, its profiles and
+# the agents' settings all belong to that user. getent first, because HOME
+# is root's under sudo.
+login_home=$(getent passwd "$login" 2>/dev/null | cut -d: -f6 || true)
+if [ -z "$login_home" ]; then
+  login_home=${HOME:-}
+fi
+group=$(id -gn "$login")
 
 root_run() {
   if [ "$am_root" = 1 ]; then
@@ -147,10 +155,35 @@ root_run() {
   fi
 }
 
+# login_run <command>...: run it as the box's login user. Nix in
+# single-user mode belongs to that user, so nothing of it is installed as
+# root even when this script runs as root.
+login_run() {
+  if [ "$(id -un)" = "$login" ]; then
+    "$@"
+  elif command -v runuser >/dev/null 2>&1; then
+    root_run runuser -u "$login" -- "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    root_run sudo -u "$login" -- "$@"
+  else
+    die "this box has neither runuser nor sudo, so Nix cannot be installed as $login"
+  fi
+}
+
 # write_root <mode> <path>: the file on stdin, installed there as root.
 write_root() {
   cat > "$tmp/staged"
   root_run install -D -m "$1" -o root -g root "$tmp/staged" "$2"
+  rm -f "$tmp/staged"
+}
+
+# write_login <mode> <path>: the file on stdin, installed there as the
+# login user's own. Its directory is made by that user, so a file in their
+# home never arrives under a directory owned by root.
+write_login() {
+  cat > "$tmp/staged"
+  login_run mkdir -p "$(dirname "$2")"
+  root_run install -m "$1" -o "$login" -g "$group" "$tmp/staged" "$2"
   rm -f "$tmp/staged"
 }
 
@@ -225,6 +258,10 @@ esac
 # store that cannot hold a rewind.
 undo_margin_gb=2
 undo_floor_gb=5
+# /nix is on this filesystem too unless --device moves the store off it,
+# and a store with one project's toolchain in it is about this big
+# (DECISIONS I-832), so the undo store cannot be promised that space.
+nix_reserve_gb=2
 if [ -z "$device" ] && [ ! -e "$image" ]; then
   probe=$(dirname "$image")
   while [ ! -d "$probe" ] && [ "$probe" != / ]; do
@@ -235,9 +272,9 @@ if [ -z "$device" ] && [ ! -e "$image" ]; then
     "" | *[!0-9]*) avail_gb="" ;;  # a df this script cannot read is not a refusal
   esac
   if [ -n "$avail_gb" ]; then
-    usable_gb=$((avail_gb - undo_margin_gb))
+    usable_gb=$((avail_gb - undo_margin_gb - nix_reserve_gb))
     if [ "$usable_gb" -lt "$undo_floor_gb" ]; then
-      die "$probe has $avail_gb GB free and the undo store needs at least $((undo_floor_gb + undo_margin_gb)) GB; free some space or pass --device PATH"
+      die "$probe has $avail_gb GB free; the undo store needs at least $((undo_floor_gb + undo_margin_gb)) GB and the Nix store about $nix_reserve_gb GB more; free some space or pass --device PATH"
     fi
     if [ "$undo_gb" -gt "$usable_gb" ]; then
       undo_cap_note="Capped the undo store at $usable_gb GB, not $undo_gb: $probe has $avail_gb GB free"
@@ -274,7 +311,7 @@ elif command -v pacman >/dev/null 2>&1; then
   pm=pacman
 fi
 
-NEEDED="mkfs.btrfs tmux git curl jq rsync rg gawk python3 tar openssl"
+NEEDED="mkfs.btrfs tmux git curl jq rsync rg gawk python3 tar xz openssl"
 
 # gh is wanted, not needed: it is how an agent on the box pushes and
 # opens a pull request, and Debian 12 has no gh package at all. So it is
@@ -322,6 +359,7 @@ package_of() {
   case "$1" in
     mkfs.btrfs) echo btrfs-progs ;;
     rg) echo ripgrep ;;
+    xz) if [ "$pm" = apt ]; then echo xz-utils; else echo xz; fi ;;
     python3) if [ "$pm" = pacman ]; then echo python; else echo python3; fi ;;
     *) echo "$1" ;;
   esac
@@ -429,6 +467,499 @@ if [ "$have_alsa" = 0 ]; then
   fi
 fi
 
+# -------------------------------------------------------------- step 2.5
+# Nix, in single-user mode, because the project's own toolchain is what
+# makes the box usable: nothing above installs node, a python package or
+# a database, and the loader this step writes puts the checkout's
+# environment in front of the agent (DECISIONS I-832). The store is /nix,
+# owned by the login user and shared by every project on the box, so the
+# second project that asks for the same Node waits for no download. No
+# daemon and no build users: single-user Nix is one directory and one
+# profile, and both stay where they are after `repose machine rm`.
+#
+# The tarball is a pinned release checked against the sha256 below, never
+# `curl | sh`: the installer at releases.nixos.org changes under its URL.
+NIX_VERSION=2.34.9
+NIX_SRI=sha256-6JEuCHWCs3meDlprBvnWM4bFSCH3etTeO5t0hzatNk4=
+
+# The nixpkgs of nix/flake.lock, which is the revision the guest base
+# pins in its own flake registry (nix/guest/base/devtools.nix): a project
+# on a box the user owns resolves `nixpkgs#...` to the same tree a hosted
+# machine builds from.
+NIXPKGS_REV=b1b875982b17dabde9b4a37f3e229e74913e6db3
+NIXPKGS_NARHASH=sha256-zVxLZiSnmaaPLwnhj7pwmqe3axBg/C6nG5JZsJMh2g4=
+NIXPKGS_MODIFIED=1789546076
+
+if [ -z "$login_home" ]; then
+  die "$login has no home directory on this box, and Nix in single-user mode keeps its profile there"
+fi
+
+# repose's own Nix-installed tools, in their own profile so the login
+# user's profile stays as the Nix installer left it.
+nix_tools=$login_home/.local/state/repose/nix-profile
+nix_conf=$login_home/.config/nix/nix.conf
+registry=$login_home/.config/nix/registry.json
+
+# nix_find: the nix this box already has, if any. /usr/local/bin is left
+# out of the search on purpose, because the symlink below points back
+# into this list.
+nix_find() {
+  local c
+  for c in "$login_home/.nix-profile/bin/nix" \
+    "$login_home/.local/state/nix/profile/bin/nix" \
+    /nix/var/nix/profiles/default/bin/nix; do
+    if [ -x "$c" ]; then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+nix_cmd=$(nix_find || true)
+nix_changed=0
+nix_mine=0
+if [ -z "$nix_cmd" ]; then
+  # The space for the store, which --device does not move: a store with
+  # one project's toolchain in it is about $nix_reserve_gb GB, and one
+  # that fills halfway through a build leaves the project without an
+  # environment and the box without the room to try again.
+  nix_avail_gb=$(df -Pk / | awk 'NR==2 {printf "%d", $4 / 1048576}')
+  case "$nix_avail_gb" in
+    "" | *[!0-9]*) nix_avail_gb="" ;;
+  esac
+  if [ -n "$nix_avail_gb" ] && [ "$nix_avail_gb" -lt "$nix_reserve_gb" ]; then
+    die "/ has $nix_avail_gb GB free and the Nix store needs about $nix_reserve_gb GB; free some space"
+  fi
+  fetch "https://releases.nixos.org/nix/nix-$NIX_VERSION/nix-$NIX_VERSION-x86_64-linux.tar.xz" \
+    "$NIX_SRI" "$tmp/nix.tar.xz"
+  rm -rf "$tmp/nix-release"
+  mkdir -p "$tmp/nix-release"
+  tar -xJf "$tmp/nix.tar.xz" -C "$tmp/nix-release" ||
+    die "the Nix $NIX_VERSION release is not a tar.xz this box can unpack"
+  nix_src=$tmp/nix-release/nix-$NIX_VERSION-x86_64-linux
+  if [ ! -x "$nix_src/install" ]; then
+    die "the Nix $NIX_VERSION release holds no install script"
+  fi
+  # A store another login already owns is theirs: taking it over would
+  # leave that user with a store they cannot write and repose with one it
+  # did not build.
+  if [ -d /nix/store ] && [ "$(stat -c '%U' /nix)" != "$login" ]; then
+    die "/nix belongs to $(stat -c '%U' /nix) on this box, not to $login; add the machine with that login, or let its owner install Nix for $login"
+  fi
+  # The store directory, owned by the login user: that ownership is what
+  # makes this a single-user install, and it is the same login that owns
+  # the undo store and the points.
+  root_run install -d -m 0755 -o "$login" -g "$group" /nix
+  # mktemp made $tmp private to whoever runs this script, and the
+  # installer below runs as the login user, who has to read the unpacked
+  # release out of it.
+  if [ "$(id -un)" != "$login" ]; then
+    root_run chmod 0755 "$tmp"
+  fi
+  # The settings the store needs, which a single-user install does not
+  # write for itself: flakes, because `nix develop` is how a project's
+  # environment is loaded; the public cache, so a toolchain is
+  # downloaded and not built; the one-entry registry below, so an
+  # indirect `nixpkgs` resolves and locks without reaching
+  # channels.nixos.org (DECISIONS I-218, I-531); and a dev shell's
+  # outputs and derivations kept, so a collection does not cost the next
+  # run a rebuild. --nix-extra-conf-file is where a multi-user install
+  # takes these from; a single-user install reads the login user's own
+  # nix.conf, so the same file is installed there.
+  if [ ! -e "$nix_conf" ]; then
+    cat > "$tmp/nix.conf" <<CONF
+# Written by repose (ops/install/machine-install.sh).
+experimental-features = nix-command flakes
+substituters = https://cache.nixos.org
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+flake-registry = $registry
+keep-outputs = true
+keep-derivations = true
+CONF
+    write_login 0644 "$nix_conf" < "$tmp/nix.conf"
+    rm -f "$tmp/nix.conf"
+  fi
+  # >&2: the installer narrates the copy into /nix, and stdout carries
+  # the one result object. USER and HOME are what it refuses to run
+  # without, and sudo leaves both as root's.
+  login_run env HOME="$login_home" USER="$login" "$nix_src/install" \
+    --no-daemon --no-channel-add --yes --nix-extra-conf-file "$nix_conf" >&2 ||
+    die "the Nix $NIX_VERSION installer failed; what it printed is above"
+  nix_cmd=$(nix_find) ||
+    die "the Nix $NIX_VERSION installer left no nix in $login_home/.nix-profile/bin"
+  nix_mine=1
+  nix_changed=1
+fi
+
+# The certificate bundle nix verifies a download against. The Nix
+# installer puts one in the login user's profile and names it in the
+# profile script, which a session with no login shell does not read, so
+# every nix below is given it by hand.
+nix_cert=""
+for cert in "$login_home/.nix-profile/etc/ssl/certs/ca-bundle.crt" \
+  /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt \
+  /etc/ssl/ca-bundle.pem; do
+  if [ -r "$cert" ]; then
+    nix_cert=$cert
+    break
+  fi
+done
+
+# nix_run <argument>...: nix as the login user, who owns the store. The
+# features are given on the command line and not taken from a
+# configuration file, so a box whose own nix.conf leaves them out is used
+# as it is.
+nix_flags="--extra-experimental-features nix-command --extra-experimental-features flakes"
+nix_run() {
+  if [ -n "$nix_cert" ]; then
+    # shellcheck disable=SC2086
+    login_run env HOME="$login_home" USER="$login" NIX_SSL_CERT_FILE="$nix_cert" \
+      "$nix_cmd" $nix_flags "$@"
+  else
+    # shellcheck disable=SC2086
+    login_run env HOME="$login_home" USER="$login" "$nix_cmd" $nix_flags "$@"
+  fi
+}
+
+nix_version=$(nix_run --version 2>/dev/null | awk 'NR == 1 {print $NF}')
+if [ -z "$nix_version" ]; then
+  die "$nix_cmd is on this box but does not run as $login"
+fi
+
+# The flake registry, of one entry: the default one is downloaded from
+# channels.nixos.org before any `nixpkgs#` resolves, which cost about a
+# minute (DECISIONS I-218), and an empty one fails a flake whose nixpkgs
+# input is indirect (I-531). A registry of another shape is this box
+# owner's and is left alone.
+registry_text=$(jq -n --arg rev "$NIXPKGS_REV" --arg nar "$NIXPKGS_NARHASH" \
+  --argjson mod "$NIXPKGS_MODIFIED" '{
+    version: 2,
+    flakes: [{
+      from: {type: "indirect", id: "nixpkgs"},
+      to: {type: "github", owner: "NixOS", repo: "nixpkgs",
+           rev: $rev, narHash: $nar, lastModified: $mod}
+    }]
+  }')
+registry_mine=1
+if [ -e "$registry" ]; then
+  jq -e '(.flakes | length) == 1 and .flakes[0].from.id == "nixpkgs"' \
+    "$registry" >/dev/null 2>&1 || registry_mine=0
+fi
+if [ "$registry_mine" = 1 ] &&
+  [ "$(cat "$registry" 2>/dev/null || true)" != "$registry_text" ]; then
+  printf '%s\n' "$registry_text" | write_login 0644 "$registry"
+  nix_changed=1
+fi
+
+# direnv and nix-direnv, through Nix: with them the loader below takes
+# the branch a hosted machine takes, where the dev shell is loaded into
+# the agent's own process and cached between runs (DECISIONS I-259).
+# Without them it falls back to `nix develop`, so a box that cannot
+# install them is named and carried on with.
+if [ ! -x "$nix_tools/bin/direnv" ]; then
+  login_run mkdir -p "$(dirname "$nix_tools")"
+  if nix_run profile install --profile "$nix_tools" \
+    "nixpkgs#direnv" "nixpkgs#nix-direnv" >&2; then
+    nix_changed=1
+  else
+    step "Nix could not install direnv here; the dev shell loads with nix develop"
+  fi
+fi
+# nix-direnv's direnvrc, which is what makes an `.envrc` a cached load
+# rather than a build on every entry. Only where the user has none: that
+# file is theirs.
+if [ -x "$nix_tools/bin/direnv" ] && [ ! -e "$login_home/.config/direnv/direnvrc" ]; then
+  printf '%s\n' "# Written by repose (ops/install/machine-install.sh)." \
+    "source $nix_tools/share/nix-direnv/direnvrc" |
+    write_login 0644 "$login_home/.config/direnv/direnvrc"
+  nix_changed=1
+fi
+
+# nix on the PATH a tmux window gets, the same problem the agents have:
+# the single-user installer writes ~/.profile, which a tmux server does
+# not read, and neither does a non-interactive ssh command.
+root_run mkdir -p "$prefix/bin"
+nix_bin=${nix_cmd%/*}
+for cmd in nix nix-store nix-env; do
+  if [ ! -x "$nix_bin/$cmd" ]; then
+    continue
+  fi
+  if [ "$(readlink "$prefix/bin/$cmd" 2>/dev/null || true)" != "$nix_bin/$cmd" ]; then
+    root_run ln -sfn "$nix_bin/$cmd" "$prefix/bin/$cmd"
+    nix_changed=1
+  fi
+  if link_on_path "$cmd"; then
+    nix_changed=1
+  fi
+done
+
+# The dev environment loader, which is nix/overlay/agents/devshell.sh
+# without the store paths and with one branch added for a box that has
+# nix and no direnv. /etc/repose/devshell.sh is where a guest keeps it
+# (DECISIONS I-275), which is where `repose exec` and the agent wrappers
+# look.
+devshell_text=$(cat <<'DEVSHELL'
+# repose's dev environment loader on a machine the user owns, written by
+# ops/install/machine-install.sh from nix/overlay/agents/devshell.sh
+# (DECISIONS I-259, I-275, I-832). The agent wrappers in /opt/repose/bin
+# source it before they exec and `repose exec` sources it over ssh;
+# sourcing defines _repose_devshell NAME, which loads the checkout's dev
+# environment, from the working directory up:
+#
+#   .envrc found by direnv (here or above)  its environment; one never
+#                                           allowed on this machine is
+#                                           allowed, one denied is left out
+#   else flake.nix naming a devShell        that dev shell, through a
+#                                           generated .envrc (`use flake`)
+#                                           under ~/.cache/repose/devshell,
+#                                           with its flake.lock there when
+#                                           the checkout has none
+#   no direnv on the box                    that dev shell through
+#                                           `nix develop`: a load without
+#                                           direnv cannot reach this
+#                                           process, so the caller execs
+#                                           through $_repose_devshell_exec
+#   else                                    nothing
+#
+# A load that fails prints why and the agent starts without it. While a
+# load runs inside tmux the pane carries @repose-devshell=loading, which
+# `repose run` waits on before it types the prompt. Messages go to
+# stderr, which is the pane.
+#
+# REPOSE_DEVSHELL_QUIET=1 (set by `repose exec`, whose stderr is the
+# user's own command output) keeps a load that works silent: direnv's
+# messages are held back and shown only when the load fails, and the
+# "loading" line appears only once a load has taken 2 seconds.
+#
+# ssh hands the command to the login user's shell, which is not always
+# bash, so this file stays POSIX: no arrays, and the nix branch's command
+# prefix is one string of quoted words.
+_repose_devshell_exec=
+_repose_devshell_nixflags="--extra-experimental-features nix-command --extra-experimental-features flakes"
+
+# The project'"'"'s own packages live in a profile inside the project
+# (DECISIONS I-832), which no login shell knows about: `repose config add`
+# and the tools the laptop carried are there. Anything running in the
+# project gets that profile first on PATH.
+_repose_project_path() {
+  _rp_dir=$PWD
+  while [ -n "$_rp_dir" ] && [ "$_rp_dir" != / ]; do
+    if [ -d "$_rp_dir/.repose/profile/bin" ]; then
+      case ":$PATH:" in
+        *":$_rp_dir/.repose/profile/bin:"*) ;;
+        *) PATH="$_rp_dir/.repose/profile/bin:$PATH"; export PATH ;;
+      esac
+      return 0
+    fi
+    _rp_dir=$(dirname "$_rp_dir")
+  done
+  return 0
+}
+
+_repose_devshell() {
+  local agent=$1 status rc allowed dir label root shadow out loaded quiet= errf= timer=
+  [ "${REPOSE_DEVSHELL_QUIET:-}" = 1 ] && quiet=1
+  _repose_project_path
+
+  if ! command -v direnv >/dev/null 2>&1; then
+    _repose_devshell_nix "$agent"
+    return 0
+  fi
+  status=$(direnv status --json 2>/dev/null) || status=
+  rc=$(printf '%s' "$status" | jq -r '.state.foundRC.path // empty' 2>/dev/null) || rc=
+  if [ -n "$rc" ]; then
+    allowed=$(printf '%s' "$status" | jq -r '.state.foundRC.allowed' 2>/dev/null) || allowed=
+    case $allowed in
+      0) ;;
+      2)
+        echo "repose: $rc is denied (direnv deny); starting $agent without it" >&2
+        return 0
+        ;;
+      *)
+        # Never allowed on this machine: every new box, every worktree,
+        # every edit of the file. The agent is about to run this
+        # checkout's code anyway (DECISIONS I-259).
+        if ! direnv allow "$rc" 2>/dev/null; then
+          echo "repose: could not allow $rc; starting $agent without it" >&2
+          return 0
+        fi
+        [ -n "$quiet" ] || echo "repose: allowed $rc (direnv allow) so $agent starts in its environment" >&2
+        ;;
+    esac
+    dir=${rc%/*}
+    label=$rc
+  else
+    root=
+    _repose_devshell_flake || return 0
+    _repose_devshell_shadow || return 0
+    dir=$shadow
+    label=$root/flake.nix
+  fi
+
+  loaded=
+  [ "${DIRENV_DIR:-}" = "-$dir" ] && loaded=1
+  if [ -z "$loaded" ]; then
+    if [ -n "$quiet" ]; then
+      (sleep 2 && echo "repose: loading the dev shell from $label (the first load can take minutes)" >&2) &
+      timer=$!
+    else
+      echo "repose: loading the dev shell from $label (the first load can take minutes)" >&2
+    fi
+  fi
+  if [ -n "$quiet" ]; then
+    errf=$(mktemp) || errf=
+  fi
+  if [ -n "${TMUX_PANE:-}" ]; then
+    tmux set-option -p -t "$TMUX_PANE" @repose-devshell loading 2>/dev/null || true
+  fi
+  # direnv export prints nothing when this process already has the
+  # current environment of $dir, and a diff otherwise.
+  if out=$(cd "$dir" && direnv export bash 2>"${errf:-/dev/stderr}"); then
+    eval "$out"
+    # A dev shell that failed to evaluate is not an error to direnv:
+    # nix-direnv falls back to the last one it built (none, the first
+    # time), says so above and sets this.
+    if [ -n "${NIX_DIRENV_DID_FALLBACK:-}" ]; then
+      _repose_devshell_done "$timer" "$errf" 1
+      echo "repose: the dev shell from $label did not load (the error is above); starting $agent with the last one that did, if any" >&2
+      [ -n "$quiet" ] || sleep 3
+    else
+      _repose_devshell_done "$timer" "$errf" ""
+    fi
+  else
+    _repose_devshell_done "$timer" "$errf" 1
+    echo "repose: the dev shell from $label did not load (the error is above); starting $agent without it" >&2
+    [ -n "$quiet" ] || sleep 3
+  fi
+  if [ -n "${TMUX_PANE:-}" ]; then
+    tmux set-option -p -u -t "$TMUX_PANE" @repose-devshell 2>/dev/null || true
+  fi
+  return 0
+}
+
+# _repose_devshell_done TIMER ERRFILE FAILED stops the quiet mode's
+# "loading" timer and, when the load failed, prints what direnv said.
+_repose_devshell_done() {
+  if [ -n "$1" ]; then
+    kill "$1" 2>/dev/null
+    wait "$1" 2>/dev/null
+  fi
+  if [ -n "$2" ]; then
+    [ -n "$3" ] && cat "$2" >&2
+    rm -f "$2"
+  fi
+  return 0
+}
+
+# _repose_devshell_flake sets the caller's `root` to the nearest folder at
+# or above $PWD, below $HOME, that holds a flake.nix whose text names a
+# dev shell, and fails when there is none. The caller has already found
+# no .envrc.
+_repose_devshell_flake() {
+  _repose_devshell_flake_root || return 1
+  grep -q devShell "$root/flake.nix" 2>/dev/null || { root=; return 1; }
+}
+
+# _repose_devshell_flake_root sets the caller's `root` to the nearest
+# folder at or above $PWD, below $HOME, with a flake.nix, without reading
+# it.
+_repose_devshell_flake_root() {
+  local d=$PWD
+  root=
+  while [ -n "$d" ] && [ "$d" != / ] && [ "$d" != "$HOME" ]; do
+    if [ -f "$d/flake.nix" ]; then
+      root=$d
+      return 0
+    fi
+    d=${d%/*}
+  done
+  return 1
+}
+
+# _repose_devshell_shadow sets the caller's `shadow` to the generated
+# .envrc's directory for `root`, writes that .envrc when it is missing or
+# out of date and allows it.
+_repose_devshell_shadow() {
+  local lockargs want
+  shadow=${XDG_CACHE_HOME:-$HOME/.cache}/repose/devshell/$(printf '%s' "$root" | sha256sum | cut -c1-16)
+  # A flake with no flake.lock gets one written next to the generated
+  # .envrc, not into the checkout, where it would block the user's next
+  # `repose sync` as an uncommitted change (DECISIONS I-483). Once the
+  # repository commits its own lock, that one is used.
+  lockargs=
+  if [ ! -e "$root/flake.lock" ]; then
+    lockargs=" --reference-lock-file $(_repose_devshell_quote "$shadow/flake.lock") --output-lock-file $(_repose_devshell_quote "$shadow/flake.lock")"
+  fi
+  want="# Written by the repose agent wrapper for $root, which has a flake.nix and no .envrc (DECISIONS I-259).
+use flake $(_repose_devshell_quote "$root")$lockargs"
+  if [ "$(cat "$shadow/.envrc" 2>/dev/null)" != "$want" ]; then
+    mkdir -p "$shadow" && printf '%s\n' "$want" >"$shadow/.envrc" || return 1
+  fi
+  direnv allow "$shadow" 2>/dev/null
+}
+
+# _repose_devshell_nix loads the dev shell with nix alone, for a box
+# whose nix has no direnv beside it. Without direnv's export the
+# environment cannot be put into this process, so what the load leaves
+# behind is a command prefix in _repose_devshell_exec and the agent
+# wrapper execs through it: `nix develop <root> --command <agent>`.
+# `repose exec` does not read that prefix and runs the user's command
+# without the dev shell.
+_repose_devshell_nix() {
+  local agent=$1 root= dir lock= pre
+  command -v nix >/dev/null 2>&1 || return 0
+  _repose_devshell_flake || return 0
+  # The lock, as above: beside the cache, never in the checkout.
+  if [ ! -e "$root/flake.lock" ]; then
+    dir=${XDG_CACHE_HOME:-$HOME/.cache}/repose/devshell/$(printf '%s' "$root" | sha256sum | cut -c1-16)
+    mkdir -p "$dir" || return 0
+    lock=" --reference-lock-file $(_repose_devshell_quote "$dir/flake.lock") --output-lock-file $(_repose_devshell_quote "$dir/flake.lock")"
+  fi
+  pre="nix $_repose_devshell_nixflags develop$lock $(_repose_devshell_quote "$root") --command"
+  if [ -n "${TMUX_PANE:-}" ]; then
+    tmux set-option -p -t "$TMUX_PANE" @repose-devshell loading 2>/dev/null || true
+  fi
+  [ "${REPOSE_DEVSHELL_QUIET:-}" = 1 ] ||
+    echo "repose: loading the dev shell from $root/flake.nix (the first load can take minutes)" >&2
+  # `--command true` builds the dev shell here, while the pane carries
+  # the option `repose run` waits on; the caller's exec then costs one
+  # cached evaluation. >&2 because stdout is the command's own.
+  if eval "$pre true" >&2; then
+    _repose_devshell_exec=$pre
+  else
+    echo "repose: the dev shell from $root/flake.nix did not load (the error is above); starting $agent without it" >&2
+  fi
+  if [ -n "${TMUX_PANE:-}" ]; then
+    tmux set-option -p -u -t "$TMUX_PANE" @repose-devshell 2>/dev/null || true
+  fi
+  return 0
+}
+
+# _repose_devshell_quote ARGUMENT prints it as one shell word, for the
+# prefix the caller evals and the .envrc the shadow holds: a directory
+# with a space in it must not become two arguments.
+_repose_devshell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+DEVSHELL
+)
+if [ "$(cat "$etcdir/devshell.sh" 2>/dev/null || true)" != "$devshell_text" ]; then
+  printf '%s\n' "$devshell_text" | write_root 0644 "$etcdir/devshell.sh"
+  nix_changed=1
+fi
+
+if [ "$nix_changed" = 1 ]; then
+  changed=1
+fi
+if [ "$nix_mine" = 1 ]; then
+  step "Installed Nix $nix_version (single-user, store at /nix)"
+elif [ "$nix_changed" = 1 ]; then
+  step "Set up Nix $nix_version for repose (this box's own Nix, configured by its owner)"
+else
+  step "Nix $nix_version is installed"
+fi
+
 # ---------------------------------------------------------------- step 3
 # The undo store: btrfs in a sparse file, or on a device the user named,
 # mounted by a unit so it comes back after a restart. The loopback file is
@@ -509,7 +1040,6 @@ for sub in projects points; do
     store_changed=1
   fi
 done
-group=$(id -gn "$login")
 for path in "$store" "$store/projects" "$store/points"; do
   if [ "$(stat -c '%U' "$path")" != "$login" ]; then
     root_run chown "$login:$group" "$path"
@@ -590,18 +1120,39 @@ if [ ! -x "$prefix/bin/repose-agent" ] ||
 fi
 
 profile_text='# repose (ops/install/machine-install.sh): the project environment, then
-# the repose bin directory on PATH, as the guest convention of
+# Nix and the repose bin directory on PATH, as the guest convention of
 # docs/interfaces/guest-conventions.md has it.
 if [ -r /etc/repose/env ]; then
   set -a
   . /etc/repose/env
   set +a
 fi
+# Nix in single-user mode names its store and its certificate bundle here.
+# Its installer adds this line to ~/.profile alone, which a tmux server
+# and a non-interactive ssh command never read (DECISIONS I-832).
+if [ -r "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
+# direnv and nix-direnv, which repose installs in their own profile.
+if [ -d "$HOME/.local/state/repose/nix-profile/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/state/repose/nix-profile/bin:"*) ;;
+    *) PATH="$HOME/.local/state/repose/nix-profile/bin:$PATH" ;;
+  esac
+fi
 case ":$PATH:" in
   *:/opt/repose/bin:*) ;;
   *) PATH="/opt/repose/bin:$PATH" ;;
 esac
 export PATH
+# A shell that starts inside a project gets that project'"'"'s own packages,
+# which live in a profile inside it (DECISIONS I-832): a tmux window, whose
+# working directory is the project, and `ssh box "cd proj && ..."`. The
+# agents get the same through /etc/repose/devshell.sh.
+if [ -r /etc/repose/devshell.sh ]; then
+  . /etc/repose/devshell.sh
+  _repose_project_path 2>/dev/null || true
+fi
 '
 if [ "$(cat /etc/profile.d/repose.sh 2>/dev/null || true)" != "$(printf '%s' "$profile_text")" ]; then
   printf '%s' "$profile_text" | write_root 0644 /etc/profile.d/repose.sh
@@ -749,11 +1300,10 @@ CODEX
 
 # The agent wrapper of nix/overlay/agents/wrap.nix as a plain script: the
 # same binary name, the same terminal environment, the same project
-# environment, then the real binary with "$@". Two parts of the nix
-# wrapper are absent and cannot be stood in for here: repose-agent-setup,
-# which registers the hooks and MCP servers of a guest, and the dev shell
-# loader of DECISIONS I-259, which needs direnv and nix-direnv. A box the
-# user owns has neither in this pass.
+# environment, the checkout's dev environment, then the real binary with
+# "$@". One part of the nix wrapper is absent and cannot be stood in for
+# here: repose-agent-setup, which registers the hooks and MCP servers of
+# a guest.
 #
 # write_wrapper <agent> <binary> <real binary> <extra lines>
 write_wrapper() {
@@ -776,10 +1326,21 @@ write_wrapper() {
     if [ -n "$extra" ]; then
       printf '%s\n' "$extra"
     fi
+    # The checkout's dev environment, loaded into this process
+    # (DECISIONS I-259). On a box with nix and no direnv it cannot be,
+    # and the loader leaves a `nix develop` prefix for the exec below
+    # instead.
+    echo "if [ -r $etcdir/devshell.sh ]; then"
+    echo "  . $etcdir/devshell.sh"
+    echo "  _repose_devshell $bin"
+    echo '  unset -f _repose_devshell _repose_devshell_done _repose_devshell_flake \'
+    echo '    _repose_devshell_flake_root _repose_devshell_shadow _repose_devshell_nix \'
+    echo '    _repose_devshell_quote'
+    echo 'fi'
     if [ "$agent" = codex ]; then
       codex_daemon
     fi
-    echo "exec $real \"\$@\""
+    printf 'eval "exec ${_repose_devshell_exec:-} %s \\"\\$@\\""\n' "$real"
   } > "$tmp/wrapper"
   root_run install -D -m 0755 "$tmp/wrapper" "$prefix/bin/$bin"
   rm -f "$tmp/wrapper"
@@ -925,44 +1486,36 @@ fi
 # already names a defaultMode keeps it, a file this script cannot read as
 # an object is left alone, and the comparison is of normalised JSON so a
 # second run against the same box changes nothing.
-claude_home=$(getent passwd "$login" 2>/dev/null | cut -d: -f6 || true)
-if [ -z "$claude_home" ]; then
-  claude_home=${HOME:-}
+claude_settings=$login_home/.claude/settings.json
+claude_current='{}'
+if [ -r "$claude_settings" ]; then
+  claude_current=$(cat "$claude_settings")
 fi
-if [ -z "$claude_home" ]; then
-  step "The login user has no home directory, so claude keeps its own settings"
+# An object whose permissions is an object or absent is the only shape
+# the merge below is safe on.
+if ! claude_now=$(printf '%s' "$claude_current" |
+  jq -S -e 'if (type == "object") and (((.permissions // {}) | type) == "object")
+            then . else null | halt_error(1) end' 2>/dev/null); then
+  step "~/.claude/settings.json is not a shape repose will edit and was left alone"
 else
-  claude_settings=$claude_home/.claude/settings.json
-  claude_current='{}'
-  if [ -r "$claude_settings" ]; then
-    claude_current=$(cat "$claude_settings")
-  fi
-  # An object whose permissions is an object or absent is the only shape
-  # the merge below is safe on.
-  if ! claude_now=$(printf '%s' "$claude_current" |
-    jq -S -e 'if (type == "object") and (((.permissions // {}) | type) == "object")
-              then . else null | halt_error(1) end' 2>/dev/null); then
-    step "~/.claude/settings.json is not a shape repose will edit and was left alone"
+  claude_want=$(printf '%s' "$claude_now" | jq -S '
+    (.permissions // {}) as $perm
+    | (if ($perm.defaultMode // null) == null then
+         .permissions = ($perm + {defaultMode: "bypassPermissions"})
+         | .skipDangerousModePermissionPrompt = true
+       else . end)
+    | (if .tui == null then .tui = "fullscreen" else . end)
+  ')
+  if [ "$claude_now" = "$claude_want" ]; then
+    step "claude starts without permission prompts"
   else
-    claude_want=$(printf '%s' "$claude_now" | jq -S '
-      (.permissions // {}) as $perm
-      | (if ($perm.defaultMode // null) == null then
-           .permissions = ($perm + {defaultMode: "bypassPermissions"})
-           | .skipDangerousModePermissionPrompt = true
-         else . end)
-      | (if .tui == null then .tui = "fullscreen" else . end)
-    ')
-    if [ "$claude_now" = "$claude_want" ]; then
-      step "claude starts without permission prompts"
-    else
-      printf '%s\n' "$claude_want" > "$tmp/claude-settings.json"
-      root_run install -D -m 0644 -o "$login" -g "$group" \
-        "$tmp/claude-settings.json" "$claude_settings"
-      root_run chown "$login:$group" "$(dirname "$claude_settings")"
-      rm -f "$tmp/claude-settings.json"
-      changed=1
-      step "Set claude to start without permission prompts"
-    fi
+    printf '%s\n' "$claude_want" > "$tmp/claude-settings.json"
+    root_run install -D -m 0644 -o "$login" -g "$group" \
+      "$tmp/claude-settings.json" "$claude_settings"
+    root_run chown "$login:$group" "$(dirname "$claude_settings")"
+    rm -f "$tmp/claude-settings.json"
+    changed=1
+    step "Set claude to start without permission prompts"
   fi
 fi
 
@@ -1119,10 +1672,11 @@ jq -nc \
   --arg name "$name" \
   --arg id "$id" \
   --arg agent "$prefix/bin/repose-agent" \
+  --arg nix "$nix_version" \
   --argjson agents "$agents_text" \
   --argjson changed "$changed_json" \
   --rawfile skipped "$tmp/skipped" \
   '{ok: true, store: $store, fs: "btrfs", machine: {name: $name, id: $id},
-    agent: $agent, agents: ($agents | map_values(.version)),
+    agent: $agent, nix: $nix, agents: ($agents | map_values(.version)),
     not_installed: ($skipped | split("\n") | map(select(length > 0))),
     changed: $changed}'

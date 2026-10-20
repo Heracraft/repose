@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"debug/buildinfo"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,39 +77,59 @@ var (
 	safeBin     = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._+-]{0,99}$`)
 )
 
-// baseCommands are the commands every guest has without a carry
-// (nix/guest/base/tool-list.nix, agents.nix, coreutils and the shells),
-// and the package managers themselves. The guest checks its PATH anyway;
-// this list keeps them out of the list and out of `repose scan`.
-var baseCommands = setOf(
+// The commands a machine already has come in two halves, because only
+// one of them is a promise. everyBoxCommands hold on any Linux box;
+// hostedBaseCommands hold on a machine repose runs and say nothing at
+// all about a machine the user owns, where the box's own `command -v`
+// sweep is the only honest source (scanMachine, DECISIONS I-812).
+
+// everyBoxCommands are the commands nothing installs and no machine
+// lacks: the shell's own builtins and keywords, and the userland every
+// distribution's base install carries. Neither machine is asked about
+// these.
+var everyBoxCommands = setOf(
+	// shell builtins and keywords
+	"cd", "echo", "exit", "export", "set", "unset", "true", "false", "test", "[", "printf", "read",
+	"source", ".", "eval", "exec", "if", "then", "else", "fi", "for", "do", "done", "while", "case", "esac",
+	"trap", "wait", "shift", "return", "local", "alias", "type", "command", "builtin", "ulimit", "umask", ":",
+	"sh", "bash", "time", "nohup", "sudo", "env", "nice", "xargs",
+	// coreutils and the rest of the POSIX userland
+	"rm", "cp", "mv", "mkdir", "rmdir", "ln", "ls", "cat", "touch", "chmod", "chown", "sleep", "kill",
+	"grep", "egrep", "sed", "awk", "find", "tr", "head", "tail", "sort", "uniq", "wc", "tee", "date",
+	"basename", "dirname", "pwd", "which", "tar", "gzip", "gunzip", "cut", "paste", "diff", "patch",
+	"stat", "realpath", "readlink", "mktemp", "seq", "yes", "whoami", "id", "hostname", "uname", "df",
+	"du", "ps", "pkill", "pgrep", "less", "more", "install", "sha256sum", "md5sum", "base64",
+)
+
+// hostedBaseCommands are the commands a machine repose runs has without
+// a carry: the base's tool list (nix/guest/base/tool-list.nix, which
+// TestBaseToolListCommands holds this list against), the agents
+// (agents.nix), the package managers themselves and the guest's own
+// programs. A machine the user owns guarantees not one of them.
+var hostedBaseCommands = setOf(
 	// base tool list
 	"curl", "wget", "jq", "rg", "fd", "bat", "fzf", "tree", "unzip", "zip", "zstd", "htop",
-	"git", "gh", "just", "node", "npm", "npx", "corepack", "pnpm", "pnpx", "python", "python3", "pip", "pip3",
+	"git", "gh", "just", "node", "npm", "npx", "corepack", "pnpm", "pnpx", "yarn", "yarnpkg",
+	"python", "python3", "pip", "pip3",
 	"uv", "uvx", "go", "gofmt", "rustup", "cargo", "rustc", "rustfmt", "clippy-driver", "cargo-clippy",
-	"tmux", "herdr", "ssh", "scp", "eza", "zoxide", "starship", "direnv", "nvim", "vim", "vi",
+	"tmux", "herdr", "ssh", "scp", "eza", "zoxide", "starship", "direnv", "nvim", "vim", "vi", "zsh",
 	"docker", "docker-compose", "dockerd", "nix", "nix-shell", "nix-env", "nix-build",
 	// the C toolchain and everyday CLIs of I-218
 	"cc", "gcc", "g++", "c++", "cpp", "ld", "ar", "as", "nm", "strip", "objdump", "readelf",
 	"make", "gmake", "pkg-config", "cmake", "ctest", "lsof", "dig", "nslookup", "host", "sqlite3",
 	"psql", "pg_dump", "pg_dumpall", "pg_restore", "pg_isready", "openssl", "gpg", "gpg2",
-	"killall", "fuser", "nc", "strace", "rsync", "nix-locate",
+	"killall", "fuser", "nc", "strace", "rsync", "nix-locate", "file", "open", "xdg-open",
 	// the native gems' configs (compat.nix, I-265)
 	"pg_config", "mysql_config", "mariadb_config",
 	// agents and their helpers (agents.nix)
 	"claude", "codex", "opencode", "gemini", "pi", "playwright-mcp", "chrome-devtools-mcp",
-	// shell builtins and keywords
-	"cd", "echo", "exit", "export", "set", "unset", "true", "false", "test", "[", "printf", "read",
-	"source", ".", "eval", "exec", "if", "then", "else", "fi", "for", "do", "done", "while", "case", "esac",
-	"trap", "wait", "shift", "return", "local", "alias", "type", "command", "builtin", "ulimit", "umask", ":",
-	"sh", "bash", "zsh", "time", "nohup", "sudo", "env", "nice", "xargs",
-	// coreutils and friends
-	"rm", "cp", "mv", "mkdir", "rmdir", "ln", "ls", "cat", "touch", "chmod", "chown", "sleep", "kill",
-	"grep", "egrep", "sed", "awk", "find", "tr", "head", "tail", "sort", "uniq", "wc", "tee", "date",
-	"basename", "dirname", "pwd", "which", "tar", "gzip", "gunzip", "cut", "paste", "diff", "patch",
-	"stat", "realpath", "readlink", "mktemp", "seq", "yes", "whoami", "id", "hostname", "uname", "df",
-	"du", "ps", "pkill", "pgrep", "less", "more", "file", "install", "sha256sum", "md5sum", "base64",
-	"open", "xdg-open",
 )
+
+// baseCommands are both halves: what a machine repose runs has without a
+// carry. The guest checks its PATH anyway; this list keeps them out of
+// the tools carry (dedupeTools) and out of the commands the MCP carry
+// reports missing (carry_mcp.go).
+var baseCommands = mergeSets(everyBoxCommands, hostedBaseCommands)
 
 func setOf(xs ...string) map[string]bool {
 	m := make(map[string]bool, len(xs))
@@ -116,6 +137,16 @@ func setOf(xs ...string) map[string]bool {
 		m[x] = true
 	}
 	return m
+}
+
+func mergeSets(ms ...map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range ms {
+		for k := range m {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // skippedGlobals are package-manager packages that are the managers
@@ -132,9 +163,17 @@ type toolEnv struct {
 	LookPath func(string) (string, error)
 }
 
-// readGlobalTools lists the laptop's globally installed tools from every
-// manager it knows, sorted by name, first occurrence of a command wins.
+// readGlobalTools lists the laptop's globally installed tools for a
+// machine repose runs, sorted by name, first occurrence of a command
+// wins.
 func readGlobalTools(te toolEnv) []toolItem {
+	return dedupeTools(collectGlobalTools(te), scanMachine{})
+}
+
+// collectGlobalTools reads every manager it knows, in that order and
+// undeduped: `repose scan` needs the whole set before it knows which
+// commands the machine it is talking about already has.
+func collectGlobalTools(te toolEnv) []toolItem {
 	var all []toolItem
 	all = append(all, readNpmGlobals(te)...)
 	all = append(all, readPnpmGlobals(te)...)
@@ -143,18 +182,18 @@ func readGlobalTools(te toolEnv) []toolItem {
 	all = append(all, readCargoInstalls(te)...)
 	all = append(all, readUvTools(te)...)
 	all = append(all, readPipxVenvs(te)...)
-	return dedupeTools(all)
+	return all
 }
 
 // dedupeTools keeps the first item that claims a command and drops items
-// every command of which is in the base or already claimed.
-func dedupeTools(items []toolItem) []toolItem {
+// every command of which mach already has or an earlier item claimed.
+func dedupeTools(items []toolItem, mach scanMachine) []toolItem {
 	claimed := map[string]bool{}
 	var out []toolItem
 	for _, it := range items {
 		var bins []string
 		for _, b := range it.Bins {
-			if !safeBin.MatchString(b) || baseCommands[b] || claimed[b] {
+			if !safeBin.MatchString(b) || mach.has(b) || claimed[b] {
 				continue
 			}
 			bins = append(bins, b)
@@ -750,20 +789,52 @@ func newToolsCarry(items []toolItem, sc *scanResult) *toolsCarry {
 // guest does with the list sends it again once.
 var toolsInstallScriptVersion = []byte("tools-1")
 
-// toolsPart is the guest half: the list lands in ~/.repose, and the
-// base's repose-tools-install plans (which commands are missing, a few
-// ms, printed as #installing and written to $XDG_RUNTIME_DIR/
-// repose-installing) and starts the background unit. On a base without
-// the installer nothing happens and no marker is written, so the list is
-// sent again after the base is upgraded. The marker is the installer's
-// to write, when a pass over this list ends.
-const toolsPart = `mkdir -p ~/.repose
+// toolsPartScript is the machine's half. The list lands in ~/.repose,
+// and then one of three things reads it:
+//
+//   - a machine repose runs has repose-tools-install, which plans here
+//     (which commands are missing, a few ms, printed as #installing and
+//     written to $XDG_RUNTIME_DIR/repose-installing) and installs in its
+//     own unit. The marker is that installer's to write, when a pass
+//     ends, so a pass a reboot cut short is finished at the next boot.
+//   - a machine the user owns has repose-agent, and the run asks it to
+//     plan and install the moment the carry is through
+//     (spineInstallTools, I-832). Its marker goes inside the project's
+//     live subvolume, where a rewind takes it with the tools it
+//     describes, so there is nothing for this part to write or to say.
+//   - a machine with neither reads the list with nothing at all. That
+//     one says so once and writes the marker itself, the hash with
+//     `:none` after it (toolsUnchanged reads both). Before this it wrote
+//     no marker, so the same list travelled on every single run and
+//     nothing ever told the user that none of it was installed.
+//
+// The list stays in ~/.repose/tools-wanted.json either way, which is
+// what an installer that arrives later reads: the base's unit is started
+// by that file's existence (nix/guest/base/tools-carry.nix).
+func toolsPartScript() string {
+	return fmt.Sprintf(`mkdir -p ~/.repose
 cp "$1/tools/wanted.json" ~/.repose/tools-wanted.json.new
 mv -f ~/.repose/tools-wanted.json.new ~/.repose/tools-wanted.json
 if command -v repose-tools-install >/dev/null 2>&1; then
   repose-tools-install plan
+elif [ ! -x %s ]; then
+  echo '#warn The machine has no tool installer, so none of your tools was installed.'
+  mkdir -p ~/.repose/carry
+  printf '%%s:none\n' "$(cat "$1/tools/hash")" > ~/.repose/carry/tools
 fi
-`
+`, shQuote(reposeAgent))
+}
+
+// toolsNoneSuffix is what the part puts after the hash in the marker it
+// writes itself: the list was applied by nothing.
+const toolsNoneSuffix = ":none"
+
+// toolsUnchanged is opts.unchanged for the tools marker, which the part
+// suffixes on a machine with no installer (it said so once; sending the
+// same list again would say it again and install nothing again).
+func (o carryOptions) toolsUnchanged(hash string) bool {
+	return o.Markers != nil && (o.Markers["tools"] == hash || o.Markers["tools"] == hash+toolsNoneSuffix)
+}
 
 // toolsNoticesPart prints what the installer could not install since the
 // last run as warnings, once: the file goes when it has been read.
@@ -785,13 +856,18 @@ func addToolsPart(p *guestPayload, tc *toolsCarry, opts carryOptions) ([]string,
 		}
 		sent = append(sent, "tools-notices")
 	}
-	if tc == nil || opts.unchanged("tools", tc.Wanted.Hash) {
+	if tc == nil || opts.toolsUnchanged(tc.Wanted.Hash) {
 		return sent, nil
 	}
 	if err := p.file("tools/wanted.json", tc.JSON); err != nil {
 		return nil, err
 	}
-	if err := p.part("tools", toolsPart); err != nil {
+	// The hash as its own file, so the marker the part may have to write
+	// itself needs no jq on the machine.
+	if err := p.file("tools/hash", []byte(tc.Wanted.Hash)); err != nil {
+		return nil, err
+	}
+	if err := p.part("tools", toolsPartScript()); err != nil {
 		return nil, err
 	}
 	return append(sent, "tools"), nil

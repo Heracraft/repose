@@ -41,6 +41,64 @@ type scanResult struct {
 	// Versions are the other version files, for `repose scan`: the
 	// toolchains that honour them fetch the version themselves.
 	Versions []scanVersion
+	// Machine is the machine the result is about: which kind it is, and
+	// what it answered (scanMachine).
+	Machine scanMachine
+}
+
+// scanMachine is the machine a scan is about. A machine repose runs has
+// the base's tool list, which is a promise; a machine the user owns has
+// whatever its owner installed, which is nothing repose can assume, so
+// the box's own `command -v` sweep is the only honest source there
+// (DECISIONS I-812).
+type scanMachine struct {
+	// Owned marks a machine the user added with `repose machine`.
+	Owned bool
+	// Name is that machine's name, "" for a machine repose runs.
+	Name string
+	// Have is the commands the machine answered to, of those it was
+	// asked about. Asked, not this map, says whether it answered: a box
+	// with none of them answers an empty list.
+	Have map[string]bool
+	// Asked is whether the machine itself said what it has. False for a
+	// machine repose runs, whose base is the answer, and for an owned one
+	// that could not be reached, where Why says so.
+	Asked bool
+	// Why is the sentence `repose scan` prints for an owned machine it
+	// could not ask: which failure it was, and whose list stood in.
+	Why string
+	// ask asks the machine; nil for a machine repose runs and in tests.
+	ask scanAsk
+}
+
+// scanAsk asks one machine which of names it has on its PATH.
+type scanAsk func(ctx context.Context, names []string) (map[string]bool, error)
+
+// has reports whether the machine already has cmd, so nothing offers to
+// install it.
+func (m scanMachine) has(cmd string) bool {
+	if everyBoxCommands[cmd] {
+		return true
+	}
+	if m.Asked {
+		return m.Have[cmd]
+	}
+	return hostedBaseCommands[cmd]
+}
+
+// The two reasons a command the scripts run needs no install because the
+// machine has it: the base's promise, and the machine's own answer.
+const (
+	baseSkipReason  = "in the machine's base"
+	onMachinePrefix = "already on "
+)
+
+func onMachineReason(name string) string { return onMachinePrefix + name }
+
+// alreadyThere is whether a skip reason means the machine has the
+// command, which the line naming what was not installed leaves out.
+func alreadyThere(why string) bool {
+	return why == baseSkipReason || strings.HasPrefix(why, onMachinePrefix)
 }
 
 type scanSkip struct{ Name, Why string }
@@ -80,15 +138,22 @@ var depBins = map[string][]string{
 	"@sveltejs/package": {"svelte-package"}, "@prisma/cli": {"prisma"}, "wrangler": {"wrangler", "wrangler2"}, "@astrojs/cli": {"astro"},
 }
 
-// scanProject scans the checkout at root.
-func scanProject(root string) *scanResult {
-	s := &scanner{root: root, cand: map[string]*toolItem{}, skip: map[string]string{}, local: map[string]bool{}, pydeps: map[string]bool{}}
+// scanProject scans the checkout at root for a machine repose runs.
+func scanProject(root string) *scanResult { return scanProjectOn(root, scanMachine{}) }
+
+// scanProjectOn scans the checkout at root for one machine: a command
+// mach has needs no install, and a machine that was not asked leaves the
+// hosted base's list standing in.
+func scanProjectOn(root string, mach scanMachine) *scanResult {
+	s := &scanner{root: root, mach: mach, cand: map[string]*toolItem{}, skip: map[string]string{}, local: map[string]bool{}, pydeps: map[string]bool{}}
 	s.run()
 	return s.result()
 }
 
 type scanner struct {
 	root string
+	// mach is the machine the commands are decided against.
+	mach scanMachine
 	// workspaces are the package dirs (relative, "." first) with their
 	// manifests.
 	ws []scanWorkspace
@@ -339,7 +404,7 @@ func (s *scanner) versions(rootPkg *scanPackage) {
 			v.Major = nodeMajor(version)
 			switch {
 			case v.Major == "":
-				v.Note = "pins no one major; the machine's node is kept"
+				v.Note = s.noMajorNote()
 			case s.res.Node == nil:
 				v.Note = "nodejs_" + v.Major + " goes into the machine's nix profile when its node is another major"
 				n := v
@@ -408,6 +473,27 @@ func (s *scanner) versions(rootPkg *scanPackage) {
 		add("python", firstLineOf(b), ".python-version")
 	}
 	s.runtimeFiles(add)
+}
+
+// noMajorNote is what a node pin that names no one major means for this
+// machine (">=18" and "^20 || ^22" name none). Nothing is installed
+// either way; on a machine the user owns, whether the box has a node of
+// its own is the difference between the project running and not, so the
+// note says which it is rather than leaving the project with no runtime
+// and nothing said.
+func (s *scanner) noMajorNote() string {
+	if !s.mach.Owned {
+		return "pins no one major; the machine's node is kept"
+	}
+	note := "pins no one major, so none is installed"
+	switch {
+	case !s.mach.Asked:
+		return note
+	case s.mach.Have["node"]:
+		return note + "; " + s.mach.Name + " has node"
+	default:
+		return note + "; " + s.mach.Name + " has no node"
+	}
 }
 
 func firstLineOf(b []byte) string {
@@ -537,9 +623,20 @@ func (s *scanner) note(w scanWorkspace, cmd, why string) {
 
 // provided says why cmd needs no install, "" when it may.
 func (s *scanner) provided(w scanWorkspace, cmd string) string {
+	if everyBoxCommands[cmd] {
+		return baseSkipReason
+	}
+	// A machine that answered is the truth about itself; one that did not
+	// leaves the hosted base's list. Either way a command the machine has
+	// not got falls through to what the project provides itself.
+	if s.mach.Asked {
+		if s.mach.Have[cmd] {
+			return onMachineReason(s.mach.Name)
+		}
+	} else if hostedBaseCommands[cmd] {
+		return baseSkipReason
+	}
 	switch {
-	case baseCommands[cmd]:
-		return "in the machine's base"
 	case s.res.Ruby != nil && rubyBins[cmd]:
 		return "comes with " + runtimeAttr("ruby", s.res.Ruby.Major)
 	case s.res.Java != nil && javaBins[cmd]:
@@ -580,6 +677,7 @@ func (s *scanner) provided(w scanWorkspace, cmd string) string {
 }
 
 func (s *scanner) result() *scanResult {
+	s.res.Machine = s.mach
 	names := make([]string, 0, len(s.cand))
 	for n := range s.cand {
 		names = append(names, n)
@@ -913,9 +1011,12 @@ type scanPersonal struct {
 	Why string
 }
 
-// ScanCmd prints what `repose run` would install in a guest for this
-// laptop and the checkout at dir, and why. Nothing is installed.
-func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool, personal scanPersonal) error {
+// ScanCmd prints what `repose run` would install on the machine for this
+// laptop and the checkout at dir, and why. Nothing is installed. mach is
+// the machine that checkout's project is on (scanMachineFor); one the
+// user owns is asked what it has, because the base's list is a promise
+// about a machine repose runs and about no other.
+func ScanCmd(ctx context.Context, out io.Writer, homeDir, dir string, jsonOut bool, personal scanPersonal, mach scanMachine) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -924,14 +1025,106 @@ func ScanCmd(out io.Writer, homeDir, dir string, jsonOut bool, personal scanPers
 		abs = root
 	}
 	te := toolEnv{Home: homeDir, GOOS: goosForScan, Getenv: os.Getenv, LookPath: lookPathFast}
-	global := readGlobalTools(te)
-	sc := scanProject(abs)
+	laptop := collectGlobalTools(te)
+	mach = askMachine(ctx, mach, laptop, abs)
+	global := dedupeTools(laptop, mach)
+	sc := scanProjectOn(abs, mach)
 	prec := precedenceFor(personal.Has, abs)
 	if jsonOut {
 		return writeJSONOut(out, scanJSON(global, sc, prec, personal))
 	}
 	printScan(out, abs, global, sc, prec, personal)
 	return nil
+}
+
+// askMachine asks a machine the user owns which of the commands this
+// laptop and this checkout name it already has: one sweep, in one ssh.
+// The scan runs twice for it, since the first pass is what there is to
+// ask about, and that pass costs a dozen small file reads and no
+// process. A machine that does not answer comes back saying so, and the
+// hosted base's list stands in.
+func askMachine(ctx context.Context, mach scanMachine, laptop []toolItem, root string) scanMachine {
+	if mach.ask == nil {
+		return mach
+	}
+	first := scanProjectOn(root, scanMachine{Owned: true, Name: mach.Name, Asked: true})
+	have, err := mach.ask(ctx, scanAskNames(laptop, first))
+	if err != nil {
+		mach.Why = scanNotAsked(mach.Name, silentWords(err))
+		return mach
+	}
+	mach.Asked, mach.Have = true, have
+	return mach
+}
+
+// scanNotAsked is the sentence for an owned machine the scan could not
+// ask: what the silence was, and whose list the listing is instead.
+func scanNotAsked(name, words string) string {
+	return name + " did not answer (" + words + "), so the commands above are the ones a machine repose runs has."
+}
+
+// scanAskNames is every command the machine is asked about: the ones the
+// laptop's tools provide, the ones the project's scripts run that the
+// project does not provide itself, and node, which decides whether those
+// scripts run at all. Sorted, so one checkout asks one question.
+func scanAskNames(laptop []toolItem, sc *scanResult) []string {
+	set := map[string]bool{"node": true}
+	for _, items := range [][]toolItem{laptop, sc.Candidates} {
+		for _, it := range items {
+			for _, b := range it.Bins {
+				if safeBin.MatchString(b) && !everyBoxCommands[b] {
+					set[b] = true
+				}
+			}
+		}
+	}
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// machineToolsHave asks a machine which of names it has: one
+// `command -v` for each in one ssh, and nothing else runs. The sweep is
+// the box's own answer, which is the only thing a machine the user owns
+// can be asked (the base's list is a promise about a machine repose
+// runs). `repose-agent tools plan` answers the same question for the
+// list the box already holds; the scan asks about commands it has not
+// sent, and about the ones the base's list would otherwise have hidden.
+func machineToolsHave(ctx context.Context, t sshTarget, slug string, names []string) (map[string]bool, error) {
+	if len(names) == 0 {
+		return map[string]bool{}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, machineSpaceWait)
+	defer cancel()
+	out, err := runOnMachine(ctx, t, toolSweepScript(slug, names), nil)
+	if err != nil {
+		return nil, err
+	}
+	have := make(map[string]bool, len(names))
+	for _, l := range nonEmptyLines(string(out)) {
+		have[strings.TrimSpace(l)] = true
+	}
+	return have, nil
+}
+
+// toolSweepScript prints the names the machine has, one per line. The
+// PATH it looks at is the project's own profile first — that is where a
+// run installs what the project needs (cmd/repose-agent/tools.go) — then
+// the directories a login shell adds that a plain `ssh box cmd` does
+// not, then the box's own.
+func toolSweepScript(slug string, names []string) string {
+	var b strings.Builder
+	b.WriteString(checkoutVar(slug, ""))
+	b.WriteString(`PATH="$repose_co/.repose/profile/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/go/bin:$HOME/.cargo/bin:$PATH"` + "\n")
+	b.WriteString("for c in")
+	for _, n := range names {
+		b.WriteString(" " + shQuote(n))
+	}
+	b.WriteString("; do command -v \"$c\" >/dev/null 2>&1 && printf '%s\\n' \"$c\"; done\ntrue\n")
+	return b.String()
 }
 
 // skipReasons are the lines `repose scan` gives for each half it leaves
@@ -973,8 +1166,12 @@ func scanJSON(global []toolItem, sc *scanResult, prec toolPrecedence, personal s
 		return v.Major
 	}
 	laptopWhy, projectWhy := skipReasons(prec, personal)
+	m := sc.Machine
 	return map[string]any{"laptop": conv(global), "project": conv(sc.Candidates), "node": major(sc.Node),
 		"ruby": major(sc.Ruby), "java": major(sc.Java),
+		// Which machine the two lists are about, and whether it answered
+		// for itself: on a machine the user owns nothing else did.
+		"machine": map[string]any{"name": m.Name, "owned": m.Owned, "asked": m.Asked},
 		// What a .nix file takes over (I-490): "" when the half is
 		// installed as listed.
 		"skipped": map[string]string{"laptop": laptopWhy, "project": projectWhy}}
@@ -1009,6 +1206,11 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 		if c.Manager == "npm" {
 			how = "nixpkgs, else npm " + c.Pkg
 		}
+		if sc.Machine.Asked {
+			// The machine answered for itself, so the line says what it
+			// said and not how a guest's installer would have found it.
+			how = "not on " + sc.Machine.Name
+		}
 		p("  %-20s %s; from %s\n", c.Name, how, c.Why)
 	}
 	for _, v := range sc.Versions {
@@ -1021,7 +1223,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 	if len(sc.Skipped) > 0 {
 		var parts []string
 		for _, s := range sc.Skipped {
-			if s.Why == "in the machine's base" {
+			if alreadyThere(s.Why) {
 				continue
 			}
 			parts = append(parts, s.Name+" ("+s.Why+")")
@@ -1044,8 +1246,12 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 	if tc != nil {
 		n = len(tc.Wanted.Items)
 	}
-	p("\n%d to check on the machine; each one it lacks is installed in the background after `repose run`.\n", n)
-	if tc != nil {
+	if m := sc.Machine; m.Owned {
+		p("\n%s\n", ownedScanTail(n, m))
+	} else {
+		p("\n%d to check on the machine; each one it lacks is installed in the background after `repose run`.\n", n)
+	}
+	if tc != nil && !sc.Machine.Owned {
 		var pins []string
 		for _, r := range []struct{ tool, v string }{{"node", tc.Wanted.Node}, {"ruby", tc.Wanted.Ruby}, {"java", tc.Wanted.Java}} {
 			if r.v != "" {
@@ -1056,6 +1262,56 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 			p("Made the machine's default the same way when it has another version: %s.\n", strings.Join(pins, ", "))
 		}
 	}
+}
+
+// ownedScanTail is the last line for a machine the user owns: what that
+// box has not got. It promises no install: what puts a tool on such a
+// box is the project's repose.nix, applied there by Nix (I-832), and a
+// box that was not asked is told apart from one that has everything.
+func ownedScanTail(n int, m scanMachine) string {
+	switch {
+	case !m.Asked && m.Why != "":
+		return fmt.Sprintf("%d to check on %s. %s", n, m.Name, m.Why)
+	case !m.Asked:
+		return fmt.Sprintf("%d to check on %s.", n, m.Name)
+	case n == 0:
+		return fmt.Sprintf("%s has every command this project and your laptop name.", m.Name)
+	default:
+		return fmt.Sprintf("%s has not got %d of them.", m.Name, n)
+	}
+}
+
+// scanMachineFor is the machine the checkout at dir is on: one the user
+// owns when the project map records it there (SPINE.md Contract 2), else
+// the machine repose runs. It reads two files on the laptop and connects
+// to nothing — the ask it carries is what reaches the box.
+func scanMachineFor(env func() (*Env, error), dir string) scanMachine {
+	if env == nil {
+		return scanMachine{}
+	}
+	e, err := env()
+	if err != nil {
+		return scanMachine{}
+	}
+	// The project is resolved from the directory the scan is about, which
+	// `repose scan DIR` may name instead of the working directory.
+	at := *e
+	if abs, err := filepath.Abs(dir); err == nil {
+		at.Cwd = abs
+	}
+	m, place, ok, err := spinePlace(&at, "", defaultResolveDeps())
+	if err != nil || !ok {
+		return scanMachine{}
+	}
+	configPath, err := machinesConfigPath()
+	if err != nil {
+		return scanMachine{Owned: true, Name: m.Name, Why: scanNotAsked(m.Name, "no ssh config")}
+	}
+	t := probeTarget(machineTarget(configPath, m))
+	ask := func(ctx context.Context, names []string) (map[string]bool, error) {
+		return machineToolsHave(ctx, t, place.Slug, names)
+	}
+	return scanMachine{Owned: true, Name: m.Name, ask: ask}
 }
 
 // scanPersonalFor asks the account whether it has a machine.nix, which
@@ -1111,7 +1367,12 @@ DIR defaults to the current checkout.
 
 A .nix file takes precedence over the scan: with a machine.nix on your account
 the laptop's tools are skipped, and with a repose.nix at the checkout root the
-scripts' commands are. The listing says which half was skipped and why.`,
+scripts' commands are. The listing says which half was skipped and why.
+
+On a machine you own the listing is what that box answered to one sweep of its
+own PATH, since the base's list describes a machine repose runs and promises
+nothing about yours. A box that does not answer is named, and so is the list
+that stands in for it.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return cobraUsageError{fmt.Errorf("repose scan takes at most one DIR, got %s", gotArgs(args))}
@@ -1130,7 +1391,8 @@ scripts' commands are. The listing says which half was skipped and why.`,
 			if err != nil {
 				return err
 			}
-			return ScanCmd(cmd.OutOrStdout(), home, dir, jsonOut, scanPersonalFor(cmd.Context(), env, home))
+			return ScanCmd(cmd.Context(), cmd.OutOrStdout(), home, dir, jsonOut,
+				scanPersonalFor(cmd.Context(), env, home), scanMachineFor(env, dir))
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON")

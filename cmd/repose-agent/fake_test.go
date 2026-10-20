@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -170,6 +171,167 @@ func (f *fakeUndo) Holders(_ context.Context, project string) ([]undo.Holder, er
 	return f.holders[project], nil
 }
 
+// fakeNix is every process the environment commands start, behind
+// undo.Runner — the seam internal/undo's backend uses for btrfs, and the
+// pattern of internal/undo's FakeRunner: every argv is recorded in order,
+// and a key in fail fails the invocation whose argv contains it.
+type fakeNix struct {
+	// calls is every argv, in order.
+	calls [][]string
+	// stdout answers the invocation whose joined argv contains the key.
+	stdout map[string]string
+	// fail fails the invocation whose joined argv contains the key, with
+	// the value as its last stderr line.
+	fail map[string]string
+	// have is the commands a login shell finds, and version what a
+	// runtime's own --version prints, by command.
+	have    map[string]bool
+	version map[string]string
+	// provides are the commands an attribute's install puts on PATH, so a
+	// `nix profile add` is followed by a `command -v` that finds them.
+	provides map[string][]string
+	// installed is every attribute `nix profile add` was given, in order,
+	// and removed every one `nix profile remove` was given.
+	installed []string
+	removed   []string
+}
+
+func newFakeNix() *fakeNix {
+	return &fakeNix{
+		stdout:   map[string]string{},
+		fail:     map[string]string{},
+		have:     map[string]bool{},
+		version:  map[string]string{},
+		provides: map[string][]string{},
+	}
+}
+
+// Run implements undo.Runner.
+func (f *fakeNix) Run(_ context.Context, argv ...string) (undo.Result, error) {
+	f.calls = append(f.calls, append([]string(nil), argv...))
+	joined := strings.Join(argv, " ")
+	for key, stderr := range f.fail {
+		if strings.Contains(joined, key) {
+			res := undo.Result{Stderr: []byte(stderr + "\n"), ExitCode: 1}
+			return res, &undo.ExitError{Argv: argv, Result: res}
+		}
+	}
+	if argv[0] == "bash" && len(argv) == 3 {
+		return f.shell(argv, argv[2])
+	}
+	if i := slices.Index(argv, "profile"); i >= 0 && i+1 < len(argv) {
+		switch argv[i+1] {
+		case "add", "install":
+			if attr := strings.TrimPrefix(last(argv), "nixpkgs#"); attr != "--help" {
+				f.add(attr)
+			}
+		case "remove":
+			attr := last(argv)
+			f.removed = append(f.removed, attr)
+			f.installed = slices.DeleteFunc(f.installed, func(a string) bool { return a == attr })
+		case "list":
+			// A test that wants a listing of its own sets stdout; without
+			// one the profile holds what it was asked to add.
+			if out, ok := f.stdout["profile list"]; ok {
+				return undo.Result{Stdout: []byte(out)}, nil
+			}
+			return undo.Result{Stdout: []byte(f.listing())}, nil
+		}
+	}
+	return f.answer(joined), nil
+}
+
+// add is an install: the attribute is in the profile, its commands are on
+// PATH, and a runtime's attribute is what a login shell then reports as
+// that runtime's version, as it is on the box.
+func (f *fakeNix) add(attr string) {
+	f.installed = append(f.installed, attr)
+	for _, bin := range f.provides[attr] {
+		f.have[bin] = true
+	}
+	if lang, out, ok := runtimeOf(attr); ok {
+		f.version[lang] = out
+	}
+}
+
+func runtimeOf(attr string) (string, string, bool) {
+	switch {
+	case strings.HasPrefix(attr, "nodejs_"):
+		return "node", "v" + strings.TrimPrefix(attr, "nodejs_") + ".1.0\n", true
+	case strings.HasPrefix(attr, "ruby_"):
+		v := strings.ReplaceAll(strings.TrimPrefix(attr, "ruby_"), "_", ".")
+		return "ruby", "ruby " + v + ".1 (2026-01-01 revision abc) [x86_64-linux]\n", true
+	case strings.HasPrefix(attr, "jdk") && strings.HasSuffix(attr, "_headless"):
+		v := strings.TrimSuffix(strings.TrimPrefix(attr, "jdk"), "_headless")
+		return "java", "openjdk version \"" + v + ".0.1\" 2026-01-20\n", true
+	}
+	return "", "", false
+}
+
+// listing is `nix profile list --json`, in the shape nix prints since it
+// keyed the elements by name.
+func (f *fakeNix) listing() string {
+	parts := make([]string, 0, len(f.installed))
+	for _, attr := range f.installed {
+		parts = append(parts, `"`+attr+`":{"attrPath":"legacyPackages.x86_64-linux.`+attr+`"}`)
+	}
+	return `{"elements":{` + strings.Join(parts, ",") + `}}`
+}
+
+// shell is `bash -lc`: the probes the agent makes of the project's
+// environment. Anything else a script asks for exits 0 with nothing.
+func (f *fakeNix) shell(argv []string, script string) (undo.Result, error) {
+	if _, rest, ok := strings.Cut(script, "command -v "); ok {
+		bin := ""
+		if fields := strings.Fields(rest); len(fields) > 0 {
+			bin = strings.Trim(fields[0], "'")
+		}
+		if f.have[bin] {
+			return undo.Result{Stdout: []byte("/usr/bin/" + bin + "\n")}, nil
+		}
+		res := undo.Result{ExitCode: 1}
+		return res, &undo.ExitError{Argv: argv, Result: res}
+	}
+	for _, lang := range runtimePins {
+		if !strings.Contains(script, lang+" -") {
+			continue
+		}
+		out, ok := f.version[lang]
+		if !ok {
+			res := undo.Result{ExitCode: 127}
+			return res, &undo.ExitError{Argv: argv, Result: res}
+		}
+		return undo.Result{Stdout: []byte(out)}, nil
+	}
+	// Whatever else a script installs — a laptop package manager, where
+	// the box has no nix — puts its commands on PATH.
+	for pkg, bins := range f.provides {
+		if !strings.Contains(script, pkg) {
+			continue
+		}
+		for _, bin := range bins {
+			f.have[bin] = true
+		}
+	}
+	return undo.Result{}, nil
+}
+
+func (f *fakeNix) answer(joined string) undo.Result {
+	for key, out := range f.stdout {
+		if strings.Contains(joined, key) {
+			return undo.Result{Stdout: []byte(out)}
+		}
+	}
+	return undo.Result{}
+}
+
+func last(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	return argv[len(argv)-1]
+}
+
 // fixture is an agent with a temporary store and home, and the fake store
 // behind the interface.
 type fixture struct {
@@ -177,6 +339,7 @@ type fixture struct {
 	out     *strings.Builder
 	errOut  *strings.Builder
 	backend *fakeUndo
+	nix     *fakeNix
 
 	// tmux records the tmux command lines, and sessions names the sessions
 	// the fake tmux has, by the target the agent asks for.
@@ -195,6 +358,7 @@ func newFixture(t *testing.T) *fixture {
 		out:      &strings.Builder{},
 		errOut:   &strings.Builder{},
 		backend:  newFakeUndo(store),
+		nix:      newFakeNix(),
 		sessions: map[string]bool{},
 		diesOn:   map[string]bool{},
 	}
@@ -205,6 +369,7 @@ func newFixture(t *testing.T) *fixture {
 		MachineFile: filepath.Join(t.TempDir(), "machine.json"),
 		Home:        home,
 		Open:        func(string) (undoStore, error) { return f.backend, nil },
+		Runner:      f.nix,
 		Tmux: func(_ context.Context, args ...string) bool {
 			f.tmux = append(f.tmux, strings.Join(args, " "))
 			switch args[0] {
@@ -257,6 +422,27 @@ func (f *fixture) writeMachine(t *testing.T) {
 	body := `{"name":"homebox","id":"0199a1c2-1f3b-7c4d-9e2a-5b6c7d8e9f01","store":"` + f.env.Store + `"}`
 	if err := os.WriteFile(f.env.MachineFile, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the machine record: %v", err)
+	}
+}
+
+// writeRepoConfig puts a repose.nix at the project's checkout root, which
+// is the live area the sync delivers it into.
+func (f *fixture) writeRepoConfig(t *testing.T, project, body string) {
+	t.Helper()
+	live := liveDir(f.env.Store, project)
+	mkdir(t, live)
+	if err := os.WriteFile(filepath.Join(live, repoConfigName), []byte(body), 0o644); err != nil {
+		t.Fatalf("write the project's %s: %v", repoConfigName, err)
+	}
+}
+
+// writeWanted puts the carry's tool list where the laptop writes it.
+func (f *fixture) writeWanted(t *testing.T, body string) {
+	t.Helper()
+	dir := filepath.Join(f.env.Home, ".repose")
+	mkdir(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "tools-wanted.json"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write the carry's tool list: %v", err)
 	}
 }
 

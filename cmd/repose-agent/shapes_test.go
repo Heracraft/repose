@@ -299,3 +299,35 @@ func TestProjectInitStartsTheTmuxSession(t *testing.T) {
 		}
 	}
 }
+
+// repose's records live inside the project's subvolume so a rewind takes
+// them with it, and the subvolume is the user's checkout, so they must not
+// show up in that project's git status.
+func TestProjectInitHidesItsOwnRecords(t *testing.T) {
+	f := newFixture(t)
+	live := liveDir(f.env.Store, "todo-app")
+	if err := os.MkdirAll(filepath.Join(live, ".git", "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code := run(context.Background(), f.env, []string{"project", "init", "--project", "todo-app"}); code != 0 {
+		t.Fatalf("exit %d: %s", code, f.out)
+	}
+	b, err := os.ReadFile(filepath.Join(live, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("read the exclude file: %v", err)
+	}
+	if !strings.Contains(string(b), "/.repose/") {
+		t.Errorf("the exclude file does not hide the records:\n%s", b)
+	}
+	// A second init does not add it twice.
+	if code := run(context.Background(), f.env, []string{"project", "init", "--project", "todo-app"}); code != 0 {
+		t.Fatalf("second init: exit %d", code)
+	}
+	again, err := os.ReadFile(filepath.Join(live, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(again), "/.repose/") != 1 {
+		t.Errorf("the entry went in twice:\n%s", again)
+	}
+}

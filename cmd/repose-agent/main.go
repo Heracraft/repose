@@ -1,7 +1,8 @@
 // Command repose-agent is the on-box command the repose CLI invokes over SSH
 // on a machine the user owns (docs/workstreams/SPINE.md, "Contract 3"). It
-// drives the undo store of internal/undo and quiesces a project so a rewind
-// cannot lose an agent's last writes.
+// drives the undo store of internal/undo, builds a project's environment
+// with Nix in single-user mode, and quiesces a project so a rewind cannot
+// lose an agent's last writes.
 //
 // Every command prints one JSON object on stdout and nothing else there;
 // anything for a human goes to stderr. A failure prints
@@ -36,6 +37,10 @@ Commands:
   point delete --project SLUG --name N
   gc --high-water PERCENT
   space
+  env apply --project SLUG [--add ATTR,ATTR]
+  env show --project SLUG
+  tools plan --project SLUG
+  tools run --project SLUG
   quiesce --project SLUG
   holders --root PATH
   status
@@ -88,6 +93,10 @@ func dispatch(ctx context.Context, env *Env, args []string) error {
 		return cmdGC(ctx, env, args[1:])
 	case "space":
 		return cmdSpace(ctx, env, args[1:])
+	case "env":
+		return cmdEnv(ctx, env, args[1:])
+	case "tools":
+		return cmdTools(ctx, env, args[1:])
 	case "quiesce":
 		return cmdQuiesce(ctx, env, args[1:])
 	case "holders":

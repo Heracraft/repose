@@ -92,7 +92,11 @@ up() {
   else
     command -v docker >/dev/null || die "docker is not on PATH; or name a box with SPINE_E2E_SSH"
     check_disk
-    mkdir -p "$DATA/opt" "$DATA/var"
+    # /nix too: a store with a toolchain in it is about 2 GB and / has a
+    # few gigabytes. The uid inside the box is 1000, the same as this
+    # machine's own user, so a host directory this user owns is writable
+    # by the box's login (the Nix install needs that, I-832).
+    mkdir -p "$DATA/opt" "$DATA/var" "$DATA/nix"
     make_box
   fi
   install_on_box
@@ -128,6 +132,7 @@ EOF
   docker run -d --name "$NAME" --privileged --cgroupns=host \
     -v /sys/fs/cgroup:/sys/fs/cgroup:rw --tmpfs /run --tmpfs /run/lock \
     -v "$DATA/opt:/opt/repose" -v "$DATA/var:/var/lib/repose" \
+    -v "$DATA/nix:/nix" \
     -p "$PORT:22" "$BOX" >/dev/null
   for _ in $(seq 30); do
     box_ssh true 2>/dev/null && break
@@ -142,7 +147,13 @@ install_on_box() {
   # is not done").
   say "serving repose-agent to the box"
   mkdir -p "$WORK/serve" && cp "$WORK/repose-agent" "$WORK/serve/"
-  ( cd "$WORK/serve" && nohup python3 -m http.server "$HTTP_PORT" --bind 0.0.0.0 >/dev/null 2>&1 & )
+  # setsid and disown: a background child of this script keeps the shell
+  # in wait() when the script's own stdout is a pipe someone is reading,
+  # and `up` then never returns (seen 2026-10-20).
+  if ! pgrep -f "http[.]server $HTTP_PORT" >/dev/null 2>&1; then
+    ( cd "$WORK/serve" && setsid python3 -m http.server "$HTTP_PORT" --bind 0.0.0.0 \
+        </dev/null >/dev/null 2>&1 & disown ) || true
+  fi
   sleep 1
   if [ -n "$EXTERNAL" ]; then
     # The box is elsewhere, so it needs an address of this machine it can
@@ -190,6 +201,9 @@ run() {
   printf 'console.log("scratch");\n' > src/scratch.ts                   # untracked
   printf '{"records":[1,2,3]}\n' > app.db                               # the dev database
   printf 'DATABASE_URL=postgres://localhost/dev\n' > .env                # gitignored, and the app needs it
+  # A real project pins its runtime; this is what the scan resolves and
+  # what the box must end up with.
+  printf '{\n  "name": "e2e",\n  "engines": { "node": "22.x" },\n  "scripts": { "dev": "node -e \\"console.log(1)\\"" }\n}\n' > package.json
   printf 'node_modules/\n.env\n' > .gitignore
   git status --short
 
@@ -213,10 +227,10 @@ run() {
   "$WORK/repose" run "$PROJ" --machine spinebox -d -p "say hello"
 
   say "what the box holds"
-  box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -type f -print | sort && cat app.db"
+  box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -path ./.repose -prune -o -type f -print | sort && cat app.db"
 
   say "an agent wrecks it"
-  box_ssh "cd ~/$PROJ && rm -rf src && printf 'CORRUPT\n' > app.db && rm -f .gitignore && find . -path ./.git -prune -o -type f -print | wc -l"
+  box_ssh "cd ~/$PROJ && rm -rf src && printf 'CORRUPT\n' > app.db && rm -f .gitignore && find . -path ./.git -prune -o -path ./.repose -prune -o -type f -print | wc -l"
 
   say "repose rewind --list"
   "$WORK/repose" rewind --list
@@ -225,11 +239,13 @@ run() {
   "$WORK/repose" rewind --yes
 
   say "what came back"
-  box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -type f -print | sort && cat app.db && git status --short"
+  box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -path ./.repose -prune -o -type f -print | sort && cat app.db && git status --short"
 
   say "checks"
-  n=$(box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -type f -print | wc -l")
-  [ "$n" = 5 ] || die "$n files after the rewind, want 5 (the four plus .env)"
+  # The project's own files: not .git, and not repose's records, which
+  # live in the subvolume so a rewind takes them too.
+  n=$(box_ssh "cd ~/$PROJ && find . -path ./.git -prune -o -path ./.repose -prune -o -type f -print | wc -l")
+  [ "$n" = 6 ] || die "$n files after the rewind, want 6 (.env, .gitignore, app.db, package.json and two in src)"
   db=$(box_ssh "cat ~/$PROJ/app.db")
   [ "$db" = '{"records":[1,2,3]}' ] || die "the database came back as $db"
 
@@ -260,7 +276,24 @@ run() {
   say "what is running, read from the box"
   "$WORK/repose" ps 2>&1 | tail -3
 
-  say "PASS: the files, the database, the .env, the git identity, sync and ps"
+  # The promise: the project must actually run. Nothing above proves that
+  # until the box has the toolchain the project pins (I-832).
+  say "can the project run?"
+  node_v=$(box_ssh "cd ~/$PROJ && . /etc/profile.d/repose.sh 2>/dev/null; node --version 2>&1 || true")
+  echo "  node on the box: $node_v"
+  case "$node_v" in
+    v*) ;;
+    *) die "the project pins node and the box has none: '$node_v'" ;;
+  esac
+  box_ssh "cd ~/$PROJ && . /etc/profile.d/repose.sh 2>/dev/null; node -e 'console.log(\"the project runs\")'" ||
+    die "node is there but the project could not run"
+
+  say "repose's own records are not in the project's git status"
+  box_ssh "cd ~/$PROJ && git status --porcelain" | grep -q "\.repose" &&
+    die "repose's records show in the user's git status"
+  echo "  .repose/ is excluded, so it cannot be committed by accident"
+
+  say "PASS: the files, the database, the .env, the git identity, sync, ps and the toolchain"
 }
 
 down() {

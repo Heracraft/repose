@@ -52,6 +52,10 @@ type Env struct {
 
 	// Open opens the undo store at a mountpoint.
 	Open func(store string) (undoStore, error)
+	// Runner runs the processes the environment commands need: nix, and a
+	// login shell for `command -v`. It is the seam internal/undo's
+	// backend uses for btrfs, so there is one of them in the agent.
+	Runner undo.Runner
 	// Tmux runs tmux and reports whether it exited 0.
 	Tmux func(ctx context.Context, args ...string) bool
 	// Signal sends sig to a pid.
@@ -71,6 +75,7 @@ func defaultEnv() *Env {
 		MachineFile: DefaultMachineFile,
 		Home:        home,
 		Open:        openBtrfs,
+		Runner:      undo.Exec{},
 		Tmux:        runTmux,
 		Signal:      signalPID,
 		Grace:       KillGrace,

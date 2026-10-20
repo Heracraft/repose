@@ -440,6 +440,67 @@ also fails on untouched `main` when this box's root disk is above 90 percent
 (`TestHerdrProjectWarnsHerdrDown`, "warning \"disk_high\" before
 SetupProject").
 
+## Third pass: the toolchain, and both options (2026-10-20)
+
+The owner: "we need to make sure its a good experience to bring your own
+hardware + repose having a hand ... the promise of the repose product must be
+fulfilled otherwise the product is useless." The promise broke at the
+toolchain: the box had no node and no python, so `repose run` synced the code,
+started the agent, and `npm run dev` failed. What closed, with the evidence
+from the same Debian 12 box (`ops/dev/spine-e2e.sh`, exit 0):
+
+- [x] **The project runs.** The run resolves the project's own pin and installs
+      it on the box: `✓ Installed nodejs_22  0.2s`, and then on the box
+      `node --version` answers **v22.23.2** and `node -e` prints. Nix in
+      single-user mode, a shared store at `/nix`, and the project's profile
+      inside its own btrfs subvolume so a rewind takes an added package back
+      out (I-832). `repose config add|show` work there;
+      `repose config remove` does not, and says the rewind is the way back.
+- [x] **The repository is licensed.** It was public with no LICENSE at all,
+      which is all rights reserved: there was no free option in the only sense
+      that matters. Apache-2.0, verified byte-identical to a pristine copy
+      apart from the copyright line (I-830).
+- [x] **Both options are written down.** `apps/web/src/content/docs/hosted-or-your-own.md`
+      says what the free self-hosted option is and what a hosted account adds,
+      as services and not gates, with no price (I-836: the price waits on
+      I-834's measurement). The README is the funnel, with the real transcripts
+      and a "What this does not do yet" section.
+- [x] **The hosted option's reachability is designed, not built.** I-834: a
+      byte-splice relay on the edge, the box dialling out with a certificate it
+      traded a join token for, direct-first connection selection, and the
+      WireGuard hub deliberately refused. The price waits on
+      `relay_bytes_total`, which the gateway has been counting since it
+      shipped and nothing has ever read.
+- [x] **The scan stops lying about an owned box.** `baseCommands` promised the
+      hosted guest's base (make, gcc, psql, docker) on a box that has none of
+      it; it is split, and an owned machine's listing is that box's own answer
+      to a `command -v` sweep. A test now ties the hosted half to
+      `nix/guest/base/tool-list.nix`, which is how it drifted (it had lost
+      `yarn` and `yarnpkg`).
+- [x] **repose's own records cannot be committed by accident.** The records
+      live in the project's subvolume so a rewind takes them, and that
+      subvolume is the user's checkout, so `.repose/` showed as untracked in
+      their repository. `project init` and every `point take` add it to
+      `.git/info/exclude` — the repository's own private ignore list, which is
+      not a tracked file and never travels. Found by reading the e2e's own
+      `git status` output.
+- [x] **Two bugs the tests caught in the new code.** A failed tool install was
+      recorded but invisible, because `plan` short-circuited on the marker a
+      pass writes; and an absent `nix` read as "nix is on the box but exited
+      1", because a shell reports a missing command as exit 127 with "command
+      not found" and the check matched neither.
+- [x] **The harness refuses to wedge or to fill the disk.** It filled this
+      machine's root disk once and later hung `up` by backgrounding a file
+      server inside a pipeline; it now checks free space first, detaches the
+      server with `setsid`, binds `/nix` to the data disk, and can point at a
+      box you already have (`SPINE_E2E_SSH`).
+
+Still true, and said in the docs rather than implied: a database is the user's
+to run; anything installed outside the project's subvolume is outside what a
+rewind undoes; and repose does not run the project's own `npm ci` or `uv sync`,
+because that executes the project's lockfile scripts on a box where the agent
+already has root.
+
 ## What is not done
 
 Named here rather than left for someone to discover:

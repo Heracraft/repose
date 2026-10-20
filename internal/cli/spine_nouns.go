@@ -479,27 +479,29 @@ func writeOwnedProjects(w io.Writer, rows []ownedRow, after bool) {
 }
 
 // spineRefusedNouns are the commands whose work is the api's or a
-// guest's: a plan's size classes, snapshots streamed to Blob, a nix
-// configuration built by the host, guestd's events and questions. A
-// project on a machine the user owns has none of that, so each of these
-// says so once (refuseOnOwnedMachine) instead of asking the api about a
-// project it has never heard of. `run`, `attach`, `sync`, `ps`, `ls`,
-// `status`, `rewind` and `machine` are the nouns that answer for such a
-// project; the rest wait for the pass that gives them something true to
-// do.
+// guest's: a plan's size classes, snapshots streamed to Blob, guestd's
+// events and questions. A project on a machine the user owns has none of
+// that, so each of these says so once (refuseOnOwnedMachine) instead of
+// asking the api about a project it has never heard of. `run`, `attach`,
+// `sync`, `ps`, `ls`, `status`, `config`, `rewind` and `machine` are the
+// nouns that answer for such a project; the rest wait for the pass that
+// gives them something true to do.
+// `config` answers in spine_config.go, where the project's own
+// repose.nix, built into a Nix profile on the box, is its configuration,
+// and the parts a host or a server of ours would hold (a revision to go
+// back to, the account's machine.nix) refuse one by one.
 // `repose restore` is not among them: it takes the name of a destroyed
 // project, not a project, so a refusal there would answer a name this
 // path knows nothing about.
 var spineRefusedNouns = []string{
-	"browser", "config", "events", "fork", "keep", "logs", "questions",
+	"browser", "events", "fork", "keep", "logs", "questions",
 	"reply", "resize", "rm", "secrets", "snapshots", "start", "stop",
 }
 
 // spineWholeAccountFlags are the flags that take one of those nouns off
-// a project and onto the account or every machine: `config --global`
-// edits machine.nix, `secrets set --global` the account's secrets,
-// `stop --unused` every machine that is idle. A checkout on a machine
-// the user owns must not refuse those.
+// a project and onto the account or every machine: `secrets set
+// --global` the account's secrets, `stop --unused` every machine that is
+// idle. A checkout on a machine the user owns must not refuse those.
 var spineWholeAccountFlags = []string{"global", "unused"}
 
 // refuseOnOwnedMachine is the one place a noun that cannot act on a

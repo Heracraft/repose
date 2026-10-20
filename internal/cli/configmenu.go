@@ -112,6 +112,12 @@ func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string)
 	if len(args) == 0 {
 		return ConfigMenuListCmd(ctx, e)
 	}
+	// A project on a machine the user owns has no api project and no host
+	// to build a closure: the menu's packages go into the project's own
+	// Nix profile there (DECISIONS I-832, spine_config.go).
+	if handled, err := spineConfigAdd(ctx, e, projectArg, args); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -179,6 +185,9 @@ func ConfigAddCmd(ctx context.Context, e *Env, projectArg string, args []string)
 func ConfigRemoveCmd(ctx context.Context, e *Env, projectArg string, args []string) error {
 	if len(args) == 0 {
 		return exitf(ExitUsage, "Name at least one package: `repose config remove gcc`.")
+	}
+	if handled, err := spineConfigRemove(e, projectArg); handled {
+		return err
 	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {

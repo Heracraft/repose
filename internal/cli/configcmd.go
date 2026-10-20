@@ -12,6 +12,12 @@ import (
 // ConfigShowCmd implements `repose config show`; --revisions, hidden
 // since `config revisions` (I-622), keeps its old lines for a release.
 func ConfigShowCmd(ctx context.Context, e *Env, projectArg string, revisions bool) error {
+	// A project on a machine the user owns has no api project: its
+	// configuration is the Nix profile on that box, built from its own
+	// repose.nix (DECISIONS I-832).
+	if handled, err := spineConfigShow(ctx, e, projectArg, revisions); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -110,6 +116,9 @@ func asAPIError(err error, target **APIError) bool {
 
 // ConfigApplyCmd implements `repose config apply [PATH]`.
 func ConfigApplyCmd(ctx context.Context, e *Env, projectArg, path string) error {
+	if handled, err := spineConfigApply(ctx, e, projectArg, path); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -164,6 +173,11 @@ func reapplyRevision(ctx context.Context, e *Env, project *Project) error {
 // its start, as `repose config revisions` and "Building revision
 // 4f1c2a9e" show it.
 func ConfigApplyRevisionCmd(ctx context.Context, e *Env, projectArg, id string) error {
+	// A revision is a build the api kept, so a project on a machine the
+	// user owns has none (spineConfigRevisions).
+	if handled, err := spineConfigRevisions(e, projectArg); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -235,6 +249,9 @@ func applyRevision(ctx context.Context, e *Env, project *Project, rev *Revision)
 // project's revisions, newest first, with the id `config apply
 // --revision` takes.
 func ConfigRevisionsCmd(ctx context.Context, e *Env, projectArg string) error {
+	if handled, err := spineConfigRevisions(e, projectArg); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -275,6 +292,9 @@ func ConfigRevisionsCmd(ctx context.Context, e *Env, projectArg string) error {
 // your machine.nix on or off for one machine, the undo of `repose run
 // --no-personal` and what the dashboard's switch does.
 func PersonalSwitchCmd(ctx context.Context, e *Env, projectArg string, on bool) error {
+	if handled, err := spinePersonalSwitch(e, projectArg); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -302,6 +322,9 @@ func PersonalSwitchCmd(ctx context.Context, e *Env, projectArg string, on bool) 
 // ConfigEditCmd implements `repose config edit`: fetch, open $EDITOR on a
 // temp file, PUT on save. editor is injected for testing.
 func ConfigEditCmd(ctx context.Context, e *Env, projectArg string, editor func(path string) error) error {
+	if handled, err := spineConfigEdit(e, projectArg, editor); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err

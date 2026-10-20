@@ -413,7 +413,7 @@ SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only
 
 ## Machines you own
 
-A machine you own is a Linux box you can already ssh into. `repose machine add` installs repose on it over that same ssh: it checks the box, provisions undo space on btrfs, and installs repose's agent and the coding agents. It installs nothing your project needs to run ([What the box does not get](/docs/own-machine#what-the-box-does-not-get)). The box keeps its own login, and the laptop reaches it directly ([Your own machine](/docs/own-machine)).
+A machine you own is a Linux box you can already ssh into. `repose machine add` installs repose on it over that same ssh: it checks the box, provisions undo space on btrfs, and installs repose's agent and the coding agents. It also puts Nix on the box in single-user mode, which is where the project's own tools come from ([The project's tools](/docs/own-machine#the-projects-tools)); running services are still yours ([What the box does not get](/docs/own-machine#what-the-box-does-not-get)). The box keeps its own login, and the laptop reaches it directly ([Your own machine](/docs/own-machine)).
 
 | Command | What it does |
 | ------- | ------------ |
@@ -453,6 +453,8 @@ An account secret is for every project, so `--global` beside a project exits 2.
 | `repose config off [PROJECT]`       | Keep your machine.nix off the project's machine. [`repose run --no-personal`](#repose-run-project) does it at a run. |
 
 With `--global`, the same commands act on your [machine.nix](/docs/config#your-machine-nix) instead of the project's file. `--global` takes no project; `on` and `off` take one, with or without it. `add` and `remove` edit the file's `home.packages = with pkgs; [ ... ];` list and push it, `edit` opens the laptop's copy and pushes it on save, `show` prints the account's copy, `revisions` lists its saves, and `apply [PATH]` pushes a file over the account's copy, by default `~/.config/repose/machine.nix`; an empty file removes it. `repose config show --revisions` is the old form of `revisions`.
+
+On a [machine you own](/docs/own-machine#the-projects-tools), `add`, `remove`, `show` and `edit` act on the project's `repose.nix` on that box: Nix there builds it into a profile inside the project's btrfs subvolume, so [`repose rewind`](#repose-rewind-project) puts an added package back where the files go. `revisions`, `on` and `off` are a hosted machine's, since the revisions and your machine.nix are state a server of ours keeps.
 
 The CLI's own settings are keys in [config.toml](#config-toml); `repose config set` exits 2 and names the file.
 

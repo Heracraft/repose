@@ -24441,3 +24441,168 @@ digits and have an identical version that is fully selfhostable").
   half is built; that number is its own entry.
 - *Order:* self-host first — no billing, no seats, no relay, no card.
   I-812's spine is that first half.
+
+**I-830. The repository is Apache-2.0 (licence, 2026-10-20).** Settles what
+I-816 said must be settled before the first public tag. *Made during
+implementation* (owner, 2026-10-20: "if you wanna pay $5 or a completely
+free option, intuit it all").
+- *Why it could not wait.* The repository is already public and has no
+  `LICENSE` file at all, which under copyright means all rights reserved.
+  Every sentence about a "completely free, fully self-hostable option" was
+  false in the only sense that matters: a stranger could read the code and
+  could not legally run it. This file is what makes the free option real.
+- *Apache-2.0, the whole repository*, CLI and server alike, with the
+  patent grant and the NOTICE discipline that comes with it. Coolify is
+  the stated role model (I-816) and is Apache-2.0; the hosted service is
+  the moat, not the source.
+- *Rejected: AGPL on the server with a permissive CLI.* It is the usual
+  answer to "stop a cloud reselling it", and I-816 named it as an option.
+  Against it: the CLI is the artefact a developer installs, and a
+  copyleft-adjacent split makes a company's lawyer read two licences
+  before anyone tries it; the thing worth reselling here is the relay and
+  the registry, which are a service and not the code; and a dual licence
+  is a standing tax on a solo maintainer. The protection it buys is small
+  at a single-digit price, and the adoption it costs is the whole plan.
+- *Rejected: source-available (BSL, fair-source).* It would keep the
+  resale question open, and it would make "completely free" a word with an
+  asterisk, which is the opposite of what the funnel needs.
+- *This is irreversible in one direction*, as I-816 says: code released
+  under Apache-2.0 stays available under it. The price is therefore capped
+  forever at what the hosted service adds, which is the model the owner
+  chose on purpose.
+
+**I-832. A project's toolchain on a machine the user owns is Nix in
+single-user mode: a shared store and a per-project profile inside the
+project's subvolume (spine-toolchain, 2026-10-20).** Settles the open
+question in `proposals/2026-10-19-wrapper-only.md` §3 and §7 item 6, and
+the one `features/own-machine.md` left open. *Made during implementation.*
+- *The problem.* The wrapper shape delivered the dirty checkout, the
+  logins and undo, and then `npm run dev` failed: the box had no node, no
+  python and no dependencies. A machine that cannot run the project
+  fulfils no promise, however good its undo is.
+- *Nix, single-user.* The installer fetches a pinned Nix release against
+  its hash, creates `/nix` owned by the login user, and installs with
+  `--no-daemon`. No root is needed afterwards, it works on any
+  distribution, and it is the only mechanism that keeps **one recipe** for
+  the hosted shape, the owned shape and this repository's own dev shell —
+  `nix/guest/base/tool-list.nix` is already a plain `pkgs: [ ... ]`
+  function with two callers, and this is the third. I-816's "no feature
+  gates" argues the same way: one environment story, not two.
+- *The store is shared at `/nix`; the profile is per project and lives
+  inside the project's live subvolume.* The store is content-addressed and
+  large, and sharing downloads between projects is most of what makes it
+  bearable, so it stays outside. The profile — the small set of symlinks
+  that says which packages this project has — goes inside the live area,
+  so **a rewind undoes `repose config add` too**, which is the behaviour a
+  hosted machine has. This is the answer to the proposal's "this wants a
+  decision, not a default".
+- *`repose.nix` at the checkout root is the project's environment here
+  too*, applied on every run between the sync and the point, so the point
+  records the environment the agent will actually use. `repose config
+  add|remove|show|edit` work on an owned machine: the menu
+  (`internal/menu`) is pure Go with an embedded catalog and needs no api,
+  so the laptop renders the same fragment it always has.
+- *The dev shell loader comes across with direnv made optional.*
+  `nix/overlay/agents/devshell.sh` is a working loader and the installer's
+  own comment said it needed direnv and nix-direnv, which a plain box has
+  not got; the port installs both through Nix so the good branch is the
+  normal one, and falls back to `nix develop` on the nearest flake when
+  they are absent.
+- *What this costs, and what it does not buy.* About 2 GB for a store with
+  a toolchain in it, which the installer's free-space guard now counts, and
+  the ask grows from "an ssh login and a package" to "an ssh login, a
+  package and a `/nix`" — the exact ask the wrapper shape was chosen to
+  avoid (proposal §1). It is still smaller than NixOS taking the disk, and
+  the alternative is a product that cannot run the project. A box whose
+  owner already has Nix is used as it is.
+- *Still the user's own:* a database. Postgres on the box is theirs to
+  run, and a rewind does not bring back anything installed outside the
+  project's subvolume. The docs say both.
+- *Rejected: mise or asdf.* Closer to the "any Linux" ask and genuinely
+  pleasant, but a second recipe to maintain beside the guest's Nix one,
+  with no shared cache and no `repose.nix`.
+  *Rejected: the distribution's packages.* `nodejs_20` becomes whatever
+  apt has, so a project's pin stops meaning anything — and the pin is the
+  one thing the scan already resolves correctly.
+  *Rejected: a container per project*, which I-812 already rejected for
+  moving the whole runtime and replacing the environment story.
+- *Not done, and named in the docs rather than implied:* repose does not
+  run the project's own dependency install (`npm ci`, `uv sync`) unasked.
+  That executes the project's lockfile scripts on the user's own
+  workstation, where an agent already has root through the passwordless
+  sudo the installer requires; it is a decision for its own entry, not a
+  default.
+
+**I-834. The hosted option's reachability is a byte-splice relay on the
+edge, and its price waits on a measurement (relay-design, 2026-10-20).**
+Design only; nothing of it is built. Extends I-816, which named
+reachability as the one thing a subscription can sell. *Made during
+implementation.*
+- *The shape.* The box holds one outbound TLS connection to the edge's
+  443, identified by a client certificate it got by trading a single-use
+  join token — `internal/hostd/register` is that client almost verbatim.
+  The edge runs a `relay` subcommand of the gateway binary that splices a
+  laptop's stream to the tunnel of a machine **the laptop's own account
+  owns**. The laptop reaches it as a `ProxyCommand` on the machine's ssh
+  block, which `internal/machine` already renders, and **only after the
+  direct address fails**.
+- *What crosses the relay is ssh ciphertext* between the laptop's key and
+  the box's own sshd. The relay holds no key to anyone's box. That single
+  property is what keeps the paid and the free build identical under
+  I-816, and it shrinks the security obligations to owner binding plus
+  abuse caps.
+- *Refused: putting an owned box on the WireGuard hub.* `wgsync` gives a
+  peer `AllowedIPs` including a guest CIDR on a routed /16 with
+  forwarding on, which is safe only because every peer today is our own
+  appliance. That is item 4 of the bring-your-own-host proposal, the
+  hardest unbuilt security work in the repository, and this shape skips it
+  entirely.
+  *Refused: reusing the SSH gateway's relay*, which terminates the user's
+  ssh at the edge and opens a second session as `dev` against a guest
+  certificate signed by our CA. An owned box has an ordinary host key and
+  its owner's login.
+  *Refused: a pure rendezvous with hole punching.* It carries no bytes,
+  but it needs a NAT-traversal stack on the box rather than one TLS dial,
+  and it fails on symmetric NAT and CGNAT — the very home networks being
+  sold to — so it needs a relay fallback anyway. The direct path the spine
+  already has is the cheap 80 percent of it.
+- *The price waits on a number we already collect.*
+  `relay_bytes_total{direction}` has been incremented by the gateway since
+  it shipped and nothing has ever read it. At Azure's $0.087/GB, $5 less
+  Polar's 75c buys about 49 GB a month, and about 36 GB once a share of
+  the edge is paid at a hundred subscribers. A developer attached to agent
+  output all day is a guess until that counter is read; a port forward to
+  a dev server or the browser view is what makes the tail dangerous. Read
+  the counter off the live edge first, then set the price.
+- *The one decision that makes a single-digit price safe* is an edge on a
+  host with an unlimited port rather than metered egress. Hetzner's 1 Gbit
+  is unlimited; Azure's is $0.087/GB.
+- *The reliability inversion is the product risk.* While the relay is
+  down, every paying user's box is unreachable and every free
+  self-hosted user is fine. Direct-first connection selection is the
+  mitigation, not an optimisation.
+
+**I-836. What each option is: free is everything self-hosted, the hosted
+option sells reachability, the registry, delivery and updates (tiers,
+2026-10-20).** Extends I-816. *Made during implementation.*
+- *Free, and completely.* The CLI, the box agent, undo, the installer and
+  the toolchain, under I-830's licence, with no account and no network
+  call to us: `repose machine add`, `run`, `attach`, `sync`, `ps`,
+  `rewind` and `config` all reach the box over ordinary ssh and nothing
+  else. The laptop is the registry (`~/.config/repose/machines.toml` and
+  `projects.toml`). A user behind NAT brings their own arrangement —
+  Tailscale, a port forward, a jump host — which the ssh block already
+  carries.
+- *The hosted option adds four things*, all of them services rather than
+  features: reachability (I-834's relay, so a box behind NAT needs no
+  arrangement at all); one registry across every machine the user owns,
+  so `repose ls` is true from any laptop; notification ingest and
+  delivery; and the agent and base update feed, as five agents change
+  weekly.
+- *No feature gates, restated as a rule with teeth:* every feature works
+  with no hosted control plane, so nothing may depend on us holding
+  something. A paid build and a free build are the same binaries; what
+  differs is whether a service answers.
+- *No price here.* I-834's measurement comes first, and
+  `docs/CHECKLIST.md` forbids documenting what is not shipped. The docs
+  say what each option is, not what it costs.

@@ -125,7 +125,8 @@ func TestRefuseOnOwnedMachineIsOneSentencePerNoun(t *testing.T) {
 		},
 		{
 			name:     "--global acts on the account, not the project",
-			path:     []string{"config", "add [PACKAGE...]"},
+			path:     []string{"secrets", "set NAME"},
+			args:     []string{"STRIPE_KEY"},
 			flag:     "global",
 			recorded: true,
 		},

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-795 entries.
+799 entries.
 
 ## Scope
 
@@ -827,3 +827,7 @@ pointer, not a summary.
 - **I-812** A project may live on a plain machine the user owns, reached by ordinary SSH, with no guest, no gateway and no control plane (wrapper-spine, 2026-10-19) — L24174
 - **I-814** Undo on a machine we do not own is a btrfs subvolume, and a rewind stops the project first (wrapper-spine, 2026-10-19) — L24306
 - **I-816** The model is a single-digit hosted control plane on hardware the user brings, plus an identical self-hostable version, self-host first (wrapper-spine, 2026-10-19) — L24409
+- **I-830** The repository is Apache-2.0 (licence, 2026-10-20) — L24445
+- **I-832** A project's toolchain on a machine the user owns is Nix in single-user mode: a shared store and a per-project profile inside the project's subvolume (spine-toolchain, 2026-10-20) — L24474
+- **I-834** The hosted option's reachability is a byte-splice relay on the edge, and its price waits on a measurement (relay-design, 2026-10-20) — L24536
+- **I-836** What each option is: free is everything self-hosted, the hosted option sells reachability, the registry, delivery and updates (tiers, 2026-10-20) — L24585

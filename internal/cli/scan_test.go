@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,133 @@ func TestScanNodeModulesBin(t *testing.T) {
 	sc := scanProject(dir)
 	if len(sc.Candidates) != 1 || sc.Candidates[0].Name != "othertool" {
 		t.Fatalf("candidates = %+v", sc.Candidates)
+	}
+}
+
+// One checkout against the three machines the scan can be talking
+// about. The base's tool list is a promise about a machine repose runs
+// and about no other: on a machine the user owns, a command counts as
+// there when the box itself said so, and when the box said nothing the
+// listing falls back to the base's list, which the tail names.
+func TestScanPerMachine(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"scripts":{"dev":"node server.js && make build && air"}}`)
+	for _, c := range []struct {
+		name       string
+		mach       scanMachine
+		candidates []string
+		skipped    []string
+	}{
+		{
+			name:       "a machine repose runs",
+			mach:       scanMachine{},
+			candidates: []string{"air"},
+			skipped:    []string{"make:" + baseSkipReason, "node:" + baseSkipReason},
+		},
+		{
+			name:       "a machine the user owns, which answered",
+			mach:       scanMachine{Owned: true, Name: "homebox", Asked: true, Have: map[string]bool{"make": true}},
+			candidates: []string{"air", "node"},
+			skipped:    []string{"make:already on homebox"},
+		},
+		{
+			name:       "a machine the user owns, which did not",
+			mach:       scanMachine{Owned: true, Name: "homebox", Why: scanNotAsked("homebox", "no answer")},
+			candidates: []string{"air"},
+			skipped:    []string{"make:" + baseSkipReason, "node:" + baseSkipReason},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sc := scanProjectOn(dir, c.mach)
+			var cands []string
+			for _, x := range sc.Candidates {
+				cands = append(cands, x.Name)
+			}
+			if !reflect.DeepEqual(cands, c.candidates) {
+				t.Errorf("candidates = %v, want %v", cands, c.candidates)
+			}
+			var skips []string
+			for _, x := range sc.Skipped {
+				skips = append(skips, x.Name+":"+x.Why)
+			}
+			if !reflect.DeepEqual(skips, c.skipped) {
+				t.Errorf("skipped = %v, want %v", skips, c.skipped)
+			}
+		})
+	}
+}
+
+// The listing for a machine the user owns: every command says the
+// machine has not got it, the tail names the machine and promises no
+// install, and a machine that did not answer is named with the list that
+// stood in for it.
+func TestScanOwnedListing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"scripts":{"dev":"node server.js && air"}}`)
+	answered := scanMachine{Owned: true, Name: "homebox", Asked: true}
+	var out bytes.Buffer
+	printScan(&out, dir, nil, scanProjectOn(dir, answered), toolPrecedence{}, scanPersonal{})
+	for _, want := range []string{"air                  not on homebox", "node                 not on homebox", "homebox has not got 2 of them."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the listing has no %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "installed in the background") {
+		t.Errorf("the listing promises a guest's installer:\n%s", out.String())
+	}
+	out.Reset()
+	silent := scanMachine{Owned: true, Name: "homebox", Why: scanNotAsked("homebox", "no answer")}
+	printScan(&out, dir, nil, scanProjectOn(dir, silent), toolPrecedence{}, scanPersonal{})
+	if want := "1 to check on homebox. homebox did not answer (no answer), so the commands above are the ones a machine repose runs has."; !strings.Contains(out.String(), want) {
+		t.Errorf("the listing has no %q:\n%s", want, out.String())
+	}
+}
+
+// A node pin that names no one major is said, and on a machine the user
+// owns the line says whether that box has a node at all: with none, the
+// project has no runtime, which is the difference between its own
+// scripts running and not.
+func TestScanUnresolvableNodePin(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"engines":{"node":"^20 || ^22"}}`)
+	for _, c := range []struct {
+		mach scanMachine
+		note string
+	}{
+		{scanMachine{}, "pins no one major; the machine's node is kept"},
+		{scanMachine{Owned: true, Name: "homebox"}, "pins no one major, so none is installed"},
+		{scanMachine{Owned: true, Name: "homebox", Asked: true, Have: map[string]bool{"node": true}}, "pins no one major, so none is installed; homebox has node"},
+		{scanMachine{Owned: true, Name: "homebox", Asked: true}, "pins no one major, so none is installed; homebox has no node"},
+	} {
+		sc := scanProjectOn(dir, c.mach)
+		if sc.Node != nil {
+			t.Fatalf("a pin naming no major became node %+v", sc.Node)
+		}
+		if len(sc.Versions) != 1 || sc.Versions[0].Note != c.note {
+			t.Fatalf("versions = %+v, want the note %q", sc.Versions, c.note)
+		}
+	}
+	// The scan prints it, which is the whole point of resolving nothing.
+	var out bytes.Buffer
+	sc := scanProjectOn(dir, scanMachine{Owned: true, Name: "homebox", Asked: true})
+	printScan(&out, dir, nil, sc, toolPrecedence{}, scanPersonal{})
+	if !strings.Contains(out.String(), "homebox has no node") {
+		t.Fatalf("the listing does not say the pin resolved to nothing:\n%s", out.String())
+	}
+}
+
+// What the machine is asked about: the laptop's commands, the project's,
+// and node. A command no box lacks is not asked about, and a name that
+// could be read as a shell word never travels.
+func TestScanAskNames(t *testing.T) {
+	laptop := []toolItem{
+		{Name: "typescript", Bins: []string{"tsc", "tsserver"}},
+		{Name: "evil", Bins: []string{"$(id)"}},
+	}
+	sc := &scanResult{Candidates: []toolItem{{Name: "air", Bins: []string{"air"}}, {Name: "ls", Bins: []string{"ls"}}}}
+	want := []string{"air", "node", "tsc", "tsserver"}
+	if got := scanAskNames(laptop, sc); !reflect.DeepEqual(got, want) {
+		t.Fatalf("scanAskNames = %v, want %v", got, want)
 	}
 }
 

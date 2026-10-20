@@ -208,6 +208,73 @@ type wireVersion struct {
 	Version string `json:"version"`
 }
 
+// wireSkip is one thing the agent did not do, with the line that says
+// why. An answer that is not the whole of what was asked for says so
+// itself: the environment that is three packages short, and the tool the
+// box would not install, are what a user reads a run's output for.
+type wireSkip struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// wireEnvApply is `env apply`: what went into the project's profile,
+// what was already in it, what the file asks for that a profile cannot
+// hold, and how long it took.
+type wireEnvApply struct {
+	Profile string     `json:"profile"`
+	Added   []string   `json:"added"`
+	Present []string   `json:"present"`
+	Skipped []wireSkip `json:"skipped"`
+	MS      int64      `json:"ms"`
+}
+
+type wireEnvShow struct {
+	Profile  string        `json:"profile"`
+	Packages []wirePackage `json:"packages"`
+}
+
+// wirePackage is one element of the profile: the name nix lists it under
+// and its nixpkgs attribute path.
+type wirePackage struct {
+	Name string `json:"name"`
+	Attr string `json:"attr"`
+}
+
+// wireTool is one entry of the carry's list the project's environment
+// has not. The commands are there so a caller can say which command is on
+// its way, which is what the guest's own installing file is for.
+type wireTool struct {
+	Name string   `json:"name"`
+	Bins []string `json:"bins"`
+}
+
+// wireRuntime is a version pin the project's environment does not meet
+// (DECISIONS I-265), and the nixpkgs attribute that meets it.
+type wireRuntime struct {
+	Runtime string `json:"runtime"`
+	Want    string `json:"want"`
+	Have    string `json:"have"`
+	Package string `json:"package"`
+}
+
+// wireToolsPlan is `tools plan`. Failed are the tools a pass could not
+// install, each with the line that said why; they are not in Missing,
+// because nothing tries them again until the laptop's entry for them
+// changes.
+type wireToolsPlan struct {
+	Hash     string        `json:"hash"`
+	Missing  []wireTool    `json:"missing"`
+	Runtimes []wireRuntime `json:"runtimes"`
+	Failed   []wireSkip    `json:"failed"`
+}
+
+type wireToolsRun struct {
+	Hash      string     `json:"hash"`
+	Installed []string   `json:"installed"`
+	Failed    []wireSkip `json:"failed"`
+	MS        int64      `json:"ms"`
+}
+
 // emit prints the command's one JSON object.
 func emit(w io.Writer, v any) error {
 	b, err := json.Marshal(v)

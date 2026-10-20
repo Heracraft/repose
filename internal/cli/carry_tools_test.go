@@ -180,7 +180,7 @@ func TestDedupeTools(t *testing.T) {
 		{Name: "evil", Bins: []string{"$(id)"}, Manager: "npm", Pkg: "evil"},
 		{Name: "--global", Bins: []string{"x"}, Manager: "npm", Pkg: "--global"},
 		{Name: "v", Bins: []string{"vv"}, Manager: "npm", Pkg: "v", Version: "1.0; rm -rf ~"},
-	})
+	}, scanMachine{})
 	var names []string
 	for _, it := range got {
 		names = append(names, it.Name+"@"+it.Version)
@@ -201,6 +201,7 @@ func TestAddToolsPart(t *testing.T) {
 		{nil, []string{"tools"}},
 		{map[string]string{"tools": "old"}, []string{"tools"}},
 		{map[string]string{"tools": tc.Wanted.Hash}, nil},
+		{map[string]string{"tools": tc.Wanted.Hash + toolsNoneSuffix}, nil},
 		{map[string]string{"tools": tc.Wanted.Hash, "tools-notices": "waiting"}, []string{"tools-notices"}},
 	} {
 		p := newGuestPayload()
@@ -326,9 +327,10 @@ func TestToolsGuestPartsGolden(t *testing.T) {
 		Java: &scanVersion{Tool: "java", Major: "21"},
 	})
 	files := map[string][]byte{
-		"tools.sh":          []byte(toolsPart),
+		"tools.sh":          []byte(toolsPartScript()),
 		"tools-notices.sh":  []byte(toolsNoticesPart),
 		"tools/wanted.json": tc.JSON,
+		"tools/hash":        []byte(tc.Wanted.Hash),
 	}
 	for rel, want := range files {
 		p := filepath.Join(guestPartsDir, rel)
@@ -348,23 +350,121 @@ func TestToolsGuestPartsGolden(t *testing.T) {
 	}
 }
 
-// A base without the installer: the list lands, nothing is said, no
-// marker, so the list travels again after a base upgrade.
-func TestToolsCarryOldBase(t *testing.T) {
+// The second of the marker's two outcomes (TestToolsCarryOverSSH is the
+// first, where the installer applies the list and writes the marker
+// itself): a machine with no installer — a box the user owns, or a base
+// older than the installer — says so once, writes the marker with
+// `:none` after the hash, and is not sent the same list again. Before
+// this the list travelled on every run and nothing was ever said.
+func TestToolsCarryNoInstaller(t *testing.T) {
 	f := newSyncFixture(t)
 	ctx := context.Background()
 	t.Setenv("PATH", "/usr/bin:/bin")
 	tc := newToolsCarry([]toolItem{{Name: "air", Bins: []string{"air"}, Manager: "go", Pkg: "github.com/air-verse/air", From: "laptop"}}, nil)
+	markers := func() map[string]string {
+		out, err := runSSH(ctx, f.target, markerScript(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parseMarkers(string(out))
+	}
 	_, o, err := syncCredentialsAndCarry(ctx, f.target, t.TempDir(), f.local, credSyncOptions{}, carryOptions{Tools: tc, Markers: map[string]string{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(o.Failed) != 0 || len(o.Lines()) != 0 {
+	if len(o.Failed) != 0 {
 		t.Fatalf("outcome = %+v", o)
 	}
-	if _, err := os.Stat(filepath.Join(f.guestHome, ".repose", "carry", "tools")); err == nil {
-		t.Fatal("a marker was written without an installer")
+	want := []string{"The machine has no tool installer, so none of your tools was installed."}
+	if !reflect.DeepEqual(o.Lines(), want) {
+		t.Fatalf("lines = %q, want %q", o.Lines(), want)
 	}
+	if got := markers()["tools"]; got != tc.Wanted.Hash+toolsNoneSuffix {
+		t.Fatalf("marker = %q, want %q", got, tc.Wanted.Hash+toolsNoneSuffix)
+	}
+	// The list is still there for whatever installs it later.
+	if _, err := os.Stat(filepath.Join(f.guestHome, ".repose", "tools-wanted.json")); err != nil {
+		t.Fatal(err)
+	}
+	// Said once: the same list is not sent again, and nothing is said.
+	_, o, err = syncCredentialsAndCarry(ctx, f.target, t.TempDir(), f.local, credSyncOptions{}, carryOptions{Tools: tc, Markers: markers()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(o.Sent) != 0 || len(o.Lines()) != 0 {
+		t.Fatalf("said again: %+v", o)
+	}
+}
+
+// The base's tool list and the hosted half of the command split are one
+// set: every package nix/guest/base/tool-list.nix installs is named here
+// with the commands it puts on a guest's PATH, and hostedBaseCommands
+// must hold each of them. Nothing tied the two together before, which is
+// how the list came to miss yarn and yarnpkg. The other sources of a
+// guest's commands (agents.nix, the shells, coreutils) are not covered
+// here; this is the file the base's own tools come from.
+func TestBaseToolListCommands(t *testing.T) {
+	bins := map[string][]string{
+		"curl": {"curl"}, "wget": {"wget"}, "jq": {"jq"}, "ripgrep": {"rg"}, "fd": {"fd"},
+		"bat": {"bat"}, "fzf": {"fzf"}, "tree": {"tree"}, "unzip": {"unzip"}, "zip": {"zip"},
+		"zstd": {"zstd"}, "htop": {"htop"}, "git": {"git"}, "gh": {"gh"}, "just": {"just"},
+		"nodejs_24": {"node", "npm", "npx", "corepack"}, "pnpm": {"pnpm"},
+		"yarnCorepack": {"yarn", "yarnpkg"}, "python312": {"python3"}, "uv": {"uv", "uvx"},
+		"go": {"go", "gofmt"}, "rustup": {"rustup", "cargo", "rustc", "rustfmt"},
+		"tmux": {"tmux"}, "openssh": {"ssh", "scp"}, "eza": {"eza"}, "zoxide": {"zoxide"},
+		"starship": {"starship"}, "direnv": {"direnv"}, "neovim": {"nvim"},
+		// A shell hook, no command of its own.
+		"nix-direnv":     {},
+		"docker-compose": {"docker-compose"},
+		"gcc":            {"cc", "gcc", "g++", "c++", "cpp"},
+		"binutils":       {"ar", "as", "ld", "nm", "strip", "objdump", "readelf"},
+		"gnumake":        {"make"}, "pkg-config": {"pkg-config"}, "cmake": {"cmake", "ctest"},
+		"file": {"file"}, "lsof": {"lsof"}, "dnsutils": {"dig", "nslookup", "host"},
+		"sqlite":           {"sqlite3"},
+		"postgresqlClient": {"psql", "pg_dump", "pg_dumpall", "pg_restore", "pg_isready"},
+		"openssl":          {"openssl"}, "gnupg": {"gpg", "gpg2"}, "psmisc": {"killall", "fuser"},
+	}
+	b, err := os.ReadFile(filepath.Join("..", "..", "nix", "guest", "base", "tool-list.nix"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range baseToolPackages(t, b) {
+		cmds, known := bins[pkg]
+		if !known {
+			t.Errorf("tool-list.nix installs %s: name the commands it provides in this test and add them to hostedBaseCommands", pkg)
+			continue
+		}
+		for _, c := range cmds {
+			if !hostedBaseCommands[c] {
+				t.Errorf("the base installs %s, which provides %s, and hostedBaseCommands has not got it", pkg, c)
+			}
+		}
+	}
+}
+
+// baseToolPackages is the packages of tool-list.nix: the names in its
+// `with pkgs; [ ... ]`, with the comments dropped.
+func baseToolPackages(t *testing.T, b []byte) []string {
+	t.Helper()
+	_, list, ok := strings.Cut(string(b), "with pkgs; [")
+	if !ok {
+		t.Fatal("tool-list.nix has no `with pkgs; [` list")
+	}
+	list, _, ok = strings.Cut(list, "\n]")
+	if !ok {
+		t.Fatal("tool-list.nix's package list does not end")
+	}
+	var out []string
+	for _, l := range strings.Split(list, "\n") {
+		if i := strings.Index(l, "#"); i >= 0 {
+			l = l[:i]
+		}
+		out = append(out, strings.Fields(l)...)
+	}
+	if len(out) < 20 {
+		t.Fatalf("tool-list.nix parsed to %d packages", len(out))
+	}
+	return out
 }
 
 // The laptop side's cost: the whole read (every manager, the project
