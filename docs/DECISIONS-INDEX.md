@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-792 entries.
+793 entries.
 
 ## Scope
 
@@ -494,7 +494,7 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11035
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11055
 - **I-428** Agent bumps run downloaded binaries in a job with no write access — L11083
-- **I-429** CI pins every action to a commit and every tool to a version — L11107
+- **I-429** CI pins every action to a commit and every tool to a version — amended by I-840; L11107
 - **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11124
 - **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11161
 - **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11190
@@ -824,3 +824,4 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
+- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L24174
