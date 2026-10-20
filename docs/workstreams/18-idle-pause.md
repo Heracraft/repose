@@ -263,47 +263,99 @@ otherwise) and `ops/alerts.yaml` the wake alert.
 
 ## 5. Checklist
 
-- [ ] The contract ships with the code: `buf lint`, `buf generate` and
-      `buf breaking --against main` clean, and `git show --stat` carries
-      `grpc-hostd.md`, `api.md`, `db-schema.md`, `host-conventions.md`
-      and `interfaces/README.md`. Evidence: the three command outputs and
-      the stat.
-- [ ] A pause of a guest the freeze then takes does not lose its memory.
-      Evidence: a Go test that freezes an already-paused guest and finds
-      an image written and no `unfrozen{reason="failed"}`, shown red
-      against `ch.Fake` made to refuse a second pause.
-- [ ] `repose start` and the dashboard's Start on a frozen machine do not
-      reboot it. Evidence: a test that a resting sample leaves
-      `guestdDead` false and `restart` false.
-- [ ] No op phase ever meets a paused guest, and a `guest_unresponsive`
-      from a resting project is not recovered as a reboot. Evidence: the
-      engine test, plus `ops/recover.go`'s own case.
-- [ ] A resting minute still bills and still counts as unused. Evidence:
-      a rollup test over a resting sample, and an `idle` test that a
-      resting stretch still raises the 24-hour notice once.
-- [ ] A wake is idempotent, is answered on a machine already awake, and
-      never queues behind a build. Evidence: the hostd tests.
-- [ ] Wake latency measured end to end on a real host: the gateway's dial
-      to the first keystroke, and `wake_ms` from the hostd metric, for a
-      guest resting 1 minute, 30 minutes and 2 hours. Evidence: the
-      figures, on a host, pasted in the queue entry's live note. **Owed:
-      this box cannot run it** (no host, and `nix develop` is the only
-      thing meant to run here).
+- [x] The contract ships with the code. Evidence: `buf lint`, `buf
+      generate` and `buf breaking --against '.git#branch=main'` all
+      silent; the commits carry `grpc-hostd.md`, `api.md`,
+      `db-schema.md`, `host-conventions.md`, `vsock-guestd.md`,
+      `ssh-gateway.md` and `interfaces/README.md`.
+- [x] A pause of a guest the freeze then takes does not lose its memory.
+      Evidence: `TestFreezeOfARestingGuestKeepsItsMemory`, shown red with
+      the `pausedAlready` guard removed ("freeze of a resting guest:
+      pause failed", the image discarded); `ch.Fake` now refuses a second
+      pause as Cloud Hypervisor does, so the test can see it. Also
+      `TestFreezeDoesNotWaitOnARestingGuest`: the pre-freeze write-back
+      no longer spends 10 s of the deadline on a guest that cannot
+      answer, which is what made a later guest lose its image.
+- [x] `repose start` and the dashboard's Start on a frozen machine do not
+      reboot it. Evidence: `TestStartOnAFrozenMachineDoesNotReboot`,
+      shown red with the guard removed (`202 {"restart":true}`), and the
+      CLI's `TestFrozenMachineIsNotGuestdDead`. The guard is in
+      `guestdDead` itself, so every caller is covered.
+- [x] No op phase meets a paused guest, and a `guest_unresponsive` from a
+      resting project is not recovered as a reboot. Evidence:
+      `TestGuestUnresponsiveFromARestingProjectWakesInstead`, shown red
+      ("commands ApplyConfig,WakeGuest,StopGuest,ApplyConfig,StartGuest"
+      -- the machine was rebooted -- against the wanted
+      "ApplyConfig,WakeGuest,ApplyConfig").
+- [x] A resting minute still bills and still counts as unused. Evidence:
+      `meter/ingest.go` keeps `state` as hostd sent it (`running`, what
+      `rollup.go:72` bills) and writes the marker to its own column;
+      `TestFrozenStretchStillRaisesTheUnusedNotice`. The one rule both
+      rest on is the sampler keeping `guestd_ok` true (S4).
+- [x] A wake is idempotent, is answered on a machine already awake, and
+      never queues behind a build. Evidence:
+      `TestWakeOfAMachineWithNothingToWake`,
+      `TestConcurrentWakesSendOneCommand` (one command for three
+      callers), and the `noSlot` job test; `runJob` now honours `noSlot`
+      for a command, not only an internal job.
+- [ ] **Wake latency measured end to end on a real host**: the gateway's
+      dial to the first keystroke, and `wake_ms` from
+      `repose_host_guest_wake_seconds`, for a guest resting 1 minute, 30
+      minutes and 2 hours. **Owed, and this box cannot run it**: no host,
+      and `nix develop` is the only thing meant to run here. `lifecycle.md`
+      and `run-and-attach.md` both say "a second or two" and must be
+      corrected if the figures disagree; `GuestWakeSlow`'s 5 s threshold
+      rests on the same guess.
+- [ ] **That a guest with two vhost-user devices answers at all after a
+      plain `vm.pause` and `vm.resume`.** This gates everything: I-652
+      records that a *snapshotted* VM must not be resumed, because its
+      virtio-fs stops answering, and every program in a guest runs from
+      `/nix/store` over virtio-fs. A plain pause is a different path and
+      is measured nowhere. **Owed**; it is why `repose.host.pauseIdle` is
+      off by default.
 - [ ] The guest's clock after a wake, and whether a user timer due during
-      a rest fires. Evidence: the same live run.
-- [ ] An outbound connection idle across a rest: what breaks after 25,
-      35 and 60 minutes, and whether Claude Code and an MCP server
-      recover. Evidence: the same live run; the docs say what was found.
-- [ ] `GuestdLost` does not page for a resting machine. Evidence: a
-      promtool case in `ops/check.sh`.
-- [ ] The four metrics are in `10-observability.md` §5 and
-      `TestHostFamily` passes. Evidence: the test run.
-- [ ] Every user-visible line obeys I-484 and I-485, the mocked band
-      included. Evidence: `pnpm --filter web exec vitest run
-      src/lib/docs.test.ts src/lib/copy.test.ts`, the CLI's
-      `TestSuccessOutputNamesNoCommand|TestCLIReassures`, and the new
-      lines pasted in the commit with what was cut.
-- [ ] The docs ship in the same commit: `go test ./internal/cli -run
-      'TestDocs|TestAgentGuide'` passes. Evidence: the run.
-- [ ] Judged at 1440 and 390 in both schemes at 1x, with a frozen row and
-      a frozen project page. Evidence: the captures.
+      a rest fires. **Owed, the same live run.** hostd arms its wake 60 s
+      before the elapse it read, assuming systemd recalculates a calendar
+      timer after a `CLOCK_REALTIME` step; that assumption is untested.
+- [ ] An outbound connection idle across a rest: what breaks after 25, 35
+      and 60 minutes, and whether Claude Code and an MCP server recover.
+      **Owed.** `lifecycle.md` states the 30-minute NAT drop from
+      `infra/azure/modules/network/variables.tf:94`; the host keeps its
+      conntrack entry for 86,400 s, so packets after the wake are dropped
+      rather than reset and the job hangs instead of failing.
+- [x] `GuestdLost` does not page for a resting machine. Evidence: the
+      promtool case "GuestdLost stays quiet for a host whose guests are
+      frozen", shown red by flipping `repose_host_guestd_lost` to 1.
+      `ops/check.sh`: 43 rules parse, every alert has a runbook heading,
+      the route is as intended.
+- [x] The metrics are in `10-observability.md` §5 and the gates cover
+      them. Evidence: `TestHostFamily` and `TestAPIFamily` name all five
+      new families; `TestHostFamily` was green while blind to them and
+      fails on a wrong name (`repose_host_guests_resting_XX`).
+- [x] Every user-visible line obeys I-484 and I-485, the mocked band
+      included. Evidence: `vitest src/lib/docs.test.ts src/lib/copy.test.ts`
+      20/20 with a dead anchor shown to fail it; the ice band's second
+      sentence cut and `unasked.ts` given a screens-only rule so it
+      cannot come back; `TestSuccessOutputNamesNoCommand` and
+      `TestCLIReassures` pass; the CLI's new lines are in the cli commit.
+- [x] The docs ship in the same commit. Evidence: `go test ./internal/cli
+      -run 'TestDocs|TestAgentGuide'` passes, including
+      `TestDocsNameEveryCommandAndFlag`, `TestDocsNameEveryConfigKey` and
+      the three agent-guide cases.
+- [x] Judged at 1440 and 390 in both schemes at 1x with a frozen row and
+      a frozen project page. Evidence: the web builder's captures;
+      Playwright 224 passed (the one failure, billing's support-link
+      case, passes alone and is a flake under the full parallel run).
+- [x] The whole tree builds and tests. Evidence: `go build ./...`, `go
+      vet ./...`, `gofmt -l` all clean; `go test ./...` 91 packages ok.
+      `internal/guestd`'s two failures (`TestHerdrProjectWarnsHerdrDown`,
+      `TestStraceReadsEnvironOnlyForTheHookPaneLookup`) pass alone, are
+      in a package this branch changes by zero lines, and the strace one
+      fails on unmodified `main` too.
+- [x] The host switch is real and off. Evidence: `nix eval` of
+      `host`.hostd.ExecStart and `host-01`'s carry no `--pause-idle`;
+      with `pauseIdle = true` on host-01 it does.
+- [ ] A live check on a host, recorded in the queue entry: that a machine
+      rests at all under the real rule, and that `hostd pause|wake`
+      works against a real control socket (only the routes, the client
+      and the wiring are covered by Go tests).
