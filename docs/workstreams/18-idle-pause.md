@@ -359,3 +359,34 @@ otherwise) and `ops/alerts.yaml` the wake alert.
       rests at all under the real rule, and that `hostd pause|wake`
       works against a real control socket (only the routes, the client
       and the wiring are covered by Go tests).
+- [x] A second pass over the committed branch, adversarially verified.
+      Evidence: five lenses (what still loses a tenant's processes; a path
+      that does not wake; a rule that freezes work or never fires; what is
+      declared but not wired; every line a reader sees), then one refuter
+      per finding that defaulted to not-real. Ten confirmed, nine refuted.
+      The ten are fixed in the commits that name them, each with the test
+      shown red first. The pass also recorded 66 things it checked and
+      found sound, including that the nix switch reaches the unit, both
+      host-stream hooks are registered in the stated order, the tick holds
+      its own advisory lock, 0029 is embedded by glob, both commands are
+      in all three switches, and all five metrics appear on a real scrape.
+
+## 6. Where the live checks run
+
+Staging, `host-stg-01` (`../../infra/README.md`, "Staging"): a real Intel
+host with nested KVM, `hostdev` on the staging edge standing in for the
+api, and no tenant guests. Nothing there needs a quarter of an hour of
+real idleness -- `hostd pause <guest_id>` on the control socket pauses one
+guest directly, and a guest can sit paused for hours before `hostd wake`
+takes it back, which is how the clock, the timers and the dropped sockets
+get their figures.
+
+As of 2026-10-20 02:20 UTC that host is **down and needs a reboot**: its
+MANA NIC has been failing to probe in a loop since about 8.8 hours into
+its uptime (`mana ...: gdma probe failed: err = -71`, repeating to the end
+of the serial log), so it answers no ICMP and no SSH, and `hostdev status`
+on the edge reports `connected: false` with a heartbeat 9 hours old while
+Azure still calls the VM running. The restart is the owner's. It is worth
+an incident note of its own: nothing alerted, and a host that loses its
+NIC and never comes back is what `HostUnreachable` and `HostScrapeDown`
+exist for.
