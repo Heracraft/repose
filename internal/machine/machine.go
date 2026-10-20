@@ -22,11 +22,22 @@ import (
 
 // Machine is one machine the user owns.
 type Machine struct {
-	Name     string // the user's name for it, [a-z0-9-], unique
-	Address  string // host or IP as ssh reaches it
-	Port     int    // 0 means 22
-	Login    string // the ssh user: the box's own owner, not "dev"
-	KeyPath  string // the laptop key authorised on the box
+	Name    string // the user's name for it, [a-z0-9-], unique
+	Address string // host or IP as ssh reaches it, resolved when it was added
+	Port    int    // 0 means 22
+	Login   string // the ssh user: the box's own owner, not "dev"
+	KeyPath string // the laptop key authorised on the box
+	// ProxyJump is the hops ssh reaches it through, in order, each as
+	// [user@]host[:port], and ProxyCommand the command it reaches it
+	// through instead. Both come from the user's own ~/.ssh/config, read
+	// once with `ssh -G` when the machine is added (resolve.go).
+	ProxyJump    string
+	ProxyCommand string
+	// Spelled is the --ssh value as the user wrote it, when that is an
+	// alias their config answers for rather than the address itself. It
+	// is what `repose machine ls` shows, since it is the name they know
+	// the box by.
+	Spelled  string
 	UndoPath string // the store's mountpoint on the box
 	AddedAt  time.Time
 }
@@ -40,6 +51,7 @@ type Registry interface {
 	List() ([]Machine, error)
 	Get(name string) (Machine, error)
 	Add(m Machine) error      // refuses a duplicate name
+	Update(m Machine) error   // replaces the entry called m.Name, ErrNotFound when it has none
 	Remove(name string) error // absence is success
 	// SSHConfig renders ~/.ssh/repose/machines, one Host block per
 	// machine, in name order. Included by ~/.ssh/repose/config like the

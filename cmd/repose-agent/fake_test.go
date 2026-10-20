@@ -20,7 +20,6 @@ var takenPoint = undo.Point{
 	Project: "todo-app",
 	Reason:  "run",
 	TakenAt: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC),
-	Bytes:   32768,
 }
 
 // fakeUndo is the store of SPINE.md "Contract 1" with no box under it. Every
@@ -38,9 +37,10 @@ type fakeUndo struct {
 	// of the state it replaces.
 	safety string
 
-	sizeBytes uint64   // what Provision was asked for
-	highWater int      // what GC was asked for
-	calls     []string // method names, in order
+	sizeBytes uint64        // what Provision was asked for
+	highWater int           // what GC was asked for
+	gc        undo.GCResult // the counts GC answers with, beside the points
+	calls     []string      // method names, in order
 }
 
 var _ undoStore = (*fakeUndo)(nil)
@@ -114,7 +114,6 @@ func (f *fakeUndo) Take(_ context.Context, project, name, reason string) (undo.P
 		Project: project,
 		Reason:  reason,
 		TakenAt: takenPoint.TakenAt,
-		Bytes:   takenPoint.Bytes,
 	}
 	f.points[project] = append([]undo.Point{p}, f.points[project]...)
 	return p, nil
@@ -131,7 +130,7 @@ func (f *fakeUndo) Rewind(_ context.Context, project, name string) (string, erro
 	if err := f.call("Rewind"); err != nil {
 		return "", err
 	}
-	safety := undo.Point{Name: f.safety, Project: project, Reason: undo.ReasonManual, TakenAt: takenPoint.TakenAt}
+	safety := undo.Point{Name: f.safety, Project: project, Reason: undo.ReasonRewind, TakenAt: takenPoint.TakenAt}
 	f.points[project] = append([]undo.Point{safety}, f.points[project]...)
 	return f.safety, nil
 }
@@ -154,15 +153,17 @@ func (f *fakeUndo) Space(_ context.Context) (undo.Space, error) {
 	return f.space, nil
 }
 
-func (f *fakeUndo) GC(_ context.Context, highWaterPercent int) ([]undo.Point, error) {
+func (f *fakeUndo) GC(_ context.Context, highWaterPercent int) (undo.GCResult, error) {
 	f.highWater = highWaterPercent
 	if err := f.call("GC"); err != nil {
-		return nil, err
+		return undo.GCResult{}, err
 	}
-	return f.points["todo-app"], nil
+	res := f.gc
+	res.Deleted = f.points["todo-app"]
+	return res, nil
 }
 
-func (f *fakeUndo) Holders(project string) ([]undo.Holder, error) {
+func (f *fakeUndo) Holders(_ context.Context, project string) ([]undo.Holder, error) {
 	if err := f.call("Holders"); err != nil {
 		return nil, err
 	}

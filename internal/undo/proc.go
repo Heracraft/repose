@@ -1,6 +1,7 @@
 package undo
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,17 +17,23 @@ type Holder struct {
 	Comm string `json:"comm"`
 }
 
-// holders returns the processes whose working directory or open files are
-// under root, which must be absolute and free of symlinks because that is
-// the shape /proc reports. It is the quiescence check a rewind makes
-// first: a writer inside the live subvolume survives the swap and goes on
-// writing where nothing can reach it, so its last writes are lost
-// silently (docs/research/wrapper-undo.md).
+// HoldersOf is the scan of one live area named by an absolute,
+// symlink-free path, for a caller that holds the path rather than the
+// store. The agent runs it on itself under sudo, which is how a process
+// of another user is seen at all (Btrfs.Scan).
+func HoldersOf(root string) ([]Holder, error) { return holders(root) }
+
+// holders returns the processes whose working directory, open files or
+// memory mappings are under root, which must be absolute and free of
+// symlinks because that is the shape /proc reports. It is the quiescence
+// check a rewind makes first: a writer inside the live subvolume
+// survives the swap and goes on writing where nothing can reach it, so
+// its last writes are lost silently (docs/research/wrapper-undo.md).
 //
 // A process of another user is invisible to a reader that is not root:
-// /proc/<pid>/cwd and /proc/<pid>/fd deny it. The project's own processes
-// belong to the login user, which is who the agent runs as, so those are
-// the ones this sees.
+// /proc/<pid>/cwd and /proc/<pid>/fd deny it. Btrfs.Holders runs a second
+// scan through Btrfs.Scan for that case; this one sees the processes of
+// the user it runs as.
 func holders(root string) ([]Holder, error) {
 	ents, err := os.ReadDir("/proc")
 	if err != nil {
@@ -52,11 +59,18 @@ func holders(root string) ([]Holder, error) {
 }
 
 // processUnder reports whether the process at proc has its working
-// directory or any open file under root.
+// directory, any open file or any memory mapping under root.
 func processUnder(proc, root string) bool {
 	if link, err := os.Readlink(filepath.Join(proc, "cwd")); err == nil && pathUnder(link, root) {
 		return true
 	}
+	if fdUnder(proc, root) {
+		return true
+	}
+	return mappedUnder(proc, root)
+}
+
+func fdUnder(proc, root string) bool {
 	fds, err := os.ReadDir(filepath.Join(proc, "fd"))
 	if err != nil {
 		return false
@@ -67,6 +81,32 @@ func processUnder(proc, root string) bool {
 			continue
 		}
 		if pathUnder(link, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// mappedUnder reports whether the process has a file under root mapped
+// into its memory. A mapping is not an open file: a process that mmaps
+// a database and closes the descriptor has no entry in fd/ and still
+// writes through the mapping after a swap, into a subvolume no path
+// reaches. sqlite's WAL, a JVM and every dynamically linked binary run
+// from the live area look like this.
+func mappedUnder(proc, root string) bool {
+	f, err := os.Open(filepath.Join(proc, "maps"))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		// address perms offset dev inode path — and only the path can
+		// hold a slash, so the first one starts it. An anonymous or
+		// pseudo mapping ("[heap]", "[stack]") has none.
+		line := sc.Text()
+		if i := strings.IndexByte(line, '/'); i >= 0 && pathUnder(line[i:], root) {
 			return true
 		}
 	}

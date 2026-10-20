@@ -13,7 +13,7 @@ import (
 
 // The JSON the CLI parses, as SPINE.md "Contract 3" writes it.
 const (
-	pointJSON = `{"name":"r-0199a1c2","project":"todo-app","reason":"run","taken_at":"2026-10-19T12:00:00Z","bytes":32768}`
+	pointJSON = `{"name":"r-0199a1c2","project":"todo-app","reason":"run","taken_at":"2026-10-19T12:00:00Z"}`
 	spaceJSON = `{"total":42949672960,"used":13314424832,"free":29635248128}`
 )
 
@@ -89,8 +89,52 @@ func TestShapes(t *testing.T) {
 			setup: seedPoint,
 			args:  []string{"gc", "--high-water", "85"},
 			want: func(*fixture) string {
-				return `{"deleted":[` + pointJSON + `],"space":` + spaceJSON + `}`
+				return `{"deleted":[` + pointJSON + `],"young":0,"kept":0,"stalled":false,"space":` + spaceJSON + `}`
 			},
+		},
+		{
+			name: "gc that the floors held back",
+			setup: func(t *testing.T, f *fixture) {
+				seedPoint(t, f)
+				f.backend.gc = undo.GCResult{Young: 4, Kept: 3, Stalled: true}
+			},
+			args: []string{"gc", "--high-water", "85"},
+			want: func(*fixture) string {
+				return `{"deleted":[` + pointJSON + `],"young":4,"kept":3,"stalled":true,"space":` + spaceJSON + `}`
+			},
+		},
+		{
+			name: "point take of every project",
+			setup: func(t *testing.T, f *fixture) {
+				mkdir(t, liveDir(f.env.Store, "todo-app"))
+				mkdir(t, liveDir(f.env.Store, "notes"))
+			},
+			args: []string{"point", "take", "--reason", "scheduled"},
+			want: func(f *fixture) string {
+				// The fake answers with the name it was given, and the
+				// store's own slug order, which os.ReadDir sorts.
+				var names []string
+				for _, p := range f.backend.points["notes"] {
+					names = append(names, p.Name)
+				}
+				for _, p := range f.backend.points["todo-app"] {
+					names = append(names, p.Name)
+				}
+				return `{"points":[` +
+					`{"name":"` + names[0] + `","project":"notes","reason":"scheduled","taken_at":"2026-10-19T12:00:00Z"},` +
+					`{"name":"` + names[1] + `","project":"todo-app","reason":"scheduled","taken_at":"2026-10-19T12:00:00Z"}` +
+					`]}`
+			},
+		},
+		{
+			name: "point take of every project in an empty store",
+			args: []string{"point", "take", "--reason", "scheduled"},
+			want: func(*fixture) string { return `{"points":[]}` },
+		},
+		{
+			name: "holders",
+			args: []string{"holders", "--root", "/var/lib/repose/undo/projects/nothing-here"},
+			want: func(*fixture) string { return `{"holders":[]}` },
 		},
 		{
 			name: "space",
@@ -106,7 +150,9 @@ func TestShapes(t *testing.T) {
 				f.diesOn[termOf(4242)] = true
 			},
 			args: []string{"quiesce", "--project", "todo-app"},
-			want: func(*fixture) string { return `{"stopped":["tmux:todo-app","node"],"busy":[]}` },
+			want: func(*fixture) string {
+				return `{"stopped":["tmux:todo-app","node (pid 4242)"],"busy":[]}`
+			},
 		},
 		{
 			name: "status",

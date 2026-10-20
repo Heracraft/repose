@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/heracraft/repose/internal/undo"
 )
 
 // maxSizeGB is a petabyte. Past it --size-gb is a typo, and the bytes it
@@ -30,13 +32,13 @@ func cmdProvision(ctx context.Context, env *Env, args []string) error {
 	// that is already there needs no size.
 	ready, err := b.Ready(ctx)
 	if err != nil {
-		return fromBackend(err, "read the undo store")
+		return env.fromBackend(err, "read the undo store")
 	}
 	if !ready && *sizeGB == 0 {
 		return errf(codeInvalidArgument, "no size given; pass --size-gb")
 	}
 	if err := b.Provision(ctx, *sizeGB<<30); err != nil {
-		return fromBackend(err, "provision the undo store")
+		return env.fromBackend(err, "provision the undo store")
 	}
 	created := !ready
 	return emit(env.Stdout, wireProvision{Store: env.Store, FS: fsBtrfs, Created: created})
@@ -73,7 +75,7 @@ func cmdProjectInit(ctx context.Context, env *Env, args []string) error {
 	created := statErr != nil
 	path, err := b.Init(ctx, *project)
 	if err != nil {
-		return fromBackend(err, "create the project's live area")
+		return env.fromBackend(err, "create the project's live area")
 	}
 	if err := linkHome(env, *project, path); err != nil {
 		return err
@@ -154,19 +156,30 @@ func cmdPoint(ctx context.Context, env *Env, args []string) error {
 
 func cmdPointTake(ctx context.Context, env *Env, args []string) error {
 	fs := flagSet(env, "point take")
-	project := fs.String("project", "", "the project's slug")
+	project := fs.String("project", "", "the project's slug; left out, every project in the store")
 	name := fs.String("name", "", "the point's name, derived from the caller's id")
-	reason := fs.String("reason", "", "manual, run, stop or scheduled")
+	reason := fs.String("reason", "", "manual, run, stop, scheduled or rewind")
 	if err := fs.Parse(args); err != nil {
 		return parseErr(err)
+	}
+	if err := checkReason(*reason); err != nil {
+		return err
+	}
+	// No --project is every project the store holds, which is what the
+	// scheduled timer runs: a six-hour session had one point, the one
+	// `repose run` took, and an agent that wrecks the project at hour
+	// five left nothing between the two to go back to
+	// (ops/install/machine-install.sh, repose-undo-point.timer).
+	if *project == "" {
+		if *name != "" {
+			return errf(codeInvalidArgument, "--name is for one project; pass --project with it")
+		}
+		return takeEveryPoint(ctx, env, *reason)
 	}
 	if err := checkSlug("project", *project); err != nil {
 		return err
 	}
 	if err := checkName(*name); err != nil {
-		return err
-	}
-	if err := checkReason(*reason); err != nil {
 		return err
 	}
 	b, err := env.backend()
@@ -175,9 +188,41 @@ func cmdPointTake(ctx context.Context, env *Env, args []string) error {
 	}
 	p, err := b.Take(ctx, *project, *name, *reason)
 	if err != nil {
-		return fromBackend(err, "take a point")
+		return env.fromBackend(err, "take a point")
 	}
 	return emit(env.Stdout, wireTake{Point: wirePointOf(p)})
+}
+
+// takeEveryPoint takes one point of every project in the store. A
+// project that will not take one does not stop the rest: this runs on a
+// timer, and one project out of space is not a reason for the others to
+// go unpointed. The failure is the store's own, and `gc` is what
+// answers it.
+func takeEveryPoint(ctx context.Context, env *Env, reason string) error {
+	b, err := env.backend()
+	if err != nil {
+		return err
+	}
+	slugs, err := projectSlugs(env.Store)
+	if err != nil {
+		return err
+	}
+	out := wireTakeAll{Points: make([]wirePoint, 0, len(slugs))}
+	var failed *agentError
+	for _, slug := range slugs {
+		p, err := b.Take(ctx, slug, undo.NewPointName(), reason)
+		if err != nil {
+			if failed == nil {
+				failed = env.fromBackend(err, "take a point of "+slug)
+			}
+			continue
+		}
+		out.Points = append(out.Points, wirePointOf(p))
+	}
+	if len(out.Points) == 0 && failed != nil {
+		return failed
+	}
+	return emit(env.Stdout, out)
 }
 
 func cmdPointList(ctx context.Context, env *Env, args []string) error {
@@ -195,7 +240,7 @@ func cmdPointList(ctx context.Context, env *Env, args []string) error {
 	}
 	points, err := b.List(ctx, *project)
 	if err != nil {
-		return fromBackend(err, "list the project's points")
+		return env.fromBackend(err, "list the project's points")
 	}
 	return emit(env.Stdout, wireList{Points: wirePointsOf(points)})
 }
@@ -220,18 +265,18 @@ func cmdPointRewind(ctx context.Context, env *Env, args []string) error {
 	// quiesce's own check, before Rewind makes it again: a project still
 	// being written to is refused rather than rewound under its writer
 	// (docs/research/wrapper-undo.md).
-	holders, err := holdersOf(b, *project)
+	holders, err := holdersOf(ctx, env, b, *project)
 	if err != nil {
 		return err
 	}
 	if len(holders) > 0 {
-		return errf(codeBusy, "the project is not quiesced: %s", strings.Join(holderNames(holders), ", "))
+		return errf(codeBusy, "the project is not quiesced: %s", strings.Join(holderLabels(holders), ", "))
 	}
 	// Rewind takes a point of the state it replaces, so the rewind itself
 	// is undoable, and answers with that point's name.
 	safety, err := b.Rewind(ctx, *project, *name)
 	if err != nil {
-		return fromBackend(err, "rewind the project")
+		return env.fromBackend(err, "rewind the project")
 	}
 	return emit(env.Stdout, wireRewind{Rewound: true, SafetyPoint: safety})
 }
@@ -261,7 +306,7 @@ func cmdPointFork(ctx context.Context, env *Env, args []string) error {
 		return err
 	}
 	if err := b.Fork(ctx, *project, *name, *as); err != nil {
-		return fromBackend(err, "fork the point")
+		return env.fromBackend(err, "fork the point")
 	}
 	return emit(env.Stdout, wireFork{Path: liveDir(env.Store, *as)})
 }
@@ -285,7 +330,7 @@ func cmdPointDelete(ctx context.Context, env *Env, args []string) error {
 	}
 	// Absence is success (Contract 1), so deleted is always true here.
 	if err := b.Delete(ctx, *project, *name); err != nil {
-		return fromBackend(err, "delete the point")
+		return env.fromBackend(err, "delete the point")
 	}
 	return emit(env.Stdout, wireDelete{Deleted: true})
 }
@@ -303,15 +348,21 @@ func cmdGC(ctx context.Context, env *Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	deleted, err := b.GC(ctx, *highWater)
+	res, err := b.GC(ctx, *highWater)
 	if err != nil {
-		return fromBackend(err, "collect the oldest points")
+		return env.fromBackend(err, "collect the oldest points")
 	}
 	space, err := b.Space(ctx)
 	if err != nil {
-		return fromBackend(err, "read the store's space")
+		return env.fromBackend(err, "read the store's space")
 	}
-	return emit(env.Stdout, wireGC{Deleted: wirePointsOf(deleted), Space: wireSpaceOf(space)})
+	return emit(env.Stdout, wireGC{
+		Deleted: wirePointsOf(res.Deleted),
+		Young:   res.Young,
+		Kept:    res.Kept,
+		Stalled: res.Stalled,
+		Space:   wireSpaceOf(space),
+	})
 }
 
 func cmdSpace(ctx context.Context, env *Env, args []string) error {
@@ -324,7 +375,7 @@ func cmdSpace(ctx context.Context, env *Env, args []string) error {
 	}
 	space, err := b.Space(ctx)
 	if err != nil {
-		return fromBackend(err, "read the store's space")
+		return env.fromBackend(err, "read the store's space")
 	}
 	return emit(env.Stdout, wireSpaceOf(space))
 }

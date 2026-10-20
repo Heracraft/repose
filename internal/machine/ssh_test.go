@@ -13,12 +13,21 @@ var updateGolden = flag.Bool("update", false, "rewrite testdata/machines and tes
 
 // goldenMachines covers what a block can carry: the default port left
 // out, a port spelled out, a port that is not 22, an IPv6 address, a key
-// path with a space in it, and a machine added without a key.
+// path with a space in it, a machine added without a key, a chain of jump
+// hosts and a ProxyCommand.
 func goldenMachines() []Machine {
 	return []Machine{
 		{Name: "workshop", Address: "2001:db8::1", Port: 2222, Login: "ada", KeyPath: "/home/ada/.ssh/my key", UndoPath: "/var/lib/repose/undo"},
 		{Name: "homebox", Address: "192.168.1.40", Login: "me", KeyPath: "~/.ssh/id_ed25519", UndoPath: "/var/lib/repose/undo"},
 		{Name: "spare", Address: "spare.example", Port: 22, Login: "me"},
+		{
+			Name: "shed", Address: "10.0.0.9", Port: 2022, Login: "ada", Spelled: "shed",
+			ProxyJump: "jump@bast.example:2222", UndoPath: "/var/lib/repose/undo",
+		},
+		{
+			Name: "tunnel", Address: "tunnel.example", Login: "me", Spelled: "tunnel",
+			ProxyCommand: "cloudflared access ssh --hostname %h", UndoPath: "/var/lib/repose/undo",
+		},
 	}
 }
 
@@ -186,5 +195,20 @@ func TestSSHResolvesTheAlias(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "\nport 2222\n") {
 		t.Error("workshop.repose did not resolve to port 2222")
+	}
+	// The hops and the command a box behind NAT is reached through: ssh
+	// reads this file with -F and no other, so each is in the block as the
+	// address it resolved to and not as an alias (resolve.go).
+	for _, c := range []struct{ host, line string }{
+		{"shed.repose", "\nproxyjump jump@bast.example:2222\n"},
+		{"tunnel.repose", "\nproxycommand cloudflared access ssh --hostname %h\n"},
+	} {
+		out, err := exec.Command(ssh, "-G", "-F", path, c.host).Output()
+		if err != nil {
+			t.Fatalf("ssh -G %s: %v", c.host, err)
+		}
+		if !strings.Contains(string(out), c.line) {
+			t.Errorf("%s resolved without %q", c.host, strings.TrimSpace(c.line))
+		}
 	}
 }

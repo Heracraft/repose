@@ -38,9 +38,14 @@ func errf(code, format string, a ...any) *agentError {
 	return &agentError{Code: code, Message: fmt.Sprintf(format, a...)}
 }
 
-// fromBackend maps internal/undo's sentinels onto the codes. Anything else
-// the backend returns is internal.
-func fromBackend(err error, what string) *agentError {
+// fromBackend maps internal/undo's sentinels onto the codes. Anything
+// else the backend returns is internal.
+//
+// A full store is the one failure the user has to act on, so it names
+// the store and the command that frees it rather than handing back a
+// bare code: nothing else on the box can tell them where the space went
+// (SPINE.md, "undo that is safe to rely on").
+func (e *Env) fromBackend(err error, what string) *agentError {
 	code := codeInternal
 	switch {
 	case errors.Is(err, undo.ErrInvalidName):
@@ -50,7 +55,9 @@ func fromBackend(err error, what string) *agentError {
 	case errors.Is(err, undo.ErrBusy):
 		code = codeBusy
 	case errors.Is(err, undo.ErrNoSpace):
-		code = codeNoSpace
+		return errf(codeNoSpace,
+			"%s: the undo store at %s is full; `repose rewind --list` names its points and `repose rewind --rm POINT` frees one",
+			what, e.Store)
 	case errors.Is(err, undo.ErrExists):
 		code = codeExists
 	}
@@ -74,7 +81,6 @@ type wirePoint struct {
 	Project string `json:"project"`
 	Reason  string `json:"reason"`
 	TakenAt string `json:"taken_at"`
-	Bytes   uint64 `json:"bytes"`
 }
 
 func wirePointOf(p undo.Point) wirePoint {
@@ -83,7 +89,6 @@ func wirePointOf(p undo.Point) wirePoint {
 		Project: p.Project,
 		Reason:  p.Reason,
 		TakenAt: p.TakenAt.UTC().Format(time.RFC3339),
-		Bytes:   p.Bytes,
 	}
 }
 
@@ -121,6 +126,12 @@ type wireTake struct {
 	Point wirePoint `json:"point"`
 }
 
+// wireTakeAll is `point take` with no --project: one point of every
+// project the store holds, which is what the scheduled timer runs.
+type wireTakeAll struct {
+	Points []wirePoint `json:"points"`
+}
+
 type wireList struct {
 	Points []wirePoint `json:"points"`
 }
@@ -142,12 +153,34 @@ type wireDelete struct {
 
 type wireGC struct {
 	Deleted []wirePoint `json:"deleted"`
-	Space   wireSpace   `json:"space"`
+	// Young and Kept are the points the floors would not let go: inside
+	// six hours, or among the three newest a project has. Stalled says a
+	// delete freed nothing and the loop stopped. Without these a store
+	// that stays over its mark looks like a GC that did not run.
+	Young   int       `json:"young"`
+	Kept    int       `json:"kept"`
+	Stalled bool      `json:"stalled"`
+	Space   wireSpace `json:"space"`
+}
+
+// wireHolders is `holders`, the scan this command runs on itself under
+// sudo so a root-owned writer in a live area is seen. pid and comm are
+// what a log field or a message may carry; a path or an argv is not
+// (docs/ops/OBSERVABILITY.md).
+type wireHolders struct {
+	Holders []wireHolder `json:"holders"`
+}
+
+type wireHolder struct {
+	PID  int    `json:"pid"`
+	Comm string `json:"comm"`
 }
 
 type wireQuiesce struct {
-	// Stopped and Busy name processes, never a path and never an argv: a log
-	// field may carry a process name and nothing a tenant typed (CLAUDE.md).
+	// Stopped and Busy name processes as "comm (pid N)", never a path and
+	// never an argv: a log field may carry a process name and a pid and
+	// nothing a tenant typed (CLAUDE.md). The pid is there because a
+	// refusal the user has to act on is unactionable without it.
 	Stopped []string `json:"stopped"`
 	Busy    []string `json:"busy"`
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -209,7 +210,7 @@ func TestNamesAndReasonsAreChecked(t *testing.T) {
 
 // List is newest first, with the reason the point was taken for.
 func TestListIsNewestFirst(t *testing.T) {
-	r := &FakeRunner{Exclusive: map[string]uint64{"points/todo-app/r-2": 104857600}}
+	r := &FakeRunner{}
 	b := newStore(t, r)
 	ctx := context.Background()
 	if _, err := b.Init(ctx, "todo-app"); err != nil {
@@ -232,35 +233,12 @@ func TestListIsNewestFirst(t *testing.T) {
 	if strings.Join(names, ",") != "r-3,r-2,r-1" {
 		t.Fatalf("points %v", names)
 	}
-	if ps[1].Bytes != 104857600 {
-		t.Fatalf("point bytes %d", ps[1].Bytes)
-	}
-	if ps[0].Bytes != 0 {
-		t.Fatalf("a point with no qgroup row reported %d bytes, want 0", ps[0].Bytes)
-	}
 	if ps[0].Reason != ReasonRun {
 		t.Fatalf("reason %q", ps[0].Reason)
 	}
 	// An empty project has no points and no error.
 	if ps, err := b.List(ctx, "other"); err != nil || len(ps) != 0 {
 		t.Fatalf("points of a project with none: %v %v", ps, err)
-	}
-}
-
-// Quotas off is 0 bytes, not a guess and not a failure.
-func TestListWithoutQuotas(t *testing.T) {
-	r := &FakeRunner{QuotasOff: true}
-	b := newStore(t, r)
-	ctx := context.Background()
-	if _, err := b.Init(ctx, "todo-app"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := b.Take(ctx, "todo-app", "r-1", ReasonManual); err != nil {
-		t.Fatal(err)
-	}
-	ps, err := b.List(ctx, "todo-app")
-	if err != nil || len(ps) != 1 || ps[0].Bytes != 0 {
-		t.Fatalf("points %+v: %v", ps, err)
 	}
 }
 
@@ -308,6 +286,124 @@ func TestRewindTakesASafetyPointBeforeTheSwap(t *testing.T) {
 		if strings.HasPrefix(e.Name(), stagingPrefix) || strings.HasPrefix(e.Name(), asidePrefix) {
 			t.Fatalf("a rewind left %s behind", e.Name())
 		}
+	}
+}
+
+// The point a rewind takes of the state it replaces carries its own
+// reason, so nothing can pick it as the newest point to go back to.
+func TestRewindSafetyPointCarriesItsOwnReason(t *testing.T) {
+	r := &FakeRunner{}
+	b := newStore(t, r)
+	ctx := context.Background()
+	if _, err := b.Init(ctx, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	liveFile(t, b, "todo-app", "f", "before")
+	if _, err := b.Take(ctx, "todo-app", "r-good", ReasonRun); err != nil {
+		t.Fatal(err)
+	}
+	safety, err := b.Rewind(ctx, "todo-app", "r-good")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps, err := b.List(ctx, "todo-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 2 || ps[0].Name != safety {
+		t.Fatalf("points %+v, want %s newest", ps, safety)
+	}
+	if ps[0].Reason != ReasonRewind {
+		t.Fatalf("the safety point's reason is %q, want %q", ps[0].Reason, ReasonRewind)
+	}
+	if ps[1].Reason != ReasonRun {
+		t.Fatalf("the point rewound to changed reason to %q", ps[1].Reason)
+	}
+}
+
+// A second scan with more privilege is merged in by pid, and one that
+// fails leaves the first scan's answer standing: a quiesce that cannot
+// run is worse than one that sees less.
+func TestHoldersMergesThePrivilegedScan(t *testing.T) {
+	r := &FakeRunner{}
+	b := newStore(t, r)
+	ctx := context.Background()
+	if _, err := b.Init(ctx, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	liveFile(t, b, "todo-app", "f", "live")
+	fd, err := os.Open(filepath.Join(b.livePath("todo-app"), "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fd.Close() }()
+	mine := os.Getpid()
+
+	b.Scan = func(context.Context, string) ([]Holder, error) {
+		return []Holder{{PID: 1, Comm: "systemd"}, {PID: mine, Comm: "undo.test"}}, nil
+	}
+	hs, err := b.Holders(ctx, "todo-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hs) != 2 || hs[0].PID != 1 || hs[1].PID != mine {
+		t.Fatalf("holders %+v, want pid 1 and %d once each", hs, mine)
+	}
+
+	b.Scan = func(context.Context, string) ([]Holder, error) {
+		return nil, errors.New("sudo: a password is required")
+	}
+	hs, err = b.Holders(ctx, "todo-app")
+	if err != nil {
+		t.Fatalf("a scan that could not run failed the check: %v", err)
+	}
+	if len(hs) != 1 || hs[0].PID != mine {
+		t.Fatalf("holders %+v, want only %d", hs, mine)
+	}
+}
+
+// A mapped file holds the live area as firmly as an open one: a process
+// that mmaps a database and closes the descriptor has nothing in fd/ and
+// still writes through the mapping after a swap.
+func TestHoldersSeeAMappedFile(t *testing.T) {
+	r := &FakeRunner{}
+	b := newStore(t, r)
+	ctx := context.Background()
+	if _, err := b.Init(ctx, "todo-app"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(b.livePath("todo-app"), "app.db")
+	if err := os.WriteFile(path, make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := syscall.Mmap(int(f.Fd()), 0, 4096, syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		_ = f.Close()
+		t.Skipf("this box will not mmap a file in a temp directory: %v", err)
+	}
+	// The descriptor goes; the mapping stays, which is the whole point.
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	hs, err := b.Holders(ctx, "todo-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Munmap(m); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, h := range hs {
+		if h.PID == os.Getpid() {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a mapped file left the live area looking quiesced: %+v", hs)
 	}
 }
 
@@ -484,6 +580,7 @@ func (s stubRunner) Run(context.Context, ...string) (Result, error) {
 // Space is read from btrfs, not from df, which reports what is allocated.
 func TestSpaceReadsBtrfsUsage(t *testing.T) {
 	b := New("/var/lib/repose/undo", stubRunner{sample})
+	b.BackingFree = func(string) (uint64, error) { return 1 << 40, nil }
 	s, err := b.Space(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -492,25 +589,78 @@ func TestSpaceReadsBtrfsUsage(t *testing.T) {
 	if s != want {
 		t.Fatalf("space %+v, want %+v", s, want)
 	}
-	if _, err := New("/x", stubRunner{"Overall:\n"}).Space(context.Background()); err == nil {
+	bad := New("/x", stubRunner{"Overall:\n"})
+	bad.BackingFree = func(string) (uint64, error) { return 1 << 40, nil }
+	if _, err := bad.Space(context.Background()); err == nil {
 		t.Fatal("usage with no figures was read as space")
 	}
 }
 
+// A sparse image promises more than the filesystem under it can hold, so
+// the free figure a user sees is the smaller of the two and the total is
+// what is used plus that. A store on its own device is left alone.
+func TestSpaceIsBoundedByTheBackingFilesystem(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		device string
+		free   uint64
+		err    error
+		want   Space
+	}{
+		{
+			name: "the box has less than the image",
+			free: 1 << 30,
+			want: Space{Total: 393216 + (1 << 30), Used: 393216, Free: 1 << 30},
+		},
+		{
+			name: "the box has more than the image",
+			free: 1 << 40,
+			want: Space{Total: 4294967296, Used: 393216, Free: 3741319168},
+		},
+		{
+			name:   "a device is its own bound",
+			device: "/dev/sdb1",
+			free:   1 << 20,
+			want:   Space{Total: 4294967296, Used: 393216, Free: 3741319168},
+		},
+		{
+			name: "an unreadable filesystem is not a failure",
+			err:  errors.New("statfs: permission denied"),
+			want: Space{Total: 4294967296, Used: 393216, Free: 3741319168},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := New("/var/lib/repose/undo", stubRunner{sample})
+			b.Device = tc.device
+			b.BackingFree = func(string) (uint64, error) { return tc.free, tc.err }
+			got, err := b.Space(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("space %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 // GC takes the oldest points until the store is under the mark, and
-// never a project's newest point.
+// never a project's newest point. With no floors — what a test asks for
+// and no box does — it works down the whole list.
 func TestGCKeepsTheNewestPointOfEachProject(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		freed uint64
-		gone  []string
+		name    string
+		freed   uint64
+		gone    []string
+		stalled bool
 	}{
-		{"one delete is enough", 10, []string{"a/r-1"}},
-		{"nothing is freed", 0, []string{"a/r-1", "b/r-1", "a/r-2"}},
+		{name: "one delete is enough", freed: 10, gone: []string{"a/r-1"}},
+		{name: "a delete that frees nothing stops the loop", freed: 0, gone: []string{"a/r-1"}, stalled: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &FakeRunner{Usage: Space{Total: 100, Used: 90, Free: 10}, FreedPerDelete: tc.freed}
 			b := newStore(t, r)
+			b.Floors = &GCFloors{}
 			ctx := context.Background()
 			// a's points are the oldest and the newest; b's sit between.
 			for _, p := range []struct{ project, name string }{
@@ -523,16 +673,19 @@ func TestGCKeepsTheNewestPointOfEachProject(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			gone, err := b.GC(ctx, 85)
+			res, err := b.GC(ctx, 85)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var got []string
-			for _, p := range gone {
+			for _, p := range res.Deleted {
 				got = append(got, p.Project+"/"+p.Name)
 			}
 			if strings.Join(got, ",") != strings.Join(tc.gone, ",") {
 				t.Fatalf("GC deleted %v, want %v", got, tc.gone)
+			}
+			if res.Stalled != tc.stalled {
+				t.Fatalf("stalled %v, want %v", res.Stalled, tc.stalled)
 			}
 			for _, project := range []string{"a", "b"} {
 				ps, err := b.List(ctx, project)
@@ -549,10 +702,130 @@ func TestGCKeepsTheNewestPointOfEachProject(t *testing.T) {
 			}
 			// A store under the mark is left alone.
 			r.Usage = Space{Total: 100, Used: 10, Free: 90}
-			if gone, err := b.GC(ctx, 85); err != nil || len(gone) != 0 {
-				t.Fatalf("GC under the mark deleted %v: %v", gone, err)
+			if res, err := b.GC(ctx, 85); err != nil || len(res.Deleted) != 0 {
+				t.Fatalf("GC under the mark deleted %v: %v", res.Deleted, err)
 			}
 		})
+	}
+}
+
+// The two floors GC works to: a project's newest MinKeep points, and
+// every point younger than MinAge. A runaway that fills the store in
+// minutes must not take the morning's history with it.
+func TestGCFloors(t *testing.T) {
+	// Five points of one project, an hour apart, the newest at epoch.
+	const hour = time.Hour
+	for _, tc := range []struct {
+		name         string
+		floors       GCFloors
+		gone         []string
+		young, kept  int
+		otherProject bool
+		otherGone    []string
+	}{
+		{
+			name:   "the newest three stay whatever their age",
+			floors: GCFloors{MinKeep: 3},
+			gone:   []string{"r-1", "r-2"},
+			kept:   3,
+		},
+		{
+			name:   "a point inside the age floor stays",
+			floors: GCFloors{MinKeep: 1, MinAge: 150 * time.Minute},
+			gone:   []string{"r-1", "r-2"},
+			young:  2,
+			kept:   1,
+		},
+		{
+			name:   "both floors together leave nothing to collect",
+			floors: GCFloors{MinKeep: 3, MinAge: 24 * hour},
+			young:  2,
+			kept:   3,
+		},
+		{
+			name:         "the floor is per project, not per store",
+			floors:       GCFloors{MinKeep: 3},
+			otherProject: true,
+			gone:         []string{"r-1", "r-2"},
+			kept:         5, // three of a, and both of b
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &FakeRunner{Usage: Space{Total: 100, Used: 90, Free: 10}, FreedPerDelete: 1}
+			b := newStore(t, r)
+			b.Floors = &tc.floors
+			ctx := context.Background()
+			// Take the points oldest first, four hours back to now, then
+			// put the clock at the newest so the ages are the test's.
+			taken := epoch.Add(-4 * hour)
+			b.Now = func() time.Time {
+				now := taken
+				taken = taken.Add(hour)
+				return now
+			}
+			if _, err := b.Init(ctx, "a"); err != nil {
+				t.Fatal(err)
+			}
+			for _, n := range []string{"r-1", "r-2", "r-3", "r-4", "r-5"} {
+				if _, err := b.Take(ctx, "a", n, ReasonRun); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.otherProject {
+				if _, err := b.Init(ctx, "b"); err != nil {
+					t.Fatal(err)
+				}
+				for _, n := range []string{"r-1", "r-2"} {
+					if _, err := b.Take(ctx, "b", n, ReasonRun); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			b.Now = func() time.Time { return epoch }
+			res, err := b.GC(ctx, 85)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, p := range res.Deleted {
+				got = append(got, p.Name)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.gone, ",") {
+				t.Fatalf("GC deleted %v, want %v", got, tc.gone)
+			}
+			if res.Young != tc.young || res.Kept != tc.kept {
+				t.Fatalf("GC reported %d young and %d kept, want %d and %d", res.Young, res.Kept, tc.young, tc.kept)
+			}
+		})
+	}
+}
+
+// The box's floors are the ones a backend with no Floors works to, so a
+// store provisioned minutes ago collects nothing.
+func TestGCFloorsDefaultToTheBoxs(t *testing.T) {
+	r := &FakeRunner{Usage: Space{Total: 100, Used: 99, Free: 1}, FreedPerDelete: 50}
+	b := newStore(t, r)
+	ctx := context.Background()
+	if _, err := b.Init(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"r-1", "r-2", "r-3", "r-4"} {
+		if _, err := b.Take(ctx, "a", n, ReasonRun); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// newStore's clock steps a minute per point, so every point is inside
+	// MinPointAge.
+	b.Now = func() time.Time { return epoch.Add(time.Hour) }
+	res, err := b.GC(ctx, 85)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Deleted) != 0 {
+		t.Fatalf("GC deleted %+v from a store whose points are minutes old", res.Deleted)
+	}
+	if res.Kept != MinPointsPerProject || res.Young != 4-MinPointsPerProject {
+		t.Fatalf("GC reported %d kept and %d young", res.Kept, res.Young)
 	}
 }
 

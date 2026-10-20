@@ -40,12 +40,15 @@ type registryFile struct {
 
 // machineEntry is one [machines.NAME] table. The name is the table key.
 type machineEntry struct {
-	Address  string    `toml:"address"`
-	Port     int       `toml:"port,omitempty"`
-	Login    string    `toml:"login"`
-	KeyPath  string    `toml:"key_path,omitempty"`
-	UndoPath string    `toml:"undo_path,omitempty"`
-	AddedAt  time.Time `toml:"added_at"`
+	Address      string    `toml:"address"`
+	Port         int       `toml:"port,omitempty"`
+	Login        string    `toml:"login"`
+	KeyPath      string    `toml:"key_path,omitempty"`
+	ProxyJump    string    `toml:"proxy_jump,omitempty"`
+	ProxyCommand string    `toml:"proxy_command,omitempty"`
+	Spelled      string    `toml:"spelled,omitempty"`
+	UndoPath     string    `toml:"undo_path,omitempty"`
+	AddedAt      time.Time `toml:"added_at"`
 }
 
 // List is every machine, in name order.
@@ -68,14 +71,8 @@ func (r *FileRegistry) Get(name string) (Machine, error) {
 // Add records m. It refuses a name the slug rules reject or one already
 // taken (ErrExists), and stamps AddedAt when the caller left it zero.
 func (r *FileRegistry) Add(m Machine) error {
-	if m.Address == "" {
-		return errors.New("a machine needs an address ssh can reach")
-	}
-	if m.Login == "" {
-		return errors.New("a machine needs an ssh login")
-	}
-	if m.Port < 0 || m.Port > 65535 {
-		return fmt.Errorf("%d is not an ssh port", m.Port)
+	if err := checkEntry(m); err != nil {
+		return err
 	}
 	unlock, err := r.lock()
 	if err != nil {
@@ -98,6 +95,59 @@ func (r *FileRegistry) Add(m Machine) error {
 	}
 	m.AddedAt = m.AddedAt.UTC().Truncate(time.Second)
 	return r.save(append(ms, m))
+}
+
+// Update replaces the entry called m.Name, which is how a machine that
+// moved keeps the projects recorded on it: a box on DHCP, a laptop that
+// changed network, a `Host` entry of the user's resolving somewhere new.
+// A name the registry has not got is ErrNotFound, since an update is not
+// how a machine is added.
+func (r *FileRegistry) Update(m Machine) error {
+	if err := checkEntry(m); err != nil {
+		return err
+	}
+	unlock, err := r.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	ms, err := r.load()
+	if err != nil {
+		return err
+	}
+	found := false
+	for i, have := range ms {
+		if have.Name != m.Name {
+			continue
+		}
+		// The entry's own history stays the entry's: when the machine was
+		// added is not what an address change is about.
+		if m.AddedAt.IsZero() {
+			m.AddedAt = have.AddedAt
+		}
+		ms[i], found = m, true
+	}
+	if !found {
+		return fmt.Errorf("%s: %w", m.Name, ErrNotFound)
+	}
+	for i := range ms {
+		ms[i].AddedAt = ms[i].AddedAt.UTC().Truncate(time.Second)
+	}
+	return r.save(ms)
+}
+
+// checkEntry is what every entry needs whichever call writes it.
+func checkEntry(m Machine) error {
+	if m.Address == "" {
+		return errors.New("a machine needs an address ssh can reach")
+	}
+	if m.Login == "" {
+		return errors.New("a machine needs an ssh login")
+	}
+	if m.Port < 0 || m.Port > 65535 {
+		return fmt.Errorf("%d is not an ssh port", m.Port)
+	}
+	return nil
 }
 
 // Remove drops the machine called name. Absence is success.
@@ -144,13 +194,16 @@ func (r *FileRegistry) load() ([]Machine, error) {
 			return nil, fmt.Errorf("%s: %w", r.Path(), err)
 		}
 		out = append(out, Machine{
-			Name:     name,
-			Address:  e.Address,
-			Port:     e.Port,
-			Login:    e.Login,
-			KeyPath:  e.KeyPath,
-			UndoPath: e.UndoPath,
-			AddedAt:  e.AddedAt,
+			Name:         name,
+			Address:      e.Address,
+			Port:         e.Port,
+			Login:        e.Login,
+			KeyPath:      e.KeyPath,
+			ProxyJump:    e.ProxyJump,
+			ProxyCommand: e.ProxyCommand,
+			Spelled:      e.Spelled,
+			UndoPath:     e.UndoPath,
+			AddedAt:      e.AddedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -162,12 +215,15 @@ func (r *FileRegistry) save(ms []Machine) error {
 	f := registryFile{Machines: make(map[string]machineEntry, len(ms))}
 	for _, m := range ms {
 		f.Machines[m.Name] = machineEntry{
-			Address:  m.Address,
-			Port:     m.Port,
-			Login:    m.Login,
-			KeyPath:  m.KeyPath,
-			UndoPath: m.UndoPath,
-			AddedAt:  m.AddedAt,
+			Address:      m.Address,
+			Port:         m.Port,
+			Login:        m.Login,
+			KeyPath:      m.KeyPath,
+			ProxyJump:    m.ProxyJump,
+			ProxyCommand: m.ProxyCommand,
+			Spelled:      m.Spelled,
+			UndoPath:     m.UndoPath,
+			AddedAt:      m.AddedAt,
 		}
 	}
 	var buf bytes.Buffer

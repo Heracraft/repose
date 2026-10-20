@@ -193,7 +193,13 @@ func newRootCmd(version string) *cobra.Command {
 		if g.verbose {
 			setVerbose(os.Stderr)
 		}
-		return refuseProjectFlag(cmd)
+		if err := refuseProjectFlag(cmd); err != nil {
+			return err
+		}
+		// The one place a noun whose work is the api's or a guest's says
+		// so for a project on a machine the user owns, instead of
+		// failing on a project the api has never heard of (I-812).
+		return refuseOnOwnedMachine(env, cmd, args, g.project)
 	}
 	envJSON := func(cmd *cobra.Command) (*Env, error) {
 		json, _ := cmd.Flags().GetBool("json")
@@ -619,6 +625,15 @@ func newAttachCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return err
 			}
 			return orWindow(cmd.Context(), e, args, window, g.project, func(project, window string) error {
+				// A machine the user owns answers for itself: the same
+				// tmux attach, over that machine's ssh (I-812).
+				spine, err := spineAttachFor(e, project, window, bridge || len(bridgeAllow) > 0)
+				if err != nil {
+					return err
+				}
+				if spine != nil {
+					return spineAttachCmd(cmd.Context(), e, *spine)
+				}
 				return runRun(cmd.Context(), e, RunOptions{ProjectArg: project, Window: window, Bridge: bridge, BridgeAllow: bridgeAllow}, true)
 			})
 		},
@@ -679,6 +694,15 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				opts.ProjectArg = g.project
 			}
 			opts.NoAttach, opts.Sync = true, true
+			// A machine the user owns: the run's own sync of the dirty
+			// checkout, with no agent started (I-812).
+			spine, err := spineSyncFor(e, opts)
+			if err != nil {
+				return err
+			}
+			if spine != nil {
+				return SpineRunCmd(cmd.Context(), e, *spine)
+			}
 			return withProjectJSON(cmd.Context(), e, opts.ProjectArg, func() error { return runRun(cmd.Context(), e, opts, false) }, func() *Project { return e.acted })
 		},
 	}

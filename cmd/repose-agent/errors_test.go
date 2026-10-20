@@ -102,8 +102,32 @@ func TestErrorCodes(t *testing.T) {
 	}
 }
 
+// A full store is the one failure a user can do something about, so the
+// refusal names the store and the command that frees it. A bare
+// "no_space" leaves them nowhere to start.
+func TestNoSpaceNamesTheStore(t *testing.T) {
+	f := newFixture(t)
+	f.backend.errs["Take"] = undo.ErrNoSpace
+	if code := f.run("point", "take", "--project", "todo-app", "--name", "r-1", "--reason", "run"); code != 1 {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	var ae errorEnvelope
+	if err := json.Unmarshal([]byte(f.stdout()), &ae); err != nil {
+		t.Fatalf("stdout is not the error envelope: %v", err)
+	}
+	if ae.Error.Code != codeNoSpace {
+		t.Fatalf("code %q", ae.Error.Code)
+	}
+	for _, want := range []string{f.env.Store, "repose rewind --rm POINT"} {
+		if !strings.Contains(ae.Error.Message, want) {
+			t.Errorf("the message does not name %q: %q", want, ae.Error.Message)
+		}
+	}
+}
+
 // TestBusyNamesTheProcesses: the refusal says what is still running, by
-// process name, which is the only thing about it the agent may report.
+// process name and pid, which is what a user needs to act on it and the
+// most about it the agent may report.
 func TestBusyNamesTheProcesses(t *testing.T) {
 	f := newFixture(t)
 	f.holds("todo-app", 4242, "claude")
@@ -116,7 +140,7 @@ func TestBusyNamesTheProcesses(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.stdout()), &ae); err != nil {
 		t.Fatalf("stdout is not the error envelope: %v", err)
 	}
-	for _, want := range []string{"claude", "node"} {
+	for _, want := range []string{"claude (pid 4242)", "node (pid 4243)"} {
 		if !strings.Contains(ae.Error.Message, want) {
 			t.Errorf("the message does not name %s: %q", want, ae.Error.Message)
 		}

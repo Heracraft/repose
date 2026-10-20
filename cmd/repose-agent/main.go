@@ -29,7 +29,7 @@ const usage = `usage: repose-agent <command> [flags]
 Commands:
   provision --size-gb N
   project init --project SLUG
-  point take --project SLUG --name N --reason manual|run|stop|scheduled
+  point take [--project SLUG --name N] --reason manual|run|stop|scheduled|rewind
   point list --project SLUG
   point rewind --project SLUG --name N
   point fork --project SLUG --name N --as SLUG
@@ -37,6 +37,7 @@ Commands:
   gc --high-water PERCENT
   space
   quiesce --project SLUG
+  holders --root PATH
   status
   version
 `
@@ -89,6 +90,8 @@ func dispatch(ctx context.Context, env *Env, args []string) error {
 		return cmdSpace(ctx, env, args[1:])
 	case "quiesce":
 		return cmdQuiesce(ctx, env, args[1:])
+	case "holders":
+		return cmdHolders(env, args[1:])
 	case "status":
 		return cmdStatus(ctx, env, args[1:])
 	case "version":

@@ -189,12 +189,61 @@ if [ "$am_root" != 1 ]; then
   command -v sudo >/dev/null 2>&1 ||
     die "there is no sudo on this box; repose needs root to mount the undo store"
   sudo -n true 2>/dev/null ||
-    die "$login cannot run sudo without a password here; repose installs over a session with no terminal"
+    die "$login cannot run sudo without a password here; repose installs over a session with no terminal.
+Allow it with: echo '$login ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/repose-$login && sudo chmod 0440 /etc/sudoers.d/repose-$login"
 fi
 if ! grep -qw btrfs /proc/filesystems 2>/dev/null; then
   root_run modprobe btrfs 2>/dev/null || true
   grep -qw btrfs /proc/filesystems 2>/dev/null ||
     die "this kernel has no btrfs; a rewind point is a btrfs subvolume (docs/research/wrapper-undo.md)"
+fi
+
+# discard=async is what gives a deleted point's blocks back to the box:
+# without it btrfs frees them inside the store and the sparse image stays
+# as large as it ever grew. btrfs has had it since Linux 5.6, and an
+# older kernel refuses the whole mount rather than the one option, so it
+# goes on only where it is understood. internal/undo makes the same
+# choice for the mount it does itself; the two must move together.
+discard_opt=""
+kver=$(uname -r)
+kmaj=${kver%%.*}
+krest=${kver#*.}
+kmin=${krest%%.*}
+case "$kmaj:$kmin" in
+  *[!0-9]*:* | *:*[!0-9]*) ;;
+  *) if [ "$kmaj" -gt 5 ] || { [ "$kmaj" -eq 5 ] && [ "$kmin" -ge 6 ]; }; then
+       discard_opt=",discard=async"
+     fi ;;
+esac
+
+# The store must not promise the box space the box has not got. The image
+# is sparse, so truncate succeeds at any size and btrfs then reports the
+# whole of it as free; the first point past the real free space fails with
+# ENOSPC and nothing above it knows why. So the size is capped at what the
+# backing filesystem has, less a margin for the box's own work, and a box
+# with less than the floor is refused outright rather than given an undo
+# store that cannot hold a rewind.
+undo_margin_gb=2
+undo_floor_gb=5
+if [ -z "$device" ] && [ ! -e "$image" ]; then
+  probe=$(dirname "$image")
+  while [ ! -d "$probe" ] && [ "$probe" != / ]; do
+    probe=$(dirname "$probe")
+  done
+  avail_gb=$(df -Pk "$probe" | awk 'NR==2 {printf "%d", $4 / 1048576}')
+  case "$avail_gb" in
+    "" | *[!0-9]*) avail_gb="" ;;  # a df this script cannot read is not a refusal
+  esac
+  if [ -n "$avail_gb" ]; then
+    usable_gb=$((avail_gb - undo_margin_gb))
+    if [ "$usable_gb" -lt "$undo_floor_gb" ]; then
+      die "$probe has $avail_gb GB free and the undo store needs at least $((undo_floor_gb + undo_margin_gb)) GB; free some space or pass --device PATH"
+    fi
+    if [ "$undo_gb" -gt "$usable_gb" ]; then
+      undo_cap_note="Capped the undo store at $usable_gb GB, not $undo_gb: $probe has $avail_gb GB free"
+      undo_gb=$usable_gb
+    fi
+  fi
 fi
 os=$arch
 if [ -r /etc/os-release ]; then
@@ -202,22 +251,36 @@ if [ -r /etc/os-release ]; then
   os=$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-${NAME:-$arch}}")
 fi
 step "Checked the box ($os, $arch, systemd, btrfs)"
+if [ -n "${undo_cap_note:-}" ]; then
+  step "$undo_cap_note"
+fi
 
 # ---------------------------------------------------------------- step 2
 # What the agent and the wrappers need from the distribution. ripgrep is
 # in the list because the agent packages put it on PATH and Codex refuses
-# a package without codex-path/rg (DECISIONS I-487).
+# a package without codex-path/rg (DECISIONS I-487); gawk because the
+# sync helpers use GNU extensions mawk has not got, and Debian and Ubuntu
+# ship mawk as `awk`.
+#
+# The manager is only detected here, not demanded: a box that already has
+# everything needs none, and refusing such a box for the want of apt was
+# a refusal with nothing behind it.
+pm=""
 if command -v apt-get >/dev/null 2>&1; then
   pm=apt
 elif command -v dnf >/dev/null 2>&1; then
   pm=dnf
 elif command -v pacman >/dev/null 2>&1; then
   pm=pacman
-else
-  die "this box has no apt, dnf or pacman; install btrfs-progs, tmux, git, curl, jq, rsync, ripgrep, python3, tar and openssl yourself and run this again"
 fi
 
-NEEDED="mkfs.btrfs tmux git curl jq rsync rg python3 tar openssl"
+NEEDED="mkfs.btrfs tmux git curl jq rsync rg gawk python3 tar openssl"
+
+# gh is wanted, not needed: it is how an agent on the box pushes and
+# opens a pull request, and Debian 12 has no gh package at all. So it is
+# installed where the distribution has it and named where it does not,
+# rather than failing an install over it.
+WANTED="gh"
 
 # link_on_path <name>: a symlink in /usr/local/bin, which is on the
 # default PATH of a login shell, a non-interactive ssh command and a tmux
@@ -284,6 +347,13 @@ for cmd in $NEEDED; do
     *) wanted="${wanted:+$wanted }$pkg" ;;
   esac
 done
+if [ -n "$wanted" ] && [ -z "$pm" ]; then
+  die "this box has no apt, dnf or pacman, and it is missing $wanted; install those yourself and run this again"
+fi
+missing_wanted=""
+for cmd in $WANTED; do
+  have_cmd "$cmd" || missing_wanted="${missing_wanted:+$missing_wanted }$(package_of "$cmd")"
+done
 
 # claude-code is a dynamically linked bun binary that needs
 # libasound.so.2, which its nix package carries as alsa-lib. The library's
@@ -313,7 +383,7 @@ has_alsa() {
 have_alsa=1
 has_alsa || have_alsa=0
 
-if [ "$pm" = apt ] && { [ -n "$wanted" ] || [ "$have_alsa" = 0 ]; }; then
+if [ "$pm" = apt ] && { [ -n "$wanted" ] || [ -n "$missing_wanted" ] || [ "$have_alsa" = 0 ]; }; then
   root_run env DEBIAN_FRONTEND=noninteractive apt-get update -qq ||
     die "apt-get update failed; this box cannot reach its package mirrors"
 fi
@@ -329,6 +399,20 @@ if [ -n "$wanted" ]; then
 else
   step "The packages are installed"
 fi
+# The wanted-but-not-needed packages, each on its own: a distribution
+# without one must not take the others down with it. The package's name
+# is also the command's for everything in WANTED, so the command is what
+# decides whether the install worked — a manager that exits 0 on a
+# package it did not place is otherwise reported as a success.
+for pkg in $missing_wanted; do
+  if [ -n "$pm" ] && pm_install "$pkg" >/dev/null 2>&1 && have_cmd "$pkg"; then
+    changed=1
+    step "Installed $pkg"
+  else
+    step "This box has no $pkg package; the agents work without it"
+  fi
+done
+
 if [ "$have_alsa" = 0 ]; then
   for pkg in $alsa_pkgs; do
     pm_install "$pkg" >/dev/null 2>&1 || continue
@@ -358,10 +442,10 @@ if [ -n "$device" ]; then
     die "$device is not a block device"
   fi
   store_source=$device
-  options="noatime,compress=zstd:1,user_subvol_rm_allowed"
+  options="noatime,compress=zstd:1,user_subvol_rm_allowed$discard_opt"
 else
   store_source=$image
-  options="loop,noatime,compress=zstd:1,user_subvol_rm_allowed"
+  options="loop,noatime,compress=zstd:1,user_subvol_rm_allowed$discard_opt"
   if [ ! -e "$image" ]; then
     root_run truncate -s "${undo_gb}G" "$image"
     root_run chmod 0600 "$image"
@@ -831,6 +915,57 @@ if [ "$agents_changed" = 1 ]; then
   changed=1
 fi
 
+# The login user's Claude Code settings, which is what decides whether an
+# agent on this box can act or stops to ask. The three keys are
+# nix/guest/base/agents.nix's, for the same reason: a repose machine is
+# one an agent may wreck and a rewind puts back, so a permission prompt
+# buys nothing and costs the whole claim (DECISIONS I-250, I-425).
+#
+# User settings, never managed settings, so the user wins: a file that
+# already names a defaultMode keeps it, a file this script cannot read as
+# an object is left alone, and the comparison is of normalised JSON so a
+# second run against the same box changes nothing.
+claude_home=$(getent passwd "$login" 2>/dev/null | cut -d: -f6 || true)
+if [ -z "$claude_home" ]; then
+  claude_home=${HOME:-}
+fi
+if [ -z "$claude_home" ]; then
+  step "The login user has no home directory, so claude keeps its own settings"
+else
+  claude_settings=$claude_home/.claude/settings.json
+  claude_current='{}'
+  if [ -r "$claude_settings" ]; then
+    claude_current=$(cat "$claude_settings")
+  fi
+  # An object whose permissions is an object or absent is the only shape
+  # the merge below is safe on.
+  if ! claude_now=$(printf '%s' "$claude_current" |
+    jq -S -e 'if (type == "object") and (((.permissions // {}) | type) == "object")
+              then . else null | halt_error(1) end' 2>/dev/null); then
+    step "~/.claude/settings.json is not a shape repose will edit and was left alone"
+  else
+    claude_want=$(printf '%s' "$claude_now" | jq -S '
+      (.permissions // {}) as $perm
+      | (if ($perm.defaultMode // null) == null then
+           .permissions = ($perm + {defaultMode: "bypassPermissions"})
+           | .skipDangerousModePermissionPrompt = true
+         else . end)
+      | (if .tui == null then .tui = "fullscreen" else . end)
+    ')
+    if [ "$claude_now" = "$claude_want" ]; then
+      step "claude starts without permission prompts"
+    else
+      printf '%s\n' "$claude_want" > "$tmp/claude-settings.json"
+      root_run install -D -m 0644 -o "$login" -g "$group" \
+        "$tmp/claude-settings.json" "$claude_settings"
+      root_run chown "$login:$group" "$(dirname "$claude_settings")"
+      rm -f "$tmp/claude-settings.json"
+      changed=1
+      step "Set claude to start without permission prompts"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- step 6
 # The machine's record on the box. The id is a UUIDv7
 # (docs/interfaces/README.md) and is written once: a second run keeps it,
@@ -912,6 +1047,63 @@ if [ "$gc_changed" = 1 ]; then
   step "Set the undo store to collect hourly above 85 percent"
 else
   step "The undo store collects hourly above 85 percent"
+fi
+
+# ------------------------------------------------------------- step 6.6
+# A point every half hour, of every project in the store. Without it the
+# only point a project has is the one `repose run` took, so a six-hour
+# agent session has exactly one place to go back to and an afternoon of
+# work is all-or-nothing. A point is 8 ms and 32 KiB (I-814), so the cost
+# is store pressure, which `gc` bounds and whose floors keep these from
+# eating each other.
+point_service="[Unit]
+Description=repose rewind point
+ConditionPathIsMountPoint=$store
+
+[Service]
+# No --project: every project in the store, each with its own name. No
+# --store either, as above.
+Type=oneshot
+User=$login
+ExecStart=$prefix/bin/repose-agent point take --reason scheduled
+"
+# Monotonic, not OnCalendar: half an hour after the timer starts and
+# half an hour after each run finishes, so a box that sleeps does not
+# come back to a queue of missed points. Persistent= means nothing to a
+# monotonic timer and is left out rather than written and ignored.
+point_timer="[Unit]
+Description=repose rewind point
+
+[Timer]
+OnActiveSec=30min
+OnUnitInactiveSec=30min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
+"
+point_changed=0
+if [ "$(cat /etc/systemd/system/repose-undo-point.service 2>/dev/null || true)" != "$(printf '%s' "$point_service")" ]; then
+  printf '%s' "$point_service" | write_root 0644 /etc/systemd/system/repose-undo-point.service
+  point_changed=1
+fi
+if [ "$(cat /etc/systemd/system/repose-undo-point.timer 2>/dev/null || true)" != "$(printf '%s' "$point_timer")" ]; then
+  printf '%s' "$point_timer" | write_root 0644 /etc/systemd/system/repose-undo-point.timer
+  point_changed=1
+fi
+if [ "$point_changed" = 1 ]; then
+  root_run systemctl daemon-reload
+fi
+if ! root_run systemctl is-enabled --quiet repose-undo-point.timer 2>/dev/null; then
+  root_run systemctl enable --now repose-undo-point.timer >/dev/null 2>&1 ||
+    die "systemctl could not enable repose-undo-point.timer"
+  point_changed=1
+fi
+if [ "$point_changed" = 1 ]; then
+  changed=1
+  step "Set the store to take a point of every project every 30 minutes"
+else
+  step "The store takes a point of every project every 30 minutes"
 fi
 
 # ---------------------------------------------------------------- step 7

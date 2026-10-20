@@ -11,9 +11,32 @@ Host homebox.repose
   ControlMaster auto
   ControlPath /home/ada/.ssh/repose/cm-%C
   ControlPersist 10m
+Host shed.repose
+  HostName 10.0.0.9
+  Port 2022
+  User ada
+  ProxyJump jump@bast.example:2222
+  UserKnownHostsFile /home/ada/.ssh/repose/machine_known_hosts
+  StrictHostKeyChecking accept-new
+  ForwardAgent no
+  ServerAliveInterval 30
+  ControlMaster auto
+  ControlPath /home/ada/.ssh/repose/cm-%C
+  ControlPersist 10m
 Host spare.repose
   HostName spare.example
   User me
+  UserKnownHostsFile /home/ada/.ssh/repose/machine_known_hosts
+  StrictHostKeyChecking accept-new
+  ForwardAgent no
+  ServerAliveInterval 30
+  ControlMaster auto
+  ControlPath /home/ada/.ssh/repose/cm-%C
+  ControlPersist 10m
+Host tunnel.repose
+  HostName tunnel.example
+  User me
+  ProxyCommand cloudflared access ssh --hostname %h
   UserKnownHostsFile /home/ada/.ssh/repose/machine_known_hosts
   StrictHostKeyChecking accept-new
   ForwardAgent no

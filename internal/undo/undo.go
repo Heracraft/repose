@@ -22,15 +22,21 @@ import (
 )
 
 // Point is one rewind point: a fixed moment of a project's files.
+//
+// There is no size field. btrfs only tells a caller what a snapshot
+// holds through qgroups, which means quotas on, and quotas on a store
+// of thousands of snapshots cost every write (I-814); so the figure
+// was 0 on every real box. A column of zeroes is worse than no column.
 type Point struct {
 	Name    string    `json:"name"`     // stable, unique, derived from the caller's id — never a wall clock
 	Project string    `json:"project"`  // project slug
-	Reason  string    `json:"reason"`   // manual | run | stop | scheduled
+	Reason  string    `json:"reason"`   // manual | run | stop | scheduled | rewind
 	TakenAt time.Time `json:"taken_at"` // RFC 3339 UTC
-	Bytes   uint64    `json:"bytes"`    // exclusive bytes this point holds, 0 when unknown
 }
 
-// Space is the store's bytes.
+// Space is the store's bytes. On an image-backed store the total is
+// bounded by the filesystem the image lives on, not by the image's own
+// size: a sparse file promises space the box may not have (I-814).
 type Space struct {
 	Total uint64 `json:"total"`
 	Used  uint64 `json:"used"`
@@ -58,8 +64,45 @@ type Backend interface {
 	// Space reports the store's bytes.
 	Space(ctx context.Context) (Space, error)
 	// GC deletes the oldest points until the store is under the high-water
-	// mark, never deleting the newest point of any project. Returns what went.
-	GC(ctx context.Context, highWaterPercent int) ([]Point, error)
+	// mark, within the floors of GCFloors. Returns what went and what it
+	// would not touch.
+	GC(ctx context.Context, highWaterPercent int) (GCResult, error)
+}
+
+// MinPointAge is how young a point is safe from collection whatever the
+// store's pressure. An agent that fills the store in ten minutes must
+// not take the morning's points with it: those are the ones a user
+// reaches for (SPINE.md, "undo that is safe to rely on").
+const MinPointAge = 6 * time.Hour
+
+// MinPointsPerProject is the points GC leaves every project, newest
+// first. One point is one chance; three is a history to choose from.
+const MinPointsPerProject = 3
+
+// GCFloors are what GC will not collect however full the store is. The
+// zero value is no floor at all, which only a test asks for; a nil
+// *GCFloors on the backend means the box's own, MinPointAge and
+// MinPointsPerProject.
+type GCFloors struct {
+	MinAge  time.Duration
+	MinKeep int
+}
+
+// GCResult is one collection: what went, and what it would not touch.
+// The counts are why a store can stay over its mark after a GC, which
+// is otherwise a silent no-op.
+type GCResult struct {
+	// Deleted is the points that went, oldest first.
+	Deleted []Point `json:"deleted"`
+	// Young is the points left because they are inside MinPointAge.
+	Young int `json:"young"`
+	// Kept is the points left because their project is at its floor of
+	// MinPointsPerProject.
+	Kept int `json:"kept"`
+	// Stalled is true when a delete freed no bytes and GC stopped. The
+	// space is held by the live areas, not by the points, so deleting
+	// more points would empty the history and free nothing.
+	Stalled bool `json:"stalled"`
 }
 
 var (
@@ -75,12 +118,18 @@ var (
 
 // The reasons a point carries. The hosted path's snapshot reasons are the
 // same three plus run, which is the point taken on every `repose run`
-// (internal/hostd/guest/snapshot.go).
+// (internal/hostd/guest/snapshot.go), and rewind, which is the point a
+// rewind takes of the state it replaces.
+//
+// ReasonRewind exists so that point can be told apart. Without it a
+// second `repose rewind` picked the newest point, which is the safety
+// point of the first, and restored the wreck the user had just escaped.
 const (
 	ReasonManual    = "manual"
 	ReasonRun       = "run"
 	ReasonStop      = "stop"
 	ReasonScheduled = "scheduled"
+	ReasonRewind    = "rewind"
 )
 
 // projectRe is the slug the guest side already accepts
@@ -110,10 +159,10 @@ func checkPoint(name string) error {
 
 func checkReason(reason string) error {
 	switch reason {
-	case ReasonManual, ReasonRun, ReasonStop, ReasonScheduled:
+	case ReasonManual, ReasonRun, ReasonStop, ReasonScheduled, ReasonRewind:
 		return nil
 	}
-	return fmt.Errorf("%w: reason %q must be manual, run, stop or scheduled", ErrInvalidName, reason)
+	return fmt.Errorf("%w: reason %q must be manual, run, stop, scheduled or rewind", ErrInvalidName, reason)
 }
 
 // NewPointName returns a point name for a point the backend takes

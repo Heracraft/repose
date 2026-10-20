@@ -19,6 +19,11 @@ import (
 
 // StatusCmd implements `repose status [PROJECT] [--json]` (07-cli.md §5.7).
 func StatusCmd(ctx context.Context, e *Env, projectArg string) error {
+	// A project on a machine the user owns is the spine's to answer for:
+	// no api project, no guestd, no billing (DECISIONS I-812).
+	if handled, err := spineStatus(ctx, e, projectArg); handled {
+		return err
+	}
 	project, err := requireProject(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -85,27 +90,64 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 
 // ProjectsCmd implements `repose ls`: a table of every project,
 // ignoring cwd, with a header row and, under a project in `error`, why
-// (DECISIONS I-153). --json is the api's list, unchanged.
+// (DECISIONS I-153). --json is the api's list, unchanged, with the
+// projects on machines the user owns after it.
+//
+// Those are listed beside the api's (DECISIONS I-812): a project on a
+// machine the user owns was invisible here, and a self-hoster may never
+// log in at all, so a login the api refuses is not the end of the list
+// when there are machines of their own to read.
 func ProjectsCmd(ctx context.Context, e *Env) error {
 	// The plan is read beside the list, for the table only.
 	bill := make(chan *Billing, 1)
 	if !e.JSON && !e.Quiet {
 		go func() { b, _ := e.Client.GetBilling(ctx); bill <- b }()
 	}
+	owned := make(chan []ownedRow, 1)
+	go func() { owned <- ownedProjects(ctx, e) }()
 	projects, err := e.Client.ListProjects(ctx)
+	rows := <-owned
 	if err != nil {
-		return err
+		var notLoggedIn *notLoggedInError
+		if len(rows) == 0 || !errors.As(err, &notLoggedIn) {
+			return err
+		}
+		// A laptop that has never logged in is a self-hoster's: the api
+		// is not part of their world and its refusal is not news. One
+		// whose login stopped working is told, and still sees the
+		// machines it owns.
+		if loggedInOnce(e.Dir) {
+			e.warn("Your login no longer works, so only the machines you own are listed.")
+		}
+		projects = nil
 	}
 	if e.JSON {
-		if projects == nil {
-			projects = []Project{}
+		if len(rows) == 0 {
+			if projects == nil {
+				projects = []Project{}
+			}
+			return writeJSONOut(e.Out, projects)
 		}
-		return writeJSONOut(e.Out, projects)
+		all := make([]any, 0, len(projects)+len(rows))
+		for i := range projects {
+			all = append(all, projects[i])
+		}
+		for _, r := range rows {
+			all = append(all, r)
+		}
+		return writeJSONOut(e.Out, all)
 	}
 	if e.Quiet {
 		for _, p := range projects {
 			_, _ = fmt.Fprintln(e.Out, p.Slug)
 		}
+		for _, r := range rows {
+			_, _ = fmt.Fprintln(e.Out, r.Slug)
+		}
+		return nil
+	}
+	if len(projects) == 0 && len(rows) > 0 {
+		writeOwnedProjects(e.Out, rows, false)
 		return nil
 	}
 	if len(projects) == 0 {
@@ -139,6 +181,7 @@ func ProjectsCmd(ctx context.Context, e *Env) error {
 	for _, l := range planWarningsAfter(b, pl != "") {
 		_, _ = fmt.Fprintln(e.Out, l)
 	}
+	writeOwnedProjects(e.Out, rows, true)
 	return nil
 }
 
@@ -865,6 +908,11 @@ var statusWatchEvery = 5 * time.Second
 // does not end the watch: the last status stays, with a line saying the
 // read failed. Any other error (no such project, logged out) ends it.
 func StatusWatch(ctx context.Context, e *Env, projectArg string, tty bool) error {
+	if _, _, own, err := spinePlace(e, projectArg, defaultResolveDeps()); err != nil {
+		return err
+	} else if own {
+		return spineFlagRefusal("--follow")
+	}
 	out := e.Out
 	var last, lastErr string
 	for {
@@ -930,6 +978,11 @@ var statusWaitEvery = 2 * time.Second
 func StatusWait(ctx context.Context, e *Env, projectArg, want string, timeout time.Duration) error {
 	if !slices.Contains(projectStates, want) {
 		return exitf(ExitUsage, "--wait takes a state: %s.", strings.Join(projectStates, ", "))
+	}
+	if _, _, own, err := spinePlace(e, projectArg, defaultResolveDeps()); err != nil {
+		return err
+	} else if own {
+		return spineFlagRefusal("--wait")
 	}
 	p, err := requireProject(ctx, e, projectArg)
 	if err != nil {

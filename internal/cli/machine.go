@@ -35,6 +35,11 @@ const defaultUndoGB = 40
 // machine: the table is worth showing even when a box is off.
 const machineSpaceWait = 10 * time.Second
 
+// resolveTarget is what this laptop's ssh makes of a --ssh address. A
+// variable so a test stands in for ssh, as streamOnMachine does for the
+// install.
+var resolveTarget = machine.ResolveTarget
+
 func newMachineCmd(env func() (*Env, error)) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "machine",
@@ -145,22 +150,58 @@ func MachineAddCmd(ctx context.Context, e *Env, opts machineAddOptions) error {
 	if err != nil {
 		return cobraUsageError{err}
 	}
+	// What this laptop's own ssh makes of that address: a `Host` entry of
+	// the user's, a Tailscale name and a jump host all reach a box, and
+	// the blocks repose writes are read with -F, which replaces the
+	// user's config rather than adding to it. So the address is resolved
+	// here, once, and what it resolved to is what the registry keeps
+	// (machine.ResolveTarget).
+	res, err := resolveTarget(ctx, target)
+	if err != nil {
+		return cobraUsageError{err}
+	}
 	reg := registryFor(e)
 	m := machine.Machine{
-		Name:     opts.Name,
-		Address:  target.Address,
-		Port:     target.Port,
-		Login:    target.Login,
-		KeyPath:  opts.Key,
-		UndoPath: defaultUndoPath,
-		AddedAt:  now(),
+		Name:         opts.Name,
+		Address:      res.Address,
+		Port:         res.Port,
+		Login:        res.Login,
+		KeyPath:      res.KeyPath,
+		ProxyJump:    res.ProxyJump,
+		ProxyCommand: res.ProxyCommand,
+		UndoPath:     defaultUndoPath,
+		AddedAt:      now(),
+	}
+	// The name the user knows the box by, when that is not the address
+	// itself: it is what `machine ls` shows them.
+	if !res.Target().Same(target) {
+		m.Spelled = strings.TrimSpace(opts.SSH)
+	}
+	if opts.Key != "" {
+		m.KeyPath = opts.Key
 	}
 	added := false
 	switch have, err := reg.Get(opts.Name); {
-	case err == nil && !samePlace(have.Target(), target):
-		return exitf(ExitGeneric, "%s is already a machine of yours, at %s. `repose machine rm %s` forgets that one.", have.Name, have.Target(), have.Name)
 	case err == nil:
-		m = have
+		// A machine of this name already: the install runs over it, and
+		// the entry is rewritten with where the box is now. A box on DHCP,
+		// a laptop on another network and a `Host` entry that was edited
+		// all move a machine, and rm-then-add would take the projects
+		// recorded on it with them.
+		moved := !have.Target().Same(m.Target())
+		m.AddedAt, m.UndoPath = have.AddedAt, have.UndoPath
+		// A key the machine was added with stays until another --key
+		// replaces it: an install over a box whose config no longer names
+		// the key would otherwise be refused by it.
+		if m.KeyPath == "" {
+			m.KeyPath = have.KeyPath
+		}
+		if err := reg.Update(m); err != nil {
+			return err
+		}
+		if moved {
+			_, _ = fmt.Fprintf(e.ErrOut, "%s moved from %s to %s.\n", m.Name, have.Target(), m.Target())
+		}
 	case !isNoSuchMachine(err):
 		return err
 	default:
@@ -211,18 +252,6 @@ func MachineAddCmd(ctx context.Context, e *Env, opts machineAddOptions) error {
 	}
 	_, _ = fmt.Fprintf(e.Out, "Added %s.\n", opts.Name)
 	return nil
-}
-
-// samePlace is whether two --ssh values name the same box: a port left
-// out and 22 spelled out are one address.
-func samePlace(a, b machine.Target) bool {
-	fill := func(t machine.Target) machine.Target {
-		if t.Port == 0 {
-			t.Port = machine.DefaultPort
-		}
-		return t
-	}
-	return fill(a) == fill(b)
 }
 
 // installerDiePrefix is how ops/install/machine-install.sh prefixes the
@@ -293,28 +322,99 @@ func MachineLsCmd(ctx context.Context, e *Env) error {
 		wg.Add(1)
 		go func(i int, m machine.Machine) {
 			defer wg.Done()
-			undo[i] = undoCell(ctx, machineTarget(configPath, m))
+			undo[i] = undoCell(ctx, probeTarget(machineTarget(configPath, m)))
 		}(i, m)
 	}
 	wg.Wait()
 	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NAME\tADDRESS\tUNDO")
 	for i, m := range all {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", m.Name, m.Target(), undo[i])
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", m.Name, m.Where(), undo[i])
 	}
 	return tw.Flush()
 }
 
-// undoCell is the UNDO column for one machine: what its store holds, or
-// that the machine did not answer.
+// undoHighWater is the percent of an undo store its machine keeps it
+// under: the timer the installer writes runs `repose-agent gc
+// --high-water 85` (ops/install/machine-install.sh), which deletes the
+// oldest points until the store is under the mark.
+const undoHighWater = 85
+
+// machineConnectWait is how long the reading `machine ls` takes waits
+// for a box to answer the connection. The table is worth having while a
+// box is off, so ssh gives up rather than holding it.
+const machineConnectWait = 5 * time.Second
+
+// probeTarget is a machine's target for that reading: ssh gives up on a
+// box that is off, and asks for no password, since `machine ls` has
+// nobody to type one.
+func probeTarget(t sshTarget) sshTarget {
+	if len(t.Args) == 0 {
+		return t
+	}
+	last := len(t.Args) - 1
+	args := make([]string, 0, len(t.Args)+4)
+	args = append(args, t.Args[:last]...)
+	args = append(args,
+		"-o", fmt.Sprintf("ConnectTimeout=%d", int(machineConnectWait.Seconds())),
+		"-o", "BatchMode=yes",
+		t.Args[last])
+	t.Args = args
+	return t
+}
+
+// undoCell is the UNDO column for one machine: what its store holds and
+// whether the oldest points are going, or why the machine said nothing.
 func undoCell(ctx context.Context, t sshTarget) string {
 	ctx, cancel := context.WithTimeout(ctx, machineSpaceWait)
 	defer cancel()
 	var space agentSpace
 	if err := agentRun(ctx, t, &space, "space"); err != nil {
-		return "unreachable"
+		// A box that took the connection and then said nothing: the wait
+		// above ended it, and ssh's own failure is that it was killed.
+		if ctx.Err() != nil {
+			return "no answer"
+		}
+		return silentWords(err)
 	}
-	return fmt.Sprintf("%s used of %s", sizeWords(space.Used), sizeWords(space.Total))
+	cell := fmt.Sprintf("%s used of %s", sizeWords(space.Used), sizeWords(space.Total))
+	if space.Total > 0 && space.Used >= space.Total/100*undoHighWater {
+		cell += ", the oldest points are going"
+	}
+	return cell
+}
+
+// silentWords is why a machine said nothing, in a few words. One word
+// for all of it ("unreachable") covers a box that is off, a box that
+// refused the laptop's key and a box whose host key changed, which are
+// three different things to do about it.
+func silentWords(err error) string {
+	var se *sshError
+	if errors.As(err, &se) {
+		switch se.ExitCode {
+		case 127:
+			return "no repose on the box"
+		case -1:
+			return "could not run ssh"
+		}
+		switch classifySSH(se.Stderr) {
+		case sshFailNoAnswer:
+			return "no answer"
+		case sshFailNoName:
+			return "address does not resolve"
+		case sshFailKeyRefused:
+			return "refused the key"
+		case sshFailHostKey:
+			return "host key changed"
+		case sshFailNoConfig:
+			return "no ssh config"
+		}
+	}
+	var ae *agentError
+	if errors.As(err, &ae) {
+		return "refused (" + ae.Code + ")"
+	}
+	return "unreachable"
 }
 
 // MachineRmCmd implements `repose machine rm NAME`: forget the machine
@@ -356,10 +456,10 @@ func streamSSH(ctx context.Context, t sshTarget, remoteCmd string, stdin io.Read
 	cmd.Stdout = &stdout
 	errPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, &sshError{ExitCode: -1, Err: err}
+		return nil, &sshError{ExitCode: -1, Err: err, Target: t}
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, &sshError{ExitCode: -1, Err: err}
+		return nil, &sshError{ExitCode: -1, Err: err, Target: t}
 	}
 	// The last lines are kept for the failure message, the way runSSH's
 	// sshError carries them (sshStderrDetail).
@@ -383,7 +483,7 @@ func streamSSH(ctx context.Context, t sshTarget, remoteCmd string, stdin io.Read
 		if errors.As(err, &xe) {
 			code = xe.ExitCode()
 		}
-		return stdout.Bytes(), &sshError{ExitCode: code, Stderr: strings.Join(tail, "\n"), Err: err}
+		return stdout.Bytes(), &sshError{ExitCode: code, Stderr: strings.Join(tail, "\n"), Err: err, Target: t}
 	}
 	return stdout.Bytes(), nil
 }

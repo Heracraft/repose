@@ -70,6 +70,16 @@ func RenderSSHConfig(ms []Machine, prefix string, multiplex bool) string {
 			_, _ = fmt.Fprintf(&b, "  Port %d\n", m.Port)
 		}
 		_, _ = fmt.Fprintf(&b, "  User %s\n", m.Login)
+		// The hops, or the command, the user's own config reached the box
+		// through, resolved when it was added: this file is read with -F,
+		// which replaces that config, so an alias here would reach nothing
+		// (resolve.go).
+		switch {
+		case m.ProxyJump != "":
+			_, _ = fmt.Fprintf(&b, "  ProxyJump %s\n", m.ProxyJump)
+		case m.ProxyCommand != "":
+			_, _ = fmt.Fprintf(&b, "  ProxyCommand %s\n", m.ProxyCommand)
+		}
 		// The named key and only it: with an agent loaded ssh otherwise
 		// offers the agent's keys first (I-108). A machine added without
 		// one gets neither line, so ssh goes on using the agent.

@@ -428,6 +428,24 @@ Applied at each workstream's PR, recorded as a comment line in
   that one guest's snapshot or restore. `blkid`, which probes a volume
   before mkfs (a guest's, when a failed create is retried), runs in the
   same sandbox.
+- **No boundary between an agent and a machine the user owns**
+  (DECISIONS I-812). A box added with `repose machine add` has no
+  hypervisor, no guest and no second user: the coding agents run as the
+  box's own login, whose `sudo` the installer requires and uses without a
+  password. An agent given full permissions there reaches everything that
+  login reaches: root on the box, the ssh keys and tokens in its home,
+  every other project on the box, and the rewind points, which are
+  subvolumes under `/var/lib/repose/undo` the same login may delete (the
+  store is mounted `user_subvol_rm_allowed`, which is what lets retention
+  run without root). A rewind replaces one project's directory; it does
+  not undo the box. Nothing on this path closes it, because the path's
+  premise is that no boundary of ours sits in front of a box the user
+  owns: the mitigation is which box, and the docs page "Your own machine"
+  states it as the decision it is, under "What an agent on it can reach".
+  Boundary 1 is unchanged for a machine repose runs. There is no api on
+  this path at all — the machine registry is a file on the laptop and the
+  CLI reaches the box over ssh — so one user's command cannot be routed to
+  another user's box.
 - **A tenant's agent misusing the tenant's own tool logins.** Inside the
   guest, gh and Codex tokens are readable by any process as `dev`. That is
   the same exposure as on the tenant's laptop.

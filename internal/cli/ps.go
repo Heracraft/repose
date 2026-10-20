@@ -168,16 +168,29 @@ const psStateOption = "@repose-state"
 // then one tab-separated line per window of session slug. The clock comes
 // from the same machine as the activity times, so a laptop clock that is
 // off does not skew "2m ago". tmux runs last: its exit is the script's.
-func psScript(slug string) string {
+func psScript(slug string) string { return psScriptSep(slug, "\t") }
+
+// psScriptSep is psScript with the field separator named. A guest's tmux
+// is the one nix pins and it passes a tab through; tmux 3.3a, which
+// Debian 12 ships, prints `_` for a tab in a format and so needs a
+// printable separator (measured on a box the user owns, 2026-10-20).
+// Hence sep: the guest keeps the tab it has always used, and a machine
+// the user owns asks for something its tmux will not rewrite.
+func psScriptSep(slug, sep string) string {
 	return "date +%s\n" + checkoutVar(slug, "") +
 		"printf '#home %s\\n#co %s\\n' \"$HOME\" \"$repose_co\"\n" +
-		fmt.Sprintf("tmux list-windows -t %s -F '#{window_index}\t#{window_name}\t#{pane_current_command}\t#{window_activity}\t#{window_active}\t#{%s}\t#{pane_current_path}'",
-			shQuote("="+slug), psStateOption)
+		fmt.Sprintf("tmux list-windows -t %s -F '#{window_index}%[3]s#{window_name}%[3]s#{pane_current_command}%[3]s#{window_activity}%[3]s#{window_active}%[3]s#{%[2]s}%[3]s#{pane_current_path}'",
+			shQuote("="+slug), psStateOption, sep)
 }
 
 // parsePs reads psScript's output. A line of five fields is a CLI before
 // I-606's script, which a test or an old fake still sends.
-func parsePs(out string) (psListing, error) {
+func parsePs(out string) (psListing, error) { return parsePsSep(out, "\t") }
+
+// parsePsSep reads psScriptSep's answer, split on sep. The path is the
+// last field, so a sep inside it is harmless: SplitN keeps the remainder
+// whole.
+func parsePsSep(out, sep string) (psListing, error) {
 	var l psListing
 	lines := nonEmptyLines(out)
 	if len(lines) == 0 {
@@ -196,7 +209,7 @@ func parsePs(out string) (psListing, error) {
 			l.Checkout = v
 			continue
 		}
-		f := strings.SplitN(line, "\t", 7)
+		f := strings.SplitN(line, sep, 7)
 		if len(f) != 5 && len(f) != 7 {
 			return l, fmt.Errorf("unexpected line with %d fields", len(f))
 		}
@@ -495,6 +508,12 @@ func PsCmd(ctx context.Context, e *Env, projectArg string) error {
 
 // PsCmdWith implements `repose ps`.
 func PsCmdWith(ctx context.Context, e *Env, opts PsOptions) error {
+	// A project on a machine the user owns has no api project and no
+	// guestd: the same tmux listing, over that machine's own ssh
+	// (DECISIONS I-812).
+	if handled, err := spinePs(ctx, e, opts); handled {
+		return err
+	}
 	project, err := requireRunningProject(ctx, e, opts.ProjectArg)
 	if err != nil {
 		return err
@@ -531,7 +550,12 @@ func PsCmdWith(ctx context.Context, e *Env, opts PsOptions) error {
 	if err != nil {
 		return stepFailed("read the tmux windows on "+project.Slug, err, "")
 	}
-	rows := psRowsTmux(l, project.Signals, time.Now())
+	return writePsRows(e, psRowsTmux(l, project.Signals, time.Now()))
+}
+
+// writePsRows prints the tmux listing: the rows as JSON, their names
+// under -q, or the table.
+func writePsRows(e *Env, rows []PsRow) error {
 	switch {
 	case e.JSON:
 		return writeJSONOut(e.Out, rows)

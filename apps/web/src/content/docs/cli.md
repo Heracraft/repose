@@ -55,7 +55,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 
 Attach to the project's session, on its current window, without syncing. WINDOW (or `-w`/`--window NAME`) opens on that window instead: a name or number as `repose ps` shows it, or on herdr an agent's name. If a project resolves, one word that names none of your projects is WINDOW. A window the session doesn't have exits 2.
 
-A machine that isn't running comes up first, as [`repose start`](#repose-start-project) does. A machine being removed, or one stopped for running a miner, exits 5.
+A machine that isn't running comes up first, as [`repose start`](#repose-start-project) does. A machine being removed, or one stopped for running a miner, exits 5. On [a machine you own](/docs/own-machine) there is nothing to start: it attaches to the project's tmux session on the box.
 
 A herdr project attaches in [three ways](/docs/run-and-attach#herdr-instead-of-tmux). `--bridge` [bridges your Chrome](#repose-browser-bridge-project) to the machine for as long as you're attached; `--bridge-allow HOST` does that with an allowlist.
 
@@ -63,7 +63,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 ### `repose sync [PROJECT]`
 
-Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
+Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back). On [a machine you own](/docs/own-machine) it sends the same work and a rewind point is taken with it.
 
 It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder, and in a folder that isn't a git checkout, it exits 2.
 
@@ -80,7 +80,7 @@ It writes nothing and exits 6 when the machine changed files your laptop changed
 
 ### `repose ps [PROJECT] [WINDOW]`
 
-The project's windows, without attaching. Needs the machine running.
+The project's windows, without attaching. Needs the machine running. On [a machine you own](/docs/own-machine) it reads the box's tmux and gives the same table.
 
 ```
 $ repose ps
@@ -413,17 +413,17 @@ SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only
 
 ## Machines you own
 
-A machine you own is a Linux box you can already ssh into. `repose machine add` installs repose on it over that same ssh: it checks the box, provisions undo space on btrfs, and installs repose's agent and the coding agents. The box keeps its own login, and the laptop reaches it directly ([Your own machine](/docs/own-machine)).
+A machine you own is a Linux box you can already ssh into. `repose machine add` installs repose on it over that same ssh: it checks the box, provisions undo space on btrfs, and installs repose's agent and the coding agents. It installs nothing your project needs to run ([What the box does not get](/docs/own-machine#what-the-box-does-not-get)). The box keeps its own login, and the laptop reaches it directly ([Your own machine](/docs/own-machine)).
 
 | Command | What it does |
 | ------- | ------------ |
-| `repose machine add NAME --ssh [user@]HOST[:PORT]` | Add the box as NAME and install repose on it, with a line per step. Without `user@` the login is this computer's. `--key PATH` names the key the box authorised, and `--undo-gb N` how much undo space to provision, 40 GB by default. `--agent-url URL` with `--agent-sha256 HEX` installs that build of repose's agent instead of the one from the signed release, for a box running your own build; one without the other exits 2. Run again on a machine already added, it installs over it; the same name at another address exits 1. |
-| `repose machine ls` | The machines you have added, with the undo space each one holds. Alias `list`, and `repose machine` alone. A machine that does not answer shows as `unreachable`. |
+| `repose machine add NAME --ssh [user@]HOST[:PORT]` | Add the box as NAME and install repose on it, with a line per step. Without `user@` the login is this computer's. A `Host` entry from your `~/.ssh/config` is resolved when you add the machine, to the host name, port, login, key and `ProxyJump` it stands for; a later edit to that entry doesn't follow. `--key PATH` names the key the box authorised, and `--undo-gb N` how much undo space to provision, 40 GB by default. `--agent-url URL` with `--agent-sha256 HEX` installs that build of repose's agent instead of the one from the signed release, for a box running your own build; one without the other exits 2. Run again on a machine already added, it installs over it; at another address it says the machine moved and installs there, and the projects recorded on it stay recorded. |
+| `repose machine ls` | The machines you have added, with the undo space each one holds. Alias `list`, and `repose machine` alone. A machine that says nothing says why: `no answer`, `refused the key`, `host key changed`, `address does not resolve` or `no repose on the box`. A store past the mark it is kept under adds `the oldest points are going`. |
 | `repose machine rm NAME` | Forget it: the laptop stops reaching it, and forgets which projects are on it. Alias `remove`. What is installed on the box, and its rewind points, stay as they are. A name that is no machine of yours exits 5. |
 
 ### `repose rewind [PROJECT]`
 
-Put the project's files back to a rewind point, a moment a btrfs snapshot on its machine holds: the newest point, or the one `--to POINT` names. It asks first, naming when the point was taken, since everything written since is lost; `-y`/`--yes` skips the question, and a no exits 1. The agents and processes writing in the project are stopped before the swap, and the line says how many. `--list` prints the points, newest first, with when each was taken, why it was taken, and what it holds. A project with no points exits 5, and so does a folder whose project is on no machine you added.
+Put the project's files back to a rewind point, a moment a btrfs snapshot on its machine holds: the newest point, or the one `--to POINT` names. It asks first, naming when the point was taken, since everything written since is lost; `-y`/`--yes` skips the question, and a no exits 1. The agents and processes writing in the project are stopped before the swap, and the line says how many. `--list` prints the points, newest first, with when each was taken and why. `--rm POINT` deletes that point and rewinds nothing. A project with no points exits 5, and so does a folder whose project is on no machine you added.
 
 Rewind points live on that machine's disk, so [they are not a backup](/docs/own-machine#points-are-not-a-backup): the disk that dies takes them with it.
 

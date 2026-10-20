@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/heracraft/repose/internal/machine"
 )
 
 // sshTarget is what runSSH needs to reach a guest: the args ssh needs
@@ -24,9 +26,23 @@ type sshTarget struct {
 	// (`repose run --on`, DECISIONS I-480), "" for the checkout itself.
 	// Every guest script that finds the checkout takes it from here.
 	Checkout string
+	// Owned marks a machine the user owns (`repose machine`, SPINE.md
+	// Contract 2). There is no gateway and no certificate on that path,
+	// so a connection that fails there fails for other reasons and is
+	// said in other words (sshError.Error). machineTarget sets it.
+	Owned bool
 }
 
 func hostTarget(slug string) sshTarget { return sshTarget{Args: []string{slug + ".repose"}} }
+
+// host is the alias ssh was given: the last argument, since the remote
+// command is not in Args.
+func (t sshTarget) host() string {
+	if len(t.Args) == 0 {
+		return ""
+	}
+	return t.Args[len(t.Args)-1]
+}
 
 // sshError is a failed `ssh <target> <cmd>`: exit 255 is ssh's own
 // failure (connection, authentication), anything else is the remote
@@ -37,20 +53,95 @@ type sshError struct {
 	ExitCode int // -1 when ssh did not run at all
 	Stderr   string
 	Err      error
+	// Target is what the connection was to, so a failure on a machine the
+	// user owns reads as what it was: there is no gateway and no
+	// certificate on that path (sshFailure).
+	Target sshTarget
 }
 
 func (e *sshError) Error() string {
 	detail := sshStderrDetail(e.Stderr)
-	switch {
-	case e.ExitCode == -1:
+	if e.ExitCode == -1 {
 		return fmt.Sprintf("could not run ssh (%v)", e.Err)
-	case e.ExitCode == 255 && strings.Contains(detail, "Permission denied"):
-		return withDetail("the gateway refused the SSH certificate", detail)
-	case e.ExitCode == 255:
-		return withDetail("the SSH connection to the machine failed", detail)
-	default:
+	}
+	if e.ExitCode != 255 {
 		return withDetail(fmt.Sprintf("the command on the machine exited with status %d", e.ExitCode), detail)
 	}
+	if !e.Target.Owned {
+		// The hosted path: ssh reaches a guest through the gateway, with a
+		// certificate, and a refusal there is one of those two.
+		if strings.Contains(detail, "Permission denied") {
+			return withDetail("the gateway refused the SSH certificate", detail)
+		}
+		return withDetail("the SSH connection to the machine failed", detail)
+	}
+	switch classifySSH(e.Stderr) {
+	case sshFailHostKey:
+		// The one connection failure the user cannot get past without
+		// being told which file remembers the old key.
+		return fmt.Sprintf("the machine's host key is not the one it had when it was added; `ssh-keygen -R %s -f %s` forgets the old one",
+			e.Target.host(), machineKnownHosts())
+	case sshFailKeyRefused:
+		return withDetail("the machine refused the key", detail)
+	case sshFailNoAnswer:
+		return withDetail("the machine did not answer", detail)
+	case sshFailNoName:
+		return withDetail("the machine's address does not resolve on this computer", detail)
+	case sshFailNoConfig:
+		return withDetail("ssh could not read the configuration repose writes for the machine", detail)
+	default:
+		return withDetail("the SSH connection to the machine failed", detail)
+	}
+}
+
+// sshFailure is what ssh's own stderr says a failed connection was. A
+// machine the user owns is silent for several reasons, and each is a
+// different thing to do about it, so `repose machine ls` and every
+// failure message name which one it was.
+type sshFailure int
+
+const (
+	sshFailOther      sshFailure = iota
+	sshFailNoAnswer              // nothing answered: the box is off, or asleep, or nothing is listening
+	sshFailNoName                // the address resolves to nothing here
+	sshFailKeyRefused            // the box answered and refused the login
+	sshFailHostKey               // the box's host key is not the one it had
+	sshFailNoConfig              // ssh could not read the config it was given
+)
+
+// classifySSH reads ssh's stderr. The host key comes first: a changed key
+// refuses the login too, and the key is what has to be fixed.
+func classifySSH(stderr string) sshFailure {
+	switch {
+	case containsAny(stderr, "REMOTE HOST IDENTIFICATION HAS CHANGED", "Host key verification failed"):
+		return sshFailHostKey
+	case containsAny(stderr, "Can't open user config file", "Bad configuration option", "Cannot open user config"):
+		return sshFailNoConfig
+	case containsAny(stderr, "Could not resolve hostname", "Name or service not known", "nodename nor servname", "Temporary failure in name resolution"):
+		return sshFailNoName
+	case containsAny(stderr, "Permission denied", "Too many authentication failures", "No supported authentication methods"):
+		return sshFailKeyRefused
+	case containsAny(stderr, "Connection refused", "Connection timed out", "Operation timed out", "No route to host",
+		"Network is unreachable", "Host is down", "Connection closed by", "Connection reset by"):
+		return sshFailNoAnswer
+	default:
+		return sshFailOther
+	}
+}
+
+func containsAny(s string, words ...string) bool {
+	for _, w := range words {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// machineKnownHosts is where a machine's host key is remembered, as a
+// message spells it. The file itself is in ~/.ssh/repose (machine.KnownHostsName).
+func machineKnownHosts() string {
+	return sshPathPrefix() + "/.ssh/repose/" + machine.KnownHostsName
 }
 
 func (e *sshError) Unwrap() error { return e.Err }
@@ -131,7 +222,7 @@ func runSSH(ctx context.Context, t sshTarget, remoteCmd string, stdin io.Reader)
 		if errors.As(err, &xe) {
 			code = xe.ExitCode()
 		}
-		return stdout.Bytes(), &sshError{ExitCode: code, Stderr: stderr.String(), Err: err}
+		return stdout.Bytes(), &sshError{ExitCode: code, Stderr: stderr.String(), Err: err, Target: t}
 	}
 	return stdout.Bytes(), nil
 }

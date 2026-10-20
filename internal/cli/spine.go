@@ -51,10 +51,23 @@ func writeMachineSSH(reg *machine.FileRegistry) error {
 }
 
 // machinesConfigPath is ~/.ssh/repose/machines, the file every ssh to a
-// machine is run with.
+// machine is run with. It renders the file from the registry first, so
+// what ssh reads is what the registry says: `machine add` and `machine rm`
+// are not the only ways the registry changes — a hand edit, a second
+// checkout of ~/.config/repose, an entry removed and put back — and the
+// file, not the registry, is what reaches the box. WriteSSH writes only
+// when the rendering differs from what is there.
 func machinesConfigPath() (string, error) {
 	sd, err := sshDir()
 	if err != nil {
+		return "", err
+	}
+	// configDir is Env.Dir (env.go), which is where registryFor reads.
+	dir, err := configDir()
+	if err != nil {
+		return "", err
+	}
+	if err := machine.NewRegistry(dir).WriteSSH(sd, sshPathPrefix()); err != nil {
 		return "", err
 	}
 	return filepath.Join(sd, machine.SSHName), nil
@@ -64,7 +77,7 @@ func machinesConfigPath() (string, error) {
 // block, named with -F, since the Include in ~/.ssh/config covers the
 // gateway's blocks alone (cert.go, I-151).
 func machineTarget(configPath string, m machine.Machine) sshTarget {
-	return sshTarget{Args: []string{"-F", configPath, machine.Alias(m.Name)}}
+	return sshTarget{Args: []string{"-F", configPath, machine.Alias(m.Name)}, Owned: true}
 }
 
 // projectAliases is every <slug>.repose the gateway's blocks already
@@ -204,7 +217,6 @@ type agentPoint struct {
 	Project string    `json:"project"`
 	Reason  string    `json:"reason"`
 	TakenAt time.Time `json:"taken_at"`
-	Bytes   uint64    `json:"bytes"`
 }
 
 type agentPoints struct {

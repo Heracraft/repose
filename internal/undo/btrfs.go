@@ -15,10 +15,22 @@ import (
 )
 
 // MountOptions are the store's mount options. user_subvol_rm_allowed is
-// what lets the login user delete its own points without sudo, and
+// what lets the login user delete its own points without sudo,
 // compress=zstd:1 is the level the measurements were taken at
-// (docs/research/wrapper-undo.md, SPINE.md contract 5).
-const MountOptions = "noatime,compress=zstd:1,user_subvol_rm_allowed"
+// (docs/research/wrapper-undo.md, SPINE.md contract 5), and
+// discard=async is what gives the space back: without it btrfs frees a
+// deleted point's blocks inside the filesystem and the sparse image
+// stays as large as it ever grew, so a store that filled once never
+// gives the box its disk back.
+//
+// btrfs has discard=async since Linux 5.6 and an older kernel refuses
+// the whole mount, so mountOptionsBase is what a mount falls back to.
+// ops/install/machine-install.sh makes the same choice for its mount
+// unit; the two must move together.
+const (
+	mountOptionsBase = "noatime,compress=zstd:1,user_subvol_rm_allowed"
+	MountOptions     = mountOptionsBase + ",discard=async"
+)
 
 // The store's layout: one mountpoint holding two subvolumes.
 //
@@ -53,6 +65,28 @@ type Btrfs struct {
 	Subvol func(path string) (bool, error)
 	// Now is the clock a point's TakenAt comes from; nil means time.Now.
 	Now func() time.Time
+	// Floors are what GC will not collect however full the store is;
+	// nil means the box's own, MinPointAge and MinPointsPerProject.
+	Floors *GCFloors
+	// BackingFree reports the bytes free on the filesystem holding the
+	// store's image, which is what bounds an image-backed store's
+	// space; nil means the statfs call, which is the real one.
+	BackingFree func(path string) (uint64, error)
+	// Scan, when set, is a second holder scan with more privilege than
+	// this process has. The agent points it at itself under sudo, so a
+	// root-owned writer in the live area is refused rather than missed:
+	// /proc/<pid>/cwd of another user's process denies a plain reader,
+	// and a holder nothing can see is a holder a rewind loses writes
+	// under. nil means the in-process scan alone.
+	Scan func(ctx context.Context, root string) ([]Holder, error)
+}
+
+// floors are the floors GC works to.
+func (b *Btrfs) floors() GCFloors {
+	if b.Floors != nil {
+		return *b.Floors
+	}
+	return GCFloors{MinAge: MinPointAge, MinKeep: MinPointsPerProject}
 }
 
 // New returns the backend for a store mountpoint.
@@ -230,18 +264,36 @@ func (b *Btrfs) Provision(ctx context.Context, sizeBytes uint64) error {
 		if err := b.ensureFilesystem(ctx, dev); err != nil {
 			return err
 		}
-		opts := MountOptions
-		if b.Device == "" {
-			opts = "loop," + opts
-		}
-		if _, err := b.R.Run(ctx, "mount", "-o", opts, dev, b.Store); err != nil {
-			return fmt.Errorf("mount the store: %w", err)
+		if err := b.mount(ctx, dev); err != nil {
+			return err
 		}
 	}
 	for _, d := range []string{b.projectsDir(), b.pointsRoot()} {
 		if err := b.ensureSubvolume(ctx, d); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// mount mounts dev on the store, falling back to a kernel older than
+// 5.6 by dropping discard=async: btrfs refuses the whole mount on an
+// option it does not know, and a store that cannot mount is a box with
+// no undo at all.
+func (b *Btrfs) mount(ctx context.Context, dev string) error {
+	prefix := ""
+	if b.Device == "" {
+		prefix = "loop,"
+	}
+	_, err := b.R.Run(ctx, "mount", "-o", prefix+MountOptions, dev, b.Store)
+	if err == nil {
+		return nil
+	}
+	if !stderrHas(err, "discard") && !stderrHas(err, "bad option", "unrecognized mount option", "Invalid argument") {
+		return fmt.Errorf("mount the store: %w", err)
+	}
+	if _, err2 := b.R.Run(ctx, "mount", "-o", prefix+mountOptionsBase, dev, b.Store); err2 != nil {
+		return fmt.Errorf("mount the store: %w", err2)
 	}
 	return nil
 }
@@ -382,7 +434,6 @@ func (b *Btrfs) Take(ctx context.Context, project, name, reason string) (Point, 
 	if err := writeMeta(b.metaPath(project, name), p); err != nil {
 		return Point{}, err
 	}
-	p.Bytes = b.pointBytes(ctx, project, name)
 	return p, nil
 }
 
@@ -419,9 +470,6 @@ func (b *Btrfs) List(ctx context.Context, project string) ([]Point, error) {
 	if err != nil {
 		return nil, fmt.Errorf("undo: points of %s: %w", project, err)
 	}
-	// One qgroup call for every point, and 0 bytes each when quotas are
-	// off: a guessed size is worse than none.
-	rows := b.qgroups(ctx)
 	var out []Point
 	for _, e := range ents {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
@@ -431,7 +479,6 @@ func (b *Btrfs) List(ctx context.Context, project string) ([]Point, error) {
 		if err != nil {
 			return nil, err
 		}
-		p.Bytes = exclusiveBytes(rows, "points/"+project+"/"+e.Name())
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -464,7 +511,7 @@ func (b *Btrfs) Rewind(ctx context.Context, project, name string) (string, error
 	// survives the swap and goes on writing where no path reaches it, so
 	// its last writes are lost without a word
 	// (docs/research/wrapper-undo.md). Stopping it is the caller's job.
-	hs, err := b.Holders(project)
+	hs, err := b.Holders(ctx, project)
 	if err != nil {
 		return "", err
 	}
@@ -472,8 +519,11 @@ func (b *Btrfs) Rewind(ctx context.Context, project, name string) (string, error
 		return "", fmt.Errorf("%w: still open by %s", ErrBusy, processes(len(hs)))
 	}
 	b.sweep(ctx, project)
+	// ReasonRewind, not ReasonManual: this point holds the state the user
+	// is escaping, so nothing may pick it as the newest point to go back
+	// to (internal/cli/rewind.go).
 	safety := NewPointName()
-	if _, err := b.Take(ctx, project, safety, ReasonManual); err != nil {
+	if _, err := b.Take(ctx, project, safety, ReasonRewind); err != nil {
 		return "", err
 	}
 	staging := filepath.Join(b.projectsDir(), stagingPrefix+project+"-"+safety)
@@ -505,10 +555,18 @@ func (b *Btrfs) Rewind(ctx context.Context, project, name string) (string, error
 	return safety, nil
 }
 
-// Holders returns the processes whose working directory or open files are
-// in the project's live area. It is what Rewind refuses on, and what the
-// agent's quiesce reports after it has stopped them.
-func (b *Btrfs) Holders(project string) ([]Holder, error) {
+// Holders returns the processes whose working directory, open files or
+// memory mappings are in the project's live area. It is what Rewind
+// refuses on, and what the agent's quiesce reports after it has stopped
+// them.
+//
+// It scans twice where it can: once in this process, which sees the
+// login user's own processes, and once through Scan, which sees a
+// process of another user that /proc hides from a plain reader. A Scan
+// that cannot run is not a failure — the in-process scan still refuses
+// the holders it found, and a quiesce that cannot run at all is worse
+// than one that sees less.
+func (b *Btrfs) Holders(ctx context.Context, project string) ([]Holder, error) {
 	if err := checkProject(project); err != nil {
 		return nil, err
 	}
@@ -523,7 +581,31 @@ func (b *Btrfs) Holders(project string) ([]Holder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("undo: processes of %s: %w", project, err)
 	}
+	if b.Scan != nil {
+		more, err := b.Scan(ctx, root)
+		if err == nil {
+			hs = mergeHolders(hs, more)
+		}
+	}
 	return hs, nil
+}
+
+// mergeHolders is the union of two scans by pid, lowest pid first, so
+// the same process seen by both is reported once.
+func mergeHolders(a, b []Holder) []Holder {
+	seen := make(map[int]bool, len(a)+len(b))
+	out := make([]Holder, 0, len(a)+len(b))
+	for _, hs := range [][]Holder{a, b} {
+		for _, h := range hs {
+			if seen[h.PID] {
+				continue
+			}
+			seen[h.PID] = true
+			out = append(out, h)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PID < out[j].PID })
+	return out
 }
 
 // processes is "1 process" or "3 processes": the count is what ErrBusy
@@ -643,41 +725,93 @@ func (b *Btrfs) Space(ctx context.Context) (Space, error) {
 	if !haveTotal || !haveUsed || !haveFree {
 		return s, errors.New("btrfs filesystem usage: no overall figures")
 	}
-	return s, nil
+	return b.bound(s), nil
+}
+
+// bound is Space as a user can rely on it. An image-backed store is a
+// sparse file: btrfs reports the image's whole size as the device, so a
+// 40 GB store on a filesystem with 6 GB left answers "34 GB free" and
+// then a point fails with ENOSPC out of nowhere. The honest free figure
+// is the smaller of the two, and the honest total is what is used plus
+// that — which is also what makes GC's high-water mark fire before the
+// box's own disk fills.
+func (b *Btrfs) bound(s Space) Space {
+	if b.Device != "" {
+		return s
+	}
+	free, err := b.backingFree(filepath.Dir(b.image()))
+	if err != nil || free >= s.Free {
+		return s
+	}
+	s.Free = free
+	s.Total = s.Used + free
+	return s
+}
+
+func (b *Btrfs) backingFree(dir string) (uint64, error) {
+	if b.BackingFree != nil {
+		return b.BackingFree(dir)
+	}
+	return statfsFree(dir)
+}
+
+// statfsFree is the bytes an unprivileged writer can still put on the
+// filesystem at dir: Bavail, not Bfree, which counts the blocks only
+// root may have.
+func statfsFree(dir string) (uint64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dir, &st); err != nil {
+		return 0, fmt.Errorf("undo: free space of %s: %w", dir, err)
+	}
+	return uint64(st.Bavail) * uint64(st.Bsize), nil
 }
 
 // GC implements Backend: the oldest points go until the store is under
-// the high-water mark, and a project's newest point never goes — it is
-// the one a rewind would reach for.
-func (b *Btrfs) GC(ctx context.Context, highWaterPercent int) ([]Point, error) {
+// the high-water mark, within three floors that keep a runaway from
+// eating the history that would undo it.
+//
+//   - A project's newest MinKeep points stay, whatever their age.
+//   - A point inside MinAge stays: a point from ten minutes ago is the
+//     one the user is about to reach for.
+//   - A delete that frees nothing stops the loop. Once the space is
+//     held by the live areas rather than by the points, deleting more
+//     points empties the history and frees nothing, which is the one
+//     way a GC can turn a full store into a full store with no undo.
+func (b *Btrfs) GC(ctx context.Context, highWaterPercent int) (GCResult, error) {
+	var res GCResult
 	if highWaterPercent < 1 || highWaterPercent > 100 {
-		return nil, fmt.Errorf("%w: high-water %d is not 1 to 100", ErrInvalidName, highWaterPercent)
+		return res, fmt.Errorf("%w: high-water %d is not 1 to 100", ErrInvalidName, highWaterPercent)
 	}
 	sp, err := b.Space(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	if !over(sp, highWaterPercent) {
-		return nil, nil
-	}
-	cand, err := b.collectable(ctx)
+	cand, young, kept, err := b.collectable(ctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	var gone []Point
+	res.Young, res.Kept = young, kept
+	if !over(sp, highWaterPercent) {
+		return res, nil
+	}
 	for _, p := range cand {
+		before := sp.Used
 		if err := b.deletePoint(ctx, p.Project, p.Name, true); err != nil {
-			return gone, err
+			return res, err
 		}
-		gone = append(gone, p)
+		res.Deleted = append(res.Deleted, p)
 		if sp, err = b.Space(ctx); err != nil {
-			return gone, err
+			return res, err
 		}
 		if !over(sp, highWaterPercent) {
 			break
 		}
+		if sp.Used >= before {
+			res.Stalled = true
+			break
+		}
 	}
-	return gone, nil
+	return res, nil
 }
 
 // over reports whether the store is at or above the high-water mark.
@@ -688,17 +822,23 @@ func over(s Space, highWaterPercent int) bool {
 	return s.Used*100 >= s.Total*uint64(highWaterPercent)
 }
 
-// collectable is every point GC may take, oldest first: all of them bar
-// each project's newest.
-func (b *Btrfs) collectable(ctx context.Context) ([]Point, error) {
+// collectable is every point GC may take, oldest first, and how many it
+// passed over: young for the ones inside MinAge, kept for the ones a
+// project holds as its floor.
+//
+// A point whose sidecar is gone and whose creation time cannot be read
+// has no TakenAt, and counts as old: the alternative is a store of
+// sidecar-less points that nothing can ever collect.
+func (b *Btrfs) collectable(ctx context.Context) (cand []Point, young, kept int, err error) {
 	ents, err := os.ReadDir(b.pointsRoot())
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, 0, 0, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("undo: points: %w", err)
+		return nil, 0, 0, fmt.Errorf("undo: points: %w", err)
 	}
-	var out []Point
+	fl := b.floors()
+	cutoff := b.now().Add(-fl.MinAge)
 	for _, e := range ents {
 		// A directory that is not a slug is not a project of ours, and
 		// nothing in points/ is worth failing a GC over.
@@ -707,65 +847,33 @@ func (b *Btrfs) collectable(ctx context.Context) ([]Point, error) {
 		}
 		ps, err := b.List(ctx, e.Name())
 		if err != nil {
-			return nil, err
+			return nil, 0, 0, err
 		}
-		if len(ps) > 1 {
-			out = append(out, ps[1:]...) // List is newest first
+		// List is newest first, so the floor is the head of the slice.
+		floor := fl.MinKeep
+		if floor < 1 {
+			floor = 1 // a project always keeps its newest point
+		}
+		if len(ps) <= floor {
+			kept += len(ps)
+			continue
+		}
+		kept += floor
+		for _, p := range ps[floor:] {
+			if !p.TakenAt.IsZero() && p.TakenAt.After(cutoff) {
+				young++
+				continue
+			}
+			cand = append(cand, p)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].TakenAt.Equal(out[j].TakenAt) {
-			return out[i].Name < out[j].Name
+	sort.Slice(cand, func(i, j int) bool {
+		if cand[i].TakenAt.Equal(cand[j].TakenAt) {
+			return cand[i].Name < cand[j].Name
 		}
-		return out[i].TakenAt.Before(out[j].TakenAt)
+		return cand[i].TakenAt.Before(cand[j].TakenAt)
 	})
-	return out, nil
-}
-
-// qgroupRow is one line of `btrfs qgroup show`.
-type qgroupRow struct {
-	path      string
-	exclusive uint64
-}
-
-// qgroups reads every subvolume's exclusive bytes. Quotas are off on a
-// fresh store, and then there is no figure to read: callers report 0,
-// which Point.Bytes documents as unknown.
-func (b *Btrfs) qgroups(ctx context.Context) []qgroupRow {
-	res, err := b.btrfs(ctx, "qgroup", "show", "--raw", b.Store)
-	if err != nil {
-		return nil
-	}
-	var rows []qgroupRow
-	for _, line := range strings.Split(string(res.Stdout), "\n") {
-		f := strings.Fields(line)
-		// qgroupid referenced exclusive path
-		if len(f) != 4 || !strings.HasPrefix(f[0], "0/") {
-			continue
-		}
-		n, err := strconv.ParseUint(f[2], 10, 64)
-		if err != nil {
-			continue
-		}
-		rows = append(rows, qgroupRow{path: f[3], exclusive: n})
-	}
-	return rows
-}
-
-// exclusiveBytes is the bytes held by the subvolume at rel, which qgroup
-// reports relative to the filesystem's root rather than to the store.
-func exclusiveBytes(rows []qgroupRow, rel string) uint64 {
-	for _, r := range rows {
-		if r.path == rel || strings.HasSuffix(r.path, "/"+rel) {
-			return r.exclusive
-		}
-	}
-	return 0
-}
-
-// pointBytes is one point's exclusive bytes, 0 when quotas are off.
-func (b *Btrfs) pointBytes(ctx context.Context, project, name string) uint64 {
-	return exclusiveBytes(b.qgroups(ctx), "points/"+project+"/"+name)
+	return cand, young, kept, nil
 }
 
 // meta is a point's sidecar: what btrfs does not record.

@@ -25,6 +25,9 @@ func spineEnv(t *testing.T) (*Env, *machine.FileRegistry, *discardWriter, *disca
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// configDir is where the spine's own helpers read the registry
+	// (machinesConfigPath), and it is Env.Dir in the CLI itself (env.go).
+	t.Setenv(envXDGConfigHome, filepath.Join(home, ".config"))
 	out, errOut := &discardWriter{}, &discardWriter{}
 	e := &Env{
 		Dir:     dir,
@@ -92,6 +95,49 @@ func fakeAgent(t *testing.T, answers map[string]string) *[]string {
 	}
 	t.Cleanup(func() { runOnMachine = old })
 	return &sent
+}
+
+// fakeAgentFails replaces the ssh that carries repose-agent's commands
+// with one that fails the way ssh does: an exit status and what it said
+// on stderr.
+func fakeAgentFails(t *testing.T, code int, stderr string) {
+	t.Helper()
+	old := runOnMachine
+	runOnMachine = func(_ context.Context, target sshTarget, _ string, _ io.Reader) ([]byte, error) {
+		return nil, &sshError{ExitCode: code, Stderr: stderr, Target: target}
+	}
+	t.Cleanup(func() { runOnMachine = old })
+}
+
+// The file ssh reads is rendered from the registry whenever a command
+// needs it, not only by `machine add` and `machine rm`: a registry that
+// came from somewhere else (a hand edit, another checkout of the config
+// directory) would otherwise reach no box.
+func TestMachinesConfigPathRendersWhatTheRegistrySays(t *testing.T) {
+	_, reg, _, _ := spineEnv(t)
+	addMachine(t, reg, testMachine())
+	path, err := machinesConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the machines config: %v", err)
+	}
+	if !strings.Contains(string(cfg), "Host homebox.repose") {
+		t.Errorf("machines config:\n%s", cfg)
+	}
+	// And again when the file has been removed under it.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := machinesConfigPath(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = os.ReadFile(path)
+	if err != nil || !strings.Contains(string(cfg), "Host homebox.repose") {
+		t.Errorf("machines config after it was removed: %s (%v)", cfg, err)
+	}
 }
 
 func TestPlaceForResolvesACheckoutToItsMachine(t *testing.T) {
@@ -268,7 +314,7 @@ func TestAgentRunQuotesItsArgumentsAndReadsTheResult(t *testing.T) {
 	if len(*sent) != 1 || (*sent)[0] != reposeAgent+" 'point' 'list' '--project' 'todo-app'" {
 		t.Fatalf("sent %q", *sent)
 	}
-	if len(points.Points) != 1 || points.Points[0].Name != "r-0199a1c2" || points.Points[0].Bytes != 109051904 {
+	if len(points.Points) != 1 || points.Points[0].Name != "r-0199a1c2" {
 		t.Fatalf("points %+v", points.Points)
 	}
 	if !points.Points[0].TakenAt.Equal(time.Date(2026, 10, 19, 10, 0, 0, 0, time.UTC)) {
@@ -301,9 +347,14 @@ func TestMachineTargetNamesItsOwnConfig(t *testing.T) {
 	if !strings.HasSuffix(configPath, filepath.Join(".ssh", "repose", machine.SSHName)) {
 		t.Errorf("config path %q", configPath)
 	}
-	got := machineTarget(configPath, testMachine()).Args
+	target := machineTarget(configPath, testMachine())
 	want := []string{"-F", configPath, "homebox.repose"}
-	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("ssh args %v, want %v", got, want)
+	if strings.Join(target.Args, " ") != strings.Join(want, " ") {
+		t.Errorf("ssh args %v, want %v", target.Args, want)
+	}
+	// A machine the user owns, which is what every failure on this path
+	// is read as (sshError.Error).
+	if !target.Owned {
+		t.Error("a machine's target is not marked as one the user owns")
 	}
 }

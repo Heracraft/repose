@@ -24249,6 +24249,60 @@ provider. no ssh gateway, no kvm stuff").
   not be read as a change: it exits 0 and made every run report
   `changed: true`.
 
+- *What an audit of the shape against its own pitch changed (2026-10-20).*
+  The first pass delivered the two differentiators and almost nothing
+  around them: the audit found 27 gaps it rated as losing the user. The
+  shape is only worth having if a person can work on the box, so:
+  - *The laptop's carry travels, the same one a guest gets.* The spine's
+    run passed `SyncOptions{RemoteURL, NoRemote}` and nothing else, so no
+    gh, codex or opencode login, no git identity, no `.env` file and no
+    tools reached the box: an agent could not commit, could not push, and
+    the project could not start. It now builds the hosted carry
+    (`buildCredentialsAndCarry` with `carryOptions{TZ, Git, Claude,
+    Tools, Markers}`) and `EnvLater`, which need a home directory, a repo
+    directory and an ssh target and nothing from the api. *Not carried:*
+    the MCP servers, because the part that renders them into an agent's
+    config is `repose-mcp sync`, which a box the user owns has not got;
+    carrying them would write a file nothing reads. The project's own
+    `.mcp.json` travels inside the checkout and its approvals reach the
+    agent window, which is the half that works.
+  - *A missing Claude Code login is detected before the prompt is typed*,
+    with the hosted path's own two sentences, rather than typing it into a
+    login screen and losing it.
+  - *`attach`, `sync`, `ps`, `ls` and `status` reach an owned machine*,
+    and every noun that cannot (snapshots, resize, stop, start, destroy,
+    config, secrets, browser, logs, reply) says so in one sentence and
+    exits 5 at the one place a project is resolved, rather than failing on
+    an api lookup. Without `attach` the shape's whole claim — leave an
+    agent, come back to it — was unreachable.
+  - *The laptop gets a fetch-only `repose` remote* at
+    `<machine>.repose:~/<slug>`, so the agent's commits have a way home
+    that is not GitHub.
+  - *An address can change.* The same name at a new address moves the
+    machine, says so, and keeps the projects recorded on it, where before
+    it exited 1 and the only way through also erased the project map.
+  - *A `~/.ssh/config` alias, a Tailscale name and a `ProxyJump` work as
+    the address*, resolved once with `ssh -G` at add time and spelled into
+    the generated block. The blocks are read with `-F`, which replaces the
+    user's own config, so a hop that is not copied is a hop that is lost.
+  - *Failures say what is true.* An authentication failure was reported as
+    a gateway refusing a certificate, on a path with neither. `machine ls`
+    now distinguishes no answer, a refused key, a changed host key, an
+    address that does not resolve and a box with no repose on it.
+  - *`gh` is best-effort, not required.* Debian 12 has no `gh` package, so
+    requiring it would have broken the install on the very box this shape
+    was proved on. It is installed where the distribution has it and named
+    where it is not; the carried login still lets git push either way.
+  - *A box's tmux is not the guest's tmux.* `repose ps` asks tmux for one
+    line per window with the fields separated, and the separator has
+    always been a tab. tmux 3.3a, which Debian 12 ships, prints `_` for a
+    tab in a format string, so every row came back as one field and the
+    listing failed. The hosted path works only because a guest's tmux is
+    the one nix pins. The spine asks for `|~|` instead (`psScriptSep`,
+    `spinePsSep`), the hosted format is untouched, and a test holds both.
+    Found by running it against a real box; nothing in the code could
+    have said so.
+
 **I-814. Undo on a machine we do not own is a btrfs subvolume, and a
 rewind stops the project first (wrapper-spine, 2026-10-19).** Scopes
 R3-6 (snapshots streamed to Blob) to hosts we own. *Made during
@@ -24303,6 +24357,43 @@ implementation*, on measurements taken before the code was written:
   login user, above 85 percent. A point is taken on every `repose run`, so
   without it the store fills and `point take` starts answering
   `no_space`.
+
+- *What the same audit changed about undo (2026-10-20).*
+  - *The safety point is no longer a trap.* A rewind takes a point of the
+    state it is leaving, and that point was written with reason `manual`,
+    so the next bare `repose rewind` selected it and restored the wreck
+    the user had just escaped. It now has its own reason, `rewind`, a bare
+    rewind does not select one, and the result line names it — a loss the
+    user cannot otherwise undo is the stated exception to "Trust the
+    reader".
+  - *`gc` has floors.* It deleted oldest-first across every project with
+    no floor and no check that a delete freed anything, so a runaway live
+    area could eat the whole history of every project on the box and still
+    run out. It now stops when a delete frees nothing, never collects a
+    point younger than 6 hours, and keeps 3 points per project.
+  - *The store cannot overcommit the disk.* The image was a sparse file
+    truncated to whatever `--undo-gb` said, so the backing filesystem
+    could fill while btrfs still believed it had room. The installer
+    refuses a size the backing filesystem cannot hold, naming both
+    numbers, and `Space` is bounded by that filesystem's free bytes rather
+    than the image's size.
+  - *`discard=async`*, so a deleted point's blocks return to the sparse
+    image instead of the file only ever growing.
+  - *A point every 30 minutes*, from a second timer, because the only
+    point before was the one a run took: a six-hour agent session had one
+    rewind target, the state it started from.
+  - *No column of zeroes.* `rewind --list` showed a SIZE for every point
+    and it was always 0 B: `btrfs qgroup show` needs root and quotas are
+    off. Quotas stay off — they cost real performance on a store made of
+    snapshots — so the column is gone and the honest sentence stays: a
+    point costs only the blocks that change after it.
+  - *`repose rewind --rm POINT`*, so a user can free space by hand, and a
+    `no_space` failure names the store instead of returning a code.
+  - *Quiesce reports the pid beside the process name*, scans
+    `/proc/<pid>/maps` as well as cwd and fd, and runs the scan through
+    the sudo the installer already requires, so a root-owned holder is
+    refused rather than missed. A holder it cannot see is a holder whose
+    writes a rewind loses silently.
 - *Rejected: ZFS*, whose `snapshot`, `rollback`, `clone` and `diff` are a
   better fit on paper, because it is an out-of-tree module that breaks on
   a kernel upgrade of a machine nobody on the team can log into. It is

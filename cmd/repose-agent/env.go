@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/heracraft/repose/internal/undo"
@@ -34,7 +37,7 @@ const (
 type undoStore interface {
 	undo.Backend
 	Ready(ctx context.Context) (bool, error)
-	Holders(project string) ([]undo.Holder, error)
+	Holders(ctx context.Context, project string) ([]undo.Holder, error)
 }
 
 // Env is everything the agent touches outside its own process, so every
@@ -79,7 +82,46 @@ var _ undoStore = (*undo.Btrfs)(nil)
 
 // openBtrfs is internal/undo's btrfs store, running real processes. It is
 // the one place the agent names an implementation.
-func openBtrfs(store string) (undoStore, error) { return undo.New(store, undo.Exec{}), nil }
+func openBtrfs(store string) (undoStore, error) {
+	b := undo.New(store, undo.Exec{})
+	b.Scan = sudoScan
+	return b, nil
+}
+
+// sudoScan is the holder scan with root's view of /proc, run by this
+// same binary under sudo. The agent runs as the box's login user, and
+// /proc/<pid>/cwd, /proc/<pid>/fd and /proc/<pid>/maps of another user's
+// process deny that user outright — so a root-owned writer in the live
+// area was not refused, it was invisible, and a rewind over it lost its
+// writes. The installer requires passwordless sudo for exactly the
+// things it cannot do without it (machine-install.sh step 1).
+//
+// A sudo that will not run is not a failure: the caller keeps the
+// in-process scan, which still refuses every holder it did find.
+func sudoScan(ctx context.Context, root string) ([]undo.Holder, error) {
+	if os.Geteuid() == 0 {
+		return nil, nil // the in-process scan already sees everything
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	out, err := exec.CommandContext(ctx, "sudo", "-n", exe, "holders", "--root", root).Output()
+	if err != nil {
+		return nil, err
+	}
+	var answer struct {
+		Holders []undo.Holder `json:"holders"`
+		Error   *struct{}     `json:"error"`
+	}
+	if err := json.Unmarshal(out, &answer); err != nil {
+		return nil, err
+	}
+	if answer.Error != nil {
+		return nil, errors.New("the privileged scan refused")
+	}
+	return answer.Holders, nil
+}
 
 // runTmux runs tmux as the login user, which is the user the agent runs as:
 // the session belongs to that user's server, not to root's.
@@ -118,8 +160,13 @@ var (
 	nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
-// reasons are the Reason values of SPINE.md "Contract 1".
-var reasons = []string{undo.ReasonManual, undo.ReasonRun, undo.ReasonStop, undo.ReasonScheduled}
+// reasons are the Reason values of SPINE.md "Contract 1", rewind
+// included: the point a rewind takes of the state it replaces carries
+// its own reason so nothing picks it as a target (internal/undo).
+var reasons = []string{
+	undo.ReasonManual, undo.ReasonRun, undo.ReasonStop,
+	undo.ReasonScheduled, undo.ReasonRewind,
+}
 
 func checkSlug(flagName, slug string) error {
 	if slug == "" {
@@ -143,7 +190,7 @@ func checkName(name string) error {
 
 func checkReason(reason string) error {
 	if !slices.Contains(reasons, reason) {
-		return errf(codeInvalidArgument, "--reason is one of manual, run, stop, scheduled")
+		return errf(codeInvalidArgument, "--reason is one of %s", strings.Join(reasons, ", "))
 	}
 	return nil
 }

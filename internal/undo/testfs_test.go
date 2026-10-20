@@ -156,19 +156,33 @@ func TestBtrfsStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("space: %v", err)
 	}
-	t.Logf("store: %d bytes total, %d used, %d free, point bytes %d", sp.Total, sp.Used, sp.Free, ps[0].Bytes)
+	t.Logf("store: %d bytes total, %d used, %d free", sp.Total, sp.Used, sp.Free)
 	if sp.Total == 0 || sp.Used == 0 || sp.Free == 0 {
 		t.Errorf("space %+v", sp)
 	}
 
-	// GC under a mark nothing can be below takes the oldest point and
-	// leaves the newest. It collects every project in the store, so a
-	// store shared with another run loses that run's older points too.
-	gone, err := b.GC(ctx, 1)
+	// The box's floors hold: both points were taken seconds ago, so a GC
+	// under a mark nothing can be below collects neither of them. This is
+	// the case that matters — an agent filling the store in ten minutes
+	// must not take the points the user would rewind to.
+	res, err := b.GC(ctx, 1)
 	if err != nil {
 		t.Fatalf("gc: %v", err)
 	}
-	t.Logf("gc deleted %d points", len(gone))
+	if len(res.Deleted) != 0 {
+		t.Fatalf("gc deleted %+v, all of it minutes old", res.Deleted)
+	}
+	t.Logf("gc with the box's floors: %d young, %d kept, stalled %v", res.Young, res.Kept, res.Stalled)
+
+	// With the floors off, it takes the oldest point and leaves the
+	// newest. It collects every project in the store, so a store shared
+	// with another run loses that run's older points too.
+	b.Floors = &GCFloors{}
+	res, err = b.GC(ctx, 1)
+	if err != nil {
+		t.Fatalf("gc without floors: %v", err)
+	}
+	t.Logf("gc deleted %d points", len(res.Deleted))
 	left, err := b.List(ctx, project)
 	if err != nil {
 		t.Fatalf("list after gc: %v", err)

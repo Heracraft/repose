@@ -29,13 +29,13 @@ func cmdStatus(ctx context.Context, env *Env, args []string) error {
 	for _, slug := range slugs {
 		points, err := b.List(ctx, slug)
 		if err != nil {
-			return fromBackend(err, "list a project's points")
+			return env.fromBackend(err, "list a project's points")
 		}
 		projects = append(projects, wireProject{Slug: slug, Points: len(points)})
 	}
 	space, err := b.Space(ctx)
 	if err != nil {
-		return fromBackend(err, "read the store's space")
+		return env.fromBackend(err, "read the store's space")
 	}
 	return emit(env.Stdout, wireStatus{Machine: machine, Projects: projects, Space: wireSpaceOf(space)})
 }

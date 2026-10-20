@@ -29,11 +29,6 @@ type FakeRunner struct {
 	Calls [][]string
 	// Usage is what `btrfs filesystem usage --raw` reports.
 	Usage Space
-	// Exclusive is each subvolume's exclusive bytes, keyed the way
-	// `btrfs qgroup show` prints the path ("points/<slug>/<name>").
-	Exclusive map[string]uint64
-	// QuotasOff makes qgroup fail the way a store without quotas does.
-	QuotasOff bool
 	// Created is the creation time `btrfs subvolume show` reports.
 	Created time.Time
 	// FailOn fails any invocation whose argv contains the key, with the
@@ -128,18 +123,6 @@ func (f *FakeRunner) Run(_ context.Context, argv ...string) (Result, error) {
 			"    Used:\t\t\t%d\n"+
 			"    Free (estimated):\t\t%d\t(min: %d)\n",
 			f.Usage.Total, f.Usage.Used, f.Usage.Used, f.Usage.Free, f.Usage.Free/2))}, nil
-	case has(rest, "qgroup", "show"):
-		if f.QuotasOff {
-			return f.exit(argv, "ERROR: can't list qgroups: quotas not enabled")
-		}
-		var sb strings.Builder
-		sb.WriteString("Qgroupid    Referenced    Exclusive   Path \n--------    ----------    ---------   ---- \n")
-		i := 0
-		for p, n := range f.Exclusive {
-			i++
-			fmt.Fprintf(&sb, "0/%d %d %d %s\n", 256+i, n, n, p)
-		}
-		return Result{Stdout: []byte(sb.String())}, nil
 	}
 	return Result{}, nil
 }

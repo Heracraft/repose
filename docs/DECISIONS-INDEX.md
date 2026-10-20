@@ -825,5 +825,5 @@ pointer, not a summary.
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
 - **I-812** A project may live on a plain machine the user owns, reached by ordinary SSH, with no guest, no gateway and no control plane (wrapper-spine, 2026-10-19) — L24174
-- **I-814** Undo on a machine we do not own is a btrfs subvolume, and a rewind stops the project first (wrapper-spine, 2026-10-19) — L24252
-- **I-816** The model is a single-digit hosted control plane on hardware the user brings, plus an identical self-hostable version, self-host first (wrapper-spine, 2026-10-19) — L24318
+- **I-814** Undo on a machine we do not own is a btrfs subvolume, and a rewind stops the project first (wrapper-spine, 2026-10-19) — L24306
+- **I-816** The model is a single-digit hosted control plane on hardware the user brings, plus an identical self-hostable version, self-host first (wrapper-spine, 2026-10-19) — L24409

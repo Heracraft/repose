@@ -60,10 +60,12 @@ behind the same interface. In `internal/undo`:
 type Point struct {
 	Name      string // stable, unique, derived from the caller's id — never a wall clock
 	Project   string // project slug
-	Reason    string // manual | run | stop | scheduled
+	Reason    string // manual | run | stop | scheduled | rewind
 	TakenAt   time.Time
-	Bytes     uint64 // exclusive bytes this point holds, 0 when unknown
 }
+// No size field: btrfs reports a snapshot's bytes only through qgroups,
+// which means quotas on, and quotas on a store of thousands of
+// snapshots cost every write — so the figure was 0 on every real box.
 
 type Space struct{ Total, Used, Free uint64 }
 
@@ -79,10 +81,12 @@ type Backend interface {
 	Take(ctx context.Context, project, name, reason string) (Point, error)
 	// List returns the project's points, newest first.
 	List(ctx context.Context, project string) ([]Point, error)
-	// Rewind replaces the live area with the point.
-	// It refuses with ErrBusy unless the live area is quiesced, and it
-	// takes a point of the current state first, so a rewind is undoable.
-	Rewind(ctx context.Context, project, name string) error
+	// Rewind replaces the live area with the point and returns the name
+	// of the point it took of the state it replaced, whose reason is
+	// "rewind", so a rewind is undoable and nothing selects that point
+	// as a target. It refuses with ErrBusy unless the live area is
+	// quiesced.
+	Rewind(ctx context.Context, project, name string) (string, error)
 	// Fork copies a point into a new project's live area.
 	Fork(ctx context.Context, srcProject, name, newProject string) error
 	// Delete removes a point. Absence is success.
@@ -90,8 +94,23 @@ type Backend interface {
 	// Space reports the store's bytes.
 	Space(ctx context.Context) (Space, error)
 	// GC deletes the oldest points until the store is under the high-water
-	// mark, never deleting the newest point of any project. Returns what went.
-	GC(ctx context.Context, highWaterPercent int) ([]Point, error)
+	// mark, within three floors: a project's newest MinPointsPerProject
+	// points stay, a point inside MinPointAge stays, and a delete that
+	// frees no bytes stops the loop. Returns what went and what it would
+	// not touch.
+	GC(ctx context.Context, highWaterPercent int) (GCResult, error)
+}
+
+const (
+	MinPointAge         = 6 * time.Hour
+	MinPointsPerProject = 3
+)
+
+type GCResult struct {
+	Deleted []Point // oldest first
+	Young   int     // left because they are inside MinPointAge
+	Kept    int     // left because their project is at its floor
+	Stalled bool    // a delete freed nothing, so the loop stopped
 }
 
 var (
@@ -114,9 +133,13 @@ Rules the implementation must hold, each measured in
   `/proc/*/fd` or `fuser`).
 - `Rewind` takes a point of the current state before swapping, and swaps
   by rename, so a failure leaves the pre-rewind state live.
-- `GC` never deletes a project's newest point. btrfs has no honest free
-  figure from `df`; use `btrfs filesystem usage --raw` and treat an
-  allocation failure as `ErrNoSpace`.
+- `GC` works to the floors above: without them an agent that fills the
+  store in ten minutes takes the morning's points with it, which is the
+  one way a collection turns a full store into a full store with no undo.
+  btrfs has no honest free figure from `df`; use `btrfs filesystem usage
+  --raw` and treat an allocation failure as `ErrNoSpace`. On an
+  image-backed store the figures are bounded by the filesystem the image
+  lives on: a sparse file promises space the box may not have.
 - `Fork` is a writable snapshot of a point: 0 s and no copied bytes.
 
 ## Contract 2: the machine record
@@ -127,18 +150,25 @@ In `internal/machine`. The registry is `~/.config/repose/machines.toml`
 ```go
 type Machine struct {
 	Name     string // the user's name for it, [a-z0-9-], unique
-	Address  string // host or IP as ssh reaches it
+	Address  string // host or IP as ssh reaches it, resolved when it was added
 	Port     int    // 0 means 22
 	Login    string // the ssh user: the box's own owner, not "dev"
 	KeyPath  string // the laptop key authorised on the box
-	UndoPath string // the store's mountpoint on the box
-	AddedAt  time.Time
+	// From the user's own ~/.ssh/config, read once with `ssh -G` when the
+	// machine is added: the blocks are read with -F, which replaces that
+	// config, so the hops have to be spelled out here or they are lost.
+	ProxyJump    string
+	ProxyCommand string
+	Spelled      string // the --ssh value as the user wrote it, when it was an alias
+	UndoPath     string // the store's mountpoint on the box
+	AddedAt      time.Time
 }
 
 type Registry interface {
 	List() ([]Machine, error)
 	Get(name string) (Machine, error)
 	Add(m Machine) error      // refuses a duplicate name
+	Update(m Machine) error   // the same name at a new address moves it
 	Remove(name string) error // absence is success
 	// SSHConfig renders ~/.ssh/repose/machines, one Host block per machine,
 	// in name order. Included by ~/.ssh/repose/config like the gateway blocks.
@@ -180,13 +210,15 @@ prints `{"error":{"code":"...","message":"..."}}` and exits non-zero.
 repose-agent provision --size-gb N        {"store":"/var/lib/repose/undo","fs":"btrfs","created":true}
 repose-agent project init  --project SLUG {"path":"/var/lib/repose/undo/projects/SLUG","created":true}
 repose-agent point take    --project SLUG --name N --reason R   {"point":{...}}
+repose-agent point take    --reason R          # every project  {"points":[{...}]}
 repose-agent point list    --project SLUG {"points":[{...}]}
 repose-agent point rewind  --project SLUG --name N              {"rewound":true,"safety_point":"..."}
 repose-agent point fork    --project SLUG --name N --as SLUG2    {"path":"..."}
 repose-agent point delete  --project SLUG --name N              {"deleted":true}
-repose-agent gc            --high-water 85                      {"deleted":[{...}],"space":{...}}
+repose-agent gc            --high-water 85                      {"deleted":[{...}],"young":N,"kept":N,"stalled":false,"space":{...}}
 repose-agent space                        {"total":...,"used":...,"free":...}
-repose-agent quiesce       --project SLUG {"stopped":["tmux:todo-app","claude"],"busy":[]}
+repose-agent quiesce       --project SLUG {"stopped":["tmux:todo-app","claude (pid 4242)"],"busy":[]}
+repose-agent holders       --root PATH    {"holders":[{"pid":4242,"comm":"claude"}]}
 repose-agent status                       {"machine":{...},"projects":[...],"space":{...}}
 ```
 
@@ -206,7 +238,7 @@ New nouns only; nothing existing changes its output.
 repose machine add NAME --ssh [user@]host[:port] [--key PATH] [--undo-gb N]
 repose machine ls
 repose machine rm NAME
-repose rewind [PROJECT] [--to POINT] [--list] [--yes]
+repose rewind [PROJECT] [--to POINT] [--list] [--rm POINT] [--yes]
 ```
 
 Output, in the house voice — what is true, once, and nothing else
@@ -218,17 +250,18 @@ NAME     ADDRESS           UNDO
 homebox  me@192.168.1.40   12.4 GB used of 40 GB
 
 $ repose rewind --list
-POINT             TAKEN             REASON   SIZE
-r-0199a1c2        14 minutes ago    run      104 MB
-r-0199a0f1        2 hours ago       manual   2 MB
+POINT             TAKEN             REASON
+r-0199a1c2        14 minutes ago    run
+r-0199a0f1        2 hours ago       manual
 
 $ repose rewind
 Rewind todo-app to the point taken 14 minutes ago? Everything written since is lost. [y/N] y
-Stopped 2 processes. Rewound todo-app (2.1s).
+Stopped 2 processes. Rewound todo-app (2.1s). The state it replaced is the point r-0199a1ff.
 ```
 
-A `no` exits 1. `--yes` skips the question. `--to` names a point. With no
-points, `rewind` exits 5 and says so. Exit codes follow the existing
+A `no` exits 1. `--yes` skips the question. `--to` names a point, and
+`--rm` deletes one and rewinds nothing. With no points, `rewind` exits 5
+and says so. Exit codes follow the existing
 table: 1 refused, 5 wrong state, 7 payment (unused here).
 
 Where a project lives is recorded on the laptop beside the machine
@@ -269,7 +302,8 @@ not built here.
 
 ## Checklist
 
-Closed 2026-10-19/20. Each line is the evidence, not a claim.
+Closed 2026-10-19/20, except where the box is empty. Each line is the
+evidence, not a claim.
 
 - [x] **`internal/undo` against a real btrfs store.** `REPOSE_UNDO_TESTFS=/mnt/nixstore/repose-undo-testfs
       go test ./internal/undo/` green, on a 30,002-file tree with a 32 MB
@@ -324,6 +358,20 @@ Closed 2026-10-19/20. Each line is the evidence, not a claim.
       `cli.md`. `go test ./internal/cli -run TestDocs` green — it is the
       test that refused `--machine`, `--agent-url` and `--agent-sha256`
       until they were documented.
+- [ ] **The docs say what this pass does, not what the first draft did.**
+      `own-machine.md` corrects the two claims the 2026-10-20 audit found
+      false — the sync carries the gitignored `.env` and `.env.*` files, not
+      "the files git ignores", and a `~/.ssh/config` host name is resolved
+      when the machine is added, so a later edit to that entry does not
+      follow — and adds "Which commands work on it", "What the box does not
+      get", "What an agent on it can reach", the `/etc/sudoers.d/repose`
+      drop-in line, the point cadence (every run, every sync, every 30
+      minutes) and the hourly collection at 85 percent. `cli.md` gains
+      `--rm` on `rewind` and the owned-machine clause on `attach`, `sync`
+      and `ps`, and loses the per-point size claim with the SIZE column.
+      `SECURITY.md` has the no-hypervisor entry. Closes with
+      `go test ./internal/cli -run TestDocs` green, which is also what
+      proves every flag these lines name landed.
 - [x] **Decisions written.** I-812, I-814 and I-816 in `DECISIONS.md`, each
       amended with what building it taught, and `DECISIONS-INDEX.md`
       regenerated.
@@ -332,13 +380,78 @@ Closed 2026-10-19/20. Each line is the evidence, not a claim.
       `gofmt -l` empty; no `TODO`, `FIXME`, `not implemented`, `_ = err` or
       bare `panic` in the new code; both nouns answer `--help`.
 
+## Second pass: the audit, and what it closed (2026-10-20)
+
+An audit asked whether this shape delivers what it is sold on — one command
+turns your laptop's working state into a machine an agent can wreck safely —
+and rated 27 of its findings as losing the user. The verdict was that the two
+differentiators worked and almost nothing around them did. What closed, with
+the evidence from a real Debian 12 box over ssh:
+
+- [x] **The agent can work.** The run passed no carry at all, so no login, no
+      git identity and no `.env` reached the box. Measured on the box after a
+      run: `.env arrived: DATABASE_URL=postgres://localhost/dev`; `git
+      identity on the box: a@b`; the gh login with
+      `url.https://github.com/.insteadof git@github.com:` and
+      `credential.https://github.com.helper !gh auth git-credential`; and an
+      agent commit that succeeded (`a9c4a41 the agent commits`). The MCP
+      servers are deliberately not carried — the part that renders them into
+      an agent's config does not exist on such a box.
+- [x] **A missing Claude Code login is caught before the prompt is typed.**
+      Seen on the box: `Claude Code is not logged in on todo-app, so your
+      prompt was not typed. Log in with \`repose attach todo-app -w claude\`,
+      then run your prompt again.`
+- [x] **There is a way back.** `attach`, `sync`, `ps`, `ls` and `status` reach
+      an owned machine; the fourteen nouns that cannot say so in one sentence
+      and exit 5. `repose ps` against the box prints its tmux listing
+      (`0:bash* bash - /var/lib/repose/undo/projects/e2e-033148 now`).
+- [x] **A way home for the work.** `Added the git remote repose: \`git fetch
+      repose\` brings the machine's commits to this checkout.`
+- [x] **A rewind is reversible and says so.** `Stopped 1 process. Rewound
+      e2e-033148 (0.0s). The state it replaced is the point r-01a1575d85617c25830ac225.`
+      The safety point carries reason `rewind`, so a second rewind cannot
+      restore the wreck the first one escaped — asserted in the harness.
+- [x] **A point is taken by `sync` too, and every 30 minutes** from a timer
+      the installer enables, where before a six-hour session had one point.
+- [x] **The store cannot eat itself or the disk.** `gc` stops when a delete
+      frees nothing, never collects a point younger than 6 hours and keeps 3
+      per project; the installer refuses an `--undo-gb` the backing
+      filesystem cannot hold; `discard=async` returns a deleted point's
+      blocks to the sparse image.
+- [x] **No column of zeroes.** `rewind --list` no longer prints a SIZE it
+      cannot know (btrfs quotas are off, and `qgroup show` needs root).
+- [x] **An address can change**, a `~/.ssh/config` alias and a `ProxyJump`
+      work as the address, and a failure says which it was rather than
+      blaming a gateway that does not exist on this path.
+- [x] **A box's tmux is not the guest's.** tmux 3.3a prints `_` for a tab in
+      a format string, so the listing came back as one field per row. The
+      spine asks for `|~|`; the hosted format is untouched. Found by running
+      it, recorded in I-812.
+- [x] **The harness refuses rather than filling a shared disk.**
+      `ops/dev/spine-e2e.sh` builds a throwaway Debian box, installs, runs,
+      wrecks and rewinds in one command, and it now checks free space first
+      (it filled this machine's root disk once) and can point at a box you
+      already have instead of making one.
+
+Build, lint and tests after the pass: `go build ./...` green, `golangci-lint
+run` on every new and changed package → `0 issues`, `gofmt -l` empty, every
+package's tests green except a pre-existing `internal/guestd` failure that
+also fails on untouched `main` when this box's root disk is above 90 percent
+(`TestHerdrProjectWarnsHerdrDown`, "warning \"disk_high\" before
+SetupProject").
+
 ## What is not done
 
 Named here rather than left for someone to discover:
 
-- **No api, no billing, no `repose ls` across machines.** Deliberate
+- **No api, no billing, no dashboard.** Deliberate
   (§"What this builds"), and it is what §6's self-host-first order asks
-  for. A machine the user owns is invisible to the dashboard.
+  for. A machine the user owns is invisible to the dashboard, and
+  `repose snapshots`, `resize`, `stop`, `start`, `rm`, `config`,
+  `secrets`, `browser`, `logs` and `reply` are a hosted machine's
+  lifecycle and its server-side state, so none of them reaches such a
+  box. The public docs say which commands do (own-machine.md, "Which
+  commands work on it").
 - **`attach` was not exercised end to end**, because it needs a terminal;
   `run -d` and `rewind` were. The attach path is `attachTmux`, the hosted
   path's own function, with the machine's target.
@@ -346,13 +459,21 @@ Named here rather than left for someone to discover:
   now builds and archives it, but no tagged release carries the asset yet,
   so every run above used `--agent-url` with `--agent-sha256`. The first
   release that publishes it proves the default path.
-- **Agent logins on the box are each agent's own.** Nothing carries a
-  Claude login to a machine the user owns, and `repose secrets` was not
+- **Agent logins on the box are each agent's own.** The `.env` files a
+  checkout ignores travel with a sync; nothing carries a Claude login or a
+  `gh` login to a machine the user owns, and `repose secrets` was not
   wired into this path.
+- **The project's own toolchain is the user's to install.** The installer
+  brings what the agents need and no language runtime, package manager or
+  database. §7 item 6 of the proposal — Nix single-user with a profile per
+  project — is the answer and is not built. The docs page says so
+  ("What the box does not get") rather than leaving a first-timer to find
+  out on the box.
 - **One tenant, one trust boundary.** There is no hypervisor between the
   agent and the box, by design (I-812): an agent running with
-  `--dangerously-skip-permissions` on a machine the user owns can reach
-  everything that login can. The docs page says so; `SECURITY.md` has no
-  entry for it yet, and should before this is offered to anyone.
+  `--dangerously-skip-permissions` on a machine the user owns reaches
+  everything that login reaches, the rewind points included. Recorded,
+  not mitigated: `SECURITY.md`'s entry under "Not mitigated in the first
+  release", and own-machine.md's "What an agent on it can reach".
 - **macOS**, which has neither btrfs nor the systemd units the installer
   writes. The installer refuses it by its box check.

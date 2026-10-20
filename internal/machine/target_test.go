@@ -10,16 +10,16 @@ func TestParseSSHTarget(t *testing.T) {
 		bad   bool
 		print string // String of the parsed target
 	}{
-		{in: "me@192.168.1.40", want: Target{Login: "me", Address: "192.168.1.40"}, print: "me@192.168.1.40"},
+		{in: "me@192.168.1.40", want: Target{Login: "me", Address: "192.168.1.40", LoginGiven: true}, print: "me@192.168.1.40"},
 		{in: "192.168.1.40", want: Target{Login: me, Address: "192.168.1.40"}, print: "ada@192.168.1.40"},
-		{in: "  me@box.example  ", want: Target{Login: "me", Address: "box.example"}, print: "me@box.example"},
-		{in: "me@box.example:2222", want: Target{Login: "me", Address: "box.example", Port: 2222}, print: "me@box.example:2222"},
+		{in: "  me@box.example  ", want: Target{Login: "me", Address: "box.example", LoginGiven: true}, print: "me@box.example"},
+		{in: "me@box.example:2222", want: Target{Login: "me", Address: "box.example", Port: 2222, LoginGiven: true}, print: "me@box.example:2222"},
 		{in: "box.example:2222", want: Target{Login: me, Address: "box.example", Port: 2222}, print: "ada@box.example:2222"},
 		{in: "box.example:22", want: Target{Login: me, Address: "box.example", Port: 22}, print: "ada@box.example:22"},
-		{in: "me@[2001:db8::1]:2222", want: Target{Login: "me", Address: "2001:db8::1", Port: 2222}, print: "me@[2001:db8::1]:2222"},
+		{in: "me@[2001:db8::1]:2222", want: Target{Login: "me", Address: "2001:db8::1", Port: 2222, LoginGiven: true}, print: "me@[2001:db8::1]:2222"},
 		{in: "[2001:db8::1]", want: Target{Login: me, Address: "2001:db8::1"}, print: "ada@[2001:db8::1]"},
-		{in: "me@[fe80::1%eth0]", want: Target{Login: "me", Address: "fe80::1%eth0"}, print: "me@[fe80::1%eth0]"},
-		{in: "me_1@box-2.example", want: Target{Login: "me_1", Address: "box-2.example"}, print: "me_1@box-2.example"},
+		{in: "me@[fe80::1%eth0]", want: Target{Login: "me", Address: "fe80::1%eth0", LoginGiven: true}, print: "me@[fe80::1%eth0]"},
+		{in: "me_1@box-2.example", want: Target{Login: "me_1", Address: "box-2.example", LoginGiven: true}, print: "me_1@box-2.example"},
 
 		{in: "", bad: true},
 		{in: "   ", bad: true},
@@ -79,5 +79,42 @@ func TestMachineTarget(t *testing.T) {
 	m.Port = 0
 	if got := m.Target().String(); got != "me@192.168.1.40" {
 		t.Errorf("Target().String() = %q", got)
+	}
+}
+
+// Where is the address the user gave: the alias they spelled when their
+// own config answers for it, and the address itself otherwise.
+func TestMachineWhere(t *testing.T) {
+	m := Machine{Name: "shed", Address: "10.0.0.9", Port: 2022, Login: "ada"}
+	if got := m.Where(); got != "ada@10.0.0.9:2022" {
+		t.Errorf("Where = %q", got)
+	}
+	m.Spelled = "shed"
+	if got := m.Where(); got != "shed" {
+		t.Errorf("Where = %q", got)
+	}
+}
+
+// Two targets name the same box when the login, the host and the port
+// are the same; a port left out is 22 spelled out, and how the login was
+// arrived at does not count.
+func TestTargetSame(t *testing.T) {
+	cases := []struct {
+		a, b Target
+		want bool
+	}{
+		{Target{Login: "me", Address: "h"}, Target{Login: "me", Address: "h", Port: 22}, true},
+		{Target{Login: "me", Address: "h"}, Target{Login: "me", Address: "h", LoginGiven: true}, true},
+		{Target{Login: "me", Address: "h", Port: 2222}, Target{Login: "me", Address: "h"}, false},
+		{Target{Login: "me", Address: "h"}, Target{Login: "ada", Address: "h"}, false},
+		{Target{Login: "me", Address: "h"}, Target{Login: "me", Address: "10.0.0.9"}, false},
+	}
+	for _, c := range cases {
+		if got := c.a.Same(c.b); got != c.want {
+			t.Errorf("%+v.Same(%+v) = %v, want %v", c.a, c.b, got, c.want)
+		}
+		if got := c.b.Same(c.a); got != c.want {
+			t.Errorf("%+v.Same(%+v) = %v, want %v", c.b, c.a, got, c.want)
+		}
 	}
 }

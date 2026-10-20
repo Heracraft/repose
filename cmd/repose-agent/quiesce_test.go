@@ -65,7 +65,7 @@ func TestQuiesceSigkillsWhatSurvivesSigterm(t *testing.T) {
 	if !slices.Equal(f.signals, want) {
 		t.Errorf("signals %v, want %v", f.signals, want)
 	}
-	if got, want := f.stdout(), `{"stopped":["node"],"busy":[]}`; got != want {
+	if got, want := f.stdout(), `{"stopped":["node (pid 4242)"],"busy":[]}`; got != want {
 		t.Errorf("stdout %s, want %s", got, want)
 	}
 }
@@ -87,11 +87,13 @@ func TestQuiesceReportsWhatItCouldNotStop(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.stdout()), &got); err != nil {
 		t.Fatalf("stdout: %v", err)
 	}
-	if !slices.Equal(got.Stopped, []string{"node"}) {
-		t.Errorf("stopped %v, want [node]", got.Stopped)
+	if !slices.Equal(got.Stopped, []string{"node (pid 4242)"}) {
+		t.Errorf("stopped %v, want [node (pid 4242)]", got.Stopped)
 	}
-	if !slices.Equal(got.Busy, []string{"claude"}) {
-		t.Errorf("busy %v, want [claude]", got.Busy)
+	// The pid is what the user acts on: "claude" alone says nothing they
+	// can do about it.
+	if !slices.Equal(got.Busy, []string{"claude (pid 4243)"}) {
+		t.Errorf("busy %v, want [claude (pid 4243)]", got.Busy)
 	}
 	// Both were asked to stop before either was killed.
 	want := []string{termOf(4242), termOf(4243), killOf(4243)}
