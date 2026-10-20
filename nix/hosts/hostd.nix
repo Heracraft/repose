@@ -80,6 +80,16 @@ let
       esac
       [ -n "''${MAINPID:-}" ] || exit 0
       sock=/var/lib/repose/guests/$id/ch.sock
+      # A guest the idle pause left resting has no vCPUs to service the
+      # ACPI event (DECISIONS I-818, I-824), so the power button would be
+      # accepted and then ignored, the 20 s below would expire, and
+      # systemd would SIGKILL the hypervisor -- taking the guest's disk
+      # down without a flush. Resume it first. vm.resume on a running VM
+      # is refused and harmless, and this runs before every guest stop,
+      # so it needs no record of which guests rest. With the freeze on
+      # (freeze.nix) hostd has already snapshotted and stopped them by
+      # the time this unit runs, and there is nothing here to resume.
+      curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.resume >/dev/null || true
       curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.power-button >/dev/null || exit 0
       echo "repose-guest-clean-stop: event=guest_power_button guest_id=$id"
       start=$(date +%s)

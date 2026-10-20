@@ -213,14 +213,36 @@ func (s *session) dialGuest(ctx context.Context) (ssh.Conn, <-chan ssh.NewChanne
 	// ssh-gateway.md and throttle a client that opens several
 	// connections. The wake gets its own budget; the dial's starts after
 	// it.
+	login := s.slug + "." + s.handle
+	woke := false
 	if s.route.Resting {
-		if err := g.wake(ctx, s.route.ProjectID, s.slug+"."+s.handle); err != nil {
+		if err := g.wake(ctx, s.route.ProjectID, login); err != nil {
 			return nil, nil, nil, &dialError{reason: "wake", err: err}
 		}
+		woke = true
 	}
 	dctx, cancel := context.WithTimeout(ctx, g.cfg.DialTimeout)
 	defer cancel()
 	nc, err := g.cfg.Dial(dctx, "tcp", net.JoinHostPort(s.route.GuestIP, strconv.Itoa(g.cfg.GuestPort)))
+	if err != nil && !woke {
+		// The route is cached for RouteTTL, so a machine that paused
+		// within those seconds still reads awake and this dial met a
+		// guest whose vCPUs are stopped: no SYN is answered and the dial
+		// spends its whole budget. The flag is not worth trusting in
+		// that direction, and a wake is idempotent, so the recovery is
+		// to ask for one and dial again rather than hand the user "did
+		// not answer ssh" for a machine that is merely frozen
+		// (DECISIONS I-822).
+		g.routes.Invalidate(login)
+		if r2, rerr := g.routes.Lookup(ctx, g.cfg.API, login); rerr == nil && r2 != nil && r2.Resting {
+			if werr := g.wake(ctx, s.route.ProjectID, login); werr == nil {
+				d2ctx, cancel2 := context.WithTimeout(ctx, g.cfg.DialTimeout)
+				defer cancel2()
+				nc, err = g.cfg.Dial(d2ctx, "tcp", net.JoinHostPort(s.route.GuestIP, strconv.Itoa(g.cfg.GuestPort)))
+				dctx = d2ctx
+			}
+		}
+	}
 	if err != nil {
 		return nil, nil, nil, &dialError{reason: "tcp", err: err}
 	}

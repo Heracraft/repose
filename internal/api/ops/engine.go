@@ -322,11 +322,19 @@ func phaseTimeout(phase string) time.Duration {
 	case "stop_guest", "snapshot":
 		return 30 * time.Minute
 	case PhaseWake:
-		// A wake is a resume, a clock step and guestd's ping: it answers
-		// in well under a second or it has failed. At the default below,
-		// a wake that never happens would hide for ten minutes on the
-		// user's `repose start` or `repose secrets set` (DECISIONS I-818).
-		return 30 * time.Second
+		// A wake is a resume, a clock step and guestd's ping, so a wake
+		// that FAILS answers in seconds with an error and fails this
+		// phase at once. This timeout therefore only fires when the host
+		// never answers at all -- it is being restarted for an upgrade,
+		// or its stream dropped -- which is the one case the engine is
+		// built to ride out: it re-sends an unfinished command after the
+		// next Hello. Thirty seconds was short enough to turn a hostd
+		// restart into a failed `repose stop` on a frozen machine, where
+		// every other guest-bound phase waits out the same restart
+		// (stop_guest and snapshot wait 30 minutes). Five minutes rides
+		// out a restart and still does not hide a host that is gone,
+		// which HostUnreachable reports in 90 seconds anyway.
+		return 5 * time.Minute
 	default:
 		return 10 * time.Minute
 	}

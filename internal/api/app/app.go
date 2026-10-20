@@ -166,6 +166,12 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
 	a.resting = resting.New(a.pool, a.hostMgr, log)
+	// Counted here, where every caller of Wake passes (I-822).
+	if a.m != nil {
+		a.resting.CountWake = func(reason, result string) {
+			a.m.RestingWakeTotal.WithLabelValues(reason, result).Inc()
+		}
+	}
 	a.events.SetResting(a.resting)
 	a.questions.Waker = a.resting
 	a.hostMgr.SetHandlers(hostmgr.Handlers{

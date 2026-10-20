@@ -79,21 +79,12 @@ func (s *Server) internalWake(w http.ResponseWriter, r *http.Request) error {
 	res, err := s.d.Resting.Wake(r.Context(), pid, reason)
 	if err != nil {
 		// The machine is frozen and did not wake: a failure, and the one
-		// thing about a pause the user is told (the brief's S6). Counted
-		// here as well as on the host, because the failures that never
-		// reach a host -- it is not connected, or the wake ran out of
-		// time -- are invisible to hostd's own counter and are exactly
-		// the ones the user feels as a dial that did not come back
-		// (DECISIONS I-822).
-		s.d.Metrics.RestingWakeTotal.WithLabelValues(reason, "failed").Inc()
+		// thing about a pause the user is told (the brief's S6). The
+		// metric is raised inside resting.Wake, where every caller of it
+		// passes -- this route is one of four (I-822).
 		obs.Logger(r.Context(), s.d.Log).Warn("wake failed", "event", "guest_wake_fail", "project_id", pid.String(), "reason", reason, "err", err.Error())
 		return errf("internal", "%s did not wake", p.Slug)
 	}
-	result := "awake"
-	if res.GetWasResting() {
-		result = "woken"
-	}
-	s.d.Metrics.RestingWakeTotal.WithLabelValues(reason, result).Inc()
 	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
 	return nil
 }

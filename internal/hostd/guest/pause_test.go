@@ -231,8 +231,12 @@ func TestRestingSampleKeepsGuestdOk(t *testing.T) {
 	h.create(gid1)
 	// One real sample first, so there are signals to repeat.
 	h.m.CollectSamples(context.Background())
-	calls := len(h.guestd(gid1).Calls())
 	h.pauseOK(gid1)
+	// After the pause: the pause itself reads one fresh sample, to refuse
+	// a session that appeared since the api's own read (I-818). What this
+	// test is about is the SAMPLER, which must ask a paused guest
+	// nothing.
+	calls := len(h.guestd(gid1).Calls())
 	s := h.m.CollectSamples(context.Background())
 	var gsm *hostdv1.GuestSample
 	for _, g := range s.Guests {
@@ -292,6 +296,65 @@ func TestRestingSurvivesAHostdRestart(t *testing.T) {
 	}
 	if !h.m.Resting(gid1) {
 		t.Fatal("the manager's own map lost the mark")
+	}
+}
+
+// A guest paused with no mark is adopted rather than lost: hostd killed
+// between vm.pause returning and the record being written leaves a guest
+// whose vCPUs are stopped and whose bbolt row says plain `running`. Left
+// that way nothing ever resumes it, the sampler asks it for a sample that
+// cannot come, and the user's `repose start` cold-boots it -- which is
+// every process the pause was keeping (DECISIONS I-824).
+func TestReconcileAdoptsAPausedGuestWithNoMark(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	// The pause, without the record: exactly what a kill in that window
+	// leaves behind.
+	if err := h.chc.Pause(context.Background(), chSock(h, gid1)); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	h.restart()
+	if g := h.guest(gid1); g.Resting != nil {
+		t.Fatalf("the record was written after all: %+v", g.Resting)
+	}
+	if err := h.m.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	g := h.guest(gid1)
+	if g.Resting == nil {
+		t.Fatal("reconcile left a paused guest unmarked; nothing would ever wake it")
+	}
+	if g.State != StateRunning {
+		t.Fatalf("state %q, want running: resting is a marker, not a state", g.State)
+	}
+	if !h.m.Resting(gid1) {
+		t.Fatal("the manager's own map did not take the adopted mark")
+	}
+	// And it is wakeable, which is the whole point of adopting it.
+	h.mustOK(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: WakeReasonCommand}))
+	if h.m.Resting(gid1) {
+		t.Fatal("the adopted guest did not wake")
+	}
+}
+
+// A wake whose resume worked but whose guestd never answered still clears
+// the mark: the vCPUs are running, so the guest is not resting, and a mark
+// left behind makes the sampler repeat the pre-pause signals for a running
+// guest for ever and the api call a working machine frozen (I-824).
+func TestWakeClearsTheMarkEvenWhenGuestdDoesNotAnswer(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.pauseOK(gid1)
+	h.guestd(gid1).Close() // the resume works; nothing answers after it
+	res := h.run(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: WakeReasonConnect}))
+	if res.Ok {
+		t.Fatal("a wake with no answer from the guest must report a failure")
+	}
+	if h.m.Resting(gid1) {
+		t.Fatal("the mark survived a resume that worked")
+	}
+	if g := h.guest(gid1); g.Resting != nil {
+		t.Fatalf("the record kept the mark: %+v", g.Resting)
 	}
 }
 
@@ -402,8 +465,19 @@ func TestWakeSetsTheGuestClock(t *testing.T) {
 	// makes them wrong, and the idle check would otherwise stop the
 	// viewer and the agents' browser within a minute of the wake
 	// (DECISIONS I-822).
-	if !strings.Contains(dates[0][2], "repose-desktop-stamp last-client last-cdp") {
-		t.Fatalf("the wake did not re-stamp the desktop's idle files: %q", dates[0][2])
+	// The stamps are touched by path and left dev's, not through
+	// repose-desktop-stamp: that command is in the desktop units' own
+	// runtimeInputs and on no PATH hostd's Exec gets, so calling it by
+	// name did nothing at all (DECISIONS I-822, I-727).
+	for _, want := range []string{"/run/repose/desktop", "last-client", "last-cdp", "chown dev:dev"} {
+		if !strings.Contains(dates[0][2], want) {
+			t.Fatalf("the wake did not re-stamp the desktop's idle files (%s missing): %q", want, dates[0][2])
+		}
+	}
+	// The clock step's own status survives the stamps, because the
+	// RUNBOOK sends an operator to the line it logs.
+	if !strings.Contains(dates[0][2], "rc=$?") || !strings.Contains(dates[0][2], "exit $rc") {
+		t.Fatalf("the clock step's exit status is not kept: %q", dates[0][2])
 	}
 }
 

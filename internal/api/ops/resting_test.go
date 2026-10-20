@@ -176,11 +176,23 @@ func TestGuestUnresponsiveFromARestingProjectIsNotAReboot(t *testing.T) {
 	}
 }
 
-// TestWakePhaseHasItsOwnTimeout: at the default of ten minutes a wake
-// that never happens would hide for ten minutes on the user's command
-// before the op failed.
+// TestWakePhaseHasItsOwnTimeout: the wake gets a budget of its own,
+// between the ten-minute default (which would hide a host that is gone)
+// and the thirty minutes a stop_guest waits. It has to outlast a hostd
+// restart, because a wake that genuinely fails answers with an error in
+// seconds and this timeout only fires when the host answers nothing at
+// all -- the case the engine re-sends after the next Hello. At thirty
+// seconds a hostd upgrade turned `repose stop` on a frozen machine into
+// a failed op (DECISIONS I-822).
 func TestWakePhaseHasItsOwnTimeout(t *testing.T) {
-	if d := ops.PhaseTimeoutForTest(ops.PhaseWake); d != 30*time.Second {
-		t.Fatalf("wake phase timeout %s, want 30s", d)
+	d := ops.PhaseTimeoutForTest(ops.PhaseWake)
+	if d != 5*time.Minute {
+		t.Fatalf("wake phase timeout %s, want 5m", d)
+	}
+	if other := ops.PhaseTimeoutForTest("apply_config"); d >= other {
+		t.Fatalf("the wake (%s) must be shorter than the default phase (%s)", d, other)
+	}
+	if d < time.Minute {
+		t.Fatalf("the wake (%s) must outlast a hostd restart", d)
 	}
 }

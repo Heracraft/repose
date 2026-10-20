@@ -121,6 +121,13 @@ type Service struct {
 	// flight shares one in-flight wake per project, so an editor opening
 	// several connections at once is one wake.
 	flight map[uuid.UUID]*wake
+	// CountWake, when set, counts one wake by its reason and result
+	// (`woken`, `awake`, `failed`). It lives here rather than at the one
+	// HTTP route because the api asks for a wake from four places -- the
+	// gateway's route, an op's wake phase, a question being delivered and
+	// the keep_awake PATCH -- and the failures hostd never sees are
+	// exactly the ones ApiWakeFailed exists for.
+	CountWake func(reason, result string)
 }
 
 type pauseRec struct {
@@ -301,6 +308,22 @@ func (s *Service) prune(now time.Time) {
 //
 // reason is one of the Reason constants, for the host's log line.
 func (s *Service) Wake(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error) {
+	res, err := s.wakeShared(ctx, projectID, reason)
+	if s.CountWake != nil {
+		switch {
+		case err != nil:
+			s.CountWake(reason, "failed")
+		case res.GetWasResting():
+			s.CountWake(reason, "woken")
+		default:
+			s.CountWake(reason, "awake")
+		}
+	}
+	return res, err
+}
+
+// wakeShared is Wake without the counting: one in-flight wake per project.
+func (s *Service) wakeShared(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error) {
 	s.mu.Lock()
 	if w, ok := s.flight[projectID]; ok {
 		s.mu.Unlock()
@@ -333,9 +356,21 @@ func (s *Service) wake(ctx context.Context, projectID uuid.UUID, reason string) 
 	if err != nil {
 		return nil, err
 	}
-	// Nothing to wake, and nothing that could be resting: a machine that
-	// is not running, has no guest, or sits on a host that cannot pause.
-	if state != "running" || hostID == nil || guestID == nil || !pauses {
+	// Nothing to wake: a machine that is not running, or has no guest.
+	if state != "running" || hostID == nil || guestID == nil {
+		return &hostdv1.WakeResult{}, nil
+	}
+	// The `pause` feature gates the PAUSE, never the wake. A host that
+	// stops naming it -- `repose.host.pauseIdle` turned off, a hostd
+	// rolled back, which is what the RUNBOOK tells an operator to do
+	// about a wake that fails -- still has the guests it froze before,
+	// and they stay paused until something resumes them. Refusing the
+	// wake there would strand exactly the machines the operator is
+	// trying to rescue. A guest we believe rests is therefore always
+	// sent its WakeGuest; a hostd too old to know the command answers
+	// `invalid_argument`, which is a failed wake and says so, rather
+	// than a machine nobody can reach.
+	if !pauses && since == nil {
 		return &hostdv1.WakeResult{}, nil
 	}
 	cmdID := store.NewID()

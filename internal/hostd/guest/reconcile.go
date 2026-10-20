@@ -320,15 +320,36 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 // mark goes, because a mark nothing cleared would silence that guest's
 // samples for good.
 //
-// A guest whose vm.info says Paused with no mark is the leftover of a
-// freeze that did not finish, which ThawAll already owns -- and ThawAll
-// runs at the top of Reconcile, before the units are listed, so by here
-// it has had its turn.
+// A guest whose vm.info says Paused with NO mark is adopted as resting
+// rather than left. Two ways it happens, and both are a tenant's
+// processes: hostd killed between vm.pause returning and the record being
+// written (a host switch's `systemctl restart hostd`, an OOM kill, a
+// panic), and the leftover of a freeze that did not finish. ThawAll runs
+// at the top of Reconcile and owns the second, so by here it has had its
+// turn; what is left is a paused guest nothing would ever resume, which
+// reported as plain `running` ends as a `repose start` that cold-boots
+// it. Adopting it costs nothing if it was the freeze's: the next thaw or
+// wake clears the mark either way.
 func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
-	if g.Resting == nil || g.State != StateRunning {
+	if g.State != StateRunning {
 		return
 	}
 	sock := ch.APISocket(m.guestDir(g.GuestID))
+	if g.Resting == nil {
+		info, err := m.d.CH.Info(ctx, sock)
+		if err != nil || ch.VMState(info) != ch.StatePaused {
+			return
+		}
+		mark := &state.Resting{Since: m.d.Now(), Reason: "adopted"}
+		if err := m.setResting(g, mark, "adopted"); err != nil {
+			m.log(g).Warn("paused guest not marked at reconcile", "event", "guest_resting", "err", err.Error())
+			return
+		}
+		m.armTimerWake(g)
+		m.log(g).Warn("adopted a paused guest with no record; it rests until something wakes it",
+			"event", "guest_resting", "resting", true, "reason", "adopted")
+		return
+	}
 	info, err := m.d.CH.Info(ctx, sock)
 	if err == nil && ch.VMState(info) != ch.StatePaused {
 		if err := m.setResting(g, nil, "reconciled"); err != nil {

@@ -64,13 +64,21 @@ var (
 // why_not words of PauseResult. A refusal is not a failure: the api reads
 // the word and tries again at its next tick.
 const (
-	whyNotRunning       = "not_running"
-	whyAlreadyResting   = "already_resting"
-	whyCommandInFlight  = "command_in_flight"
-	whyHostStopping     = "host_stopping"
+	whyNotRunning      = "not_running"
+	whyAlreadyResting  = "already_resting"
+	whyCommandInFlight = "command_in_flight"
+	whyHostStopping    = "host_stopping"
+	// whyFrozen is the host-restart freeze (I-652), not the idle pause: a
+	// guest with a freeze record is mid-freeze or waiting for a thaw. The
+	// word a USER reads for an idle pause is "frozen" (I-826); these are
+	// hostd's own log and metric words, and `already_resting` is the one
+	// that means "this feature has it".
 	whyFrozen           = "frozen"
 	whyTimerDue         = "timer_due"
 	whyGuestUnreachable = "guest_unreachable"
+	// whyInUse: a session or a tmux client appeared between the api's
+	// newest sample and this pause.
+	whyInUse = "in_use"
 )
 
 // Pause reasons hostd raises itself.
@@ -209,6 +217,26 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 	if serr != nil {
 		return refuse(whyGuestUnreachable)
 	}
+	// Every refusal comes before anything is done TO the guest. The api
+	// asks once a minute, so a guest that is refused every time -- one
+	// with a timer due inside the hold, which is a guest with a timer
+	// every few minutes -- would otherwise have its page cache dropped
+	// once a minute for ever (the write-back below is what drops it).
+	next := m.nextUserTimer(ctx, g, sess)
+	if !next.IsZero() && next.Sub(m.d.Now()) < PauseHold {
+		return refuse(whyTimerDue)
+	}
+	// Nothing opened a session since the api read its samples. The api's
+	// newest sample can be a minute old and its own terms are the
+	// authority on what is idle, but a pause that lands on a session
+	// opened in that minute freezes a user mid-keystroke, and the
+	// gateway's relay then kills their session on its keepalive rather
+	// than waking anything. A fresh read costs one vsock round trip.
+	if sr, err := sess.Sample(ctx); err == nil && sr != nil {
+		if sg := sr.GetSignals(); sg.GetSshSessions() > 0 || sg.GetTmuxClients() > 0 {
+			return refuse(whyInUse)
+		}
+	}
 	// The write-back the freeze already does before it pauses
 	// (freeze.go): every dirty page reaches the volume while the guest
 	// still runs, and a guest with the balloon also drops its page cache
@@ -227,25 +255,41 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 		// disk and the guest keeps running.
 		m.log(g).Warn("guest cache write-back failed before the pause", "event", "guest_resting")
 	}
-	next := m.nextUserTimer(ctx, g, sess)
-	if !next.IsZero() && next.Sub(m.d.Now()) < PauseHold {
-		return refuse(whyTimerDue)
-	}
 	sock := ch.APISocket(m.guestDir(g.GuestID))
-	if err := m.d.CH.Pause(ctx, sock); err != nil {
-		m.countPause(reason, "failed")
-		m.log(g).Error("pause failed; guest keeps running", "event", "guest_resting", "err", err.Error())
-		return nil, errf(CodeInternal, "cloud-hypervisor vm.pause: %v", err)
-	}
+	// The record goes down BEFORE the pause, the way the freeze writes
+	// its own record before it pauses (freeze.go) and for the same
+	// reason: a hostd that dies between the two leaves a guest whose
+	// vCPUs are stopped, and the recoverable direction is a mark with no
+	// pause, not a pause with no mark. Reconcile reads vm.info for a
+	// marked guest and clears a mark the hypervisor contradicts, so a
+	// write that lands and a pause that then fails costs one skipped
+	// guest-side sample; the other order costs a guest nothing would
+	// ever wake and a `repose start` that cold-boots it (I-824).
 	at := m.d.Now()
 	mark := &state.Resting{Since: at, Reason: pauseReason(reason), NextTimer: next}
 	if err := m.setResting(g, mark, reason); err != nil {
-		// The VM is paused and the record is not: resume it rather than
-		// leave a guest paused that nothing will wake.
-		m.log(g).Error("resting mark not written; resuming the guest", "event", "guest_resting", "err", err.Error())
-		_ = m.resumeVM(ctx, g, sock)
 		m.countPause(reason, "failed")
+		m.log(g).Error("resting mark not written; guest keeps running", "event", "guest_resting", "err", err.Error())
 		return nil, errf(CodeInternal, "state write: %v", err)
+	}
+	if err := m.d.CH.Pause(ctx, sock); err != nil {
+		// The mark is down and the guest runs. Take it off; a mark the
+		// hypervisor contradicts is cleared at the next reconcile too,
+		// but until then the sampler would skip this guest's own
+		// signals, and a wake would be sent for a guest that never
+		// paused.
+		if cerr := m.setResting(g, nil, "pause_failed"); cerr != nil {
+			// Now the record says resting and the guest is not, and
+			// nothing here can fix it. Reconcile corrects it at hostd's
+			// next start; until then this guest's samples carry the
+			// signals it had, so the operator is told rather than left
+			// to read a stale sample as the truth.
+			m.Warn("guest_resting_stale", "guest "+g.GuestID+": marked resting but the hypervisor never paused")
+			m.log(g).Error("resting mark not cleared after a failed pause", "event", "guest_resting", "err", cerr.Error())
+		}
+		m.countPause(reason, "failed")
+		m.log(g).Error("pause failed; guest keeps running", "event", "guest_resting", "err", err.Error())
+		return nil, errf(CodeInternal, "cloud-hypervisor vm.pause: %v", err)
 	}
 	m.armTimerWake(g)
 	m.countPause(reason, "paused")
@@ -402,6 +446,15 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	// before anything in the guest reads it (I-233 saw 10 s of drift
 	// after a short freeze). This is the freeze's own step, through the
 	// Exec that already exists rather than a new guestd request (S5).
+	// From here the vCPUs are running, so the guest is not resting
+	// whatever guestd does. The mark goes now rather than at the end:
+	// left behind, it makes the sampler repeat the pre-pause signals for
+	// a running guest for ever and the api call a working machine frozen.
+	// A guestd that does not answer is a failed wake and is reported as
+	// one, but it is not a resting guest.
+	if err := m.setResting(g, nil, reason); err != nil {
+		m.log(g).Warn("resting mark not cleared after the resume", "event", "guest_resting", "err", err.Error())
+	}
 	sess, serr := m.awaitSession(ctx, id, WakeGuestdWait, nil)
 	if serr != nil {
 		m.countWakeFailed("guestd")
@@ -419,10 +472,17 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	// old the moment the clock moves, and the check would kill the
 	// browser -- its tabs, its logins and the agents' CDP connections --
 	// within a minute of the user coming back. Nobody was idle while the
-	// machine was asleep, so the wake restores the baseline. `|| true`:
-	// a guest with no desktop has no such command, and that is not a
-	// failed wake.
-	script := "date -u -s @" + sec + "; repose-desktop-stamp last-client last-cdp || true"
+	// machine was asleep, so the wake restores the baseline.
+	//
+	// The stamps are touched by path and left dev's, which is what
+	// repose-desktop-stamp does (I-727): that command is in the desktop
+	// units' own runtimeInputs and not on any PATH hostd's Exec gets, so
+	// calling it by name did nothing. A guest with no desktop has no such
+	// directory, which is not a failed wake -- but the clock step's own
+	// status is kept, because the RUNBOOK tells an operator to grep for
+	// the line it logs.
+	script := "date -u -s @" + sec + "; rc=$?; " +
+		`d=/run/repose/desktop; if [ -d "$d" ]; then touch "$d/last-client" "$d/last-cdp" && chown dev:dev "$d/last-client" "$d/last-cdp"; fi; exit $rc`
 	if r, err := sess.Exec(cctx, []string{"/bin/sh", "-c", script}, 10, ""); err != nil || r.GetExitCode() != 0 {
 		m.log(g).Warn("guest clock not set after the wake", "event", "guest_resting")
 	}
@@ -437,11 +497,6 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		return nil, errf(CodeGuestUnresponsive, "guestd did not answer after the resume: %v", perr)
 	}
 	took := m.d.Now().Sub(start)
-	if err := m.setResting(g, nil, reason); err != nil {
-		// The guest runs; a mark nothing cleared is corrected at the
-		// next reconcile, and the next sample reads the map.
-		m.log(g).Warn("resting mark not cleared", "event", "guest_resting", "err", err.Error())
-	}
 	if m.d.Metrics != nil {
 		m.d.Metrics.GuestWakeSeconds.Observe(took.Seconds())
 	}
