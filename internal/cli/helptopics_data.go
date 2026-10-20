@@ -41,7 +41,7 @@ var exitTopic = []topicRow{
 	{[]string{"2"}, "Wrong usage."},
 	{[]string{"3"}, "Not logged in, or the login expired."},
 	{[]string{"4"}, "No such project."},
-	{[]string{"5"}, "The machine isn't running."},
+	{[]string{"5"}, "The machine isn't running. On a [machine you own](#machines-you-own): the project is on no machine you added, or the rewind point you named is not there."},
 	{[]string{"6"}, "The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped."},
 	{[]string{"7"}, "A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it."},
 	{[]string{"8"}, "No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too."},

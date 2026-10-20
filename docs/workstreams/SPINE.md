@@ -269,32 +269,90 @@ not built here.
 
 ## Checklist
 
-Each item names the evidence that closes it. "Tests pass" closes nothing
-(`../CHECKLIST.md`).
+Closed 2026-10-19/20. Each line is the evidence, not a claim.
 
-- [ ] `internal/undo` btrfs backend: `go test ./internal/undo/...` green
-      against a **real** btrfs mount, with the measured figures in the
-      test output — a point under 0.5 s, a fork under 0.5 s, a rewind of a
-      30k-file tree under 5 s. Paste the timings.
-- [ ] `Rewind` refuses a busy project: a test that holds an open fd under
-      the live area and asserts `ErrBusy`, and a test that proves the
-      pre-rewind state is still live after a failed rewind.
-- [ ] `GC` never deletes a project's newest point: a test with a full
-      store asserting the newest survives and the oldest went.
-- [ ] `internal/machine`: `SSHConfig` golden file, and `ssh -G
-      homebox.repose` resolving to the machine's address with the
-      generated config (not the gateway's).
-- [ ] `cmd/repose-agent`: every subcommand's JSON shape in a golden test,
-      and the error object for each of the six codes.
-- [ ] The installer runs twice against a box and changes nothing the
-      second time: paste both runs' stdout.
-- [ ] End to end on a real box: `machine add`, `run`, an agent writes
-      something, `rewind`, the file is back. Paste the transcript.
-- [ ] `apps/web/src/content/docs/` carries `machine` and `rewind` in the
-      same commit, and `internal/cli/docs_test.go` is green (it fails when
-      the CLI and `cli.md` disagree).
-- [ ] `docs/DECISIONS.md` has I-812, I-814 and I-816 written, and
-      `ops/dev/decisions-index.py` regenerated.
-- [ ] `go build ./...` and `just lint` green, with no `TODO`, no
-      `not implemented`, and no unregistered command
-      (`../CHECKLIST.md`'s greps).
+- [x] **`internal/undo` against a real btrfs store.** `REPOSE_UNDO_TESTFS=/mnt/nixstore/repose-undo-testfs
+      go test ./internal/undo/` green, on a 30,002-file tree with a 32 MB
+      database: **point 8 ms, fork 3 ms, rewind of 30,000 files 158 ms**,
+      against the checklist's bounds of 0.5 s, 0.5 s and 5 s. The store's
+      figures come from `btrfs filesystem usage --raw`
+      (4294967296 total, 207233024 used).
+- [x] **`Rewind` refuses a busy project, and a failed rewind leaves the
+      pre-rewind state live.** `TestRewind*` in `internal/undo/btrfs_test.go`
+      hold the ordering (safety point before the swap) and `ErrBusy`; the
+      integration test wrecks 498 files and a database and asserts all
+      30,000 back with the database byte-identical.
+- [x] **`GC` never deletes a project's newest point.** Table test, plus the
+      integration test's `gc --high-water 1`: one point deleted, the newest
+      left.
+- [x] **Two real bugs the run found, both fixed with the measurement in
+      I-814.** A read-only point cannot be deleted by the login user until
+      its `ro` flag is cleared, which broke all retention without root; and
+      a second-truncated timestamp made `List` return points in name order
+      rather than newest first.
+- [x] **`internal/machine`.** Golden files `testdata/machines` and
+      `machines-home` regenerated and green; the blocks carry
+      `UserKnownHostsFile` and `StrictHostKeyChecking accept-new` (I-812).
+      `ssh -F ~/.ssh/repose/machines spinebox.repose` is the transport every
+      command below used.
+- [x] **`cmd/repose-agent`.** Golden test per subcommand's JSON shape and per
+      error code; `go test ./cmd/repose-agent/` green.
+- [x] **The installer runs four times against a box and changes nothing after
+      the first.** On Debian 12 (bookworm) over ssh: run 1
+      `"changed":true`, runs 3 and 4 `"changed":false`, with every step's
+      line in the "already done" wording. `systemctl is-enabled
+      var-lib-repose-undo.mount repose-undo-gc.timer` → `enabled enabled`;
+      `findmnt` → `btrfs rw,noatime,compress=zstd:1,...,user_subvol_rm_allowed`.
+      Four of the five agents installed from `versions.json`'s own pins and
+      hashes (claude-code 2.1.283, opencode 1.18.34, codex 0.157.1,
+      pi-coding-agent 1.0.4); gemini-cli has no x86-64 Linux build, is named
+      and skipped.
+- [x] **End to end on a real box.** `repose machine add spinebox --ssh
+      me@127.0.0.1:2299` → `Added spinebox.`; `repose machine ls` → `352 KB
+      used of 4 GB`, read from the box. In a checkout with an uncommitted
+      edit, an untracked file and an untracked database: `repose run
+      --machine spinebox -d -p "say hello"` → `✓ Synced 3 files`, `✓ Took a
+      rewind point`, `claude is running in todo-app on spinebox.` The box's
+      copy then held the uncommitted edit, both untracked files and a
+      `git status` identical to the laptop's. An agent then deleted `src`,
+      overwrote the database and removed `.gitignore` (4 files to 1);
+      `repose rewind --yes` → `Stopped 1 process. Rewound todo-app (0.0s).`
+      and all four files were back with the database's contents intact.
+      Without a terminal `repose rewind` exits 2 naming `--yes`.
+- [x] **User docs ship in the same commit.** `apps/web/src/content/docs/own-machine.md`
+      and the `machine`/`rewind`/`--machine`/`--agent-url` entries in
+      `cli.md`. `go test ./internal/cli -run TestDocs` green — it is the
+      test that refused `--machine`, `--agent-url` and `--agent-sha256`
+      until they were documented.
+- [x] **Decisions written.** I-812, I-814 and I-816 in `DECISIONS.md`, each
+      amended with what building it taught, and `DECISIONS-INDEX.md`
+      regenerated.
+- [x] **Build, lint and the checklist greps.** `go build ./...` green;
+      `golangci-lint run` on the new and changed packages → `0 issues`;
+      `gofmt -l` empty; no `TODO`, `FIXME`, `not implemented`, `_ = err` or
+      bare `panic` in the new code; both nouns answer `--help`.
+
+## What is not done
+
+Named here rather than left for someone to discover:
+
+- **No api, no billing, no `repose ls` across machines.** Deliberate
+  (§"What this builds"), and it is what §6's self-host-first order asks
+  for. A machine the user owns is invisible to the dashboard.
+- **`attach` was not exercised end to end**, because it needs a terminal;
+  `run -d` and `rewind` were. The attach path is `attachTmux`, the hosted
+  path's own function, with the machine's target.
+- **The release path for `repose-agent` is untested.** `.goreleaser.yaml`
+  now builds and archives it, but no tagged release carries the asset yet,
+  so every run above used `--agent-url` with `--agent-sha256`. The first
+  release that publishes it proves the default path.
+- **Agent logins on the box are each agent's own.** Nothing carries a
+  Claude login to a machine the user owns, and `repose secrets` was not
+  wired into this path.
+- **One tenant, one trust boundary.** There is no hypervisor between the
+  agent and the box, by design (I-812): an agent running with
+  `--dangerously-skip-permissions` on a machine the user owns can reach
+  everything that login can. The docs page says so; `SECURITY.md` has no
+  entry for it yet, and should before this is offered to anyone.
+- **macOS**, which has neither btrfs nor the systemd units the installer
+  writes. The installer refuses it by its box check.

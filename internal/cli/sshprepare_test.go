@@ -28,6 +28,7 @@ func TestRenderSSHEntry(t *testing.T) {
 Match originalhost "*.repose,!*'*" exec "'/home/u/.local/bin/repose' ssh-prepare '%n'"
 Match all
 Include ~/.ssh/repose/hosts
+Include ~/.ssh/repose/machines
 `
 	if got != want {
 		t.Fatalf("entry:\n%s\nwant:\n%s", got, want)

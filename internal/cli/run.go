@@ -44,6 +44,9 @@ type RunOptions struct {
 	// NoPersonal keeps the account's machine.nix off this machine, for
 	// good (--no-personal, DECISIONS I-490).
 	NoPersonal bool
+	// Machine is --machine: run on that machine of the user's own, with
+	// no api, no guest and no gateway (DECISIONS I-812).
+	Machine string
 	// Multiplexer is --multiplexer: tmux or herdr for a new project, or a
 	// switch from the next start for an existing one (DECISIONS I-502).
 	Multiplexer string

@@ -19,6 +19,23 @@ builds:
     ldflags:
       - -s -w -X main.version={{ .Version }}
 
+  # The agent a machine the user owns runs (DECISIONS I-812).
+  # linux only: a machine repose reaches over SSH is a Linux box, and the
+  # undo store is btrfs. ops/install/machine-install.sh downloads this
+  # archive and checks it against the release's signed checksums.txt.
+  - id: repose-agent
+    main: ./cmd/repose-agent
+    binary: repose-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
 archives:
   - id: repose
     ids: [repose]
@@ -27,6 +44,11 @@ archives:
     # tag (via the releases/latest redirect) and needs the archive name to
     # match byte for byte, prefix included.
     name_template: "repose_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+
+  - id: repose-agent
+    ids: [repose-agent]
+    formats: [tar.gz]
+    name_template: "repose-agent_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: checksums.txt

@@ -220,6 +220,7 @@ func newRootCmd(version string) *cobra.Command {
 		newRmCmd(env, g),
 		newKeepCmd(env, g),
 		newRestoreCmd(env, g),
+		newRewindCmd(env, g),
 		newForkCmd(envJSON, env, g),
 		newLogsCmd(envJSON, env, g),
 		newLsCmd(envJSON),
@@ -238,6 +239,7 @@ func newRootCmd(version string) *cobra.Command {
 		newCpCmd(env, g),
 		newPasteCmd(env, g),
 		newScanCmd(env),
+		newMachineCmd(env),
 		newSessionHelperCmd(),
 		newSSHPrepareCmd(env),
 		newCodeCmd(env, g),
@@ -525,6 +527,15 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A machine the user owns answers for itself: no login, no
+			// api, no gateway (DECISIONS I-812).
+			spine, err := spineRunFor(e, opts)
+			if err != nil {
+				return err
+			}
+			if spine != nil {
+				return SpineRunCmd(cmd.Context(), e, *spine)
+			}
 			if again, err := loginFirst(cmd.Context(), e); err != nil {
 				return err
 			} else if again {
@@ -535,6 +546,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 			return runRun(cmd.Context(), e, opts, false)
 		},
 	}
+	cmd.Flags().StringVar(&opts.Machine, "machine", "", "run on `NAME`, a machine of your own added with repose machine add")
 	cmd.Flags().StringVar(&opts.Agent, "agent", "", "the agent `NAME` -p starts: claude, opencode, codex, gemini or pi (default: the project's agent, set at creation from config.toml's default_agent); without -p, NAME becomes the project's agent")
 	cmd.Flags().StringVar(&opts.Size, "size", "", "`SIZE` of a new or stopped machine: small, large or xl (default: config.toml's default_size, else large)")
 	cmd.Flags().StringVarP(&opts.Prompt, "prompt", "p", "", "start an agent on this prompt")

@@ -24216,6 +24216,38 @@ provider. no ssh gateway, no kvm stuff").
   a container per project (it covers system packages too, but it moves the
   whole runtime off systemd-on-NixOS and replaces the environment story,
   three to five weeks for a shape nobody has yet asked for).
+- *Found by building it*, all four on a real Debian 12 box over ordinary
+  ssh, and none of them visible from reading the code:
+  - *The box's host key is learned once and pinned after that.* The
+    machine blocks carry `UserKnownHostsFile ~/.ssh/repose/machine_known_hosts`
+    and `StrictHostKeyChecking accept-new`. The hosted path pins a CA
+    (`cert.go` writes an `@cert-authority` line); a box the user names has
+    no CA, so the first connection learns the key and a changed key is
+    refused, which is the half of strict checking that still means
+    something. It is repose's own file: trusting a box for repose does not
+    add a key to the user's `~/.ssh/known_hosts`.
+  - *The agents go on the default PATH, with a symlink in
+    `/usr/local/bin`.* tmux gives a new window the environment its
+    **server** started with, and neither `set-environment -t`,
+    `set-environment -g` nor `new-window -e` changes that for a window
+    opened later (tmux 3.3a). An agent window therefore ran a command that
+    was not on PATH, which tmux started and closed again at once.
+    `/etc/profile.d/repose.sh` is still written, for a shell the user logs
+    in with.
+  - *`tmux new-window` exits 0 whatever becomes of the command it
+    started*, so a missing agent read as a started one and `repose run`
+    said nothing. The run now lists the session's windows afterwards and
+    says the agent started and stopped at once.
+  - *The project's tmux session is the agent's to start.* On a guest a
+    systemd user unit starts it; a machine the user owns has no such unit,
+    so `repose-agent project init` starts it, idempotently. This extends
+    Contract 3's "nothing else" for `project init`.
+- *The login user's PATH is not root's.* The installer runs as the box's
+  own user and Debian keeps `mkfs.btrfs` and `ldconfig` in `/usr/sbin`, so
+  `command -v` reported installed packages as missing. Both lookups now
+  try the sbin directories, which is also why a no-op `apt install` must
+  not be read as a change: it exits 0 and made every run report
+  `changed: true`.
 
 **I-814. Undo on a machine we do not own is a btrfs subvolume, and a
 rewind stops the project first (wrapper-spine, 2026-10-19).** Scopes
@@ -24254,6 +24286,23 @@ implementation*, on measurements taken before the code was written:
 - *Points are not a backup.* They live on the user's disk and that disk
   dying takes them. git is the offsite copy; `btrfs send` to the user's
   own bucket is a later option, not a promise, and the docs say so.
+- *A point's read-only flag is cleared before it is deleted.* btrfs
+  refuses `subvolume delete` of a read-only subvolume for a non-root user
+  — "Could not destroy subvolume/snapshot: Read-only file system" —
+  however `user_subvol_rm_allowed` is set, and `btrfs property set -ts
+  <path> ro false` as that same user then lets the delete through
+  (measured, 2026-10-19). Without this, retention and `gc` could not
+  collect anything without root, which is the whole reason the store is
+  mounted `user_subvol_rm_allowed`. Found by running the integration
+  test, not by reading.
+- *A point's time is kept at full precision.* Truncating it to the second
+  made a rewind's safety point and the point it rewinds to tie, and
+  `List`, which sorts on it, then returned them in name order rather than
+  newest first. A caller that shows a time rounds it itself.
+- *`gc` runs hourly from a systemd timer the installer enables*, as the
+  login user, above 85 percent. A point is taken on every `repose run`, so
+  without it the store fills and `point take` starts answering
+  `no_space`.
 - *Rejected: ZFS*, whose `snapshot`, `rollback`, `clone` and `diff` are a
   better fit on paper, because it is an out-of-tree module that breaks on
   a kernel upgrade of a machine nobody on the team can log into. It is

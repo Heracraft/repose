@@ -29,6 +29,12 @@ func exitCodeOf(err error) int {
 	if err == nil {
 		return ExitOK
 	}
+	// A usage mistake is exit 2, which is what Run does with one
+	// (cli.go:81). Without this a test asserting ExitUsage reads -1.
+	var ue cobraUsageError
+	if errors.As(err, &ue) {
+		return ExitUsage
+	}
 	return -1
 }
 

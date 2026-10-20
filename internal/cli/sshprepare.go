@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/heracraft/repose/internal/machine"
 )
 
 // Plain ssh to every project (DECISIONS I-281). ~/.ssh/repose/config, the
@@ -144,6 +146,11 @@ func renderSSHEntry(exe, prefix string) string {
 		b.WriteString("Match all\n")
 	}
 	_, _ = fmt.Fprintf(&b, "Include %s\n", sshPath(prefix, ".ssh/repose/"+sshHostsName))
+	// The blocks of machines the user owns (DECISIONS I-812). Their own
+	// file, after the gateway's: a laptop holds both kinds at once, and
+	// `repose machine add` refuses a name a project's block already
+	// claims, so no alias is in two places.
+	_, _ = fmt.Fprintf(&b, "Include %s\n", sshPath(prefix, ".ssh/repose/"+machine.SSHName))
 	return b.String()
 }
 

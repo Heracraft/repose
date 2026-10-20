@@ -44,6 +44,7 @@ Starting a machine needs a [plan](/docs/billing). Without one, `run` opens the b
 | `--no-sync`               | Don't copy the checkout, even into a new machine. Your tool logins and git identity are still copied.                                                                                                                                                              |
 | `--size small\|large\|xl` | Size of a new project, or of a stopped one this command starts. Default: [`default_size`](#config-toml). A machine of another size exits 2 and names `repose resize`, unless it's stopped; a stopping one is waited out first.                                                              |
 | `--on PROJECT`            | Add this folder to PROJECT's machine as [another checkout](/docs/run-and-attach#several-repositories-on-one-machine), beside its own.                                                                                                                               |
+| `--machine NAME`          | Run on [a machine you own](/docs/own-machine) added with `repose machine add`, not on a machine repose runs. The checkout stays on that machine from then on, so later runs there need no flag. A point is taken before the agent starts, which is what `repose rewind` goes back to. `--size`, `--temp`, `--worktree`, `--bridge`, `--on`, `--multiplexer` and `--no-personal` are not for such a machine and exit 2. |
 | `--temp [DURATION]`       | A new [temporary machine](/docs/lifecycle#temporary-machines), destroyed with no snapshot after DURATION (`10m` to `24h`, or `1d`; default `24h`). `--temp 3h` works anywhere among the arguments.                                                                  |
 | `--bridge`                | Also [bridge your Chrome](#repose-browser-bridge-project) to the machine while attached.                                                                                                                                                                           |
 | `--bridge-allow HOST`     | Bridge, and let the agents use only this site in your Chrome: the `--allow` of `repose browser bridge`. Repeatable; `*.example.com` is `example.com` and its subdomains.                                                                                           |
@@ -410,6 +411,22 @@ Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-q
 
 SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only one snapshot has them. `--as-new` is the old name of `--as`.
 
+## Machines you own
+
+A machine you own is a Linux box you can already ssh into. `repose machine add` installs repose on it over that same ssh: it checks the box, provisions undo space on btrfs, and installs repose's agent and the coding agents. The box keeps its own login, and the laptop reaches it directly ([Your own machine](/docs/own-machine)).
+
+| Command | What it does |
+| ------- | ------------ |
+| `repose machine add NAME --ssh [user@]HOST[:PORT]` | Add the box as NAME and install repose on it, with a line per step. Without `user@` the login is this computer's. `--key PATH` names the key the box authorised, and `--undo-gb N` how much undo space to provision, 40 GB by default. `--agent-url URL` with `--agent-sha256 HEX` installs that build of repose's agent instead of the one from the signed release, for a box running your own build; one without the other exits 2. Run again on a machine already added, it installs over it; the same name at another address exits 1. |
+| `repose machine ls` | The machines you have added, with the undo space each one holds. Alias `list`, and `repose machine` alone. A machine that does not answer shows as `unreachable`. |
+| `repose machine rm NAME` | Forget it: the laptop stops reaching it, and forgets which projects are on it. Alias `remove`. What is installed on the box, and its rewind points, stay as they are. A name that is no machine of yours exits 5. |
+
+### `repose rewind [PROJECT]`
+
+Put the project's files back to a rewind point, a moment a btrfs snapshot on its machine holds: the newest point, or the one `--to POINT` names. It asks first, naming when the point was taken, since everything written since is lost; `-y`/`--yes` skips the question, and a no exits 1. The agents and processes writing in the project are stopped before the swap, and the line says how many. `--list` prints the points, newest first, with when each was taken, why it was taken, and what it holds. A project with no points exits 5, and so does a folder whose project is on no machine you added.
+
+Rewind points live on that machine's disk, so [they are not a backup](/docs/own-machine#points-are-not-a-backup): the disk that dies takes them with it.
+
 ## Secrets
 
 | Command                         | What it does |
@@ -524,8 +541,8 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 | Path                | What it holds                                                                                                                                                                                                                                       |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, and caches that are safe to delete. On macOS the refresh token is in the keychain.                     |
-| `~/.ssh/repose/`    | The CLI's own SSH key, its 24-hour certificate, `hosts` with one `Host` block per project, and the `config` that `~/.ssh/config` includes ([SSH and editors](/docs/ssh-and-editors#how-it-works)).                                                   |
+| `~/.config/repose/` | `config.toml`, your login at mode 0600, your [`machine.nix`](/docs/config#your-machine-nix) with `machine.nix.state` beside it, `machines.toml` and `projects.toml` for the [machines you own](#machines-you-own), and caches that are safe to delete. On macOS the refresh token is in the keychain.                     |
+| `~/.ssh/repose/`    | The CLI's own SSH key, its 24-hour certificate, `hosts` with one `Host` block per project, `machines` with one per machine you own, and the `config` that `~/.ssh/config` includes ([SSH and editors](/docs/ssh-and-editors#how-it-works)).                                                   |
 | `~/.ssh/config`     | The `Include ~/.ssh/repose/config` line at the top, under a `# added by repose` comment. No other line changes.                                                                                                                                      |
 | `.git/config`       | In each project's checkout, the `repose` remote. Nothing is committed.                                                                                                                                                                              |
 
@@ -544,7 +561,7 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 2 | Wrong usage. |
 | 3 | Not logged in, or the login expired. |
 | 4 | No such project. |
-| 5 | The machine isn't running. |
+| 5 | The machine isn't running. On a [machine you own](#machines-you-own): the project is on no machine you added, or the rewind point you named is not there. |
 | 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
