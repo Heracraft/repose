@@ -67,6 +67,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`error while loading shared libraries: libpq.so.5: cannot open shared object file`** from a program you built on the machine. The program names a library by the exact path it had when you compiled it, and a later platform update moved that library. The machine keeps the libraries of the base it runs, so building the program again is the usual fix. To keep the old build, `repose-store-repair ./your-program` on the machine downloads the libraries it names, well under a second each, as long as the machine can reach the internet. If it says the path is empty, `repose stop` and `repose start` the machine, then run it again.
 
+**A machine `repose ls` marks `frozen` doesn't answer.** Waking it failed. The machine is still `running` and its processes and memory are as they were; `repose attach todo-app` tries the wake again. After several tries that get nowhere, `repose stop todo-app` then `repose start todo-app` gets you back onto the machine and ends what was running on it ([Frozen machines](/docs/lifecycle#frozen-machines)).
+
 **``todo-app is running but repose has no address for it; run `repose stop todo-app` then `repose start todo-app` ``.** The machine is running, but repose doesn't hold the address connections go to, so nothing can reach it. The stop and the start give it one; waiting doesn't help.
 
 **``Could not start todo-app: the server's machine disks are unavailable right now; this machine's disk is intact, and `repose start` works once they are back``.** The machine's server restarted and its disk storage for machines didn't come back. `todo-app` stays stopped with its disk as it was.

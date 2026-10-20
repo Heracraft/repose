@@ -147,7 +147,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now backup.timer
 ```
 
-`bash -lc` makes it a login shell, so the job gets the same `PATH`, secrets and variables you get in a terminal. `Persistent=true` catches up a run the machine was stopped for, at its next start. Nothing on the machine sends mail, so the job's output is in the journal: `journalctl --user -u backup`. `systemctl --user list-timers` shows when each job runs next.
+`bash -lc` makes it a login shell, so the job gets the same `PATH`, secrets and variables you get in a terminal. `Persistent=true` catches up a run the machine was stopped for, at its next start. Nothing on the machine sends mail, so the job's output is in the journal: `journalctl --user -u backup`. `systemctl --user list-timers` shows when each job runs next. A job that comes due while the machine is [frozen](/docs/lifecycle#frozen-machines) wakes it and runs.
 
 ## Ports
 
@@ -232,7 +232,7 @@ The dashboard's **Usage** card draws four charts over the last hour, day or week
 - **Waiting for a core**: the time something in the machine was ready to run and had to wait. High while CPU sits at 100% means more work than cores: a build running more jobs than the size has, or several test runs at once. Run fewer jobs at a time, or [give the machine more cores](#changing-the-size).
 - **Waiting for the server**: the time the machine's cores waited for a CPU on the server. A slow minute with your own CPU low came from the server.
 
-The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap.
+The hour is drawn a minute to a point, the day five minutes and the week an hour, so a one-minute spike flattens in the longer windows. A stopped machine isn't sampled, and leaves a gap. A [frozen](/docs/lifecycle#frozen-machines) machine is sampled: its CPU reads about zero and its memory stays where it was.
 
 Under the charts, folded, are the eight busiest processes of the window: name, CPU time, peak memory. repose records process names and numbers, never their arguments or anything you type ([what repose stores](/docs/secrets#what-repose-stores)). For a live view, run `htop` on the machine.
 

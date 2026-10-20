@@ -106,6 +106,18 @@ todo-app: unused for 26h; claude needs input 3h
 
 An unused machine's memory still counts against what your plan runs at once, so a start elsewhere can be refused until you stop it ([Memory](/docs/billing#what-a-plan-means)). When the machine hasn't reported for 10 minutes, or its server isn't answering, repose can't tell and says nothing.
 
+## Frozen machines
+
+A running machine nobody is using has its cores paused after about 15 minutes of quiet: no SSH session, no tmux or herdr client, every agent finished or waiting on you, and next to no CPU or network. `repose ls`, `repose status` and the dashboard mark it `frozen`.
+
+Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change. Nothing runs while it's frozen, so a program of your own waiting on a clock carries on from where it was at the wake.
+
+Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due. Its clock is set as it wakes.
+
+Connections the machine itself had open to the internet may not survive. The server drops an outbound connection idle for 30 minutes, and the far end can drop one sooner; a program that reconnects carries on, and one that doesn't has to be restarted.
+
+To keep one machine out of this, [keep it awake](/docs/config#keeping-a-machine-awake).
+
 ## Snapshots
 
 The disk is snapshotted every night while running, and whenever you stop. Take one yourself before something risky:
@@ -302,7 +314,7 @@ Your applications' output isn't collected; it stays on the machine.
 | ------------------------- | ------------------------------------------------------------------------------------------- |
 | `creating`, `building`    | A new project's configuration and disk are being made.                                      |
 | `starting`                | Booting.                                                                                    |
-| `running`                 | On.                                                                                         |
+| `running`                 | On. A running machine nobody is using may also be [frozen](#frozen-machines).                |
 | `stopping`, `stopped`     | Shutting down, or off with the disk kept.                                                   |
 | `restoring`               | A snapshot is being written to the disk, or a [fork](#fork-a-project)'s copy is being made. |
 | `destroying`, `destroyed` | Being deleted, or gone ([Destroy and restore](#destroy-and-restore)).                       |

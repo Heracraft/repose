@@ -580,9 +580,9 @@
 	// plans.test.ts (DECISIONS I-784, amending R3-2).
 	let vcpus = $derived(project ? classVCPUs(project.class) || undefined : undefined);
 
-	/** The sentence after "code: " in last_error, as the projects list shows it. */
-	/** When the machine was frozen while idle, behind the flag (I-683). */
+	/** When the machine was frozen while idle (I-683, I-826). */
 	let frozen = $derived(project ? frozenSince(project) : undefined);
+	/** The sentence after "code: " in last_error, as the projects list shows it. */
 	let errorReason = $derived.by(() => {
 		if (!project || project.state !== 'error' || !project.last_error) return '';
 		const i = project.last_error.indexOf(': ');
@@ -724,14 +724,13 @@
 		</p>
 
 		{#if frozen}
-			<!-- Frozen while idle (I-683, behind a flag): its memory is put
-			     away and its processes held; a connection wakes it. -->
+			<!-- Frozen while idle (I-683, I-826): the cores are stopped and
+			     every process is held. How long is the band's one fact; what
+			     wakes it is /docs/lifecycle's answer, not the screen's
+			     (I-484, I-485). -->
 			<div class="frost-band mt-4" data-testid="frozen">
 				<Snowflake size={18} />
-				<p>
-					<span class="font-medium">Frozen for {uptime(frozen)}.</span>
-					<span class="text-ink-muted">It wakes when you connect.</span>
-				</p>
+				<p><span class="font-medium">Frozen for {uptime(frozen)}.</span></p>
 			</div>
 		{/if}
 

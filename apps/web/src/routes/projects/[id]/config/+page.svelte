@@ -47,6 +47,7 @@
 	let reapplying = $state<string | undefined>(undefined);
 	let holdSaving = $state(false);
 	let personalSaving = $state(false);
+	let keepAwakeSaving = $state(false);
 
 	// Menu tab state.
 	let selectedPackages = $state<Set<string>>(new Set());
@@ -283,6 +284,23 @@
 			toastApiError(err, 'Could not change the machine.nix switch.');
 		} finally {
 			personalSaving = false;
+		}
+	}
+
+	// Effective at once: a machine already frozen is woken by the api, and
+	// one that is awake is not frozen again while this is ticked (I-818).
+	// The checkbox follows the project, as the two above it do.
+	async function toggleKeepAwake(box: HTMLInputElement) {
+		if (!project) return;
+		const next = box.checked;
+		keepAwakeSaving = true;
+		try {
+			project = await patchProject(id, { keep_awake: next });
+		} catch (err) {
+			box.checked = !!project.keep_awake;
+			toastApiError(err, 'Could not change the freezing switch.');
+		} finally {
+			keepAwakeSaving = false;
 		}
 	}
 
@@ -570,6 +588,19 @@
 								>Edit machine.nix on your account</a
 							>
 						</p>
+					</section>
+
+					<section class="form-section mt-8 pt-5">
+						<h2 class="text-xl font-semibold">Freezing</h2>
+						<label class="check-row mt-2">
+							<input
+								type="checkbox"
+								checked={!!project.keep_awake}
+								disabled={keepAwakeSaving}
+								onchange={(e) => void toggleKeepAwake(e.currentTarget)}
+							/>
+							Keep this machine awake
+						</label>
 					</section>
 
 					<section class="form-section mt-8 pt-5">

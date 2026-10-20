@@ -50,8 +50,10 @@ describe('eventKind', () => {
 		});
 		expect(eventKind('snapshot_done').label).toBe('snapshot');
 		expect(eventKind('base_updated').label).toBe('base');
+		// The fixed word is "unused" (I-617, I-826): "idle" is an agent's
+		// state, and the card showed it for a machine.
 		expect(eventKind('idle_running')).toEqual({
-			label: 'idle',
+			label: 'unused',
 			tone: 'attention',
 			group: 'machine'
 		});

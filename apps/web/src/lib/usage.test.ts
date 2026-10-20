@@ -72,6 +72,22 @@ describe('readings', () => {
 		expect(peak([])).toBeUndefined();
 		expect(latest([{ t: 0, v: null }])).toBeUndefined();
 	});
+	// A frozen machine is sampled every minute and reports zero CPU with
+	// its memory where it was (I-818 S4), so the chart must read that as a
+	// flat line and not as a stopped machine: one run, no gap, and a
+	// reading of "now 0%" rather than UsageChart's "no data" (I-826).
+	it('reads a frozen machine as a flat line, not a gap', () => {
+		const flat = [
+			{ t: 0, v: 0 },
+			{ t: m, v: 0 },
+			{ t: 2 * m, v: 0 }
+		];
+		expect(segments(flat, 60)).toHaveLength(1);
+		expect(latest(flat)).toBe(0);
+		expect(peak(flat)).toBe(0);
+		expect(latest(flat)).not.toBeUndefined();
+		expect(pct(latest(flat)!)).toBe('0%');
+	});
 	it('nearest finds the closest time', () => {
 		expect(nearest(pts, 70_000)).toBe(1);
 		expect(nearest([], 0)).toBe(-1);
