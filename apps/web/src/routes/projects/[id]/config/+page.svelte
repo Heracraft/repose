@@ -298,7 +298,7 @@
 			project = await patchProject(id, { keep_awake: next });
 		} catch (err) {
 			box.checked = !!project.keep_awake;
-			toastApiError(err, 'Could not change the freezing switch.');
+			toastApiError(err, 'Could not change whether this machine is kept awake.');
 		} finally {
 			keepAwakeSaving = false;
 		}
@@ -591,7 +591,7 @@
 					</section>
 
 					<section class="form-section mt-8 pt-5">
-						<h2 class="text-xl font-semibold">Freezing</h2>
+						<h2 class="text-xl font-semibold">Keeping a machine awake</h2>
 						<label class="check-row mt-2">
 							<input
 								type="checkbox"

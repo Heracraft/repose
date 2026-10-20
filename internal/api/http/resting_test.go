@@ -187,6 +187,21 @@ func TestRestRuleHoldsEveryTerm(t *testing.T) {
 		{"up for less than the window", quiet, func(t *testing.T, r *restingEnv) {
 			r.upFor(t, time.Minute)
 		}},
+		// An open repose-ask question holds a machine awake (I-822): the
+		// wake steps the guest's clock forward by the whole rest, which
+		// would expire every open question in the second the user came
+		// back and tell the agent nobody answered. The agent is in
+		// needs_input, which the rule otherwise lets rest, so this term
+		// is what makes that safe -- and it was the one term with no
+		// test.
+		{"an open repose-ask question", quiet, func(t *testing.T, r *restingEnv) {
+			if _, err := r.e.h.Pool.Exec(r.e.h.Ctx,
+				`insert into questions (id, project_id, guest_id, event_id, agent, text, state, expires_at)
+				 values ($1, $2, $3, $4, 'claude', 'which branch?', 'pending', now() + interval '20 minutes')`,
+				store.NewID(), r.p.ID, store.NewID(), store.NewID()); err != nil {
+				t.Fatal(err)
+			}
+		}},
 		{"the host unreachable", quiet, func(t *testing.T, r *restingEnv) {
 			if _, err := r.e.h.Pool.Exec(r.e.h.Ctx, "update projects set host_unreachable = true where id = $1", r.p.ID); err != nil {
 				t.Fatal(err)
@@ -233,6 +248,48 @@ func TestRestRuleNeedsAFullStretch(t *testing.T) {
 	r.sample(t, now.Add(-time.Duration(resting.Samples)*time.Minute), quiet)
 	if cs, err := r.e.h.Resting.Candidates(ctx, now); err != nil || len(cs) != 1 {
 		t.Fatalf("15 quiet minutes in a row: %+v %v", cs, err)
+	}
+}
+
+// TestRestRuleToleratesADroppedMinuteButNotAStaleSampler: the api drops a
+// whole minute for every guest on a host when it cannot write that
+// minute's partition, and hostd's own 60 s tick slips because it samples
+// guests in series. Window carries slack for a few such minutes; what it
+// must not tolerate is a sampler that stopped, because silence says
+// nothing about who is attached.
+func TestRestRuleToleratesADroppedMinuteButNotAStaleSampler(t *testing.T) {
+	r := newRestingEnv(t, "gap")
+	ctx := r.e.h.Ctx
+	r.upFor(t, 3*time.Hour)
+	now := time.Now().UTC()
+	// Fifteen quiet samples with two minutes missing in the middle.
+	at := 0
+	for i := 0; i < resting.Samples; i++ {
+		if i == 7 {
+			at += 2 // the minutes the sampler did not send
+		}
+		r.sample(t, now.Add(-time.Duration(at)*time.Minute), quiet)
+		at++
+	}
+	cs, err := r.e.h.Resting.Candidates(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("a stretch with two dropped minutes was refused: %+v", cs)
+	}
+	// The same stretch, but nothing since: a host that stopped reporting.
+	r2 := newRestingEnv(t, "stale")
+	r2.upFor(t, 3*time.Hour)
+	for i := 0; i < resting.Samples; i++ {
+		r2.sample(t, now.Add(-time.Duration(i+12)*time.Minute), quiet)
+	}
+	cs2, err := r2.e.h.Resting.Candidates(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs2) != 0 {
+		t.Fatalf("a machine whose newest sample is 12 minutes old was asked to rest: %+v", cs2)
 	}
 }
 

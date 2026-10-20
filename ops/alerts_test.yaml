@@ -1055,7 +1055,7 @@ tests:
               severity: warn
               reason: connect
             exp_annotations:
-              summary: "the api failed 10 wake(s) of a frozen machine (connect)"
+              summary: "the api failed 10 wake(s) of a frozen machine (asked for by: connect)"
               description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
               runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
 

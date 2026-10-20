@@ -149,7 +149,12 @@ DECISIONS entry and this list with it. Counts as of 2026-10-01.
       stray hue. Evidence: `rg -n 'rounded-(md|lg|xl|2xl|3xl|full)\b|font-bold|<b>|<strong'
       apps/web/src --glob '*.svelte' "${L[@]}"` and `rg -n
       'purple|violet|fuchsia|pink-|orange-|indigo|teal|cyan|lime-'
-      apps/web/src --glob '*.{svelte,css}' "${L[@]}"` each print 0 lines.
+      apps/web/src --glob '*.{svelte,css}' "${L[@]}"` each print 0 lines,
+      with one allowance: the two `--frost` tokens in `routes/layout.css`
+      (cyan-700 light, cyan-300 dark), which paint a frozen machine
+      (DECISIONS I-826). Blue is spent on links, focus and selection, so
+      a frozen machine painted in the accent would read as a link or as a
+      measure. Any other cyan is a hit.
 - [ ] One scheme mechanism and a visible focus ring. Evidence: `rg -n
       'data-theme|class="dark' apps/web/src` prints 0 lines; `rg -n
       'outline-none' apps/web/src "${L[@]}"` prints only the docs drawer

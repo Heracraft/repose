@@ -639,13 +639,19 @@ groups:
         # still calls running.
         # Not a page, for GuestWakeFailed's reason: the next thing the
         # user does asks for the wake again.
+        # `reason` here is what ASKED for the wake (connect, op, answer,
+        # keep_awake) -- not the step that failed, which is what `reason`
+        # means on GuestWakeFailed above. hostd knows the step; the api
+        # only knows it got no answer, so this label says who was
+        # waiting. Read the two together and they say "a connect was
+        # waiting" and "the resume is what broke".
         expr: |
           sum by (reason) (increase(repose_api_resting_wake_total{result="failed"}[15m])) > 0
         for: 5m
         labels:
           severity: warn
         annotations:
-          summary: "the api failed {{ $value }} wake(s) of a frozen machine ({{ $labels.reason }})"
+          summary: "the api failed {{ $value }} wake(s) of a frozen machine (asked for by: {{ $labels.reason }})"
           description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
           runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
 

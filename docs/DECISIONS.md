@@ -24245,7 +24245,7 @@ and an idle machine is not free -- `.claude-wrapped` at its prompt took
   for the rest of the shape: a guest whose hypervisor is paused keeps its
   bbolt state `running`, because the state enum is fixed.
 - *Off until a host is told otherwise.* hostd names `pause` in
-  `Hello.features` only where `repose.host.pause.enable` is set, so the
+  `Hello.features` only where `repose.host.pauseIdle` is set (`--pause-idle`), so the
   api pauses nothing on a host that has not been switched on. This is
   I-652's and I-686's pattern, and it exists because of the one thing
   nobody has measured: I-652 records that with Cloud Hypervisor 53 and

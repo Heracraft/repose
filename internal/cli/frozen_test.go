@@ -253,3 +253,26 @@ func TestLsReadsTheApisRestingField(t *testing.T) {
 		t.Errorf("--json:\n%s", out.String())
 	}
 }
+
+// A frozen machine gets the long first-ssh wait: it is `running`, so a
+// command that found it running would otherwise take sshWaitShort, and
+// the gateway spends its own wake budget inside the dial that follows --
+// the user would read "did not answer ssh" about a machine whose
+// processes are all still there (DECISIONS I-822).
+func TestFrozenMachineGetsTheLongSSHWait(t *testing.T) {
+	var e Env
+	awake := &Project{State: "running"}
+	e.waitFrozen(awake)
+	short := e.sshWait()
+
+	var e2 Env
+	e2.waitFrozen(&Project{State: "running", Resting: &ProjectResting{Since: time.Now().Add(-42 * time.Minute)}})
+	long := e2.sshWait()
+
+	if long <= short {
+		t.Fatalf("frozen wait %s, awake wait %s: a frozen machine must get the longer one", long, short)
+	}
+	if short != sshWaitShort || long != sshWaitTimeout {
+		t.Fatalf("waits %s and %s, want %s and %s", short, long, sshWaitShort, sshWaitTimeout)
+	}
+}

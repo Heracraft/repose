@@ -46,8 +46,15 @@ const (
 	Samples = 15
 	// Window bounds how far back those samples may reach: 15 samples
 	// spread over an hour are a sampler that skipped, not a quiet
-	// quarter of an hour.
-	Window = (Samples + 1) * time.Minute
+	// quarter of an hour. It carries slack for a few minutes the sampler
+	// did not send, because with no slack at all one dropped minute puts
+	// the 15th sample outside the window and the machine waits another
+	// Window before it can rest -- and a minute goes missing for every
+	// guest on a host whenever the api cannot write that minute's
+	// partition, or whenever hostd's own 60 s tick slips (it samples
+	// guests in series). Five minutes of slack tolerates four such
+	// minutes in a quarter of an hour.
+	Window = (Samples + 5) * time.Minute
 	// CPUNsPerSample is the host-measured CPU a quiet minute may use,
 	// 6 s: 0.10 of a core. `.claude-wrapped` at its prompt burns about
 	// 2 s a minute, so the threshold leaves room for a machine doing
@@ -226,9 +233,18 @@ select c.id, c.host_id, c.guest_id from cand c join last l on l.id = c.id and l.
 having count(*) = $8::bigint and min(l.ts) >= $9 and max(l.ts) >= $10
    and count(*) filter (where l.quiet) = $8::bigint`
 
-// Candidates reads the rule. The newest of the Samples must be no older
-// than idle.Fresh (an unreachable host sends none, and silence is not
-// evidence that nobody is attached) and the oldest within Window.
+// Candidates reads the rule.
+//
+// Two terms bound how old the evidence may be, and the tighter one is
+// the oldest-sample term, not the freshness one: with samples a minute
+// apart the 15th is 14 minutes behind the newest, so `min(ts) >= now -
+// Window` already requires the NEWEST to be within Window - 14m. That is
+// the real freshness budget, and it is what the slack in Window buys.
+// The `max(ts) >= now - idle.Fresh` term is kept as the floor it is named
+// for -- a host that stopped reporting says nothing about who is attached
+// -- and it binds only if Window ever grows past idle.Fresh + 14m.
+// Every way this arithmetic can be wrong returns FEWER candidates: a
+// rest delayed, never a pause on a machine somebody is using.
 func (s *Service) Candidates(ctx context.Context, now time.Time) ([]Candidate, error) {
 	rows, err := s.pool.Query(ctx, candidatesSQL,
 		now, now.Add(-UpFor), Feature, now.Add(-SessionWindow),
