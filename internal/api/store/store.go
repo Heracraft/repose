@@ -103,6 +103,16 @@ type Project struct {
 	// neither, which counts at VolumeBytes (HeldBytes).
 	DiskHeldBytes *int64     `db:"disk_held_bytes"`
 	DiskHeldAt    *time.Time `db:"disk_held_at"`
+	// RestingSince is when the machine's current rest began, nil while it
+	// is awake (0029, DECISIONS I-818): its vCPUs are stopped and its
+	// memory is resident, so every process survives and a wake is a
+	// resume. The state stays `running`; resting is a marker, never a
+	// state. Written from hostd's GuestResting event and reconciled from
+	// Hello, and cleared by SetProjectState for any state but running.
+	RestingSince *time.Time `db:"resting_since"`
+	// KeepAwake keeps this machine out of the rest rule (DECISIONS
+	// I-820). The api decides what rests, so it takes effect at once.
+	KeepAwake bool `db:"keep_awake"`
 }
 
 // HeldBytes is the bytes the plan's disk counts for p: the measured or
@@ -114,7 +124,7 @@ func (p *Project) HeldBytes() int64 {
 	return p.VolumeBytes
 }
 
-const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at`
+const projectCols = `id, user_id, name, slug, remote_url, class, state, host_id, guest_id, guest_ip, vsock_cid, agent_default, hold_base_updates, base_version, config_revision_id, volume_bytes, tz, host_unreachable, last_error, started_at, stopped_at, destroyed_at, created_at, updated_at, expires_at, personal_opt_out, multiplexer, disk_held_bytes, disk_held_at, resting_since, keep_awake`
 
 // Host is a hosts row. Cores is the host's physical cores, which
 // placement counts committed guest vCPUs against (0027, DECISIONS I-735,
@@ -452,10 +462,16 @@ func ListAllProjects(ctx context.Context, q Querier) ([]Project, error) {
 
 // SetProjectState updates state and the matching timestamp.
 func SetProjectState(ctx context.Context, q Querier, id uuid.UUID, state string) error {
+	// resting_since is cleared by any state but running: a machine that
+	// stops, errors or is destroyed is not resting, and a marker left on
+	// it would show a frozen machine that no longer exists (I-818). This
+	// is the one place a project's state is written, so it is the one
+	// place the marker has to be cleared.
 	_, err := q.Exec(ctx, `update projects set state = $2,
 		started_at = case when $2 = 'running' and state <> 'running' then now() else started_at end,
 		stopped_at = case when $2 = 'stopped' then now() else stopped_at end,
-		destroyed_at = case when $2 = 'destroyed' then coalesce(destroyed_at, now()) else destroyed_at end
+		destroyed_at = case when $2 = 'destroyed' then coalesce(destroyed_at, now()) else destroyed_at end,
+		resting_since = case when $2 = 'running' then resting_since else null end
 		where id = $1`, id, state)
 	return err
 }

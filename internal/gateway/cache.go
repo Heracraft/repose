@@ -284,3 +284,53 @@ func (cc *certCache) Signer(ctx context.Context, api *Client, key ssh.Signer, pr
 func publicKeyLine(pk ssh.PublicKey) string {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk)))
 }
+
+// Invalidate drops a login's cached route, so the next lookup asks the
+// api. Called the moment a wake succeeds (DECISIONS I-818): the cached
+// answer still says the machine rests, and a second connection a second
+// later would ask for a wake it does not need.
+func (rc *routeCache) Invalidate(login string) {
+	rc.mu.Lock()
+	delete(rc.entries, login)
+	rc.mu.Unlock()
+}
+
+// wakeGroup shares one in-flight wake per project. authenticate runs once
+// per key a client offers and an editor opens several connections at
+// once, so without this one window is several wakes (DECISIONS I-818).
+type wakeGroup struct {
+	mu    sync.Mutex
+	calls map[string]*wakeCall
+}
+
+type wakeCall struct {
+	done chan struct{}
+	err  error
+}
+
+func newWakeGroup() *wakeGroup { return &wakeGroup{calls: map[string]*wakeCall{}} }
+
+// Do runs fn for projectID unless a call for it is already in flight, in
+// which case it waits for that one and takes its answer. ctx ending stops
+// the wait, never the call.
+func (wg *wakeGroup) Do(ctx context.Context, projectID string, fn func() error) error {
+	wg.mu.Lock()
+	if c, ok := wg.calls[projectID]; ok {
+		wg.mu.Unlock()
+		select {
+		case <-c.done:
+			return c.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c := &wakeCall{done: make(chan struct{})}
+	wg.calls[projectID] = c
+	wg.mu.Unlock()
+	c.err = fn()
+	close(c.done)
+	wg.mu.Lock()
+	delete(wg.calls, projectID)
+	wg.mu.Unlock()
+	return c.err
+}

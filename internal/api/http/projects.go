@@ -17,6 +17,7 @@ import (
 	"github.com/heracraft/repose/internal/api/lifecycle"
 	"github.com/heracraft/repose/internal/api/meter"
 	"github.com/heracraft/repose/internal/api/ops"
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/scheduler"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
@@ -116,6 +117,8 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 		"running_seconds_today": x.runningToday, "running_seconds_month": x.runningMonth,
 		"last_snapshot_at": x.lastSnapshot, "host_unreachable": p.HostUnreachable, "last_error": p.LastError, "tz": p.TZ,
 		"personal_opt_out": p.PersonalOptOut,
+		// Whether this machine is kept out of the rest rule (I-820).
+		"keep_awake": p.KeepAwake,
 		// What the next start runs (I-502); a running machine may still
 		// run the other one until it stops.
 		"multiplexer": multiplexer.Normalize(p.Multiplexer),
@@ -127,6 +130,16 @@ func (s *Server) projectJSON(ctx context.Context, p *store.Project, u *store.Use
 	}
 	if p.GuestIP != nil {
 		out["guest_ip"] = p.GuestIP.String()
+	}
+	if p.State == "running" && p.RestingSince != nil {
+		// A machine whose vCPUs are stopped and whose memory is resident:
+		// every process survives and the first thing that reaches it
+		// wakes it (I-818). Read from the projects row, not from a
+		// samples query, so a hundred-project list stays one query per
+		// project; and with no 24-hour gate like `idle`'s, because a
+		// pause happens about fifteen minutes in and the marker must not
+		// hide for a machine's first day.
+		out["resting"] = map[string]any{"since": *p.RestingSince}
 	}
 	if x.idleSince != nil {
 		// A running machine unused for a day, still holding the plan's
@@ -415,6 +428,11 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 		PersonalOptOut *bool `json:"personal_opt_out"`
 		// Multiplexer changes what the next start runs (I-502).
 		Multiplexer *string `json:"multiplexer"`
+		// KeepAwake keeps this machine out of the rest rule (I-820). It
+		// takes effect at once: the api decides what rests, so nothing
+		// has to be pushed to the machine, and a machine already resting
+		// is woken here.
+		KeepAwake *bool `json:"keep_awake"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -511,6 +529,20 @@ func (s *Server) patchProject(w http.ResponseWriter, r *http.Request) error {
 	if body.PersonalOptOut != nil {
 		if err := s.setPersonalOptOut(ctx, p, *body.PersonalOptOut); err != nil {
 			return err
+		}
+	}
+	if body.KeepAwake != nil {
+		if _, err := s.d.Pool.Exec(ctx, "update projects set keep_awake = $2 where id = $1", p.ID, *body.KeepAwake); err != nil {
+			return err
+		}
+		// Effective at once in both directions: the rule reads the column
+		// on its next pass, and a machine already frozen when the user
+		// turns the switch on is woken now rather than at whatever next
+		// reaches it (I-820).
+		if *body.KeepAwake && p.RestingSince != nil && s.d.Resting != nil {
+			if _, err := s.d.Resting.Wake(ctx, p.ID, resting.ReasonKeepAwake); err != nil {
+				obs.Logger(ctx, s.d.Log).Warn("keep-awake wake failed", "event", "guest_wake_fail", "project_id", p.ID.String(), "err", err.Error())
+			}
 		}
 	}
 	if keep && p.ExpiresAt != nil {
@@ -643,10 +675,21 @@ const guestdStaleAfter = 5 * time.Minute
 
 // guestdDead reports whether the newest sample of a running project says
 // its guestd is not answering.
+//
+// A resting sample never says so (DECISIONS I-818). hostd keeps
+// guestd_ok true for a paused guest, because guestd is paused with its
+// machine and not lost; this is the second guard, and it is the one that
+// matters: guestdDead is what lifecycle.Start turns into restart=true,
+// which is stop_guest plus start_guest. On a frozen machine `repose
+// start` and the dashboard's Start would then reboot it and lose every
+// process the pause was taken to keep.
 func (s *Server) guestdDead(ctx context.Context, p *store.Project) (bool, error) {
 	l, ok, err := meter.LatestSample(ctx, s.d.Pool, p.ID)
 	if err != nil || !ok {
 		return false, err
+	}
+	if l.Resting {
+		return false, nil
 	}
 	return l.State == "running" && !l.GuestdOK && time.Since(l.TS) < guestdStaleAfter && !sampleBeforeStart(p, l), nil
 }

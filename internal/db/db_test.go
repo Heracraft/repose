@@ -30,11 +30,21 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0028 (the class vCPU figures in host_reservations, I-784) is the
-	// newest, and it only replaces the view: hosts.cores and the view's
-	// own vcpus column, which 0027 added, survive its down. Then 0027's
-	// down takes both.
+	// 0029 (the idle pause, I-818) is the newest: three defaulted
+	// columns, which its down takes and which nothing below it has.
 	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name in ('projects', 'meter_samples') and column_name in ('resting_since', 'keep_awake', 'resting')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("0029's down left %d of its columns", n)
+	}
+	if down, err = db.MigrateDown(ctx, pool, 1); err != nil || len(down) != 1 {
+		t.Fatalf("down 1 to 0027: %v %v", down, err)
+	}
+	// 0028 (the class vCPU figures in host_reservations, I-784) only
+	// replaces the view: hosts.cores and the view's own vcpus column,
+	// which 0027 added, survive its down. Then 0027's down takes both.
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}

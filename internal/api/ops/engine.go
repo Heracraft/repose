@@ -321,9 +321,39 @@ func phaseTimeout(phase string) time.Duration {
 		return 60 * time.Minute
 	case "stop_guest", "snapshot":
 		return 30 * time.Minute
+	case PhaseWake:
+		// A wake is a resume, a clock step and guestd's ping: it answers
+		// in well under a second or it has failed. At the default below,
+		// a wake that never happens would hide for ten minutes on the
+		// user's `repose start` or `repose secrets set` (DECISIONS I-818).
+		return 30 * time.Second
 	default:
 		return 10 * time.Minute
 	}
+}
+
+// hostPauses reports whether a host's Hello named the pause feature
+// (DECISIONS I-818). Read as raw SQL, the way the scheduler reads
+// local_clone: store.Host carries no features field.
+func (e *Engine) hostPauses(ctx context.Context, hostID uuid.UUID) (bool, error) {
+	var ok bool
+	err := e.pool.QueryRow(ctx, "select 'pause' = any(features) from hosts where id = $1", hostID).Scan(&ok)
+	if db.IsNoRows(err) {
+		return false, nil
+	}
+	return ok, err
+}
+
+// restingNow reports whether the api believes the op's project rests.
+func (e *Engine) restingNow(ctx context.Context, op *store.Op) bool {
+	if op.ProjectID == nil {
+		return false
+	}
+	var resting bool
+	if err := e.pool.QueryRow(ctx, "select resting_since is not null from projects where id = $1", *op.ProjectID).Scan(&resting); err != nil {
+		return false
+	}
+	return resting
 }
 
 func phases(op *store.Op) []string {

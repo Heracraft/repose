@@ -27,10 +27,15 @@ const (
 // without asking guestd), then boot it. It is what `repose start` enqueues
 // for a project in `error` or one whose guestd stopped answering.
 func PlanRestart(pendingRevision bool) []string {
+	// The stop is the first phase and it reaches the guest, so a machine
+	// that rests is woken before it (I-818). A restart is not how a
+	// resting machine is woken -- guestdDead is false for one, so no
+	// start plans one -- but a restart asked for any other reason must
+	// not meet a paused guest either.
 	if pendingRevision {
-		return []string{PhaseStopGuest, PhaseApplyConfig, PhaseStartGuest}
+		return []string{PhaseWake, PhaseStopGuest, PhaseApplyConfig, PhaseStartGuest}
 	}
-	return []string{PhaseStopGuest, PhaseStartGuest}
+	return []string{PhaseWake, PhaseStopGuest, PhaseStartGuest}
 }
 
 // RestartParams are the params a PlanRestart op carries.
@@ -70,6 +75,16 @@ func (e *Engine) recoverFrom(ctx context.Context, op *store.Op, code string) boo
 		e.notifyPlatform(ctx, *op.ProjectID, "snapshot_failed",
 			"the final snapshot before destroy was skipped because the environment could not be read; the newest earlier snapshot is kept for 30 days")
 		skip = true
+
+	// A paused guest answers no vsock call, and hostd reports that as
+	// guest_unresponsive. On a machine the api believes resting, the
+	// answer is a wake and the same phase again -- never a reboot, which
+	// is a stop and a start and would lose every process the pause was
+	// taken to keep (DECISIONS I-818). This arm sits above the start's
+	// reboot arm below, which is the one the failure would otherwise
+	// reach.
+	case recovered == "" && code == codeGuestUnresponsive && ph != PhaseWake && e.restingNow(ctx, op):
+		next = append([]string{PhaseWake}, all[op.Step:]...)
 
 	case recovered != "" || code != codeGuestUnresponsive:
 		return false

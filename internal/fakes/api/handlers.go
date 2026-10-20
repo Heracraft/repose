@@ -539,6 +539,8 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 		PersonalOptOut *bool `json:"personal_opt_out"`
 		// What the next start runs (I-502).
 		Multiplexer *string `json:"multiplexer"`
+		// Kept out of the rest rule, effective at once (I-820).
+		KeepAwake *bool `json:"keep_awake"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -604,6 +606,14 @@ func (f *Fake) patchProject(w http.ResponseWriter, r *http.Request) *apiError {
 	}
 	if body.HoldBaseUpdates != nil {
 		p.HoldBaseUpdates = *body.HoldBaseUpdates
+	}
+	if body.KeepAwake != nil {
+		p.KeepAwake = *body.KeepAwake
+		// Effective at once, as the api's is: a machine already frozen
+		// when the switch goes on wakes now (I-820).
+		if p.KeepAwake {
+			p.Resting = nil
+		}
 	}
 	if body.PersonalOptOut != nil {
 		f.setPersonalOptOut(userFrom(r), p, *body.PersonalOptOut)
@@ -2112,13 +2122,41 @@ func (f *Fake) internalRoute(w http.ResponseWriter, r *http.Request) *apiError {
 			// always sent it (internal/api/http/internal.go), so no
 			// gateway test could tell an unreachable host from a project
 			// with no address — the two the gateway collapsed into one
-			// banner until I-721.
+			// banner until I-721. `resting` (I-818) is here for the same
+			// reason: it is what makes the gateway ask for a wake, and a
+			// fake that left it out would make the whole wake untestable.
 			"project_id": p.ID, "guest_ip": p.GuestIP, "state": p.State, "principals": []string{p.ID},
-			"host_unreachable": p.HostUnreachable,
+			"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.Resting != nil,
 		})
 		return nil
 	}
 	return notFound("login")
+}
+
+// internalWake is POST /internal/wake: the gateway holds its dial on this
+// call while the machine resumes (DECISIONS I-818). The fake wakes at
+// once and answers whether the machine was resting, which is what the
+// real api's answer says.
+func (f *Fake) internalWake(w http.ResponseWriter, r *http.Request) *apiError {
+	var body struct {
+		ProjectID string `json:"project_id"`
+		Reason    string `json:"reason"`
+	}
+	if e := decodeBody(r, &body, true); e != nil {
+		return e
+	}
+	p, ok := f.projects[body.ProjectID]
+	if !ok || p.destroyed {
+		return notFound("project")
+	}
+	f.wakes++
+	if f.wakeFails {
+		return errf("internal", "%s did not wake", p.Slug)
+	}
+	was := p.State == "running" && p.Resting != nil
+	p.Resting = nil
+	writeJSON(w, http.StatusOK, map[string]any{"was_resting": was, "wake_ms": 40})
+	return nil
 }
 
 func (f *Fake) internalRevoked(w http.ResponseWriter, r *http.Request) *apiError {

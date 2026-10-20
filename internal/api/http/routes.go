@@ -86,6 +86,7 @@ func (s *Server) registerUserRoutes() {
 func (s *Server) registerInternalRoutes() {
 	m := s.internal
 	s.route(m, "GET /v1/internal/route", s.internalRoute)
+	s.route(m, "POST /v1/internal/wake", s.internalWake)
 	s.route(m, "GET /v1/internal/revoked", s.internalRevoked)
 	s.route(m, "GET /v1/internal/ca", s.internalCA)
 	s.route(m, "POST /v1/internal/sessions", s.internalSessions)

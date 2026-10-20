@@ -82,6 +82,11 @@ const (
 	// LockResume picks the one replica that runs the resume tick after a
 	// host reboot (DECISIONS I-645).
 	LockResume int64 = 1014
+	// LockResting picks the one replica that evaluates the rest rule
+	// every minute (DECISIONS I-818). Its own id and its own tick: the
+	// hourly jobs hold LockRollup only in the first five minutes of an
+	// hour.
+	LockResting int64 = 1015
 )
 
 // TryLock takes a session-level advisory lock on a dedicated connection

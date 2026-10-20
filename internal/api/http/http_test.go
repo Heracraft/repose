@@ -90,6 +90,7 @@ func newEnvWith(t *testing.T, limits *httpapi.RateLimits, tweak func(*httpapi.De
 		Outbox:    notify.New(h.Pool, map[string]notify.Sender{"email": sender, "ntfy": sender, "gchat": sender}, h.Metrics, log),
 		Unsub:     unsub,
 		Questions: h.Questions,
+		Resting:   h.Resting,
 		Gateway:   httpapi.Gateway{Host: "ssh.test", Port: 22}, Limits: limits, BillingEnforce: true,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, h.Pool)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/ca/sshca"
 	"github.com/heracraft/repose/internal/db"
@@ -26,12 +27,90 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"project_id": p.ID, "guest_ip": nil, "state": p.State, "principals": []string{p.ID.String()}, "host_unreachable": p.HostUnreachable}
+	// resting (DECISIONS I-818) tells the gateway to ask for a wake
+	// before it dials. The state stays `running`, so nothing in the
+	// gateway refuses on this flag: its route cache holds an answer for
+	// five seconds, which makes the flag stale in both directions, and
+	// the wake is idempotent precisely so that does not matter.
+	out := map[string]any{"project_id": p.ID, "guest_ip": nil, "state": p.State, "principals": []string{p.ID.String()},
+		"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.RestingSince != nil}
 	if p.GuestIP != nil {
 		out["guest_ip"] = p.GuestIP.String()
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// internalWake resumes a machine that rests and answers when it is awake
+// (DECISIONS I-818). The gateway holds its dial on this call, so it
+// answers within resting.WakeTimeout either way; it is idempotent, and a
+// machine that was already awake is answered `was_resting: false`.
+//
+// Not an op: the op that needs the machine awake is itself the project's
+// one open op (internal/api/resting).
+func (s *Server) internalWake(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		ProjectID string `json:"project_id"`
+		// Reason is a lower_snake word for the host's log line; the
+		// gateway sends `connect`.
+		Reason string `json:"reason"`
+	}
+	if err := decode(r, &body); err != nil {
+		return err
+	}
+	pid, err := uuid.Parse(body.ProjectID)
+	if err != nil {
+		return errf("invalid", "project_id is not valid")
+	}
+	if s.d.Resting == nil {
+		return errf("internal", "waking is not configured on this api")
+	}
+	p, err := store.GetProject(r.Context(), s.d.Pool, pid)
+	if err != nil {
+		return err
+	}
+	if p.DestroyedAt != nil {
+		return db.ErrNotFound
+	}
+	reason := resting.ReasonConnect
+	if body.Reason != "" && lowerSnake(body.Reason) {
+		reason = body.Reason
+	}
+	res, err := s.d.Resting.Wake(r.Context(), pid, reason)
+	if err != nil {
+		// The machine is frozen and did not wake: a failure, and the one
+		// thing about a pause the user is told (the brief's S6). Counted
+		// here as well as on the host, because the failures that never
+		// reach a host -- it is not connected, or the wake ran out of
+		// time -- are invisible to hostd's own counter and are exactly
+		// the ones the user feels as a dial that did not come back
+		// (DECISIONS I-822).
+		s.d.Metrics.RestingWakeTotal.WithLabelValues(reason, "failed").Inc()
+		obs.Logger(r.Context(), s.d.Log).Warn("wake failed", "event", "guest_wake_fail", "project_id", pid.String(), "reason", reason, "err", err.Error())
+		return errf("internal", "%s did not wake", p.Slug)
+	}
+	result := "awake"
+	if res.GetWasResting() {
+		result = "woken"
+	}
+	s.d.Metrics.RestingWakeTotal.WithLabelValues(reason, result).Inc()
+	writeJSON(w, http.StatusOK, map[string]any{"was_resting": res.GetWasResting(), "wake_ms": res.GetWakeMs()})
+	return nil
+}
+
+// lowerSnake accepts the reason words a client may send: up to 32
+// lower-case letters and underscores, so nothing from a request reaches a
+// log line in any other shape.
+func lowerSnake(s string) bool {
+	if s == "" || len(s) > 32 {
+		return false
+	}
+	for _, c := range s {
+		if (c < 'a' || c > 'z') && c != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) internalRevoked(w http.ResponseWriter, r *http.Request) error {

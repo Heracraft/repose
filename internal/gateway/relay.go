@@ -107,7 +107,10 @@ func (s *session) run(ctx context.Context) {
 	s.guest = guest
 	g.cfg.Metrics.Sessions.Inc()
 	g.cfg.Metrics.SessionsTotal.Inc()
-	s.log.Info("session opened", "event", "session_open", "source_prefix", s.prefix)
+	// resting says the route this session was opened on had the machine
+	// frozen, so a dial that took a second has its reason on the line
+	// (I-818).
+	s.log.Info("session opened", "event", "session_open", "source_prefix", s.prefix, "resting", s.route.Resting)
 	// Reported on a context the session's end does not cancel: a client
 	// that connects and leaves within the round trip used to cancel its
 	// own "opened" mid-flight, and the "closed" below waits for this so the
@@ -200,6 +203,21 @@ func (s *session) dialGuest(ctx context.Context) (ssh.Conn, <-chan ssh.NewChanne
 		IsHostAuthority: func(auth ssh.PublicKey, _ string) bool { return keysEqual(auth, hostCA) },
 		Clock:           g.cfg.Clock,
 	}
+	// The one place every user-facing SSH action converges -- plain ssh,
+	// scp, VS Code Remote-SSH, every repose command and the fast attach,
+	// which makes no api call of its own -- so it is the one place a wake
+	// covers them all (DECISIONS I-818). It is here and not in the
+	// publickey callback: that runs under the connection's 10 s
+	// handshake deadline and the per-source cap of 4 handshakes, so a
+	// wake there would both break the handshake promise of
+	// ssh-gateway.md and throttle a client that opens several
+	// connections. The wake gets its own budget; the dial's starts after
+	// it.
+	if s.route.Resting {
+		if err := g.wake(ctx, s.route.ProjectID, s.slug+"."+s.handle); err != nil {
+			return nil, nil, nil, &dialError{reason: "wake", err: err}
+		}
+	}
 	dctx, cancel := context.WithTimeout(ctx, g.cfg.DialTimeout)
 	defer cancel()
 	nc, err := g.cfg.Dial(dctx, "tcp", net.JoinHostPort(s.route.GuestIP, strconv.Itoa(g.cfg.GuestPort)))
@@ -278,6 +296,10 @@ func dialFailure(err error) (reason, msg string) {
 		return "unknown", MsgNotReady
 	}
 	switch de.reason {
+	case "wake":
+		// A failure, not a machine that is not ready: the processes are
+		// all still there and the machine did not resume (I-818).
+		return "wake_failed", MsgWakeFailed
 	case "cert", "ca":
 		return de.reason, MsgControlPlane
 	case "tcp":
@@ -730,4 +752,30 @@ func newSessionID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails on Linux (it panics instead)
 	return hex.EncodeToString(b[:])
+}
+
+// wake asks the api to resume a machine that rests and waits for it,
+// under WakeTimeout (DECISIONS I-818). One wake per project at a time,
+// however many connections ask at once; the route cache entry goes as
+// soon as one succeeds, so the next connection does not ask again on a
+// five-second-old flag.
+func (g *Gateway) wake(ctx context.Context, projectID, login string) error {
+	started := g.cfg.Clock()
+	err := g.wakes.Do(ctx, projectID, func() error {
+		wctx, cancel := context.WithTimeout(ctx, g.cfg.WakeTimeout)
+		defer cancel()
+		res, err := g.cfg.API.Wake(wctx, projectID, "connect")
+		if err != nil {
+			return err
+		}
+		g.routes.Invalidate(login)
+		g.log.Info("machine woken for a connection", "event", "guest_wake", "project_id", projectID,
+			"was_resting", res.WasResting, "wake_ms", int(res.WakeMs), "waited_ms", g.cfg.Clock().Sub(started).Milliseconds())
+		return nil
+	})
+	if err != nil {
+		g.log.Warn("machine did not wake", "event", "guest_wake_fail", "project_id", projectID,
+			"waited_ms", g.cfg.Clock().Sub(started).Milliseconds(), "err", err.Error())
+	}
+	return err
 }
