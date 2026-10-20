@@ -24310,8 +24310,9 @@ twelve queries, not as metrics.** (launch-metrics, 2026-10-19)
   migrations after 0028 and reverts them first, so the next migration adds
   a step and changes nothing else.
 
-**I-808. `repose-admin projects show` no longer prints "cost today"; what
-a destroy keeps is owed a decision.** (launch-metrics, 2026-10-19)
+**I-808. `repose-admin projects show` no longer prints "cost today", and a
+destroy keeps the last snapshot, not all of them.** (launch-metrics,
+2026-10-19; the snapshot half decided by the owner 2026-10-20)
 - *The row that was always $0.00.* `cost today` summed `usage_hours.cost_cents`,
   which the rollup writes as zero by design since plan-v1 (`billing/plans.go`),
   so the figure was `$0.00` for every project, always, and
@@ -24322,22 +24323,19 @@ a destroy keeps is owed a decision.** (launch-metrics, 2026-10-19)
   which `repose-admin billing show` prints. This is the doc being wrong
   rather than the code: `08-dashboard.md`'s table still lists a cost
   column, and the dashboard has never rendered one.
-- *The snapshots, left alone and owed a decision.* `markDestroyed` sets
-  `expires_at = now() + 30 days` on every live snapshot of the destroyed
-  project. R4-11, `features/snapshots.md` and every public line
-  ("A final snapshot is kept for 30 days") say the LAST one, and a project
-  may hold seven dailies, so a destroy keeps up to seven times the bytes
-  those lines promise. The fix was written and then reverted, because
-  `apps/web/src/content/docs/lifecycle.md` ("Destroy and restore") and
-  `cli.md`'s `restore` row promise the other half: "`--snapshot ID` picks
-  an older snapshot" of a destroyed project, which works only while the
-  older ones are kept. Two user-visible promises disagree, and which one
-  goes is the owner's call, not an implementation detail: keeping them all
-  costs blob bytes nobody has measured, and keeping one removes a
-  documented restore path in launch week. A test asserts today's behaviour
-  precisely (`ops_test.go`, "keep the snapshot 30 days"), so this was
-  deliberate once. Whichever way it goes, it ships with the docs edit in
-  the same commit.
+- *A destroy keeps the last snapshot, not all of them.* `markDestroyed`
+  set `expires_at = now() + 30 days` on every live snapshot of the
+  destroyed project, so a destroy kept up to seven dailies: seven times
+  the bytes R4-11, `features/snapshots.md` and every public line
+  ("A final snapshot is kept for 30 days") promise. The newest by
+  `taken_at` now keeps the 30 days and the older ones expire at once.
+  Two user-visible promises disagreed, because `lifecycle.md` and
+  `cli.md`'s `restore` row also said `--snapshot ID` picks an *older*
+  snapshot of a destroyed project, which worked only while they were all
+  kept. The owner chose the last snapshot (2026-10-20), so those two lines
+  go; the flag stays, and names the snapshot. A test asserted the old
+  behaviour precisely, so it was deliberate once; it now asserts the
+  promise.
 
 **I-810. A daily digest to Google Chat, from a timer on the personal
 server.** (launch-metrics, 2026-10-19)

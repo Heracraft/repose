@@ -828,5 +828,5 @@ pointer, not a summary.
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24229
 - **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24267
 - **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24290
-- **I-808** `repose-admin projects show` no longer prints "cost today"; what a destroy keeps is owed a decision — 2026-10-19; L24313
-- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24342
+- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24313
+- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24340
