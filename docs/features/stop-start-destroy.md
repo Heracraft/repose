@@ -1,6 +1,8 @@
 # Stop, start, destroy
 
 A project's guest is always on until the user stops it (DECISIONS R1-5).
+One nobody is using has its vCPUs paused and keeps everything else
+("Idle pause", I-818); that is not a stop and not a state.
 Stopping snapshots and deallocates; the disk stays, trimmed at shutdown,
 and what it holds keeps counting toward the plan's disk total, and the
 stopped project costs nothing (DECISIONS I-289, I-570, I-585).
@@ -97,6 +99,57 @@ A plan is a monthly price for memory that may run at once, disk, egress
 and a number of projects (DECISIONS I-289); nothing is billed by the hour,
 and a stopped project costs nothing. Hours are still counted and shown.
 
+## Idle pause
+
+An automatic idle pause, not a cheaper stop (DECISIONS I-818). A running
+project rests when its host's Hello named the `pause` feature, its
+`keep_awake` is false, no op and no gateway session are open for it, no
+user timer in the guest is due within 15 minutes, and each of its last 15
+one-minute samples shows `guestd_ok`, no SSH session, no tmux or herdr
+client, every agent `idle` or `needs_input`, CPU under 6 s (0.10 of a
+core) and under 64 KiB of network. Its vCPUs are then paused through
+Cloud Hypervisor. A container does not hold a machine awake on its own:
+CPU and network already cover a container doing work, and a port it
+serves is reached over a forward, which wakes the machine. Nothing is
+snapshotted, shut down or written anywhere:
+the guest's memory stays resident on its host, so every process, open
+file and socket is there when it wakes, and the plan counts its memory
+exactly as before.
+
+- The state stays `running`. `resting` is an additive marker on the wire,
+  the project row and the sample, never an eleventh state; the user-visible
+  word for it is `frozen` (I-683). `repose ls`'s STATE cell and the
+  `repose status` header carry it, and `up 31h` is unchanged, because a
+  pause does not move `started_at`.
+- The api decides and sends `PauseGuest`; hostd keeps the safeties only
+  it can see and answers `paused=false` with a lower_snake `why_not`:
+  `not_running`, `already_resting`, `command_in_flight`, `host_stopping`,
+  `frozen` (the host-restart freeze holds the guest), `timer_due` (a user
+  timer in the guest is due within 15 minutes) or `guest_unreachable`. A
+  refusal is not a failure: the api reads the word and tries again at its
+  next tick.
+- Either side may wake. The api wakes before every guest-bound phase of
+  every op and before a secrets write, the gateway wakes at `dialGuest`
+  so plain `ssh`, `scp`, an editor and the fast attach all wake, and
+  hostd wakes the guest itself before anything that needs guestd and for
+  a timer that comes due.
+- A frozen guest's sample keeps `guestd_ok` true and repeats the last
+  signals it read, with `resting` set, so `repose start` and the
+  dashboard's Start never reboot a frozen machine, the unused rule
+  (I-262) still counts the minute as unused, and `GuestdLost` does not
+  page for it.
+- A wake is idempotent and answers on a machine already awake. A pause of
+  a guest the host-restart freeze then takes is snapshotted as it is, so
+  the guest keeps its memory across the restart (I-652, I-796).
+- Nothing is notified and no user-read event is raised: the marker is the
+  whole surface (I-484, I-485). hostd's `GuestResting` event updates the
+  project row alone and never goes through the state-change path, which
+  would cancel the project's open questions. A wake that failed is the
+  exception: it alerts the operator (`GuestWakeFailed`) and the user sees
+  a machine that did not answer ssh.
+- A per-project **Keep awake** switch on the Config page holds a machine
+  awake, effective at once.
+
 ## Behaviour that must hold
 
 Stop:
@@ -125,6 +178,11 @@ Stop:
 - `stop` takes several projects, or `--unused` for every running project
   the api reports idle (I-262); they are resolved first, asked about once
   and stopped in parallel, one line each, exit 1 when one failed (I-615).
+  A frozen machine ("Idle pause" above) is normally unused too and `--unused` stops it
+  like any other: the user asked, and the stop is what throws the resident
+  memory away. The busy-agent question reads the newest sample, which on a
+  frozen machine is the one taken before the pause, so an agent that was
+  idle then is idle now (nothing runs while the cores are paused).
 - In every laptop folder whose `repose` remote is a machine being
   stopped (the working directory's checkout, and the folders
   `projects.json` links to the machine, I-638), the CLI runs `git fetch
@@ -490,4 +548,6 @@ sessions to non-running guests).
 ## Deferred
 
 Idle auto-stop (R1-5; needs the recorded signals). Scheduled start and stop.
-Pause (Cloud Hypervisor pause without snapshot) as a cheaper stop.
+Pausing a frozen guest's memory out to the host's disk, which would free
+memory as well as CPU and is what would sell a seat twice; the analysis is
+in `../proposals/2026-10-11-pause-idle-machines.md` §9.

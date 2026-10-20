@@ -96,12 +96,24 @@ A running project may rest when all of these hold:
 - its host's Hello named the `pause` feature;
 - `keep_awake` is false;
 - no op is open for it, and no gateway session is open;
+- no `repose-ask` question of its is still open (I-822): a question
+  carries a wall-clock expiry inside the guest, and the wake steps that
+  clock forward by the whole rest, so a machine that rested an hour would
+  expire every open question in the second the user came back;
 - each of its last 15 one-minute samples has `guestd_ok`,
   `ssh_sessions = 0`, `tmux_clients = 0`, every agent in `idle` or
   `needs_input` (anything else, `unknown` included, counts as working),
   `cpu_ns` under 6 s (0.10 of a core), and `net_rx + net_tx` under 64 KiB;
 - no user timer inside the guest is due within the next 15 minutes
-  (hostd reads the next elapse before it pauses, §4).
+  (hostd reads the next *realtime* elapse before it pauses, §4; a
+  monotonic timer counts the guest's own uptime, which stops with its
+  vCPUs, so it keeps its remaining time across a rest and misses
+  nothing).
+
+hostd refuses a pause it must not take, and says why rather than failing:
+a command in flight for that guest, the host going down, the guest not
+running or already resting, a freeze record on it, no guestd session, or
+a timer due inside the hold.
 
 A container does not block a rest on its own: CPU and network already
 cover a container doing work, and a port a container serves is reached
@@ -109,15 +121,23 @@ over a forward, which wakes the machine (proposal §6).
 
 ## 4. Items
 
+The decisions are not one per item: each entry is one ruling, and most
+items touch several. I-818 is the pause itself (the rule, the split, the
+contract, the metrics); I-820 is `keep_awake`; I-822 is what wakes a
+machine; I-824 is what the pause must never cost it; I-826 is the word
+and the marker's whole surface; I-828 is the memory half, deliberately
+unbuilt. An item's row names the entries its code cites.
+
 | Item | What | Decisions | Owner |
 |---|---|---|---|
 | P1 | The contract: `PauseGuest`/`WakeGuest`, `GuestStatus.resting_at`, `GuestSample.resting`, the `GuestResting` event, the `pause` feature, migration 0029 | I-818 | cut already |
-| P2 | hostd: pause, wake, the bbolt marker, reconcile, the sampler, the freeze interaction, the timer wake, metrics | I-818 | builder |
-| P3 | api: the rule, the resting service, the wake before every guest-bound path, the marker on the Project, `keep_awake` | I-818, I-820 | builder |
-| P4 | gateway: the wake at `dialGuest`, the route flag | I-822 | builder |
-| P5 | CLI: the marker in the `ls` state cell and the `status` header, `--json`, `cli.md` | I-824 | builder |
-| P6 | web: the flag goes, the two breakpoints agree, the unasked band goes, the keep-awake switch | I-826 | builder |
-| P7 | docs and operations: `lifecycle.md`, `machine.md`, `run-and-attach.md`, `config.md`, `troubleshooting.md`, the agent guide, the metric list and the alerts | I-828 | builder |
+| P2 | hostd: pause, wake, the bbolt marker, reconcile, the sampler, the freeze interaction, the timer wake, metrics | I-818, I-822, I-824 | builder |
+| P3 | api: the rule, the resting service, the wake before every guest-bound path, the marker on the Project, `keep_awake` | I-818, I-820, I-822, I-824 | builder |
+| P4 | gateway: the wake at `dialGuest`, the route flag | I-818, I-822 | builder |
+| P5 | CLI: the marker in the `ls` state cell and the `status` header, `--json`, `cli.md` | I-820, I-824, I-826 | builder |
+| P6 | web: the flag goes, the two breakpoints agree, the unasked band goes, the keep-awake switch | I-820, I-826 | builder |
+| P7 | docs and operations: `lifecycle.md`, `machine.md`, `run-and-attach.md`, `config.md`, `troubleshooting.md`, the agent guide, the metric list and the alerts | I-818, I-822, I-824, I-826 | builder |
+| P8 | The host switch `repose.host.pauseIdle`, off by default, which is what puts `pause` in `Hello.features` | I-818 | integrator |
 
 Shared numbers, cut and generated already (P1): `Command.pause_guest = 24`,
 `wake_guest = 25`; `Result.pause = 17`, `wake = 18`; `GuestStatus.resting_at = 8`;

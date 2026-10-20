@@ -89,6 +89,26 @@ at every restart alerts once and then never again. hostd keeps the totals
 beside its freeze records (`/var/lib/repose/hostd/freeze/.tally.json`)
 and publishes them at each start, so the series only ever rises.
 
+The idle pause (DECISIONS I-818): a running guest nobody is using has its
+vCPUs paused, and `repose_host_guests_resting` is how many on the host are
+in that state. `repose_host_guest_pause_total{reason,result}` counts
+pauses and wakes by what asked for them (`idle` for the api's rule,
+`connect`, `op`, `answer`, `keep_awake` for its wakes, `operator`,
+`timer`, `command` for hostd's, `other` for the rest) and what came of
+them (`paused`, `refused` for a
+`why_not` the api retries, `failed`), `repose_host_guest_wake_seconds` is
+the wake hostd measured and `repose_host_guest_wake_failed_total{reason}`
+the step a wake failed at (`resume`, `guestd`, `state`); the event is
+`guest_resting`, and a failed wake logs at Error with the step as
+`phase`. Two things to know before
+reading anything else about a frozen guest: its sample keeps `guestd_ok`
+true and repeats the last signals hostd read, so it is never in
+`repose_host_guestd_lost` and `GuestdLost` cannot fire for one; and its
+state stays `running`, so `repose_host_guests{state}` and the billing
+rollup count it exactly as a busy guest. A frozen guest's CPU series goes
+to about zero while its memory series does not move, which is the pair to
+look for in "Per-guest resources" before concluding a machine is wedged.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),

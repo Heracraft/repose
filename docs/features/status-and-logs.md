@@ -95,8 +95,15 @@ one (I-590), e.g. `kanali: its new system did not boot, so it runs its
 previous one: ...`. While a
 listed project's disk is 90 percent full or more (the api's root
 filesystem figure), a `DISK` column reads `93% full` for it and `-` for
-the rest, there only then, as `LEFT` is (I-567). `--json` is
-the api's list, unchanged. `repose status`, `logs` and `events` take the
+the rest, there only then, as `LEFT` is (I-567). A running project the
+api reports resting reads `running frozen` in the STATE cell and carries
+`frozen` after the state in the `status` header, with no line under the
+table and no notification: the marker is the whole surface of a pause
+(I-826, I-484, I-485). `up 31h` is unchanged
+by a pause, and `--wait running` is already satisfied, since `frozen` is
+a marker on `running` and not a state. `--json` carries the api's
+`resting` beside the Project's fields; the CLI's own `Project` struct has
+to name the field or `--json` drops it. `repose status`, `logs` and `events` take the
 project as their argument (`repose logs izma -f`, I-155).
 
 ## Behaviour that must hold
@@ -112,9 +119,13 @@ Status:
 - Agent state per window comes from guestd's latest `AgentState`
   (`working`, `idle`, `needs_input`, `unknown`) and is at most 60 seconds
   stale on a healthy guest.
+- A `?` after an agent's state in `ls` and `status` means the project's
+  newest sample is two minutes old or older. It never appears on a
+  resting project: hostd keeps sampling one, repeating the last signals
+  it read, and the agents of a machine whose cores are paused cannot have
+  moved on (I-826).
 - Not built: git state in `Sample` (status reads it over ssh instead,
-  I-616), the base and config revision lines, and marking stale agent
-  state with `?`.
+  I-616), and the base and config revision lines.
 - Listening processes (DECISIONS I-200, I-207): `repose status PROJECT`
   of a running guest lists each loopback or wildcard TCP listener on port
   1024 and up with its process's name, age and memory, so a dev server

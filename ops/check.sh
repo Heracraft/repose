@@ -84,6 +84,7 @@ repose-chat-page stack=repose alertname=HostdDown severity=page host_id=host-01
 repose-chat-page stack=repose alertname=ApiDown severity=page job=api-grpc
 repose-chat-page stack=repose alertname=MonitoringPathDown severity=page
 repose-chat stack=repose alertname=HostServiceDown severity=warn host_id=host-01
+repose-chat stack=repose alertname=GuestWakeFailed severity=warn host_id=host-01 reason=resume
 repose-chat stack=repose alertname=BillingStopped severity=info
 ROUTES
 echo "routes as intended"
