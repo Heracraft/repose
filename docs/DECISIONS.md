@@ -24170,3 +24170,227 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-818. A machine nobody is using rests, and comes back at once.**
+(idle-pause, 2026-10-20; the mechanism of
+`../proposals/2026-10-11-pause-idle-machines.md` M2 without its swap, and
+a departure from that proposal's §6) A `running` machine whose project
+passes the rule below has its vCPUs paused with `vm.pause`. Its memory
+stays resident on the host; the hypervisor, virtiofsd, the tap and the
+vsock session stay up. Every process, every socket, every open file and
+every byte of guest memory survive, and the first thing that reaches for
+the machine resumes it. Nothing is stopped, nothing boots, no snapshot is
+taken and no process dies, so R1-5 and I-262 stand in what they defend: a
+machine is still always-on until `stop`, and repose still never stops one
+for being idle. R1-5's "*Revisit when:* the recorded signals show what an
+unattended agent looks like from outside" is the condition this meets --
+the signals have been recorded since day one, and §5 of the proposal is
+what they say. What it buys is CPU, which is what binds a host: one
+tenant's agent at full tilt made every other guest on host-01 type at
+17 ms p50 instead of 2.7 ms (`../proposals/2026-10-14-host-cpu-capacity.md`),
+and an idle machine is not free -- `.claude-wrapped` at its prompt took
+12.2 CPU hours of the prod sample's idle minutes.
+- *The rule.* A running project may rest when its host's `Hello` named
+  the `pause` feature, `keep_awake` is false (I-820), no op is open for
+  it, no gateway session is open, no user timer inside it is due within
+  15 minutes, and each of its last 15 one-minute samples has `guestd_ok`,
+  `ssh_sessions = 0`, `tmux_clients = 0`, every agent `idle` or
+  `needs_input` (anything else, `unknown` included, counts as working),
+  `cpu_ns` under 6 s (0.10 of a core) and `net_rx + net_tx` under 64 KiB.
+  The 6 s line is the proposal's: 3 s fails as soon as Claude sits at its
+  prompt, and the figures for each line are its §5. A container does not
+  block a rest on its own -- CPU and network cover a container doing
+  work, and a port it serves is reached over a forward, which wakes the
+  machine.
+- *The api decides, hostd executes, either may wake.* The proposal wanted
+  hostd to evaluate the rule from its own live samples "so a pause does
+  not wait on the api". It cannot: two of the seven terms exist only in
+  Postgres (an open gateway session, an op in flight) and a third is a
+  column, so hostd would be deciding on a third of the rule. A 15 minute
+  quiet window also makes the api's one-minute sample lag immaterial, and
+  one rule in one place cannot drift from itself. hostd keeps the
+  safeties only it can see: it refuses a pause while it has a command in
+  flight for that guest, while the host is going down, or when the guest
+  is not running, and it wakes a guest itself before anything that needs
+  guestd.
+- *A refusal is not a failure.* `PauseResult.paused` is false with a
+  lower_snake `why_not` for each of those, so the api learns why without
+  an error and the operator metric separates a refusal from a fault.
+- *The contract,* all additive, behind `Hello.features = "pause"` because
+  an older hostd answers a command it does not know `invalid_argument`:
+  `Command.pause_guest = 24` and `wake_guest = 25`, `Result.pause = 17`
+  and `wake = 18`, `GuestStatus.resting_at = 8` (reconciled from bbolt
+  and the hypervisor's `vm.info`, so a hostd restart does not lose the
+  marker), `GuestSample.resting = 17`, and `Event.guest_resting = 16`,
+  which is deliberately not a `GuestStateChanged`: a state change
+  cancels the project's open questions, and an answer is one of the
+  things a wake is for. Migration `0029_resting` adds
+  `projects.resting_since`, `projects.keep_awake` and
+  `meter_samples.resting`.
+- *The state stays `running`,* and `resting` is a marker on it, never an
+  eleventh guest state. `internal/billing/rollup.go` counts a sample with
+  `state = 'running'` as the hours of record, so a new state string would
+  stop billing the minute; the enum is also mirrored in
+  `interfaces/README.md`, hostd's Prometheus labels and the CLI's
+  `--wait`.
+- *Nothing new touches disk.* No host swap, no snapshot image, no fourth
+  home for a secret, and no seat sold twice: the scheduler's arithmetic,
+  I-290's seat and the public text in `billing.md` and `limits.md` are
+  unchanged, because a resting machine holds its plan memory exactly as a
+  running one does. I-828 records what the memory half would need.
+- *Metrics.* `repose_host_guests_resting`,
+  `repose_host_guest_pause_total{reason,outcome}`,
+  `repose_host_guest_wake_seconds` and
+  `repose_host_guest_wake_failed_total{reason}`, with the alert on a wake
+  that failed or was slow. `GuestdLost` cannot fire for a resting machine
+  (I-824).
+*Rejected:* a snapshot to a file, which I-233 and I-235 already refused
+and which would reset the vsock and restart virtiofsd; host swap, which
+needs a ruling this entry does not have (I-828); an eleventh state (it
+stops billing); the pause or the wake as an op (the engine allows one
+open op per project, and a wake is needed precisely when that op is the
+one waiting, so an op-modelled wake deadlocks against itself); a new
+guestd request for the prepare and the clock step (the version
+negotiation `vsock-guestd.md` promises does not exist, and it would need
+every machine's base rebuilt -- the freeze's `Exec` of `sync` and
+`date -u -s` already does both, so this feature reaches machines that are
+already running); and waking on inbound traffic to the tap, which a
+paused hypervisor never sees.
+
+**I-820. A machine rests unless its project keeps it awake.**
+(idle-pause, 2026-10-20; the proposal's decision 5) The pause is on by
+default, with a per-project `keep_awake` that turns it off. I-235's
+option 5 and I-262 both leaned the other way, and what they rejected was
+an opt-in *stop*: a switch that ends processes is a different thing from
+one that pauses them. Opt-in also earns nothing, because almost nobody
+turns a setting on, while the risk it is meant to cover -- a job that
+looks quiet -- is already carried by the rule's CPU and network terms.
+`keep_awake` is the remedy for the cases those terms miss, and they are
+specific: a job waiting on an outbound connection it must not drop (a bot
+long-polling an API, `gh run watch`, a websocket MCP server). No packet
+arrives to wake such a job, and its traffic can sit under 64 KiB a
+minute.
+- *Where it lives.* A column on `projects`, a field on
+  `PATCH /projects/:id`, a switch in the dashboard's Config rail beside
+  base updates and `machine.nix`, and a word in `repose status`'s setup
+  line. `hold_base_updates` is the precedent end to end, including having
+  no CLI setter of its own. It takes effect at once, with no restart and
+  no command to any host, because the api is what decides a rest; hostd
+  never learns the key, which is why `CreateGuest` and `StartGuest` did
+  not gain a field for it.
+*Rejected:* a `config.toml` key (it is per-project server-side state, not
+a laptop preference, and the laptop is not where the machine's owner
+decides it); a `repose.nix` option (the api would have to parse an
+evaluated guest configuration to answer a question it already has a
+column for); a new CLI verb (nothing else sets a project switch that way,
+and `--multiplexer`'s flag belongs to a start, which this is not).
+
+**I-822. Everything that reaches a machine wakes it first.**
+(idle-pause, 2026-10-20; the proposal's §7, checked against the code) A
+wake is idempotent and cheap: a machine that is already running is
+answered `ok` with `was_resting` false, so a caller may ask for a wake it
+does not know it needs. That is what makes the following safe.
+- *One point covers SSH.* `session.dialGuest` in the gateway is where
+  plain `ssh`, `scp`, VS Code Remote-SSH, every `repose` command that
+  opens a session and the I-223 fast attach all converge -- and the fast
+  attach makes no api call of its own, so no earlier hook could serve it.
+  The wake is asked for there and awaited inside the dial's budget. The
+  route carries `resting` for the log line and nothing refuses on it: the
+  5 s route cache makes the flag stale in both directions.
+- *The op engine wakes before the first guest-bound phase* of every plan
+  that reaches a guest, with a timeout of its own, because an unnamed
+  phase gets ten minutes by default and a failed wake would then be a
+  ten-minute silent hang on the user's `repose ssh`.
+- *The api wakes first* on the questions deliver (a paused
+  `needs_input` agent is only acceptable because the answer wakes it),
+  `secrets set` (the agent guide promises a new value within seconds), a
+  config apply, `GrowFs`, a resize, a stop, a fork and a snapshot the
+  user asked for.
+- *hostd wakes the guest itself* before every caller of
+  `Manager.session` except the sampler, and at a user timer it was told
+  about: before each pause it reads the next elapse from the guest's
+  system manager and dev's user manager, refuses to pause when one is due
+  within 15 minutes, and arms a wake for the rest. `machine.md` promises
+  timers run with nobody attached, and that promise is older than this
+  feature.
+- *The sampler is the one caller that must not wake.* It would wake every
+  resting machine once a minute, which is the feature undone.
+
+**I-824. The pause must never cost a machine its memory.** *Made during
+implementation* (idle-pause, 2026-10-20) Three paths in the tree turn a
+paused guest into a cold boot, which is the exact opposite of what this
+feature promises, and all three were reachable before anything was
+written.
+- *The freeze would have lost it.* `FreezeAll` admits any guest whose
+  bbolt state is `running` with an active unit and then calls `vm.pause`.
+  Cloud Hypervisor refuses a second pause, so the freeze fails, discards
+  the image, counts `unfrozen{reason="failed"}` and lets that guest
+  cold-boot at the next host restart -- I-796's incident, re-created by
+  this feature. The freeze now treats an already-paused guest as paused
+  and snapshots it where it is, and `ch.Fake` refuses a second pause so a
+  test can see the failure instead of passing through it.
+- *`repose start` would have rebooted it.* A paused guest answers no
+  guestd `Sample`, which left `guestd_ok` false, which `guestdDead` reads
+  as a dead environment, which sets `restart: true`, which is a
+  `stop_guest` plus `start_guest`. The user who pressed Start on a frozen
+  machine to make sure it was alive would have ended every process in it.
+- *Any op would have rebooted it.* `ops/recover.go` turns an
+  `apply_config` that fails with `guest_unresponsive` into a full reboot,
+  and `guest_unresponsive` is exactly what a vsock call to a paused guest
+  returns.
+- *The rule that fixes all three at the source:* a resting guest's sample
+  keeps `guestd_ok` **true** and repeats the last guest-written signals it
+  read, with `resting` set and `state` still `running`. guestd is paused,
+  not lost. The same one line keeps I-262's unused notice firing (its
+  `usedSQL` reads `not guestd_ok` as *use*, so without this the notice
+  would go silent for exactly the machines that rest), keeps the
+  `repose_host_guestd_lost` gauge at zero so `GuestdLost` does not page
+  the on-call for every frozen machine, and keeps `repose status` from
+  warning that the environment's agent is not answering. Waking before
+  every op phase is the second guard, so `recover.go`'s path stays
+  unreachable rather than merely unlikely.
+
+**I-826. The word is "frozen", and the marker is the whole surface.**
+(idle-pause, 2026-10-20; amends I-683) I-683 mocked this look behind a
+flag and recorded the owner's word for it: frozen, a six-armed snowflake
+at 13px and the word in `--frost`. The field it reads, `resting`, is now
+real, so the flag, the `frozenSince` term that gated it and the
+Playwright test asserting that a production build shows no frozen machine
+all go. The word is free: "frozen" appears in CLI code only in comments
+about the host-restart freeze and in no string a user reads.
+- *Where it shows.* The `repose ls` STATE cell and the `repose status`
+  header, the dashboard's project row, project page and the plan's memory
+  squares. State that belongs to a row is a column (I-484), so there is
+  no new line under the table, and `up 31h` stays correct beside it,
+  because a pause does not move `started_at`.
+- *The unused line is unchanged and still prints.* It says something
+  else: that a machine nobody has touched for a day is holding plan
+  memory. The two overlap often and are not the same fact. The
+  dashboard's two breakpoints now agree about them, which the mock's did
+  not.
+- *Nothing announces a pause.* No notification, no event a user reads, no
+  line on `run` or `attach`. A pause is invisible by design, and a notice
+  about it is help nobody asked for (I-485). A wake that failed is the
+  exception, because that is a failure: it alerts the operator and the
+  user is told why. The mock's "It wakes when you connect." is cut for
+  the same reason -- it narrates what the screen implies and adds a next
+  step nobody asked for.
+
+**I-828. The memory half is not built, and this is what it would need.**
+(idle-pause, 2026-10-20) This entry exists so the next session does not
+read I-818 as half-finished work and finish it. Pausing the vCPUs frees
+CPU, which is what binds a host today. Pushing the guest's memory to
+encrypted host swap would free memory and let a host carry more
+subscriptions than it has seats, and that is a different decision with
+three preconditions, none of which is met: the owner must rule that
+encrypted host swap with a key per boot may hold guest RAM, which amends
+`CLAUDE.md`'s "Secrets have three homes" and `features/secrets.md`; the
+public seat promise in `billing.md` and `limits.md` must say that a host
+carries more subscriptions than seats before one does; and a wake that
+does not fit on a pinned host needs a remedy, since R2-3 pins a project
+to its host and moving one is a restore from Blob. The arithmetic, the
+measured pausable shares and the seat counts are §9 of
+`../proposals/2026-10-11-pause-idle-machines.md`, with the capacity model
+corrected by `../proposals/2026-10-14-host-cpu-capacity.md`. Until those
+three are settled, a frozen machine holds its plan memory exactly as a
+running one does.

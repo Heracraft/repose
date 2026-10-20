@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-792 entries.
+798 entries.
 
 ## Scope
 
@@ -720,7 +720,7 @@ pointer, not a summary.
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19687
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19745
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19777
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — L19795
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-826; L19795
 - **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; L19825
 - **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; L19875
 - **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; L19954
@@ -824,3 +824,9 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; L24174
+- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L24260
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L24288
+- **I-824** The pause must never cost a machine its memory — L24319
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; L24353
+- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L24379
