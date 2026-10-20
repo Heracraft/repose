@@ -45,7 +45,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.
 
-**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead.
+**`todo-app is running but did not answer ssh in 15 s.`** `repose stop` and then `repose start` restart it. A command that has just started or created the machine waits 60 s instead. If the line under it says the machine is frozen, read the frozen entry below first: a stop there ends processes that are still running.
 
 ## Machine state
 
@@ -67,7 +67,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`error while loading shared libraries: libpq.so.5: cannot open shared object file`** from a program you built on the machine. The program names a library by the exact path it had when you compiled it, and a later platform update moved that library. The machine keeps the libraries of the base it runs, so building the program again is the usual fix. To keep the old build, `repose-store-repair ./your-program` on the machine downloads the libraries it names, well under a second each, as long as the machine can reach the internet. If it says the path is empty, `repose stop` and `repose start` the machine, then run it again.
 
-**A machine `repose ls` marks `frozen` doesn't answer.** Waking it failed. The machine is still `running` and its processes and memory are as they were; `repose attach todo-app` tries the wake again. After several tries that get nowhere, `repose stop todo-app` then `repose start todo-app` gets you back onto the machine and ends what was running on it ([Frozen machines](/docs/lifecycle#frozen-machines)).
+**`environment is frozen and did not wake; try again shortly`**, on a machine `repose ls` marks `frozen`. The wake failed, not the machine: it is still `running`, with its processes, open files and memory as they were. `repose attach todo-app` asks for the wake again, and so does any other command that reaches the machine. `repose stop todo-app` then `repose start todo-app` is the last resort: the stop ends every process on it ([Frozen machines](/docs/lifecycle#frozen-machines)).
 
 **``todo-app is running but repose has no address for it; run `repose stop todo-app` then `repose start todo-app` ``.** The machine is running, but repose doesn't hold the address connections go to, so nothing can reach it. The stop and the start give it one; waiting doesn't help.
 

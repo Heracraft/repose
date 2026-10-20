@@ -167,12 +167,14 @@ Families:
   every reboot and `increase()` sees no rise.
   The idle pause (I-818) adds `repose_host_guests_resting` (gauge, guests
   whose vCPUs are paused), `repose_host_guest_pause_total{reason,result}`
-  (`reason` is what asked for the pause or the wake, from one bounded
-  list for both sides: `idle` (the api's rule), `connect`, `op`, `answer`
-  and `keep_awake` (the api's wakes), `operator` (`hostd pause`), `timer`
-  and `command` (hostd's own wakes), and `other` for anything else, so a
-  caller cannot grow the series; `result` is `paused`, `refused` (a
-  `why_not` the api reads and retries, not a failure) or `failed`),
+  (`PauseGuest` commands alone: `reason` is what asked for the *pause* --
+  `idle` (the api's rule) or `operator` (`hostd pause`) -- and `result`
+  is `paused`, `refused` (a `why_not` the api reads and retries, not a
+  failure) or `failed`. The reason enum is one bounded list shared with
+  the wake side, so the wake words `connect`, `op`, `answer`,
+  `keep_awake`, `timer`, `command` and `other` exist on this counter at
+  zero and are not wakes; wakes are broken down by reason from the api's
+  `repose_api_resting_wake_total` below),
   `repose_host_guest_wake_seconds` (histogram, the wake hostd measured and
   reports as `wake_ms`) and `repose_host_guest_wake_failed_total{reason}`
   (`resume`, `guestd` or `state`, the step that failed). I-818 named the
@@ -184,8 +186,11 @@ Families:
   `repose_api_request_duration_seconds{route}`,
   `repose_api_hosts{state}`, `repose_api_projects{state,class}`,
   `repose_api_schedule_total{result}`,
-  `repose_api_resting_wake_total{reason,result}` (the wakes the api asked
-  for, I-818: `result` is `woken`, `awake` or `failed`. The host's own
+  `repose_api_resting_wake_total{reason,result}` (every wake the api
+  asked for, and the one counter that breaks wakes down by reason, I-818:
+  `reason` is what reached the machine (`connect`, `op`, `answer`,
+  `keep_awake`) and `result` is `woken`, `awake` (nothing to wake) or
+  `failed`. The host's own
   `repose_host_guest_wake_failed_total` cannot see a wake that never
   reached a host -- one that is not connected, or that ran out of time --
   and those are the ones a user feels as a dial that did not come back),

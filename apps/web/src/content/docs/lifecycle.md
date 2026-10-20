@@ -110,9 +110,11 @@ An unused machine's memory still counts against what your plan runs at once, so 
 
 A running machine nobody is using has its cores paused after about 15 minutes of quiet: no SSH session, no tmux or herdr client, every agent finished or waiting on you, and next to no CPU or network. `repose ls`, `repose status` and the dashboard mark it `frozen`.
 
-Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change. Nothing runs while it's frozen, so a program of your own waiting on a clock carries on from where it was at the wake.
+Its state is still `running`, and nothing is ended: every process, open file and socket stays as it was, and its memory is untouched, so [what it holds against your plan](#unused-machines) doesn't change.
 
-Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due. Its clock is set as it wakes.
+Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
+
+The machine's clock stops with its cores and is set forward to the real time as it wakes. A program of yours that compares wall-clock times sees the frozen stretch as time that passed, and anything whose deadline fell inside it runs at the wake.
 
 Connections the machine itself had open to the internet may not survive. The server drops an outbound connection idle for 30 minutes, and the far end can drop one sooner; a program that reconnects carries on, and one that doesn't has to be restarted.
 

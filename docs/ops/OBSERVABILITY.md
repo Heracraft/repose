@@ -92,13 +92,24 @@ and publishes them at each start, so the series only ever rises.
 The idle pause (DECISIONS I-818): a running guest nobody is using has its
 vCPUs paused, and `repose_host_guests_resting` is how many on the host are
 in that state. `repose_host_guest_pause_total{reason,result}` counts
-pauses and wakes by what asked for them (`idle` for the api's rule,
-`connect`, `op`, `answer`, `keep_awake` for its wakes, `operator`,
-`timer`, `command` for hostd's, `other` for the rest) and what came of
-them (`paused`, `refused` for a
-`why_not` the api retries, `failed`), `repose_host_guest_wake_seconds` is
+`PauseGuest` commands alone: its `reason` is what asked for the *pause*
+(`idle` for the api's rule, `operator` for `hostd pause`) and its
+`result` what came of it (`paused`, `refused` for a `why_not` the api
+retries, `failed`). The reason enum is shared with the wake side, so the
+wake words (`connect`, `op`, `answer`, `keep_awake`, `timer`, `command`,
+`other`) exist on this counter at zero and must not be read as wakes.
+A wake's reason and result are the api's
+`repose_api_resting_wake_total{reason,result}`: `reason` is what reached
+the machine (`connect` a session through the gateway, `op` an op's wake
+phase, `answer` an answer carried to a waiting agent, `keep_awake` the
+switch being turned on) and `result` is `woken`, `awake` (nothing to
+wake) or `failed`, so
+`sum by (reason) (increase(repose_api_resting_wake_total[1h]))` is the
+breakdown of wakes by what asked for them.
+`repose_host_guest_wake_seconds` is
 the wake hostd measured and `repose_host_guest_wake_failed_total{reason}`
-the step a wake failed at (`resume`, `guestd`, `state`); the event is
+the step a wake failed at (`resume`, `guestd`, `state`), which hostd sees
+only for a wake that reached it; the event is
 `guest_resting`, and a failed wake logs at Error with the step as
 `phase`. Two things to know before
 reading anything else about a frozen guest: its sample keeps `guestd_ok`

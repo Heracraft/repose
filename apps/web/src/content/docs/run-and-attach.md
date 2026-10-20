@@ -139,7 +139,7 @@ repose's messages inside the session (the time zone, new port forwards, copied f
 delivery = "herdr"
 ```
 
-To take a machine out of the sidebar for a while, so herdr's connection doesn't hold it [in use](/docs/lifecycle#unused-machines) or [awake](/docs/lifecycle#frozen-machines), disable its entry. Its agents keep running.
+herdr holds an SSH session to every machine in its sidebar, so a machine listed there never reads [unused](/docs/lifecycle#unused-machines) and never [freezes](/docs/lifecycle#frozen-machines). To take one out of the sidebar for a while, disable its entry. Its agents keep running.
 
 ```
 id=$(herdr machine list --json |

@@ -887,9 +887,11 @@ where to look.
 A machine nobody was using had its vCPUs paused (DECISIONS I-818) and
 would not resume. Nothing is lost yet: the guest's memory, its processes
 and its open files are where they were, and the project still reads
-`running`. What the owner sees is a machine that does not answer
-(``todo-app is running but did not answer ssh in 15 s``), so treat it as
-a tenant blocked, not as an idle machine.
+`running`. What the owner sees is the gateway's own refusal --
+``environment is frozen and did not wake; try again shortly`` -- usually
+under the CLI's ``todo-app is running but did not answer ssh in 15 s``,
+which is what wraps it. Treat it as a tenant blocked, not as an idle
+machine.
 
 1. Which guests are resting on the host, and which are not coming back:
    `hostd guests --json` on the host, and
