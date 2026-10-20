@@ -581,6 +581,12 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	}
 	switch g.State {
 	case StateRunning:
+		// A resting guest (I-818) is woken: a start is the api, or a
+		// user, asking for the machine, and the answer must not pretend
+		// a boot happened to a machine whose processes never stopped.
+		if err := m.wakeIfResting(ctx, g, WakeReasonCommand); err != nil {
+			return nil, err
+		}
 		// Nothing booted for this command, so it carries no timings, as
 		// create's running case does not (I-707).
 		return startResult(g, resent, "", nil), nil
@@ -899,6 +905,15 @@ func (mon *monitor) run() {
 
 func (mon *monitor) checkLost() {
 	m := mon.m
+	// A resting guest is paused, not lost (I-818). Its session normally
+	// stays open, so this check is not reached for it at all; whether
+	// Cloud Hypervisor closes the host side of vsock.sock on vm.pause is
+	// not measured, so the mark is suppressed either way. Moving lostAt
+	// forward also keeps a wake from being read as 60 s of silence.
+	if m.restingMark(mon.g.GuestID) != nil {
+		mon.lostAt = m.d.Now()
+		return
+	}
 	if !mon.lost && m.d.Now().Sub(mon.lostAt) >= m.cfg.GuestdLostAfter {
 		mon.lost = true
 		m.log(mon.g).Warn("guestd lost", "event", "guestd_lost")

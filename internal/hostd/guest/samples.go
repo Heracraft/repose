@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/hostinfo"
 	"github.com/heracraft/repose/internal/hostd/lvm"
@@ -86,6 +88,46 @@ func (m *Manager) advanceWait(guestID string, total uint64) uint64 {
 	cur.wait, cur.waitSeen = total, true
 	m.last[guestID] = cur
 	return d
+}
+
+// guestFigures is the last reading a guest wrote itself, kept so a
+// resting guest's sample can repeat it (S4): it is paused, so these are
+// still true of it. cpu_ns_delta and the net deltas are not here -- they
+// are the host's own counters, read every tick, and a resting guest's
+// read about zero, which is the point of the feature.
+type guestFigures struct {
+	signals  *hostdv1.GuestSignals
+	memUsed  uint64
+	rootUsed uint64
+	rootSize uint64
+}
+
+// keepGuestFigures records what a successful Sample read.
+func (m *Manager) keepGuestFigures(guestID string, gsm *hostdv1.GuestSample) {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	m.lastGuest[guestID] = guestFigures{
+		signals:  proto.Clone(gsm.Signals).(*hostdv1.GuestSignals),
+		memUsed:  gsm.GuestMemUsedBytes,
+		rootUsed: gsm.RootUsedBytes,
+		rootSize: gsm.RootSizeBytes,
+	}
+}
+
+// fillResting repeats the last figures the guest wrote on a resting
+// guest's sample, with guestd_ok true. With none kept (hostd restarted
+// under a resting guest) the signals are zero but still guestd_ok: an
+// idle machine is what they would say anyway, and `not guestd_ok` must
+// never be what a rest looks like.
+func (m *Manager) fillResting(guestID string, gsm *hostdv1.GuestSample) {
+	m.curMu.Lock()
+	f, ok := m.lastGuest[guestID]
+	m.curMu.Unlock()
+	if ok && f.signals != nil {
+		gsm.Signals = proto.Clone(f.signals).(*hostdv1.GuestSignals)
+		gsm.GuestMemUsedBytes, gsm.RootUsedBytes, gsm.RootSizeBytes = f.memUsed, f.rootUsed, f.rootSize
+	}
+	gsm.Signals.GuestdOk = true
 }
 
 // counterDelta is how far a cumulative counter moved since prev. A reading
@@ -225,7 +267,23 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			if drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap); ok {
 				gsm.NetRxBytesDelta, gsm.NetTxBytesDelta = drx, dtx
 			}
-			if sess, err := m.session(g.GuestID); err == nil {
+			if m.restingMark(g.GuestID) != nil {
+				// A resting guest is paused, not lost (S4 of
+				// docs/workstreams/18-idle-pause.md): guestd is paused
+				// with it, so there is no Sample to ask for -- and asking
+				// would spend this loop's 10 s per resting guest, in
+				// series, against a 60 s tick. The marker goes on the
+				// sample, the state stays `running`, and the last signals
+				// the guest wrote are repeated with guestd_ok true. Four
+				// other things read that: the api's unused notice (which
+				// counts `not guestd_ok` as use), the dashboard's Start
+				// and `repose start` (which would otherwise reboot a
+				// resting machine and lose every process), the
+				// repose_host_guestd_lost gauge and the CLI's "the
+				// environment's agent is not answering".
+				gsm.Resting = true
+				m.fillResting(g.GuestID, gsm)
+			} else if sess, err := m.session(g.GuestID); err == nil {
 				sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				sr, err := sess.Sample(sctx)
 				cancel()
@@ -237,6 +295,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 					gsm.CpuPressureUsDelta = m.advancePressure(g.GuestID, sr.GetCpuPressureUsTotal())
 					gsm.GuestMemUsedBytes = min(sr.GetMemUsedBytes(), maxGuestMem)
 					gsm.RootUsedBytes, gsm.RootSizeBytes = boundRootFS(sr.GetRootUsedBytes(), sr.GetRootSizeBytes(), gsm.DiskAllocBytes)
+					m.keepGuestFigures(g.GuestID, gsm)
 				} else {
 					lost++
 				}
@@ -351,6 +410,10 @@ type Status struct {
 	CID       uint32 `json:"vsock_cid"`
 	Unit      string `json:"unit"`
 	Virtiofsd string `json:"virtiofsd"`
+	// Resting is the idle pause's marker (I-818): the guest's vCPUs are
+	// stopped and its memory is resident. Its state stays `running`.
+	Resting   bool       `json:"resting"`
+	RestingAt *time.Time `json:"resting_at,omitempty"`
 	// Store is what the guest's virtiofsd shares: "view" (its own
 	// closure, I-463) or "whole-store" (started before I-463; restart the
 	// guest), empty when it is not running.
@@ -375,6 +438,10 @@ func (m *Manager) Guests(ctx context.Context) ([]Status, error) {
 		if g.Interrupted != nil {
 			at := g.Interrupted.At
 			st.InterruptedBootID, st.InterruptedAt = g.Interrupted.BootID, &at
+		}
+		if g.Resting != nil {
+			at := g.Resting.Since
+			st.Resting, st.RestingAt = true, &at
 		}
 		if a, _ := m.d.Systemd.IsActive(ctx, GuestUnit(g.GuestID)); a {
 			st.Unit = "active"

@@ -52,8 +52,8 @@ func TestEveryCommandKindIsHandled(t *testing.T) {
 		}
 		seen++
 	}
-	if seen != 14 {
-		t.Fatalf("expected 14 commands in the contract, saw %d", seen)
+	if seen != 16 {
+		t.Fatalf("expected 16 commands in the contract, saw %d", seen)
 	}
 }
 

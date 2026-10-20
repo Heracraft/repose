@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
@@ -270,6 +271,7 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 			if g.State != StateRunning {
 				_ = m.setState(g, StateRunning, "reconciled: hypervisor running") // logged inside; nothing else to do on failure
 			}
+			m.reconcileResting(ctx, g)
 			m.reshape(ctx, g)
 			m.startMonitor(g)
 			return
@@ -308,6 +310,37 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 			_ = virtiofs.StopAuth(ctx, m.d.Systemd, g.GuestID) // the same for the login share
 		}
 	}
+}
+
+// reconcileResting settles the idle pause's marker against the
+// hypervisor at hostd's start (I-818), so a guest that was resting is
+// still reported resting in Hello and its timer wake is armed again.
+// vm.info is read for a guest the record says rests: one whose vCPUs run
+// lost its pause (a freeze resumed it, or a `hostd thaw` did), and the
+// mark goes, because a mark nothing cleared would silence that guest's
+// samples for good.
+//
+// A guest whose vm.info says Paused with no mark is the leftover of a
+// freeze that did not finish, which ThawAll already owns -- and ThawAll
+// runs at the top of Reconcile, before the units are listed, so by here
+// it has had its turn.
+func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
+	if g.Resting == nil || g.State != StateRunning {
+		return
+	}
+	sock := ch.APISocket(m.guestDir(g.GuestID))
+	info, err := m.d.CH.Info(ctx, sock)
+	if err == nil && ch.VMState(info) != ch.StatePaused {
+		if err := m.setResting(g, nil, "reconciled"); err != nil {
+			m.log(g).Warn("resting mark not cleared at reconcile", "event", "guest_resting", "err", err.Error())
+		}
+		return
+	}
+	// Still paused, or a hypervisor that cannot be asked: the mark
+	// stands, and the next sample and the next pause read it again.
+	m.noteResting(g.GuestID, g.Resting)
+	m.armTimerWake(g)
+	m.log(g).Info("guest is still resting", "event", "guest_resting", "resting", true, "reason", "reconciled")
 }
 
 // reconcileGood keeps a guest's last good closure rooted (I-590), and

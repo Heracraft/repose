@@ -285,6 +285,28 @@ func (h *HTTP) Info(ctx context.Context, sock string) (json.RawMessage, error) {
 	return json.RawMessage(b), nil
 }
 
+// The VM states vm.info reports that hostd acts on.
+const (
+	StateRunning = "Running"
+	StatePaused  = "Paused"
+)
+
+// VMState is the `state` field of a vm.info body: "Running", "Paused",
+// "Created", "Shutdown" or "" when the body cannot be read. It is what
+// tells an idle pause (DECISIONS I-818) from a guest whose vCPUs run, and
+// the freeze reads it before pausing a guest that may be paused already:
+// Cloud Hypervisor refuses a second vm.pause, and that refusal once
+// discarded a freeze image and cost a guest its memory (I-796).
+func VMState(info json.RawMessage) string {
+	var v struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(info, &v); err != nil {
+		return ""
+	}
+	return v.State
+}
+
 func (h *HTTP) Version(ctx context.Context) (string, error) {
 	if h.VersionFn == nil {
 		return "", nil
@@ -313,12 +335,22 @@ func (f *Fake) Shutdown(_ context.Context, sock string) error {
 	return f.record("shutdown", sock)
 }
 
+// Pause refuses a VM that is paused already, as Cloud Hypervisor does
+// (vm.pause answers 404 for a VM that is not running): without that a
+// unit test of a freeze over an idle pause passes while the host loses
+// the guest's memory (DECISIONS I-818, I-796).
 func (f *Fake) Pause(_ context.Context, sock string) error {
-	err := f.record("pause", sock)
-	if err == nil {
-		f.setPaused(sock, true)
+	if err := f.record("pause", sock); err != nil {
+		return err
 	}
-	return err
+	f.mu.Lock()
+	already := f.paused[sock]
+	f.mu.Unlock()
+	if already {
+		return fmt.Errorf("ch: vm.pause: 404: the VM is not running")
+	}
+	f.setPaused(sock, true)
+	return nil
 }
 
 func (f *Fake) Resume(_ context.Context, sock string) error {

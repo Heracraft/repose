@@ -36,6 +36,24 @@ in
       description = "Machine hostname. The host id used everywhere else comes from registration, not from this.";
     };
 
+    pauseIdle = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Rest a guest nobody is using: its vCPUs stop and its memory stays
+        resident on this host, every process and socket survives, and
+        anything that reaches the machine wakes it (DECISIONS I-818).
+        This is what puts `pause` in the host's Hello, so an api asks a
+        host without it for no pause and no wake.
+
+        Off by default, and a host opts in the way it opts into the
+        freeze: a plain vm.pause and vm.resume of a guest with two
+        vhost-user devices is measured on no repose host yet, and I-652
+        records that a *snapshotted* VM must not be resumed at all
+        because its virtio-fs stops answering.
+      '';
+    };
+
     provider = lib.mkOption {
       type = lib.types.enum [ "azure" "none" ];
       default = "azure";

@@ -99,7 +99,10 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 		return nil, e
 	}
 	if g.State == StateRunning {
-		sess, serr := m.session(g.GuestID)
+		// The fsfreeze needs guestd, so a resting guest is woken first:
+		// without this every resting guest produced one failed snapshot
+		// and one freeze_timeout warning a night (I-818).
+		sess, serr := m.sessionAwake(ctx, g)
 		if serr != nil {
 			return failed(serr)
 		}

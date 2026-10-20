@@ -333,6 +333,10 @@ func cmd(c any) *hostdv1.Command {
 		out.Cmd = &hostdv1.Command_Drain{Drain: v}
 	case *hostdv1.AnswerQuestion:
 		out.Cmd = &hostdv1.Command_AnswerQuestion{AnswerQuestion: v}
+	case *hostdv1.PauseGuest:
+		out.Cmd = &hostdv1.Command_PauseGuest{PauseGuest: v}
+	case *hostdv1.WakeGuest:
+		out.Cmd = &hostdv1.Command_WakeGuest{WakeGuest: v}
 	}
 	return out
 }
@@ -381,6 +385,24 @@ func (h *harness) create(id string) *hostdv1.Result {
 	req := createReq(id)
 	req.SystemClosure = h.closure
 	return h.mustOK(cmd(req))
+}
+
+// restart models hostd coming back: a new Manager with a new registry
+// over the same state, host and fakes. Reconcile is the caller's, since
+// what it settles is often what the test is about.
+func (h *harness) restart() {
+	h.t.Helper()
+	h.m.Close()
+	d := h.m.d
+	d.Metrics = metrics.New()
+	h.metrics = d.Metrics
+	m2, err := New(h.cfg, d)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	m2.Run()
+	h.t.Cleanup(m2.Close)
+	h.m = m2
 }
 
 func (h *harness) guest(id string) *state.Guest {

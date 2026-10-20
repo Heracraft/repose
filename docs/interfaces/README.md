@@ -20,6 +20,12 @@ Naming rules across all of them: ids are UUIDv7 strings; timestamps are RFC
 3339 UTC; sizes are bytes as integers; durations are seconds as integers;
 enums are lower_snake strings; the size class enum is `small|large|xl`; the
 guest state enum is `creating|building|starting|running|stopping|stopped|
-restoring|destroying|destroyed|error`. The api's error codes are listed in
+restoring|destroying|destroyed|error`. `resting` is **not** an eleventh
+state (DECISIONS I-818): it is a marker on a guest that is still
+`running`, carried beside the state on the wire
+(`GuestStatus.resting_at`, `GuestSample.resting`), on the row
+(`projects.resting_since`) and in hostd's bbolt record, because the
+guest's vCPUs are stopped but its memory, its processes and the minute it
+bills are all still there. The api's error codes are listed in
 [api.md](api.md) (the error envelope at the top); hostd's are in
 [grpc-hostd.md](grpc-hostd.md).

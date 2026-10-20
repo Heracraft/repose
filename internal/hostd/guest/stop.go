@@ -87,6 +87,13 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 	if timeoutS == 0 {
 		timeoutS = m.cfg.StopTimeoutS
 	}
+	// A resting guest cannot process a shutdown request (I-818), so the
+	// stop would wait out its whole timeout before escalating to the
+	// hypervisor. A wake that fails changes nothing here: the escalation
+	// below stops the guest either way.
+	if err := m.wakeIfResting(ctx, g, WakeReasonCommand); err != nil {
+		m.log(g).Warn("guest not woken before the stop", "event", "guest_resting", "code", err.Code)
+	}
 	if err := m.setState(g, StateStopping, ""); err != nil {
 		return errf(CodeInternal, "%v", err)
 	}
@@ -237,7 +244,7 @@ func (m *Manager) resize(ctx context.Context, c *hostdv1.ResizeVolume) *Error {
 		if err := m.d.CH.ResizeDisk(ctx, ch.APISocket(m.guestDir(g.GuestID)), ch.DiskID, c.NewBytes); err != nil {
 			return errf(CodeInternal, "cloud-hypervisor resize-disk: %v", err)
 		}
-		sess, err := m.session(g.GuestID)
+		sess, err := m.sessionAwake(ctx, g)
 		if err != nil {
 			return err
 		}
