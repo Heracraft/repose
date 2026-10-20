@@ -24172,7 +24172,7 @@ finding two releases with no notes at all.
   them.
 
 **I-818. A machine nobody is using rests, and comes back at once.**
-(idle-pause, 2026-10-20; the mechanism of
+(idle-pause, 2026-10-20; amends R1-5, I-262 and I-235; the mechanism of
 `../proposals/2026-10-11-pause-idle-machines.md` M2 without its swap, and
 a departure from that proposal's §6) A `running` machine whose project
 passes the rule below has its vCPUs paused with `vm.pause`. Its memory
@@ -24238,6 +24238,31 @@ and an idle machine is not free -- `.claude-wrapped` at its prompt took
   I-290's seat and the public text in `billing.md` and `limits.md` are
   unchanged, because a resting machine holds its plan memory exactly as a
   running one does. I-828 records what the memory half would need.
+- *It is I-235's own option 1,* which the owner chose first and nobody
+  built: "`stop` pauses the VM and leaves its memory resident on the host
+  ... No image, so no new home for secrets". What I-235 attached to a
+  `stop` this attaches to idleness, and I-652 already set the precedent
+  for the rest of the shape: a guest whose hypervisor is paused keeps its
+  bbolt state `running`, because the state enum is fixed.
+- *Off until a host is told otherwise.* hostd names `pause` in
+  `Hello.features` only where `repose.host.pause.enable` is set, so the
+  api pauses nothing on a host that has not been switched on. This is
+  I-652's and I-686's pattern, and it exists because of the one thing
+  nobody has measured: I-652 records that with Cloud Hypervisor 53 and
+  virtiofsd 1.14 a VM **must not be resumed after a snapshot**, since its
+  virtio-fs stops answering. A plain pause and resume of a guest with two
+  vhost-user devices is a different path and is measured on no repose
+  host. Until it is, the switch is how a host opts in, and the live check
+  in `../workstreams/18-idle-pause.md` is what closes it.
+- *The one promise it breaks.* An outbound connection the guest left idle
+  across a rest may be gone: repose's Azure NAT gateway drops a flow
+  idle for 30 minutes (`nat_idle_timeout_minutes`), and a remote server
+  drops one on its own timeout, on any host. Processes, memory and files
+  survive; a socket that timed out does not, and the job on the other end
+  of it must reconnect. Whether Claude Code, Codex and an MCP server do
+  reconnect is unverified, which is why the rule's network term is 64 KiB
+  a minute rather than zero, why `keep_awake` exists (I-820), and why
+  `lifecycle.md` says it in the user's own words.
 - *Metrics.* `repose_host_guests_resting`,
   `repose_host_guest_pause_total{reason,outcome}`,
   `repose_host_guest_wake_seconds` and
@@ -24313,6 +24338,18 @@ does not know it needs. That is what makes the following safe.
   within 15 minutes, and arms a wake for the rest. `machine.md` promises
   timers run with nobody attached, and that promise is older than this
   feature.
+- *The nightly snapshot wakes it too.* `DESIGN.md` promises every
+  snapshot a `fsfreeze -f /` in the guest, and a paused guest runs
+  nothing. hostd's own 03:00 snapshot therefore wakes a resting machine,
+  takes it, and leaves it to rest again after its next 15 quiet minutes:
+  one wake a night, against a crash-consistent snapshot of a machine
+  whose filesystem nobody quiesced. I-594's crash-consistent path stays
+  what it is -- the fallback when a guest cannot answer, not the normal
+  case for a machine that is only asleep.
+- *A thaw clears the marker.* A guest that was resting when the host
+  restarted comes back from its image through I-652's thaw, which
+  restores and resumes it; it comes back awake, and rests again when the
+  rule says so.
 - *The sampler is the one caller that must not wake.* It would wake every
   resting machine once a minute, which is the feature undone.
 
@@ -24368,6 +24405,12 @@ about the host-restart freeze and in no string a user reads.
   memory. The two overlap often and are not the same fact. The
   dashboard's two breakpoints now agree about them, which the mock's did
   not.
+- *`--frost` is the one cyan in the web app,* and this entry is the
+  allowance `CHECKLIST.md`'s colour grep needs: frozen is painted in
+  cyan-700 (light) and cyan-300 (dark) because blue is spent on links,
+  focus and selection, so a frozen machine painted in the accent would
+  read as a link or as a measure. I-683 shipped the token with no entry
+  to point the grep at; the grep has been red on main since.
 - *Nothing announces a pause.* No notification, no event a user reads, no
   line on `run` or `attach`. A pause is invisible by design, and a notice
   about it is help nobody asked for (I-485). A wake that failed is the

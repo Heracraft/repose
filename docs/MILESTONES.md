@@ -118,6 +118,9 @@ running machines and the guest freeze on prod), and the herdr laptop checks.*
 
 ## Later, in order of likely demand
 
-Preview URLs. Idle auto-stop (needs M1 signals for a month). `repose mcp
-forward`. Telegram and Discord. Hetzner host module. Per-project LUKS. Teams.
+Idle auto-stop left this list on 2026-10-20 without being built: the
+signals it waited for say an idle machine should **rest**, not stop, and
+that is DECISIONS I-818 and `workstreams/18-idle-pause.md`.
+
+Preview URLs. `repose mcp forward`. Telegram and Discord. Hetzner host module. Per-project LUKS. Teams.
 Central builder. Automatic capacity.
