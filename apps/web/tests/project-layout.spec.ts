@@ -5,7 +5,14 @@
 // machine runs, a machine in error offers Restart, and the sections come
 // in the order a visit needs them (DECISIONS I-680, I-837).
 import { test, expect, type Locator } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addEvents, setAgents } from './helpers';
+import {
+	signIn,
+	createProject,
+	destroyProject,
+	apiURLFromEnv,
+	addEvents,
+	setAgents
+} from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -276,7 +283,7 @@ test('Destroy opens its typed confirm and Keep it gives focus back', async ({ pa
 
 // On a phone the header's action is one row under the status line in
 // every state, so the remote and the state stay under the title.
-test('on a phone the header action sits under the status line', async ({ page }) => {
+test('on a phone the header action is the first row under the tabs', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const p = await project('phone-head', 0);
 	for (const [state, name] of [
@@ -286,12 +293,29 @@ test('on a phone the header action sits under the status line', async ({ page })
 		if (state === 'stopped') await stop(p.id);
 		await page.goto(`/projects/${p.id}`);
 		await expect(page.getByTestId('project-state')).toHaveText(state);
-		const status = await page.getByTestId('project-state').boundingBox();
 		const action = await page.getByRole('button', { name, exact: true }).boundingBox();
 		const tabs = await page.getByRole('navigation', { name: 'Project' }).boundingBox();
-		expect(action!.y).toBeGreaterThan(status!.y + status!.height);
-		expect(action!.y + action!.height).toBeLessThan(tabs!.y);
+		const first = await page.locator('.pgrid > *').first().boundingBox();
+		expect(action!.y).toBeGreaterThan(tabs!.y + tabs!.height);
+		expect(action!.y + action!.height).toBeLessThan(first!.y);
 	}
+});
+
+// One head on every tab (review r3 sys3-1): the strip does not move under
+// the pointer from tab to tab, and the state shows on each.
+test('the tab strip sits at one y on Overview, Config and Secrets', async ({ page }) => {
+	const p = await project('tabs-y', 0);
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		const ys: number[] = [];
+		for (const path of ['', '/config', '/secrets']) {
+			await page.goto(`/projects/${p.id}${path}`);
+			await expect(page.getByTestId('project-state')).toHaveText('running');
+			ys.push((await page.locator('.hk-tabs').boundingBox())!.y);
+		}
+		expect(Math.max(...ys) - Math.min(...ys), `at ${width}: ${ys.join(', ')}`).toBeLessThan(0.5);
+	}
+	await destroyProject(apiURLFromEnv(), p.id);
 });
 
 // Machine shows one disk size: the meter's. The volume behind it is read

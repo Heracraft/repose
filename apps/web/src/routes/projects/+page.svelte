@@ -55,6 +55,7 @@
 	import { frozenSince } from '$lib/frozen';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusOnMount } from '$lib/focus';
+	import { tabStopWhenScrolls } from '$lib/scroller';
 
 	let projects = $state<Project[] | undefined>(undefined);
 	/** The first load failed; the poll keeps trying, and Retry asks now. */
@@ -650,15 +651,9 @@
 						<a href={resolve('/projects')} class="hk-link">Clear</a>
 					</div>
 				{:else}
-					<!-- From 640px, a table: a region with a name and a tab stop,
-					     since between 640 and 1024 it may scroll sideways. -->
-					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-					<div
-						class="hk-table-wrap hidden sm:block"
-						role="region"
-						aria-label="Projects"
-						tabindex="0"
-					>
+					<!-- From 640px, a table. Where it scrolls sideways (640 to 1024
+					     with long names) it is a named region with a tab stop. -->
+					<div class="hk-table-wrap hidden sm:block" use:tabStopWhenScrolls={'Projects'}>
 						<table class="hk-table hk-table--hover ptable">
 							<thead>
 								<tr>

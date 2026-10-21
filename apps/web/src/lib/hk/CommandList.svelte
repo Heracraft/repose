@@ -14,8 +14,20 @@
 	   projects list): one near-black pane, one command per 40px row, each
 	   with its own Copy that copies that row alone. Rows scroll sideways
 	   inside the pane and never wrap. No bar unless `title`. */
+	import { MediaQuery } from 'svelte/reactivity';
 	import CopyButton from './CopyButton.svelte';
 	import { tabStopWhenScrolls } from '$lib/scroller';
+
+	// Below 400px Copy drops its word (the name stays "Copy {what}" and the
+	// box 44px): at 320 the word took 70px of a 280px row and cut the
+	// command short (review r3 sys3-2).
+	const narrow = new MediaQuery('max-width: 399.98px');
+
+	/** A line scrolled to its end shows its last characters unfaded. */
+	function markEnd(e: Event) {
+		const el = e.currentTarget as HTMLElement;
+		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+	}
 
 	let {
 		commands,
@@ -39,11 +51,17 @@
 		{#each commands as c (c.command)}
 			<li class="row" class:has-note={!!c.note}>
 				<!-- A tab stop only while the line is wider than the pane. -->
-				<div class="line" use:tabStopWhenScrolls>
+				<div class="line" use:tabStopWhenScrolls onscroll={markEnd}>
 					{#if c.note}<span class="note"># {c.note}</span>{/if}
 					<code><span class="prompt" aria-hidden="true">$&nbsp;</span>{c.command}</code>
 				</div>
-				<CopyButton text={c.command} label="Copy" ariaLabel="Copy {c.what}" tone="dark" size="sm" />
+				<CopyButton
+					text={c.command}
+					label={narrow.current ? undefined : 'Copy'}
+					ariaLabel="Copy {c.what}"
+					tone="dark"
+					size="sm"
+				/>
 			</li>
 		{/each}
 	</ul>
@@ -83,6 +101,11 @@
 		font-size: 0.8125rem;
 		line-height: 1.25rem;
 		white-space: pre;
+	}
+	/* A line cut at the pane's edge fades over its last 1.5rem, so the cut
+	   reads as more text; scrolled to its end, it shows plain. */
+	.line:global([data-scrolls='true']:not([data-end='true'])) {
+		mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
 	}
 	.line:focus-visible {
 		outline: none;

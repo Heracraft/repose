@@ -28,6 +28,7 @@
 	} from '$lib/menuSelection';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
+	import ProjectMeta from '$lib/components/project/ProjectMeta.svelte';
 	import NixEditor from '$lib/components/NixEditor.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { CatalogItem, Config, Project, Revision } from '$lib/api/types';
@@ -341,7 +342,10 @@
 	title={project?.name ?? (loadFailed ? 'Config' : '…')}
 	crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 >
-	{#snippet tabs()}<ProjectTabs {id} />{/snippet}
+	{#snippet tabs()}
+		{#if project}<ProjectMeta {project} />{/if}
+		<ProjectTabs {id} />
+	{/snippet}
 	<LoadState
 		status={project && config ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={load}
@@ -617,15 +621,17 @@
 							>
 								<ul class="rev-list">
 									{#each shownRevisions as rev (rev.revision_id)}
+										{@const live =
+											rev.status === 'applied' && rev.revision_id === config?.revision_id}
 										<li class="rev">
 											<span class="rev-date">{dateTime(rev.created_at)}</span>
 											<span class="rev-status"
 												>{#if rev.status === 'failed'}<span
 														class="hk-dot hk-dot--err"
 														aria-hidden="true"
-													></span>{/if}{rev.status}</span
+													></span>{/if}{live ? 'current' : rev.status}</span
 											>
-											{#if rev.status !== 'building'}
+											{#if rev.status !== 'building' && !live}
 												<button
 													type="button"
 													class="hk-btn-ghost hk-btn-sm rev-apply"

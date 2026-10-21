@@ -169,9 +169,8 @@
 				{#if meta.effective}
 					<p class="mt-2 text-compact text-ink-3">Effective {longDate(meta.effective)}</p>
 				{/if}
-				{#if meta.status}
-					<p class="hk-banner mt-5 mb-0">Draft: {meta.status}</p>
-				{/if}
+				<!-- The policy links before the draft banner, which is a different
+				     height on each policy or missing: the row keeps one y. -->
 				<nav aria-label="Policies" class="phone-links mt-5 flex gap-5 md:hidden">
 					{#each links as link (link.href)}
 						<a href={link.href} aria-current={page.url.pathname === link.href ? 'page' : undefined}
@@ -179,6 +178,9 @@
 						>
 					{/each}
 				</nav>
+				{#if meta.status}
+					<p class="hk-banner mt-5 mb-0">Draft: {meta.status}</p>
+				{/if}
 				<div class="mt-6 border-t border-hairline sm:mt-8">
 					{#if rendered.sections.length > 1}
 						<!-- Below 1280 there is no rail, so the sections fold in here, as on the docs. -->

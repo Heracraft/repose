@@ -15,6 +15,7 @@
 	import { dateTime } from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
+	import ProjectMeta from '$lib/components/project/ProjectMeta.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { Project, SecretMeta } from '$lib/api/types';
@@ -170,7 +171,10 @@
 	title={project?.name ?? (loadFailed ? 'Secrets' : '…')}
 	crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 >
-	{#snippet tabs()}<ProjectTabs {id} />{/snippet}
+	{#snippet tabs()}
+		{#if project}<ProjectMeta {project} />{/if}
+		<ProjectTabs {id} />
+	{/snippet}
 	<LoadState
 		status={secrets !== undefined ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={load}

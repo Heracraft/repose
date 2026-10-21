@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { frozenSince } from '$lib/frozen';
 	import { onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { page } from '$app/state';
@@ -29,20 +28,10 @@
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
 	import { pollWhileVisible, pollUntilDone } from '$lib/poll';
-	import {
-		bytes,
-		classMemoryGB,
-		classVCPUs,
-		dateOnly,
-		dateTime,
-		gb,
-		normalizeRemoteDisplay,
-		tempLeft,
-		uptime
-	} from '$lib/format';
+	import { bytes, dateOnly, dateTime, gb } from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
-	import StateDot from '$lib/components/StateDot.svelte';
+	import ProjectMeta from '$lib/components/project/ProjectMeta.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import ErrorView from '$lib/components/ErrorView.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
@@ -660,17 +649,7 @@
 
 	let revision = $derived(revisions.find((r) => r.revision_id === project?.config_revision_id));
 
-	// The size's cores (the api calls the field vcpus), for the status
-	// line, which has to say them for a
-	// stopped machine too: a stopped machine is not sampled, so the
-	// samples payload's own `vcpus` is not there to read (I-492). The
-	// figure lives in format.ts, pinned to scheduler.ClassVCPU by
-	// plans.test.ts (DECISIONS I-784, amending R3-2).
-	let vcpus = $derived(project ? classVCPUs(project.class) || undefined : undefined);
-
 	/** The sentence after "code: " in last_error, as the projects list shows it. */
-	/** When the machine was frozen while idle, behind the flag (I-683). */
-	let frozen = $derived(project ? frozenSince(project) : undefined);
 	let errorReason = $derived.by(() => {
 		if (!project || project.state !== 'error' || !project.last_error) return '';
 		const i = project.last_error.indexOf(': ');
@@ -713,8 +692,9 @@
 			>{:else}{part.text}{/if}{/each}{/snippet}
 
 <!-- The header's action: one row at the title's baseline from 640px; on a
-     phone, one row under the status line, in the same place whatever the
-     state (rendered in the tabs snippet there, so PageShell draws none). -->
+     phone, the first row under the tabs, in the same place whatever the
+     state. Under the tabs, so the head and the strip sit where Config's and
+     Secrets' do (review r3 sys3-1). -->
 {#snippet headActions()}
 	<div class="acts">
 		{#if project?.state === 'stopped'}
@@ -758,58 +738,9 @@
 {/snippet}
 
 <!-- The remote, the state and the size under the title, then the tabs on
-     the title's rule. The meta block rides at the top of PageShell's tabs
-     snippet until PageShell takes a snippet lede (request to FOUNDATION). -->
+     the title's rule: the same head on Config and Secrets (ProjectMeta). -->
 {#snippet tabs()}
-	{#if project}
-		<div class="project-meta">
-			{#if project.remote_url}
-				<p class="remote">
-					{#each normalizeRemoteDisplay(project.remote_url).split(/(?<=\/)/) as part, i (i)}{part}<wbr
-						/>{/each}
-				</p>
-			{/if}
-			<p class="status">
-				<span class="status-state" data-testid="project-state"
-					><StateDot state={project.state} frozen={!!frozen} /></span
-				>
-				<!-- Frozen reads as the list does, "frozen for 1h35m", with the
-				     size facts every other state shows (review r1 dash-r1-4). -->
-				{#if frozen}
-					<span class="status-frozen" data-testid="frozen" title="It wakes when you connect."
-						>for {uptime(frozen)}</span
-					>
-				{/if}
-				<span class="status-facts">
-					<span aria-hidden="true">·</span>
-					<span class="hk-mono" data-testid="project-class">{project.class}</span>
-					{#if vcpus}
-						<span aria-hidden="true">·</span>
-						<span>{vcpus} {vcpus === 1 ? 'core' : 'cores'}</span>
-						<span aria-hidden="true">·</span>
-						<span>{classMemoryGB(project.class)} GB</span>
-					{/if}
-					{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
-						<!-- The stored choice is the next start's; a running machine
-							     may still run tmux until it stops (I-502). -->
-						<span aria-hidden="true">·</span>
-						<span class="hk-mono">herdr</span>
-					{/if}
-					{#if project.state === 'running' && !frozen}
-						<span aria-hidden="true">·</span>
-						<span>up {uptime(project.started_at)}</span>
-					{/if}
-					{#if project.expires_at}
-						<span aria-hidden="true">·</span>
-						<span class="hk-badge hk-badge--outline" data-testid="project-temporary">temporary</span
-						>
-						<span class="whitespace-nowrap">{tempLeft(project.expires_at)}</span>
-					{/if}
-				</span>
-			</p>
-			{#if phone.current}{@render headActions()}{/if}
-		</div>
-	{/if}
+	{#if project}<ProjectMeta {project} />{/if}
 	<ProjectTabs {id} />
 {/snippet}
 
@@ -855,6 +786,7 @@
 		{tabs}
 		action={phone.current ? undefined : headActions}
 	>
+		{#if phone.current}<div class="phone-acts">{@render headActions()}</div>{/if}
 		{#if hasNotes}
 			<div class="notes">
 				{#if askingStop}
@@ -1192,41 +1124,8 @@
 		gap: 0.5rem;
 		min-height: 2.25rem;
 	}
-	.project-meta > .acts {
-		margin-top: 0.75rem;
-	}
-	.project-meta {
-		/* Under the title as its lede: pull back the tabs row's 1.25rem. */
-		margin: -0.875rem 0 1.25rem;
-	}
-	.remote {
-		margin: 0;
-		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
-		overflow-wrap: anywhere;
-	}
-	.status {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 0.5rem;
-		margin: 0.5rem 0 0;
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-	}
-	.status-state {
-		font-size: 0.875rem;
-		color: var(--hk-text);
-	}
-	.status-facts {
-		display: contents;
-	}
-	.status-frozen {
-		margin-left: -0.25rem;
-		font-size: 0.875rem;
-		color: var(--hk-text-2);
+	.phone-acts {
+		margin-bottom: 1.75rem;
 	}
 	.snap-check {
 		font-size: 0.8125rem;

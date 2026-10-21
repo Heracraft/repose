@@ -104,7 +104,7 @@
 					{#if overRun}
 						<p>
 							<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Running
-							<span class="nw">{gbs(compare.runningGB)}</span>, holds
+							<span class="nw">{gbs(compare.runningGB)}</span>, allows
 							<span class="nw">{gbs(p.memoryGB)}</span>
 						</p>
 					{/if}

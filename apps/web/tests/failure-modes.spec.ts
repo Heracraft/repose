@@ -261,3 +261,25 @@ test('a questions answer arriving after a failed list leaves the bar up', async 
 		await unfail('GET', '/projects');
 	}
 });
+
+// The root boundary (AppBoundary): a page that throws while it renders
+// shows the 500 page with Reload as its one primary, in the row of ways
+// back and at their size. On /projects there is no "Back to Projects".
+test('a /projects that throws while it renders offers Reload and Docs, at one size', async ({
+	page
+}) => {
+	await page.route('**/v1/projects/destroyed**', (r) =>
+		r.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+	);
+	await page.goto('/projects');
+	await expect(page.getByRole('heading', { level: 1, name: 'Something went wrong' })).toBeVisible();
+	const reload = page.getByRole('button', { name: 'Reload' });
+	const docs = page.locator('main#main').getByRole('link', { name: 'Docs' });
+	await expect(reload).toBeVisible();
+	await expect(docs).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Back to Projects' })).toHaveCount(0);
+	const r = (await reload.boundingBox())!;
+	const d = (await docs.boundingBox())!;
+	// One row: their centres line up.
+	expect(Math.abs(r.y + r.height / 2 - (d.y + d.height / 2))).toBeLessThan(2);
+});

@@ -400,6 +400,19 @@
 		return { cents: s.next_charge_cents ?? p.price_cents, on };
 	}
 
+	let overCents = $derived(billing?.usage?.overage_cents ?? 0);
+	/** Next charge is in the plan's list; the egress overage joins it there
+	 * (review r3 B1). A trial's Status already names its first charge, and
+	 * a failed payment's banner is the charge that matters (R1-A5). */
+	let nextShown = $derived(
+		!!sub &&
+			!!plan &&
+			!!nextCharge(sub, plan) &&
+			sub.status !== 'trialing' &&
+			sub.status !== 'past_due' &&
+			accountStatus !== 'suspended'
+	);
+
 	const apiPlan = (id: PlanId) => billing?.plans.find((p) => p.id === id);
 	/** A downgrade the account does not fit: the api refuses it (over_plan). */
 	const doesNotFit = (fp: PlanFigures) =>
@@ -560,8 +573,9 @@
 				</div>
 				<div class="cell">
 					<Meter label="Disk held" used={diskHeld} limit={limits.disk} />
-					{#if !diskOver && heaviest.length && diskHeld >= limits.disk * 0.8}
-						<!-- Who holds it, only once it nears the limit. -->
+					{#if heaviest.length && diskHeld >= limits.disk * 0.8}
+						<!-- Who holds it, once it nears the limit and while it is over,
+						     when the user picks what to shrink (review r3 B3). -->
 						<p class="note">
 							Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}
 						</p>
@@ -580,7 +594,9 @@
 						<p class="note note--over" data-testid="egress-over">
 							<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Over by {gbs(
 								Math.round((billing.usage.egress_gb - limits.egress) * 10) / 10
-							)}: {money(billing.usage.overage_cents)} on the next invoice at $0.05 a GB.
+							)}{nextShown
+								? ' at $0.05 a GB.'
+								: `: ${money(overCents)} on the next invoice at $0.05 a GB.`}
 						</p>
 					{:else if egressBy.length && billing.usage.egress_gb >= limits.egress * 0.5}
 						<p class="note">
@@ -793,15 +809,14 @@
 						</dd>
 					</div>
 				{/if}
-				<!-- A trial's Status already names its first charge. A failed
-				     payment's banner is the charge that matters, so no renewal
-				     shows beside it (review r1 R1-A5). -->
-				{#if nextCharge(sub, plan) && sub.status !== 'trialing' && sub.status !== 'past_due' && accountStatus !== 'suspended'}
+				{#if nextShown}
 					{@const next = nextCharge(sub, plan)!}
 					<div>
 						<dt>Next charge</dt>
 						<dd>
-							<span data-testid="next-charge">{money(next.cents)}</span> on {@render day(next.on)}
+							<span data-testid="next-charge">{money(next.cents)}</span>{overCents > 0
+								? ` + ${money(overCents)} egress`
+								: ''} on {@render day(next.on)}
 						</dd>
 					</div>
 				{/if}

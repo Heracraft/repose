@@ -27,7 +27,7 @@ test.afterAll(async () => {
 /** The table row of a project, found by its name's link. */
 function row(page: Page, name: string) {
 	return page
-		.getByRole('region', { name: 'Projects' })
+		.locator('.hk-table-wrap')
 		.locator('tr')
 		.filter({ has: page.getByRole('link', { name, exact: true }) });
 }
@@ -256,6 +256,29 @@ test("clicking a row's empty area opens the project", async ({ page }) => {
 	await expect(page.getByRole('heading', { level: 1, name: p.name })).toBeVisible();
 });
 
+test('the table takes a tab stop only while it scrolls sideways', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'table-stop-app',
+		remote_url: 'github.com/heracraft/table-stop-app'
+	});
+	litter.push(p.id);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/projects');
+	await expect(row(page, p.name)).toBeVisible();
+	const wrap = page.locator('.hk-table-wrap');
+	await expect(wrap).toHaveAttribute('data-scrolls', 'false');
+	await expect(wrap).not.toHaveAttribute('tabindex', /.*/);
+	await expect(wrap).not.toHaveAttribute('role', /.*/);
+	// Narrow enough that the table is wider than its box.
+	await page.setViewportSize({ width: 660, height: 900 });
+	await page.evaluate(() => {
+		const t = document.querySelector<HTMLElement>('.hk-table-wrap table');
+		if (t) t.style.minWidth = '900px';
+	});
+	await expect(wrap).toHaveAttribute('tabindex', '0');
+	await expect(page.getByRole('region', { name: 'Projects' })).toBeVisible();
+});
+
 test('Stop on a row stops the project', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'row-stop-app',
@@ -330,7 +353,7 @@ test.afterEach(async () => {
  * for first: without that every read here races the first paint.
  */
 async function names(page: Page): Promise<string[]> {
-	const cells = page.getByRole('region', { name: 'Projects' }).locator('tbody tr .pname');
+	const cells = page.locator('.hk-table-wrap').locator('tbody tr .pname');
 	await cells.first().waitFor({ state: 'attached' });
 	return cells.allInnerTexts();
 }

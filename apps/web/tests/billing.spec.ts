@@ -8,6 +8,7 @@ import {
 	setBilling,
 	resetBilling,
 	createProject,
+	destroyProject,
 	apiURLFromEnv
 } from './helpers';
 
@@ -294,6 +295,33 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await expect(page.getByTestId('disk-over')).toHaveCount(0);
 });
 
+// Over on egress and disk (review r3 B1, B3): the next charge carries the
+// overage, the egress note gives only the rate, and the projects that hold
+// the most disk stay named while it is over.
+test('over the plan, Next charge adds the egress and the disk names who holds the most', async ({
+	page
+}) => {
+	const heavy = await createProject(apiURLFromEnv(), {
+		name: 'heavy-app',
+		remote_url: 'github.com/heracraft/heavy-app'
+	});
+	await setBilling({ mode: 'active', plan: 'solo', egress_gb: 312.4, disk_held_gb: 140 });
+	await page.goto('/billing');
+	await expect(page.getByTestId('next-charge')).toHaveText('$39.00');
+	await expect(page.getByTestId('next-charge').locator('..')).toContainText(
+		'$39.00 + $3.12 egress on'
+	);
+	await expect(page.getByTestId('egress-over')).toHaveText('Over by 62.4 GB at $0.05 a GB.');
+	await expect(page.getByTestId('disk-over')).toBeVisible();
+	await expect(
+		page
+			.getByTestId('meter-disk-held')
+			.locator('..')
+			.locator('.note', { hasText: /^Most: / })
+	).toBeVisible();
+	await destroyProject(apiURLFromEnv(), heavy.id);
+});
+
 test('over its limits at 390, Solo keeps every meter inside This month and the page narrow', async ({
 	page
 }) => {
@@ -429,7 +457,7 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	// What runs now is set against each smaller plan, and a downgrade the
 	// account does not fit is not offered: its button waits (I-837).
 	await expect(page.getByTestId('change-plan').getByTestId('plan-solo')).toContainText(
-		'Running 16 GB, holds 8 GB'
+		'Running 16 GB, allows 8 GB'
 	);
 	const down = page.getByRole('button', { name: 'Downgrade to Solo' });
 	await expect(down).toHaveAttribute('aria-disabled', 'true');
@@ -469,14 +497,14 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');
 	await expect(page.getByRole('button', { name: /Upgrade/ })).toHaveCount(0);
-	// 24 GB runs and Plus holds 16: the card says so and its button waits.
+	// 24 GB runs and Plus allows 16: the card says so and its button waits.
 	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText(
-		'Running 24 GB, holds 16 GB'
+		'Running 24 GB, allows 16 GB'
 	);
 	const refused = page.getByRole('button', { name: 'Downgrade to Plus' });
 	await expect(refused).toHaveAttribute('aria-disabled', 'true');
 	// The reason on the card is the button's description.
-	await expect(refused).toHaveAccessibleDescription('Running 24 GB, holds 16 GB');
+	await expect(refused).toHaveAccessibleDescription('Running 24 GB, allows 16 GB');
 	await stopAll();
 });
 

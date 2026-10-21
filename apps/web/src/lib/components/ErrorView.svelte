@@ -7,18 +7,25 @@
 	// raw message.
 	import type { Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { authState } from '$lib/auth.svelte';
 
 	let {
 		status,
 		title,
-		children
+		children,
+		action
 	}: {
 		status: number;
 		title: string;
-		/** One line, or a control such as Reload. */
+		/** One line, or a form. */
 		children?: Snippet;
+		/** The page's one primary, such as Reload, drawn in the row of ways back. */
+		action?: Snippet;
 	} = $props();
+
+	// Projects is no way back from /projects itself.
+	let onProjects = $derived(page.url.pathname === resolve('/projects'));
 </script>
 
 <main id="main" tabindex="-1" class="frame error-view">
@@ -26,8 +33,11 @@
 	<h1 class="hk-h2 title">{title}</h1>
 	{#if children}<div class="extra">{@render children()}</div>{/if}
 	<div class="links">
-		{#if authState.authenticated}
+		{@render action?.()}
+		{#if authState.authenticated && !onProjects}
 			<a href={resolve('/projects')} class="hk-btn-secondary">Back to Projects</a>
+		{:else if authState.authenticated}
+			<a href={resolve('/docs')} class="hk-more">Docs</a>
 		{:else}
 			<a href={resolve('/docs')} class="hk-more">Docs</a>
 			<a href={resolve('/')} class="hk-more">Home</a>

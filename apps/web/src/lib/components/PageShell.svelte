@@ -136,6 +136,14 @@
 		align-items: center;
 		gap: 0.5rem;
 	}
+	/* Over tabs the action adds no height to the title row, so the strip
+	   sits at one y on a tab with an action and on one without (review r3
+	   sys3-1). It stays on the title's baseline. */
+	@media (min-width: 640px) {
+		.head--tabs .action {
+			margin-block: -0.75rem;
+		}
+	}
 	.tabs {
 		margin-top: 1.25rem;
 		border-bottom: 1px solid var(--hk-hairline);

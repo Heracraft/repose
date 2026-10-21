@@ -3,7 +3,7 @@
 // editor with Nix highlighting, Apply, build log streams, a failing
 // fragment shows the error block with the line highlighted."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, destroyProject, apiURLFromEnv } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -40,6 +40,31 @@ test('applying a menu selection shows the generated fragment on the Nix tab', as
 
 	await page.getByRole('tab', { name: 'Nix' }).click();
 	await expect(page.locator('.cm-content')).toContainText('pkgs.zig');
+});
+
+// The Revisions rail marks the live revision "current" and offers no
+// Re-apply on it; older applied ones keep both (review r3 r3-dash-1).
+test('the revisions rail marks the live revision current', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'rev-current-app',
+		remote_url: 'github.com/heracraft/rev-current-app'
+	});
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Menu' }).click();
+	await page.getByText('Zig', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	// Both revisions fall in one minute, so their order is not pinned here.
+	const rows = page.locator('.rev-list > li');
+	await expect(rows).toHaveCount(2);
+	const live = rows.filter({ has: page.locator('.rev-status', { hasText: 'current' }) });
+	const older = rows.filter({ has: page.locator('.rev-status', { hasText: 'applied' }) });
+	await expect(live).toHaveCount(1);
+	await expect(live.getByRole('button', { name: 'Re-apply' })).toHaveCount(0);
+	await expect(older).toHaveCount(1);
+	await expect(older.getByRole('button', { name: 'Re-apply' })).toBeVisible();
+	await destroyProject(apiURLFromEnv(), p.id);
 });
 
 // A selection with nixpkgs packages added by name (`repose config add gcc`,

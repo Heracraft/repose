@@ -12,9 +12,9 @@
 	{@render children()}
 	{#snippet failed()}
 		<ErrorView status={500} title="Something went wrong">
-			<button type="button" class="hk-btn-secondary hk-btn-sm" onclick={() => location.reload()}
-				>Reload</button
-			>
+			{#snippet action()}
+				<button type="button" class="hk-btn" onclick={() => location.reload()}>Reload</button>
+			{/snippet}
 		</ErrorView>
 	{/snippet}
 </svelte:boundary>
