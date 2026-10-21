@@ -24401,6 +24401,40 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   count; machine.nix has no head under its own tab. Standalone links take
   a 44px box on touch (`hk-tap`), command rows are 44px on touch, and in
   forced colours a waiting dot is square and an error dot a diamond.
+- *Frozen look prototypes, amendment 2026-10-21.* The owner asked for a
+  sleek, realistic frozen effect ("icy blurred background with realistic
+  ice colors. Or maybe only the edge"). Five looks are built, dev only,
+  and none replaces I-683's yet: `?frost=<look>` on any dashboard URL
+  (`lib/frost.svelte.ts`, kept for the tab) sets `data-frost` on `<html>`,
+  the ice tokens (`--hk-ice-*`) are in repose.css, and `lib/hk/frost.css` styles the surfaces that opt in with
+  `data-frost-on` (a /projects row, the project head, the Machine
+  section) and the state word (`[data-frozen]`). `ink`: the flake and word
+  in measured ice ink. `rime`: a crust of rime grain on a row's bottom
+  rule and the head's tab rule, the Machine section's leading edge.
+  `pane`: cloudy ice, low streaked clouds with rime at the edges. `window`:
+  patchy window frost grown in from the edges, the state word a frosted
+  chip in rows. `glaze`: a clear-ice sheet with a lit top edge and one
+  streak. The rail shows a hexagonal ice bead in every look but `off` and
+  `ink`. /design shows all six side by side. Colours are measured from
+  photos of glacier, iceberg, hoarfrost, rime and window frost (hue 198
+  to 221, saturation 17 to 57 percent); textures are feTurbulence inside
+  SVG data URIs used as masks or row backgrounds, which the CSP allows,
+  so no `backdrop-filter`. A table row takes neither a mask nor an
+  absolutely positioned pseudo-element (Chrome wraps it in a cell), so
+  rows carry the textures as backgrounds with the colour baked in per
+  theme, fading to the page by the size column so a frozen row is never
+  a band. Text on a texture steps up one ink (`--hk-text-3` takes
+  `--hk-text-2`). The worst pixel under every text run on both pages is
+  4.53:1 or better in every look, both themes, at 1440 and 390
+  (`.dev/tmp-frost/contrast.mjs` in the frost worktree). Forced colours
+  drop every wash and texture and draw the bead in GrayText; reduced
+  transparency drops the clouds and the sheen; nothing moves. Stopped
+  machines keep the hollow ring in every look, and only frozen ones take
+  frost, which a plan caps at 2 (Solo), 4 (Plus) or 8 (Pro) machines, so
+  a long project list costs the same few cached rasters. Frozen and
+  `?frost=` stay out of a production build (frozen.spec). The owner picks
+  a look; the one picked then supersedes I-683's look and the
+  DESIGN-LANGUAGE line "no band, no cyan and no row fill".
 - *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
   `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
   the rail's geometry at 1440 and 1024, the strip's end at 101px, one current

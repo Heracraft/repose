@@ -17,6 +17,7 @@
 	import { diskFullPercent } from '$lib/disk';
 	import { bytes, classMemoryGB, gb, gbs } from '$lib/format';
 	import type { Project } from '$lib/api/types';
+	import { frozenSince } from '$lib/frozen';
 
 	let {
 		project,
@@ -56,7 +57,12 @@
 	let canGrow = $derived(DISK_SIZES_GB.some((s) => s * GIB > project.volume_bytes));
 </script>
 
-<section class="hk-section machine" data-testid="machine-card" aria-labelledby="machine-title">
+<section
+	class="hk-section machine"
+	data-testid="machine-card"
+	data-frost-on={frozenSince(project) ? 'card' : undefined}
+	aria-labelledby="machine-title"
+>
 	<div class="hk-section-head">
 		<h2 id="machine-title" class="hk-h2-app">Machine</h2>
 	</div>

@@ -57,6 +57,7 @@
 	}
 	.frozen {
 		gap: 0.375rem;
-		color: var(--hk-text-2);
+		/* Ice ink under a frost look (lib/hk/frost.css). */
+		color: var(--hk-frozen-ink, var(--hk-text-2));
 	}
 </style>

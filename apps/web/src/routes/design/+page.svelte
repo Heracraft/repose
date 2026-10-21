@@ -18,6 +18,8 @@
 	import { PLANS } from '$lib/plans';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import type { GuestState } from '$lib/api/types';
+	import Snowflake from '$lib/components/Snowflake.svelte';
+	import { FROST_LOOKS, FROST_NOTES } from '$lib/frost.svelte';
 
 	const states: GuestState[] = ['running', 'creating', 'starting', 'stopping', 'stopped', 'error'];
 	let range = $state<'hour' | 'day' | 'week'>('day');
@@ -410,9 +412,185 @@
 			<button type="button" class="hk-btn">Apply</button>
 		</div>
 	</section>
+
+	<!-- The frozen-machine prototypes side by side (I-841 amendment, owner
+	     feedback 2026-10-21). Each box carries its own data-frost, the
+	     attribute lib/hk/frost.css keys on; on a real page ?frost=<look>
+	     sets it on <html>. -->
+	<section class="hk-section" id="frozen-looks" data-testid="frozen-looks">
+		<div class="hk-section-head"><h2 class="hk-h2-app">Frozen looks</h2></div>
+		<div class="frost-grid">
+			{#each FROST_LOOKS as look (look)}
+				<div class="frost-box" data-frost={look} data-testid="frost-{look}">
+					<p class="frost-name"><code>?frost={look}</code> {FROST_NOTES[look]}</p>
+					<div class="frost-head" data-frost-on="head">
+						<p class="frost-crumb">Projects</p>
+						<p class="frost-title hk-h1-app">ml-pipeline</p>
+						<p class="frost-meta">
+							<StateDot state="running" frozen />
+							<span>for 1h35m · <span class="hk-mono">large</span> · 8 GB</span>
+						</p>
+						<p class="frost-tabs">
+							<span class="frost-tab-on">Overview</span><span>Events</span><span>Usage</span>
+						</p>
+					</div>
+					<table class="hk-table frost-table">
+						<tbody>
+							<tr data-frost-on="row">
+								<td><span class="frost-row-name">ml-pipeline</span></td>
+								<td><StateDot state="running" frozen /><span class="frost-sub">for 1h35m</span></td>
+							</tr>
+							<tr>
+								<td><span class="frost-row-name">billing-api</span></td>
+								<td><StateDot state="running" /><span class="frost-sub">up 5m</span></td>
+							</tr>
+							<tr>
+								<td><span class="frost-row-name">old-blog</span></td>
+								<td
+									><StateDot state="stopped" /><span class="frost-sub">last run 3 days ago</span
+									></td
+								>
+							</tr>
+						</tbody>
+					</table>
+					<div class="frost-split">
+						<ul class="frost-rail" aria-label="Rail marks">
+							<li>
+								<span class="frost-mark" aria-hidden="true"
+									>{#if look === 'off' || look === 'ink'}<Snowflake size={12} />{:else}<span
+											class="hk-ice-bead"
+										></span>{/if}</span
+								>ml-pipeline
+							</li>
+							<li>
+								<span class="frost-mark" aria-hidden="true"
+									><span class="hk-dot hk-dot--on"></span></span
+								>billing-api
+							</li>
+							<li>
+								<span class="frost-mark" aria-hidden="true"
+									><span class="hk-dot hk-dot--idle"></span></span
+								>old-blog
+							</li>
+						</ul>
+						<section class="frost-card" data-frost-on="card" aria-label="Machine, {look}">
+							<p class="frost-card-title">Machine</p>
+							<Meter
+								label="Memory in use"
+								used={3.6}
+								limit={8}
+								valueText="3.6 GB of 8 GB"
+								testid="frost-mem-{look}"
+							/>
+						</section>
+					</div>
+				</div>
+			{/each}
+		</div>
+	</section>
 </PageShell>
 
 <style>
+	.frost-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+		gap: 1rem;
+	}
+	.frost-box {
+		padding: 1rem 1.5rem 1.5rem;
+		border: 1px solid var(--hk-hairline);
+		border-radius: var(--hk-radius-lg, 12px);
+		background: var(--hk-bg);
+		overflow: hidden;
+	}
+	.frost-name {
+		margin: 0 0 3.25rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.frost-crumb {
+		position: absolute;
+		top: -2rem;
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.frost-head {
+		margin-bottom: 1.25rem;
+		border-bottom: 1px solid var(--hk-border);
+	}
+	.frost-title {
+		margin: 0;
+		font-family: var(--hk-font-display);
+		font-weight: 400;
+	}
+	.frost-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.5rem 0 1rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.frost-tabs {
+		display: flex;
+		gap: 1.5rem;
+		margin: 0;
+		padding-bottom: 0.625rem;
+		font-size: 0.875rem;
+		color: var(--hk-text-2);
+	}
+	.frost-tab-on {
+		color: var(--hk-text);
+	}
+	.frost-table td {
+		height: 3.25rem;
+	}
+	.frost-row-name {
+		font-weight: 500;
+	}
+	.frost-sub {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.frost-split {
+		display: grid;
+		grid-template-columns: 9rem 1fr;
+		gap: 1.25rem;
+		align-items: start;
+		margin-top: 1.25rem;
+	}
+	.frost-rail {
+		display: grid;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
+	.frost-rail li {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+	}
+	.frost-mark {
+		display: inline-flex;
+		justify-content: center;
+		width: 0.75rem;
+		color: var(--hk-frozen-ink, var(--hk-text-2));
+	}
+	.frost-mark .hk-dot {
+		width: 6px;
+		height: 6px;
+	}
+	.frost-card-title {
+		margin: 0 0 0.75rem;
+		font-family: var(--hk-font-display);
+		font-size: 1.125rem;
+	}
 	.g-row {
 		display: flex;
 		flex-wrap: wrap;

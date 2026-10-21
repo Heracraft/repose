@@ -22,5 +22,10 @@ test('a production build shows no frozen machine, even when the api says resting
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('project-state')).toHaveText('running');
 	await expect(page.getByTestId('frozen')).toHaveCount(0);
+	// The frost prototypes (?frost=, lib/frost.svelte.ts) are dev only too.
+	await page.goto(`/projects/${p.id}?frost=pane`);
+	await expect(page.getByTestId('project-state')).toHaveText('running');
+	await expect(page.locator('[data-frost-on]')).toHaveCount(0);
+	await expect(page.locator('html')).not.toHaveAttribute('data-frost');
 	await setResting(p.id, -1);
 });

@@ -1,0 +1,425 @@
+/* A frozen machine's look: dev prototypes (owner feedback 2026-10-21,
+   amending I-841; .dev/notes/frost-protos.md). A frozen machine is running
+   with its memory suspended while idle, and wakes when you connect (I-683).
+
+   The look is picked by data-frost on <html> (lib/frost.svelte.ts, ?frost=)
+   or on a /design gallery box: off, ink, rime, pane, window, glaze. Off is
+   I-683 as built, and nothing here applies to it. Surfaces opt in with
+   data-frost-on: row (a /projects row), head (the project page's head),
+   card (the Machine section); the state word is StateDot's [data-frozen].
+
+   Colour. Ice tokens measured from photos of glacier, iceberg, hoarfrost,
+   rime and window frost (frost-research.md): hue 198 to 221, saturation
+   17 to 57 percent, never a saturated cyan. Only the word and its flake
+   take a readable ice colour (--hk-ice-ink, 5.4:1 light, 10.6:1 dark); every
+   other ice token is decorative and never carries text.
+
+   Texture. Three SVG data URIs with feTurbulence inside, used as masks over
+   token colours, so one URI serves both themes and the browser rasterises
+   each once per size (CSP img-src data:). Grain is rime, cloud is cloudy
+   ice, blotch is the patchy front of window frost. No backdrop-filter:
+   a flat page has nothing behind a pane to blur.
+
+   Unlayered (like doc.css), so a rule here meets component styles on
+   specificity, not on layer order. */
+
+:root {
+	--hk-frost-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 12 -6.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29'/%3E%3C/svg%3E");
+	--hk-frost-cloud: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.005 .028' numOctaves='4' seed='8' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.2 -0.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23c%29'/%3E%3C/svg%3E");
+	--hk-frost-blotch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='200'%3E%3Cfilter id='b' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.03' numOctaves='5' seed='6' stitchTiles='stitch' result='n'/%3E%3CfeColorMatrix in='n' values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 7 -3.2' result='p'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch' result='g'/%3E%3CfeColorMatrix in='g' values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 12 -6.6' result='s'/%3E%3CfeComposite in='p' in2='s' operator='arithmetic' k1='.45' k2='.55' k3='.35' k4='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23b%29'/%3E%3C/svg%3E");
+}
+
+/* The ice tokens are in repose.css, with the other theme-dependent ones
+   (one scheme mechanism, docs/CHECKLIST.md). */
+
+/* ---------- Every look but off: ice ink ---------- */
+
+/* StateDot and the rail read --hk-frozen-ink, the secondary ink by default. */
+:root[data-frost] .hk,
+.hk [data-frost]:not([data-frost='off']) {
+	--hk-frozen-ink: var(--hk-ice-ink);
+}
+
+/* The memory a frozen machine holds is the thing that is frozen: its
+   meter fills in ice ink (3:1 and up against the track in both themes). */
+[data-frost]:not([data-frost='off']) [data-frost-on='card'] .hk-meter-fill {
+	background: var(--hk-ice-ink);
+}
+
+/* The rail's mark: a hexagonal bead of ice, the dot's size and slot. */
+.hk .hk-ice-bead {
+	display: block;
+	width: 9px;
+	height: 10px;
+	clip-path: polygon(50% 0, 96% 25%, 96% 75%, 50% 100%, 4% 75%, 4% 25%);
+	background: var(--hk-ice-bead);
+}
+
+/* Text on a textured surface steps up one ink: the faintest grey is 4.5:1
+   on a flat page, and clouds or frost behind it take that margin. */
+[data-frost='pane'] [data-frost-on],
+[data-frost='window'] [data-frost-on],
+[data-frost='glaze'] [data-frost-on] {
+	--hk-text-3: var(--hk-text-2);
+}
+
+/* ---------- Shared geometry ---------- */
+
+[data-frost] [data-frost-on]:not([data-frost-on='row']) {
+	position: relative;
+	isolation: isolate;
+}
+[data-frost] [data-frost-on]::before,
+[data-frost] [data-frost-on]::after {
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	-webkit-mask-repeat: repeat;
+	mask-repeat: repeat;
+}
+/* The head's material reaches into the gutter and above the title, so the
+   title keeps the column's left edge; its bottom edge is the tab rule. */
+[data-frost] [data-frost-on='head']::before,
+[data-frost] [data-frost-on='head']::after {
+	inset: -2.875rem -1.5rem 0;
+	border-radius: var(--hk-radius-xl) var(--hk-radius-xl) 0 0;
+}
+@media (max-width: 639.98px) {
+	[data-frost] [data-frost-on='head']::before,
+	[data-frost] [data-frost-on='head']::after {
+		inset: -2.75rem calc(-1 * var(--hk-gutter)) 0;
+		border-radius: 0;
+	}
+}
+
+/* ---------- rime: crust along the bottom edge ----------
+   Rime and hoarfrost settle on an edge and grow inward. The row's wash
+   rises from its bottom rule and fades by the state column; the grain
+   hugs the rule, densest at the leading corner, under no text. */
+
+/* The head: the same crust on the tab rule, across the head's width. */
+[data-frost='rime'] [data-frost-on='head']::before {
+	content: '';
+	inset: auto -1.5rem 0;
+	height: 4.5rem;
+	border-radius: 0;
+	background: var(--hk-ice-wash);
+	box-shadow: inset 0 -1px 0 var(--hk-ice-edge);
+	-webkit-mask-image:
+		linear-gradient(to top, #000 0 1px, rgb(0 0 0 / 0.85) 2px, transparent 100%),
+		linear-gradient(90deg, transparent 0, #000 1.5rem, rgb(0 0 0 / 0.6) 40%, transparent 85%);
+	-webkit-mask-composite: source-in;
+	mask-image:
+		linear-gradient(to top, #000 0 1px, rgb(0 0 0 / 0.85) 2px, transparent 100%),
+		linear-gradient(90deg, transparent 0, #000 1.5rem, rgb(0 0 0 / 0.6) 40%, transparent 85%);
+	mask-composite: intersect;
+}
+[data-frost='rime'] [data-frost-on='head']::after {
+	content: '';
+	inset: auto -1.5rem 0;
+	height: 1.25rem;
+	border-radius: 0;
+	background: var(--hk-ice-grain);
+	opacity: calc(var(--hk-ice-grain-o) * 1.6);
+	-webkit-mask-image:
+		var(--hk-frost-grain), linear-gradient(to top, #000 0, rgb(0 0 0 / 0.5) 4px, transparent 100%),
+		linear-gradient(90deg, transparent 0, #000 1.5rem, rgb(0 0 0 / 0.4) 35%, transparent 70%);
+	-webkit-mask-size:
+		160px 160px,
+		100% 100%,
+		100% 100%;
+	-webkit-mask-composite: source-in, source-in;
+	mask-image:
+		var(--hk-frost-grain), linear-gradient(to top, #000 0, rgb(0 0 0 / 0.5) 4px, transparent 100%),
+		linear-gradient(90deg, transparent 0, #000 1.5rem, rgb(0 0 0 / 0.4) 35%, transparent 70%);
+	mask-size:
+		160px 160px,
+		100% 100%,
+		100% 100%;
+	mask-composite: intersect, intersect;
+}
+@media (max-width: 639.98px) {
+	[data-frost='rime'] [data-frost-on='head']::before,
+	[data-frost='rime'] [data-frost-on='head']::after {
+		inset: auto calc(-1 * var(--hk-gutter)) 0;
+	}
+}
+/* The Machine section: frost on its leading edge, the text 1rem in. */
+[data-frost='rime'] [data-frost-on='card'] {
+	padding-left: 1rem;
+}
+[data-frost='rime'] [data-frost-on='card']::before {
+	content: '';
+	background: linear-gradient(90deg, var(--hk-ice-wash), transparent 9rem);
+	box-shadow: inset 1px 0 0 var(--hk-ice-edge);
+}
+[data-frost='rime'] [data-frost-on='card']::after {
+	content: '';
+	background: var(--hk-ice-grain);
+	opacity: calc(var(--hk-ice-grain-o) * 1.6);
+	-webkit-mask-image:
+		var(--hk-frost-grain), linear-gradient(90deg, #000 0, rgb(0 0 0 / 0.5) 4px, transparent 13px);
+	-webkit-mask-size:
+		160px 160px,
+		100% 100%;
+	-webkit-mask-composite: source-in;
+	mask-image:
+		var(--hk-frost-grain), linear-gradient(90deg, #000 0, rgb(0 0 0 / 0.5) 4px, transparent 13px);
+	mask-size:
+		160px 160px,
+		100% 100%;
+	mask-composite: intersect;
+}
+
+/* ---------- pane: cloudy ice ----------
+   The owner's "icy blurred background": low clouds streaked sideways, as
+   lake and window ice are, over a pale wash; rime grain thickens toward
+   the edges and leaves the middle, where the text is, clear. The grain is
+   a tile with its colour baked in, covered in the middle by the wash. */
+
+[data-frost='pane'] [data-frost-on]:not([data-frost-on='row'])::before {
+	content: '';
+	background:
+		radial-gradient(
+			farthest-corner at 50% 40%,
+			var(--hk-ice-wash) 68%,
+			color-mix(in srgb, var(--hk-ice-wash) 0%, transparent) 100%
+		),
+		var(--hk-frost-grain-img), var(--hk-ice-wash);
+	box-shadow:
+		inset 0 1px 0 var(--hk-ice-rim),
+		inset 0 0 0 1px var(--hk-ice-edge);
+}
+[data-frost='pane'] [data-frost-on]:not([data-frost-on='row'])::after {
+	content: '';
+	background: var(--hk-ice-cloud);
+	opacity: var(--hk-ice-cloud-o);
+	-webkit-mask-image: var(--hk-frost-cloud);
+	-webkit-mask-size: 600px 240px;
+	mask-image: var(--hk-frost-cloud);
+	mask-size: 600px 240px;
+}
+[data-frost='pane'] [data-frost-on='card'] {
+	padding: 1.25rem;
+}
+[data-frost='pane'] [data-frost-on='card']::before,
+[data-frost='pane'] [data-frost-on='card']::after {
+	border-radius: var(--hk-radius-lg);
+}
+
+/* ---------- window: frost grown in from every edge ----------
+   Window frost nucleates at the frame and grows inward as feathers. A
+   white crust glows along the inside of the edge, grain and fern sit
+   thick there and thin out, and the middle stays clear glass. */
+
+[data-frost='window'] [data-frost-on='head']::before,
+[data-frost='window'] [data-frost-on='card']::before {
+	content: '';
+	background: var(--hk-ice-window);
+	box-shadow:
+		inset 0 0 0 1px var(--hk-ice-edge),
+		inset 0 0 22px 3px var(--hk-ice-glow),
+		inset 0 1px 0 var(--hk-ice-rim);
+}
+/* Patches with ragged fronts, speckled with rime (one texture), grown in
+   from the edges: blotch ∩ (left-right ∪ top-bottom), composited bottom
+   up. Shallow on the left and top, where the text starts, deeper on the
+   right; the corners, where two fronts meet, are the heaviest, as on a
+   real pane. */
+[data-frost='window'] [data-frost-on='head']::after,
+[data-frost='window'] [data-frost-on='card']::after {
+	content: '';
+	background: var(--hk-ice-crust);
+	opacity: var(--hk-ice-crust-o);
+	mask-image:
+		var(--hk-frost-blotch),
+		linear-gradient(
+			90deg,
+			#000,
+			transparent 1.25rem,
+			transparent calc(100% - var(--frost-r, 4.5rem)),
+			#000
+		),
+		linear-gradient(
+			180deg,
+			#000,
+			transparent 0.875rem,
+			transparent calc(100% - var(--frost-b, 0.625rem)),
+			#000
+		);
+	mask-size:
+		400px 200px,
+		100% 100%,
+		100% 100%;
+	mask-composite: intersect, add;
+}
+@media (max-width: 639.98px) {
+	[data-frost='window'] [data-frost-on='head'] {
+		--frost-r: 1.5rem;
+	}
+}
+[data-frost='window'] [data-frost-on='card'] {
+	--frost-r: 1.25rem;
+	--frost-b: 1.125rem;
+	padding: 1.25rem;
+}
+[data-frost='window'] [data-frost-on='card']::before,
+[data-frost='window'] [data-frost-on='card']::after {
+	border-radius: var(--hk-radius-lg);
+}
+/* Rows have no room for a frame of frost: the state word becomes a small
+   frosted pane of its own. */
+[data-frost='window'] .state[data-frozen] {
+	position: relative;
+	isolation: isolate;
+	/* Pulled left so the flake keeps the column's edge; the right side
+	   takes its room, so the text after it does not move under it. */
+	margin: -0.1875rem 0 -0.1875rem -0.5rem;
+	padding: 0.1875rem 0.5rem;
+	border-radius: var(--hk-radius-6);
+	background: var(--hk-ice-wash);
+	box-shadow:
+		inset 0 0 0 1px var(--hk-ice-edge),
+		inset 0 0 6px 1px var(--hk-ice-glow),
+		inset 0 1px 0 var(--hk-ice-rim);
+}
+/* The stacked row starts at the column's edge: the chip does too. */
+[data-frost='window'] .mrow-meta .state[data-frozen] {
+	margin-left: 0;
+}
+[data-frost='window'] .state[data-frozen]::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	background: var(--hk-ice-grain);
+	opacity: calc(var(--hk-ice-grain-o) * 1.4);
+	-webkit-mask-image:
+		var(--hk-frost-grain),
+		linear-gradient(90deg, #000, transparent 6px, transparent calc(100% - 6px), #000);
+	-webkit-mask-size:
+		160px 160px,
+		100% 100%;
+	-webkit-mask-composite: source-in;
+	mask-image:
+		var(--hk-frost-grain),
+		linear-gradient(90deg, #000, transparent 6px, transparent calc(100% - 6px), #000);
+	mask-size:
+		160px 160px,
+		100% 100%;
+	mask-composite: intersect;
+}
+
+/* ---------- glaze: clear ice ----------
+   Clear ice is a cold blue-grey sheet, not frost: a tint deepening
+   downward, the top edge catching light, one soft specular streak. No
+   grain, so the sleekest of the five. */
+
+[data-frost='glaze'] [data-frost-on]:not([data-frost-on='row'])::before {
+	content: '';
+	background:
+		linear-gradient(
+			112deg,
+			transparent 0 18%,
+			var(--hk-ice-sheen) 24%,
+			transparent 31%,
+			transparent 62%,
+			color-mix(in srgb, var(--hk-ice-sheen) 50%, transparent) 66%,
+			transparent 70%
+		),
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--hk-ice-wash) 60%, transparent),
+			var(--hk-ice-wash)
+		);
+	box-shadow:
+		inset 0 1px 0 var(--hk-ice-rim),
+		inset 0 0 0 1px var(--hk-ice-edge);
+}
+[data-frost='glaze'] [data-frost-on]:not([data-frost-on='row'])::after {
+	content: '';
+	background: linear-gradient(
+		180deg,
+		transparent 55%,
+		color-mix(in srgb, var(--hk-ice-cloud) 22%, transparent)
+	);
+}
+[data-frost='glaze'] [data-frost-on='card'] {
+	padding: 1.25rem;
+}
+[data-frost='glaze'] [data-frost-on='card']::before,
+[data-frost='glaze'] [data-frost-on='card']::after {
+	border-radius: var(--hk-radius-lg);
+}
+/* ---------- Rows ----------
+   A row is the background of its <tr> or <li>, painted across the row's
+   cells. Each fades to the page colour on the right, so a frozen row is a
+   cold patch at its leading end and never a band across the table. */
+
+/* rime: the wash rises from the bottom rule, the crust hugs it. */
+[data-frost='rime'] [data-frost-on='row'] {
+	background:
+		linear-gradient(90deg, transparent 0, transparent 22%, var(--hk-bg) 68%),
+		var(--hk-frost-crust-img) left bottom / 720px 14px no-repeat,
+		linear-gradient(to top, var(--hk-ice-wash), transparent 90%);
+}
+/* pane: low cloud over the wash, streaked sideways. */
+[data-frost='pane'] [data-frost-on='row'] {
+	background:
+		linear-gradient(90deg, transparent 0, transparent 30%, var(--hk-bg) 80%),
+		var(--hk-frost-cloud-img) -40px -70px / 600px 240px repeat-x,
+		var(--hk-ice-wash);
+}
+/* glaze: the sheet's tint, its lit top edge and one streak. */
+[data-frost='glaze'] [data-frost-on='row'] {
+	background:
+		linear-gradient(90deg, transparent 0, transparent 30%, var(--hk-bg) 75%),
+		linear-gradient(112deg, transparent 0 14%, var(--hk-ice-sheen) 19%, transparent 25%),
+		linear-gradient(var(--hk-ice-rim), var(--hk-ice-rim)) top / 100% 1px no-repeat,
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--hk-ice-wash) 55%, transparent),
+			var(--hk-ice-wash)
+		);
+}
+/* Hover keeps the kit's wash over the frost. */
+.hk .hk-table--hover tbody tr[data-frost-on]:hover td {
+	background: var(--hk-hover);
+}
+
+/* ---------- Preferences ---------- */
+
+/* Clouds and sheen are translucency; the solid wash stays. */
+@media (prefers-reduced-transparency: reduce) {
+	[data-frost='pane'] [data-frost-on]::after,
+	[data-frost='glaze'] [data-frost-on]:not([data-frost-on='row'])::after {
+		display: none;
+	}
+}
+/* Forced colours: no texture, no wash. The word "frozen" carries the
+   state, as it does in every look; the bead turns GrayText. */
+@media (forced-colors: active) {
+	[data-frost] [data-frost-on]::before,
+	[data-frost] [data-frost-on]::after,
+	[data-frost] .state[data-frozen]::after {
+		display: none;
+	}
+	[data-frost] [data-frost-on='row'] {
+		background: none;
+	}
+	[data-frost='window'] .state[data-frozen] {
+		box-shadow: none;
+	}
+	.hk .hk-ice-bead {
+		forced-color-adjust: none;
+		background: GrayText;
+	}
+}
+
+/* The head's material reaches up behind the crumbs: lift them over it. */
+[data-frost] .page-shell:has(> .head[data-frost-on]) > .crumbs {
+	position: relative;
+	z-index: 1;
+}

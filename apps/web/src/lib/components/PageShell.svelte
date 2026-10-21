@@ -14,6 +14,7 @@
 		lede,
 		action,
 		tabs,
+		frozen = false,
 		children
 	}: {
 		title: string;
@@ -25,6 +26,8 @@
 		action?: Snippet;
 		/** Links under the title, on a full-width hairline (ProjectTabs, .hk-tabs): the current one's edge lies on it. */
 		tabs?: Snippet;
+		/** The page is a frozen machine's: a frost look may draw on the head (lib/hk/frost.css). */
+		frozen?: boolean;
 		children: Snippet;
 	} = $props();
 
@@ -58,7 +61,7 @@
 			{/each}
 		</p>
 	{/if}
-	<div class="head" class:head--tabs={tabs}>
+	<div class="head" class:head--tabs={tabs} data-frost-on={frozen ? 'head' : undefined}>
 		<div class="title-row">
 			<div class="min-w-0">
 				<h1 class="hk-h1-app title">

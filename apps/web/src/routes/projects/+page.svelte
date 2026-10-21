@@ -665,7 +665,7 @@
 							<tbody>
 								{#each rows as p (p.id)}
 									{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-									<tr class="prow">
+									<tr class="prow" data-frost-on={frozenSince(p) ? 'row' : undefined}>
 										<td class="c-name">
 											<span class="pname-line">
 												<!-- The name's ::after covers the row, so a click
@@ -715,7 +715,7 @@
 								agents.map((a) => a.agent).join(', '),
 								d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
 							].filter(Boolean)}
-							<li class="mrow">
+							<li class="mrow" data-frost-on={frozen ? 'row' : undefined}>
 								<div class="mrow-line">
 									<span class="mrow-name">
 										<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
@@ -1001,6 +1001,10 @@
 	.mrow-meta :global(.state) {
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
+	}
+	/* Ice ink under a frost look (lib/hk/frost.css). */
+	.mrow-meta :global(.state[data-frozen]) {
+		color: var(--hk-frozen-ink, var(--hk-text-2));
 	}
 	.mrow-sub {
 		display: flex;

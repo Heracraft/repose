@@ -31,6 +31,7 @@
 	import { classMemoryGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import { frozenSince } from '$lib/frozen';
+	import { frost } from '$lib/frost.svelte';
 	import type { GuestState, Project } from '$lib/api/types';
 	import Snowflake from './Snowflake.svelte';
 	import { notFound } from '$lib/notFound.svelte';
@@ -246,6 +247,8 @@
 								<span class="mark" aria-hidden="true">
 									{#if asks}
 										<span class="hk-dot hk-dot--warn" data-tone="warn"></span>
+									{:else if frozenSince(p) && frost.bead}
+										<span class="hk-ice-bead"></span>
 									{:else if frozenSince(p)}
 										<Snowflake size={12} />
 									{:else}
@@ -558,7 +561,7 @@
 			align-items: center;
 			justify-content: center;
 			width: 0.75rem;
-			color: var(--hk-text-2);
+			color: var(--hk-frozen-ink, var(--hk-text-2));
 		}
 		.mark .hk-dot {
 			width: 6px;

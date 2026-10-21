@@ -30,6 +30,7 @@
 	import LoadState from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import ProjectMeta from './ProjectMeta.svelte';
+	import { frozenSince } from '$lib/frozen';
 	import { notFound } from '$lib/notFound.svelte';
 	import { ProjectState, provideProject } from './context.svelte';
 	import type { PaymentRequiredReason, Project } from '$lib/api/types';
@@ -268,6 +269,7 @@
 		title={project?.name ?? 'Project'}
 		crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 		{tabs}
+		frozen={!!project && !!frozenSince(project)}
 		action={phone.current ? undefined : headActions}
 	>
 		{#if hasNotes}

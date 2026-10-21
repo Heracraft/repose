@@ -446,8 +446,15 @@ a guest state to it:
 | frozen | the 12px snowflake and "frozen" in `--hk-text-2` in place of dot and word | `data-frozen` |
 
 A frozen machine has no band, no cyan and no row fill; frozen is a normal
-state of a running machine. A dot keeps `data-tone` and its parent
-`data-state` for tests and stylesheets.
+state of a running machine. Five dev-only prototypes of a realistic frozen
+look (`ink`, `rime`, `pane`, `window`, `glaze`) wait for the owner's pick
+(I-841 amendment 2026-10-21): `?frost=<look>` on any dashboard URL, or
+all of them side by side on /design. The ice tokens (`--hk-ice-*`) are in
+repose.css; the looks, their textures and the rail's `hk-ice-bead` are in
+`lib/hk/frost.css`. Until one is picked, this table holds.
+
+A dot keeps `data-tone` and its parent `data-state` for tests and
+stylesheets.
 
 ## Fields
 

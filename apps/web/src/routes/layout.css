@@ -10,6 +10,8 @@
    rule loses to an unlayered one at any specificity. */
 @import '../lib/components/nix-editor.css';
 @import '../lib/components/doc.css';
+/* A frozen machine's look, dev prototypes (I-841 amendment). */
+@import '../lib/hk/frost.css';
 
 /*
  * One system for every page, the Herakraft kit: Noto Serif 400 for display

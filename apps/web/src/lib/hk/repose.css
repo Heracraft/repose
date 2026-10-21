@@ -47,6 +47,76 @@
 	--hk-on-err: #09090b;
 }
 
+/* Ice: the frozen-machine prototypes' tokens (lib/hk/frost.css, I-841
+   amendment 2026-10-21). Measured from photos of glacier, iceberg,
+   hoarfrost, rime and window frost; only --hk-ice-ink carries text. */
+.hk {
+	--hk-ice-ink: #456b86; /* the word and the flake: 5.4:1 on #fafafa */
+	--hk-ice-wash: #eef3f8; /* fill under ink text: --hk-text 15.6:1 */
+	--hk-ice-edge: #b6cade; /* 1px edges, decorative */
+	--hk-ice-rim: #ffffff; /* light catching the top edge */
+	--hk-ice-cloud: #a1c1de; /* window frost p85-95 */
+	--hk-ice-deep: #7f9cbd; /* window frost p50-70 */
+	--hk-ice-grain: #7f9cbd;
+	--hk-ice-crust: #ffffff; /* rime: white, it traps air */
+	--hk-ice-crust-o: 0.95;
+	--hk-ice-window: #dfe7f0; /* the glass behind window frost: --hk-text 14:1, ice ink 4.6:1 */
+	--hk-ice-grain-o: 0.5;
+	--hk-ice-cloud-o: 0.32;
+	--hk-ice-glow: rgb(255 255 255 / 0.9);
+	--hk-ice-sheen: rgb(255 255 255 / 0.75);
+	--hk-ice-bead: linear-gradient(150deg, #e8f0f8 0 20%, #a1c1de 45%, #456b86 100%);
+	/* Row textures with the colour baked in: a table row can carry neither
+	   a mask nor a pseudo-element (Chrome wraps one in a cell), only its
+	   background, so these are per theme. */
+	--hk-frost-grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.498  0 0 0 0 0.612  0 0 0 0 0.741  0 0 0 12 -6.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' opacity='0.7'/%3E%3C/svg%3E");
+	--hk-frost-crust-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='14'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.498  0 0 0 0 0.612  0 0 0 0 0.741  0 0 0 12 -6.6'/%3E%3C/filter%3E%3ClinearGradient id='v' x1='0' y1='1' x2='0' y2='0'%3E%3Cstop offset='0' stop-color='%23fff'/%3E%3Cstop offset='.3' stop-color='%23fff' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='0'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='100%25' height='100%25' fill='url%28%23v%29'/%3E%3C/mask%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' mask='url%28%23m%29' opacity='0.8'/%3E%3C/svg%3E");
+	--hk-frost-cloud-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.005 .028' numOctaves='4' seed='8' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.631  0 0 0 0 0.757  0 0 0 0 0.871  0 0 0 2.2 -0.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23c%29' opacity='0.32'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk {
+		--hk-ice-ink: #a1c1de; /* 10.6:1 on #09090b */
+		--hk-ice-wash: #10161f;
+		--hk-ice-edge: #3b4c69;
+		--hk-ice-rim: rgb(178 209 234 / 0.24);
+		--hk-ice-cloud: #4d6681;
+		--hk-ice-deep: #7995ba;
+		--hk-ice-grain: #b2d1ea;
+		--hk-ice-crust: #c6d8ea;
+		--hk-ice-crust-o: 0.62;
+		--hk-ice-window: #10161f;
+		--hk-ice-grain-o: 0.3;
+		--hk-ice-cloud-o: 0.24;
+		--hk-ice-glow: rgb(178 209 234 / 0.2);
+		--hk-ice-sheen: rgb(178 209 234 / 0.1);
+		--hk-ice-bead: linear-gradient(150deg, #eef5fb 0 20%, #a1c1de 45%, #5d7da0 100%);
+		--hk-frost-grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.698  0 0 0 0 0.820  0 0 0 0 0.918  0 0 0 12 -6.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' opacity='0.28'/%3E%3C/svg%3E");
+		--hk-frost-crust-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='14'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.698  0 0 0 0 0.820  0 0 0 0 0.918  0 0 0 12 -6.6'/%3E%3C/filter%3E%3ClinearGradient id='v' x1='0' y1='1' x2='0' y2='0'%3E%3Cstop offset='0' stop-color='%23fff'/%3E%3Cstop offset='.3' stop-color='%23fff' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='0'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='100%25' height='100%25' fill='url%28%23v%29'/%3E%3C/mask%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' mask='url%28%23m%29' opacity='0.5'/%3E%3C/svg%3E");
+		--hk-frost-cloud-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.005 .028' numOctaves='4' seed='8' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.302  0 0 0 0 0.400  0 0 0 0 0.506  0 0 0 2.2 -0.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23c%29' opacity='0.26'/%3E%3C/svg%3E");
+	}
+}
+:root[data-theme='dark'] .hk,
+:root.dark .hk {
+	--hk-ice-ink: #a1c1de;
+	--hk-ice-wash: #10161f;
+	--hk-ice-edge: #3b4c69;
+	--hk-ice-rim: rgb(178 209 234 / 0.24);
+	--hk-ice-cloud: #4d6681;
+	--hk-ice-deep: #7995ba;
+	--hk-ice-grain: #b2d1ea;
+	--hk-ice-crust: #c6d8ea;
+	--hk-ice-crust-o: 0.62;
+	--hk-ice-window: #10161f;
+	--hk-ice-grain-o: 0.3;
+	--hk-ice-cloud-o: 0.24;
+	--hk-ice-glow: rgb(178 209 234 / 0.2);
+	--hk-ice-sheen: rgb(178 209 234 / 0.1);
+	--hk-ice-bead: linear-gradient(150deg, #eef5fb 0 20%, #a1c1de 45%, #5d7da0 100%);
+	--hk-frost-grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.698  0 0 0 0 0.820  0 0 0 0 0.918  0 0 0 12 -6.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' opacity='0.28'/%3E%3C/svg%3E");
+	--hk-frost-crust-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='14'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='1' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.698  0 0 0 0 0.820  0 0 0 0 0.918  0 0 0 12 -6.6'/%3E%3C/filter%3E%3ClinearGradient id='v' x1='0' y1='1' x2='0' y2='0'%3E%3Cstop offset='0' stop-color='%23fff'/%3E%3Cstop offset='.3' stop-color='%23fff' stop-opacity='.55'/%3E%3Cstop offset='1' stop-color='%23fff' stop-opacity='0'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='100%25' height='100%25' fill='url%28%23v%29'/%3E%3C/mask%3E%3Crect width='100%25' height='100%25' filter='url%28%23a%29' mask='url%28%23m%29' opacity='0.5'/%3E%3C/svg%3E");
+	--hk-frost-cloud-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.005 .028' numOctaves='4' seed='8' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.302  0 0 0 0 0.400  0 0 0 0 0.506  0 0 0 2.2 -0.85'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23c%29' opacity='0.26'/%3E%3C/svg%3E");
+}
+
 /* Every control a user types into or picks from has a 3:1 edge. */
 .hk :is(.hk-input, .hk-select, .hk-textarea) {
 	border-color: var(--hk-control-edge);
