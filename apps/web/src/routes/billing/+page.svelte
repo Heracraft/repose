@@ -393,13 +393,6 @@
 		return { day: Math.max(1, day), of };
 	}
 
-	/** The i-th machine's fill among n, as MemoryBlocks draws its run. */
-	function runFill(i: number, n: number): string {
-		if (n <= 1) return 'var(--hk-accent)';
-		if (n === 2) return i === 0 ? 'var(--hk-accent)' : 'var(--hk-text-2)';
-		return i < 3 ? `var(--hk-series-${i + 1})` : 'var(--hk-text-2)';
-	}
-
 	/** What is charged next and when; undefined once nothing more is. The
 	 * api's next_charge_cents prices a scheduled plan from the renewal on. */
 	function nextCharge(s: Subscription, p: Plan): { cents: number; on: string } | undefined {
@@ -546,38 +539,16 @@
 					</div>
 					<MemoryBlocks
 						label="Memory running"
+						legendLabel="Memory running"
+						legend
 						segments={running.map((p) => ({
 							name: p.name,
 							gb: classMemoryGB(p.class),
-							frozen: !!frozenSince(p)
+							frozen: !!frozenSince(p),
+							href: resolve('/projects/[id]', { id: p.id })
 						}))}
 						limit={limits.memory}
 					/>
-					{#if running.length}
-						<ul class="legend" aria-label="Memory running">
-							{#each running as p, i (p.id)}
-								<li>
-									<!-- The swatch is that machine's run of squares, in MemoryBlocks' fills. -->
-									{#if frozenSince(p)}
-										<i class="sw sw--ice" aria-hidden="true"></i>
-									{:else}
-										<i class="sw" style="--fill: {runFill(i, running.length)}" aria-hidden="true"
-										></i>
-									{/if}
-									<a href={resolve('/projects/[id]', { id: p.id })} class="legend-link">{p.name}</a>
-									<span class="u-num"
-										>{classMemoryGB(p.class)} GB{frozenSince(p) ? ', frozen' : ''}</span
-									>
-								</li>
-							{/each}
-							{#if runningOver}
-								<li>
-									<i class="sw sw--over" aria-hidden="true"></i>Over the plan
-									<span class="u-num">{gbs(billing.usage.running_gb - limits.memory)}</span>
-								</li>
-							{/if}
-						</ul>
-					{/if}
 					<p class="note">{runsAtOnce(limits.memory)}</p>
 				</div>
 				<div class="cell">
@@ -1213,61 +1184,6 @@
 	.month-banner {
 		margin: 1rem 0 0;
 	}
-	.legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem 1rem;
-		margin: 0.75rem 0 0;
-		padding: 0;
-		list-style: none;
-		font-size: 0.8125rem;
-	}
-	.legend li {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4375rem;
-	}
-	/* The swatch is a square of the picture, so the legend reads as part of it. */
-	.sw {
-		width: 10px;
-		height: 10px;
-		background: var(--fill);
-	}
-	.sw--ice {
-		box-shadow: inset 0 0 0 1px var(--hk-ice-ink);
-		background: repeating-linear-gradient(135deg, var(--hk-ice-ink) 0 1px, transparent 1px 3px);
-	}
-	.sw--over {
-		box-shadow:
-			0 0 0 1px var(--hk-warn-dot),
-			inset 0 0 0 1px var(--hk-warn-dot);
-		background: transparent;
-	}
-	.legend-link {
-		color: var(--hk-text);
-		text-decoration: underline;
-		text-decoration-color: transparent;
-		text-underline-offset: 3px;
-		transition: text-decoration-color var(--hk-dur-fast) var(--hk-ease);
-	}
-	.legend-link:hover {
-		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-	}
-	.u-num {
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-	}
-	@media (forced-colors: active) {
-		.sw {
-			forced-color-adjust: none;
-			background: CanvasText;
-		}
-		.sw--ice {
-			box-shadow: none;
-			background: GrayText;
-		}
-	}
-
 	/* Invoices. */
 	.pager {
 		display: flex;
@@ -1315,17 +1231,13 @@
 		width: 4rem;
 		text-align: right;
 	}
-	/* A row's lone link and a project's name under Memory running take a
-	   thumb's height without growing their rows. */
+	/* A row's lone link takes a thumb's height without growing its row. */
 	@media (pointer: coarse), (max-width: 639.98px) {
-		.c-link a,
-		.legend-link {
+		.c-link a {
 			display: inline-flex;
 			align-items: center;
 			min-height: 2.75rem;
 			margin-block: -0.75rem;
-		}
-		.c-link a {
 			padding-inline: 0.5rem;
 			margin-inline: -0.5rem;
 		}

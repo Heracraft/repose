@@ -15,6 +15,7 @@
 	import Segmented from '$lib/hk/Segmented.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import { MEM_LOOKS, MEM_LOOK_DEFAULT, MEM_LOOK_NOTES } from '$lib/memlook';
 	import { PLANS } from '$lib/plans';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import type { GuestState } from '$lib/api/types';
@@ -264,17 +265,34 @@
 			<Meter label="Egress this period" used={112.4} limit={100} />
 			<Meter label="Memory" used={0} limit={8} />
 		</div>
-		<div class="facts-gap">
-			<MemoryBlocks
-				label="Memory running"
-				segments={[
-					{ name: 'kanali', gb: 16 },
-					{ name: 'landing-site', gb: 8 },
-					{ name: 'todo-app', gb: 4, frozen: true }
-				]}
-				limit={32}
-				legend
-			/>
+		<!-- The three looks of Memory running (lib/memlook.ts), on the case the
+		     owner judged: 36 GB of 32, two running, two frozen, 4 GB over. -->
+		<div class="meters facts-gap">
+			{#each MEM_LOOKS as look (look)}
+				<figure class="memlook">
+					<div class="hk-meter">
+						<div class="hk-meter-top">
+							<span class="hk-meter-label">Memory running</span>
+							<span class="hk-meter-value">36 GB of 32 GB · over</span>
+						</div>
+						<MemoryBlocks
+							label="Memory running, look {look}"
+							segments={[
+								{ name: 'job-board', gb: 8 },
+								{ name: 'billing-api', gb: 4 },
+								{ name: 'ml-pipeline', gb: 16, frozen: true },
+								{ name: 'api-gateway', gb: 8, frozen: true }
+							]}
+							limit={32}
+							legend
+							{look}
+						/>
+					</div>
+					<figcaption>
+						{look.toUpperCase()}{look === MEM_LOOK_DEFAULT ? ' (default)' : ''}. {MEM_LOOK_NOTES[look]}
+					</figcaption>
+				</figure>
+			{/each}
 		</div>
 	</section>
 
@@ -581,6 +599,14 @@
 	}
 	.facts-gap {
 		margin-top: 1.5rem;
+	}
+	.memlook {
+		margin: 0;
+	}
+	.memlook figcaption {
+		margin-top: 1rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
 	}
 	.tabs-sample {
 		border-bottom: 1px solid var(--hk-hairline);
