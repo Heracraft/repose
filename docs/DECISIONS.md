@@ -24498,3 +24498,41 @@ turn on, and the measurement is worth having for ever, not for one
 window); logging every candidate every tick (1,440 lines a day saying the
 same thing); and counting on the host instead, which cannot see the
 projects whose host never pauses -- the ones the measurement is about.
+
+**I-846. The idle pause is turned on for host-01.** (pause-on-host-01,
+2026-10-21) `repose.host.pauseIdle = true` on the one host that carries
+paying users, which is what puts `pause` in its Hello and lets the api
+pause a machine there. Its own entry and its own commit, the way I-686
+turned the freeze on after staging had proved it, because this is the
+first decision in the set that can cost a tenant something.
+- *What it rests on.* The mechanism is measured, on host-stg-01 on
+  2026-10-21 and not on a dev box: a plain `vm.pause` and `vm.resume` of a
+  guest with both vhost-user devices, held up to 35 minutes, left
+  `/nix/store` readable and a binary from it runnable, never changed the
+  boot id, kept both tmux sessions and a counting loop, and resumed in 9
+  to 10 ms. A freeze of an already-resting guest wrote its image and
+  thawed it back. `hostd wake` answered in 114 ms over a real control
+  socket. The figures are `../workstreams/18-idle-pause.md` §7.
+- *What it does not rest on, and the order that fixes it.* Staging proves
+  nothing of the api (`../../infra/README.md`), so the rule's own
+  judgement on real machines, the marker, the gateway's wake, the CLI and
+  the dashboard arrive here first. I-844 is why that is readable before it
+  is lived: the rule runs for every project whatever its host says, so
+  `repose_api_resting_candidates{result="would_rest"}` and its
+  candidate-minutes say what this fleet would do. **Read a week of it
+  before this entry ships.** If it names a machine somebody was using,
+  this entry waits.
+- *The blast radius is chosen, not accepted.* `keep_awake` takes effect at
+  once (I-820), so every project that must not be frozen is set before
+  this lands and the ones left are the subjects. host-01 carries three
+  guests, one of them the conductor's own.
+- *Rollback is safe, and only because of I-824.* `pauseIdle = false` and a
+  switch stops new pauses, and a host that no longer names the feature
+  still wakes the guests it already froze -- the api gates the pause on
+  the feature and never the wake. Before that fix the runbook's own remedy
+  would have stranded every frozen machine.
+- *The switch is the conductor's,* with the rest of the queue's host
+  changes, not a window of its own (the owner's instruction, 2026-10-21).
+  A switch restarts hostd and leaves guests running; main's kernel pin
+  (I-778) is staged by the same switch and needs a reboot of its own,
+  which is not this.

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-799 entries.
+800 entries.
 
 ## Scope
 
@@ -831,3 +831,4 @@ pointer, not a summary.
 - **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; L24409
 - **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L24441
 - **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L24460
+- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L24502
