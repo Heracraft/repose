@@ -24170,3 +24170,130 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-837. The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif
+400 on zinc with one blue, hairline sections in place of cards, near-black
+code panes, a System, Light and Dark switch, and a landing led by a terminal
+of a real `repose run`.** (ui-revamp, 2026-10-20) The owner asked for a
+complete revamp of the UI and UX to Herakraft UI (Guide B,
+`branding/docs/ui-guide`), with the recruiting developer portal as the
+living reference, and asked that Guide B be followed where it and repose's
+own rules disagree. DESIGN-LANGUAGE.md is rewritten to the shipped system
+and is the visual spec again; the owner's 2026-10-18 note that the design
+language stays is withdrawn by this request. The build spec, its three
+critiques and the area reviews are in the branch's `.dev/notes/`.
+- *Tokens.* The kit's `tokens.css` is copied byte for byte to
+  `apps/web/src/lib/hk/` and scoped by `class="hk"` on `<body>`. Every
+  repose addition lives in `repose.css` beside it, each with its reason, so
+  a kit update is a file copy. One addition changes a kit value: inputs
+  take `--hk-control-edge` (#8b8b94 light, #71717a dark), since the kit's
+  #e4e4e7 edge is 1.27:1 and the 3:1 floor for control edges stands. Every
+  control reaches 44px on touch, inputs included, and inputs take 16px text
+  there so iOS does not zoom. Focus is the kit's 2px accent ring. Toasts are
+  neutral and only an error is coloured. Segmented controls now exist: the
+  theme switch, the projects and events filters, the usage range.
+- *Type.* Inter (the fontsource variable build, opsz 14 to 32, which has no
+  cv11 or ss01, as the reference renders), Geist Mono for code, and Noto
+  Serif at 400 for every heading and 600 for the wordmark only. All three
+  are self-hosted in `static/fonts` with metric-matched local fallbacks, so
+  the CSP still allows no third-party font. JetBrains Mono and Noto Serif
+  700 are deleted. Docs prose goes from 17px to 15px in the same 624px
+  column. Nothing on a page is heavier than 600.
+- *Geometry kept.* The 1200px frame, its 20 to 40px gutter, the 57px sticky
+  header at every width and the docs columns of 220, 48, 624, 48 and 180
+  stay (I-656), so the kit's 76rem container, 2rem gutter and stacked phone
+  header are not used. The dashboard keeps its three places in the header
+  and gets no left rail: three places do not need a column, and a rail
+  takes 248px from the projects table. The footer gains a compact form on
+  dashboard pages and holds the theme switch.
+- *Shape and depth.* Radii follow the kit, 4 to 14px and a pill, in place
+  of the 2 to 4px scale. A shadow exists only on menus, toasts and the hero
+  terminal; panes and the selected item of a joined control use 1px rings.
+- *Theme switch.* System, Light and Dark at the foot of every page store
+  the choice in this browser (`localStorage` `hk-theme`) and set
+  `data-theme` and `color-scheme` on `<html>` before first paint, from
+  app.html's one inline script, whose sha256 is in the CSP and checked by
+  `app-html.test.ts`. Tailwind's `dark:`, the tokens, the toasts and the
+  browser's theme-color follow it. The OS-only rule is gone; the first
+  paint is #fafafa on #18181b, or #09090b under #f4f4f5 in the dark.
+  `content/docs/index.md` "The dashboard" documents the control.
+- *Status colour.* Amber marks only what needs the user and red only what
+  went wrong (Guide B 5.3), and both appear only in badges, dots and
+  banners; the outage bar and the error toast count as banners. A status
+  line is secondary text with a 7px dot before it. A running machine is a
+  filled ink dot, busy states pulse, stopped and unused are a hollow 3:1
+  ring, and the green running dot is gone. A frozen machine shows a
+  snowflake and "frozen" in the secondary text colour on its status line,
+  with no band and no cyan. Plan disk and egress are meters; memory keeps
+  its squares, one per GB, inside the meter's layout, with frozen GB
+  hatched. Usage charts draw in the accent. The logo's blue block is the
+  one brand use of the accent.
+- *Page order.* Dashboard cards become sections with serif headings on the
+  page colour. `/projects`: the billing banner, Waiting on you, the table,
+  then the plan figures as one row under it, Recent activity (five rows,
+  repeats folded, never a question or a failure) and Recently destroyed;
+  row actions are lighter buttons, always shown. An empty account gets the
+  install, login and run commands in one pane. The project page leads
+  with Connect (one pane of three commands, each with its Copy) under the
+  exception banners, which stay first because each changes what Connect
+  will do; then Waiting on you, Events beside Agents and Machine,
+  Snapshots beside Details, Usage as four compact charts, and Destroy
+  behind "Destroy <name>…", which opens its typed confirmation with Keep
+  it. One Restore… per snapshot opens a panel that restores over the
+  project or, with Restore as new, into a new one. Config and Secrets keep
+  the project's name as their title, and Menu and Nix are a small
+  segmented tab list, so the page has one row of page tabs. Billing shows
+  the current plan as one row of facts (price, status, next charge) and no
+  plan to buy on an exempt account. Settings puts Notifications second, and
+  Delete account behind a button that opens its typed confirmation. A
+  styled 404 keeps the shell, an unknown path no longer sends signed-out
+  visitors to `/`, and a render failure shows "Something went wrong" with
+  Reload in place of a skeleton that never ended.
+- *The landing.* Guide B 13.1: an eyebrow, the serif headline, a two-tone
+  lead with "full permissions" in its second sentence, "Get started" and a
+  labelled copy of the install command, and a near-black terminal
+  replaying the Quickstart's `repose run -p` session, read at build time
+  from `content/docs/index.md`. The terminal in the hero follows Guide B
+  because the owner asked for it, which overrides LANDING.md's "Where
+  terminals are allowed" that kept terminals out of the hero; the lead's
+  measure drops from 48rem to 34rem beside it. The lead carries no figure,
+  since the terminal shows the one measured number. "Your laptop's setup,
+  in one command" keeps the owner's I-772 heading. Each command shows once:
+  the install line in the hero only, and the feature cells give their
+  commands as text with no copy button. The seven drawn pictures, their
+  shapes, the frieze, `animejs` and about 9,900 lines go; their claims stay
+  as text with the command that does each. No stat strip, because no public
+  figure can be read at render time and reproduced. Pricing stays on the
+  landing as PlanCells' public cards, since there is no `/pricing` route.
+- *Where the landing left the build spec.* (1) The hero terminal has no
+  copy button: its `cd ~/code/your-project` fails on a visitor's laptop,
+  and the `repose run -p` after it would then start an agent in whatever
+  folder they are in (Guide B 1.10). (2) It ends on "Ready in 16s." with a
+  still caret and no `$ ` line, because `repose run -p` attaches you to
+  the agent's window. (3) The pane has no minimum height and is centred on
+  the copy column: Guide B 12.9's 25 to 27rem is for a scrolling feed, and
+  this pane replays eight fixed lines; landing-hero.spec checks at most
+  4rem under the last line. (4) The run step shows and copies `repose run`
+  alone. (5) The lines are hidden from first paint under `html.js`, with a
+  5s CSS fallback, so the prerendered pane does not flash full and then
+  blank. (6) "Start a free week" signs in and comes back to `/billing`
+  through `signIn(returnTo)`, whose only allowed path is `/billing`, kept
+  in sessionStorage and never read from a URL; every other sign-in still
+  lands on `/projects`. The seats line and the full-state button keep
+  their wording ("18 seats left", "Start a free week").
+- *Kept on purpose.* Inline confirmation panels and ConfirmType (I-386,
+  I-391, I-661); Guide B's modal dialogs are not used. The outage bar and a
+  page's failed-load banner both show, since they say different things
+  (I-390, I-393). Dates keep the CLI's format. Waitlist, seat and trial
+  copy are unchanged pending the owner's 2026-10-17 decisions. Docs pages
+  get "View as Markdown" and no "Copy for LLM".
+- *What it overrules.* Supersedes I-369, I-379, I-397, I-399, I-400,
+  I-401, I-666, I-667, I-668, I-669, I-673, I-675, I-676, I-677, I-684,
+  and I-373's green running dot. Amends I-331, I-370, I-371, I-372, I-374, I-375,
+  I-376, I-378, I-388, I-392, I-398, I-655, I-659, I-660, I-663, I-664,
+  I-674, I-679, I-680, I-681, I-683, I-693 and I-772.
+- *Checks.* CHECKLIST.md "For every change to the web app's look" is the
+  greps for this system, and the landing loses its separate allow-lists,
+  since it has no pictures left to exempt. `pnpm a11y` passes 52 runs (13
+  pages, light and dark, 1440 and 390); the full Playwright suite passes
+  241 tests.

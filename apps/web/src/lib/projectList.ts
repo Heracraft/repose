@@ -139,7 +139,7 @@ export function listSearch(current: URLSearchParams, f: Filter, query: string): 
 /**
  * Rows shown before "Show all N". Every other growing list on the
  * dashboard is capped the same way (snapshots 8, config revisions 8,
- * Recently destroyed 10, DESIGN-LANGUAGE "Card layout"); the live list
+ * Recently destroyed 10, DESIGN-LANGUAGE "Long lists"); the live list
  * is the one that grows to 100 and never was.
  */
 export const PROJECTS_SHOWN = 25;

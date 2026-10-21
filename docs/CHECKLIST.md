@@ -92,141 +92,121 @@ written so none of them goes unnoticed again.
 
 ## For every change to the web app's look
 
-`docs/DESIGN-LANGUAGE.md` is the spec (DECISIONS I-369). Run these from
-the repository root; each prints nothing when the rule holds. `$L` leaves
-out the landing (`routes/+page.svelte`, `routes/landing.css`,
-`lib/components/landing/`), which `LANDING.md` governs and "The landing"
-below checks:
-`L=(--glob '!**/landing/**' --glob '!**/routes/+page.svelte' --glob
-'!**/routes/landing.css')`. A hit is fixed, or the rule changes through a
-DECISIONS entry and this list with it. Counts as of 2026-10-01.
+`docs/DESIGN-LANGUAGE.md` is the spec (DECISIONS I-837). Run these from the
+repository root with `W=apps/web/src`; each prints nothing unless the item
+says otherwise. A hit is fixed, or the rule changes through a DECISIONS
+entry and this list with it. Counts as of 2026-10-21.
 
-- [ ] Text colours come from the ink tokens, and zinc-400 and lighter is
-      never text. Evidence: `rg -n 'text-zinc-[3-6]00' apps/web/src --glob
-      '*.svelte' "${L[@]}"` prints 0 lines.
-- [ ] Blue is only the palette, links, focus and selection, all in
-      `layout.css`. Evidence: `rg -n 'blue-[0-9]' apps/web/src "${L[@]}"
-      --glob '!**/routes/layout.css'` prints 0 lines (`layout.css` itself
-      has 23: eleven palette steps, then `--sh-accent`, `--pic-accent`,
-      `--accent`, `--accent-strong`, `--selection` and `--focus` twice
-      each, once per scheme; `.link` and the docs' links use
-      `text-accent`, I-392, I-397).
-- [ ] No shadows, and no gradient of more than one colour. Evidence: `rg
-      -n 'shadow-|box-shadow: [^n]' apps/web/src "${L[@]}"` prints 0
-      lines; `rg -nP 'gradient\((?!(var\([^)]*\)|#[0-9a-fA-F]+|currentColor),
-      \1\))' apps/web/src | rg -v mask-image` prints 0 lines (the docs
-      sidebar's foot fade is a mask, which paints no colour, I-660).
-- [ ] Every page is on the one frame and the one header (I-655, I-656).
-      Evidence: `rg -n 'max-w-(5xl|7xl)|HeaderFrame' apps/web/src --glob
-      '*.svelte'` prints 0 lines; `pnpm test:integration
-      tests/design.spec.ts -g 'logo stands'` passes.
+- [ ] Colours come from tokens. Evidence: `rg -n
+      '\b(text|bg|border|ring|fill|stroke|outline|decoration|from|via|to|divide|placeholder|caret|accent)-(zinc|gray|slate|stone|neutral|blue|sky|cyan|teal|emerald|green|lime|yellow|amber|orange|red|rose|pink|fuchsia|purple|violet|indigo)-[0-9]{2,3}\b'
+      $W --glob '*.svelte'` prints 0 lines; `rg -n '#[0-9a-fA-F]{3,8}\b' $W
+      --glob '*.{svelte,css}' --glob '!**/lib/hk/**' --glob
+      '!**/routes/layout.css' --glob '!**/routes/design/**'` prints 0 lines,
+      and `rg -n '#[0-9a-fA-F]{3,8}\b' $W/routes/layout.css` prints only the
+      first-paint pair, 6 lines (`--page` and `--ink` in light, the dark
+      media block and `[data-theme='dark']`); `rg -n
+      'var\(--(page|ink|surface|sunken|rule|accent|frost|sh-|pic-)' $W --glob
+      '*.svelte'` prints 0 lines.
+- [ ] Status colour stays in badges, dots and banners. Evidence: `rg -n
+      'color:\s*var\(--hk-(ok|warn|err)\)' $W --glob '*.{svelte,css}' --glob
+      '!**/lib/hk/**' --glob '!**/routes/design/**'` prints only the outage
+      bar (`routes/+layout.svelte`) and the error toast (`routes/layout.css`),
+      which are banners, 2 lines.
+- [ ] One scheme mechanism. Evidence: `rg -ln 'prefers-color-scheme' $W`
+      prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
+      `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts` and
+      `routes/layout.css`, 7 files; `rg -n
+      'class="dark|classList\.(add|toggle)\(.dark' $W` and `rg -n
+      'theme="system"|richColors' $W --glob '*.svelte'` print 0 lines.
+- [ ] The inline script's hash is in the CSP, and the first paint matches the
+      tokens. Evidence: `pnpm -C apps/web exec vitest run
+      src/lib/app-html.test.ts` passes.
+- [ ] Headings are serif 400 and weight stops at 600. Evidence: `rg -n
+      'font-(semibold|bold|extrabold|black)\b|<b>' $W --glob '*.svelte'`
+      prints 0 lines; `rg -n '<strong' $W --glob '*.svelte' --glob
+      '!**/routes/design/**'` prints only the landing lead
+      (`routes/+page.svelte`), 1 line; `rg -nP
+      'font-weight:\s*(700|800|900|bold)' $W --glob '*.{svelte,css}' --glob
+      '!**/lib/hk/tokens.css'` prints 0 lines.
+- [ ] Fonts are first-party and the kit's three. Evidence: `rg -n
+      'fonts\.(googleapis|gstatic)' apps/web/src apps/web/static
+      apps/web/svelte.config.js --glob '!**/lib/hk/tokens.css'` prints 0
+      lines (the kit's file names Google Fonts in a comment); `rg -n
+      'JetBrains Mono' apps/web/src apps/web/static --glob
+      '!**/lib/hk/tokens.css'` prints 0 lines; a page load's network panel
+      shows only the site's host.
+- [ ] Radii are the kit's. Evidence: `rg -n
+      'rounded-(sm|md|lg|xl|2xl|3xl)\b|rounded-\[' $W --glob '*.svelte'`
+      prints 0 lines; `rg -nP
+      'border-radius:\s*+(?!var\(--hk-radius|0[;\s]|50%|inherit|9999?px)' $W
+      --glob '*.{svelte,css}' --glob '!**/lib/hk/tokens.css'` prints 0 lines
+      (`\s*+` is possessive: a plain `\s*` backtracks and lets every
+      declaration through).
+- [ ] Elevation is three levels. Evidence: `rg -n
+      '\bshadow-(sm|md|lg|xl|2xl|inner)\b' $W --glob '*.svelte'` prints 0
+      lines; `rg -nUP 'box-shadow:\s*+(?!none|var\(--hk-|inset
+      -?[0-9.]+(px)? -?[0-9.]+(px)? 0 (-?[0-9.]+px )?var\(--hk-|0 0 0
+      [0-9.]+px var\(--hk-)' $W --glob '*.{svelte,css}' --glob
+      '!**/lib/hk/**'` prints 0 lines (`-U` reads a shadow that prettier
+      broke over several lines from its first value).
+- [ ] Motion uses the kit's curve and durations, and nothing moves on hover.
+      Evidence: `rg -nP 'transition[^;]*\b\d+m?s\b' $W --glob
+      '*.{svelte,css}' --glob '!**/lib/hk/**'` prints 0 lines; `rg -n
+      'duration-[0-9]|hover:(-?translate|scale)' $W --glob '*.svelte'` prints
+      0 lines; `rg -n 'animejs' apps/web/package.json $W` prints 0 lines;
+      under reduced motion `document.getAnimations()` is empty on `/`,
+      `/projects` and a project page (design.spec, landing-motion.spec).
+- [ ] Sizes come from the scale. Evidence: `rg -n
+      'text-\[[0-9.]+(px|rem|em)\]' $W --glob '*.svelte'` and `rg -n
+      '![pm][xytrbl]?-' $W --glob '*.svelte'` print 0 lines.
+- [ ] The legacy classes are gone. Evidence: `rg -nP
+      'class="[^"]*(?<![\w-])(btn|btn-quiet|btn-ghost|btn-danger|badge|dot|card|banner|field|stat-row|codeblock|check-row|frost-band|table)(?![\w-])'
+      $W --glob '*.svelte'` prints 0 lines (the lookarounds keep `hk-btn`
+      and its kin from matching).
+- [ ] Every shared class and custom property is namespaced and documented.
+      Evidence: `rg -no '\.hk-[a-z0-9-]+' apps/web/src/lib/hk/repose.css |
+      sed 's/.*:\.//' | sort -u | while read c; do rg -qP
+      "(?<![\w-])$c(?![\w-])" docs/DESIGN-LANGUAGE.md || echo "$c"; done`
+      prints 0 lines; `rg -n --glob '*.svelte' -e '--[a-z]+-[a-z]+:' $W | rg
+      -v -e '--hk-|--i:|--n:|--cols:|--d:'` prints 0 lines (with `-e`: after
+      a bare `--`, rg reads `--glob` as a path).
+- [ ] No native or modal dialogs. Evidence: `rg -n
+      'window\.confirm|[^.\w/]confirm\(|<dialog|showModal' $W --glob
+      '*.{svelte,ts}' | rg -v '//|onconfirm'` prints 0 lines.
+- [ ] Copy holds. Evidence: `pnpm -C apps/web exec vitest run
+      src/lib/copy.test.ts src/lib/docs.test.ts` passes; `rg -n '—'
+      $W/routes $W/lib/components --glob '*.svelte' | rg -v '<!--|//|\*'`
+      prints 0 lines; `rg -niw
+      'seamlessly|effortlessly|powerful|robust|unlock|leverage|empower' $W
+      --glob '*.svelte'` prints 0 lines; `rg -nP '>[^<{]*!\s*<' $W --glob
+      '*.svelte'` prints 0 lines.
+- [ ] Every page is on the one frame and the one header (I-656). Evidence:
+      `rg -n 'max-w-(5xl|7xl)|HeaderFrame' $W --glob '*.svelte'` prints 0
+      lines; `pnpm test:integration tests/design.spec.ts -g 'logo stands|header
+      row fits'` passes.
+- [ ] Touch targets are 44px. Evidence: `pnpm test:integration
+      tests/design.spec.ts -g 'touch targets'` passes (header and main of
+      nine pages at 390 with touch).
+- [ ] A new mark that shows state in a fill or a coloured edge has a rule in
+      the `forced-colors` block of `layout.css` or `repose.css`. Evidence: a
+      capture with Chromium's `forcedColors: 'active'`.
+- [ ] The keyboard path, forced colours, reduced motion, the theme switch and
+      the phone column hold. Evidence: `pnpm build`, then `pnpm
+      test:integration tests/design.spec.ts` passes; a panel that opens in
+      place of a button adds its focus check there (I-392).
+- [ ] The accessibility gate passes: `pnpm build`, then `pnpm a11y` in
+      `apps/web`, 52 runs (13 pages, light and dark, 1440 and 390), with
+      `KNOWN_FAILURES` empty or each entry carrying a reason and, where it
+      fails at one width only, that width.
+- [ ] Judged at real size: viewport captures or crops at 1x, 1440 and 390
+      wide, light and dark, of every changed page, plus the dark theme
+      chosen by the switch on a light OS (CLAUDE.md "Judge visuals at real
+      size").
 - [ ] A release's notes exist before its tag and read as Simplified
       Technical English (I-798). Evidence: `gh release view <tag> --json body
       --jq '.body | length'` is over 400, and the notes name every
       user-visible change, what the release does not fix with its numbers,
       and what it costs. `release.yml` fails the publish below 400 bytes.
-- [ ] Toasts are house banners. Evidence: `rg -n 'richColors' apps/web/src
-      --glob '*.svelte' | rg -v '<!--'` prints 0 lines.
-- [ ] No page asks a third party for a font, and the CSP allows none.
-      Evidence: `rg -n 'fonts\.(googleapis|gstatic)' apps/web/src
-      apps/web/static apps/web/svelte.config.js` prints 0 lines, and a page
-      load's network panel shows only the site's host.
-- [ ] No native dialogs. Evidence: `rg -n 'window\.confirm|[^.\w/]confirm\('
-      apps/web/src --glob '*.{svelte,ts}' | rg -v '//|onconfirm'` prints 0
-      lines.
-- [ ] Sizes come from the scale, not overrides or hand-written values.
-      Evidence: `rg -n '![pm][xytrbl]?-' apps/web/src --glob '*.svelte'
-      "${L[@]}"` prints 0 lines (a compact button uses `.btn--sm`);
-      `rg -n 'text-\[[0-9.]+(px|rem|em)\]' apps/web/src --glob '*.svelte'`
-      prints 0 lines; `rg -n '\[var\(--' apps/web/src --glob '*.svelte'
-      "${L[@]}"` prints 0 lines (use `text-ink-muted`, `border-rule` and
-      the other token utilities).
-- [ ] Mono under 13px is only a badge. Evidence: `rg -n
-      'font-mono[^"]*text-x?xs|text-x?xs[^"]*font-mono|font-mono[^"]*text-2xs|text-2xs[^"]*font-mono'
-      apps/web/src --glob '*.svelte' "${L[@]}"` prints 0 lines (running
-      mono is `text-compact` or larger; a badge is `.badge`, I-393).
-- [ ] Corners stay at 4px or less, weight stays at semibold, and no
-      stray hue. Evidence: `rg -n 'rounded-(md|lg|xl|2xl|3xl|full)\b|font-bold|<b>|<strong'
-      apps/web/src --glob '*.svelte' "${L[@]}"` and `rg -n
-      'purple|violet|fuchsia|pink-|orange-|indigo|teal|cyan|lime-'
-      apps/web/src --glob '*.{svelte,css}' "${L[@]}"` each print 0 lines.
-- [ ] One scheme mechanism and a visible focus ring. Evidence: `rg -n
-      'data-theme|class="dark' apps/web/src` prints 0 lines; `rg -n
-      'outline-none' apps/web/src "${L[@]}"` prints only the docs drawer
-      (`routes/docs/+layout.svelte`, which is focused by script, not by
-      the keyboard).
-- [ ] A new component that shows state in a fill or a coloured border has
-      a rule in the `forced-colors` block of `layout.css`. Evidence: a
-      capture with Chromium's `forcedColors: 'active'`.
-- [ ] The keyboard path, forced colours, reduced motion and the phone
-      column hold. Evidence: `pnpm build`, then `pnpm test:integration
-      tests/design.spec.ts` passes; a panel that opens in place of a
-      button adds its focus check there (I-392).
-- [ ] The accessibility gate passes: `pnpm build`, then `pnpm a11y` in
-      `apps/web`, 56 runs (14 pages, light and dark, 1440 and 390), with
-      `KNOWN_FAILURES` empty or each entry carrying a reason and, where it
-      fails at one width only, that width (DECISIONS I-389, I-399). The
-      landing's four are audited under reduced motion, so two runs give
-      the same result (I-397).
-- [ ] Judged at real size: viewport captures or crops at 1x, 1440 and
-      390 wide, light and dark, of every changed page (CLAUDE.md "Judge
-      visuals at real size").
-
-### The landing
-
-The same rules over the landing's own files (I-397), with one allow-list:
-the pictures of real tools keep their tool's colours and sizes
-(`LANDING.md`, "Real, and whole, or not at all"; I-392). `$P` is the
-landing. `$C` leaves out the two files that are a capture and nothing
-else, `Editor.svelte` (LazyVim's Tokyo Night) and `Ready.svelte` (the
-terminal's ANSI colours). `Browser.svelte` and `Localhost.svelte` hold
-drawn parts too (chips, a ring, a title bar's dot), so the hue greps
-read them; the hex and size greps take `$X`, which also leaves them
-out, since their captured parts (the agent's white page and its log,
-tmux's bar) are written in hex and drawn at the capture's scale (the
-log at 10px in a narrow frame): `P=(apps/web/src/routes/+page.svelte
-apps/web/src/routes/landing.css apps/web/src/lib/components/landing)`,
-`C=(--glob '!**/landing/Editor.svelte' --glob '!**/landing/Ready.svelte')`,
-`X=("${C[@]}" --glob '!**/landing/Browser.svelte' --glob
-'!**/landing/Localhost.svelte')`. Counts as of 2026-10-01 (I-400).
-
-- [ ] Text is never zinc-300 to zinc-600, weight stops at semibold for
-      markup, and sizes take no overrides. Evidence: `rg -n
-      'text-zinc-[3-6]00|font-bold|<b>|<strong|![pm][xytrbl]?-|text-\[[0-9.]+(px|rem|em)\]'
-      "${P[@]}"` prints 0 lines (a large call to action is `.btn--lg`).
-- [ ] Blue and every other hue come from the tokens: `--sh-*` for shapes,
-      `--pic-*` for drawn pictures, the Foundation's for text. Evidence:
-      `rg -n 'blue-[0-9]|purple|violet|fuchsia|pink-|orange-|indigo|teal|cyan|lime-'
-      "${P[@]}" "${C[@]}"` prints only the Browser picture's two marks
-      over its capture (`--chip` and `--on-log`, `LANDING.md`, "Since the
-      owner's notes"), 2 lines; `rg -n
-      'amber|emerald|green-|yellow|red-[0-9]|zinc-[0-9]|rose-|sky-|slate-|gray-|stone-'
-      "${P[@]}" "${C[@]}"` prints only the green running dots
-      (`emerald-500`, open for the owner in STATUS.md): the drawn title
-      bars of Hero, OneCommand, ComesBack and Localhost, and OneCommand's
-      "Ready" dot, 5 lines; `rg -n
-      ':\s*#[0-9a-fA-F]{3,8}\b|="#[0-9a-fA-F]'
-      "${P[@]}" "${X[@]}"` prints only the hero's Claude Code colours
-      (`--claude`, `--mode`, and `--rogue`, the mascot turned red), 5
-      lines.
-- [ ] No shadows: an inset edge with no blur is a bar, and is the only
-      `box-shadow`. Evidence: `rg -nP 'shadow-|box-shadow:
-      (?!none|inset -?[\d.]+(px)? -?[\d.]+(px)? 0 )' "${P[@]}"` prints 0
-      lines.
-- [ ] Corners stay at 4px or less; `50%` draws a circle (a dot, a node,
-      the globe), not a corner. Evidence: `rg -n
-      'rounded-(md|lg|xl|2xl|3xl|full)\b|border-radius:
-      *([5-9]|[1-9][0-9]+)(\.[0-9]+)?px|border-radius: *[0-9.]+(rem|em)'
-      "${P[@]}"` prints 0 lines.
-- [ ] One mono, and nothing a visitor reads under 11px outside the
-      captures. Evidence: `rg -n "font-family:[^;]*(Menlo|Consolas|SF
-      Mono|Courier|monospace)|font-\[" "${P[@]}"` prints 0 lines (a picture
-      names `var(--font-mono)`); `rg -nP 'font-size:
-      *(\d|10)(\.\d+)?px' "${P[@]}" "${X[@]}"` prints 0 lines.
-- [ ] Every picture stops on its final frame when reduced motion turns on
-      mid-session. Evidence: `rg --files-without-match watchReducedMotion
-      apps/web/src/lib/components/landing/{Hero,OneCommand,ComesBack,Browser,Localhost}.svelte`
-      prints 0 lines.
 
 ## For every workstream, before it is called done
 

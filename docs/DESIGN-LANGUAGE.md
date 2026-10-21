@@ -1,753 +1,804 @@
 # Design language
 
-One system for every page: neutral paper and ink, hairline rules, corners
-of 2 to 4px, no shadows or gradients, one accent colour. The source is
-`apps/web/src/routes/layout.css`; read the CSS, not the recruiting app it
-began as a copy of (DECISIONS I-369 retired that).
+repose's web app reads as one Herakraft product: Noto Serif 400 for display
+only, Inter 15px for everything else, Geist Mono for commands, zinc neutrals
+with one blue for links, current items, eyebrows, focus and chart emphasis,
+hairline rows on the page colour, and near-black code panes in both themes.
 
-The Foundation below is shared by the dashboard, the docs, the legal pages
-and the landing. The Dashboard part adds the patterns of the signed-in
-pages. The landing adds its own grammar in `LANDING.md` on top of the
-Foundation, and nothing in the Foundation is restated there.
+Herakraft UI (Guide B, `branding/docs/ui-guide/GUIDE-B-herakraft-ui.md`) is
+the parent spec. This file records what repose took from it, the numbers it
+ships with, and where it departs and why (DECISIONS I-837). The code is in
+`apps/web/src/lib/hk/` and `apps/web/src/routes/layout.css`; when this file
+and the code disagree, one of them is wrong, and a change to the rules goes
+through a DECISIONS entry. `CHECKLIST.md` "For every change to the web
+app's look" holds the greps that catch drift. The gallery at `/design` on a
+`vite dev` server draws every component below on one page (it is a 404 in a
+build).
 
 # Foundation
 
-## Tokens
+## Tokens and scope
 
-Scheme colours are CSS variables on `:root` in `layout.css`, redefined
-under `prefers-color-scheme: dark`, and exposed as Tailwind utilities
-through `@theme inline` (`text-ink`, `border-control`, `bg-sunken`), so
-each utility follows the scheme. Light and dark come from the OS only: no
-theme toggle, no `class="dark"`, no `[data-theme]`.
+`lib/hk/tokens.css` is the kit's file, copied byte for byte; a kit update is
+a file copy. `lib/hk/repose.css` holds every repose addition, each rule with
+its reason. `routes/layout.css` imports both into Tailwind's components
+layer, so a utility on the same element still wins (`class="hk-btn h-10"` is
+40px), and a component's own `<style>`, which is unlayered, beats both.
+`<body class="hk">` puts every page inside the kit's scope.
 
-| Token | Light | Dark | Use |
+Colour in markup comes from three places only: an `hk-*` class, a token in a
+component `<style>` (`var(--hk-text-3)`), or one of the theme utilities below.
+No Tailwind palette utility (`text-zinc-500`), no hex outside `lib/hk/` and
+the first-paint pair in `layout.css`, and no `prefers-color-scheme` block in
+a component: the tokens already follow the theme.
+
+| Utility suffix | Token | Light | Dark |
 |---|---|---|---|
-| `--page` | `#fbfbfa` | `#111110` | The page ground (`bg-page`). `app.html` paints it before the CSS loads (I-331). |
-| `--surface` | `#ffffff` | `#161615` | Fields, `.btn-quiet`, `.banner`, `.card`, `.stat-row`, the Account panel, toasts, the Nix editor's current line in the light. |
-| `--sunken` | `#f4f4f2` | `#1b1b1a` | Code blocks, the Nix editor, the landing's stages, kbd. |
-| `--rule` | `#e6e6e3` | `#31312e` | Hairlines between sections, rows and cards (dark stepped up from `#2a2a28` by I-659). |
-| `--rule-strong` | `#cfcfcb` | `#3b3b38` | Badges, table heads, banners. Never the only edge of a control. |
-| `--control-edge` | `#888883` | `#6e6e6a` | The edge of anything you type into or press: fields, `.btn-quiet`, the hollow state dot, the meter track (`border-control`). |
+| `page` | `--hk-bg` | `#fafafa` | `#09090b` |
+| `surface` | `--hk-surface` | `#ffffff` | `#111113` |
+| `surface-2` | `--hk-surface-2` | `#f4f4f5` | `#18181b` |
+| `hairline` | `--hk-hairline` | `#ececee` | `#1c1c1f` |
+| `line` | `--hk-border` | `#e4e4e7` | `#27272a` |
+| `line-strong` | `--hk-border-strong` | `#d4d4d8` | `#3f3f46` |
+| `ink` | `--hk-text` | `#18181b` | `#f4f4f5` |
+| `ink-2` | `--hk-text-2` | `#52525b` | `#a1a1aa` |
+| `ink-3` | `--hk-text-3` | `#636369` | `#8b8b94` |
+| `control` | `--hk-control-edge` | `#8b8b94` | `#71717a` |
+| `accent` | `--hk-accent` | `#1d4ed8` | `#60a5fa` |
+| `ok`, `warn`, `err` | `--hk-ok`, `--hk-warn`, `--hk-err` | 700 to 800 steps | 300 to 400 steps |
 
-Three layout tokens sit beside them, the same in both schemes: `--frame-w`
-(75rem), `--frame-x` (`clamp(1.25rem, 3vw, 2.5rem)`) and `--header-h`
-(57px). See "Page frame and header".
-| `--ink` | zinc-900 | zinc-100 | Primary text (`text-ink`). |
-| `--ink-muted` | zinc-600 | zinc-400 | Secondary text: metadata, ledes, table heads, the inactive nav link. |
-| `--ink-faint` | `#6b6b66` | `#8f8f8a` | Tertiary text: placeholders, code comments, timestamps. |
-| `--accent` | blue-700 | blue-300 | Link text (`text-accent`: `.link`, the docs' links). |
-| `--accent-strong` | blue-900 | blue-200 | A link under the pointer (`hover:text-accent-strong`). |
-| `--selection` | blue-200 | blue-800 | The text selection's ground. |
-| `--focus` | blue-600 | blue-400 | The focus ring. |
+`--hk-text-4` (`#a1a1aa`, dark `#5f5f68`) is for placeholders and list
+markers and is never readable text. The status utilities colour text on
+their own washes (banners, badges) and nothing else.
 
-Pages use `text-ink*`, never a hand-paired `text-zinc-500
-dark:text-zinc-400`. That pairing is how the dashboard and the landing
-ended up with two different "muted" greys (I-370). The accent is the same:
-a page names `--accent`, never a blue step (I-392). `app.html` writes
-`--page` and `--ink` out by hand for the first paint;
-`src/lib/app-html.test.ts` fails when the two files disagree.
+Tokens repose adds in `repose.css`: `--hk-container` 75rem, `--hk-gutter`
+`clamp(1.25rem, 3vw, 2.5rem)`, `--hk-header-h` 57px at every width,
+`--hk-control-edge`, the three font stacks with their fallback faces,
+`--hk-shadow-terminal`, `--hk-busy` and `--hk-busy-halo` for the busy dot,
+and `--hk-on-err` for text on the armed red. `layout.css` keeps three
+variables on `:root` for code outside `.hk`: `--frame-w`, `--frame-x`,
+`--header-h`, with the same numbers.
 
-## Palette
+## The accent
 
-Tailwind's zinc, blue, emerald, amber and red are re-toned once in
-`@theme`, so a stock utility cannot bring in Tailwind's defaults. Each
-colour has one meaning:
+Blue has five jobs: a link, the current item (header, docs sidebar, rail),
+an eyebrow, the focus ring, and the emphasis in a chart or a meter. The
+logo's square is the sixth, and the one brand use. A primary button is
+inverted ink, so blue on a page always means "this navigates" or "you are
+here". Text selection is the kit's blue wash.
 
-- **Zinc** is a neutral grey: text, rules, the primary button.
-- **Blue is the accent**, for links (`.link`, the docs' links), the focus
-  ring and text selection. It may also draw a measure: a meter's fill
-  under its limit (I-659). The usage chart's line is `--chart-line`,
-  which `layout.css` sets to `--ink`; the accent is one switch away
-  there and is not what ships (I-679). Nothing else is blue in the dashboard, the docs or the legal
-  pages except the logo's big square (see Logo); a busy state, a current
-  tab and code syntax are not (I-373, I-374, I-388). The landing's shapes
-  and bar use it as `LANDING.md` says, and so do the plan cells on
-  `/billing` (I-663).
-- **Emerald** is running and success, **amber** attention: a warning
-  banner, a meter's overage, something that waits on you
-  (`.badge--warn`). **Red** is failure and destruction.
+## Status colour
 
-No purple, pink, orange or other hue in anything the site draws for
-itself: text, controls, rules, state, the landing's shapes and bar. A new
-colour there needs a DECISIONS entry.
-
-One layer is exempt: a picture of a real tool on the landing (a terminal,
-Claude Code, an editor, a browser) keeps that tool's own colours, because
-it shows what you will see (`LANDING.md`, "The hero"). Claude Code's orange
-mascot, its pink `⏵⏵ bypass permissions on` line, a terminal's ANSI
-colours and an editor theme live inside those pictures and nowhere else
-(I-392).
+Amber marks what needs the user, red what went wrong (Guide B 5.3). Both
+appear only in a badge, a dot, a banner, the outage bar and the error toast.
+A line that reports a status is `--hk-text-2` text with a 7px dot before it;
+a line that states a refusal is a banner. A running machine has no colour:
+its dot is filled ink. The kit's green `--ok` dot is not used for a machine
+state; `--hk-ok` appears only on the success banner (`seat-held`, the
+billing-exempt line).
 
 ## Contrast floor
 
-- Text: 4.5:1 or better on `--page`, `--surface` and `--sunken` in both
-  schemes. Every `--ink*` token holds it. zinc-500 (`#70706b`) holds it in
-  the light scheme only (4.52:1 on `--sunken`); in the dark it is 3.5 to
-  3.8:1, so it is never dark-scheme text. zinc-400 and zinc-300 are never
-  light-scheme text. A page that needs a grey for text uses `text-ink-muted`
-  or `text-ink-faint`, which switch with the scheme.
-- Control edges, focus rings, state dots and meter tracks: 3:1 or better
-  against what they sit on (WCAG 1.4.11). `--control-edge` holds 3.2:1 or
-  better on `--page`, `--surface` and `--sunken` in both schemes; a control
-  whose only edge is `--rule` or `--rule-strong` fails this (the Nix
-  editor and the docs' copy button did, I-391).
-- State never rides on colour alone: a dot has its word, a meter says
-  "over", a current tab has its underline.
-- `tests-a11y/a11y.spec.ts` fails on any Lighthouse binary audit that
-  scores 0, on every page in both schemes at 1440 and 390 (I-389).
+Text is 4.5:1 on its ground and a control's edge or a state mark is 3:1
+(WCAG 1.4.3, 1.4.11). `--hk-text-3` is AA at 11px on the page in both themes.
+The kit's input edge, `--hk-border`, is 1.27:1, so every input, select and
+textarea takes `--hk-control-edge`, 3:1 in both themes. The selected item of
+a joined control carries a 1px `--hk-control-edge` ring in light, so
+selection is never a 1.3:1 fill alone. A meter's fill can sit under 3:1
+(amber is 2.06:1 on the light page); its value text and `aria-valuetext`
+carry the number. `pnpm a11y` audits 13 pages in both themes at 1440 and 390.
 
-## Corners
+## Touch
 
-The whole radius scale runs from 2px to 4px (`--radius-xs` and
-`--radius-sm` 2px, `--radius-md` 3px, `--radius-lg` and up 4px).
-`rounded-sm` on fields, buttons, cards, banners and toasts; `rounded-xs`
-on badges, dots and keys. No shadows. No gradients, except the
-one-colour `linear-gradient(c, c)` that draws a rule or a bar, and the
-landing's sphere.
+Below 640px, or under a coarse pointer, every control a thumb hits is at
+least 44px tall: buttons of every kind and size, inputs, selects and
+textareas (with 16px text, so iOS does not zoom on focus), every item of a
+joined control, checkbox rows, page tabs, crumb links, copy buttons, and the
+header's links, which take the full 56px row. A ghost action in a table row
+keeps the row's height by a negative block margin (`hk-btn-ghost--touch`).
+Links inside running text are exempt (WCAG 2.5.8's inline exception).
+`design.spec.ts` "touch targets" measures `header` and `main` of nine pages
+at 390 with touch.
 
 ## Type
 
-Two webfonts, self-hosted from `static/fonts` with their OFL texts, so no
-page asks a third party for a font (I-371):
+Three families, all self-hosted in `apps/web/static/fonts/` with their OFL
+licences, so the CSP's `font-src 'self'` holds (I-371):
 
-- **Noto Serif** (400, 600, 700) for every heading, `h1` to `h6`, and
-  `.font-display`. The base style applies it, so a heading needs no
-  `font-display` class.
-- **JetBrains Mono** (400, 600, 400 italic) is the one monospace: code,
-  commands, ids, sizes, badges and the landing's pictures and labels.
-  `--font-mono` leads with it; a component never names its own mono stack.
-- **Body text is the system sans** (`--font-sans`, Tailwind's default
-  stack written out).
+- **Inter**, the fontsource variable build (opsz 14 to 32, wght 100 to 900;
+  400, 500 and 600 are used). It has no `cv11` or `ss01`, so the kit's
+  `font-feature-settings` line is inert, as the reference renders it.
+- **Geist Mono** 400, 500 and a real 400 italic for code comments. Contextual
+  alternates are off on `html`, so `://` in an install URL is never spaced.
+- **Noto Serif** 400 for every heading, 600 for the wordmark only.
 
-Serif titles over a plain sans page are the identity. Each webfont has a
-metric-matched local fallback, so nothing reflows when it arrives.
-Contextual ligatures are off for the whole page
-(`font-variant-ligatures: no-contextual` on `html`): JetBrains Mono draws
-its code ligatures that way, and one of them spaced `://` apart in every
-URL (I-392).
+Each webfont has a local fallback face (`Inter Fallback` over Arial, `Geist
+Mono Fallback` over Courier New, `Noto Serif Fallback` over Georgia) scaled
+with capsize metrics, so text painted before the font arrives wraps where it
+will after. `app.html` preloads Inter latin, Noto Serif 400 latin and Geist
+Mono 400 latin; latin-ext loads only for a page that has such a character.
 
-| Step | Size | Use |
+Every `h1`, `h2` and `h3` is the serif at 400 (the kit's `.hk :where(h1, h2,
+h3)`). Weight stops at 600, and 600 is only for small labels (eyebrows,
+footer heads, docs group titles). A label that must be a heading element for
+a test (a plan name, an empty row's title) sets `font-family:
+var(--hk-font-sans)` on its own class, or uses `hk-empty-title`.
+
+| Role | Class | Size / line | Notes |
+|---|---|---|---|
+| Landing headline | `hk-h1` | 40 to 56px / 1.05 | -0.025em, `max-width: 16ch`, balanced |
+| Docs, legal and error titles, landing section heads | `hk-h2` | 28 to 36px / 1.12 | -0.02em |
+| Landing feature cells | `hk-h3` | 24px / 1.3 | |
+| Dashboard page title | `hk-h1-app` | 24px / 32px, 30px / 36px from 640px | PageShell's `h1` |
+| Dashboard section head | `hk-h2-app` | 20px / 28px | -0.01em |
+| Docs section head | `.doc h2` | 24px / 31px | |
+| Lead | `hk-lead` | 17px / 1.6, `--hk-text-3` | `<strong>` is the claim in ink at 500 |
+| Body | | 15px / 1.6 | Inter, the kit's base |
+| UI text, buttons | | 14px, 13px in a small button | 500 on buttons |
+| Caption, label | `hk-label` | 12px / 16px, `--hk-text-3` | |
+| Eyebrow | `hk-eyebrow` | 11px, 600, 0.16em, uppercase, accent | sans even on an `h2` |
+| Code in panes | | Geist Mono 13px / 20px | 12px / 20px in the hero terminal |
+| Inline code | `.hk code` | 0.85em Geist Mono on `--hk-surface-2` | 5px radius, no border |
+
+Figures that line up use `hk-num` (tabular). No Tailwind `text-[…]` sizes in
+markup.
+
+## Corners
+
+| Radius | Token | Used by |
 |---|---|---|
-| `text-2xs` | 11px | Badges, the landing's uppercase labels. The floor: no text is smaller. |
-| `text-xs` | 12px | Table heads, notes under a meter. |
-| `text-compact` | 13px | Mono readings beside sans text, code blocks, kbd, the dashboard nav on a phone. |
-| `text-sm` | 14px | Dashboard body, fields, buttons, banners. |
-| `text-base` | 16px | Body text outside the prose. |
-| `text-prose` | 17px, 1.7 | Docs and legal prose (`.doc`, I-660). Code blocks stay 13px. |
-| `text-xl` | 20px | Every dashboard h2, semibold. |
-| `text-2xl` | 24px | Docs and legal h2; a stat's figure (`.stat-value`, serif). |
-| `text-4xl` | 36px | The page title everywhere: `PageShell`, `DocPage`, a policy. Serif 600 at `-0.01em` (I-660). |
+| 4px | `--hk-radius-xs` | focus outline, kbd, skeleton bars |
+| 5px | `--hk-radius-sm` | badges, inline code |
+| 6px | `--hk-radius-6` | segmented thumb and items, docs sidebar items |
+| 7px | `--hk-radius-7` | small buttons, the Account pill |
+| 8px | `--hk-radius` | buttons, inputs, banners, toasts, menus, the inline confirm, command lines |
+| 9px | `--hk-radius-9` | segmented track |
+| 12px | `--hk-radius-lg` | code panes, the terminal, plan cards, panels |
+| 14px | `--hk-radius-xl` | kit modals (unused) |
+| pill | `--hk-radius-pill` | dots, meter track |
 
-The landing sets its own display sizes (`LANDING.md`, "Type"). Mono under
-13px is a badge and nothing else: no label, no running text. The
-landing's uppercase labels are its own (I-395). A picture of a real tool
-on the landing (the Editor's LazyVim screen, the Browser's log, Ready's
-terminal, Localhost's tmux bar) is exempt from the 11px floor and the
-13px mono rule, as it is from the palette: it is drawn at the scale that
-fits the whole capture in its frame, and on a phone the Editor's screen
-draws at 8.4px so 69 columns fit (I-397). A picture the landing draws
-for itself keeps the 11px floor, and its rows (a file name, a diff
-stat, a time) are mono at 12px to 12.5px, 11px on a phone: a picture's
-labels at the picture's scale, as "Your working state" drew them when
-the owner chose it (I-399).
-Pages write no `text-[13px]`; a size that is missing becomes a step here.
-Figures that change or line up in columns (sizes, counts, times, prices)
-use `tabular-nums`. Page markup uses no `font-bold`; emphasis in body text
-is `font-medium` or `font-semibold`.
+Tailwind's `rounded-*` steps map onto these values (`rounded-lg` is 8px), but
+markup uses the tokens. Square corners belong to memory squares and the
+outage bar.
+
+## Elevation
+
+Three levels. Flat on the page colour, for nearly everything. A 1px ring or
+inset edge, for code panes, the selected item of a joined control and the
+info banner. A shadow (`--hk-shadow-pop`) for the Account menu, toasts and a
+chart's tooltip; in the dark it is a 1px `#27272a` ring plus a deeper drop,
+since a shadow alone is invisible on `#09090b`. The hero terminal adds
+`--hk-shadow-terminal`, the one drop shadow on a pane. Nothing else casts
+one, and no surface has a gradient.
 
 ## Spacing
 
-Tailwind's 4px steps, used the same way everywhere: the frame's gutter
-(`--frame-x`, 20px on a phone to 40px); 40px between the last rule
-above a page's title and the title (`pt-10`), 32px from the title rule to the content (`mt-8`), 40px between
-sections with 24px under each section's rule (`.form-section`); 20px
-inside a card (`p-5`); 12px for a row (`.row`); 96px under the last
-section (`pb-24`).
+Guide B 10.1 on repose's frame:
+
+| Distance | Value |
+|---|---|
+| Page top to title | 1.75rem, 2.25rem from 640px (PageShell) |
+| Title block to content | 1.75rem |
+| Between dashboard sections | 2.75rem |
+| Section head to its content | 0.875rem |
+| Row padding | 0.75rem (facts), 0.875rem (kit rows, questions) |
+| Table row, skeleton row | 56px |
+| Landing sections | 4.5rem from 1024px, 3.5rem below |
+| Page bottom | 6rem |
+| Banner to what follows | 1.5rem |
 
 ## Motion
 
-Motion is for state, and only on colour, opacity and transform.
+One curve, `--hk-ease` (`cubic-bezier(0.2, 0, 0, 1)`), and the kit's named
+durations: 150ms for colour, border and background; 160ms for the copy icon;
+200ms for a chevron; 220ms for the segmented thumb; 240ms for a terminal line;
+260ms for the drawn check; 400ms for a meter's fill. A transition names a
+token, never a number. Nothing moves on hover or press: buttons change colour
+only. Nothing fades in on scroll. The busy dot pulses at 1.6s. The hero
+terminal plays once and stops on a still caret, so it needs no pause control
+(WCAG 2.2.2). Under `prefers-reduced-motion: reduce` the busy dot holds
+still, the terminal shows every line, the thumb jumps, and
+`document.getAnimations()` is empty on `/`, `/projects` and a project page
+(design.spec, landing-motion.spec).
 
-| Where | What | Duration, easing | Reduced motion |
-|---|---|---|---|
-| Buttons, links, nav | Colour on hover and press | 150ms, Tailwind's default ease | Stays (colour only) |
-| `.dot--busy` | Opacity pulse | 2s, `cubic-bezier(0.4, 0, 0.6, 1)`, looping | Still (`motion-safe`) |
-| Docs drawer | Slides in from the left | 200ms ease-out | None (`motion-reduce:transition-none`) |
-| Docs heading anchor | Fades in on hover | 150ms | Stays (opacity only) |
-| Docs "On this page" fold | Chevron turns half a turn | 150ms | None (`motion-reduce:transition-none`) |
-| Docs "On this page" rail | A link scrolls the page to its section | The browser's smooth scroll | Jumps (`prefers-reduced-motion: reduce` checked on click) |
-| Landing | Rails, ticks, the hero's bar, shapes landing, the snapshot mark, the pictures | `LANDING.md`, "Motion" | Every shape still and whole |
+## Focus
 
-Anything that travels, turns or loops runs only under
-`prefers-reduced-motion: no-preference`. A colour or opacity change of
-200ms or less may stay for everyone. A transition names its properties:
-Tailwind's `transition-colors` includes `outline-color`, and the focus
-ring faded in with it.
+`:focus-visible` is a 2px `--hk-accent` outline 2px out, 4px corners.
+Where a container would clip an outset ring the ring goes inside: header
+links, page tabs, a scrolling table wrapper and a joined control's items
+take `outline-offset: -2px`. A table row's link draws its ring on the row's
+`::after`, which covers the row. A code pane or the Nix editor shows a 2px
+inset `--hk-code-focus` ring. `<main id="main" tabindex="-1">` is the skip
+link's target and draws no ring. The skip link, `hk-skip`, is the first tab
+stop on every page.
 
 ## Icons
 
-Inline SVG, no icon library: 16px on a 16 or 20 grid, 1.5 stroke, square
-caps, no fill, in `currentColor` or zinc-500. Drawn ones today are the
-select chevron, the search glass and the docs' fold chevron. A background
-image icon disappears in forced colours; the forced-colours block drops
-it or swaps in the native control.
+Inline 16x16 SVG, `stroke: currentColor`, 1.4 stroke, round caps, `aria-hidden`
+beside a word. No icon library. The snowflake (`Snowflake.svelte`) and the
+copy and check glyphs follow the same rule.
 
 ## Logo
 
-`Logo.svelte` is the I-363 mark (a thin cross in ink, three blocks in
-grey, light grey and the accent) followed by "repose" in Noto Serif 600.
-The mark is in every header (I-381):
+The cross-and-blocks mark, its strokes in `--hk-text` and its large square in
+`--hk-accent`, then "repose" in Noto Serif 600 18px at -0.01em (16px in the
+footer). The link's name is "repose, home". Below 640px the header shows the
+mark alone.
 
-- It links to `/` from every page, the dashboard included, named
-  "repose, home", with a 40px hit area (I-655).
-- 28px tall with the word from `sm` up. The word sits 1px under centre,
-  so its baseline is the header links' baseline.
-- Below `sm`: the 24px `sm` cut alone, so the header row fits 320px. The
-  link carries the name. The footer shows the `sm` mark with the word at
-  every width.
-- Never under 24px. At 16px (the tab) use the favicon, a heavier cut of
-  the same drawing (`static/favicon.svg`, `favicon.png`).
-- The mark's grey blocks have their own greys so they hold 3:1 at header
-  size: zinc-500 and `--control-edge` in the light, zinc-400 and
-  `--control-edge` in the dark. The landing's large shapes keep
-  `--sh-grey` and `--sh-light`. The big square is `--sh-accent`, the one
-  `--sh-*` token that appears off `/` (I-363, I-393).
+## Frame and header
 
-## Page frame and header
+Every page is built in one frame (I-656): a 1200px box, its gutter included,
+centred, with a gutter of 20px on a phone growing to 40px. The `frame`
+utility applies it to the header row, the footer, every `main`, the docs and
+the landing. At 1440 with a classic scrollbar the content box is 1120px wide.
+The kit's 76rem container and 2rem gutter are not used: the docs columns and
+the tests' geometry depend on 1200.
 
-**The frame** (I-656). Every page is built in one column: the `frame`
-utility in `layout.css` centres a box of `--frame-w` (1200px, gutter
-included) and pads it by `--frame-x` (20px on a phone, 40px from 1334px
-up). The header's row, the footer, `PageShell`'s main, the docs' frame,
-the legal pages' main and the landing's rails use it, so the content
-column is 1120px from 1280 up and the logo, the page's title and the
-docs' sidebar all start at x=160 at 1440 and x=20 at 390 (7.5px less
-where a classic scrollbar takes its gutter). No page sets its own
-`max-w-*` frame or side padding. `html` keeps `scrollbar-gutter: stable`
-and `scroll-padding-top: calc(var(--header-h) + 1rem)`, so a jump to a
-heading lands 16px under the sticky header; the docs add their sub-bar's
-44px below `lg`.
+The header is one 56px row and a 1px `--hk-hairline` rule, 57px, sticky at
+the top at every width, on `--hk-bg` at 88% with a 10px blur. The kit's
+stacked, non-sticky phone header is not used: the docs sub-bar is pinned to
+end at 101px, and the item counts design.spec reads depend on one row.
 
-**The header** is `SiteHeader.svelte`, the one header (I-655). The root
-layout draws it on every route at the first paint, before the sign-in
-check answers. It is sticky on every page: 56px over a full-bleed
-`--rule` hairline, its row on the frame. Left, the logo (see Logo).
-Right, a `nav` named "Site" with, in this order on every page: Docs
-(current on `/docs` and below), Pricing (`/#pricing`, hidden below
-400px), Feedback (`https://repose.fider.io`), GitHub (from `sm`), and one
-account slot. The links are `text-sm` in `--ink-muted`, ink under the
-pointer, 16px apart below `sm` and 24px from it; the current page is ink
-with a 1px ink edge lying on the header's rule, no bold shift and no
-accent, and its focus ring is drawn inside the link. The account slot
-is always a `.btn-quiet .btn--sm` of one minimum width: "Sign in" while
-signed out or unknown (the prerendered HTML), "Dashboard" signed in on a
-public page, and on a signed-in page the "Account" disclosure
-(`AccountMenu.svelte`): a 16px chevron, and a panel on `--surface` with a
-`--rule-strong` edge and no shadow holding Settings and Sign out in 36px
-rows. It is a disclosure, not an ARIA menu: focus moves to its first
-item, the arrows move between them, Escape, a click outside or a
-navigation closes it. The URLs are in `lib/links.ts`.
+- Signed out: the logo, then Docs, Pricing (hidden below 400px), Feedback,
+  GitHub (from 640px) and Sign in. Signed in on a public page, the slot is a
+  Dashboard link in the same small secondary look.
+- Signed in on a dashboard page: the logo and the Dashboard nav (Projects;
+  Billing, hidden below 360px; Settings, hidden below 640px), then Docs,
+  Feedback (from 640px), GitHub (from 640px) and Account.
+- Header links (`hk-navlink`) are 14px `--hk-text-2`. The current one is the
+  accent with a 1px accent edge lying on the header's rule, weight unchanged,
+  `aria-current="page"`; the edge is the cue that does not depend on colour.
+- The Projects link carries a `hk-badge--warn` count of waiting questions,
+  and its name says it ("Projects, 2 questions waiting").
+- The account slot keeps one width for its three forms. Sign in is a small
+  secondary button. Account is a 32px pill with a chevron that opens a menu
+  on `--hk-surface` with the pop shadow: the email on its first line, then
+  the places the header hides at that width, Settings and Sign out.
 
-**The dashboard's places.** On signed-in pages `DashNav.svelte` sits in
-the header row beside the logo, 20px after it below `sm` and 32px from
-it (I-679): Projects, Billing and Settings in the header's link style;
-Settings hides below `sm` and Billing below 360px, both still in the
-Account menu, which also takes Docs and Feedback below `sm`. A signed-in
-page's right side drops Pricing. Projects carries a `.badge--warn` with
-the number of questions waiting across every project, and its name says
-it ("Projects, 1 question waiting"). A project's pages put
-`ProjectTabs.svelte` (Overview, Config, Secrets) under the title on the
-title's rule, through `PageShell`'s `tabs` snippet: links with
-`aria-current`, drawn like the header's. On the docs below `lg` a sticky
-44px sub-bar sits under the header: the Menu button and the open page's
-title. No hamburger anywhere else.
+There is no left rail on the dashboard. Three places do not need a column,
+and a rail with its gap takes 248px from the projects table and the project
+page's two-column rows. On a project page the header marks the place
+(Projects, in the accent) and the page tabs mark the view (in ink).
 
-## Footer
+## Footer and the theme switch
 
-`SiteFooter.svelte`, on every page and under the landing's frieze on
-`/` (I-655): a `--rule` hairline, the frame, 28px above and below, the
-`sm` mark with the word on the left and, on the right, Docs, Pricing,
-GitHub, Feedback, then Terms, Privacy, Refunds, in `text-sm`
-`--ink-muted`. Below 768px the two groups are two columns, so the lines
-align. The root layout keeps it at the window's foot on a short page.
+The full footer (landing, docs, legal) sits on a hairline, `3rem 0 2rem`:
+the logo, then two columns, **Product** (Docs, Pricing, llms.txt, GitHub,
+Feedback) and **Policies** (Terms, Privacy, Refunds), with 12px 600 heads
+and 13px `--hk-text-3` links. Below them, on a hairline, the theme switch.
+The compact footer (dashboard pages, and error pages for a signed-in user)
+is one row, `1.25rem 0`: Docs, Feedback, Terms, Privacy and Refunds left,
+the theme switch right. Both put their links in `nav[aria-label="Footer"]`.
 
-# Dashboard
+The theme switch (`ThemeSwitch.svelte`) is a small segmented radio group
+named "Theme": System, Light, Dark. It lives in the footer and nowhere else.
+Light or Dark is stored in this browser (`localStorage` `hk-theme`) and set
+as `data-theme` on `<html>`; System removes both and follows the OS.
+`lib/theme.svelte.ts` reads nothing at import, so prerendered pages render
+System checked and show the stored choice once they run, at the same size.
 
-The signed-in pages: projects, a project and its config and secrets,
-billing, and settings (which holds the account, I-578).
+## First paint
 
-## Frame
+`app.html` paints the page before any CSS arrives: `html` gets `#fafafa` and
+`#18181b`, or `#09090b` and `#f4f4f5` in the dark by media query or by
+`data-theme`, with `color-scheme` set so the scrollbar and native controls
+match. Its one inline script reads `hk-theme` and sets `data-theme` and both
+`theme-color` metas before the body paints. The body stays hidden until
+`layout.css` applies (its last, unlayered rule), so no page paints unstyled
+(I-331). The script's sha256 sits in `svelte.config.js` `script-src`;
+`app-html.test.ts` fails when the script changes and the hash does not, and
+when the first-paint pair drifts from `--hk-bg` and `--hk-text`.
 
-`PageShell.svelte` wraps every page in a `<main>` on the frame, `pt-10
-pb-24`. It spans the frame by default (`width="full"`, with `list` kept
-as an alias); `width="form"` holds the content to `max-w-2xl`, flush
-left, and a form page may put a second column beside it (I-664). It
-draws the breadcrumb (`text-sm text-ink-muted`, `·` separators), the h1
-(`text-4xl font-semibold tracking-[-0.01em]`), an optional lede, an
-action (right of the title from `sm`, under it below), an optional
-`tabs` row, then a `--rule` hairline. A page's h2s are `text-xl
-font-semibold`, card titles included; no dashboard page uses h3 (I-375).
+# Components
 
-## The pages
-
-What each signed-in page leads with (I-664). A change to a page's order
-or its first screen goes through a DECISIONS entry.
-
-- **Projects**: the questions agents wait on, as the "Waiting on
-  you" card (I-693); a stat strip (`PlanStrip`) of memory running, disk held and
-  egress against the plan, or, with no plan limits, four facts from the
-  list (memory, machines running, agents needing input, disk in use);
-  a toolbar past 8 projects (a search field and the All, Needs you,
-  Running, Stopped filters, both in the URL, I-762); the table, capped
-  at 25 behind "Show all N"; Recent activity; Recently destroyed. The
-  rows are ordered by what wants you, then what is up, then what is at
-  rest, most recently active first inside each (I-761) — never the
-  api's `created_at`. The table's name link
-  covers the row, and its Start or Stop answers in place. Below `sm`
-  rows stack, never scroll sideways. With no projects the empty state
-  is one card across the frame: `repose run` on the left, the plan
-  facts or the waitlist on the right (I-681).
-- **A project** (I-680): "Waiting on you" across the frame while any
-  question waits;
-  then Events in two thirds beside Connect over Machine, the two
-  columns ending on one line (I-682); Usage across
-  the frame; then Snapshots in two thirds beside Agents (while the
-  machine runs) over Details; Destroy last. With no snapshot yet, a
-  running machine's Snapshots, Agents and Details share a row of
-  three. From `md` the short cards pair and Events and Snapshots span
-  both columns. A phone has one column in the order Questions,
-  Connect, Events, Machine, Usage, Snapshots, Agents, Details,
-  Destroy. Nothing mounts above painted content: what the first screen
-  needs is fetched together. The Machine card is memory in use and
-  disk as ring rows (the size's vCPUs and memory are on the status
-  line); Usage's busiest processes are a table folded under a
-  full-width `<details>` until opened (I-674). The snapshot list shows
-  the newest 8 behind "Show all N".
-  **Resize…** under Disk opens a panel across the frame under the
-  Events, Connect and Machine row (under Machine on a phone).
-- **Frozen** (I-683, behind `FROZEN_LOOK`; a mock until the api sends
-  `resting`): the snowflake and "frozen" in `--frost` replace the dot
-  and "running"; a frozen row has a frost wash and edge, its memory
-  squares turn to ice, and its page has an ice band under the status
-  line. Frost is never the accent and never amber: nothing is wrong.
-- **Events** come in numbered pages, not an endless "Show older": 10
-  rows under day headings, one pager (Newest, Newer, "Page n of m",
-  Older) above the list (I-674), the place in the URL, and the
-  filters as links with `aria-current`, drawn like the project's tabs.
-  A disabled pager button keeps its place and says why in its title.
-  One page has no pager; the count beside the title is enough. Below
-  `sm` the pager spans the card: Newer, the position (or "N newer" in
-  its place), Older (I-680).
-- **Billing**: the plan, its price once and its status, then memory
-  as squares beside disk and egress as ring rows, then one band of
-  facts (period, next charge, latest invoice) (I-674); plans as
-  `PlanCells`. On a phone the plan's two actions share a row at equal
-  width. Change plan opens its own section across the frame under the
-  plan card, not inside it (I-681).
-  Paged tables (invoices) use the same Newer and Older.
-- **Settings, Config, Secrets**: a 280px label column beside the
-  controls from `lg` (Settings), or the work in two thirds and its
-  context in one (Config, Secrets). An action that saves sits in the
-  footer of what it saves.
-
-## Card layout
-
-Rules for every grid of cards (I-680). The owner, on a restore
-confirm squeezed into a third-width card: "even the form being in such
-a small area".
-
-- **A card is as tall as its content.** No `h-full`, `*:h-full`,
-  `flex-1` or stretch to match a neighbour; every grid that holds
-  cards is `items-start`. A card's inner bottom ends within 40px of
-  its last content, in every state and at every width.
-- **Columns line up by what is in them.** Pair cards whose natural
-  heights match in the common state (running, a full page of events,
-  1 to 3 agents, 5 or more snapshots). Something whose count changes,
-  like Questions, runs across the frame, never in a column. In a
-  sparse state the shorter column may end up to about 300px early;
-  fill that with real content or leave it.
-- **A list that grows over time is capped**: the newest N and a
-  `.btn-ghost` "Show all N" / "Show fewer" under it (snapshots 8,
-  config revisions 8); Recently destroyed shows 10 and fetches the rest
-  with "Show more" (I-681). A paged list hides its pager on one page. Rows in a wide card take one line.
-- **A form opens inline under what asked for it, in a box at least
-  32rem wide.** A list whose rows open a form sits in a card two
-  thirds wide or full width, never a third-width side card. A shared
-  form lays out by its own `@container`, never the viewport: the
-  field is `flex-1 min-w-0` up to about 32rem, the buttons a
-  `shrink-0` group that wraps under it whole. In a confirm panel 40rem
-  or wider the warning sits left and the form right, as in Destroy;
-  narrower, they stack. Nothing passes its box's edge from 320 to
-  1440 wide.
-- **From `md` to `lg` short cards sit two to a row**; a card without
-  a partner spans both, and no card spans 700px for one line.
-- **Figures and dates never split.** A date is one `whitespace-nowrap`
-  span; a figure may wrap between its number and its "of LIMIT", never
-  inside either. Labels take `min-w-0` (a `minmax(0,1fr)` grid column)
-  so they wrap or ellipsize instead of pushing a figure out.
-
-## Hairlines, not boxes
-
-Borders use `--rule` for sections, rows and cards, `--rule-strong` for
-badges, table heads and banners, and `--control-edge` for controls.
-Sections separate with a top rule and spacing (`.form-section`, whose
-first one on a page draws no rule under the title's; `.row`). `.card` is a
-`--rule` box filled with `--surface`, one step off the page, with no
-shadow: unfilled, a page of cards read as a wireframe (I-659). `.btn-quiet`, `.banner` and fields
-keep a `--surface` fill, one step off `--page`, so a control reads as
-something you can use. The Nix editor is the one field on `--sunken`: it
-holds code, and code sits on `--sunken` everywhere; its `--control-edge`
-border still marks it as a control. Its current line is one step lighter
-than the fill: `--surface` in the light, and in the dark, where
-`--surface` is the darker, `--sunken` with 5% `--ink` mixed in (I-393,
-I-395).
+Every class here is `hk-` prefixed. The kit's come from `tokens.css`;
+those marked (repose) are in `repose.css`. Svelte components are in
+`lib/hk/` and `lib/components/`.
 
 ## Buttons
 
-- `.btn`: the inverted zinc primary, one per view.
-- `.btn-quiet`: `--control-edge` border on `--surface`, for a secondary
-  action that still needs a button's weight.
-- `.btn-danger`: bordered red, for an action that cannot be undone.
-- `.btn-ghost`: a muted word with a hairline underline in
-  `--control-edge`, which turns ink under the pointer, for a secondary
-  action. The resting underline says it can be pressed; grey and
-  underlined, it cannot be taken for a link, which is blue (I-392).
-- `.btn-ghost-danger`: the same in red, for a destructive action that can
-  be reversed or that opens a confirmation.
+- `hk-btn`: the primary, inverted ink (`#18181b` with `#fafafa` text; the
+  reverse in the dark). One per screen.
+- `hk-btn-secondary`: surface, 1px `--hk-border`, ink text.
+- `hk-btn-ghost`: no fill, `--hk-text-2`, a wash on hover. Row actions and
+  "Keep it".
+- `hk-btn-danger`: transparent with a red edge at 35% and red text. For an
+  action that cannot be undone. Weight follows consequence, so it is never
+  ghost.
+- Sizes: default 36px / 14px / 8px corners; `hk-btn-sm` 30px / 13px / 7px
+  corners; `hk-btn-lg` 40px for the hero and pricing calls to action only.
+  All are 14px Inter 500 or smaller and 44px on touch.
+- Hover and press change colour only, 150ms. Pressed is one step past hover.
 
-Visual weight tracks consequence. Choices of equal weight (a question's
-answers) are all `.btn-quiet`, never a row of primaries. Sizes (I-376):
-the default suits a form; `.btn--sm` (`px-3 py-1.5`, at least 40px tall
-below 640px, I-657) is for rows, toolbars and header bars; `.btn--lg` (`px-5 py-2.5`) is for a call to action that
-stands alone on its row, the landing's "Get started" and "Start a free
-week" and nothing else (I-397). No `!py-*` or `!px-*` overrides. Hover and press
-(`active:`, one step darker than hover) apply to every button and to a
-link drawn as one; a disabled button does not answer them. Never gate
-them with `enabled:`, which no `<a>` matches (I-393). A
-disabled `.btn`, `.btn-quiet` or `.btn-danger` has one look whatever its
-kind: a `--rule-strong` outline on `--surface` with `--ink-faint` text
-(I-391); `aria-disabled="true"` takes the same look, for a button that
-must keep focus while it waits (LoadState's Retry). A ghost button at the
-end of a row takes `-mr-2` (or `-mx-2`) so its word lines up with the
-content edge, as on secrets, config revisions and snapshots. A word that
-does something in a dense row takes the `hit` utility, an 8px margin that
-takes the pointer without moving the layout (I-657).
+**Waiting** (repose). A button whose request is in flight keeps focus and
+says so in its label ("Starting…", "Keeping…"): `aria-disabled="true"`,
+never `disabled`, which drops focus to `<body>` (I-766). The primary takes
+`--hk-disabled-bg` and `--hk-disabled-text`; the others turn `--hk-text-3`
+at full opacity. The face text equals the accessible name.
+
+**Disabled** (repose). A true `disabled` is only for Save with nothing to
+save, ConfirmType before the name matches, and a pager at its end. It is
+flat `--hk-text-3`, never faded (settings-account.spec reads its colour).
+
+**Armed** (repose). `hk-btn-danger--armed` is ConfirmType's button once the
+typed name matches: a solid `--hk-err` fill with `--hk-on-err` text, so the
+moment the action becomes possible is visible (I-661).
+
+**Danger text** (repose). `hk-btn-text-danger` has ghost geometry and red
+text, for one reversible destructive action at a page's end ("Cancel plan",
+undone by Resume). Never in a table row (Guide B anti-pattern 19).
+
+## Badges
+
+`hk-badge`, 20px, 11px 500, 5px corners, with `--warn`, `--err`, `--ok`,
+`--info`, `--mono` and `--outline`. A badge marks an exception: a count of
+waiting questions (`--warn`), "temporary", the "Current" plan and a
+"refunded" invoice (`--outline`). Normal states (paid, applied, manual) are
+plain words.
+
+## Dots and states
+
+`hk-dot` is 7px, always beside a word, `aria-hidden`. `StateDot.svelte` maps
+a guest state to it:
+
+| State | Dot | Class |
+|---|---|---|
+| running | filled ink | `hk-dot--on` (repose) |
+| creating, building, starting, stopping, restoring, destroying | `--hk-busy` with a 3px halo, pulsing | `hk-dot--busy` (repose) |
+| stopped, destroyed, unused | hollow 1.5px `--hk-control-edge` ring | `hk-dot--idle` (repose) |
+| needs input, host unreachable | amber | `hk-dot--warn` |
+| error | red | `hk-dot--err` |
+| frozen | the 12px snowflake and "frozen" in `--hk-text-2` in place of dot and word | `data-frozen` |
+
+A frozen machine has no band, no cyan and no row fill; frozen is a normal
+state of a running machine. A dot keeps `data-tone` and its parent
+`data-state` for tests and stylesheets.
 
 ## Fields
 
-- `.field`: `rounded-sm`, `--control-edge` border on `--surface`,
-  placeholder in `--ink-faint`. Focus is the house `:focus-visible` ring,
-  2px `--focus`, offset 2px (I-372); a field does not restyle its border
-  on focus.
-- Every field has a visible `<label for>`, or an `aria-label` when the
-  row's heading already names it (a search box). A placeholder is an
-  example, never the label.
-- An error is a `.field-error` paragraph under the field, with an id; the
-  field carries `aria-invalid` and `aria-describedby` pointing at it.
-- Selects are `select.field` with the drawn chevron.
-- A boolean is a native checkbox (`accent-zinc-900`, dark zinc-100) and a
-  text label on one line (`.check-row`). A pick-several list is a
-  searchable list of `.check-list-row`s with the description in muted
-  text.
+`hk-input`, `hk-select` and `hk-textarea` are 36px, 8px corners, 14px text,
+with the 3:1 `--hk-control-edge` border (repose). Focus is a 55% accent
+border and a 3px `--hk-ring` halo. `aria-invalid="true"` turns the edge red
+and `hk-field-error` says why under the field. A disabled field takes the
+plain border. `hk-input--search` (repose) adds a magnifier on the left in
+`#71717a`, which reads on both themes. Labels are `hk-field-label`; fields
+stack in `hk-fields`. Inputs are `width: 100%`, so markup sizes them
+(`max-w-80`).
 
-## Badges, dots, tables, meters
+## Checkboxes
 
-- `.badge`: 11px mono on a `--rule-strong` edge, neutral. `.badge--new`
-  emerald, `.badge--error` red, and `.badge--warn` amber for what waits
-  on you or is over a limit (a question count, I-659). Nothing else; a
-  tag like "temporary" is a plain `.badge`.
-- `StateDot.svelte`: an 8px square before the state's word, which is
-  always printed. Filled for running (emerald), error (red) and busy
-  (ink, pulsing under `motion-safe`); hollow, edged in `--control-edge`,
-  for stopped and destroyed (I-373).
-- Questions (I-693): one `QuestionRow` on /projects and the project
-  page, in a `.card` titled "Waiting on you" with a `.badge--warn`
-  count. Rows split by hairlines, each marked by one amber square
-  (`.dot--warn`), never a rule down the side: amber is "waits on you",
-  blue stays links, focus and measures. A 13px meta line (agent in
-  mono, window muted, the age right-aligned, the expiry in amber only in
-  its last 10 minutes), the question at 16px held to about 80
-  characters a line and clamped to 3 lines (4 on a phone) with "Show
-  all" only when clamped, options as `.btn-quiet .btn--sm` chips or a
-  field that grows to 4 lines with a quiet "Send", and a `.btn-ghost`
-  "Dismiss". A closed question is one line for 8 seconds.
-- `.table`: hairlines, no fills, heads in `text-xs text-ink-muted`. A
-  table that scrolls sideways on a phone sits in a `role=region` with an
-  `aria-label` and `tabindex=0`, so a keyboard can scroll it.
-- `Meter.svelte` (I-659): one series as a 6px bar on `--sunken` with a
-  `--control-edge` edge, filled in the accent. Past the limit the bar's
-  scale becomes the used figure: the share up to the limit stays blue,
-  the overage is amber, and a 1px ink tick marks the limit, so "over" is
-  an amount; the reading and `aria-valuetext` say "over" too. An optional
-  `marker` draws a 1px `--ink-muted` tick (the period's pace on egress),
-  described by `markerLabel`; `compact` puts the bar and the reading on
-  one line for a table cell; `href` makes the label a link. It draws the
-  project page's memory and disk. Charts beyond a meter need a DECISIONS
-  entry.
-- Plan limits (I-674): memory running is `MemoryBlocks.svelte`, the
-  plan's squares (one per GB, 32 to a row, 16 in a box under 413px,
-  I-681) filled by
-  each running machine in the accent, alternate machines at 55%, free
-  squares outlined, past the limit amber. Disk held and egress are
-  `UsageRing.svelte`, an 18px pie (a filled wedge on a `--sunken` disc,
-  I-679) beside the "X of Y" figure. A page
-  shows each limit once and draws no bar for it.
-- Stat strips (I-659): `.stat-row` is a `--surface` box whose `.stat`
-  cells are split by `--rule` hairlines (stacked, with horizontal ones,
-  below `sm`). A cell is a `.stat-label` (12px, muted), a `.stat-value`
-  (24px serif 600, tabular) and an optional `.stat-sub` or meter. A page
-  leads with the figures its user came for.
-- `UsageChart.svelte` (I-492, I-659): one measure over time as a 2px
-  accent line over a 12% accent area, dashed hairlines at the top and middle, the top's
-  value in `text-2xs` faint, "N hours ago" and "now" under it. One series
-  per chart, so no legend; the label and an "now X, peak Y" reading in
-  mono carry the numbers. Hover or the arrow keys show one point. A gap
-  is a time with no data. No explanation under a chart: the public docs
-  say what each measure means.
-- A reading of a share is "X of Y" ("4 GB of 20 GB"), on a meter or in a
-  card, never "X / Y".
-- `CodeCopy.svelte`: one command on a `.codeblock` line that scrolls,
-  with its own Copy button beside it outside the scroll, "Copied" for
-  1.5s and in its own live region; a failure toasts.
-- `.codeblock`: a command block on a dashboard page, 13px mono on
-  `--sunken`. Its lines scroll sideways, as the docs' blocks do; a
-  wrapped install line left "| sh" alone on the last line. As the docs'
-  blocks do, it shows a 2px `--ink-faint` bar at an edge where a line
-  runs on, and a block wider than its box takes a tab stop
-  (`tabStopWhenScrolls`, I-401).
+`hk-check` is a label around a native 16px box with `accent-color` the
+accent, 14px text, 24px tall and 44px on touch (repose). Save-on-change
+settings toast their result; fields with a Save button say "Not saved yet."
+while dirty (I-332).
 
-## States
+## Joined controls
 
-Every view that loads or acts has each of these:
+All share one look: a `--hk-surface-2` track with 3px padding and a 1px
+inset hairline, items 30px (24px with `hk-seg--sm`) at 13px 500
+`--hk-text-3`, and the selected item on `--hk-surface` in ink with the 3:1
+ring. In the dark the selected item is `#3f3f46` with a `#a1a1aa` inset ring
+and `#fafafa` text. Focus is a 2px accent outline inside the item, so the
+track never clips it. In forced colours the selected item takes a 2px
+Highlight outline.
 
-- **Loading**: `LoadState` draws a still skeleton in `--sunken` blocks
-  (the title's bar where no title is on screen yet, a stat strip, four
-  rows), no shimmer, and says "Loading…" to a screen reader in a
-  `role=status` (I-659). The root layout draws the page-shaped one on a
-  private page while the sign-in check runs. The h1 names the page
-  ("Project"), never "Loading…".
-- **Failed first load**: `LoadState.svelte` shows the error in a
-  `.banner--error` (`role=alert`) with a Retry (`.btn-quiet .btn--sm`,
-  "Retrying…" while it runs) that re-runs the same load. Only the first
-  load goes there; a refresh that fails later keeps the content on screen
-  and raises a toast (I-385), once, when the poll starts failing
-  (`PollFailure` in `lib/api/toast.ts`, I-393), or, if the load banner or
-  the outage bar was saying it then, on the first failed tick after it
-  goes (I-394). A page keeps its load error until a load
-  succeeds, so the banner and its button stay through a retry and keep
-  the keyboard's focus; a breadcrumb waiting on the failed load's name
-  reads "Project", not "…".
-- **Empty**: an h2 that says so ("No projects yet"). If the screen has
-  no way to add one, one sentence on how, with the command when the CLI
-  is the way; if it has one (a form below), at most one sentence of
-  fact the user needs, never instructions for the form (I-485).
-- **Disabled**: the one disabled look (see Buttons; a ghost button fades
-  to `opacity-50`) and `cursor-not-allowed`, and a sentence
-  that says why when the reason is not obvious ("Stop todo-app first",
-  "320 GB is the largest size."). If no choice is valid, the control is
-  replaced by that sentence.
-- **Pending**: while an action runs, its button is disabled and its label
-  becomes the verb with an ellipsis ("Destroying…", "Re-applying…").
-  One action at a time per page section.
-- **Danger zone**: last on the page, an h2 in red at `text-xl`
-  ("Destroy", "Delete account"), a sentence on what is lost, and
-  `ConfirmType`.
+- `hk-seg` with `Segmented.svelte`: native radios under a sliding thumb
+  (`hk-seg--slide`, `hk-seg-thumb`, repose). For a choice of four or fewer
+  short options: the theme switch. Before it runs, the checked label is
+  raised and no thumb shows.
+- `hk-seg--links` (repose): a `<nav>` of links with `aria-current="page"`,
+  for filters that live in the URL: the projects filter and the event kinds.
+- `hk-seg--buttons` (repose): `button[aria-pressed]`, for the Usage range
+  (Hour, Day, Week).
+- `hk-tablist` (repose): `role="tablist"` drawn as a small track, so it never
+  reads as the page tabs above it. Config's Menu and Nix. One tab stop, the
+  selected tab; the arrow keys move between tabs. In forced colours the
+  selected tab has a 3px CanvasText bottom edge and the others a 3px Canvas
+  edge, so nothing shifts.
 
-## Confirmation
+## Page tabs
 
-One pattern per consequence, and never the browser's `confirm()` (I-386):
+`hk-tabs` (repose): a `<nav>` of links on the full-width hairline PageShell
+draws under its `tabs` snippet, 1.5rem apart, 40px tall (44px on touch), 14px
+`--hk-text-2`. The current tab is ink with a 1px ink edge lying on the rule,
+weight unchanged. A project's Overview, Config and Secrets.
 
-- **Cannot be undone** (destroy a project, delete the account, restore a
-  snapshot over the disk): `ConfirmType`. Its field has a visible label,
-  "Type `slug` to confirm", with the word in mono; the `.btn-danger` stays
-  disabled until it matches exactly, then turns the filled red of
-  `.btn-danger--armed` (I-661); Enter confirms. The panel says what
-  is lost.
-- **A single deletion whose cost is recoverable** (a secret, cancelling a
-  plan): an inline two-step in the row. The first button turns into a
-  sentence naming the effect, a `.btn-danger .btn--sm` that does it and a
-  `.btn-ghost` "Keep it".
-- **Focus follows the panel** (WCAG 2.4.3, I-391). A panel that opens in
-  place of the button that asked for it takes focus: "Keep it" in a
-  two-step, the field in `ConfirmType` or `RestoreNameForm`, the size
-  select of the project page's resize panel. Cancel or Keep it puts focus
-  back on that button; a row that goes away passes it to the next row's
-  button. A panel that closes on its own after a wait (a grow that
-  finished) gives focus back only if focus was still inside it.
-  `lib/focus.ts` has the two helpers.
-- **Leaving unsaved edits**: the SvelteKit navigation is cancelled and a
-  `.banner--warn` asks in place, with Stay (focused) and Leave. Stay puts
-  focus back on the link that asked to leave, or on the unsaved field
-  when the browser's Back asked (I-393).
+## Tables
 
-No modals: the inline panel keeps what is being confirmed on screen.
+`hk-table`: 13px, a 12px `--hk-text-3` header over `--hk-border`, hairline
+rules between rows, outer cells flush with the frame, numbers right-aligned
+and tabular (`hk-num-col`). `hk-table--hover` washes the row under the
+pointer, and a row's main link covers the row with its `::after`; any action
+in the row sits above it (`position: relative; z-index: 1`). A table that
+may scroll sideways sits in `hk-table-wrap` (repose) with `role="region"`, a
+name, and a tab stop while it overflows (`tabStopWhenScrolls` in
+`lib/scroller.ts`); its 4px inline padding, pulled back by a negative margin,
+keeps a focus ring on the first or last column visible while the text edge
+stays put. Below 640px a table with row actions stacks each row into two
+lines, its action on the right of line 1.
 
-## Tabs
+## Facts
 
-A switch that swaps a panel in place without changing the URL is ARIA
-tabs: `tablist`, `tab` with `aria-selected` and a roving tabindex,
-`tabpanel` with `aria-labelledby`; arrows, Home and End move between
-tabs. The keys are handled on the tabs, so the tablist needs no
-tabindex. If only the current panel is rendered, only the current tab
-carries `aria-controls`; an id that names nothing is a broken reference. The current tab looks like the header's current page: ink with a
-1px underline, no weight change, no accent (I-388). A switch that changes
-the URL is links with `aria-current`.
+`hk-facts` (repose) is a `<dl>` of read-back facts: each `div` a hairline
+row, `dt` 13px `--hk-text-3` in a 9rem column, `dd` 14px ink (add `hk-mono`
+for an id). Below 640px `dt` sits over `dd`. Inside `hk-section` the first
+row drops its top rule, so one rule sits where one belongs. `hk-facts--row`
+sets the facts side by side between two hairlines, `dt` 12px over `dd` 15px:
+Billing's current plan (price, status, next charge).
 
-## Toasts
+## Stat strip
 
-`svelte-sonner`, `theme="system"`, bottom-right, without `richColors`
-(I-374). From 600px up the toast's right edge is the frame's content
-edge, not the window's; on a phone it spans the page's 20px gutters
-(`mobileOffset`), so its edges are the column's. A toast is a banner of its kind: `--surface` and `--ink` for
-neutral, the `.banner--ok`, `--error` and `--warn` colours for typed
-ones, 2px corner, a hairline, no shadow. Toasts report the result of
-something the user did, and a failed refresh. A failure that leaves the
-page with nothing to show is a banner, not a toast, and not both: one
-failure is said once, in `errorText`'s words (I-390). A poll says it once
-too: a toast on the first failed tick, none while the load banner or the
-outage bar shows, and the toast dismissed when a tick gets through
-(`PollFailure`, I-393). Only a toast counts as said: a tick that failed
-quietly under the banner or the bar does not stop the next one, after
-they have gone, from toasting (I-394).
+`hk-stats` with `hk-stat`, `hk-stat-label`, `hk-stat-value` and
+`hk-stat-unit`: hairlines above and below, no tiles, three or four columns
+from 900px, labels that wrap and reserve two lines. repose shows a stat strip
+only for a figure it can read at render time; the dashboard has none today,
+and the landing has none because no public figure is both live and
+reproducible.
+
+## Meters and memory squares
+
+`Meter.svelte` on the kit's `hk-meter`: the label left, the value right in
+500 tabular ink, a 6px pill track (`hk-meter-track`) and its fill
+(`hk-meter-fill`) under them. `role="meter"` is named by the label, with
+`aria-valuetext` the value text ("24 GB of 32 GB", "112.4 GB of 100 GB ·
+over"). The fill is the accent while comfortable, amber under 20% left, red
+under 5% left or past the limit, and `--hk-text-4` with a quiet value when
+nothing is counted yet, so a first run raises no alarm. The fill's width
+moves in 400ms and holds still under reduced motion. In forced colours the
+track draws a GrayText edge and the fill CanvasText (repose).
+
+Memory is squares, one per GB (`MemoryBlocks.svelte`), passed into a Meter
+through its `track` snippet so every plan figure shares one anatomy. Squares
+are 10px on /billing and 8px in the projects plan row, 2px apart, square
+cornered. One machine's run is the accent; two are the accent and
+`--hk-text-2`; three or more take `--hk-series-1` to `-3`, then `--hk-text-2`,
+with a 12px legend naming each machine. Frozen GB are hatched in
+`--hk-text-3`, GB past the plan are `--hk-warn-dot`, and a free GB is a 1px
+`--hk-control-edge` outline. In forced colours running GB are CanvasText,
+frozen GrayText, free an outline.
+
+## Code pane
+
+`CodeBlock.svelte`: near-black in both themes (`--hk-code-bg` `#0c0c0e`,
+`#0e0e10` on a dark page, where a 1px outer ring separates it), 12px
+corners, an inset `--hk-code-border`, a 42px bar when it has a title or tabs,
+Geist Mono 13px / 20px. Shell blocks show `$ ` and output in
+`--hk-code-muted`, commands in `--hk-code-text`, `# ` comments in italic.
+Copy copies the commands only. Line numbers appear past eight lines, never in
+docs panes, so the 70-column rule holds there. A pane that scrolls takes a
+tab stop and shows a 2px inset `--hk-code-focus` ring when focused. Strings
+are blue-300 and numbers amber-300; every other token is a zinc step, so the
+pane is never the loudest thing on the page.
+
+## Command list
+
+`CommandList.svelte`: two to four commands in one near-black pane, a 40px row
+each: a muted `$ `, the command in `--hk-code-text`, and its own dark small
+Copy named "Copy {what}". A `# note` above a command is 12px italic and wraps
+on a phone while the command scrolls sideways; Copy lines up with the command
+line. A row takes a tab stop only while it overflows. Used where a page
+offers several commands together: Connect on a project page, the empty
+/projects state.
+
+## Command line
+
+`CodeCopy.svelte`: one lone command on a light page, in a `--hk-surface-2`
+box with a 1px border and 8px corners, Geist Mono 13px ink, an optional muted
+`$ `, and a page-tone small Copy at the end. On touch the box is 46px tall,
+so the 44px Copy sits inside it edge to edge. Long commands scroll sideways
+inside the box. A page keeps one dark anchor, so a lone command is light.
+
+## Copy button
+
+`CopyButton.svelte`: sizes sm, md and lg (24, 28, 40px; all reach 44px on
+touch), tones `dark` for a pane and `page` for the page. The face says what
+it does ("Copy", "Copy install command"), and its accessible name starts with
+the face ("Copy the install command"). On copy the icon becomes a check drawn
+in 260ms and a polite live region says "Copied"; the width never changes. A
+copy button's text is exactly what the pane shows and runs where the reader
+pastes it (Guide B 1.10).
+
+## Terminal
+
+`landing/Terminal.svelte` is the landing's one terminal, described under The
+landing. It is the only pane with a drop shadow.
+
+## Banners
+
+`hk-banner`: 8px corners, `0.75rem 1rem`, 14px, one sentence and at most one
+action, 1.5rem above what follows. The base is amber (warn) for something
+that needs you or a refusal; `hk-banner--err` for something that went wrong,
+`role="alert"`; `hk-banner--ok` for a confirmed good state; `hk-banner--info`
+(repose) for a neutral fact (`--hk-surface-2`, ink, an inset hairline). Links
+inside are underlined at 35%. `hk-banner-action` (repose) draws a `<button>`
+as that inline link where the action must be a button ("Update card" opens
+the payment portal). One banner per fact, and the page does not repeat it in
+a status line. In forced colours a banner draws a CanvasText edge.
 
 ## The outage bar
 
-A strip in the `.banner--error` colours across the top of every page
-while the api is down (08-dashboard.md 6): "Cannot reach the API.
-Retrying…" when a request got no answer, "The API is failing right now.
-Retrying…" on a 5xx. A 503 carrying one of the codes api.md lists as
-answers ("Errors"; `ANSWER_503` in `lib/api/errors.ts`) is not an outage
-and raises no bar (I-390, I-393). The bar is said in a `role=status`
-region (`#outage`) that is always in the page and empty while the api
-answers; only its contents change, so a screen reader announces the bar
-when it comes (I-393).
+`#outage` in `routes/+layout.svelte`: a full-bleed strip above the header,
+`--hk-err-wash` with `--hk-err` text at 13px 500, centred in the frame, square
+cornered. It says the API cannot be reached. A page's failed-load banner
+shows under it too, since the bar is about the API and the banner about what
+this page could not load (I-390, I-393).
 
-## Keyboard
+## Empty row
 
-The first tab stop on every page is "Skip to content" (`routes/+layout.svelte`),
-hidden until focused, which moves focus to the page's `<main>` (WCAG
-2.4.1). `<main>` carries `id="main"` and draws no ring when the link
-focuses it. `tests/design.spec.ts` drives it, the resize panel's focus,
-Retry, forced colours and reduced motion (I-392).
+`hk-empty-row`: one line of 14px `--hk-text-3` on the left and the one action
+(a guide link or the primary) on the right, between hairlines. The section
+head's own button hides while the empty row offers it. A heading a test pins
+goes inside as `h2.hk-empty-title` (repose, sans 14px 500 ink).
+
+## Loading and failure
+
+`LoadState.svelte`. Loading is a still skeleton (`hk-skel` bars on
+`hk-skel-row` rows, repose): `shape="page"` draws a title bar in a box the
+height of the h1, so the swap to the page moves nothing, then four 56px rows;
+`content` four rows; `rows` three. A screen reader hears the label once
+(`role="status"`).
+
+### Failure
+
+A load that fails becomes `hk-banner--err` with `role="alert"`, the reason,
+and a small secondary "Retry" that reads "Retrying…" with `aria-disabled`
+while it runs, focus kept. A poll that fails says so once: the toast comes on
+its first failure and not again until it has recovered (`lib/api/toast.ts`,
+I-393).
+
+## Toasts
+
+svelte-sonner, mounted with the resolved theme and no `richColors`. Every toast
+is neutral (`--hk-surface`, 1px `--hk-border`, the pop shadow, 8px corners,
+13px ink) except an error, which takes the err wash and text like its banner.
+A page with a bottom bar lifts the toasts above it.
+
+## Bottom bar
+
+`hk-bottom-bar` (repose): a sticky foot with a `--hk-border` top edge, the
+page colour at 90% with an 8px blur, and the safe-area inset. Config's Apply
+lives there.
+
+## Inline confirmation
+
+A confirmation opens in place, under the control that asked for it, and
+focus moves into it and back when it closes (`lib/focus.ts`, I-386, I-391).
+No modal dialog and no `confirm()`.
+
+- `hk-confirm` (repose) with `hk-confirm-actions`: `--hk-surface-2`, 8px
+  corners, one sentence naming the target and the consequence, then the
+  danger verb (`hk-btn-danger hk-btn-sm`) and a ghost "Keep it" or "Keep it
+  running" on one row. Stop with an agent mid-turn, Delete a secret, Cancel
+  plan.
+- `ConfirmType.svelte` for what cannot be undone: the label "Type `slug` to
+  confirm", a mono input, and a danger button that stays `disabled` until the
+  exact name, then arms. Enter confirms. `cancelLabel` names the ghost
+  ("Keep it"). One row from 24rem of its own width.
+- Reveal, then type: Destroy and Delete account first show one danger button
+  ("Destroy job-board…", "Delete account…"); pressing it puts ConfirmType in
+  its place with focus in the field. A page never carries an open
+  destroy field on every visit.
+
+## Error pages
+
+`ErrorView.svelte` owns the page's one `main`: the status as a Geist Mono
+eyebrow ("404"), `hk-h2` "Not found" or "Something went wrong", an optional
+line or form, then "Back to Projects" for a signed-in user or "Docs" and
+"Home" otherwise. No lead sentence and never a framework message. The root
+`+error.svelte`, the layout's error boundary (with Reload) and a missing
+project all use it, inside the site's header and footer. An unknown path
+renders it for everyone; only `/projects`, `/billing` and `/settings` send a
+signed-out visitor to `/`.
 
 ## Forced colours
 
-An unlayered `@media (forced-colors: active)` block in `layout.css` puts
-back whatever carries a state in a fill or a coloured border (I-377):
-state dots, the current nav item, the current tab (a 3px `Highlight`
-edge, I-393), select arrows, button, badge and key
-edges, disabled buttons in `GrayText`, and the meter fill
-(`Meter.svelte`). A new component that shows state that way adds its rule
-there and is checked with Chromium's `forcedColors: 'active'`.
+Every mark that carries state in a fill or a coloured edge has a rule in the
+`forced-colors` block of `layout.css` or `repose.css`: dots in CanvasText with
+the idle one an outline, the current nav link and page tab underlined, the
+selected joined-control item in Highlight, the tablist's 3px edges, meters,
+banners, disabled buttons in GrayText, the armed danger button's 2px edge,
+badges and kbd edged. A new stateful mark adds its own rule.
 
-## Controls
+# Dashboard
 
-For boolean and pick-one settings (notification channels on or off, hold
-base updates, default agent, size class) use plain controls in the same
-palette, not chips or segmented groups:
+## Page head
 
-- A boolean is a native checkbox and a label on one line (`.check-row`).
-  One per line, aligned left.
-- A pick-one with a handful of options is a `select.field`. A pick-one
-  that needs a sentence per option is a vertical list of native radios
-  with the help text under each; no card borders around options. No page
-  needs one today, and the old `.radio-row` classes were deleted (I-378);
-  build it again in `layout.css`, with forced-colour states, when one
-  does.
-- Pick-several (the config menu's package list) is a searchable list with
-  a native checkbox per row and the description in muted text, not a wall
-  of pills.
+`PageShell.svelte`: `<main id="main" tabindex="-1" class="frame">`, crumbs
+13px `--hk-text-3` with middots (44px tall on touch), `h1.hk-h1-app` with a
+`<wbr>` after each `-`, `_` and `.` so a slug breaks at its separators, the
+page's one action on the title's baseline from 640px and under it on a
+phone, and a 14px `--hk-text-3` lede (a string, or a snippet). With `tabs`
+the page tabs sit 1.25rem under the title on a full-width hairline.
+`width="form"` caps the content at 42rem.
 
-Chip-wrapped checkboxes, segmented pick-ones and card-sized radio options
-stay rejected. So does a toggle switch until a page needs one (the unused
-`.switch` was deleted with the rest).
+## Sections
+
+A dashboard page is sections on the page colour: `hk-section` (repose),
+2.75rem apart, a `hk-section-head` row with an `h2.hk-h2-app` and, on the
+right, a 13px `--hk-text-3` caption or one small button. No border, no fill,
+no card. Rows inside are hairlines. A panel (`hk-panel`, 12px corners, a
+1px border on the surface) is only for plan cards; panels are never nested.
+
+## The pages
+
+Order at 1440, top to bottom. A phone shows the same order in one column.
+
+- **/projects**: the billing banner when a payment failed or the account is
+  suspended; Waiting on you (questions as hairline rows, the section's badge
+  carrying the count); the projects table, with search and the four filters
+  past 8 projects, Start or Stop as a ghost button always shown on each row,
+  and stop's inline confirm under its row; the plan row (Memory running as
+  squares, Disk held and Egress this period as meters, then "Billing"), one
+  row between two hairlines; Recent activity, five rows with repeats of one
+  kind on one project folded and questions and failures never folded;
+  Recently destroyed with "Kept until" and "Restore…". An empty account sees
+  its billing line, "No projects yet." with the Quickstart link, and one
+  command pane with the install, `repose login` and `repose run` commands.
+- **A project**: the exception banners (last error, refusal, host
+  unreachable, abuse stop, boot fallback), which stay first because each one
+  changes what Connect will do; Connect, one command pane of `repose run`,
+  `ssh <name>.repose` and `repose code <name>`; Waiting on you; then from
+  1024px two columns (`minmax(0, 1fr) 21rem`): Events beside Agents (while
+  it runs and reports one) and Machine, Snapshots beside Details; Usage, four
+  80px charts across; Destroy, behind its button. The header holds the
+  remote in Geist Mono as the lede and a status line (StateDot, size, cores,
+  memory, uptime, or the frozen sentence); its action is Stop with
+  "Snapshot on stop", Start or Restart. On a phone the action sits one row
+  under the status line in every state. One "Restore…" per snapshot opens a
+  panel offering the restore over the project (typed name) or, with
+  "Restore as new", into a new project.
+- **Config**: the project's name as the title and Config as the current tab.
+  From 1024px the editor column and an 18rem rail. The editor column holds
+  the Menu and Nix tablist with the applied status beside it; Menu is the
+  hand-edit banner, a search and `hk-check` rows in two columns; Nix is the
+  Nix editor as a near-black code surface, at least 28rem tall. The rail
+  holds Base updates, machine.nix and Revisions. Apply sits in the bottom
+  bar. Leaving with an unapplied edit asks first (Stay, Leave).
+- **Secrets**: the project's name as the title. From 1024px the list and a
+  21rem form. Each secret is a hairline row with a ghost "Delete…" that opens
+  the inline confirm; the account's secrets follow, struck where the project
+  has its own.
+- **/billing**: the payment banners; the current plan (its name in serif,
+  then price, status and next charge as one row of facts, then Change plan
+  and Card and receipts); This month (Running now as squares, Disk held and
+  Egress this period as meters, between two hairlines); Change plan, opened
+  in place with focus on its heading; Invoices; Cancel plan, last, as danger
+  text. An account with no plan sees the plan cards with a button each; an
+  exempt account sees its banner and the meters and no plan to buy.
+- **/settings**: Account, Notifications, Timezone, Install, machine.nix,
+  Secrets, Delete account. From 1024px each section is a 15rem head column and
+  a 40rem control column, sections on hairlines 2.75rem apart; the
+  machine.nix editor stays in the 40rem column with a 10rem minimum height.
+
+## Long lists
+
+A list that grows is capped and offers the rest: projects 25 ("Show all
+N"), snapshots 8, config revisions 8, Recently destroyed 10 ("Show more"),
+Recent activity 5, waiting questions 3. Events and invoices page with a
+"Page 1 of 5" or "1–6 of 12" position at the foot of the list.
+
+## One primary
+
+A screen has one `hk-btn` at most. Row actions are ghost buttons; a section's
+own action is a small secondary. The primary is what the page is for:
+Start on a stopped project, Apply on config, Choose a plan on an empty
+account.
+
+## Titles
+
+`<title>` is the page, then the project where there is one, then "repose",
+joined by middots: "Billing · repose", "Config · job-board · repose".
 
 # Docs and legal pages
 
-They use the Foundation and the shared header. Prose is `.doc` in
-`layout.css`: the site's palette over `@tailwindcss/typography`, with the
-plugin's `--tw-prose-*` colours mapped to the ink and rule tokens and no
-`prose-zinc` or `prose-invert`, whose cool greys and white headings are
-off the palette. Every heading is 600, as on the dashboard, and the h1 is
-the page title's `text-4xl` at every width. Inline code is a quiet chip at
-body weight with no backticks; a span with no space in it (a command, a
-flag, a path) of 30 characters or fewer never breaks across lines, a
-span with spaces breaks only at them (`--api-url URL`, I-393), and a
-longer word (a URL) wraps, so no chip pushes a phone's page sideways
-(`docs.test.ts` holds the limit). The legal pages render inline code
-with the same renderer (`lib/codespan.ts`, I-394). A command used as a heading is the
-heading's own mono text, not a chip. Shell blocks are ink with muted
-prompts and output, and no token hue: in the docs blue is a link (I-388).
-A block or table wider than its box shows a 2px `--ink-faint` bar at the
-edge where text is hidden, and takes a tab stop so a keyboard can scroll
-it; one that fits has neither (I-394, I-395). The bar is a one-colour
-layer. Only a table's term column stays on one line. Below 40rem a
-table of two or three columns stacks each row: the term, a middle cell
-muted beside it, the description under both at full width; a wider
-table keeps its grid with tighter cells (I-681). On a phone a code
-block's Copy button keeps the 40px strip above the code, so it hides
-no line (I-681).
-The copy button is 28px tall and says "Copied" to a screen reader through
-a live region as well as on its face. Links are in
-the accent; h2 sections are separated by a rule. Prose is `text-prose`, 17px at 1.7, and the title 36px, 40px under the
-last rule above it (I-660). Prose, code blocks, tables and the h2 rules
-share one right edge: one measure. The docs frame is inside the shared
-frame (I-656, I-660): from `lg` a 220px sidebar, 48px, then the page; from
-`xl` the text, 48px and a 180px "On this page" rail at the frame's right
-edge, so at 1440 the sidebar is at x=160, the 624px text at 428 and the
-rail at 1100. Below `xl` the text holds to 42rem. The sidebar lists pages
-and nothing else, under a search that sticks to its top. From `lg` up it
-draws no scrollbar (one flashed over it on the first visit, I-660) and
-fits 1440x900 whole: 26px rows, labels 16px apart, the Tutorials group
-folded except on a tutorial's page, a rule under the search once the
-list scrolls, and a 24px fade at its foot while more is below. When it
-must scroll to show the open page, the page's group label comes to the
-top. The rail lists the page's h2s and, under each, its h3s, one step
-in. On a phone the drawer, opened from the sub-bar's Menu, opens
-scrolled to show the current page's link, and the list scrolls under the
-search (I-400).
-The rail's column is drawn on every page, empty when a page has one h2
-or none, so the sidebar, the text and the rail sit at the same x on
-every page. The rail and the sidebar stick at 57px, under the header and
-its hairline, and a long rail scrolls on its own. The section you are
-reading, the last h2 above a line a quarter of the way down the window,
-is ink with a 1px ink edge on the rail's hairline (an underline in
-forced colours), `aria-current="true"`; the others are `--ink-muted`.
-Above the first h2 the first link is marked, so the rail always says
-where you are (amends I-400). A section's h3s show under it, 13px and
-one step in, while it is the one being read; on the CLI reference all
-30 show, by command name ("repose run").
-A rail link scrolls smoothly, or jumps under reduced motion. Its links
-are 28px tall, over the 24px target size (I-391). Below `xl` the
-sections fold under the description in "On this page".
-Legal pages (I-658) sit on the docs' tracks, so a policy's text is
-where a docs page's text is: from `lg` a 220px "Policies" column
-(Terms, Privacy, Refunds, in the sidebar's look, sticky at 57px), then
-the text; from `xl` the 180px "On this page" rail at the frame's right
-edge, in the rail's type and 28px rows, marking the section being read.
-Below `xl` the text holds to 42rem and the sections fold into "On this
-page" under the effective date; below `lg` the three policies are one
-line of links there.
+The docs frame sits inside the shared frame (I-656, I-660). From 768px a
+220px sidebar sticks under the header at 57px, then 48px, then the article.
+From 1280px the article is 624px (about 42rem at 15px), then 48px and a
+180px "On this page" rail at the frame's right edge; at 1440 the sidebar
+starts at x=160, the text at 428 and the rail at 1100. Below 1280 the rail
+folds into an "On this page" disclosure above the body, phones included.
+Below 768px a 44px sub-bar sticks under the header, ending at 101px, with
+"Open the docs menu" (the current page's title) on the left and Pricing on
+the right; the menu opens as an opaque panel with search first.
 
-# The landing's exception
+- **Sidebar**: a "Search the docs" field that filters in place, group titles
+  12px 600 ink, items 13px `--hk-text-2` with 6px corners, each reserving a
+  2px left rule. The current item is the accent on `--hk-accent-wash` with
+  that rule in the accent, `aria-current="page"`. Tutorials folds. From 768px
+  it draws no scrollbar and fits 1440x900.
+- **Article head**: the section as an eyebrow, `h1.hk-h2`, the page's
+  description as `hk-lead`, then "View as Markdown" (a small ghost link to
+  `/docs/{slug}.md`), then a hairline.
+- **Prose** (`lib/components/doc.css`, scoped `.hk .doc`): 15px / 1.6
+  `--hk-text-2`; h2 serif 24px with a "#" self-link on hover; h3 Inter 15px
+  600 ink; lists with `--hk-text-4` markers; links underlined at 35%. A span
+  of inline code with no space in it, 30 characters or fewer, never breaks
+  (I-393); `docs.test.ts` holds the limit.
+- **Code**: the code pane look, `max-height: 30rem`, never wrapping, the
+  70-column rule, no line numbers. Copy is a dark small button 8px from the
+  top right; when the text column is under 624px it takes its own strip
+  above the code, so it hides no line. A pane or table that overflows on
+  either axis takes a tab stop, a region name from its heading, and a 2px
+  `--hk-code-dim` bar on the hidden edge.
+- **Tables**: 13px, the table header look, the term column on one line from
+  640px. Below 40rem a table of two or three columns stacks each row.
+- **Notes**: a 2px accent left rule on `--hk-accent-wash`.
+- **Rail**: "On this page" 12px 600, items 13px `--hk-text-3` on a 1px track;
+  the section being read is ink with a 1px accent rule, `aria-current="true"`,
+  and its h3s show one step in.
+- **Docs 404**: inside the docs frame, the "404" eyebrow, "Not found", and up
+  to six closest pages.
+- **Legal pages**: the same tracks, with a 220px "Policies" column (Terms,
+  Privacy, Refunds) in the sidebar's look, the effective date under the
+  title, and the draft notice as a warn banner.
 
-The landing adds a shape set in the `--sh-*` tokens (zinc greys, ink and
-the blue accent), a palette for the pictures it draws in the `--pic-*`
-tokens (the blue, three greys, and a diff stat's red and green; I-397),
-a blue bar under its headline and prices, a sphere drawn as a flat disc
-with a globe's meridians over it where it stands for the internet, its
-own display sizes, and its own page grammar (rails, ticked rules, stages, cells) in
-`apps/web/src/routes/landing.css`. Those exist only on `/`, save the
-logo's `--sh-accent` square in every header (see Logo) and the plan
-cells (`lib/plans.ts`, `PlanCells.svelte`), which draw the Units
-picture and the blue price rule on `/billing` as on `/#pricing`, so the
-two cannot disagree (I-663). They are described in `LANDING.md`. Every other page follows this document with no
-exception.
+# The landing
+
+The landing (`routes/+page.svelte`, `routes/landing.css`,
+`lib/components/landing/`) uses this system with no exception: the same
+tokens, type and components. `LANDING.md` covers what it says and shows.
+
+- **Width**: the full 1120px frame. Two-column sections from 1024px,
+  `minmax(0, 0.8fr) minmax(0, 1.2fr)` with a 3.5rem gap, the heading column
+  sticky under the header; one column below.
+- **Hero**: from 1024px `minmax(0, 1fr) minmax(0, 1.05fr)`, 4rem apart,
+  centred. Left: the eyebrow, `h1.hk-h1`, the two-tone lead at 34rem, "Get
+  started" (`hk-btn-lg`) beside a large page-tone "Copy install command",
+  and the install command in Geist Mono 13px under them, exactly what the
+  button copies. Right: the terminal.
+- **The terminal** replays the Quickstart's `repose run -p` session, parsed
+  at build time from `content/docs/index.md`, so the page cannot drift from
+  the docs. A near-black pane with 12px corners, a 1px outer ring, an inset
+  border and `--hk-shadow-terminal`; a 38px bar titled
+  `~/code/your-project`; Geist Mono 12px / 20px. Commands are
+  `--hk-code-text`, `$ ` and output `--hk-code-muted`, ticks `--hk-code-ok`.
+  When 40% in view it plays once, one line every 450ms, each rising 4px and
+  fading in over 240ms, and ends on "Ready in 16s." with a still caret. It
+  has no copy button, no minimum height and no status dot. Without scripts
+  and under reduced motion every line shows at once.
+- **Each command once**: the install line in the hero only; `repose login`
+  and `repose run` as light command lines in "Your laptop's setup"; the
+  feature cells give their command as one mono line with a muted `$` and no
+  copy button, since a visitor without the CLI cannot run it.
+- **Sections**: the hero; "Your laptop's setup, in one command"; "On every
+  machine", four cells in a 2x2 grid from 768px, each with an `hk-h3`, a
+  paragraph and its command; "Agents on first boot", a hairline list read
+  from `content/docs/agents.md`; "Pricing"; "Questions", three `details`
+  rows between hairlines; the full footer.
+- **Pricing**: `PlanCells` in its public variant, three cards from 900px on
+  `hk-panel`-like frames, the founding price struck when it applies, then
+  "Start a free week" and the seats line. Plan figures come from
+  `lib/plans.ts`, never typed into markup.
+- **Never on the landing**: isometric or anatomy figures, drawn pictures of
+  the product, invented sample output, a stat strip without a source, motion
+  on scroll, or a second dark pane in the first two screens.
+
+# Copy
+
+Guide B 1.1 and 1.2 and `CLAUDE.md` "Trust the reader": every line says what
+is true, once, and stops. No sentence without a verb, no em dash, no
+reassurance, no next step after a success, no caption that restates what the
+screen shows. One term per thing (a project, its machine, a snapshot). Dates
+use the CLI's format (`2026-10-20 23:06`, "just now"), which the tests pin.
+Prices, sizes and limits come from `lib/plans.ts` and the API, never typed.
+`copy.test.ts` and `docs.test.ts` scan routes, components and the docs for
+the patterns `lib/unasked.ts` lists.
 
 # Where it goes
 
-`apps/web/src/routes/layout.css` for tokens and classes; `app.html` for
-the font preloads and the pre-CSS colours, which must match `--page` and
-`--ink`. A new class goes in `layout.css` with a comment that says why,
-in full sentences, like the rest of the file. `CHECKLIST.md`, "Design",
-has the greps that catch drift from this document.
+| What | File |
+|---|---|
+| The kit's tokens and primitives (never edited) | `apps/web/src/lib/hk/tokens.css` |
+| repose's additions, each with its reason | `apps/web/src/lib/hk/repose.css` |
+| Imports, `@theme`, `frame`, `@font-face`, first-paint pair, toasts, forced colours | `apps/web/src/routes/layout.css` |
+| First paint, theme script, preloads | `apps/web/src/app.html` (hash in `svelte.config.js`) |
+| Theme state | `lib/theme.svelte.ts`, `lib/components/ThemeSwitch.svelte` |
+| Shared components | `lib/hk/` (CopyButton, CodeBlock, CommandList, Segmented), `lib/components/` (PageShell, LoadState, ErrorView, Meter, StateDot, Snowflake, CodeCopy, ConfirmType, SiteHeader, SiteFooter, DashNav, AccountMenu, Logo, PlanCells, MemoryBlocks) |
+| Docs prose and code | `lib/components/doc.css` (unlayered) |
+| The Nix editor | `lib/components/nix-editor.css` (unlayered: CodeMirror's theme is) |
+| The landing | `routes/+page.svelte`, `routes/landing.css`, `lib/components/landing/` |
+| The gallery | `routes/design/+page.svelte` (dev only) |
+
+A new shared class goes in `repose.css`, `hk-` prefixed and named in
+Components above, with a comment that says why. A page styles itself in its
+component's `<style>`.

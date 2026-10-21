@@ -3,8 +3,8 @@
    with its reason (DECISIONS I-837). Imported into the components layer
    after tokens.css (routes/layout.css), so a rule here beats the kit's at
    equal specificity, and a Tailwind utility on the same element beats both.
-   Every class is hk- prefixed; repose's legacy classes (.btn, .card, .dot)
-   live in layout.css until Phase 3 deletes them. */
+   Every class is hk- prefixed and named in DESIGN-LANGUAGE.md
+   "Components". */
 
 /* ---------- Tokens ---------- */
 
