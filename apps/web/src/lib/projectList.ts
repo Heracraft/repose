@@ -66,32 +66,36 @@ export function orderProjects(projects: Project[], waiting: (p: Project) => bool
 	});
 }
 
-/** The state filter above the list; `all` is the default and writes no URL state. */
-export const FILTERS = ['all', 'waiting', 'up', 'off'] as const;
+/**
+ * The state filter above the list. Running is the default and writes no
+ * URL state (the owner's call, 2026-10-17: "Project list defaults to
+ * Running"): an account holds up to 100 projects, most of them stopped,
+ * and the ones that are up or want you are the ones read daily (I-841).
+ */
+export const FILTERS = ['up', 'off', 'all'] as const;
 export type Filter = (typeof FILTERS)[number];
+export const DEFAULT_FILTER: Filter = 'up';
 
 /** What each filter is called above the list. */
 export const FILTER_LABELS: Record<Filter, string> = {
-	all: 'All',
-	waiting: 'Needs you',
 	up: 'Running',
-	off: 'Stopped'
+	off: 'Stopped',
+	all: 'All'
 };
 
 /**
- * Whether a project passes the state filter. The filters are not the
- * bands: a running machine with a question is under Running as well as
- * under Needs you, because someone filtering Running wants every machine
- * that is up.
+ * Whether a project passes the state filter. Running keeps every machine
+ * that is up and every one that wants you, a failed one included: its
+ * row leads the list under "Needs you", so the default view never hides
+ * a machine the user has to act on. Stopped keeps every machine at rest,
+ * a failed one too, since its row offers Start like a stopped one.
  */
 export function matchesFilter(p: Project, f: Filter, waiting: boolean): boolean {
 	switch (f) {
 		case 'all':
 			return true;
-		case 'waiting':
-			return needsYou(p, waiting);
 		case 'up':
-			return !atRest(p);
+			return !atRest(p) || needsYou(p, waiting);
 		case 'off':
 			return atRest(p);
 	}
@@ -112,11 +116,18 @@ export function matchesQuery(p: Project, query: string): boolean {
 	);
 }
 
-/** A filter from the URL's `state`; anything else is All. */
+/**
+ * A filter from the URL's `state`. The two values the list had before
+ * Running was the default (`waiting`, Needs you, whose rows now lead
+ * Running) read as Running; anything else unknown is Running too.
+ */
 export function readFilter(q: URLSearchParams): Filter {
 	const f = q.get('state');
-	return FILTERS.includes(f as Filter) ? (f as Filter) : 'all';
+	return FILTERS.includes(f as Filter) ? (f as Filter) : DEFAULT_FILTER;
 }
+
+/** Whether the URL names a filter, rather than leaving the default. */
+export const filterChosen = (q: URLSearchParams) => FILTERS.includes(q.get('state') as Filter);
 
 /** What was typed, from the URL's `q`. */
 export const readQuery = (q: URLSearchParams) => q.get('q') ?? '';
@@ -124,17 +135,121 @@ export const readQuery = (q: URLSearchParams) => q.get('q') ?? '';
 /**
  * The URL's query for a filter and a search, keeping every other
  * parameter as it was. The default filter and an empty search write
- * nothing, so the plain list has a plain URL.
+ * nothing, so the plain list has a plain URL. Running chosen with a
+ * search is written out (`state=up`), since a search on the unchosen
+ * default looks through every project (effectiveFilter); `undefined`
+ * is that unchosen default.
  */
-export function listSearch(current: URLSearchParams, f: Filter, query: string): string {
+export function listSearch(current: URLSearchParams, f: Filter | undefined, query: string): string {
 	const q = new URLSearchParams(current);
 	q.delete('state');
 	q.delete('q');
-	if (f !== 'all') q.set('state', f);
+	if (f && (f !== DEFAULT_FILTER || query.trim())) q.set('state', f);
 	if (query.trim()) q.set('q', query.trim());
 	const str = q.toString();
 	return str ? `?${str}` : '';
 }
+
+/**
+ * The filter the list is drawn with. A short list (TOOLBAR_FROM or
+ * fewer) has no toolbar and shows everything. A search typed while no
+ * filter is chosen looks through every project, stopped ones included:
+ * a name the user types is one they want, whatever its state.
+ */
+export function effectiveFilter(f: Filter, chosen: boolean, count: number, query: string): Filter {
+	if (count <= TOOLBAR_FROM) return 'all';
+	if (!chosen && query.trim()) return 'all';
+	return f;
+}
+
+/** Stopped machines the Running view keeps under it, most recently run first. */
+export const RECENT_STOPPED = 5;
+
+/** One band of the drawn list, with its rows in order. */
+export interface Group {
+	band: Band;
+	rows: Project[];
+}
+
+/** What the list draws: its bands, and how many stopped rows Running folds. */
+export interface ListView {
+	/** The filter drawn with, which the filter control marks as current. */
+	filter: Filter;
+	groups: Group[];
+	/** Rows matched before any cap. */
+	matched: number;
+	/** Machines at rest the Running view leaves out; 0 elsewhere. */
+	folded: number;
+	/** Machines at rest in all, for the Running view's "All N stopped". */
+	resting: number;
+}
+
+/**
+ * The rows /projects draws, in bands. `ordered` is every project in the
+ * held order. Running draws every machine that is up or wants you and,
+ * under them, the RECENT_STOPPED stopped ones that ran last, so a machine
+ * stopped yesterday is one click from Start and an account with nothing
+ * running is not an empty page. Stopped and All, and any search, cap at
+ * `cap` rows until "Show all".
+ *
+ * `bandOf` is the band each row was in when the order was taken (see
+ * byHeldOrder): a machine stopped from its row keeps its place under
+ * Running until the set of projects changes, instead of jumping to the
+ * stopped rows under the pointer that pressed Stop.
+ */
+export function listView(
+	ordered: Project[],
+	opts: {
+		filter: Filter;
+		chosen: boolean;
+		query: string;
+		waiting: (p: Project) => boolean;
+		bandOf: (p: Project) => Band;
+		cap: number;
+	}
+): ListView {
+	const f = effectiveFilter(opts.filter, opts.chosen, ordered.length, opts.query);
+	const matched = ordered.filter(
+		(p) =>
+			(f === 'up' ? opts.bandOf(p) !== 'off' : matchesFilter(p, f, opts.waiting(p))) &&
+			matchesQuery(p, opts.query)
+	);
+	let rows: Project[];
+	let folded = 0;
+	let resting = 0;
+	if (f === 'up') {
+		const rest = ordered
+			.filter((p) => opts.bandOf(p) === 'off')
+			.sort((a, b) => (lastActive(a) < lastActive(b) ? 1 : lastActive(a) > lastActive(b) ? -1 : 0));
+		// Running chosen beside a search keeps to what is up.
+		const recent = opts.query.trim() ? [] : rest.slice(0, RECENT_STOPPED);
+		folded = opts.query.trim() ? 0 : rest.length - recent.length;
+		resting = rest.length;
+		rows = [...matched, ...recent];
+	} else {
+		rows = matched.slice(0, opts.cap);
+	}
+	// One group per band, in BANDS order, whatever order the rows came in
+	// (before the order is first held, they come in the api's).
+	const groups: Group[] = BANDS.map((b) => ({
+		band: b,
+		rows: rows.filter((p) => opts.bandOf(p) === b)
+	})).filter((g) => g.rows.length > 0);
+	return {
+		filter: f,
+		groups,
+		matched: f === 'up' ? rows.length + folded : matched.length,
+		folded,
+		resting
+	};
+}
+
+/** The heads over the bands where more than one is drawn. */
+export const BAND_LABELS: Record<Band, string> = {
+	waiting: 'Needs you',
+	up: 'Running',
+	off: 'Stopped'
+};
 
 /**
  * Rows shown before "Show all N". Every other growing list on the

@@ -428,16 +428,23 @@ test('the state filter keeps its choice in the URL', async ({ page }) => {
 	for (let i = 0; i < 8; i++) await make(api, `filt-${i}`, { stopped: true });
 
 	await page.goto('/projects');
+	const filters = page.getByRole('navigation', { name: 'Filter projects' });
+	// Running is the default, written nowhere in the URL.
+	await expect(filters.getByRole('link', { name: 'Running' })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
 	// The suite shares one account, so this test's own projects are
-	// narrowed to with the search; the cap would otherwise decide what is
-	// on screen.
+	// narrowed to with the search, which with no filter chosen looks
+	// through every project.
 	await page.getByLabel('Search projects').fill('filt-');
 	await expect(page).toHaveURL(/[?&]q=filt-/);
-	const filters = page.getByRole('navigation', { name: 'Filter projects' });
 	await expect(filters.getByRole('link', { name: 'All' })).toHaveAttribute('aria-current', 'page');
+	expect(await names(page)).toContain(down.name);
 
 	await filters.getByRole('link', { name: 'Running' }).click();
 	await expect(page).toHaveURL(/[?&]state=up/);
+	await expect(page).toHaveURL(/[?&]q=filt-/);
 	const running = await names(page);
 	expect(running).toContain(up.name);
 	expect(running).not.toContain(down.name);
@@ -507,7 +514,7 @@ test('the phone row carries a temporary machine’s countdown', async ({ page })
 
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/projects');
-	const li = page.getByRole('list', { name: 'Projects' }).locator('li').filter({ hasText: p.name });
+	const li = page.locator('main .mgroup > li').filter({ hasText: p.name });
 	await expect(li).toContainText('temporary');
 	await expect(li).toContainText(/destroyed in|left/);
 });
@@ -586,7 +593,7 @@ test('the phone row puts the action beside the name and the state under it', asy
 	const p = await make(apiURLFromEnv(), 'phone-row');
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/projects');
-	const li = page.getByRole('list', { name: 'Projects' }).locator('li').filter({ hasText: p.name });
+	const li = page.locator('main .mgroup > li').filter({ hasText: p.name });
 	const name = await li.getByRole('link', { name: p.name, exact: true }).boundingBox();
 	const action = await li.getByRole('button', { name: `Stop ${p.name}` }).boundingBox();
 	const state = await li.getByText('running', { exact: true }).boundingBox();

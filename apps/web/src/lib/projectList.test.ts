@@ -6,6 +6,10 @@ import {
 	holdsMemory,
 	lastActive,
 	byHeldOrder,
+	effectiveFilter,
+	filterChosen,
+	listView,
+	RECENT_STOPPED,
 	idSetKey,
 	listSearch,
 	matchesFilter,
@@ -172,14 +176,14 @@ describe('matchesFilter', () => {
 		for (const x of [running, stopped, broken]) expect(matchesFilter(x, 'all', false)).toBe(true);
 	});
 
-	it('keeps a machine with a question under Running as well as under Needs you', () => {
+	it('keeps a machine with a question under Running', () => {
 		expect(matchesFilter(running, 'up', true)).toBe(true);
-		expect(matchesFilter(running, 'waiting', true)).toBe(true);
+		expect(matchesFilter(stopped, 'up', true)).toBe(true);
 	});
 
-	it('puts a failed machine under Needs you and under Stopped, not Running', () => {
-		expect(matchesFilter(broken, 'waiting', false)).toBe(true);
-		expect(matchesFilter(broken, 'up', false)).toBe(false);
+	it('keeps a failed machine under Running, where it leads, and under Stopped', () => {
+		expect(matchesFilter(broken, 'up', false)).toBe(true);
+		expect(matchesFilter(broken, 'off', false)).toBe(true);
 	});
 
 	it('separates running from stopped', () => {
@@ -223,18 +227,31 @@ describe('the URL', () => {
 		expect(readQuery(q)).toBe('todo');
 	});
 
-	it('falls back to All for a filter it does not know', () => {
-		expect(readFilter(new URLSearchParams('state=sideways'))).toBe('all');
-		expect(readFilter(new URLSearchParams())).toBe('all');
+	it('falls back to Running, the default, for a filter it does not know', () => {
+		expect(readFilter(new URLSearchParams('state=sideways'))).toBe('up');
+		expect(readFilter(new URLSearchParams())).toBe('up');
+		// Needs you was a filter before Running was the default; its rows lead Running.
+		expect(readFilter(new URLSearchParams('state=waiting'))).toBe('up');
+		expect(filterChosen(new URLSearchParams('state=waiting'))).toBe(false);
+		expect(filterChosen(new URLSearchParams('state=up'))).toBe(true);
 	});
 
 	it('writes nothing for the plain list', () => {
-		expect(listSearch(new URLSearchParams(), 'all', '')).toBe('');
-		expect(listSearch(new URLSearchParams(), 'all', '  ')).toBe('');
+		expect(listSearch(new URLSearchParams(), 'up', '')).toBe('');
+		expect(listSearch(new URLSearchParams(), undefined, '  ')).toBe('');
+	});
+
+	it('writes All, which is no longer the default', () => {
+		expect(listSearch(new URLSearchParams(), 'all', '')).toBe('?state=all');
 	});
 
 	it('writes the filter and the search, trimmed', () => {
-		expect(listSearch(new URLSearchParams(), 'up', ' todo ')).toBe('?state=up&q=todo');
+		expect(listSearch(new URLSearchParams(), 'off', ' todo ')).toBe('?state=off&q=todo');
+	});
+
+	it('writes Running out only beside a search, where the default would search all', () => {
+		expect(listSearch(new URLSearchParams(), 'up', 'todo')).toBe('?state=up&q=todo');
+		expect(listSearch(new URLSearchParams(), undefined, 'todo')).toBe('?q=todo');
 	});
 
 	it('keeps every other parameter', () => {
@@ -242,9 +259,9 @@ describe('the URL', () => {
 	});
 
 	it('round-trips', () => {
-		const s = listSearch(new URLSearchParams(), 'waiting', 'auth');
+		const s = listSearch(new URLSearchParams(), 'off', 'auth');
 		const q = new URLSearchParams(s);
-		expect(readFilter(q)).toBe('waiting');
+		expect(readFilter(q)).toBe('off');
 		expect(readQuery(q)).toBe('auth');
 	});
 });
@@ -281,5 +298,126 @@ describe('the held order', () => {
 			byHeldOrder(held)
 		);
 		expect(sorted.map((x) => x.name)).toEqual(['a', 'b', 'c']);
+	});
+});
+
+/** An account of n projects: two running, one with a question, one failed, the rest stopped a day apart. */
+function account(n: number): { list: Project[]; asks: Set<string> } {
+	const list: Project[] = [];
+	for (let i = 0; i < n; i++) {
+		const state = i < 2 ? 'running' : i === 2 ? 'error' : 'stopped';
+		const day = String(1 + (i % 28)).padStart(2, '0');
+		const month = String(1 + Math.floor(i / 28)).padStart(2, '0');
+		list.push(
+			p({
+				name: `p-${String(i).padStart(3, '0')}`,
+				state,
+				started_at: `2026-${month}-${day}T00:00:00Z`,
+				remote_url: i === 77 ? 'https://github.com/findme/p-077' : ''
+			})
+		);
+	}
+	return { list, asks: new Set(['p-001']) };
+}
+
+function viewOf(n: number, filter: 'up' | 'off' | 'all', query = '', chosen = false, cap = 25) {
+	const { list, asks } = account(n);
+	const waiting = (x: Project) => asks.has(x.id);
+	const ordered = orderProjects(list, waiting);
+	return listView(ordered, {
+		filter,
+		chosen,
+		query,
+		waiting,
+		bandOf: (x) => band(x, waiting(x)),
+		cap
+	});
+}
+
+const names = (v: ReturnType<typeof viewOf>) => v.groups.flatMap((g) => g.rows.map((r) => r.name));
+
+describe('a large account', () => {
+	it('shows everything, in one band order, up to 8 projects', () => {
+		const v = viewOf(8, 'up');
+		expect(v.filter).toBe('all');
+		expect(names(v)).toHaveLength(8);
+		expect(v.folded).toBe(0);
+	});
+
+	for (const n of [40, 150]) {
+		it(`at ${n}, Running shows what is up or wants you, then the ${RECENT_STOPPED} stopped that ran last`, () => {
+			const v = viewOf(n, 'up');
+			expect(v.filter).toBe('up');
+			expect(v.groups.map((g) => g.band)).toEqual(['waiting', 'up', 'off']);
+			// The failed machine and the one asking lead; the other running one follows.
+			expect(v.groups[0].rows.map((r) => r.name).sort()).toEqual(['p-001', 'p-002']);
+			expect(v.groups[1].rows.map((r) => r.name)).toEqual(['p-000']);
+			expect(v.groups[2].rows).toHaveLength(RECENT_STOPPED);
+			// Most recently run first.
+			const runs = v.groups[2].rows.map((r) => r.started_at!);
+			expect([...runs].sort().reverse()).toEqual(runs);
+			expect(v.resting).toBe(n - 3);
+			expect(v.folded).toBe(n - 3 - RECENT_STOPPED);
+		});
+
+		it(`at ${n}, Stopped lists every machine at rest, capped at 25`, () => {
+			const v = viewOf(n, 'off', '', true);
+			expect(v.matched).toBe(n - 2);
+			expect(names(v)).toHaveLength(25);
+			expect(names(viewOf(n, 'off', '', true, Infinity))).toHaveLength(n - 2);
+		});
+
+		it(`at ${n}, a search with no filter chosen looks through stopped ones too`, () => {
+			const v = viewOf(n, 'up', 'findme');
+			expect(v.filter).toBe('all');
+			expect(names(v)).toEqual(['p-077'].filter((x) => Number(x.slice(2)) < n));
+			// Running chosen keeps the search to Running.
+			expect(names(viewOf(n, 'up', 'findme', true))).toEqual([]);
+		});
+	}
+
+	it('keeps a stopped machine in its held band, so Stop does not move its row', () => {
+		const { list, asks } = account(40);
+		const waiting = (x: Project) => asks.has(x.id);
+		const ordered = orderProjects(list, waiting);
+		const heldBand = new Map(ordered.map((x) => [x.id, band(x, waiting(x))]));
+		const after = ordered.map((x) =>
+			x.name === 'p-000' ? { ...x, state: 'stopped' as const } : x
+		);
+		const v = listView(after, {
+			filter: 'up',
+			chosen: false,
+			query: '',
+			waiting,
+			bandOf: (x) => heldBand.get(x.id)!,
+			cap: 25
+		});
+		expect(v.groups[1].rows.map((r) => r.name)).toEqual(['p-000']);
+	});
+});
+
+describe('effectiveFilter', () => {
+	it('is All for a short list, whatever the URL says', () => {
+		expect(effectiveFilter('off', true, 8, '')).toBe('all');
+	});
+	it('keeps a chosen filter past 8', () => {
+		expect(effectiveFilter('off', true, 9, 'x')).toBe('off');
+	});
+});
+
+describe('listView before the order is held', () => {
+	it('draws one group per band whatever order the rows come in', () => {
+		const { list, asks } = account(20);
+		const waiting = (x: Project) => asks.has(x.id);
+		// The api's order, bands interleaved: no held order yet.
+		const v = listView([...list].reverse(), {
+			filter: 'all',
+			chosen: true,
+			query: '',
+			waiting,
+			bandOf: (x) => band(x, waiting(x)),
+			cap: 25
+		});
+		expect(v.groups.map((g) => g.band)).toEqual(['waiting', 'up', 'off']);
 	});
 });
