@@ -18,6 +18,8 @@
 	import { ApiError } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
 	import { reachability } from '$lib/api/reachability.svelte';
+	import { billingStore } from '$lib/billing.svelte';
+	import { title } from '$lib/title';
 	import {
 		money,
 		price,
@@ -145,17 +147,23 @@
 		};
 		try {
 			me = await getMe();
+			billingStore.setMe(me);
 		} catch (err) {
 			meError = err;
 		}
 		try {
 			billing = await getBilling();
+			// The rail's plan foot and the phone's plan line read the same
+			// answer, so they agree with this page the moment it changes
+			// (checkout, change, cancel, resume), not at the next 60s read.
+			billingStore.set(billing);
 			billingDisabled = false;
 			loadError = undefined;
 			reportMe();
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'billing_disabled') {
 				billingDisabled = true;
+				billingStore.setOff();
 				reportMe();
 			} else if (billing) {
 				// A refresh after an action: what is on screen stays, and the
@@ -208,6 +216,7 @@
 			await new Promise((r) => setTimeout(r, 2000));
 			try {
 				billing = await getBilling();
+				billingStore.set(billing);
 			} catch {
 				// A blip while the webhook lands; the next round asks again.
 			}
@@ -420,7 +429,7 @@
 </script>
 
 <svelte:head>
-	<title>Billing · repose</title>
+	<title>{title('Billing')}</title>
 </svelte:head>
 
 <!-- A plan's button in the picker. Only the plan the visitor came for is
@@ -1106,10 +1115,10 @@
 		margin-top: 1.25rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
-	/* From 900px the one to three facts take their content's width in one
+	/* From a 640px column the one to three facts take their content's width in one
 	   row, so Status and Next charge stay on one line where they fit,
 	   with no empty tracks after them (review r4). */
-	@media (min-width: 900px) {
+	@container dash (min-width: 640px) {
 		.facts {
 			display: flex;
 			flex-wrap: wrap;
@@ -1121,7 +1130,7 @@
 			max-width: 40rem;
 		}
 	}
-	@media (max-width: 479.98px) {
+	@container dash (width < 440px) {
 		.facts {
 			grid-template-columns: minmax(0, 1fr);
 		}
@@ -1176,7 +1185,9 @@
 		border-top: 1px solid var(--hk-hairline);
 		border-bottom: 1px solid var(--hk-hairline);
 	}
-	@media (min-width: 900px) {
+	/* Three across from a 760px column: at 700 (the rail at 1024) the
+	   memory cell's label and figure no longer share a line. */
+	@container dash (min-width: 760px) {
 		.month {
 			grid-template-columns: repeat(3, minmax(0, 1fr));
 			gap: 2.5rem;

@@ -3,13 +3,16 @@
 // shows a subscription's status, usage of the plan and its invoices.
 import { test, expect } from '@playwright/test';
 import {
+	fail,
 	failNext,
+	unfail,
 	signIn,
 	setBilling,
 	resetBilling,
 	createProject,
 	destroyProject,
-	apiURLFromEnv
+	apiURLFromEnv,
+	type BillingState
 } from './helpers';
 
 test.afterAll(async () => {
@@ -52,15 +55,18 @@ test('with billing off the page says so and sells nothing', async ({ page }) => 
 
 test('a failed first load says so and Retry loads the page', async ({ page }) => {
 	await setBilling({ mode: 'none' });
-	// Loaded once first: the projects page that signIn lands on reads
-	// GET /billing for its plan strip (I-664) and could take the one
-	// failure; after this the reload is the only request for it.
 	await page.goto('/billing');
 	await expect(page.getByRole('heading', { level: 2, name: 'Solo' })).toBeVisible();
-	await failNext('GET', '/billing', 'internal');
-	await page.reload();
+	// Every read fails until unfail: the rail's own read in the root
+	// layout (I-841) would otherwise take a one-shot failure.
+	await fail('GET', '/billing', 'internal');
+	try {
+		await page.reload();
+		await expect(page.getByRole('alert')).toBeVisible();
+	} finally {
+		await unfail('GET', '/billing');
+	}
 	const failed = page.getByRole('alert');
-	await expect(failed).toBeVisible();
 	await failed.getByRole('button', { name: 'Retry' }).click();
 	await expect(page.getByRole('heading', { level: 2, name: 'Solo' })).toBeVisible();
 	await expect(failed).toHaveCount(0);
@@ -634,4 +640,142 @@ test('a plan that never arrives points at the support address', async ({ page })
 	// The payment went through: the banner stands alone, with no second checkout.
 	await expect(page.locator('[id^="choose-"]')).toHaveCount(0);
 	await expect(page.getByRole('list', { name: 'Plans' })).toHaveCount(0);
+});
+
+// I-841: the plan lives in the rail's foot from 1024px, one state line per
+// billing mode, and below 1024px as one line under the strip only when
+// something needs doing. /billing is the plan's own page and shows neither.
+test.describe('the plan outside /billing', () => {
+	const calm = { seats: { total: 30, held: 12, waiting: 0 }, waitlist: { position: 0 } };
+	const full = { total: 30, held: 30, waiting: 5 };
+	const day = /\d{4}-\d{2}-\d{2}/;
+	/** [mode, state, foot's name line, foot's state line, phone's line link or none] */
+	const rows: [string, BillingState, string | undefined, RegExp, string | undefined][] = [
+		['exempt', { mode: 'exempt' }, undefined, /^\d+(\.\d)? GB$/, undefined],
+		['none', { mode: 'none' }, 'No plan', /^Choose a plan$/, 'Choose a plan'],
+		[
+			'waitlist',
+			{ mode: 'none', seats: full, waitlist: { position: 3 } },
+			'No plan',
+			/^On the waitlist$/,
+			'Billing'
+		],
+		['full', { mode: 'none', seats: full }, 'No plan', /^repose is full$/, 'Billing'],
+		[
+			'held',
+			{ mode: 'none', waitlist: { position: 1, invited: true } },
+			'No plan',
+			/^Seat held$/,
+			'Billing'
+		],
+		[
+			'trial',
+			{ mode: 'trial', plan: 'solo' },
+			'Solo',
+			new RegExp(`^Trial until ${day.source}$`),
+			undefined
+		],
+		[
+			'active',
+			{ mode: 'active', plan: 'pro' },
+			'Pro',
+			/^\d+ GB of 32 GB running( · over)?$/,
+			undefined
+		],
+		[
+			'cancelled',
+			{ mode: 'active', plan: 'pro', cancelled: true },
+			'Pro',
+			new RegExp(`^Ends ${day.source}$`),
+			undefined
+		],
+		[
+			'scheduled',
+			{ mode: 'active', plan: 'pro', scheduled_plan: 'plus' },
+			'Pro',
+			new RegExp(`^Changes to Plus ${day.source}$`),
+			undefined
+		],
+		['past_due', { mode: 'past_due', plan: 'pro' }, 'Pro', /^Payment failed$/, 'Update card'],
+		['suspended', { mode: 'suspended', plan: 'pro' }, 'Pro', /^Suspended$/, 'Update card and pay']
+	];
+
+	for (const [mode, state, name, line, phone] of rows) {
+		test(`${mode}: the rail foot and the phone's plan line`, async ({ page }) => {
+			await setBilling({ ...calm, scheduled_plan: '', cancelled: false, ...state });
+			await page.setViewportSize({ width: 1440, height: 900 });
+			await page.goto('/projects');
+			const foot = page.getByTestId('plan-strip');
+			await expect(foot).toBeVisible();
+			const lines = foot.locator(':scope > *');
+			await expect(lines.first()).toHaveText(mode === 'exempt' ? 'Running' : 'Plan');
+			// The state line leads with the err dot's space when it has one.
+			if (name) await expect(foot).toContainText(name);
+			await expect(lines.last()).toHaveText(new RegExp(`^\\s*${line.source.slice(1)}`));
+			// A state that needs the user links to /billing; the calm ones are text.
+			const link = foot.getByRole('link');
+			if (phone) await expect(link).toHaveAttribute('href', '/billing');
+			else await expect(link).toHaveCount(0);
+
+			await page.setViewportSize({ width: 390, height: 844 });
+			await expect(foot).toBeHidden();
+			const strip = page.getByRole('navigation', { name: 'Dashboard' });
+			await expect(strip.getByRole('link', { name: 'Billing' })).toBeInViewport();
+			const planLine = page.locator('.plan-line');
+			if (phone) {
+				await expect(planLine.getByRole('link', { name: phone, exact: true })).toHaveAttribute(
+					'href',
+					'/billing'
+				);
+			} else {
+				await expect(planLine.getByRole('link')).toHaveCount(0);
+			}
+
+			// The plan's own page shows neither.
+			await page.goto('/billing');
+			await expect(page.getByRole('heading', { level: 1, name: 'Billing' })).toBeVisible();
+			await expect(page.locator('.plan-line a')).toHaveCount(0);
+			await page.setViewportSize({ width: 1440, height: 900 });
+			await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+		});
+	}
+
+	test('billing off: no foot and no line', async ({ page }) => {
+		await page.goto('/projects');
+		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+		await expect(page.locator('.plan-line a')).toHaveCount(0);
+	});
+
+	// /billing hands its own reads to the shared store, so the foot says
+	// what the page just did without waiting for the rail's 60s read.
+	test('cancelling on /billing shows in the rail foot on the next page', async ({ page }) => {
+		await setBilling({
+			...calm,
+			mode: 'active',
+			plan: 'solo',
+			cancelled: false,
+			scheduled_plan: ''
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		const foot = page.getByTestId('plan-strip');
+		await expect(foot).toContainText(/running/);
+		const rail = page.getByRole('navigation', { name: 'Dashboard' });
+		await rail.getByRole('link', { name: 'Billing' }).click();
+		await expect(page).toHaveURL('/billing');
+		await page.getByRole('button', { name: 'Cancel plan' }).click();
+		await page.getByTestId('confirm-cancel').getByRole('button', { name: 'Cancel plan' }).click();
+		await expect(page.getByTestId('plan-status')).toContainText('Cancelled. Ends');
+		await rail.getByRole('link', { name: 'Projects', exact: true }).click();
+		await expect(page).toHaveURL('/projects');
+		await expect(foot).toContainText(new RegExp(`Ends ${day.source}`), { timeout: 2000 });
+		// Resume, back on /billing, reaches it the same way.
+		await rail.getByRole('link', { name: 'Billing' }).click();
+		await page.getByRole('button', { name: 'Resume plan' }).click();
+		await expect(page.getByTestId('plan-status')).toHaveText('Active.');
+		await rail.getByRole('link', { name: 'Projects', exact: true }).click();
+		await expect(foot).toContainText(/GB of 8 GB running/, { timeout: 2000 });
+	});
 });
