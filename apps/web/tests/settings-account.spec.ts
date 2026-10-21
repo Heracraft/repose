@@ -12,6 +12,7 @@ test('settings round-trips timezone, email toggle and ntfy URL, and the test but
 	page
 }) => {
 	await page.goto('/settings');
+	await expect(page).toHaveTitle('Settings · repose');
 
 	// DECISIONS I-332: the checkbox and the timezone save on change, with a
 	// toast; the ntfy URL has its own Save.
@@ -206,7 +207,9 @@ test('settings sections share one 40rem column at 1440', async ({ page }) => {
 	expect(Math.abs(box.x + box.width - (facts.x + facts.width))).toBeLessThan(1);
 	expect(line.x).toBeGreaterThanOrEqual(box.x);
 	// The h2 column is 15rem and the gap 3rem: the controls start 288px in.
-	const h2 = (await page.getByRole('heading', { level: 2, name: 'Account', exact: true }).boundingBox())!;
+	const h2 = (await page
+		.getByRole('heading', { level: 2, name: 'Account', exact: true })
+		.boundingBox())!;
 	expect(Math.round(box.x - h2.x)).toBe(288);
 	// The account's key and value sit side by side, not 672px apart.
 	const handle = page.locator('#account dt', { hasText: 'Handle' });

@@ -29,7 +29,7 @@
 		timeUntil,
 		classMemoryGB
 	} from '$lib/format';
-	import { fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
+	import { HOLD_HOURS, fromApi, holdsMemory, ordinal, type PlanFigures } from '$lib/plans';
 	import { SUPPORT_MAILTO } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
@@ -121,10 +121,18 @@
 		!!sub &&
 			!!plan &&
 			!!sub.intro_until &&
+			!sub.scheduled_plan &&
 			sub.next_charge_cents != null &&
 			sub.next_charge_cents < plan.price_cents
 	);
-	let latest = $derived(newest(invoices));
+	/** The plan's price this month: the introductory one while it runs. */
+	let priceNow = $derived(
+		sub && plan ? (introCharge ? sub.next_charge_cents! : plan.price_cents) : 0
+	);
+	/** Change plan's cards, the current one at the price the account pays. */
+	let changeFigures = $derived(
+		figures.map((f) => (f.id === sub?.plan ? { ...f, priceCents: priceNow } : f))
+	);
 
 	async function load() {
 		// One failure, one report (I-395): an account that did not load is
@@ -359,13 +367,13 @@
 	// Egress reads as the pricing table writes it: 1000 GB is 1 TB.
 	const egressFigure = (n: number) => (n >= 1000 && n % 1000 === 0 ? sizeGB(n) : gbs(n));
 
-	/** "one large, or two small" for a plan's memory (docs/PRICING.md):
+	/** "Fits one large, or two small." for a plan's memory (docs/PRICING.md):
 	 * xl 16 GB, large 8, small 4. */
 	function runsAtOnce(memoryGB: number): string {
 		const xl = Math.floor(memoryGB / 16);
 		const large = Math.floor(memoryGB / 8);
-		if (xl > 0) return `${count(xl)} xl, ${count(large)} large, or any mix`;
-		return `${count(large)} large, or ${count(Math.floor(memoryGB / 4))} small`;
+		if (xl > 0) return `Fits ${count(xl)} xl, ${count(large)} large, or any mix.`;
+		return `Fits ${count(large)} large, or ${count(Math.floor(memoryGB / 4))} small.`;
 	}
 
 	/** Which day of the period today is, of how many. */
@@ -377,21 +385,19 @@
 		return { day: Math.max(1, day), of };
 	}
 
-	/** What is charged next and when; undefined once nothing more is. */
+	/** What is charged next and when; undefined once nothing more is. A
+	 * scheduled plan starts at the renewal, so the renewal charges its
+	 * price: the api's next_charge_cents still prices the current plan
+	 * (internal/billing ChargeCents, requests/foundation.md). */
 	function nextCharge(s: Subscription, p: Plan): { cents: number; on: string } | undefined {
 		if (s.cancel_at) return undefined;
 		const on = s.status === 'trialing' && s.trial_end ? s.trial_end : s.next_billed_at;
 		if (!on) return undefined;
+		if (scheduledPlan) return { cents: scheduledPlan.price_cents, on };
 		return { cents: s.next_charge_cents ?? p.price_cents, on };
 	}
 
 	const apiPlan = (id: PlanId) => billing?.plans.find((p) => p.id === id);
-	function newest(list: Invoice[]) {
-		return list.reduce<Invoice | undefined>(
-			(a, b) => (!a || new Date(b.created_at) > new Date(a.created_at) ? b : a),
-			undefined
-		);
-	}
 	/** A downgrade the account does not fit: the api refuses it (over_plan). */
 	const doesNotFit = (fp: PlanFigures) =>
 		!!billing && (billing.usage.running_gb > fp.memoryGB || diskHeld > fp.diskGB);
@@ -449,6 +455,7 @@
 				type="button"
 				class="hk-btn-secondary"
 				aria-disabled={refused ? 'true' : waiting()}
+				aria-describedby={refused ? `over-${fp.id}` : undefined}
 				data-testid="change-to-{fp.id}"
 				onclick={() => !refused && changePlan(fp.id)}
 			>
@@ -509,8 +516,7 @@
 					<div class="hk-meter-top">
 						<span class="hk-meter-label">Running now</span>
 						<span class="hk-meter-value"
-							>{gbs(billing.usage.running_gb)} of {gbs(limits.memory)}{#if runningOver}&nbsp;·
-								over{/if}</span
+							>{gbs(billing.usage.running_gb)} of {gbs(limits.memory)}{#if runningOver}&nbsp;· over{/if}</span
 						>
 					</div>
 					<MemoryBlocks
@@ -544,7 +550,9 @@
 					<Meter label="Disk held" used={diskHeld} limit={limits.disk} />
 					{#if !diskOver && heaviest.length && diskHeld >= limits.disk * 0.8}
 						<!-- Who holds it, only once it nears the limit. -->
-						<p class="note">Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}</p>
+						<p class="note">
+							Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}
+						</p>
 					{/if}
 				</div>
 				<div class="cell">
@@ -552,10 +560,9 @@
 						label="Egress this period"
 						used={billing.usage.egress_gb}
 						limit={limits.egress}
-						valueText="{egressFigure(billing.usage.egress_gb)} of {egressFigure(limits.egress)}{billing
-							.usage.egress_gb > limits.egress
-							? ' · over'
-							: ''}"
+						valueText="{egressFigure(billing.usage.egress_gb)} of {egressFigure(
+							limits.egress
+						)}{billing.usage.egress_gb > limits.egress ? ' · over' : ''}"
 					/>
 					{#if billing.usage.overage_cents > 0}
 						<p class="note note--over" data-testid="egress-over">
@@ -593,6 +600,13 @@
 	onpageshow={(e) => {
 		if (e.persisted) busy = undefined;
 	}}
+	onkeydown={(e) => {
+		// Escape inside Change plan closes it, as the toggle above it does.
+		if (e.key !== 'Escape' || !changing) return;
+		if (!document.getElementById('change-plan')?.contains(document.activeElement)) return;
+		e.preventDefault();
+		void toggleChange();
+	}}
 />
 
 <PageShell title="Billing">
@@ -608,22 +622,22 @@
 		</div>
 	{:else if !sub}
 		{#if setupTimedOut}
-			<div class="hk-banner" role="alert">
+			<!-- Alone: the payment went through, so no second checkout is offered. -->
+			<div class="hk-banner" role="alert" data-testid="setup-timeout">
 				<p>
-					The plan has not arrived. Your payment went through and nothing is charged twice.
+					The plan has not arrived.
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a mailto, not a route -->
 					<a href={SUPPORT_MAILTO} data-testid="support-link">Email us</a> and we will finish it by hand.
 				</p>
 			</div>
-		{/if}
-		{#if accountStatus === 'exempt'}
+		{:else if accountStatus === 'exempt'}
 			<!-- Exempt: no plan to buy, so no cards and no buy buttons; what it
 			     holds, against the biggest plan's figures. -->
 			<div class="hk-banner hk-banner--ok" role="status">
-				<p>This account is billing-exempt. No plan is needed.</p>
+				<p>This account is billing-exempt.</p>
 			</div>
 			{@render thisMonth()}
-		{:else if setupTimedOut || holdActive || anyAvailable}
+		{:else if holdActive || anyAvailable}
 			{#if holdActive && billing.waitlist?.hold_until}
 				<div class="hk-banner hk-banner--ok" role="status" data-testid="seat-held">
 					<p>
@@ -645,14 +659,14 @@
 							<span class="email">{me?.email ?? 'you'}</span> when a seat frees.
 						</p>
 					</div>
-					<dl class="hk-facts hk-facts--row place-facts">
+					<dl class="hk-facts hk-facts--row">
 						<div>
 							<dt>Seats free</dt>
 							<dd>{billing.seats.free}</dd>
 						</div>
 						<div>
 							<dt>Hold after invite</dt>
-							<dd>72 h to choose a plan</dd>
+							<dd>{HOLD_HOURS} h to choose a plan</dd>
 						</div>
 					</dl>
 				</div>
@@ -662,8 +676,7 @@
 					<div class="full-row">
 						<p>
 							Every seat is taken and {billing.seats.waiting}
-							{billing.seats.waiting === 1 ? 'person is' : 'people are'} waiting. A seat frees when a
-							plan ends.
+							{billing.seats.waiting === 1 ? 'person is' : 'people are'} waiting.
 						</p>
 						<button
 							type="button"
@@ -720,7 +733,7 @@
 					<dt>Price</dt>
 					<dd>
 						<span class="plan-price"
-							><span class="n">{price(introCharge ? sub.next_charge_cents! : plan.price_cents)}</span>
+							><span class="n">{price(priceNow)}</span>
 							a month</span
 						>
 						{#if introCharge && sub.intro_until}
@@ -736,17 +749,16 @@
 						<dd>
 							<span data-testid="plan-status">
 								{#if sub.cancel_at}
-									Cancelled. Ends {@render day(sub.cancel_at)}; machines stop then and snapshots stay
-									30 days.
+									Cancelled. Ends {@render day(sub.cancel_at)}; machines stop then and snapshots
+									stay 30 days.
 								{:else if sub.status === 'trialing' && sub.trial_end}
 									Trial. First charge of {price(sub.next_charge_cents ?? plan.price_cents)} on {@render day(
 										sub.trial_end
 									)}.
 								{:else if sub.status === 'past_due'}
 									<!-- The banner says the payment failed. -->
-								{:else if sub.next_billed_at}
-									Active. Renews {@render day(sub.next_billed_at)}.
 								{:else}
+									<!-- Next charge says when it renews. -->
 									Active.
 								{/if}
 								{#if scheduledPlan}
@@ -774,18 +786,6 @@
 						<dt>Next charge</dt>
 						<dd>
 							<span data-testid="next-charge">{money(next.cents)}</span> on {@render day(next.on)}
-							{#if billing.usage.overage_cents > 0}
-								<span class="sub">plus {money(billing.usage.overage_cents)} egress so far</span>
-							{/if}
-						</dd>
-					</div>
-				{/if}
-				{#if latest}
-					<div>
-						<dt>Latest invoice</dt>
-						<dd>
-							{money(latest.amount_cents)}, {latest.status.replaceAll('_', ' ')}
-							<span class="sub">{@render day(latest.created_at)}</span>
 						</dd>
 					</div>
 				{/if}
@@ -817,9 +817,7 @@
 					class="hk-btn-secondary"
 					aria-disabled={waiting()}
 					onclick={() => openPortal()}
-					aria-label={busy === 'portal' ? undefined : 'Manage card and receipts'}
-					>{#if busy === 'portal'}Opening…{:else}<span class="max-sm:hidden">Manage card and receipts</span
-						><span class="sm:hidden">Card and receipts</span>{/if}</button
+					>{busy === 'portal' ? 'Opening…' : 'Card and receipts'}</button
 				>
 			</div>
 		</section>
@@ -834,18 +832,24 @@
 				<div class="hk-section-head">
 					<h2 id="change-plan-h" class="hk-h2-app" tabindex="-1">Change plan</h2>
 					<p>
-						Upgrades apply now, prorated. Downgrades apply at renewal on {@render day(sub.period_end)}.
+						Upgrades apply now, prorated. Downgrades apply at renewal on {@render day(
+							sub.period_end
+						)}.
 					</p>
 				</div>
 				<PlanCells
-					plans={figures}
+					plans={changeFigures}
 					current={sub.plan}
 					compare={{ runningGB: billing.usage.running_gb, diskHeldGB: diskHeld }}
 					action={changeAction}
 					level={3}
 				/>
 				{#if changeError}
-					<div class="hk-banner hk-banner--err change-error" role="alert" data-testid="change-error">
+					<div
+						class="hk-banner hk-banner--err change-error"
+						role="alert"
+						data-testid="change-error"
+					>
 						<p>{changeError}</p>
 					</div>
 				{/if}
@@ -902,7 +906,8 @@
 									{#if inv.status === 'paid'}
 										paid
 									{:else}
-										<span class="hk-badge hk-badge--outline">{inv.status.replaceAll('_', ' ')}</span>
+										<span class="hk-badge hk-badge--outline">{inv.status.replaceAll('_', ' ')}</span
+										>
 									{/if}
 								</td>
 								<td class="c-amount">
@@ -939,8 +944,8 @@
 						<p>
 							Cancel the plan? It ends on {@render day(
 								sub.status === 'trialing' && sub.trial_end ? sub.trial_end : sub.period_end
-							)}. Machines run until then and stop at it; snapshots are kept 30 days after. Nothing is
-							charged after that.
+							)}. Machines run until then and stop at it; snapshots are kept 30 days after. Nothing
+							is charged after that.
 						</p>
 						<div class="hk-confirm-actions">
 							<button
@@ -1054,9 +1059,6 @@
 	.place .hk-banner {
 		margin-bottom: 0.5rem;
 	}
-	.place-facts {
-		max-width: 40rem;
-	}
 	.email {
 		overflow-wrap: anywhere;
 	}
@@ -1084,7 +1086,6 @@
 		}
 	}
 	.facts dd {
-		font-variant-numeric: tabular-nums;
 		text-wrap: pretty;
 	}
 	.facts .sub {
@@ -1141,6 +1142,7 @@
 		font-size: 0.8125rem;
 		line-height: 1.25rem;
 		color: var(--hk-text-3);
+		text-wrap: pretty;
 	}
 	.note--over {
 		color: var(--hk-text-2);
@@ -1174,7 +1176,7 @@
 		background: var(--hk-accent);
 	}
 	.sw--alt {
-		background: color-mix(in srgb, var(--hk-accent) 55%, var(--hk-surface));
+		background: color-mix(in srgb, var(--hk-accent) 70%, var(--hk-surface));
 	}
 	.sw-ice {
 		display: inline-flex;
@@ -1243,6 +1245,21 @@
 	.c-link {
 		width: 20%;
 		text-align: right;
+	}
+	/* A row's lone link and a project's name under Running now take a
+	   thumb's height without growing their rows. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.c-link a,
+		.legend-link {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.75rem;
+		}
+		.c-link a {
+			padding-inline: 0.5rem;
+			margin-inline: -0.5rem;
+		}
 	}
 	/* Below 640px a row is two lines: date and amount, then number and
 	   status; the link stays right. */

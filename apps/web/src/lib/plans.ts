@@ -119,6 +119,10 @@ export function memoryLine(gb: number): string {
 /** A plan's disk or egress: "100 GB", "1 TB". */
 export const planSize = sizeGB;
 
+/** How long an invitation holds a seat, in hours: internal/api/waitlist's
+ * HoldDuration, which the api does not send. plans.test.ts parses it. */
+export const HOLD_HOURS = 72;
+
 /** The ordinal of a place on the waitlist: "1st", "2nd", "13th", "22nd". */
 export function ordinal(n: number): string {
 	const mod100 = n % 100;

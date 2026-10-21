@@ -134,6 +134,11 @@ test('Solo costs $39 for 12 months on a first subscription, then $49; a returnin
 	await expect(card.locator('.plan-price .n')).toHaveText('$39');
 	await expect(page.getByTestId('intro-until')).toContainText(/^then \$49 a month from \d{4}-/);
 	await expect(page.getByTestId('next-charge')).toHaveText('$39.00');
+	// The current card in Change plan shows the price the account pays.
+	await page.getByRole('button', { name: 'Change plan' }).click();
+	await expect(
+		page.getByTestId('change-plan').getByTestId('plan-solo').locator('.p-price .n')
+	).toHaveText('$39');
 	await setBilling({ mode: 'none', intro_used: true });
 	await page.goto('/billing');
 	const solo = page.getByTestId('plan-solo');
@@ -300,10 +305,7 @@ test('over its limits at 390, Solo keeps every meter inside This month and the p
 		'412.7 GB of 250 GB · over'
 	);
 	const fit = await page.evaluate(() => {
-		const section = document
-			.getElementById('month-h')!
-			.closest('section')!
-			.getBoundingClientRect();
+		const section = document.getElementById('month-h')!.closest('section')!.getBoundingClientRect();
 		const meters = ['meter-running-now', 'meter-disk-held', 'meter-egress-this-period'].map(
 			(id) => document.querySelector(`[data-testid="${id}"]`)!
 		);
@@ -332,7 +334,13 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 }) => {
 	await setBilling({ mode: 'active', plan: 'plus' });
 	await page.goto('/billing');
-	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
+	await expect(page).toHaveTitle('Billing · repose');
+	// Status says Active once; Next charge carries the renewal date.
+	await expect(page.getByTestId('plan-status')).toHaveText('Active.');
+	await expect(page.getByTestId('plan')).toContainText(
+		/Next charge\s*\$89\.00 on \d{4}-\d{2}-\d{2}/
+	);
+	await expect(page.getByTestId('plan')).not.toContainText('Latest invoice');
 	const list = page.getByRole('table', { name: 'Invoices' });
 	await expect(list.getByText('$89.00')).toBeVisible();
 	await expect(list.getByText('REPOSE-0001', { exact: false })).toBeVisible();
@@ -343,7 +351,7 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 	await page.route('https://sandbox.polar.sh/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Polar portal</h1>' })
 	);
-	await page.getByRole('button', { name: /Manage card and receipts/ }).click();
+	await page.getByRole('button', { name: 'Card and receipts' }).click();
 	await page.waitForURL(
 		'https://sandbox.polar.sh/repose/portal?customer_session_token=polar_cst_fake'
 	);
@@ -453,7 +461,7 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await page.goto('/billing');
 	await expect(page.getByTestId('meter-running-now')).toContainText('24 GB of 32 GB');
 	await expect(page.getByTestId('meter-running-now')).toContainText(
-		'two xl, four large, or any mix'
+		'Fits two xl, four large, or any mix.'
 	);
 	// What runs is listed under the meter, each with its size.
 	await expect(page.getByRole('list', { name: 'Running now' })).toContainText('pro-a');
@@ -465,10 +473,10 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText(
 		'Running 24 GB, holds 16 GB'
 	);
-	await expect(page.getByRole('button', { name: 'Downgrade to Plus' })).toHaveAttribute(
-		'aria-disabled',
-		'true'
-	);
+	const refused = page.getByRole('button', { name: 'Downgrade to Plus' });
+	await expect(refused).toHaveAttribute('aria-disabled', 'true');
+	// The reason on the card is the button's description.
+	await expect(refused).toHaveAccessibleDescription('Running 24 GB, holds 16 GB');
 	await stopAll();
 });
 
@@ -482,6 +490,8 @@ test('a downgrade that fits is scheduled for the renewal and can be undone', asy
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	await expect(page.getByTestId('plan-status')).toContainText('Changes to Plus on');
+	// The renewal charges Plus, not Pro.
+	await expect(page.getByTestId('next-charge')).toHaveText('$89.00');
 	// With Plus scheduled, the Status fact offers to keep Pro (I-837), and
 	// Change plan still lists Solo and says from when Plus applies.
 	await expect(page.getByTestId('change-keep')).toHaveText('Keep Pro');
@@ -523,7 +533,7 @@ test('cancelling asks first, then shows the end date and a Resume that undoes it
 	await expect(page.getByTestId('plan-status')).toContainText('Cancelled. Ends');
 	await expect(page.getByRole('button', { name: 'Change plan' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Resume plan' }).click();
-	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
+	await expect(page.getByTestId('plan-status')).toHaveText('Active.');
 	// Resume plan is gone; focus goes to Cancel plan, not <body>.
 	await expect(page.getByRole('button', { name: 'Cancel plan' })).toBeFocused();
 });
@@ -593,4 +603,7 @@ test('a plan that never arrives points at the support address', async ({ page })
 	);
 	// Not the feedback board, which is for feedback.
 	await expect(page.getByTestId('support-link')).not.toHaveAttribute('href', /fider/);
+	// The payment went through: the banner stands alone, with no second checkout.
+	await expect(page.locator('[id^="choose-"]')).toHaveCount(0);
+	await expect(page.getByRole('list', { name: 'Plans' })).toHaveCount(0);
 });

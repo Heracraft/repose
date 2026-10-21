@@ -247,7 +247,7 @@
 </script>
 
 <svelte:head>
-	<title>Settings — repose</title>
+	<title>Settings · repose</title>
 </svelte:head>
 
 <PageShell title="Settings">
@@ -372,7 +372,9 @@
 									autocomplete="off"
 									spellcheck="false"
 									class="hk-input mono"
-									placeholder={gchat ? 'New webhook URL' : 'https://chat.googleapis.com/v1/spaces/...'}
+									placeholder={gchat
+										? 'New webhook URL'
+										: 'https://chat.googleapis.com/v1/spaces/...'}
 									bind:value={gchatUrl}
 								/>
 								<button
@@ -384,11 +386,6 @@
 									{savingGChat ? 'Saving…' : 'Save'}
 								</button>
 							</div>
-							{#if gchat?.broken_at}
-								<p class="field-note">
-									Google refused the webhook. Save a new one, or send a test once it works again.
-								</p>
-							{/if}
 							{#if gchatDirty && !ntfyDirty && heldNavigation}
 								<div class="hk-banner ask" role="alert">
 									<p>The Google Chat webhook is not saved. Leave this page anyway?</p>
@@ -448,7 +445,7 @@
 		<section class="set-row">
 			<div class="set-head">
 				<h2 id="install-h" class="hk-h2-app">Install</h2>
-				<p class="set-note">The CLI, for macOS and Linux.</p>
+				<p class="set-note">Runs on macOS and Linux.</p>
 			</div>
 			<div class="set-body">
 				<CodeCopy command={INSTALL_COMMAND} what="install command" />

@@ -8,7 +8,8 @@
   Each card is the same stack: the name; the price, with the list price
   struck while an introductory price applies (public) and the line that
   says when it ends; a hairline; the memory in words; disk and egress; a
-  line for a figure the account already passes; the action the page gives.
+  line for a figure the account already passes (id over-{plan id}, for the
+  action's aria-describedby); the action the page gives.
   From 900px the cards share their rows (a subgrid), so each line runs
   level across the three whatever one card holds that the others do not.
 
@@ -70,7 +71,8 @@
 					{#if variant === 'public'}
 						First {intro.months} months{#if intro.limit}, first {intro.limit} subscribers{/if}
 					{:else}
-						<span data-testid="intro-{p.id}">{price(intro.priceCents)} for {intro.months} months</span
+						<span data-testid="intro-{p.id}"
+							>{price(intro.priceCents)} for {intro.months} months</span
 						>, then {price(p.priceCents)}
 						{#if intro.egressGB !== p.egressGB}and <span class="nw">{planSize(p.egressGB)}</span>
 							egress{/if}
@@ -96,7 +98,8 @@
 				</dl>
 			{/if}
 			{#if compare && (overRun || overDisk)}
-				<div class="p-over">
+				<!-- over-{id}: a refused action names this line as its reason (aria-describedby). -->
+				<div class="p-over" id="over-{p.id}">
 					{#if overRun}
 						<p>
 							<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Running

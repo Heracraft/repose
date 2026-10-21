@@ -6,7 +6,6 @@
 	import { onMount, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { toast } from 'svelte-sonner';
 	import { leaveAnyway, leavingAnyway } from '$lib/leave';
 	import { getPersonal, putPersonal } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
@@ -75,7 +74,6 @@
 			} else {
 				saved = `Saved. ${rebuildSummary(res.projects)}`.trim();
 			}
-			toast.success('machine.nix saved.');
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				conflict = true;
@@ -121,26 +119,28 @@
 				{/if}
 				<NixEditor bind:value={text} {errorLine} label="machine.nix" />
 				<div class="foot">
-					<!-- The state, said once as it changes; the revision the
-					     account holds and Save on the right. -->
-					<span role="status" class="state">
-						{#if dirty}
-							<span class="dirty">Unsaved changes</span>
-						{:else if saved}
-							{saved}
-						{:else if personal?.created_at}
-							Saved
-						{:else}
-							You have none yet.
-						{/if}
-					</span>
-					<span class="right">
+					<!-- The state, said once as it changes, and the revision the
+					     account holds on one line; Save on the right. -->
+					<span class="left">
+						<span role="status" class="state">
+							{#if dirty}
+								<span class="dirty">Unsaved changes</span>
+							{:else if saved}
+								{saved}
+							{:else if personal?.created_at}
+								Saved
+							{:else}
+								You have none yet.
+							{/if}
+						</span>
 						{#if personal?.created_at}
 							<span class="when">
 								{dateTime(personal.created_at)}
 								{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
 							</span>
 						{/if}
+					</span>
+					<span class="right">
 						<button
 							type="button"
 							class="hk-btn-secondary hk-btn-sm"
@@ -154,10 +154,7 @@
 				</div>
 				{#if conflict}
 					<div class="hk-banner after" role="alert">
-						<p>
-							machine.nix on your account changed after this page loaded, probably pushed from your
-							laptop. Load that copy to edit it; your changes here are dropped.
-						</p>
+						<p>machine.nix changed after this page loaded. Loading it drops your changes here.</p>
 						<button type="button" class="hk-banner-action" onclick={load}
 							>Load the account's copy</button
 						>
@@ -210,11 +207,18 @@
 	.dirty {
 		color: var(--hk-text);
 	}
-	.right {
+	.left {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 0.75rem;
+		min-width: 0;
+		flex: 1 1 0;
+	}
+	.right {
+		display: flex;
 		align-items: center;
-		gap: 0.25rem 1rem;
+		margin-left: auto;
 	}
 	.when {
 		font-variant-numeric: tabular-nums;

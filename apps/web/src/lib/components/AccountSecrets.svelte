@@ -43,9 +43,9 @@
 	onMount(load);
 
 	function validateName(n: string): string | undefined {
-		if (SHELL.has(n)) return 'This name is reserved: the machine uses it to keep secrets current.';
+		if (SHELL.has(n)) return `${n} is reserved.`;
 		if (!NAME_RE.test(n))
-			return 'Must match [A-Z][A-Z0-9_]{0,63}: uppercase letters, digits and underscores, starting with a letter.';
+			return 'Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.';
 		return undefined;
 	}
 
@@ -114,7 +114,7 @@
 			await load();
 			void focusAfterRender(...after, 'account-secret-name');
 		} catch (err) {
-			toastApiError(err, 'Could not remove the secret.');
+			toastApiError(err, 'Could not delete the secret.');
 		} finally {
 			deleting = undefined;
 		}
@@ -171,7 +171,7 @@
 									<td colspan="3">
 										<div class="hk-confirm" data-testid="confirm-delete-account-secret">
 											<p>
-												Remove <code>{@render secretName(s.name)}</code> from every project? A project
+												Delete <code>{@render secretName(s.name)}</code> from every project? A project
 												with its own keeps that one.
 											</p>
 											<div class="hk-confirm-actions">
@@ -254,7 +254,8 @@
 						{#if file}
 							<span class="file-name" data-testid="account-secret-file-name">{file.name}</span>
 							<span class="file-size">{bytes(file.size)}</span>
-							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={clearFile}>Clear</button>
+							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={clearFile}>Clear</button
+							>
 						{:else}
 							<button
 								type="button"

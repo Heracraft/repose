@@ -91,10 +91,13 @@ test('an account secret name is checked before it is sent', async ({ page }) => 
 	await section.getByLabel('Name', { exact: true }).fill('BASH_ENV');
 	await section.getByLabel('Value', { exact: true }).fill('x');
 	await section.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(section.getByText(/reserved/)).toBeVisible();
+	await expect(section.getByText('BASH_ENV is reserved.')).toBeVisible();
 	await section.getByLabel('Name', { exact: true }).fill('MY-KEY');
 	await section.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(section.getByText(/\[A-Z\]\[A-Z0-9_\]/)).toBeVisible();
+	// The rule in words, not as a regular expression (Guide B 1.3).
+	await expect(
+		section.getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
+	).toBeVisible();
 });
 
 // The Settings form takes a file as the project page does (I-698): the

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MEMORY_STATES, PLANS, fromApi, memoryLine, ordinal } from './plans';
+import { HOLD_HOURS, MEMORY_STATES, PLANS, fromApi, memoryLine, ordinal } from './plans';
 import { classMemoryGB, classVCPUs } from './format';
 
 // The landing is prerendered, so its plans are figures in the web's own
@@ -15,6 +15,11 @@ const goSource = readFileSync(
 
 const usageSource = readFileSync(
 	join(__dirname, '..', '..', '..', '..', 'internal', 'billing', 'usage.go'),
+	'utf8'
+);
+
+const waitlistSource = readFileSync(
+	join(__dirname, '..', '..', '..', '..', 'internal', 'api', 'waitlist', 'waitlist.go'),
 	'utf8'
 );
 
@@ -35,6 +40,12 @@ function goPlan(name: string): Record<string, string> {
 }
 
 describe('plans', () => {
+	it('hold a waitlist seat as long as internal/api/waitlist does', () => {
+		const m = waitlistSource.match(/HoldDuration\s*=\s*(\d+)\s*\*\s*time\.Hour/);
+		expect(m, 'waitlist.go: no HoldDuration = N * time.Hour').not.toBeNull();
+		expect(HOLD_HOURS).toBe(Number(m![1]));
+	});
+
 	it('match internal/billing/plans.go figure for figure', () => {
 		expect(PLANS.map((p) => p.name)).toEqual(['Solo', 'Plus', 'Pro']);
 		for (const p of PLANS) {
