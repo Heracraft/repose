@@ -35,7 +35,7 @@
 	<div class="hk-section-head">
 		<h2 id="details-title" class="hk-h2-app">Details</h2>
 	</div>
-	<dl class="hk-facts details">
+	<dl class="hk-facts hk-facts--row details">
 		<div>
 			<dt>Base</dt>
 			<dd>
@@ -102,13 +102,10 @@
 </section>
 
 <style>
-	/* A 21rem column: the label column narrows to its words. */
-	.details > :global(div) {
-		grid-template-columns: 7.5rem minmax(0, 1fr);
-	}
-	@media (max-width: 639.98px) {
-		.details > :global(div) {
-			grid-template-columns: minmax(0, 1fr);
+	/* Side by side across the column, two to a row on a phone. */
+	@media (max-width: 479.98px) {
+		.details {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 	.num {
@@ -134,7 +131,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		justify-content: space-between;
 		gap: 0 0.5rem;
 	}
 	.keep {

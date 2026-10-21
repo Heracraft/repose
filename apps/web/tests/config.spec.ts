@@ -200,21 +200,73 @@ test('a Menu search that matches nothing says so', async ({ page }) => {
 	);
 });
 
-test('at lg the revisions sit in a rail beside the editor', async ({ page }) => {
+// Config has no side column (I-841): the switches sit in a row under the
+// tabs, then Secrets, then Packages with the editor across the column,
+// then Revisions under it.
+test('Config reads top to bottom: switches, Secrets, Packages, Revisions', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
-		name: 'rail-app',
-		remote_url: 'github.com/heracraft/rail-app'
+		name: 'config-order-app',
+		remote_url: 'github.com/heracraft/config-order-app'
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`/projects/${p.id}/config`);
 	await page.getByRole('tab', { name: 'Nix' }).click();
-	const editor = await page.locator('.nix-frame').boundingBox();
-	const revisions = await page.getByRole('heading', { name: 'Revisions' }).boundingBox();
-	expect(revisions!.x).toBeGreaterThan(editor!.x + editor!.width);
-	expect(revisions!.x + 300).toBeGreaterThanOrEqual(1200);
-	// The editor is the page's subject: it opens with room to write in
-	// (28rem) even for an empty fragment.
+	const y = async (name: string) =>
+		(await page.getByRole('heading', { level: 2, name, exact: true }).boundingBox())!.y;
+	const hold = (await page.getByRole('checkbox', { name: /Hold base updates/ }).boundingBox())!;
+	const [secrets, packages, revisions] = [
+		await y('Secrets'),
+		await y('Packages'),
+		await y('Revisions')
+	];
+	expect(hold.y).toBeLessThan(secrets);
+	expect(secrets).toBeLessThan(packages);
+	expect(packages).toBeLessThan(revisions);
+	const editor = (await page.locator('.nix-frame').boundingBox())!;
+	const tabs = (await page.getByRole('navigation', { name: 'Project' }).boundingBox())!;
+	// The editor spans the column the tabs' rule spans.
+	expect(Math.abs(editor.x - tabs.x)).toBeLessThanOrEqual(1);
+	expect(editor.width).toBeGreaterThan(800);
+	// It opens with room to write in (28rem) even for an empty fragment.
 	expect((await page.locator('.nix-editor').boundingBox())!.height).toBeGreaterThanOrEqual(440);
+});
+
+// machine.nix is edited under Settings, on its own tab (I-841).
+test('Edit machine.nix goes to Settings, machine.nix', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'mnix-link-app',
+		remote_url: 'github.com/heracraft/mnix-link-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	const link = page.getByRole('link', { name: 'Edit machine.nix' });
+	await expect(link).toHaveAttribute('href', '/settings/machine-nix');
+	await link.click();
+	await expect(page).toHaveURL('/settings/machine-nix');
+});
+
+// One primary on the page: on Config the Apply bar holds it, so a stopped
+// project's Start in the header draws secondary there (ia-final 2.3).
+test("on Config a stopped project's Start is secondary beside the Apply bar", async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'config-primary-app',
+		remote_url: 'github.com/heracraft/config-primary-app'
+	});
+	await fetch(`${api}/projects/${p.id}/stop`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ snapshot: false })
+	});
+	await page.goto(`/projects/${p.id}`);
+	const start = page.getByRole('button', { name: 'Start', exact: true });
+	await expect(start).toHaveClass(/(^|\s)hk-btn(\s|$)/, { timeout: 10_000 });
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Config' })
+		.click();
+	await expect(page.locator('.hk-bottom-bar')).toBeVisible();
+	await expect(start).toHaveClass(/hk-btn-secondary/);
+	await expect(page.locator('main .hk-btn:visible')).toHaveCount(0);
 });
 
 // An edit not applied holds a navigation away: Stay keeps it, Leave goes

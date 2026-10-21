@@ -3,8 +3,11 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getBilling, getMe, listDestroyed, listProjects, listQuestions } from '$lib/api/client';
+	import { listDestroyed, listProjects, listQuestions } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
+	import { billingStore } from '$lib/billing.svelte';
+	import { projectsStore } from '$lib/projects.svelte';
+	import { title } from '$lib/title';
 	import { withoutBillingURL } from '$lib/refusal';
 	import { PollFailure } from '$lib/api/toast';
 	import { pollWhileVisible } from '$lib/poll';
@@ -31,7 +34,6 @@
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
-	import PlanStrip from '$lib/components/projects/PlanStrip.svelte';
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
@@ -54,7 +56,7 @@
 		readQuery,
 		type Filter
 	} from '$lib/projectList';
-	import type { Billing, DestroyedProject, Me, Project, Question } from '$lib/api/types';
+	import type { DestroyedProject, Project, Question } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusOnMount } from '$lib/focus';
@@ -89,12 +91,11 @@
 		if (page.length < DESTROYED_PAGE) destroyedDone = true;
 	}
 	/**
-	 * The account: its billing status for the past-due and suspended
-	 * banners, and the seats and waitlist state of a user with no project
-	 * yet (I-290).
+	 * The account, from the dashboard's one billing store (I-841): its
+	 * billing status for the past-due and suspended banners, and the seats
+	 * and waitlist state of a user with no project yet (I-290).
 	 */
-	let me = $state<Me | undefined>(undefined);
-	let lastMe = 0;
+	let me = $derived(billingStore.me);
 	let holdActive = $derived(
 		!!me?.waitlist?.hold_until && new Date(me.waitlist.hold_until).getTime() > Date.now()
 	);
@@ -108,16 +109,6 @@
 		)
 	);
 
-	/** GET /billing for the plan strip and the lede; undefined while off or failing. */
-	let billing = $state<Billing | undefined>(undefined);
-	/** billing_disabled is an answer, not a failure: it is not asked again. */
-	let billingOff = $state(false);
-	let planName = $derived(
-		billing?.subscription
-			? billing.plans.find((p) => p.id === billing?.subscription?.plan)?.name
-			: undefined
-	);
-
 	// A failing refresh toasts once, not on every poll (I-393).
 	const listFailure = new PollFailure('Could not load projects.');
 
@@ -125,39 +116,31 @@
 		const first = projects === undefined;
 		try {
 			// The first load asks for the questions with the list, so the
-			// card above the strip is in the first paint and nothing lands
+			// card above the table is in the first paint and nothing lands
 			// above the table later (DESIGN-LANGUAGE "The pages"). It is a
 			// side read, so passive: its answer must not clear the outage bar
 			// a failing list raises at the same time (I-393).
 			if (first) {
-				// Billing comes with the list: without it the strip paints as
-				// a row of stat cells and changes to squares and rings a few
-				// hundred ms later, pushing the table down under the pointer
-				// ("Nothing mounts above painted content", I-680).
-				// The account rides in the first load too, passive like the
-				// rest, so the past-due banner is in the first paint.
-				const [list, account, qs, bill] = await Promise.all([
+				// The account rides in the first load too, from the shared
+				// store (one read with the rail's), so the past-due banner is
+				// in the first paint ("Nothing mounts above painted content",
+				// I-680).
+				const [list, qs] = await Promise.all([
 					listProjects(),
-					getMe({ passive: true }).catch(() => undefined),
 					listQuestions('pending', { passive: true }).catch(() => undefined),
-					getBilling({ passive: true }).catch((err: unknown) => {
-						if (err instanceof ApiError && err.code === 'billing_disabled') billingOff = true;
-						return undefined;
-					})
+					billingStore.refresh({ maxAge: 30_000 })
 				]);
-				if (account) {
-					me = account;
-					lastMe = Date.now();
-				}
 				if (qs) {
 					questions = qs;
-					pendingQuestions.set(qs.length);
+					pendingQuestions.set(qs);
 				}
-				if (bill) billing = bill;
 				projects = list;
 			} else {
 				projects = await listProjects();
 			}
+			// The rail lists the same projects: it follows this poll with no
+			// read of its own (I-841).
+			projectsStore.set(projects);
 			loadFailed = false;
 			listFailure.ok();
 		} catch (err) {
@@ -174,12 +157,9 @@
 			// raised (the strip's and the callout's calls included).
 			return;
 		}
-		// The strip's and the callout's calls go out once the list is in;
-		// each fails on its own and keeps what it showed last.
-		const side = Promise.all([
-			first ? undefined : refreshQuestions(),
-			first ? undefined : refreshBilling()
-		]);
+		// The questions' call goes out once the list is in; it fails on its
+		// own and keeps what it showed last.
+		const side = first ? undefined : refreshQuestions();
 		// Its own try: an api without the route (older than I-167) answers
 		// 404, and that must not hide the live list or raise a toast.
 		// Destroyed projects change a few times a week, and this is the
@@ -194,39 +174,20 @@
 				destroyedNewest = [];
 			}
 		}
-		// The account's status moves with a payment, a few times a month;
-		// the 60s step the destroyed list keeps is enough for it.
-		if (!first && (projects.length === 0 || Date.now() - lastMe >= 60_000)) {
-			try {
-				me = await getMe();
-				lastMe = Date.now();
-			} catch {
-				// The banner it drew stays.
-			}
-		}
+		// The account's status moves with a payment, a few times a month,
+		// and the rail reads it every 60s. An account with no project yet
+		// waits on a seat or a plan, so it is read on every tick.
+		if (!first && projects.length === 0) await billingStore.refresh({ passive: false });
 		await side;
 	}
 
 	async function refreshQuestions() {
 		try {
 			questions = await listQuestions('pending');
-			pendingQuestions.set(questions.length);
+			pendingQuestions.set(questions);
 		} catch {
 			// The callout keeps the questions it showed; the list's own
 			// failure is the one reported.
-		}
-	}
-
-	async function refreshBilling() {
-		if (billingOff) return;
-		try {
-			billing = await getBilling();
-		} catch (err) {
-			if (err instanceof ApiError && err.code === 'billing_disabled') {
-				billingOff = true;
-				billing = undefined;
-			}
-			// Any other failure keeps the strip it drew last, or only Memory.
 		}
 	}
 
@@ -354,8 +315,7 @@
 		return [
 			awake > 0 ? `${awake} running` : 'No machines running',
 			broken > 0 ? `${broken} in error` : '',
-			`${n} ${n === 1 ? 'project' : 'projects'}`,
-			planName
+			`${n} ${n === 1 ? 'project' : 'projects'}`
 		]
 			.filter(Boolean)
 			.join(' · ');
@@ -517,25 +477,32 @@
 {/snippet}
 
 <svelte:head>
-	<title>Projects · repose</title>
+	<title>{title('Projects')}</title>
 </svelte:head>
 
-<PageShell title="Projects" lede={summary}>
+<!-- Until the list answers, the lede's line is held empty, so the page
+     under it does not drop 28px when the count arrives (I-664). -->
+<PageShell title="Projects" lede={projects === undefined ? '\u00a0' : summary}>
 	<LoadState
 		status={projects !== undefined ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={refresh}
 		error={loadError}
 	>
 		<!-- The account's payment state, one sentence each; the full rule is
-		     on /billing. -->
+		     on /billing. Below 1024px the plan line under the strip says it
+		     already, so the banner gives way there (I-841). -->
 		{#if me?.billing.status === 'suspended'}
-			<div class="hk-banner hk-banner--err" role="alert" data-testid="projects-suspended">
+			<div
+				class="hk-banner hk-banner--err pay-banner"
+				role="alert"
+				data-testid="projects-suspended"
+			>
 				<p>
 					Your account is suspended. <a href={resolve('/billing')}>Update card and pay</a>
 				</p>
 			</div>
 		{:else if me?.billing.status === 'past_due'}
-			<div class="hk-banner" role="status" data-testid="projects-past-due">
+			<div class="hk-banner pay-banner" role="status" data-testid="projects-past-due">
 				<p>Your last payment failed. <a href={resolve('/billing')}>Update card</a></p>
 			</div>
 		{/if}
@@ -549,7 +516,6 @@
 						: me?.billing.status === 'none'
 							? 'none'
 							: undefined}
-			{@const planFigures = !banner && !billingOff && !!billing && billing.usage.memory_gb > 0}
 			<div class="empty">
 				{#if banner === 'held' && me?.waitlist?.hold_until}
 					<div class="hk-banner hk-banner--ok" role="status" data-testid="seat-held">
@@ -570,7 +536,7 @@
 						<span
 							>Choose a plan before your first machine can start. Seven days free, card at checkout.</span
 						>
-						<a href={resolve('/billing')} class="hk-btn hk-btn-sm">Choose a plan</a>
+						<a href={resolve('/billing')} class="hk-btn-secondary hk-btn-sm">Choose a plan</a>
 					</div>
 				{/if}
 				<div class="hk-empty-row">
@@ -590,11 +556,6 @@
 						}
 					]}
 				/>
-				{#if planFigures}
-					<div class="plan-row">
-						<PlanStrip projects={[]} {billing} />
-					</div>
-				{/if}
 			</div>
 		{:else if projects}
 			{#if refusal}
@@ -625,7 +586,7 @@
 				</div>
 			{/if}
 
-			<WaitingCard bind:questions cap={3} testid="pending-questions" />
+			<WaitingCard bind:questions limit={1} />
 
 			<div class="hk-section list">
 				<!-- A search and the state filters, once the list is long enough
@@ -662,18 +623,18 @@
 						<a href={resolve('/projects')} class="hk-link">Clear</a>
 					</div>
 				{:else}
-					<!-- From 640px, a table. Where it scrolls sideways (640 to 1024
-					     with long names) it is a named region with a tab stop. -->
-					<div class="hk-table-wrap hidden sm:block" use:tabStopWhenScrolls={'Projects'}>
+					<!-- From a 600px column, a table, laid out by the column's width
+					     (@container dash, I-841). Where it scrolls sideways it is a
+					     named region with a tab stop. -->
+					<div class="hk-table-wrap ptable-wrap" use:tabStopWhenScrolls={'Projects'}>
 						<table class="hk-table hk-table--hover ptable">
 							<thead>
 								<tr>
 									<th scope="col" class="c-name">Project</th>
 									<th scope="col" class="c-state">State</th>
-									<th scope="col" class="c-size hidden lg:table-cell">Size</th>
+									<th scope="col" class="c-size">Size</th>
 									<th scope="col" class="c-agents">Agents</th>
-									<th scope="col" class="c-disk hk-num-col hidden md:table-cell">Disk</th>
-									<th scope="col" class="c-snap hidden xl:table-cell">Last snapshot</th>
+									<th scope="col" class="c-disk hk-num-col">Disk</th>
 									<th scope="col" class="c-act"><span class="hk-sr">Actions</span></th>
 								</tr>
 							</thead>
@@ -697,7 +658,7 @@
 											{/if}
 										</td>
 										<td class="c-state">{@render stateCell(p)}</td>
-										<td class="c-size hidden whitespace-nowrap lg:table-cell">
+										<td class="c-size whitespace-nowrap">
 											<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
 													class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
 												>{/if}
@@ -705,23 +666,12 @@
 										<td class="c-agents">
 											<AgentChips agents={p.signals?.agents} asked={!!questionsFor.get(p.id)} />
 										</td>
-										<td class="c-disk hk-num-col hidden whitespace-nowrap md:table-cell"
-											>{@render diskCell(p)}</td
-										>
-										<td class="c-snap muted hidden whitespace-nowrap xl:table-cell">
-											{#if p.last_snapshot_at}
-												<time datetime={p.last_snapshot_at} title={dateTime(p.last_snapshot_at)}
-													>{relativeTime(p.last_snapshot_at)}</time
-												>
-											{:else}
-												<span class="hk-sr">none</span>
-											{/if}
-										</td>
+										<td class="c-disk hk-num-col whitespace-nowrap">{@render diskCell(p)}</td>
 										<td class="c-act">{@render actionButton(p)}</td>
 									</tr>
 									{#if askingStop === p.id}
 										<tr class="confirm-row" data-testid="confirm-stop">
-											<td colspan="7">{@render confirmStop(p)}</td>
+											<td colspan="6">{@render confirmStop(p)}</td>
 										</tr>
 									{/if}
 								{/each}
@@ -729,9 +679,9 @@
 						</table>
 					</div>
 
-					<!-- Below 640px, stacked rows: the name and its Start or Stop on
-					     the first line, the state and the figures on the second. -->
-					<ul class="mlist sm:hidden" aria-label="Projects">
+					<!-- Below a 600px column, stacked rows: the name and its Start or
+					     Stop on the first line, the state and the figures on the second. -->
+					<ul class="mlist" aria-label="Projects">
 						{#each rows as p (p.id)}
 							{@const agents = p.signals?.agents ?? []}
 							{@const frozen = frozenSince(p)}
@@ -794,10 +744,6 @@
 				{/if}
 			</div>
 
-			<div class="plan-row">
-				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
-			</div>
-
 			<RecentActivity {projects} />
 		{/if}
 		<RecentlyDestroyed
@@ -811,35 +757,58 @@
 </PageShell>
 
 <style>
-	/* ---- The table (from 640px) ---- */
+	/* ---- The table (from a 600px column) ----
+	   The column, not the window, decides (I-841): at 1024 the rail leaves
+	   the page 700px. Disk joins at 680px and Size at 800px, so Start and
+	   Stop always fit. */
+	.ptable-wrap {
+		display: none;
+	}
+	.ptable .c-size,
+	.ptable .c-disk {
+		display: none;
+	}
+	@container dash (min-width: 600px) {
+		.ptable-wrap {
+			display: block;
+		}
+		.mlist {
+			display: none;
+		}
+	}
+	@container dash (min-width: 680px) {
+		.ptable .c-disk {
+			display: table-cell;
+		}
+	}
+	@container dash (min-width: 800px) {
+		.ptable .c-size {
+			display: table-cell;
+		}
+	}
 	.ptable td {
 		padding-top: 0.875rem;
 		padding-bottom: 0.875rem;
 		vertical-align: top;
 	}
 	.ptable .c-name {
-		width: 30%;
+		width: 34%;
 	}
 	.ptable .c-state {
-		width: 16%;
+		width: 20%;
 	}
 	.ptable .c-size {
-		width: 14%;
+		width: 16%;
 	}
 	.ptable .c-agents {
-		width: 15%;
+		width: 18%;
 	}
 	.ptable .c-disk {
-		width: 7%;
-	}
-	/* Clear of the right-aligned disk figure, so "1 GB" and "2h ago" read
-	   as two columns (review r4). */
-	.ptable .c-snap {
-		width: 12%;
-		padding-left: 2rem;
+		width: 6%;
 	}
 	.ptable .c-act {
 		width: 6%;
+		padding-left: 1.5rem;
 		text-align: right;
 		white-space: nowrap;
 	}
@@ -976,10 +945,6 @@
 	:global(#questions) + .list:not(:has(.ptools)) .mrow:first-child {
 		border-top: 0;
 	}
-	/* The plan row's top rule closes the list. */
-	.list :global(.hk-empty-row) {
-		border-bottom: 0;
-	}
 	.mrow {
 		position: relative;
 		min-height: 3.5rem;
@@ -1037,13 +1002,16 @@
 	.pmore .hk-btn-ghost {
 		margin-left: -0.625rem;
 	}
-	.plan-row {
-		margin-top: 2.75rem;
-	}
 	.refusal-stops {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
+	}
+
+	@media (max-width: 1023.98px) {
+		.pay-banner {
+			display: none;
+		}
 	}
 
 	/* ---- No projects ---- */

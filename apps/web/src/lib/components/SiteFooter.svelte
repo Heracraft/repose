@@ -77,6 +77,13 @@
 	.site-footer--compact {
 		padding: 1.25rem 0;
 	}
+	/* The rail's height counts on this row's (--dash-foot-h, I-841). */
+	@media (min-width: 1024px) {
+		.site-footer--compact {
+			box-sizing: border-box;
+			height: var(--dash-foot-h);
+		}
+	}
 	ul {
 		margin: 0;
 		padding: 0;

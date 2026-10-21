@@ -24297,3 +24297,112 @@ critiques and the area reviews are in the branch's `.dev/notes/`.
   since it has no pictures left to exempt. `pnpm a11y` passes 52 runs (13
   pages, light and dark, 1440 and 390); the full Playwright suite passes
   241 tests.
+
+**I-841. The dashboard gets a rail: Projects, Questions, Billing and
+Settings, your projects by name, and the plan; a Questions page; project and
+Settings pages split into tabs; every old URL keeps working.** (ui-revamp,
+2026-10-21) *Made during implementation.* The owner opened the dashboard's
+pages, menus and navigation to change, on the condition that the UX and UI
+improve. Three proposals and three judges are in the branch's
+`.dev/notes/ia-*.md`; this is the build of the top-scored one (ia-daily)
+with grafts from the others (`.dev/notes/ia-final.md`).
+- *Why a rail.* Measured on the fake stack: the question count sat on
+  "Projects" and read as a project count; Settings and Billing moved into the
+  Account menu below 640px and 360px; switching project took two clicks; the
+  project page was 2028px at 1440 and 3983px at 390 with nine sections and
+  every section's polls. The rail puts the four places at one spot at every
+  width, lists your projects with one dot each (amber while an agent waits on
+  you) so Connect is one click from any page, and holds the plan.
+- *Rail from 1024px, a named exception to Guide B 11.6 (768px).* At 768 the
+  page column is 470px, under the projects table's and Overview's one-column
+  floor. From 1024 it is 714px or wider. Below 1024 a sticky 44px strip under
+  the header holds the same four places and ends at 101px, the docs
+  sub-bar's line. Pages lay out by the page column's width (`@container
+  dash`), not the window's. Checked with shots at 1024, 1280 and 1440 (rail)
+  and 768, 390 and 360 (strip).
+- *Questions.* A Questions place with the pending count, a `/questions`
+  page with every waiting question and the last 7 days' answers (from `GET
+  /questions?state=all`, no API change), and a `(N)` prefix on every
+  dashboard page's title through `lib/title.ts`. /projects shows the first
+  question and "N more on Questions". Each count shows once per screen.
+- *Plan.* The /projects plan row and the lede's "· Pro" go. The rail's foot
+  shows the plan and one state line per billing mode, with dates and no
+  meter, and is left off /billing. With no plan and every seat taken it says
+  "repose is full", which is true, where the plan said "On the waitlist".
+  Below 1024 a plan line under the strip shows only for a failed payment, a
+  suspended account, no plan, the waitlist, a full fleet and a held seat; its
+  room is kept while the last mode seen (stored per browser) was one of
+  those, so it moves nothing in. One billing store (`lib/billing.svelte.ts`,
+  /me and /billing, passive every 60s while in view) replaces each page's
+  own read; a page's active read hands its answer to it.
+- *Shared reads.* `lib/projects.svelte.ts` holds the projects list the rail
+  draws: /projects's 10s poll sets it, a project's poll patches its row, and
+  elsewhere the rail reads it every 60s in view and on a navigation that
+  finds it older than 30s. `lib/questions.svelte.ts` keeps the pending list
+  and a count per project. A hidden tab reads none of them.
+- *Project tabs.* Overview, Events, Usage, Snapshots, Config.
+  `projects/[id]/+layout.svelte` owns the fetch, the poll and the header, so
+  Start and Stop stay mounted across tabs, and each tab fetches only its own
+  data. Overview leads with the project's questions, then Connect. Project
+  secrets move into Config under Secrets; `/projects/<id>/secrets` redirects
+  there.
+- *Settings tabs.* General (Account, Timezone, Install, Delete account),
+  Notifications, Secrets, machine.nix. `#account` and `#delete-account` stay
+  on `/settings`. Both secret lists open their add form inline from "Add
+  secret".
+- *Account menu.* The email, Docs and Feedback below 640px, and Sign out.
+  Sign out stays on Settings too (I-578).
+- *URLs.* Every path stays. `/settings#machine-nix`, `#secrets`,
+  `#notifications` and the project page's `events_*` keys and old section
+  fragments move client-side through one tested table (`lib/legacyUrls.ts`),
+  with `replaceState`, so Back leaves. `/account` keeps its 308 to
+  `/settings`; nothing new answers a 308 from `/settings`, since browsers
+  cache the old one. The `test` and `notify_channel_broken` emails link
+  `/settings/notifications`. `/billing` and its queries are unchanged for the
+  CLI, refusals and Polar.
+- *Kept.* Recent activity on /projects (I-762), the `events_*` keys (I-662),
+  sign-in landing on /projects, the header item counts design.spec reads.
+- *Found while joining the areas.* The project layout draws its tabs inside
+  `{#key id}<ProjectFrame>`: SvelteKit reuses a layout across a params
+  change, so a rail click from one project to another kept the first one's
+  poll and context. A project that does not exist is a 404 the frame draws,
+  not a routed error, so it raises a flag (`lib/notFound.svelte.ts`) and the
+  rail marks no place current, as on any signed-in 404. The rail's height is
+  its grid row's, at most the window under the header, so a short page with
+  the outage bar above the header still ends at the window's foot (review
+  r4); at a fixed `100dvh - 57px` it ran 108px past it.
+- *Fixed after the IA review* (`.dev/notes/ia-review-fixes.md`). The
+  rail is the window under the header less the compact footer's 71px row,
+  and the grid at least that tall: with the grid row's height (above) the
+  rail slid 71px under the header at a long page's foot and its plan sat
+  71px higher on a short page; now the first place stays at y=93 and the
+  plan at one height on every page. While the outage bar shows, its height
+  comes off both, so a short page still ends at the window's foot. Below 1024 a project's row is not drawn, so
+  Projects is current on a project's tabs (no place was before). On the
+  app's first load below 1024 the page column waits, hidden, for billing
+  (2.5s at most), so a plan line seen first on a fresh browser paints with
+  the page: CLS at 390 on /projects in past_due went from 0.31 to 0.0007.
+  The grid's min-height keeps the footer under the fold, and /projects
+  holds its lede's line and Settings its Install row until they fill:
+  CLS at 390 on /projects 0.24, /settings 0.24, /billing 0.11 went to
+  0.007 or less. A failed payment is amber in the rail and the plan line,
+  as the banners have it (kit 7); red stays for suspended. Overview still
+  reads the 1h samples for Machine's "Memory in use", which the project
+  does not carry (amends ia-final 2.4), and keeps them, the config
+  revisions and the egress reading for a minute across tab switches.
+  Project tabs are 1rem apart below 480px and 0.625rem below 385px (the
+  spec's 1rem does not fit 360). Both secret lists are headed by their
+  count; machine.nix has no head under its own tab. Standalone links take
+  a 44px box on touch (`hk-tap`), command rows are 44px on touch, and in
+  forced colours a waiting dot is square and an error dot a diamond.
+- *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
+  `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
+  the rail's geometry at 1440 and 1024, the strip's end at 101px, one current
+  place per page, at most one primary per page, the title's count and the
+  rail's foot; routes.spec renders every new route and every redirect;
+  `pnpm a11y` audits 19 pages (76 runs).
+- Supersedes the "no left rail" rule (spec 1.7, DESIGN-LANGUAGE "Frame and
+  header"). Amends I-578, I-655, I-664, I-679, I-680, I-693 and I-837:
+  I-578's menu contents, I-655's and I-679's header places, the page orders
+  and where questions sit of I-664, I-680 and I-693, and I-837's
+  DESIGN-LANGUAGE page list.

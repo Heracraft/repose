@@ -62,6 +62,25 @@ test('the dashboard header links to the docs', async ({ page }) => {
 	await expect(docs).toHaveAttribute('href', '/docs');
 });
 
+// The Account menu holds who is signed in and Sign out, and below 640px
+// the header's Docs and Feedback; the places are in the rail or strip at
+// every width, so Settings and Billing are not in it (DECISIONS I-841).
+for (const width of [1440, 390]) {
+	test(`the Account menu holds the email and Sign out at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 800 });
+		await signIn(page);
+		await page.goto('/projects');
+		await page.getByRole('button', { name: 'Account', exact: true }).click();
+		const panel = page.locator('.account-panel');
+		await expect(panel).toBeVisible();
+		await expect(panel.locator('.account-email')).toContainText('@');
+		const items = panel.locator('a, button').filter({ visible: true });
+		await expect(items).toHaveText(width < 640 ? ['Docs', 'Feedback', 'Sign out'] : ['Sign out']);
+		await expect(panel.getByRole('link', { name: 'Settings' })).toHaveCount(0);
+		await expect(panel.getByRole('link', { name: 'Billing' })).toHaveCount(0);
+	});
+}
+
 // The Account button sits in the sticky header; Escape returns focus to it
 // without scrolling the page to the top (review r4).
 for (const width of [1440, 390]) {

@@ -1,23 +1,39 @@
-// The count of questions agents are waiting on, across every project, that
-// DashNav's Projects badge shows. One count for the whole dashboard, so a
-// page that answers a question or reads the pending list updates the
-// badge at once; before, the nav polled on its own every 30s and kept
-// showing a question the reader had just answered.
+// The questions agents are waiting on, across every project: the count on
+// the Questions place in the rail or strip, the "(N)" in every dashboard
+// title, and the amber dot on a project's rail row (DECISIONS I-841). One
+// store for the whole dashboard, so a page that answers a question or
+// reads the pending list updates all three at once.
+import { SvelteMap } from 'svelte/reactivity';
 import { listQuestions } from './api/client';
+import type { Question } from './api/types';
 
 class PendingQuestions {
 	count = $state(0);
+	/** Pending questions per project id. */
+	byProject = new SvelteMap<string, number>();
 	#at = 0;
 
-	/** Sets the count from a pending list a page has just read. */
-	set(n: number): void {
-		this.count = n;
+	/** Sets the store from a pending list a page has just read. */
+	set(list: Question[]): void {
 		this.#at = Date.now();
+		const pending = list.filter((q) => q.state === 'pending');
+		this.count = pending.length;
+		const per: Record<string, number> = {};
+		for (const q of pending) per[q.project_id] = (per[q.project_id] ?? 0) + 1;
+		for (const id of [...this.byProject.keys()]) if (!(id in per)) this.byProject.delete(id);
+		for (const [id, n] of Object.entries(per)) {
+			if (this.byProject.get(id) !== n) this.byProject.set(id, n);
+		}
+	}
+
+	/** Whether an agent on this project waits on the user. */
+	waiting(projectId: string): boolean {
+		return (this.byProject.get(projectId) ?? 0) > 0;
 	}
 
 	/**
 	 * Reads the pending list again, unless it was read less than `maxAge`
-	 * ms ago. A failed read keeps the last count and says nothing; the
+	 * ms ago. A failed read keeps the last list and says nothing; the
 	 * page's own load reports an outage.
 	 */
 	async refresh(maxAge = 0): Promise<void> {
@@ -26,9 +42,9 @@ class PendingQuestions {
 		try {
 			// Passive: a background count must not clear an outage the page
 			// it sits over has just reported.
-			this.count = (await listQuestions('pending', { passive: true })).length;
+			this.set(await listQuestions('pending', { passive: true }));
 		} catch {
-			// Keep the last count.
+			// Keep the last list.
 		}
 	}
 }

@@ -5,20 +5,19 @@
 	import { FEEDBACK_URL, SOURCE_URL, pricingHref } from '$lib/links';
 	import Logo from './Logo.svelte';
 	import AccountMenu from './AccountMenu.svelte';
-	import DashNav from './DashNav.svelte';
 
 	let {
 		dashboard
 	}: {
-		/** A signed-in page (projects, billing, settings): the account slot is the Account menu and DashNav sits beside the logo. */
+		/** A dashboard page: the account slot is the Account menu, and the rail or strip under the header holds the places. */
 		dashboard: boolean;
 	} = $props();
 
-	/** A signed-in page with its own places beside the logo (I-679). */
+	/** A signed-in dashboard page: no Pricing, and below sm Docs and Feedback move into the Account menu (I-679, I-841). */
 	let dash = $derived(dashboard && authState.authenticated);
 	let onDocs = $derived(page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/'));
 
-	// The links' one look (Site nav and DashNav): full row height, so the
+	// The links' one look: full row height, so the
 	// current one's 1px accent edge lies on the header's rule; accent when
 	// current, with the edge as its non-colour cue, muted otherwise, and no
 	// weight change. The focus ring is drawn inside the link, so the rule
@@ -36,25 +35,21 @@
   The items are the same everywhere and in one order: Docs, Pricing,
   Feedback, GitHub, then one account slot. Below 400px Pricing goes (the
   footer has it), and below sm GitHub and the logo's word go, so the row
-  fits a 320px phone. A signed-in page puts Projects, Billing and
-  Settings beside the logo in the same row (I-679), drops Pricing, and
-  below sm moves Docs and Feedback into the Account menu.
+  fits a 320px phone. A dashboard page drops Pricing and below sm moves
+  Docs and Feedback into the Account menu (I-679); its places are in the
+  rail beside the page, or the strip under this header below 1024px
+  (DashRail, I-841).
 -->
 <header class="site-header">
 	<div class="frame flex h-14 items-center justify-between gap-4">
-		<div class="flex h-full min-w-0 items-stretch gap-5 sm:gap-8">
-			<a
-				href={resolve('/')}
-				aria-label="repose, home"
-				class="-m-2 flex shrink-0 items-center self-center p-2 focus-visible:-outline-offset-2"
-				><span class="sm:hidden"><Logo size="sm" mark word={false} /></span><span
-					class="hidden sm:inline"><Logo mark /></span
-				></a
-			>
-			{#if dashboard && authState.authenticated}
-				<DashNav />
-			{/if}
-		</div>
+		<a
+			href={resolve('/')}
+			aria-label="repose, home"
+			class="-m-2 flex shrink-0 items-center self-center p-2 focus-visible:-outline-offset-2"
+			><span class="sm:hidden"><Logo size="sm" mark word={false} /></span><span
+				class="hidden sm:inline"><Logo mark /></span
+			></a
+		>
 		<nav aria-label="Site" class="flex h-full items-stretch gap-4 sm:gap-6">
 			<a
 				href={resolve('/docs')}

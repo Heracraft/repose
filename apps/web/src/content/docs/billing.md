@@ -21,7 +21,7 @@ The $39 is the founding price: the first 30 subscribers to Solo pay it for Solo'
 
 Prices are in USD and exclude tax, which Polar adds at checkout for your country. A machine's size is its [memory and cores](/docs/machine).
 
-Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page does.
+Your plan's memory is how much runs at once, around the clock: the month costs the same however many hours your machines run. An account can have [100 projects](/docs/limits#projects) on every plan, and a stopped one counts toward your disk. [`repose ls`](/docs/cli#repose-ls) ends with your plan and how much of it is in use, as the dashboard's **Billing** page and the foot of its side menu do. On a narrower screen the dashboard shows a line under its menu only when the plan needs you: a failed payment, a suspended account, no plan, the waitlist or a held seat.
 
 ## What a plan means
 

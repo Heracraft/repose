@@ -1,7 +1,17 @@
 // Checklist: "Secrets: add via text and via file, list, delete; values
-// never appear in the DOM after save."
+// never appear in the DOM after save." A project's secrets are a section
+// of its Config tab, and "Add secret" opens the form inline (DECISIONS
+// I-841); /projects/<id>/secrets still lands there.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
+import type { Page } from '@playwright/test';
+
+/** Opens a project's secrets on Config, and the add form. */
+async function openAdd(page: Page, id: string) {
+	await page.goto(`/projects/${id}/config#secrets`);
+	await page.getByRole('button', { name: 'Add secret' }).click();
+	await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+}
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -12,7 +22,10 @@ test('add via text, list, and delete; the value never reaches the DOM', async ({
 		name: 'secrets-app',
 		remote_url: 'github.com/heracraft/secrets-app'
 	});
+	// The old path lands on the section.
 	await page.goto(`/projects/${p.id}/secrets`);
+	await expect(page).toHaveURL(`/projects/${p.id}/config#secrets`);
+	await page.getByRole('button', { name: 'Add secret' }).click();
 
 	await page.getByLabel('Name', { exact: true }).fill('DATABASE_URL');
 	await page.getByLabel('Value', { exact: true }).fill('postgres://user:hunter2@db/app');
@@ -37,8 +50,8 @@ test('add via text, list, and delete; the value never reaches the DOM', async ({
 	await page.getByRole('button', { name: 'Delete DATABASE_URL' }).click();
 	await page.getByRole('button', { name: 'Delete DATABASE_URL now' }).click();
 	await expect(secretRow).toHaveCount(0, { timeout: 5_000 });
-	// The last row went, so focus lands on the Add form's first field.
-	await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+	// The last row went, so focus lands on Add secret.
+	await expect(page.getByRole('button', { name: 'Add secret' })).toBeFocused();
 });
 
 test('a name that does not match the allowed pattern is rejected client-side', async ({ page }) => {
@@ -46,7 +59,7 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 		name: 'secrets-invalid-app',
 		remote_url: 'github.com/heracraft/secrets-invalid-app'
 	});
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 
 	// The field shows and sends capitals, so a lowercase name is no longer
 	// a mismatch; a hyphen still is.
@@ -70,7 +83,7 @@ test('a value over 64 KB is rejected client-side before it reaches the api', asy
 		name: 'secrets-huge-app',
 		remote_url: 'github.com/heracraft/secrets-huge-app'
 	});
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 
 	await page.getByLabel('Name', { exact: true }).fill('BIG_VALUE');
 	await page.getByLabel('Value', { exact: true }).fill('x'.repeat(70_000));
@@ -89,7 +102,7 @@ test('add via file stores the bytes, and they never reach the DOM', async ({ pag
 		name: 'secrets-file-app',
 		remote_url: 'github.com/heracraft/secrets-file-app'
 	});
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 
 	// A byte sequence that is deliberately not valid UTF-8, so a path that
 	// round-tripped through a string would corrupt it.
@@ -126,7 +139,7 @@ test('a file over 64 KB is rejected client-side', async ({ page }) => {
 		name: 'secrets-big-file',
 		remote_url: 'github.com/heracraft/secrets-big-file'
 	});
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 
 	await page.getByLabel('Name', { exact: true }).fill('BIG_FILE');
 	await page.setInputFiles('input[type=file]', {
@@ -146,11 +159,11 @@ test('a failed first load shows the error and Retry loads the list', async ({ pa
 		remote_url: 'github.com/heracraft/secrets-retry-app'
 	});
 	await failNext('GET', `/projects/${p.id}/secrets`, 'internal');
-	await page.goto(`/projects/${p.id}/secrets`);
-	const failed = page.getByRole('alert');
+	await page.goto(`/projects/${p.id}/config`);
+	const failed = page.locator('#secrets').getByRole('alert');
 	await expect(failed).toBeVisible();
 	await failed.getByRole('button', { name: 'Retry' }).click();
-	await expect(page.getByRole('heading', { level: 2, name: 'No secrets yet' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 3, name: 'No secrets yet' })).toBeVisible();
 	await expect(failed).toHaveCount(0);
 });
 
@@ -162,7 +175,7 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 		name: 'secrets-picker-app',
 		remote_url: 'github.com/heracraft/secrets-picker-app'
 	});
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 	await page.getByLabel('Name', { exact: true }).fill('deploy_key');
 
 	const chooser = page.waitForEvent('filechooser');
@@ -179,42 +192,75 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 	const body = (await put).postDataJSON() as { value: string };
 	expect(body.value).toBe(bytes.toString('base64'));
 	await expect(page.getByText('DEPLOY_KEY', { exact: true })).toBeVisible();
-	// The form is clear for the next one.
+	// The form closes, and opens again clear for the next one.
+	await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Add secret' })).toBeFocused();
+	await page.getByRole('button', { name: 'Add secret' }).click();
 	await expect(page.getByTestId('secret-file-name')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Load from file' })).toBeVisible();
+	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('');
 });
 
-// I-664: the list and the form fill the frame side by side at 1440.
-test('secrets spans the frame at 1440', async ({ page }) => {
+// The form waits behind "Add secret" (I-841): closed, the section is its
+// head and the list; open, the form sits under the head, and Cancel
+// closes it and gives focus back.
+test('Add secret opens the form inline and Cancel closes it', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
-		name: 'secrets-wide-app',
-		remote_url: 'github.com/heracraft/secrets-wide-app'
+		name: 'secrets-inline-app',
+		remote_url: 'github.com/heracraft/secrets-inline-app'
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/projects/${p.id}/secrets`);
-	const card = page.locator('form', { has: page.getByRole('heading', { name: 'Add a secret' }) });
-	const box = await card.boundingBox();
-	expect(box!.x + box!.width).toBeGreaterThanOrEqual(1200);
-	const empty = await page.getByRole('heading', { name: 'No secrets yet' }).boundingBox();
-	expect(empty!.y).toBeLessThan(box!.y + box!.height);
+	await page.goto(`/projects/${p.id}/config`);
+	const section = page.locator('#secrets');
+	const open = section.getByRole('button', { name: 'Add secret' });
+	await expect(section.getByRole('heading', { level: 3, name: 'No secrets yet' })).toBeVisible();
+	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
+	await expect(open).toHaveAttribute('aria-expanded', 'false');
+	await expect(open).toHaveClass(/hk-btn-secondary/);
+	await open.click();
+	await expect(open).toHaveAttribute('aria-expanded', 'true');
+	const name = section.getByLabel('Name', { exact: true });
+	const value = section.getByLabel('Value', { exact: true });
+	await expect(name).toBeFocused();
+	// Side by side in the 872px column.
+	const [n, v] = [await name.boundingBox(), await value.boundingBox()];
+	expect(Math.abs(n!.y - v!.y)).toBeLessThan(4);
+	expect(v!.x).toBeGreaterThan(n!.x + n!.width);
+	await section.getByRole('button', { name: 'Cancel' }).click();
+	await expect(name).toHaveCount(0);
+	await expect(open).toBeFocused();
 });
 
-// With no secrets the list is one empty row that says where a secret
-// lands; it no longer runs the form's height (I-837).
-test('the empty state is one row level with the top of the form at 1440', async ({ page }) => {
-	const p = await createProject(apiURLFromEnv(), {
-		name: 'secrets-level-app',
-		remote_url: 'github.com/heracraft/secrets-level-app'
+// The account's secrets reach the machine too; a name the project sets
+// itself is struck, and Settings is where they are kept.
+test("the account's secrets show under the project's, with a link to Settings", async ({
+	page
+}) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'secrets-acct-app',
+		remote_url: 'github.com/heracraft/secrets-acct-app'
 	});
-	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/projects/${p.id}/secrets`);
-	const form = await page
-		.locator('form', { has: page.getByRole('heading', { name: 'Add a secret' }) })
-		.boundingBox();
-	const title = await page.getByRole('heading', { level: 2, name: 'No secrets yet' }).boundingBox();
-	if (!form || !title) throw new Error('no form or empty row');
-	expect(title.y).toBeLessThan(form.y + 40);
-	expect(title.height).toBeLessThan(30);
+	const put = (path: string) =>
+		fetch(`${api}${path}`, {
+			method: 'PUT',
+			headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+			body: JSON.stringify({ value: Buffer.from('x').toString('base64') })
+		});
+	await put('/me/secrets/SHARED_TOKEN');
+	await put(`/projects/${p.id}/secrets/SHARED_TOKEN`);
+	await page.goto(`/projects/${p.id}/config`);
+	const acct = page.getByTestId('account-secrets');
+	await expect(acct.getByText('SHARED_TOKEN')).toHaveClass(/overridden/);
+	await expect(acct).toContainText('This project’s own is used');
+	await expect(acct.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+		'href',
+		'/settings/secrets'
+	);
+	await fetch(`${api}/me/secrets/SHARED_TOKEN`, {
+		method: 'DELETE',
+		headers: { Authorization: 'Bearer playwright' }
+	});
 });
 
 // At 320 a long name breaks after its underscores, never inside a word,
@@ -229,7 +275,7 @@ test('on a phone a long name breaks at its underscores and Updated folds under i
 		remote_url: 'github.com/heracraft/secrets-phone-app'
 	});
 	await page.setViewportSize({ width: 320, height: 800 });
-	await page.goto(`/projects/${p.id}/secrets`);
+	await openAdd(page, p.id);
 	await page.getByLabel('Name', { exact: true }).fill(name);
 	await page.getByLabel('Value', { exact: true }).fill('whsec_x');
 	await page.getByRole('button', { name: 'Add', exact: true }).click();

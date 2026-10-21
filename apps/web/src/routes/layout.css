@@ -268,6 +268,10 @@
 		/* The site header's 56px row and its 1px rule: what a sticky bar
 		   under it, the docs' sidebar and a jump to a heading clear. */
 		--header-h: 57px;
+		/* The compact footer's one row from 1024px (1px rule, 1.25rem
+		   padding, the 30px theme switch): the dashboard's rail ends this
+		   far over the window's foot, so it never meets the header. */
+		--dash-foot-h: 71px;
 		/* First-paint pair: equal to --hk-bg and --hk-text (app.html paints
 		   them before this file arrives, app-html.test holds them equal). */
 		--page: #fafafa;
@@ -301,6 +305,12 @@
 	/* Below 768px the docs add their 44px sub-bar under the header. */
 	@media (width < 48rem) {
 		:root:has([data-docs-subbar]) {
+			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
+		}
+	}
+	/* Below 1024px the dashboard adds its 44px strip under the header (I-841). */
+	@media (width < 64rem) {
+		:root:has([data-dash-strip]) {
 			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
 		}
 	}
@@ -440,6 +450,16 @@ body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
 	.hk-dot--ok,
 	.hk-dot--live {
 		background-color: CanvasText;
+	}
+	/* With every fill one colour, the two that ask for you keep a shape:
+	   waiting on you (amber) a square, gone wrong (red) a diamond, so a
+	   rail row that waits is not read as one that runs (review IA). */
+	.hk-dot--warn {
+		border-radius: 1px;
+	}
+	.hk-dot--err {
+		border-radius: 1px;
+		transform: rotate(45deg) scale(0.85);
 	}
 	/* Joined controls: the selected item takes a Highlight edge, since its
 	   raised fill is lost. */

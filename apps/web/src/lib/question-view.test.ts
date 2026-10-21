@@ -4,6 +4,7 @@ import {
 	askedLine,
 	expiryLine,
 	layoutQuestions,
+	answeredRows,
 	EXPIRY_SHOWN_MS
 } from './question-view';
 import type { Question } from './api/types';
@@ -148,5 +149,63 @@ describe('layoutQuestions', () => {
 			q({ id: 'b', window: 'two', created_at: ago(5) })
 		]);
 		expect(groups[0].rows.map((r) => r.folded.length)).toEqual([0, 0]);
+	});
+});
+
+describe('answeredRows', () => {
+	const closed = (id: string, min: number, over: Partial<Question> = {}) =>
+		q({
+			id,
+			state: 'answered',
+			answer: 'yes',
+			answered_via: 'email',
+			answered_at: ago(min),
+			...over
+		});
+
+	it('lists the last 7 days of closed questions, newest first, without the pending ones', () => {
+		const rows = answeredRows(
+			[
+				closed('old', 8 * 24 * 60),
+				closed('a', 30),
+				q({ id: 'open' }),
+				closed('b', 5),
+				closed('c', 6 * 24 * 60)
+			],
+			NOW
+		);
+		expect(rows.map((r) => r.question.id)).toEqual(['b', 'a', 'c']);
+	});
+
+	it('words each outcome as the closing line does, the answer apart', () => {
+		const [email, dash, term, dismissed, withdrawn, cli] = answeredRows(
+			[
+				closed('1', 1),
+				closed('2', 2, { answered_via: 'dashboard', answer: 'no' }),
+				closed('3', 3, { answered_via: 'terminal', answer: null }),
+				closed('4', 4, { state: 'cancelled', answer: null, answered_via: 'dashboard' }),
+				closed('5', 5, { state: 'cancelled', answer: null, answered_via: 'agent' }),
+				closed('6', 6, { answered_via: 'cli', answer: 'main' })
+			],
+			NOW
+		);
+		expect(email).toMatchObject({ answer: 'yes', rest: 'by email' });
+		expect(dash).toMatchObject({ answer: 'no', rest: '' });
+		expect(term).toMatchObject({ rest: 'Answered in the terminal' });
+		expect(term.answer).toBeUndefined();
+		expect(dismissed).toMatchObject({ rest: 'Dismissed' });
+		expect(withdrawn).toMatchObject({ rest: 'Withdrawn by the agent' });
+		expect(cli).toMatchObject({ answer: 'main', rest: 'from the CLI' });
+	});
+
+	it('says the time today and the day before that', () => {
+		const [today, yesterday] = answeredRows([closed('t', 60), closed('y', 24 * 60)], NOW);
+		expect(today.when).toBe('11:00');
+		expect(yesterday.when).toBe('Yesterday 12:00');
+	});
+
+	it('falls back to when it was asked when the api has no close time', () => {
+		const [r] = answeredRows([closed('x', 0, { answered_at: null, created_at: ago(90) })], NOW);
+		expect(r.when).toBe('10:30');
 	});
 });

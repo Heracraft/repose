@@ -153,7 +153,9 @@ export const putPersonal = (fragment: string, base: string | null) =>
 	});
 
 // Projects.
-export const listProjects = () => request<Project[]>('/projects');
+/** passive: the rail's background read (I-841), as getMe's. */
+export const listProjects = (opts: { passive?: boolean } = {}) =>
+	request<Project[]>('/projects', opts);
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 export const patchProject = (
 	id: string,

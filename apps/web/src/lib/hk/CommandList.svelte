@@ -121,9 +121,18 @@
 	.row.has-note :global(.hk-copy) {
 		margin-bottom: 0.375rem;
 	}
+	/* On touch each row is as tall as its 44px Copy, so one Copy's box
+	   never crosses the hairline into the next row; under a note the
+	   line gains 4px at its foot so Copy stays level with it. */
 	@media (pointer: coarse), (max-width: 639.98px) {
+		.row {
+			min-height: 2.75rem;
+		}
+		.row.has-note .line {
+			padding-bottom: 0.75rem;
+		}
 		.row.has-note :global(.hk-copy) {
-			margin-bottom: -0.25rem;
+			margin-bottom: 0;
 		}
 	}
 	/* The note wraps on a phone; the command scrolls. */

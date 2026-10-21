@@ -160,34 +160,46 @@ Dashboard (as built; `workstreams/08-dashboard.md` §5.2 is the page list
 this describes, and it is narrower than an earlier draft of this section
 promised, DECISIONS I-96):
 
+The places are a rail beside the page from 1024px and a strip under the
+header below it: Projects, Questions (with the count of waiting
+questions), Billing and Settings, then the projects by name with one dot
+each, and the plan at the rail's foot (I-841).
+
 - `/projects`: one row per project: name and remote, state with its
-  uptime (or, for a stopped one, when it last ran), size, agents, disk
-  and last snapshot, with Start or Stop on the row. The running hours
-  this once promised are gone from the row, as from `status`: nothing is
-  priced by the hour (I-616, I-289). The rows are ordered by what wants
-  you, then what is up, then what is at rest (I-761), not by the api's
+  uptime (or, for a stopped one, when it last ran), size, agents and
+  disk, with Start or Stop on the row. The running hours this once
+  promised are gone from the row, as from `status`: nothing is priced by
+  the hour (I-616, I-289). The rows are ordered by what wants you, then
+  what is up, then what is at rest (I-761), not by the api's
   `created_at`; a search and the state filters sit above the table past
   8 projects and the list is capped at 25 (I-762). No per-row sparkline.
-- `/projects/[id]`: cards for connect (the `repose run` and `ssh` lines),
-  signals, usage (CPU, memory and the two waits as charts over an hour,
-  a day or a week — not running hours, which I-616 removed), disk (the
-  guest's root filesystem used, of its size, and `N% full` at 90
-  or more, I-567) with a resize control, events newest first, the
-  last build with a link to the config page, and snapshots with restore
-  and restore-as-new. Start, Stop, Resize and Destroy are the header
-  actions; Destroy makes you type the slug.
-- `/projects/[id]/config` and `/projects/[id]/secrets` are their own
-  pages, not cards: the config page carries the menu, the Nix editor, the
-  streaming build log and the revision list, and the secrets page the
-  names and their dates.
+  The first waiting question sits above the table with "N more on
+  Questions"; Recent activity and Recently destroyed follow it.
+- `/questions`: every waiting question, grouped by project, answered or
+  dismissed in place, and the last 7 days' answers (I-841).
+- `/projects/[id]`: one header (name, remote, status line, Start, Stop or
+  Restart) over five tabs (I-841). Overview: the project's questions,
+  connect (the `repose run` and `ssh` lines), agents, the machine (disk
+  as the guest's root filesystem used, of its size, and `N% full` at 90
+  or more, I-567, with a resize control), the latest events, details and
+  Destroy, which makes you type the slug. Events: newest first, filtered
+  to agents, errors or the machine, paged with `events_*` keys (I-662).
+  Usage: CPU, memory and the two waits as charts over an hour, a day or a
+  week, not running hours, which I-616 removed. Snapshots: the list with
+  restore and restore-as-new. Config: the menu, the Nix editor, the
+  streaming build log, the revision list, and the project's secrets
+  (names and dates; `/projects/[id]/secrets` redirects there).
 - `/billing`: the plan and its status, memory running as squares beside
   disk held and egress as rings, the period band, the plan picker and
   the invoice table. Not usage for the month by class: `UsageRow`'s
   `guest_hours` is declared and never drawn, and nothing on the
   dashboard is priced by the hour (I-616, I-289).
-  `/settings`: the account (handle, email, GitHub login), timezone,
-  email toggle, ntfy URL and its test button, machine.nix, account
-  secrets, and deletion last; `/account` redirects there (I-578).
+- `/settings`: General (the account: handle, email, GitHub login; the
+  timezone; the install line; deletion last), `/settings/notifications`
+  (email toggle, ntfy URL, Google Chat webhook and the test button),
+  `/settings/secrets` (account secrets) and `/settings/machine-nix`;
+  `/account` redirects to `/settings` (I-578), and the old `#machine-nix`,
+  `#secrets` and `#notifications` fragments move to their tabs (I-841).
 
 Usage on the dashboard (DECISIONS I-492, I-493):
 

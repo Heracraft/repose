@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { inDash } from '$lib/dash';
 
 	interface Crumb {
 		label: string;
@@ -31,13 +32,18 @@
 	// (overflow-wrap is the last resort). The parts are text nodes, so
 	// nothing is parsed as markup.
 	let parts = $derived(title.split(/(?<=[-_.])/));
+
+	// In the dashboard's grid the grid is the frame (I-841); a layout may
+	// draw this shell for its pages (projects/[id], settings), which then
+	// render sections only.
+	const dash = inDash();
 </script>
 
 <!-- The page's one <main>, on the shared .frame (I-656), so the title
      starts under the logo on every page. The root layout's sign-in
      skeleton uses the same padding, so the swap to the page moves nothing
      (I-664). -->
-<main id="main" tabindex="-1" class="frame page-shell">
+<main id="main" tabindex="-1" class="page-shell" class:frame={!dash.on}>
 	{#if crumbs.length}
 		<p class="crumbs">
 			{#each crumbs as crumb, i (crumb.label)}

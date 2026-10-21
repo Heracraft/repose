@@ -17,7 +17,9 @@ test.skip(!haveAuthState(), NO_AUTH_REASON);
 /** Waits for the signed-in shell rather than for a fixed time. */
 async function gotoSignedIn(page: Page, path: string) {
 	await page.goto(path);
-	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByRole('button', { name: 'Account', exact: true })).toBeVisible({
+		timeout: 30_000
+	});
 }
 
 test('the saved session lands on /projects, not the landing page', async ({ page }) => {
@@ -48,7 +50,9 @@ test('a dropped access token is refreshed against the real Logto', async ({ page
 	expect(dropped.length, 'no Logto access-token key in localStorage to drop').toBeGreaterThan(0);
 
 	await page.reload();
-	await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByRole('button', { name: 'Account', exact: true })).toBeVisible({
+		timeout: 30_000
+	});
 	await expect(page.locator('table').or(page.getByText('No projects yet'))).toBeVisible({
 		timeout: 30_000
 	});
@@ -58,14 +62,15 @@ test('a dropped access token is refreshed against the real Logto', async ({ page
 
 test('/settings shows the real identity and guards deletion', async ({ page }) => {
 	await gotoSignedIn(page, '/settings');
-	const handle = (await page.locator('#account dd.font-mono').first().innerText()).trim();
+	const handle = (await page.locator('#account dd').first().innerText()).trim();
 	expect(handle, 'no handle rendered on /settings').not.toBe('');
 
 	await expect(
 		page.getByText('Everything, including snapshots, is deleted 30 days later.')
 	).toBeVisible();
 
-	const button = page.getByRole('button', { name: 'Delete account' });
+	await page.getByRole('button', { name: 'Delete account…' }).click();
+	const button = page.getByRole('button', { name: 'Delete account', exact: true });
 	await expect(button).toBeDisabled();
 	const input = page.locator('#delete-account').getByRole('textbox');
 	await input.fill(`${handle}x`);
@@ -77,25 +82,34 @@ test('/settings shows the real identity and guards deletion', async ({ page }) =
 	await expect(button).toBeDisabled();
 });
 
-test('/settings round-trips timezone, email toggle and ntfy URL', async ({ page }) => {
+test('Settings round-trips timezone, email toggle and ntfy URL', async ({ page }) => {
 	await gotoSignedIn(page, '/settings');
 
 	// Each control saves as it changes; the ntfy URL has its own Save
-	// (DECISIONS I-332), and machine.nix has another further down (I-578).
+	// (DECISIONS I-332). The timezone is on General, the channels on
+	// Notifications (I-841).
 	const tz = page.getByLabel('Timezone');
+	const beforeTz = await tz.inputValue();
+	const probeTz = beforeTz === 'Europe/Lisbon' ? 'Europe/Berlin' : 'Europe/Lisbon';
+	await tz.selectOption(probeTz);
+	await expect(page.getByText(`Timezone set to ${probeTz}.`)).toBeVisible({ timeout: 15_000 });
+	await page.reload();
+	await expect(tz).toHaveValue(probeTz, { timeout: 30_000 });
+	await tz.selectOption(beforeTz);
+	await expect(page.getByText(`Timezone set to ${beforeTz}.`)).toBeVisible({ timeout: 15_000 });
+
+	await page
+		.getByRole('navigation', { name: 'Settings' })
+		.getByRole('link', { name: 'Notifications' })
+		.click();
+	await expect(page).toHaveURL(/\/settings\/notifications$/);
 	const email = page.getByRole('checkbox', { name: 'Email notifications' });
 	const ntfy = page.locator('#ntfy-url');
 	const saveNtfy = page.locator('form', { has: ntfy }).getByRole('button', { name: 'Save' });
-
-	const beforeTz = await tz.inputValue();
 	const beforeEmail = await email.isChecked();
 	const beforeNtfy = await ntfy.inputValue();
-
-	const probeTz = beforeTz === 'Europe/Lisbon' ? 'Europe/Berlin' : 'Europe/Lisbon';
 	const probeNtfy = `https://ntfy.sh/repose-live-check-${Date.now()}`;
 
-	await tz.selectOption(probeTz);
-	await expect(page.getByText(`Timezone set to ${probeTz}.`)).toBeVisible({ timeout: 15_000 });
 	await email.setChecked(!beforeEmail);
 	await expect(
 		page.getByText(beforeEmail ? 'Email notifications off.' : 'Email notifications on.')
@@ -105,13 +119,10 @@ test('/settings round-trips timezone, email toggle and ntfy URL', async ({ page 
 	await expect(page.getByText('ntfy URL saved.')).toBeVisible({ timeout: 15_000 });
 
 	await page.reload();
-	await expect(tz).toHaveValue(probeTz, { timeout: 30_000 });
-	await expect(ntfy).toHaveValue(probeNtfy);
+	await expect(ntfy).toHaveValue(probeNtfy, { timeout: 30_000 });
 	expect(await email.isChecked()).toBe(!beforeEmail);
 
 	// Put the account back exactly as it was.
-	await tz.selectOption(beforeTz);
-	await expect(page.getByText(`Timezone set to ${beforeTz}.`)).toBeVisible({ timeout: 15_000 });
 	await email.setChecked(beforeEmail);
 	await ntfy.fill(beforeNtfy);
 	await saveNtfy.click();
@@ -124,7 +135,7 @@ test('/settings round-trips timezone, email toggle and ntfy URL', async ({ page 
 // degrade rather than break if the api has no route. Either outcome is a
 // pass here, and the run's output says which happened.
 test('Send test reaches POST /me/notify-test', async ({ page }) => {
-	await gotoSignedIn(page, '/settings');
+	await gotoSignedIn(page, '/settings/notifications');
 	const responded = page.waitForResponse((r) => r.url().includes('/me/notify-test'), {
 		timeout: 30_000
 	});
@@ -134,11 +145,9 @@ test('Send test reaches POST /me/notify-test', async ({ page }) => {
 	if (res.status() === 404) {
 		await expect(page.getByText('Test not available yet')).toBeVisible();
 	} else {
-		await expect(
-			page
-				.getByText('Test notification sent.')
-				.or(page.getByText('The test notification failed on every channel.'))
-		).toBeVisible({ timeout: 15_000 });
+		await expect(page.getByTestId('test-report')).toContainText(/Test notification/, {
+			timeout: 15_000
+		});
 	}
 });
 
@@ -165,6 +174,7 @@ test('sign-out returns to the landing page and clears the session', async ({ pag
 		'sign-out revokes the saved session; set REPOSE_LIVE_SIGNOUT=1 and re-run live:auth afterwards'
 	);
 	await gotoSignedIn(page, '/projects');
+	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL(`${LIVE_URL}/`, { timeout: 30_000 });
 	await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible();

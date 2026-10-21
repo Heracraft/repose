@@ -42,7 +42,7 @@ Press Ctrl-C to stop watching: `Interrupted. The build keeps going on the machin
 
 ## The menu
 
-The dashboard's project Config page is this menu: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Packages that aren't menu entries show under **Extra packages**, each with **Remove**.
+The project's **Config** tab is this menu, under **Packages**: tick an entry, choose a version where there's a choice, **Apply**. It groups the databases under **Services**. Packages that aren't menu entries show under **Extra packages**, each with **Remove**.
 
 | Group     | Entries                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -67,7 +67,7 @@ repose config edit            # edit in $EDITOR, apply on save
 repose config apply ./repose.nix
 ```
 
-The dashboard's Config page has the same file under its **Nix** tab. While the menu manages the project, that editor is read-only until **Edit as Nix**. Going to another page with an edit you have not applied asks first; **Stay** keeps the edit.
+The **Config** tab has the same file under **Nix**. While the menu manages the project, that editor is read-only until **Edit as Nix**. Going to another page with an edit you have not applied asks first; **Stay** keeps the edit.
 
 ```nix
 { pkgs, ... }:
@@ -169,14 +169,14 @@ Applying machine.nix (changed) to 3 machines in the background.
 
 If you saved it on the dashboard since and haven't changed the laptop's copy, the laptop's is brought up to date instead. If both changed, `run` pushes nothing and says so. `repose config --global apply` then keeps the laptop's copy, and `repose config --global show > ~/.config/repose/machine.nix` keeps the account's.
 
-**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with `repose config --global on todo-app`, or the switch on the project's Config page; `repose config --global off todo-app` turns it off without a run.
+**Leaving it off.** `repose run --no-personal` creates a machine without it, or turns it off on an existing one, for a machine shown in a demo, say. Turn it back on with `repose config --global on todo-app`, or the switch on the project's **Config** tab; `repose config --global off todo-app` turns it off without a run.
 
 **Removing it.** Empty the file and push it: `: > ~/.config/repose/machine.nix`, then `repose config --global apply`. Every machine switches back without it. Deleting the file removes nothing: the account keeps its copy and new machines still get it. Shells already open keep the aliases and functions they loaded.
 
 ## Revisions and base updates
 
-Every change to a project's configuration is saved as a revision. `repose config revisions` lists them with the error of any that failed. To get back from a change that broke something, `repose config apply --revision 9c41d2e7` switches the running machine to a revision that built; the dashboard's Config page re-applies one from its Revisions list.
+Every change to a project's configuration is saved as a revision. `repose config revisions` lists them with the error of any that failed. To get back from a change that broke something, `repose config apply --revision 9c41d2e7` switches the running machine to a revision that built; the project's **Config** tab re-applies one from its **Revisions** list.
 
-The platform updates the base (agents, tools, kernel) most weeks, sooner for a security fix. Each project is rebuilt on it. A running machine switches in place; a stopped one gets the new base at its next start. A revision that changes the kernel, from a base update or a change of your own, is built but applies only when the machine restarts: `repose stop todo-app && repose start todo-app` when the agents are idle. If your configuration doesn't build on it, the project stays on the revision it runs and you get a [notification](/docs/notifications) naming the error. To hold a project on its current base, tick **Hold base updates** on its Config page; there's no CLI flag for it.
+The platform updates the base (agents, tools, kernel) most weeks, sooner for a security fix. Each project is rebuilt on it. A running machine switches in place; a stopped one gets the new base at its next start. A revision that changes the kernel, from a base update or a change of your own, is built but applies only when the machine restarts: `repose stop todo-app && repose start todo-app` when the agents are idle. If your configuration doesn't build on it, the project stays on the revision it runs and you get a [notification](/docs/notifications) naming the error. To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
 
 Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base, held or not yet rebuilt, can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and let it update first.
