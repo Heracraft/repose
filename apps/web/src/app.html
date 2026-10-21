@@ -8,35 +8,53 @@
 		<link rel="icon" type="image/png" href="%sveltekit.assets%/favicon.png?v=2" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<!-- The dashboard renders in the browser (ssr = false), and the
-		     prerendered pages (the landing, I-398, the docs and the legal
-		     pages) link their CSS as a file. Until that CSS arrives the page
-		     would paint the browser's default white, and a dark-mode visitor
-		     sees a white flash. These match --page in routes/layout.css so the
-		     first paint is already the right colour. -->
+		     prerendered pages (the landing, the docs and the legal pages)
+		     link their CSS as a file. Until that CSS arrives the page would
+		     paint the browser's default white, and a dark-mode visitor sees
+		     a white flash. These match --page in routes/layout.css (and the
+		     kit's --hk-bg), so the first paint is already the right colour;
+		     the script below repaints them for a stored theme. -->
 		<meta name="color-scheme" content="light dark" />
-		<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)" />
-		<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)" />
-		<!-- Marks the page as scripted before the first paint, so a style can
-		     tell "the bundle is on its way" from "scripts are off": the
-		     landing's hero draws its pre-run frame under html.js and stays
-		     whole without it. The CSP (svelte.config.js) allows no inline
-		     script it has no hash for, so script-src carries this one's
-		     sha256 ('sha256-aL3Pv6ygSyucrLwgv7XagHcNUqYEpcwpRZTImp8W7/g=');
-		     the hash covers the text between the tags, its tabs and
-		     newlines included, so any change to it changes the hash. -->
+		<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+		<!-- Before the first paint: marks the page as scripted (the landing
+		     draws its pre-run frame under html.js and stays whole without
+		     it), and applies the theme stored by the footer's switch
+		     (lib/theme.svelte.ts), so a visitor who chose Dark on a light
+		     computer never sees a light frame. The CSP (svelte.config.js)
+		     allows no inline script it has no hash for, so script-src
+		     carries this one's sha256 ('sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8='); the hash covers the
+		     text between the tags, its tabs and newlines included, so any
+		     change to it changes the hash (app-html.test checks both). -->
 		<script>
 			document.documentElement.classList.add('js');
+			try {
+				var t = localStorage.getItem('hk-theme');
+				if (t === 'light' || t === 'dark') {
+					document.documentElement.dataset.theme = t;
+					var m = document.querySelectorAll('meta[name="theme-color"]');
+					for (var i = 0; i < m.length; i++) m[i].content = t === 'dark' ? '#09090b' : '#fafafa';
+				}
+			} catch (e) {}
 		</script>
 		<style>
 			html {
-				background: #fbfbfa;
-				color: #181817;
+				background: #fafafa;
+				color: #18181b;
 			}
 			@media (prefers-color-scheme: dark) {
-				html {
-					background: #111110;
-					color: #f3f3f1;
+				html:not([data-theme='light']) {
+					background: #09090b;
+					color: #f4f4f5;
 				}
+			}
+			html[data-theme='dark'] {
+				background: #09090b;
+				color: #f4f4f5;
+				color-scheme: dark;
+			}
+			html[data-theme='light'] {
+				color-scheme: light;
 			}
 			/* The route renders as soon as its script runs, which can be
 			   before its stylesheet has loaded. Hidden until routes/layout.css
@@ -47,33 +65,33 @@
 		</style>
 		<!-- The fonts are self-hosted (static/fonts, @font-face in
 		     routes/layout.css). Three cuts are fetched before the CSS that
-		     names them arrives: Noto Serif 700 is the landing's headline, 600
-		     every dashboard title, and JetBrains Mono 400 the landing's
-		     install command and its pictures' rows, all above the fold. -->
+		     names them arrives: Inter is the body text of every page, Noto
+		     Serif 400 every page title, and Geist Mono 400 the landing's
+		     install line and the dashboard's commands. -->
 		<link
 			rel="preload"
-			href="%sveltekit.assets%/fonts/noto-serif-latin-700-normal.woff2"
+			href="%sveltekit.assets%/fonts/inter-latin-opsz-normal.woff2"
 			as="font"
 			type="font/woff2"
 			crossorigin="anonymous"
 		/>
 		<link
 			rel="preload"
-			href="%sveltekit.assets%/fonts/noto-serif-latin-600-normal.woff2"
+			href="%sveltekit.assets%/fonts/noto-serif-latin-400-normal.woff2"
 			as="font"
 			type="font/woff2"
 			crossorigin="anonymous"
 		/>
 		<link
 			rel="preload"
-			href="%sveltekit.assets%/fonts/jetbrains-mono-latin-400-normal.woff2"
+			href="%sveltekit.assets%/fonts/geist-mono-latin-400-normal.woff2"
 			as="font"
 			type="font/woff2"
 			crossorigin="anonymous"
 		/>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover">
+	<body class="hk" data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

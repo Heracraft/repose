@@ -2,7 +2,7 @@
 // a page, forced colours, reduced motion, and the phone column
 // (DESIGN-LANGUAGE.md; DECISIONS I-377, I-391, I-392). Lighthouse (tests-a11y)
 // scores the pages at rest; these drive them.
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, fail, unfail } from './helpers';
 
 test.describe('signed in', () => {
@@ -72,7 +72,7 @@ test.describe('signed in', () => {
 		});
 		await page.emulateMedia({ forcedColors: 'active' });
 		await page.goto(`/projects/${p.id}`);
-		const dot = page.locator('.dot--good').first();
+		const dot = page.locator('.hk-dot--on').first();
 		await expect(dot).toBeVisible();
 		const { fill, edge } = await dot.evaluate((el) => {
 			const s = getComputedStyle(el);
@@ -275,5 +275,143 @@ test.describe('public pages', () => {
 		expect(await code.evaluate((el) => getComputedStyle(el).fontVariantLigatures)).toBe(
 			'no-contextual'
 		);
+	});
+});
+
+// The theme switch (DECISIONS I-837): System, Light and Dark in the footer
+// of every page. A choice is stored per browser, painted before the first
+// frame, and System hands the page back to the computer's setting.
+test.describe('the theme switch', () => {
+	const theme = (page: Page) =>
+		page.evaluate(() => ({
+			attr: document.documentElement.dataset.theme ?? null,
+			stored: localStorage.getItem('hk-theme'),
+			bg: getComputedStyle(document.body).backgroundColor
+		}));
+
+	test('sets data-theme, survives a reload, and System removes it', async ({ page }) => {
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.goto('/docs/cli');
+		const group = page.getByRole('radiogroup', { name: 'Theme' });
+		await expect(group.getByRole('radio', { name: 'System' })).toBeChecked();
+		await group.getByText('Dark', { exact: true }).click();
+		await expect(group.getByRole('radio', { name: 'Dark' })).toBeChecked();
+		expect(await theme(page)).toEqual({ attr: 'dark', stored: 'dark', bg: 'rgb(9, 9, 11)' });
+		await page.reload();
+		await expect(group.getByRole('radio', { name: 'Dark' })).toBeChecked();
+		expect(await theme(page)).toEqual({ attr: 'dark', stored: 'dark', bg: 'rgb(9, 9, 11)' });
+		await group.getByText('System', { exact: true }).click();
+		expect(await theme(page)).toEqual({ attr: null, stored: null, bg: 'rgb(250, 250, 250)' });
+		// Light holds on a dark computer.
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await expect.poll(async () => (await theme(page)).bg).toBe('rgb(9, 9, 11)');
+		await group.getByText('Light', { exact: true }).click();
+		expect(await theme(page)).toEqual({
+			attr: 'light',
+			stored: 'light',
+			bg: 'rgb(250, 250, 250)'
+		});
+	});
+
+	// With every stylesheet held back, the page shows what app.html paints
+	// on its own: the stored Dark, on a light computer.
+	for (const path of ['/', '/projects']) {
+		test(`a stored Dark paints ${path} dark before any CSS`, async ({ page }) => {
+			await page.emulateMedia({ colorScheme: 'light' });
+			await page.addInitScript(() => localStorage.setItem('hk-theme', 'dark'));
+			await page.route('**/*.css', (route) => route.abort());
+			await page.goto(path, { waitUntil: 'domcontentloaded' });
+			const paint = await page.evaluate(() => ({
+				bg: getComputedStyle(document.documentElement).backgroundColor,
+				scheme: getComputedStyle(document.documentElement).colorScheme,
+				chrome: [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].map(
+					(m) => m.content
+				)
+			}));
+			expect(paint).toEqual({
+				bg: 'rgb(9, 9, 11)',
+				scheme: 'dark',
+				chrome: ['#09090b', '#09090b']
+			});
+		});
+	}
+});
+
+// The root error page (Guide B 12.22): a path nothing serves keeps the
+// header and the footer, says Not found, and offers the way back.
+test('an unknown path signed in keeps the dashboard header and offers Projects', async ({
+	page
+}) => {
+	await signIn(page);
+	await page.goto('/no-such-place');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page).toHaveTitle('Not found · repose');
+	await expect(page.locator('main#main')).toHaveCount(1);
+	await expect(
+		page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link', { name: /^Projects/ })
+	).toBeVisible();
+	await page.getByRole('link', { name: 'Back to Projects' }).click();
+	await expect(page).toHaveURL('/projects');
+});
+
+test('an unknown path signed out renders Not found and stays put', async ({ page }) => {
+	await page.goto('/no-such-place');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Site' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Footer' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Docs', exact: true }).last()).toBeVisible();
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL('/no-such-place');
+});
+
+// Touch targets (Guide B 1.7): at 390 on a touch screen every control a
+// thumb hits measures 44px or more. The header is the shared shell, held
+// on every page now; a page's own <main> joins MAIN_READY when its area
+// lands on the kit (spec 0.1, Phase 2), and every page by Phase 3.
+const TOUCH_PAGES = ['/', '/docs/cli', '/projects', 'project', '/billing', '/settings'];
+const MAIN_READY = new Set<string>(['/no-such-place']);
+
+async function shortTargets(page: Page, scope: string): Promise<string[]> {
+	return page.locator(scope).evaluateAll((roots) => {
+		const out: string[] = [];
+		for (const root of roots) {
+			const els = root.querySelectorAll<HTMLElement>(
+				'button, a[role=button], input, select, [role=tab], label:has(input)'
+			);
+			for (const el of els) {
+				const r = el.getBoundingClientRect();
+				if (!r.width || !r.height || !el.checkVisibility()) continue;
+				// A box or a radio inside its label: the label is the target.
+				if (el instanceof HTMLInputElement && el.closest('label')) continue;
+				if (el instanceof HTMLInputElement && /^(hidden|radio|checkbox)$/.test(el.type)) continue;
+				if (r.height < 43.5) {
+					const name = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
+					out.push(`${el.tagName.toLowerCase()} "${name.slice(0, 30)}" ${Math.round(r.height)}px`);
+				}
+			}
+		}
+		return out;
+	});
+}
+
+test.describe('touch targets', () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+	test('every control in the header and in a migrated main is 44px tall', async ({ page }) => {
+		const p = await createProject(apiURLFromEnv(), {
+			name: 'touch-app',
+			remote_url: 'github.com/heracraft/touch-app'
+		});
+		await signIn(page);
+		for (const path of [...TOUCH_PAGES, ...MAIN_READY]) {
+			const url = path === 'project' ? `/projects/${p.id}` : path;
+			await page.goto(url);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			expect(await shortTargets(page, 'header'), `${url} header`).toEqual([]);
+			if (MAIN_READY.has(path)) {
+				expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
+			}
+		}
 	});
 });

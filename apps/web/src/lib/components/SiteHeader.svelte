@@ -18,14 +18,12 @@
 	let dash = $derived(dashboard && authState.authenticated);
 	let onDocs = $derived(page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/'));
 
-	// The links' one look, as the dashboard's row and a project's tabs draw
-	// it: full height, so the current one's 1px ink edge lies on the
-	// header's rule; ink when current, muted otherwise. The focus ring is
-	// drawn inside the link, so the rule under it does not cut it.
-	const LINK =
-		'-mb-px flex items-center border-b transition-[color,border-color] duration-150 focus-visible:-outline-offset-2';
-	const IDLE = 'border-transparent text-ink-muted hover:text-ink';
-	const CURRENT = 'border-ink text-ink';
+	// The links' one look (Site nav and DashNav): full row height, so the
+	// current one's 1px accent edge lies on the header's rule; accent when
+	// current, with the edge as its non-colour cue, muted otherwise, and no
+	// weight change. The focus ring is drawn inside the link, so the rule
+	// under it does not cut it.
+	const LINK = 'hk-navlink';
 </script>
 
 <!--
@@ -42,7 +40,7 @@
   Settings beside the logo in the same row (I-679), drops Pricing, and
   below sm moves Docs and Feedback into the Account menu.
 -->
-<header class="sticky top-0 z-30 border-b border-rule bg-page">
+<header class="site-header">
 	<div class="frame flex h-14 items-center justify-between gap-4">
 		<div class="flex h-full min-w-0 items-stretch gap-5 sm:gap-8">
 			<a
@@ -57,18 +55,18 @@
 				<DashNav />
 			{/if}
 		</div>
-		<nav aria-label="Site" class="flex h-full items-stretch gap-4 text-sm sm:gap-6">
+		<nav aria-label="Site" class="flex h-full items-stretch gap-4 sm:gap-6">
 			<a
 				href={resolve('/docs')}
 				aria-current={onDocs ? 'page' : undefined}
-				class="{LINK} {onDocs ? CURRENT : IDLE} {dash ? 'max-sm:hidden' : ''}">Docs</a
+				class="{LINK} {dash ? 'max-sm:hidden' : ''}">Docs</a
 			>
 			<!-- eslint-disable svelte/no-navigation-without-resolve -- pricingHref() builds it with resolve(); the other two are off-site -->
 			{#if !dash}
-				<a href={pricingHref()} class="{LINK} {IDLE} max-[399px]:hidden">Pricing</a>
+				<a href={pricingHref()} class="{LINK} max-[399px]:hidden">Pricing</a>
 			{/if}
-			<a href={FEEDBACK_URL} class="{LINK} {IDLE} {dash ? 'max-sm:hidden' : ''}">Feedback</a>
-			<a href={SOURCE_URL} class="{LINK} {IDLE} hidden sm:flex">GitHub</a>
+			<a href={FEEDBACK_URL} class="{LINK} {dash ? 'max-sm:hidden' : ''}">Feedback</a>
+			<a href={SOURCE_URL} class="{LINK} hidden sm:flex">GitHub</a>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			<!-- One slot, one size: the three variants share a minimum width,
 			     so the links beside it do not move when the sign-in check
@@ -77,9 +75,9 @@
 				{#if authState.authenticated && dashboard}
 					<AccountMenu />
 				{:else if authState.authenticated}
-					<a class="btn-quiet btn--sm min-w-26" href={resolve('/projects')}>Dashboard</a>
+					<a class="hk-btn-secondary hk-btn-sm min-w-26" href={resolve('/projects')}>Dashboard</a>
 				{:else}
-					<button type="button" class="btn-quiet btn--sm min-w-26" onclick={() => signIn()}
+					<button type="button" class="hk-btn-secondary hk-btn-sm min-w-26" onclick={() => signIn()}
 						>Sign in</button
 					>
 				{/if}
@@ -87,3 +85,15 @@
 		</nav>
 	</div>
 </header>
+
+<style>
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 30;
+		border-bottom: 1px solid var(--hk-hairline);
+		background: color-mix(in srgb, var(--hk-bg) 88%, transparent);
+		backdrop-filter: saturate(1.4) blur(10px);
+		-webkit-backdrop-filter: saturate(1.4) blur(10px);
+	}
+</style>

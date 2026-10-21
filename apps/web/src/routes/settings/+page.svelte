@@ -12,6 +12,7 @@
 	import MachineNix from '$lib/components/MachineNix.svelte';
 	import AccountSecrets from '$lib/components/AccountSecrets.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
+	import { INSTALL_COMMAND } from '$lib/links';
 	import { dateOnly } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { Me } from '$lib/api/types';
@@ -452,10 +453,7 @@
 			<p class={FACT}>The CLI, for macOS and Linux.</p>
 		</div>
 		<div class={BODY}>
-			<CodeCopy
-				command="curl -fsSL https://repose.herakraft.co/install.sh | sh"
-				what="install command"
-			/>
+			<CodeCopy command={INSTALL_COMMAND} what="install command" />
 		</div>
 	</section>
 

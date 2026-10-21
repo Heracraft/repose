@@ -1,0 +1,55 @@
+/* Moved verbatim from routes/layout.css (I-837, Phase 1); PROJECTS owns it now.
+   Imported unlayered by layout.css: CodeMirror injects its theme as
+   unlayered styles, and those beat anything inside a layer. */
+
+/* Nix editor (CodeMirror 6). Unlayered on purpose: CodeMirror injects its
+   theme as unlayered styles, and those beat anything inside a layer. Code
+   sits on --sunken everywhere else (.codeblock, the docs' pre), so the
+   editor does too: on --surface it was a 320px pure white block on the
+   warm page in the light (I-393). The current line lifts one step toward
+   the reader: to --surface in the light; in the dark --surface is the
+   darker of the two, so the line mixes 5% --ink into --sunken instead,
+   which keeps --ink-faint's line number at 4.5:1 where --rule would not
+   (I-395). */
+.nix-editor .cm-editor {
+	@apply h-full rounded-sm border text-sm;
+	background-color: var(--sunken);
+	border-color: var(--control-edge);
+}
+.nix-editor .cm-editor.cm-focused {
+	@apply border-zinc-900 outline-2 outline-offset-2 dark:border-zinc-300;
+	outline-color: var(--focus);
+}
+/* The gutter is a solid strip with its own edge, and the code starts
+   0.5rem past it: a long line scrolled sideways slides under that edge
+   instead of running into the line numbers. --rule on --sunken was too
+   faint to read as an edge at 1x, so it takes the strong rule. */
+.nix-editor .cm-editor .cm-gutters {
+	@apply text-ink-faint;
+	background-color: var(--sunken);
+	border-right: 1px solid var(--rule-strong);
+}
+.nix-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
+	@apply pr-2 pl-2.5;
+}
+.nix-editor .cm-editor .cm-content {
+	@apply pl-2 font-mono text-ink;
+}
+.nix-editor .cm-editor .cm-activeLine,
+.nix-editor .cm-editor .cm-activeLineGutter {
+	background-color: var(--surface);
+}
+/* Dark follows the theme switch (I-837, Phase 1 move). */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) .nix-editor .cm-editor .cm-activeLine,
+	:root:not([data-theme='light']) .nix-editor .cm-editor .cm-activeLineGutter {
+		background-color: color-mix(in oklab, var(--ink) 5%, var(--sunken));
+	}
+}
+:root[data-theme='dark'] .nix-editor .cm-editor .cm-activeLine,
+:root[data-theme='dark'] .nix-editor .cm-editor .cm-activeLineGutter {
+	background-color: color-mix(in oklab, var(--ink) 5%, var(--sunken));
+}
+.nix-editor .cm-line-error {
+	@apply bg-red-100 dark:bg-red-950;
+}

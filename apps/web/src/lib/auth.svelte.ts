@@ -42,6 +42,21 @@ export async function initAuth(): Promise<void> {
 	authState.authenticated = await getClient().isAuthenticated();
 }
 
+/**
+ * The signed-in user's email from the ID token Logto already holds, with no
+ * request: the Account menu's first line. Undefined when the token has
+ * none or cannot be read.
+ */
+export async function signedInEmail(): Promise<string | undefined> {
+	if (!browser) return undefined;
+	try {
+		const claims = await getClient().getIdTokenClaims();
+		return typeof claims.email === 'string' && claims.email ? claims.email : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function callbackUrl(): string {
 	return `${location.origin}/callback`;
 }

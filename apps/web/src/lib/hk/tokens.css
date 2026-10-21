@@ -1,0 +1,1439 @@
+/* Herakraft UI: tokens and primitives.
+
+   Source. Token values come from the reference implementation's token sheet
+   (apps/web/src/lib/dev/dev.css in the source project) unless a comment names
+   another file. Each colour is a Tailwind zinc, blue, emerald, amber or red
+   step, plus three in-between greys from dev.css (--hk-hairline, --hk-text-3,
+   the dark --hk-surface).
+
+   Changes against dev.css, each with its real source:
+   - Renamed: the scope .dev became .hk, the class prefix d- became hk-, and
+     every custom property gained an --hk- prefix (see "Namespace" below).
+   - Tokens for values the source wrote inline: radii (dev.css, Segmented,
+     Modal, MethodBadge), durations (dev.css and the components), the modal
+     shadow with its 1px ring (Modal.svelte), dot colours (dev.css .d-dot,
+     Terminal.svelte), code-pane extras (CodeBlock.svelte), the select
+     chevron (dev.css), --hk-header-h (routes/developers/+layout.svelte),
+     --hk-container and --hk-gutter (dev.css .d-container).
+   - Adapted from the consumer stylesheet routes/layout.css: flat disabled
+     colours for the primary button (.btn--block:disabled, commit 283597c:
+     zinc-200 on zinc-500 light, zinc-800 on zinc-400 dark, where dev.css
+     fades every button to opacity 0.45); the selected chip's soft fill and
+     weight (.chip:has(input:checked) light, .chip--filled.chip--active
+     dark); the 44px ghost-button touch modifier (.btn-ghost--touch); the
+     dark selected touch segment (.seg--touch); the unconfirmed-value rule
+     (.unconfirmed).
+   - Primitives dev.css does not have, copied from where the source kept them:
+     hk-btn-lg (CopyButton lg and the landing hero), hk-stats, hk-empty-row,
+     hk-banner, hk-fields and hk-secret (dashboard/dash.css), hk-more and
+     text-wrap on the hero h1 and lead (routes/developers/+page.svelte),
+     hk-seg (Segmented.svelte, without the script-driven sliding thumb),
+     hk-method (MethodBadge.svelte), hk-meter (Meter.svelte), hk-stat
+     (Stat.svelte), hk-code and the syntax classes (CodeBlock.svelte),
+     hk-modal (Modal.svelte).
+   - New in this kit, with no source rule: touch modifiers for buttons, chips
+     and rows; hk-textarea; disabled, readonly and invalid states for every
+     field; :active and aria-busy on buttons; the phone heading sizes; the
+     .dark class selectors; the eyebrow's font-family. Each carries a comment.
+
+   Namespace. Custom properties are --hk-*, because shadcn/ui and many kits
+   define bare --border, --ring, --accent, --radius and --background, and read
+   some of them as hsl() channel triples. A bare hex --border inside a shadcn
+   host breaks its borders, and a bare --accent turns its hover surfaces blue.
+
+   Scope. Everything hangs off the `.hk` wrapper class, never bare elements or
+   :root alone. Some frameworks (SvelteKit, for one) keep a layout's stylesheet
+   in the document after client-side navigation, so unscoped rules would leak
+   into pages that never asked for them. If your whole app adopts this file,
+   put class="hk" on <body>.
+
+   Theme. Follows the OS through prefers-color-scheme. A data-theme attribute
+   ("light" or "dark") or a class (.light or .dark, which next-themes sets by
+   default) on <html> overrides it in both directions. Components read these
+   tokens; check how your host's `dark:` utility is driven before using it
+   inside .hk (Guide B section 8.1).
+
+   Cascade layers. This file is unlayered. Unlayered rules beat every layered
+   rule, so under Tailwind v4 (which puts preflight and utilities in layers)
+   import it into the components layer, or `class="hk-btn h-10"` stays 36px:
+       @import "./tokens.css" layer(components);
+   Under Tailwind v3 or no Tailwind, import it as it is; specificity decides,
+   and .hk .hk-btn (0,2,0) beats a single utility class (0,1,0).
+
+   Fonts. Two requests (Guide B section 9.4 has the next/font and self-hosted
+   recipes). Site-wide, wherever the wordmark shows:
+   https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&display=swap
+   Only on the surfaces that use them:
+   https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400..600&display=swap
+
+   Class prefix. Primitives use `hk-`. Before adopting, grep your stylesheet
+   for global classes named .seg .rail .chip .badge .row .btn .field .card
+   .link; the reference project broke two components on exactly those. */
+
+/* ---------- Light tokens (default) ---------- */
+
+.hk {
+	/* Surfaces */
+	--hk-bg: #fafafa; /* zinc-50: the page */
+	--hk-surface: #ffffff; /* cards, inputs, popovers */
+	--hk-surface-2: #f4f4f5; /* zinc-100: segmented track, inline code, kbd */
+	--hk-hover: rgb(24 24 27 / 0.04); /* row and ghost-button hover wash */
+	--hk-active: rgb(24 24 27 / 0.08); /* new: pressed wash, one step over hover */
+	--hk-hairline: #ececee; /* between zinc-100 and zinc-200: row rules */
+	--hk-border: #e4e4e7; /* zinc-200: inputs, table header rule, panels */
+	--hk-border-strong: #d4d4d8; /* zinc-300: hover borders, emphasised card */
+
+	/* Text, strongest to faintest */
+	--hk-text: #18181b; /* zinc-900 */
+	--hk-text-2: #52525b; /* zinc-600: body copy in docs, secondary buttons */
+	--hk-text-3: #636369; /* one step under zinc-500, AA at 11px on --hk-bg */
+	--hk-text-4: #a1a1aa; /* zinc-400: placeholders, list markers. Never readable text */
+
+	/* The one accent */
+	--hk-accent: #1d4ed8; /* blue-700: links, current item, eyebrows, focus */
+	--hk-accent-hover: #1e40af; /* blue-800 */
+	--hk-accent-wash: rgb(29 78 216 / 0.06); /* current nav item, active search row */
+	--hk-ring: rgb(29 78 216 / 0.28); /* 3px input focus halo */
+	/* An unconfirmed machine-filled value (layout.css .unconfirmed: blue-700/30,
+	   dark blue-400/30). Mixed from the accent so it follows the theme. */
+	--hk-unconfirmed: color-mix(in srgb, var(--hk-accent) 30%, transparent);
+
+	/* Primary buttons invert instead of using the accent */
+	--hk-invert-bg: #18181b;
+	--hk-invert-bg-hover: #3f3f46;
+	--hk-invert-text: #fafafa;
+
+	/* Disabled primary: flat colours, from layout.css .btn--block:disabled
+	   (283597c). Opacity on an inverted button left its label near 3:1. */
+	--hk-disabled-bg: #e4e4e7; /* zinc-200 */
+	--hk-disabled-text: #71717a; /* zinc-500 */
+
+	/* Selected chip: a soft step fill, from layout.css .chip:has(input:checked).
+	   The inverted ink chip "read as a stray dark-mode element". */
+	--hk-selected-bg: #d4d4d8; /* zinc-300 */
+	--hk-selected-border: #a1a1aa; /* zinc-400 */
+	--hk-selected-text: #18181b;
+
+	/* Status: 700-800 text on a 100 wash */
+	--hk-ok: #047857;
+	--hk-ok-wash: #d1fae5;
+	--hk-ok-dot: #10b981;
+	--hk-warn: #92400e;
+	--hk-warn-wash: #fef3c7;
+	--hk-warn-dot: #f59e0b; /* amber-500, dev.css .d-dot--warn and the meter */
+	--hk-err: #b91c1c;
+	--hk-err-wash: #fee2e2;
+	--hk-err-dot: #ef4444; /* red-500, dev.css .d-dot--err and the meter */
+	--hk-info: #1d4ed8;
+	--hk-info-wash: #dbeafe;
+
+	/* Elevation and the modal scrim */
+	--hk-shadow-pop: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.12);
+	--hk-shadow-modal: 0 0 0 1px var(--hk-border), 0 24px 64px -16px rgb(0 0 0 / 0.35);
+	--hk-scrim: rgb(9 9 11 / 0.36);
+
+	/* Code panes are dark in both themes. One syntax accent for strings, one
+	   for numbers, everything else a zinc step, so the pane is never the
+	   loudest thing on the page. */
+	--hk-code-bg: #0c0c0e;
+	--hk-code-bar: #121214;
+	--hk-code-border: #232327;
+	--hk-code-border-outer: transparent; /* becomes a ring on a dark page */
+	--hk-code-text: #e4e4e7; /* zinc-200: identifiers, active tab */
+	--hk-code-muted: #8b8b94; /* 5.6:1 on --hk-code-bg: tabs, meta */
+	--hk-code-comment: #8b8b94; /* same step as muted; set apart by italic */
+	--hk-code-dim: #7f7f88; /* line numbers only: 4.9:1 */
+	--hk-code-punct: #a1a1aa; /* zinc-400: punctuation */
+	--hk-code-keyword: #a1a1aa; /* zinc-400, CodeBlock.svelte .t-k */
+	--hk-code-key: #d4d4d8; /* zinc-300: JSON keys, hovered tabs */
+	--hk-code-fn: #f4f4f5; /* zinc-100, CodeBlock.svelte .t-f */
+	--hk-code-string: #93c5fd; /* blue-300; also shell variables */
+	--hk-code-number: #fcd34d; /* amber-300; also booleans and null */
+	--hk-code-ok: #6ee7b7; /* emerald-300: copied check, 2xx chip */
+	--hk-code-scrollbar: #2a2a2f;
+	--hk-code-focus: rgb(147 197 253 / 0.5); /* a focused scrollable body */
+	--hk-code-2xx: #6ee7b7;
+	--hk-code-2xx-wash: rgb(16 185 129 / 0.14);
+	--hk-code-4xx: #fcd34d;
+	--hk-code-4xx-wash: rgb(245 158 11 / 0.14);
+	--hk-code-5xx: #fca5a5;
+	--hk-code-5xx-wash: rgb(239 68 68 / 0.16);
+	--hk-live-dot: #34d399; /* emerald-400, Terminal.svelte */
+
+	/* Charts. Slots 1-3 are a validated categorical palette; use them only
+	   for 3+ categories. Slot 3 is under 3:1 on light, so any chart using it
+	   carries a legend and a tooltip. Two-series success/error charts use
+	   --hk-accent and --hk-err instead. --hk-series-muted is 1.42:1 on the
+	   light page (1.91:1 dark): under WCAG 1.4.11. The kit keeps it and relies
+	   on the hover/focus readout, the gridlines and a hidden table; for 3:1
+	   use #8b8b94 light and #5f5f68 dark (Guide B section 12.12). */
+	--hk-series-1: #2a78d6;
+	--hk-series-2: #eb6834;
+	--hk-series-3: #1baf7a;
+	--hk-series-muted: #d4d4d8; /* every bar except the one that matters */
+	--hk-grid: #e4e4e7;
+
+	/* Type */
+	--hk-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--hk-font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--hk-font-display: 'Noto Serif', Georgia, 'Times New Roman', serif;
+
+	/* Shape: the full set of radii */
+	--hk-radius-xs: 4px; /* kbd, method badge, focus outline */
+	--hk-radius-sm: 5px; /* badges, inline code, status chip */
+	--hk-radius-6: 6px; /* segmented thumb, docs nav items, modal close */
+	--hk-radius-7: 7px; /* small buttons, account pill, rail items, search rows */
+	--hk-radius: 8px; /* buttons, inputs, banners, tooltips */
+	--hk-radius-9: 9px; /* segmented track */
+	--hk-radius-lg: 12px; /* code panes, cards, panels */
+	--hk-radius-xl: 14px; /* modals, search palette */
+	--hk-radius-pill: 999px; /* chips, dots, meter track */
+
+	/* Motion: one curve, the full set of durations */
+	--hk-ease: cubic-bezier(0.2, 0, 0, 1);
+	--hk-dur-fast: 150ms; /* colour, border, background, chevrons in logs */
+	--hk-dur-icon: 160ms; /* copy icon to check */
+	--hk-dur-screen: 180ms; /* phone flow screen change */
+	--hk-dur: 200ms; /* tab underline, chevron, modal pop and fade */
+	--hk-dur-slide: 220ms; /* segmented thumb */
+	--hk-dur-enter: 240ms; /* terminal record entry */
+	--hk-dur-draw: 260ms; /* check-mark stroke */
+	--hk-dur-meter: 400ms; /* meter fill width */
+	--hk-dur-count: 600ms; /* stat count-up */
+
+	/* Layout */
+	--hk-header-h: 3.5rem; /* 0 below 640px, where the header does not stick */
+	--hk-container: 76rem;
+	--hk-gutter: 1.25rem; /* 2rem from 1024px */
+
+	color-scheme: light;
+	background: var(--hk-bg);
+	color: var(--hk-text);
+	font-family: var(--hk-font-sans);
+	font-size: 15px;
+	line-height: 1.6;
+	font-feature-settings: 'cv11', 'ss01';
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Dark tokens ---------- */
+
+/* The OS asks for dark, and nothing on <html> says light. */
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk {
+		--hk-bg: #09090b;
+		--hk-surface: #111113;
+		--hk-surface-2: #18181b;
+		--hk-hover: rgb(250 250 250 / 0.04);
+		--hk-active: rgb(250 250 250 / 0.08);
+		--hk-hairline: #1c1c1f;
+		--hk-border: #27272a;
+		--hk-border-strong: #3f3f46;
+		--hk-text: #f4f4f5;
+		--hk-text-2: #a1a1aa;
+		--hk-text-3: #8b8b94;
+		--hk-text-4: #5f5f68; /* 3.14:1 on the dark surface: never readable text */
+		--hk-accent: #60a5fa;
+		--hk-accent-hover: #93c5fd;
+		--hk-accent-wash: rgb(96 165 250 / 0.08);
+		--hk-ring: rgb(96 165 250 / 0.35);
+		--hk-invert-bg: #f4f4f5;
+		--hk-invert-bg-hover: #d4d4d8;
+		--hk-invert-text: #09090b;
+		--hk-disabled-bg: #27272a; /* zinc-800 */
+		--hk-disabled-text: #a1a1aa; /* zinc-400 */
+		--hk-selected-bg: #3f3f46; /* zinc-700 */
+		--hk-selected-border: #71717a; /* zinc-500 */
+		--hk-selected-text: #fafafa;
+		--hk-ok: #34d399;
+		--hk-ok-wash: rgb(16 185 129 / 0.14);
+		--hk-ok-dot: #34d399;
+		--hk-warn: #fbbf24;
+		--hk-warn-wash: rgb(245 158 11 / 0.14);
+		--hk-err: #f87171;
+		--hk-err-wash: rgb(239 68 68 / 0.14);
+		--hk-info: #60a5fa;
+		--hk-info-wash: rgb(59 130 246 / 0.14);
+		/* A drop shadow is near-invisible on #09090b, so dark elevation is a
+		   1px #27272a ring plus a deeper shadow. */
+		--hk-shadow-pop: 0 0 0 1px #27272a, 0 12px 32px -8px rgb(0 0 0 / 0.6);
+		--hk-scrim: rgb(0 0 0 / 0.6);
+		--hk-code-bg: #0e0e10;
+		--hk-code-bar: #131316;
+		--hk-code-border-outer: #222226; /* separates the pane from a dark page */
+		--hk-series-1: #3987e5;
+		--hk-series-2: #d95926;
+		--hk-series-3: #199e70;
+		--hk-series-muted: #3f3f46;
+		--hk-grid: #27272a;
+		color-scheme: dark;
+	}
+}
+/* A manual choice of dark, by attribute or by class. */
+:root[data-theme='dark'] .hk,
+:root.dark .hk {
+	--hk-bg: #09090b;
+	--hk-surface: #111113;
+	--hk-surface-2: #18181b;
+	--hk-hover: rgb(250 250 250 / 0.04);
+	--hk-active: rgb(250 250 250 / 0.08);
+	--hk-hairline: #1c1c1f;
+	--hk-border: #27272a;
+	--hk-border-strong: #3f3f46;
+	--hk-text: #f4f4f5;
+	--hk-text-2: #a1a1aa;
+	--hk-text-3: #8b8b94;
+	--hk-text-4: #5f5f68;
+	--hk-accent: #60a5fa;
+	--hk-accent-hover: #93c5fd;
+	--hk-accent-wash: rgb(96 165 250 / 0.08);
+	--hk-ring: rgb(96 165 250 / 0.35);
+	--hk-invert-bg: #f4f4f5;
+	--hk-invert-bg-hover: #d4d4d8;
+	--hk-invert-text: #09090b;
+	--hk-disabled-bg: #27272a;
+	--hk-disabled-text: #a1a1aa;
+	--hk-selected-bg: #3f3f46;
+	--hk-selected-border: #71717a;
+	--hk-selected-text: #fafafa;
+	--hk-ok: #34d399;
+	--hk-ok-wash: rgb(16 185 129 / 0.14);
+	--hk-ok-dot: #34d399;
+	--hk-warn: #fbbf24;
+	--hk-warn-wash: rgb(245 158 11 / 0.14);
+	--hk-err: #f87171;
+	--hk-err-wash: rgb(239 68 68 / 0.14);
+	--hk-info: #60a5fa;
+	--hk-info-wash: rgb(59 130 246 / 0.14);
+	--hk-shadow-pop: 0 0 0 1px #27272a, 0 12px 32px -8px rgb(0 0 0 / 0.6);
+	--hk-scrim: rgb(0 0 0 / 0.6);
+	--hk-code-bg: #0e0e10;
+	--hk-code-bar: #131316;
+	--hk-code-border-outer: #222226;
+	--hk-series-1: #3987e5;
+	--hk-series-2: #d95926;
+	--hk-series-3: #199e70;
+	--hk-series-muted: #3f3f46;
+	--hk-grid: #27272a;
+	color-scheme: dark;
+}
+
+@media (min-width: 1024px) {
+	.hk {
+		--hk-gutter: 2rem;
+	}
+}
+@media (max-width: 639.98px) {
+	.hk {
+		--hk-header-h: 0px; /* the phone header stacks and does not stick */
+	}
+}
+
+/* ---------- Root canvas and scrollbar ---------- */
+
+/* Reserve the scrollbar's width so a page growing past the viewport does not
+   shift sideways. The reserved gutter shows the root canvas, so paint it the
+   page colour (repeated as hex, since the tokens live on .hk). */
+html:has(.hk) {
+	scrollbar-gutter: stable;
+	background: #fafafa;
+}
+@media (prefers-color-scheme: dark) {
+	html:not(.light):not([data-theme='light']):has(.hk) {
+		background: #09090b;
+	}
+}
+html[data-theme='dark']:has(.hk),
+html.dark:has(.hk) {
+	background: #09090b;
+}
+
+/* ---------- Type ---------- */
+
+/* Every heading level is the serif at regular weight. Never bold. */
+.hk :where(h1, h2, h3, .hk-display, .hk-h1, .hk-h2, .hk-h3) {
+	font-family: var(--hk-font-display);
+	font-weight: 400;
+	color: var(--hk-text);
+	letter-spacing: -0.015em;
+}
+.hk .hk-h1 {
+	font-size: clamp(2.5rem, 1.6rem + 3.6vw, 3.5rem); /* 40 to 56px */
+	line-height: 1.05;
+	letter-spacing: -0.025em;
+	text-wrap: balance; /* a one-word widow ("key.") was a finding */
+}
+/* Page titles. The source kept 36px at every width; the clamp (new) brings it
+   to 28px at 375 so a docs title does not outweigh the phone h1. */
+.hk .hk-h2 {
+	font-size: clamp(1.75rem, 1.4rem + 1.5vw, 2.25rem);
+	line-height: 1.12;
+	letter-spacing: -0.02em;
+}
+.hk .hk-h3 {
+	font-size: 1.5rem; /* 24px at every width */
+	line-height: 1.3;
+}
+/* Dashboard and app page titles: 24px on phones, 30px from 640px (the
+   consumer side's h1 sizes, new here for the dashboard). */
+.hk .hk-h1-app {
+	font-size: 1.5rem;
+	line-height: 2rem;
+	letter-spacing: -0.02em;
+}
+@media (min-width: 640px) {
+	.hk .hk-h1-app {
+		font-size: 1.875rem;
+		line-height: 2.25rem;
+	}
+}
+.hk .hk-h4 {
+	font-family: var(--hk-font-sans);
+	font-size: 0.9375rem;
+	font-weight: 600;
+	letter-spacing: -0.005em;
+}
+.hk .hk-lead {
+	font-size: 1.0625rem; /* 17px */
+	line-height: 1.6;
+	color: var(--hk-text-3);
+	text-wrap: pretty;
+}
+/* Two-tone lead: the claim in full ink, the rest muted. */
+.hk .hk-lead strong {
+	color: var(--hk-text);
+	font-weight: 500;
+}
+/* Small caps labels. Sets the sans family itself (dev.css .d-eyebrow did not)
+   and lifts specificity over the heading rule, so an eyebrow class on an h2
+   stays sans. The reference's serif plan labels were h2s with a page-scoped
+   .plan-name class that set no font-family and inherited the heading serif:
+   give any such local label `font-family: var(--hk-font-sans)`, or use a <p>
+   with this class above the heading. */
+.hk :is(.hk-eyebrow, h1.hk-eyebrow, h2.hk-eyebrow, h3.hk-eyebrow) {
+	font-family: var(--hk-font-sans);
+	font-size: 0.6875rem; /* 11px */
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--hk-accent);
+}
+.hk .hk-label {
+	font-size: 0.75rem;
+	line-height: 1rem;
+	color: var(--hk-text-3);
+}
+.hk .hk-muted {
+	color: var(--hk-text-3);
+}
+.hk :is(.hk-mono, code, kbd, pre) {
+	font-family: var(--hk-font-mono);
+	font-feature-settings: normal;
+}
+.hk .hk-num {
+	font-variant-numeric: tabular-nums;
+}
+.hk :not(pre) > code {
+	font-size: 0.85em;
+	padding: 0.1em 0.35em;
+	border-radius: var(--hk-radius-sm);
+	background: var(--hk-surface-2);
+	border: 1px solid var(--hk-hairline);
+	color: var(--hk-text);
+}
+.hk kbd {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.25rem;
+	height: 1.25rem;
+	padding: 0 0.3rem;
+	border-radius: var(--hk-radius-xs);
+	border: 1px solid var(--hk-border);
+	font-size: 0.6875rem;
+	color: var(--hk-text-3);
+}
+.hk .hk-link {
+	color: var(--hk-accent);
+	text-decoration: none;
+	text-underline-offset: 3px;
+}
+.hk .hk-link:hover {
+	text-decoration: underline;
+}
+/* In running text a link carries a quiet underline (WCAG 1.4.1). Standalone
+   nav links and arrow "more" links stay bare. Visited links keep the accent:
+   the portal's links are navigation, and a second link colour would be a
+   second accent. */
+.hk :where(p, li, td, .hk-desc) .hk-link:not(:where(.hk-more, .hk-more *)) {
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+.hk :where(p, li, td, .hk-desc) .hk-link:not(:where(.hk-more, .hk-more *)):hover {
+	text-decoration-color: currentColor;
+}
+/* "More" link: the arrow lives in CSS so it never enters the link text. */
+.hk .hk-more {
+	display: inline-block;
+	margin-top: 1.25rem;
+	font-size: 0.875rem;
+	font-weight: 500;
+	color: var(--hk-accent);
+	text-decoration: none;
+}
+.hk .hk-more::after {
+	content: ' \2192';
+}
+.hk ::selection {
+	background: rgb(59 130 246 / 0.22);
+}
+
+/* ---------- Focus and skip link ---------- */
+
+.hk :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+	outline: 2px solid var(--hk-accent);
+	outline-offset: 2px;
+	border-radius: var(--hk-radius-xs);
+}
+/* Targets <main id="main" tabindex="-1">, whose own outline is suppressed. */
+.hk .hk-skip {
+	position: absolute;
+	left: 0.5rem;
+	top: -3rem;
+	z-index: 50;
+	padding: 0.5rem 0.75rem;
+	border-radius: var(--hk-radius);
+	background: var(--hk-invert-bg);
+	color: var(--hk-invert-text);
+	font-size: 0.875rem;
+	font-weight: 500;
+	text-decoration: none;
+	transition: top var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-skip:focus {
+	top: 0.5rem;
+}
+.hk main[tabindex='-1']:focus {
+	outline: none;
+}
+
+/* ---------- Buttons ---------- */
+
+.hk :is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	height: 2.25rem; /* 36px on fine pointers; .hk-btn--touch for 44px */
+	padding: 0 0.875rem;
+	border-radius: var(--hk-radius);
+	font: inherit;
+	font-size: 0.875rem;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+	text-decoration: none;
+	border: 1px solid transparent;
+	transition:
+		background-color var(--hk-dur-fast) var(--hk-ease),
+		border-color var(--hk-dur-fast) var(--hk-ease),
+		color var(--hk-dur-fast) var(--hk-ease);
+}
+/* Primary is inverted ink. That leaves blue for two meanings: "this
+   navigates" and "you are here". */
+.hk .hk-btn {
+	background: var(--hk-invert-bg);
+	color: var(--hk-invert-text);
+}
+.hk .hk-btn:hover {
+	background: var(--hk-invert-bg-hover);
+}
+.hk .hk-btn-secondary {
+	background: var(--hk-surface);
+	color: var(--hk-text);
+	border-color: var(--hk-border);
+	box-shadow: 0 1px 0 rgb(0 0 0 / 0.02);
+}
+.hk .hk-btn-secondary:hover {
+	border-color: var(--hk-border-strong);
+	background: var(--hk-surface-2);
+}
+.hk .hk-btn-ghost {
+	background: transparent;
+	color: var(--hk-text-2);
+	padding: 0 0.625rem;
+}
+.hk .hk-btn-ghost:hover {
+	color: var(--hk-text);
+	background: var(--hk-hover);
+}
+/* Irreversible actions. Weight follows consequence, so this is never ghost. */
+.hk .hk-btn-danger {
+	background: transparent;
+	color: var(--hk-err);
+	border-color: color-mix(in srgb, var(--hk-err) 35%, transparent);
+}
+.hk .hk-btn-danger:hover {
+	background: var(--hk-err-wash);
+}
+/* Pressed (new): one background step past hover, no transform, per the
+   "nothing translates, scales or bounces" motion rule. */
+.hk .hk-btn:active:not(:disabled) {
+	background: color-mix(in srgb, var(--hk-invert-bg-hover) 80%, var(--hk-invert-text));
+}
+.hk .hk-btn-secondary:active:not(:disabled) {
+	background: var(--hk-border);
+}
+.hk .hk-btn-ghost:active:not(:disabled) {
+	background: var(--hk-active);
+}
+.hk .hk-btn-danger:active:not(:disabled) {
+	background: color-mix(in srgb, var(--hk-err) 18%, transparent);
+}
+.hk .hk-btn-sm {
+	height: 1.875rem;
+	padding: 0 0.625rem;
+	font-size: 0.8125rem;
+	border-radius: var(--hk-radius-7);
+}
+.hk .hk-btn-lg {
+	height: 2.5rem; /* hero pair: both buttons share this height */
+	padding: 0 1.125rem;
+}
+/* A 44px touch target for ghost text actions that keeps the row's height
+   (layout.css .btn-ghost--touch). */
+.hk .hk-btn-ghost--touch {
+	min-height: 2.75rem;
+	min-width: 2.75rem;
+	margin-block: -0.5rem;
+	padding-inline: 0.75rem;
+}
+/* Busy: the label changes ("Sending…") and the button disables; no spinner. */
+.hk :is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-busy='true'] {
+	cursor: progress;
+}
+/* Disabled. Secondary, ghost and danger keep the source's opacity. The
+   inverted primary gets flat colours: opacity dropped its label near 3:1 in
+   dark mode. Disable only while a request is in flight, never as validation. */
+.hk :is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger):disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.hk .hk-btn:disabled {
+	background: var(--hk-disabled-bg);
+	color: var(--hk-disabled-text);
+	cursor: not-allowed;
+}
+.hk .hk-btn[aria-busy='true']:disabled {
+	cursor: progress;
+}
+
+/* ---------- Badges, dots, method badges ---------- */
+
+.hk .hk-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	height: 1.25rem;
+	padding: 0 0.4rem;
+	border-radius: var(--hk-radius-sm);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	background: var(--hk-surface-2);
+	color: var(--hk-text-2);
+}
+.hk .hk-badge--mono {
+	font-family: var(--hk-font-mono);
+	font-weight: 400;
+}
+.hk .hk-badge--ok {
+	background: var(--hk-ok-wash);
+	color: var(--hk-ok);
+}
+.hk .hk-badge--warn {
+	background: var(--hk-warn-wash);
+	color: var(--hk-warn);
+}
+.hk .hk-badge--err {
+	background: var(--hk-err-wash);
+	color: var(--hk-err);
+}
+.hk .hk-badge--info {
+	background: var(--hk-info-wash);
+	color: var(--hk-info);
+}
+/* For facts worth showing that are not problems. */
+.hk .hk-badge--outline {
+	background: transparent;
+	border: 1px solid var(--hk-border);
+	color: var(--hk-text-3);
+}
+/* Dots sit beside a text label that carries the meaning, so the 3:1 rule for
+   graphics does not bind them. */
+.hk .hk-dot {
+	display: inline-block;
+	width: 0.4375rem; /* 7px */
+	height: 0.4375rem;
+	border-radius: var(--hk-radius-pill);
+	background: var(--hk-text-4);
+	flex: none;
+}
+.hk .hk-dot--ok {
+	background: var(--hk-ok-dot);
+}
+/* Pulse only for a feed that streams. A replayed feed gets the still dot. */
+.hk .hk-dot--live {
+	background: var(--hk-ok-dot);
+	animation: hk-pulse 2s ease-in-out infinite;
+}
+.hk .hk-dot--warn {
+	background: var(--hk-warn-dot);
+}
+.hk .hk-dot--err {
+	background: var(--hk-err-dot);
+}
+@keyframes hk-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+/* HTTP method badge (MethodBadge.svelte). The word carries the meaning. The
+   source's sm size was 9px; this kit raises it to 10px (Guide B section 15). */
+.hk .hk-method {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	height: 1.375rem;
+	padding: 0 0.4375rem;
+	border-radius: var(--hk-radius-xs);
+	font-family: var(--hk-font-mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.02em;
+	line-height: 1;
+	color: var(--hk-ok);
+	background: var(--hk-ok-wash);
+}
+.hk .hk-method--sm {
+	height: 1rem;
+	min-width: 2.25rem;
+	padding: 0 0.25rem;
+	font-size: 0.625rem;
+}
+.hk .hk-method--post {
+	color: var(--hk-info);
+	background: var(--hk-info-wash);
+}
+.hk .hk-method--put {
+	color: var(--hk-warn);
+	background: var(--hk-warn-wash);
+}
+.hk .hk-method--del {
+	color: var(--hk-err);
+	background: var(--hk-err-wash);
+}
+
+/* ---------- Rows, rules, surfaces ---------- */
+
+/* The separator sits on the top edge, so a list needs no wrapper and no
+   :last-child exception. Close the list with a bottom rule on its container. */
+.hk .hk-row {
+	border-top: 1px solid var(--hk-hairline);
+	padding: 0.875rem 0;
+}
+/* Rows a user taps get a hover wash; plain read-only rows do not. */
+.hk .hk-row--hover:hover {
+	background: var(--hk-hover);
+}
+.hk .hk-rule {
+	border: 0;
+	border-top: 1px solid var(--hk-border);
+	margin: 0;
+}
+.hk .hk-panel {
+	background: var(--hk-surface);
+	border: 1px solid var(--hk-border);
+	border-radius: var(--hk-radius-lg);
+}
+.hk .hk-stats {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1.5rem 1.25rem;
+	padding: 1.25rem 0;
+	border-top: 1px solid var(--hk-hairline);
+	border-bottom: 1px solid var(--hk-hairline);
+}
+@media (min-width: 900px) {
+	.hk .hk-stats {
+		grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+	}
+}
+/* Stat (Stat.svelte). The label wraps at every width and reserves two lines,
+   so values in one grid row stay level. The source truncated labels from
+   640px up, which cut "Metered calls this mo..." on narrow columns. */
+.hk .hk-stat {
+	min-width: 0;
+}
+.hk .hk-stat-label {
+	min-height: 2lh;
+	font-size: 0.8125rem;
+	color: var(--hk-text-3);
+	text-wrap: balance;
+}
+.hk .hk-stat-value {
+	display: flex;
+	align-items: baseline;
+	gap: 0.25rem;
+	margin-top: 0.25rem;
+	font-size: 1.5rem;
+	line-height: 2rem;
+	font-weight: 500;
+	letter-spacing: -0.02em;
+	color: var(--hk-text);
+}
+.hk .hk-stat--lg .hk-stat-value {
+	font-size: 2rem;
+	line-height: 2.5rem;
+}
+.hk .hk-stat-unit {
+	font-size: 0.875rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	color: var(--hk-text-3);
+}
+/* Meter (Meter.svelte). Label wraps; the value never pushes it into an
+   ellipsis. Put a long value under the label with .hk-meter--stack. */
+.hk .hk-meter {
+	--m: var(--hk-accent);
+}
+.hk .hk-meter-top {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0.25rem 1rem;
+	margin-bottom: 0.5rem;
+	font-size: 0.8125rem;
+}
+.hk .hk-meter--stack .hk-meter-top {
+	flex-direction: column;
+}
+.hk .hk-meter-label {
+	min-width: 0;
+	color: var(--hk-text-3);
+}
+.hk .hk-meter-value {
+	white-space: nowrap;
+	color: var(--hk-text);
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+/* The fill restates the value text, so the text carries the number and the
+   fill's contrast (amber 2.06:1 on the light page) is not the only signal. */
+.hk .hk-meter-track {
+	height: 6px;
+	border-radius: var(--hk-radius-pill);
+	overflow: hidden;
+	background: color-mix(in srgb, var(--m) 16%, transparent);
+}
+.hk .hk-meter-fill {
+	height: 100%;
+	border-radius: var(--hk-radius-pill);
+	background: var(--m);
+	transition: width var(--hk-dur-meter) var(--hk-ease);
+}
+.hk .hk-meter--warn {
+	--m: var(--hk-warn-dot);
+}
+.hk .hk-meter--err {
+	--m: var(--hk-err-dot);
+}
+/* First run: nothing counted yet, so no alarm colour. */
+.hk .hk-meter--neutral {
+	--m: var(--hk-text-4);
+}
+.hk .hk-meter--neutral .hk-meter-value {
+	color: var(--hk-text-3);
+	font-weight: 400;
+}
+.hk .hk-empty-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.75rem 1rem;
+	padding: 1rem 0;
+	border-top: 1px solid var(--hk-hairline);
+	border-bottom: 1px solid var(--hk-hairline);
+	color: var(--hk-text-3);
+	font-size: 0.875rem;
+}
+.hk .hk-banner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 1rem;
+	padding: 0.75rem 1rem;
+	margin-bottom: 1.5rem;
+	border-radius: var(--hk-radius);
+	font-size: 0.875rem;
+	background: var(--hk-warn-wash);
+	color: var(--hk-warn);
+}
+.hk .hk-banner--ok {
+	background: var(--hk-ok-wash);
+	color: var(--hk-ok);
+}
+.hk .hk-banner--err {
+	background: var(--hk-err-wash);
+	color: var(--hk-err);
+}
+.hk .hk-banner a {
+	color: inherit;
+	font-weight: 500;
+}
+/* A revealed key or signing secret, with a copy button at the end. */
+.hk .hk-secret {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+	border: 1px solid var(--hk-border);
+	border-radius: var(--hk-radius);
+	background: var(--hk-surface-2);
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	color: var(--hk-text);
+	word-break: break-all;
+}
+.hk .hk-secret > span {
+	flex: 1;
+	min-width: 0;
+}
+
+/* ---------- Form controls ---------- */
+
+.hk :is(.hk-input, .hk-select, .hk-textarea) {
+	width: 100%;
+	border-radius: var(--hk-radius);
+	border: 1px solid var(--hk-border);
+	background: var(--hk-surface);
+	color: var(--hk-text);
+	font: inherit;
+	font-size: 0.875rem;
+	transition:
+		border-color var(--hk-dur-fast) var(--hk-ease),
+		box-shadow var(--hk-dur-fast) var(--hk-ease);
+}
+.hk :is(.hk-input, .hk-select) {
+	height: 2.25rem;
+	padding: 0 0.75rem;
+}
+/* New: .hk-input is a fixed 2.25rem, so a textarea needs its own class. */
+.hk .hk-textarea {
+	display: block;
+	min-height: 5rem;
+	padding: 0.5rem 0.75rem;
+	line-height: 1.5;
+	resize: vertical;
+}
+.hk :is(.hk-input, .hk-textarea)::placeholder {
+	color: var(--hk-text-4); /* non-essential: every field has a visible label */
+}
+.hk :is(.hk-input, .hk-select, .hk-textarea):hover {
+	border-color: var(--hk-border-strong);
+}
+.hk :is(.hk-input, .hk-select, .hk-textarea):focus {
+	outline: none;
+	border-color: color-mix(in srgb, var(--hk-accent) 55%, transparent);
+	box-shadow: 0 0 0 3px var(--hk-ring);
+}
+.hk :is(.hk-input, .hk-select, .hk-textarea)[aria-invalid='true'] {
+	border-color: var(--hk-err);
+}
+/* New: disabled and readonly fields. */
+.hk :is(.hk-input, .hk-select, .hk-textarea):disabled {
+	background: var(--hk-surface-2);
+	color: var(--hk-text-3);
+	border-color: var(--hk-border);
+	cursor: not-allowed;
+}
+.hk :is(.hk-input, .hk-textarea)[readonly] {
+	background: var(--hk-surface-2);
+}
+/* One zinc-500 chevron that reads on both themes, so no dark twin. */
+.hk .hk-select {
+	appearance: none;
+	padding-right: 2.25rem;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 0.625rem center;
+	background-size: 1rem;
+	cursor: pointer;
+}
+.hk .hk-field-label {
+	display: block;
+	margin-bottom: 0.375rem;
+	font-size: 0.8125rem;
+	font-weight: 500;
+	color: var(--hk-text);
+}
+.hk .hk-field-error {
+	margin-top: 0.375rem;
+	font-size: 0.8125rem;
+	color: var(--hk-err);
+}
+.hk .hk-fields {
+	display: grid;
+	gap: 1.25rem;
+	max-width: 40rem;
+}
+/* Chips: picking several from a set. The native checkbox stays inside.
+   28px on fine pointers; .hk-chip--touch for 44px. */
+.hk .hk-chip {
+	position: relative; /* new: anchors the hidden input */
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	height: 1.75rem;
+	padding: 0 0.625rem;
+	border-radius: var(--hk-radius-pill);
+	border: 1px solid var(--hk-border);
+	font-size: 0.75rem;
+	font-weight: 500;
+	color: var(--hk-text-2);
+	cursor: pointer;
+	transition:
+		border-color var(--hk-dur-fast) var(--hk-ease),
+		color var(--hk-dur-fast) var(--hk-ease),
+		background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-chip:hover {
+	border-color: var(--hk-border-strong);
+	color: var(--hk-text);
+}
+/* Selected: a soft step fill plus semibold, so selection is never colour
+   alone. dev.css used an inverted ink fill. The consumer stylesheet moved
+   away from it: the ink chip "read as a stray dark-mode element", the
+   inverted near-white one on /roles "was the loudest thing on the page", and
+   reviewers in three rounds found a solid chip beside a solid submit read as
+   a second primary. A standalone chip may change weight because nothing
+   joined to it shifts. Hover is restated so it does not drag the selected
+   chip back toward the unselected look. */
+.hk .hk-chip:is(:has(input:checked), [aria-pressed='true']),
+.hk .hk-chip:is(:has(input:checked), [aria-pressed='true']):hover {
+	background: var(--hk-selected-bg);
+	border-color: var(--hk-selected-border);
+	color: var(--hk-selected-text);
+	font-weight: 600;
+}
+.hk .hk-chip:has(input:focus-visible) {
+	box-shadow: 0 0 0 3px var(--hk-ring);
+}
+.hk .hk-chip:has(input:disabled) {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.hk .hk-chip input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+/* On/off options that are not picks from a set. */
+.hk .hk-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.875rem;
+	color: var(--hk-text-2);
+	cursor: pointer;
+}
+.hk .hk-check input {
+	width: 1rem;
+	height: 1rem;
+	margin: 0;
+	accent-color: var(--hk-accent);
+	cursor: pointer;
+}
+/* Segmented control (Segmented.svelte), static version: the selected label
+   carries the raised surface. The reference slides one thumb under the labels
+   with a script that sets --i; see reference/Segmented.svelte. Label weight
+   never changes: in a joined control bolder text shifts the neighbours. */
+.hk .hk-seg {
+	display: inline-grid;
+	grid-auto-columns: minmax(0, 1fr);
+	grid-auto-flow: column;
+	max-width: 100%;
+	padding: 3px;
+	border-radius: var(--hk-radius-9);
+	background: var(--hk-surface-2);
+	box-shadow: inset 0 0 0 1px var(--hk-hairline);
+}
+.hk .hk-seg label {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 1.875rem;
+	padding: 0 0.875rem;
+	border-radius: var(--hk-radius-6);
+	font-size: 0.8125rem;
+	font-weight: 500;
+	color: var(--hk-text-3);
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-seg label:hover,
+.hk .hk-seg label:has(input:checked) {
+	color: var(--hk-text);
+}
+.hk .hk-seg label:has(input:checked) {
+	background: var(--hk-surface);
+	box-shadow:
+		0 0 0 1px var(--hk-border),
+		0 1px 2px rgb(0 0 0 / 0.06);
+}
+/* The track clips an outset ring, so focus sits on the label. */
+.hk .hk-seg label:has(input:focus-visible) {
+	box-shadow: 0 0 0 2px var(--hk-accent);
+}
+.hk .hk-seg input {
+	position: absolute;
+	opacity: 0;
+	pointer-events: none;
+}
+.hk .hk-seg--sm label {
+	height: 1.5rem;
+	padding: 0 0.625rem;
+	font-size: 0.75rem;
+}
+/* Phone-width segmented control for a form (layout.css .seg--touch). */
+.hk .hk-seg--touch {
+	display: grid;
+	width: 100%;
+}
+.hk .hk-seg--touch label {
+	height: auto;
+	min-height: 2.75rem;
+	padding: 0 0.5rem;
+	font-size: 0.9375rem;
+}
+/* In dark mode a large selected segment is a mid zinc with an inset light
+   ring, not a near-white slab; the ring keeps the selection above 3:1. */
+:root[data-theme='dark'] .hk .hk-seg--touch label:has(input:checked),
+:root.dark .hk .hk-seg--touch label:has(input:checked) {
+	background: #3f3f46; /* zinc-700 */
+	color: #fafafa;
+	box-shadow: inset 0 0 0 1px #a1a1aa; /* zinc-400 */
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk .hk-seg--touch label:has(input:checked) {
+		background: #3f3f46;
+		color: #fafafa;
+		box-shadow: inset 0 0 0 1px #a1a1aa;
+	}
+}
+/* Option card: a pick-one or pick-several where each choice is a sentence.
+   The border stays neutral: a blue frame this large reads as a callout. */
+.hk .hk-option {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 3.5rem;
+	padding: 0.75rem;
+	border: 1px solid var(--hk-border);
+	border-radius: var(--hk-radius);
+	font-size: 0.9375rem;
+	color: var(--hk-text);
+	cursor: pointer;
+}
+.hk .hk-option:has(input:checked) {
+	border-color: var(--hk-border-strong);
+	background: var(--hk-surface-2);
+	font-weight: 600;
+}
+.hk .hk-option:has(input:focus-visible) {
+	box-shadow: 0 0 0 3px var(--hk-ring);
+}
+
+/* ---------- Touch sizes ---------- */
+
+/* Dense sizes are for fine pointers. On a touch screen, or below 640px, a
+   control marked --touch reaches 44px and a row marked --touch reaches 56px. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk :is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger).hk-btn--touch {
+		min-height: 2.75rem;
+		font-size: 0.9375rem;
+	}
+	.hk .hk-chip.hk-chip--touch {
+		min-height: 2.75rem;
+		padding: 0 0.875rem;
+		font-size: 0.8125rem;
+	}
+	.hk .hk-row.hk-row--touch {
+		display: flex;
+		align-items: center;
+		min-height: 3.5rem;
+	}
+}
+
+/* ---------- Tables ---------- */
+
+.hk .hk-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.8125rem;
+	font-variant-numeric: tabular-nums;
+}
+.hk .hk-table th {
+	text-align: left;
+	font-weight: 500;
+	font-size: 0.75rem;
+	color: var(--hk-text-3);
+	padding: 0 0.75rem 0.5rem;
+	border-bottom: 1px solid var(--hk-border);
+	white-space: nowrap;
+}
+.hk .hk-table td {
+	padding: 0.625rem 0.75rem;
+	border-top: 1px solid var(--hk-hairline);
+	vertical-align: middle;
+}
+/* Flush outer edges, so the table aligns with the text column. */
+.hk .hk-table :is(th, td):first-child {
+	padding-left: 0;
+}
+.hk .hk-table :is(th, td):last-child {
+	padding-right: 0;
+}
+.hk .hk-table tbody tr:first-child td {
+	border-top: 0;
+}
+.hk .hk-table--hover tbody tr:hover td {
+	background: var(--hk-hover);
+}
+.hk .hk-table .hk-num-col {
+	text-align: right;
+}
+
+/* ---------- Code pane (CodeBlock.svelte) ---------- */
+
+/* Frame, bar and body. Tabs, line numbers, copy and the cut-edge fade need
+   the script in reference/CodeBlock.svelte. */
+.hk .hk-code {
+	--cb-pad: 1rem;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+	border-radius: var(--hk-radius-lg);
+	background: var(--hk-code-bg);
+	box-shadow:
+		0 0 0 1px var(--hk-code-border-outer),
+		inset 0 0 0 1px var(--hk-code-border);
+	color: var(--hk-code-text);
+}
+.hk .hk-code-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	height: 2.625rem;
+	padding: 0 0.5rem 0 var(--cb-pad);
+	border-bottom: 1px solid var(--hk-code-border);
+	background: var(--hk-code-bar);
+	font-size: 0.8125rem;
+	color: var(--hk-code-key);
+}
+.hk .hk-code-body {
+	overflow: auto;
+	padding: 0.875rem var(--cb-pad);
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	scrollbar-color: var(--hk-code-scrollbar) transparent;
+	scrollbar-width: thin;
+}
+.hk .hk-code-body:focus-visible {
+	outline: none;
+	box-shadow: inset 0 0 0 2px var(--hk-code-focus);
+}
+.hk .hk-code-body :is(pre, code) {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	white-space: pre;
+}
+.hk .hk-code--wrap .hk-code-body code {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+/* HTTP status chip in a pane's bar. */
+.hk .hk-code-status {
+	display: inline-flex;
+	align-items: center;
+	height: 1.25rem;
+	padding: 0 0.375rem;
+	border-radius: var(--hk-radius-sm);
+	font-family: var(--hk-font-mono);
+	font-size: 0.6875rem;
+	color: var(--hk-code-2xx);
+	background: var(--hk-code-2xx-wash);
+}
+.hk .hk-code-status--4xx {
+	color: var(--hk-code-4xx);
+	background: var(--hk-code-4xx-wash);
+}
+.hk .hk-code-status--5xx {
+	color: var(--hk-code-5xx);
+	background: var(--hk-code-5xx-wash);
+}
+/* The eight token classes reference/highlight.ts emits. Comments are italic
+   in the source; Geist Mono has no italic on Google Fonts, so browsers draw a
+   synthetic oblique. Drop the italic if that bothers you. */
+.hk .t-a {
+	color: var(--hk-code-key); /* JSON keys */
+}
+.hk .t-s {
+	color: var(--hk-code-string); /* strings, unquoted URLs */
+}
+.hk .t-v {
+	color: var(--hk-code-string); /* shell variables */
+}
+.hk .t-n {
+	color: var(--hk-code-number); /* numbers, true, false, null */
+}
+.hk .t-k {
+	color: var(--hk-code-keyword); /* keywords, shell flags */
+}
+.hk .t-f {
+	color: var(--hk-code-fn); /* function and command names */
+}
+.hk .t-p {
+	color: var(--hk-code-punct); /* punctuation */
+}
+.hk .t-c {
+	color: var(--hk-code-comment); /* comments */
+	font-style: italic;
+}
+
+/* ---------- Modal (Modal.svelte) ---------- */
+
+/* A native <dialog> opened with showModal(). */
+.hk .hk-modal {
+	width: calc(100% - 2rem);
+	max-width: 32rem;
+	max-height: calc(100dvh - 2rem);
+	margin: auto;
+	padding: 0;
+	overflow: auto;
+	border: 0;
+	border-radius: var(--hk-radius-xl);
+	background: var(--hk-surface);
+	color: var(--hk-text);
+	box-shadow: var(--hk-shadow-modal);
+}
+.hk .hk-modal--sm {
+	max-width: 24rem;
+}
+.hk .hk-modal--lg {
+	max-width: 44rem;
+}
+.hk .hk-modal::backdrop {
+	background: var(--hk-scrim);
+	backdrop-filter: blur(2px);
+}
+.hk .hk-modal[open] {
+	animation: hk-pop var(--hk-dur) var(--hk-ease);
+}
+.hk .hk-modal[open]::backdrop {
+	animation: hk-fade var(--hk-dur) var(--hk-ease);
+}
+@keyframes hk-pop {
+	from {
+		opacity: 0;
+		transform: translateY(6px) scale(0.985);
+	}
+}
+@keyframes hk-fade {
+	from {
+		opacity: 0;
+	}
+}
+.hk .hk-modal-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1.125rem 1.25rem 0;
+}
+.hk .hk-modal-title {
+	margin: 0;
+	font-family: var(--hk-font-display);
+	font-size: 1.25rem;
+	line-height: 1.75rem;
+	font-weight: 400;
+	letter-spacing: -0.01em;
+}
+.hk .hk-modal-body {
+	padding: 0.875rem 1.25rem 1.25rem;
+	font-size: 0.875rem;
+	color: var(--hk-text-2);
+}
+.hk .hk-modal-foot {
+	display: flex;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	padding: 0.875rem 1.25rem;
+	border-top: 1px solid var(--hk-hairline);
+	background: color-mix(in srgb, var(--hk-surface-2) 45%, var(--hk-surface));
+}
+
+/* ---------- Layout ---------- */
+
+/* Inline padding only: page sections own padding-block. A shorthand here
+   would tie on specificity with them and stylesheet order would decide. */
+.hk .hk-container {
+	width: 100%;
+	max-width: var(--hk-container);
+	margin: 0 auto;
+	padding-inline: var(--hk-gutter);
+}
+.hk .hk-sr {
+	position: absolute;
+	display: block; /* a <table class="hk-sr"> ignores height otherwise */
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+	.hk *,
+	.hk *::before,
+	.hk *::after,
+	.hk .hk-modal[open]::backdrop {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}

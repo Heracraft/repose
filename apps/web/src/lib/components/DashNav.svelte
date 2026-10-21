@@ -32,17 +32,13 @@
 	let waiting = $derived(pendingQuestions.count);
 </script>
 
-<nav aria-label="Dashboard" class="flex h-full items-stretch gap-4 text-sm sm:gap-6">
+<nav aria-label="Dashboard" class="flex h-full items-stretch gap-4 sm:gap-6">
 	{#each links as link (link.href)}
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- link.href is built with resolve() in the links array above -->
 		<a
 			href={link.href}
 			aria-current={isCurrent(link.href) ? 'page' : undefined}
-			class="-mb-px flex items-center gap-2 border-b transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {isCurrent(
-				link.href
-			)
-				? 'border-ink text-ink'
-				: 'border-transparent text-ink-muted hover:text-ink'} {link.label === 'Settings'
+			class="hk-navlink {link.label === 'Settings'
 				? 'max-sm:hidden'
 				: link.label === 'Billing'
 					? 'max-[359px]:hidden'
@@ -51,7 +47,7 @@
 				? `Projects, ${waiting} ${waiting === 1 ? 'question' : 'questions'} waiting`
 				: undefined}
 			>{link.label}{#if link.label === 'Projects' && waiting > 0}<span
-					class="badge badge--warn tabular-nums"
+					class="hk-badge hk-badge--warn hk-num"
 					aria-hidden="true">{waiting}</span
 				>{/if}</a
 		>

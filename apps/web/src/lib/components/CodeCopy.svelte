@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
+	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import { tabStopWhenScrolls } from '$lib/scroller';
 
-	// A command on a dashboard page with its own Copy button (I-659): the
-	// install line, `repose code todo-app`, `repose run`. One line of
-	// .codeblock in a row with the button: the line scrolls sideways in
-	// its own box and the button sits beside it, outside the scroll, so
-	// no text runs under it at any width. The button's face says "Copied"
-	// for 1.5s and its own live region says it to a screen reader, which
-	// does not announce a change to the text of the button it is on.
+	// One lone command on a light page with its own Copy (Guide B 12.18):
+	// `repose run`, the install line, `ssh todo-app.repose`. A light box,
+	// mono 13px, the command scrolling sideways inside it and never
+	// wrapping, the button at its end outside the scroll. Several commands
+	// together go in CommandList; near-black is for code panes, so a page
+	// keeps one dark anchor.
 	let {
 		command,
 		copy,
-		what
+		what,
+		prompt = false
 	}: {
 		/** The line shown, with no "$ " prompt. */
 		command: string;
@@ -20,35 +20,46 @@
 		copy?: string;
 		/** What the line is, for the button's name: "Copy {what}". */
 		what: string;
+		/** Show a muted "$ " before the command. */
+		prompt?: boolean;
 	} = $props();
-
-	let copied = $state(false);
-	let timer: ReturnType<typeof setTimeout> | undefined;
-
-	async function onclick() {
-		try {
-			await navigator.clipboard.writeText(copy ?? command);
-		} catch {
-			toast.error('Could not copy. Select the command instead.');
-			return;
-		}
-		copied = true;
-		clearTimeout(timer);
-		timer = setTimeout(() => (copied = false), 1500);
-	}
-
-	$effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="codeblock flex items-center gap-2 p-0">
-	<pre
-		class="codeblock min-w-0 flex-1 rounded-none border-0 pr-1"
-		use:tabStopWhenScrolls>{command}</pre>
-	<button
-		type="button"
-		class="btn-quiet mr-1.5 h-7 shrink-0 px-2 py-0 text-xs font-normal"
-		aria-label="Copy {what}"
-		{onclick}>{copied ? 'Copied' : 'Copy'}</button
-	>
-	<span class="sr-only" role="status">{copied ? 'Copied to the clipboard.' : ''}</span>
+<div class="code-copy">
+	<pre class="line" use:tabStopWhenScrolls>{#if prompt}<span class="prompt" aria-hidden="true"
+				>$&nbsp;</span
+			>{/if}{command}</pre>
+	<CopyButton text={copy ?? command} label="Copy" ariaLabel="Copy {what}" tone="page" size="sm" />
 </div>
+
+<style>
+	.code-copy {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-width: 0;
+		padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+		border: 1px solid var(--hk-border);
+		border-radius: var(--hk-radius);
+		background: var(--hk-surface-2);
+	}
+	.line {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+		overflow-x: auto;
+		scrollbar-width: thin;
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text);
+		white-space: pre;
+	}
+	.line:focus-visible {
+		outline-offset: 2px;
+	}
+	.prompt {
+		color: var(--hk-text-3);
+		user-select: none;
+	}
+</style>

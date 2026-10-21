@@ -7,15 +7,16 @@ import { describe, expect, it } from 'vitest';
 // The layout's "Skip to content" link is rendered on every page and points
 // at #main. A page whose markup has no <main id="main">, and wraps itself in
 // none of the shells that draw one, leaves that link pointing at nothing
-// (/callback did, I-400). This reads every +page.svelte and holds each to it.
+// (/callback did, I-400). This reads every +page.svelte and +error.svelte
+// and holds each to it.
 const routes = fileURLToPath(new URL('../routes', import.meta.url));
-const SHELLS = ['PageShell', 'DocPage', 'LegalPage'];
+const SHELLS = ['PageShell', 'DocPage', 'LegalPage', 'ErrorView'];
 
 function pages(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {
 		const p = join(dir, name);
 		if (statSync(p).isDirectory()) return pages(p);
-		return name === '+page.svelte' ? [p] : [];
+		return name === '+page.svelte' || name === '+error.svelte' ? [p] : [];
 	});
 }
 

@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { authState, signIn } from '$lib/auth.svelte';
+	import { INSTALL_COMMAND } from '$lib/links';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
 	import Hero from '$lib/components/landing/Hero.svelte';
@@ -18,8 +19,6 @@
 	import Localhost from '$lib/components/landing/Localhost.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
 	import Editor from '$lib/components/landing/Editor.svelte';
-
-	const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
 
 	let signingIn = $state(false);
 	/** The command whose Copy was pressed last, for 1.5s; null otherwise. */

@@ -115,3 +115,11 @@ test('/healthz answers 200', async ({ request }) => {
 	const res = await request.get('/healthz');
 	expect(res.status()).toBe(200);
 });
+
+// The primitives gallery is for `vite dev` only (Guide B 16): a production
+// build answers it with the root 404, so its sample figures never ship.
+test('/design is Not found in a production build', async ({ page }) => {
+	await page.goto('/design');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Design' })).toHaveCount(0);
+});
