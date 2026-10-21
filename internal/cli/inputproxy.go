@@ -513,16 +513,10 @@ func bracketed(paths []string, trail string) []byte {
 	return append(b, pasteEndSeq...)
 }
 
-// Limits of one drop. A dropped file is copied whatever its type, up to
-// dropMaxBytes: the copy holds up the keys typed after it, and /tmp is
-// not for large files; `repose cp` is. 50 MB rather than a pasted
-// image's 20 MB (pasteMaxBytes), because what a user drags onto the
-// terminal is as often a dump or an archive as a screenshot, and 50 MB
-// over the project's connection is a few seconds of held keys (I-842).
-const (
-	dropMaxFiles = 20
-	dropMaxBytes = 50 << 20
-)
+// dropMaxFiles bounds one drop. A dropped file is copied whatever its
+// type, up to pasteMaxBytes, the same limit a pasted image has and for
+// the same reason (I-842).
+const dropMaxFiles = 20
 
 // dropHandler does what the scanner found: copies files and clipboard
 // images to the guest and returns the bytes to type in their place.
@@ -582,8 +576,8 @@ func (h *dropHandler) files(a inputAction) []byte {
 		if err != nil {
 			return a.raw
 		}
-		if fi.Size() > dropMaxBytes {
-			h.notify(fmt.Sprintf("%s is %s; dropped files are copied up to %s. Use repose cp for larger ones.", filepath.Base(f), humanBytes(fi.Size()), humanBytes(dropMaxBytes)))
+		if fi.Size() > pasteMaxBytes {
+			h.notify(fmt.Sprintf("%s is %s; dropped files are copied up to %s. Use repose cp for larger ones.", filepath.Base(f), humanBytes(fi.Size()), humanBytes(pasteMaxBytes)))
 			return a.raw
 		}
 		sizes[i] = fi.Size()

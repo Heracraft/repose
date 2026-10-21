@@ -24171,31 +24171,49 @@ finding two releases with no notes at all.
   release fails to fix. The guard checks that notes exist; a person writes
   them.
 
-**I-842. A dropped file is copied up to 50 MB; a pasted image stays at 20
-MB.** (drop-plain, 2026-10-21) The owner dropped a 21 MB `pg_dump` on an
-attached terminal with v0.1.39 and got the laptop's path, not a copy.
-- *What the cap was.* One constant, `pasteMaxBytes` (20 MB), capped both
-  a clipboard image and a dropped file. `dropMaxBytes` is now the drop's
-  own limit, 50 MB. The image path keeps 20 MB, and so does the macOS
-  clipboard watcher's PNG limit in `clipwatch.go`, which is a copy of a
-  screenshot and nothing else.
-- *Why 50 MB and not more.* The copy runs on the input proxy's own loop,
-  so keys typed after a drop are buffered and reach the pane after the
-  transfer. The cap is what keeps that wait short. A dump or an archive
-  is an ordinary thing to drag onto a terminal, so 20 MB was too low;
-  `repose cp`, which has no cap and holds up nothing, stays the path for
-  anything larger.
+**I-842. One limit on what the terminal carries into a guest: 50 MB, for
+a dropped file and a pasted image alike.** (drop-plain, 2026-10-21) The
+owner dropped a 21 MB `pg_dump` on an attached terminal with v0.1.39 and
+got the laptop's path, not a copy.
+- *What the limit was.* `pasteMaxBytes`, 20 MB, written for a clipboard
+  image ("a full-screen 5K screenshot is about 15 MB; more than this is
+  not a screenshot") and then reused for dropped files when I-280 added
+  them. A dump or an archive is an ordinary thing to drag onto a
+  terminal, so the figure refused a normal use. It is now 50 MB.
+- *Why not two limits.* The first draft of this change gave drops their
+  own `dropMaxBytes` of 50 MB and left images at 20 MB. The owner asked
+  why two, and there is no good answer: a user who drops a file and a
+  user who pastes a screenshot are asking for the same thing, the cost
+  is the same (the copy runs on the input proxy's loop, so the keys
+  typed after it wait for the transfer; `/tmp` is not for large files),
+  and two figures mean two things to learn and two places to change.
+  `pasteMaxBytes` is the one number: the drop gate, `repose paste`,
+  Ctrl+V, and the macOS clipboard watcher's own check all read it. The
+  watcher's JXA script had a third copy of the figure as a literal;
+  it now takes the constant through an `@MAX@` placeholder, with a test
+  that the placeholder is gone and the number is there, because a
+  placeholder left in the script is a syntax error that would kill the
+  watcher and with it Cmd+V.
+- *What 50 MB costs.* A few seconds of buffered keys on a home
+  connection, and up to 1 GB in `~/Library/Caches/repose/clipboard` in
+  the worst case rather than 400 MB: the macOS watcher writes a PNG copy
+  of every image-only clipboard, not only the ones that get pasted, and
+  prunes to the newest 20 and a day. Accepted as a cache bound, not a
+  reason for a second limit. `repose cp` still has no cap and holds up
+  nothing.
 - *Why the refusal was invisible.* A refused drop says why with `tmux
-  display-message`. On tmux 3.7c, the guest's own version, a plain status
-  message is cleared by the next key press, and that key still reaches
-  the pane: a drop followed by Enter erases the explanation before it is
-  read. `-N` holds the message for its full delay but swallows every key
-  while it shows (measured both ways on 3.7c with a client on a pty), so
-  it is not an option. The owner chose the higher cap and a line in the
-  docs over any change to the message, so the channel is unchanged.
+  display-message`. On tmux 3.7c, the guest's own version, a plain
+  status message is cleared by the next key press, and that key still
+  reaches the pane: a drop followed by Enter erases the explanation
+  before it is read. `-N` holds the message for its full delay but
+  swallows every key while it shows (measured both ways on 3.7c with a
+  client on a pty), so it is not an option. The owner chose the higher
+  limit and a line in the docs over any change to the message, so the
+  channel is unchanged.
 - *What the docs say.* /docs/limits gains a "Files you drop or paste"
-  section with both numbers, since the drop cap was on the
-  run-and-attach page only, and /docs/run-and-attach now says 50 MB.
+  section, since the figure was on the run-and-attach page only;
+  /docs/run-and-attach, /docs/cli's `repose paste` and the guest agent
+  guide all say 50 MB.
 - *Not fixed, deliberately.* The two exits in `dropHandler.files` that
   fall back to the raw paste with no message at all: a path that fails
   its second `dropFile` check, and a file that cannot be stat'ed. Nor

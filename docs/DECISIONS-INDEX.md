@@ -824,4 +824,4 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
-- **I-842** A dropped file is copied up to 50 MB; a pasted image stays at 20 MB — 2026-10-21; L24174
+- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L24174

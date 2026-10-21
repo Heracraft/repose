@@ -331,10 +331,9 @@ func TestDropFileFollowsLinks(t *testing.T) {
 	}
 }
 
-// I-842: a dropped file is copied up to 50 MB, over the 20 MB a pasted
-// image takes, since what a user drags over is as often a dump as a
-// screenshot. Over that nothing is copied, the paste goes through as the
-// terminal sent it, and the status line says why.
+// I-842: a dropped file is copied up to pasteMaxBytes, 50 MB, the same
+// limit a pasted image has. Over that nothing is copied, the paste goes
+// through as the terminal sent it, and the status line says why.
 func TestDropSizeCap(t *testing.T) {
 	f, dir := pasteFixture(t)
 	laptop := t.TempDir()
@@ -386,7 +385,7 @@ func TestDropSizeCap(t *testing.T) {
 	}
 
 	// Over 50 MB: nothing copied, the drop goes through as it came.
-	huge := sparse("dump-too-big.dump", dropMaxBytes+1)
+	huge := sparse("dump-too-big.dump", pasteMaxBytes+1)
 	raw = []byte("\x1b[200~" + huge + "\x1b[201~")
 	got = h.files(inputAction{kind: actFiles, raw: raw, files: []string{huge}})
 	if !bytes.Equal(got, raw) {

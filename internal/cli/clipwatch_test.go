@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -144,5 +145,19 @@ func TestInputProxySwitches(t *testing.T) {
 		if got := inputProxyEnabled(); got != tc.want {
 			t.Errorf("REPOSE_NO_INPUT_PROXY=%q REPOSE_INPUT_PROXY=%q: on = %v, want %v", tc.no, tc.old, got, tc.want)
 		}
+	}
+}
+
+// I-842: the watcher's size limit is pasteMaxBytes, not a second copy of
+// the number. A placeholder left in the script would be a JXA syntax
+// error, so the watcher would die and Cmd+V would stop working.
+func TestClipWatchScriptCarriesTheCap(t *testing.T) {
+	args := clipWatchCommand(t.TempDir()).Args
+	script := args[len(args)-2]
+	if strings.Contains(script, "@MAX@") {
+		t.Fatal("the watcher script still holds its @MAX@ placeholder")
+	}
+	if want := "png.length > " + strconv.Itoa(pasteMaxBytes); !strings.Contains(script, want) {
+		t.Fatalf("the watcher script does not cap at pasteMaxBytes (%s)", want)
 	}
 }

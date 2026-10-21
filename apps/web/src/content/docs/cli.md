@@ -232,7 +232,7 @@ Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` fo
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running. It exits 1 with no image on the clipboard, and on Linux with no clipboard tool, where the message names `wl-clipboard` on Wayland or `xclip` on X11.
+Copy the image on your clipboard, up to 50 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running. It exits 1 with no image on the clipboard, and on Linux with no clipboard tool, where the message names `wl-clipboard` on Wayland or `xclip` on X11.
 
 | Flag            | What it does                                                                          |
 | --------------- | ------------------------------------------------------------------------------------- |

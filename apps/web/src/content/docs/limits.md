@@ -51,8 +51,7 @@ Data your machines send to the internet counts against the plan's allowance for 
 
 ## Files you drop or paste
 
-- A file [dropped on an attached terminal](/docs/run-and-attach#drop-a-file-or-paste-an-image) is copied to the machine up to 50 MB, and 20 files at once. Over either, nothing is copied: you get your laptop's path and the status line says why. [`repose cp`](/docs/sync#single-files) has no such limit.
-- An image pasted with `Cmd+V`, `Ctrl+V` or [`repose paste`](/docs/cli#repose-paste-project) is copied up to 20 MB.
+- A file [dropped on an attached terminal](/docs/run-and-attach#drop-a-file-or-paste-an-image), or an image pasted there with `Cmd+V`, `Ctrl+V` or [`repose paste`](/docs/cli#repose-paste-project), is copied to the machine up to 50 MB; a drop takes up to 20 files at once. Over either, nothing is copied and the status line says why. [`repose cp`](/docs/sync#single-files) has no such limit.
 
 ## Disk and console
 
