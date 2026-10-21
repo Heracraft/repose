@@ -45,6 +45,13 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEnlaWLqhKDXwKRp74FWyHFmrK5eZXh7U3VL3a3J/EO0 operator"
     ];
 
+    # The idle pause is proven here before host-01 (DECISIONS I-818), the
+    # way the freeze below was: this host has no tenant guests, and the
+    # mechanism -- a plain vm.pause and vm.resume of a guest with two
+    # vhost-user devices -- was measured here on 2026-10-21
+    # (../../docs/workstreams/18-idle-pause.md section 7).
+    pauseIdle = true;
+
     # The guest freeze is proven here before host-01 (DECISIONS I-652,
     # I-653), with staging's own vault (`make output ENV=staging`,
     # freeze_keyvault).

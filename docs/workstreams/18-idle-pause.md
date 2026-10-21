@@ -355,10 +355,25 @@ otherwise) and `ops/alerts.yaml` the wake alert.
 - [x] The host switch is real and off. Evidence: `nix eval` of
       `host`.hostd.ExecStart and `host-01`'s carry no `--pause-idle`;
       with `pauseIdle = true` on host-01 it does.
-- [ ] A live check on a host, recorded in the queue entry: that a machine
-      rests at all under the real rule, and that `hostd pause|wake`
-      works against a real control socket (only the routes, the client
-      and the wiring are covered by Go tests).
+- [x] `hostd pause|wake` against a real control socket, and a resting
+      guest that survives a hostd restart. Evidence (§7, host-stg-01
+      switched to this branch): `hostd pause` records `resting_at`,
+      `hostd wake` answers `woken in 114 ms`, and a guest paused by the
+      previous hostd -- which writes no record -- was ADOPTED by the new
+      one rather than left for a `repose start` to cold-boot.
+- [x] A freeze of a guest the idle pause already left resting does not
+      lose its memory. Evidence (§7): `frozen`, 3,501 ms, an 803 MB
+      image, `unfrozen{reason="failed"} 0`, then `thawed` in 1,543 ms
+      with the marker cleared -- and the guest kept the same boot id and
+      both tmux sessions through the pause, the freeze and the restore.
+- [ ] The rule itself, the marker on the Project, the gateway's wake, the
+      CLI and the dashboard on a real deployment. **Not provable on
+      staging by design** (`../../infra/README.md`: "Not proven here:
+      anything in the api" -- staging has `hostdev` standing in for the
+      api and no pause or wake subcommands of its own). Their evidence is
+      the Postgres-backed tests in `internal/api/http` and
+      `internal/gateway` until a release reaches a host that has the
+      switch on.
 - [x] A second pass over the committed branch, adversarially verified.
       Evidence: five lenses (what still loses a tenant's processes; a path
       that does not wake; a rule that freezes work or never fires; what is
@@ -434,6 +449,29 @@ What this settles:
   end, so this does not separate the Azure NAT gateway's 30 minutes from
   the far end's own timeout, and it says nothing yet about whether Claude
   Code or an MCP server reconnects.
+
+### This branch's own code, on the host (same day, after the switch)
+
+host-stg-01 was switched to this branch (`hostd effd9a6`, `pauseIdle =
+true` in its own configuration, the I-686 pattern): `nix store diff-closures`
+showed `hostd 6ff9739 -> hostd-effd9a6` and main's CVE kernel bump, and
+`dry-activate` said hostd restarts and the guests keep running, which is
+what happened. The switch took 1.4 s.
+
+| What | Result |
+|---|---|
+| **A paused guest with no record, adopted** (I-824) | The guest was paused by the OLD hostd, which writes none, and the switch restarted hostd under it. The new one adopted it: `resting: true`, `resting_at` set, state still `running`, and `WARN adopted a paused guest with no record; it rests until something wakes it`. Before the fix this guest reads plain `running`, nothing wakes it, and `repose start` cold-boots it |
+| **`hostd wake` on a real control socket** | `woken in 114 ms` -- the whole wake: resume, clock step, the desktop stamps, guestd's ping |
+| **`hostd pause` on a real control socket** | `paused`, with `resting_at` on the record |
+| **The sampler's S4 rule** | `repose_host_guestd_lost 0` with a guest resting, so `GuestdLost` cannot page for a frozen machine |
+| `repose_host_guest_wake_seconds_count` | 1 after the one wake; the pause counter carries the corrected reason enum (`connect`, `op`, `answer` present) |
+| **A freeze of an already-resting guest** (S7, I-824) | `frozen`, 3,501 ms, an 802,750,464-byte image, and `repose_host_guest_freeze_unfrozen_total{reason="failed"} 0`. This is the path that, before the fix, met Cloud Hypervisor's refusal of a second `vm.pause`, discarded the image and left the guest to cold-boot at the next host restart -- I-796's own incident |
+| The thaw after it | `thawed`, 1,543 ms, `resting: false`, state `running` with reason `restored from a frozen image` |
+| **What the guest kept through all of it** | The same boot id it had before the first pause, after an idle pause AND a freeze to an encrypted image AND a restore; both tmux sessions; the counting loop still running, its largest gap still the 35 minute pause |
+
+The host is left switched to this branch with the pause on. To put it back
+on main: build `nixosConfigurations.host-stg-01` from a main checkout and
+switch it the same way (`../ops/RUNBOOK.md`, "Switch a host to main").
 
 Still owed, and none of it is the mechanism: the wake as a user feels it
 end to end (this branch's hostd is not on that host, so the figure here is
