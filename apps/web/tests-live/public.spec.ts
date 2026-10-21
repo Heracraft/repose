@@ -24,9 +24,7 @@ test('landing renders with the install command and the sign-in button', async ({
 }, testInfo) => {
 	await page.goto('/');
 	await expect(
-		page.getByRole('heading', {
-			name: /A developer's laptop is the wrong place for a coding agent/
-		})
+		page.getByRole('heading', { level: 1, name: 'Your dev environment, replicated in the cloud' })
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible();
 	await expect(
@@ -46,19 +44,20 @@ test('landing renders with the install command and the sign-in button', async ({
 test('landing pricing matches PRICING.md', async ({ page }) => {
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	await expect(pricing.getByText('Three plans. Seven days free, card at checkout.')).toBeVisible();
-	// Solo shows $39 while founding places last, then $49 (I-672).
-	const plans: Array<[string, string | RegExp, string]> = [
-		['Solo', /\$(39|49)/, '8 GB running at once · 100 GB disk · 250 GB egress'],
-		['Plus', '$89', '16 GB running at once · 250 GB disk · 500 GB egress'],
-		['Pro', '$169', '32 GB running at once · 500 GB disk · 1 TB egress']
+	await expect(pricing.getByText('Launch prices. Seven days free.')).toBeVisible();
+	// Solo shows $39 while founding places last, then $49 (I-672). The run
+	// line and the disk and egress line are two lines of PlanCells' card.
+	const plans: Array<[string, string | RegExp, string, string]> = [
+		['solo', /\$(39|49)/, '8 GB running at once', '100 GB disk · 250 GB egress'],
+		['plus', '$89', '16 GB running at once', '250 GB disk · 500 GB egress'],
+		['pro', '$169', '32 GB running at once', '500 GB disk · 1 TB egress']
 	];
-	for (const [name, price, spec] of plans) {
-		const cell = pricing.locator('.tier', {
-			has: page.getByRole('heading', { name, exact: true })
-		});
-		await expect(cell).toContainText(price);
-		await expect(cell).toContainText(spec);
+	await expect(pricing.locator('[data-testid^="plan-"]')).toHaveCount(3);
+	for (const [id, price, run, specs] of plans) {
+		const cell = pricing.getByTestId(`plan-${id}`);
+		await expect(cell.locator('.p-price .n')).toHaveText(price);
+		await expect(cell.locator('.p-run')).toHaveText(run);
+		await expect(cell.locator('.p-specs')).toHaveText(specs);
 	}
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	// GET /public/seats (I-290): one of the two sentences, or nothing when
@@ -66,7 +65,7 @@ test('landing pricing matches PRICING.md', async ({ page }) => {
 	const seats = page.getByTestId('seats-line');
 	if ((await seats.count()) > 0) {
 		await expect(seats).toHaveText(
-			/^(\d+ of \d+ seats left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/
+			/^(\d+ seats? of 8 GB left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/
 		);
 	}
 });
