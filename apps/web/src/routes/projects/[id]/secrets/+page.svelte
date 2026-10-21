@@ -38,6 +38,7 @@
 	let name = $state('');
 	let value = $state('');
 	let fileInput = $state<HTMLInputElement | undefined>(undefined);
+	let nameField = $state<HTMLInputElement | undefined>(undefined);
 	// The file Load from file picked, shown by name in place of a native
 	// file widget; while one is picked it is the value, not the textarea.
 	let file = $state<File | undefined>(undefined);
@@ -73,9 +74,10 @@
 	onMount(load);
 
 	function validateName(n: string): string | undefined {
+		if (n === '') return 'Name is required.';
 		if (RESERVED.has(n)) return 'This name is reserved for the guest’s SSH host material.';
 		if (!NAME_RE.test(n))
-			return 'Must match [A-Z][A-Z0-9_]{0,63}: uppercase letters, digits and underscores, starting with a letter.';
+			return 'Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.';
 		return undefined;
 	}
 
@@ -111,6 +113,7 @@
 			}
 			base64 = encodeBase64(value);
 		}
+		if (nameError) nameField?.focus();
 		if (nameError || valueError) return;
 
 		saving = true;
@@ -147,7 +150,7 @@
 			await load();
 			void focusAfterRender(...after, 'secret-name');
 		} catch (err) {
-			toastApiError(err, 'Could not remove the secret.');
+			toastApiError(err, 'Could not delete the secret.');
 		} finally {
 			deleting = undefined;
 		}
@@ -235,7 +238,7 @@
 											<td colspan="3" data-testid="confirm-delete-secret">
 												<div class="hk-confirm">
 													<p>
-														Remove <span class="hk-mono">{@render secretName(s.name)}</span>?
+														Delete <span class="hk-mono">{@render secretName(s.name)}</span>?
 														Running processes that already read it keep their copy until they
 														restart.
 													</p>
@@ -323,6 +326,7 @@
 							autocapitalize="characters"
 							spellcheck="false"
 							bind:value={name}
+							bind:this={nameField}
 							aria-invalid={nameError ? 'true' : undefined}
 							aria-describedby={nameError ? 'secret-name-error' : undefined}
 							oninput={() => (nameError = undefined)}
@@ -372,7 +376,7 @@
 						{#if valueError}<p id="secret-value-error" class="hk-field-error">{valueError}</p>{/if}
 					</div>
 				</div>
-				<button type="submit" class="hk-btn sadd" disabled={saving || !name}>
+				<button type="submit" class="hk-btn sadd" disabled={saving}>
 					{saving ? 'Storing…' : 'Add'}
 				</button>
 			</form>
@@ -401,6 +405,11 @@
 	.slist :global(.hk-empty-row) {
 		justify-content: flex-start;
 		gap: 0.25rem 0.75rem;
+	}
+	/* First under the tabs: their rule is the row's top edge. */
+	.slist > :global(.hk-empty-row:first-child) {
+		border-top: 0;
+		padding-top: 0;
 	}
 	.stable {
 		border-bottom: 1px solid var(--hk-hairline);
@@ -487,5 +496,21 @@
 	}
 	.sadd {
 		margin-top: 1.25rem;
+	}
+	/* A thumb's 44px, the row's height unchanged. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.hk-section-head > .settings-link {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.sact .hk-btn-ghost,
+		.sfile-load {
+			margin-inline: 0;
+		}
 	}
 </style>

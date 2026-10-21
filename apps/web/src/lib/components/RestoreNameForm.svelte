@@ -36,6 +36,10 @@
 
 	let fieldId = $derived(`restore-name-${id}`);
 	let errorId = $derived(`restore-error-${id}`);
+	/** Submitted empty: said under the field, which takes focus. */
+	let empty = $state(false);
+	let field = $state<HTMLInputElement>();
+	let shown = $derived(empty ? 'Name is required.' : error);
 </script>
 
 <!-- From 36rem of its own width the label, the field and the buttons share
@@ -45,7 +49,13 @@
 	class="rnf"
 	onsubmit={(e) => {
 		e.preventDefault();
-		if (value.trim() !== '' && !busy) onsubmit(value.trim());
+		if (busy) return;
+		if (value.trim() === '') {
+			empty = true;
+			field?.focus();
+			return;
+		}
+		onsubmit(value.trim());
 	}}
 >
 	<div class="rnf-row">
@@ -55,14 +65,16 @@
 				id={fieldId}
 				class="hk-input rnf-input"
 				bind:value
+				bind:this={field}
+				oninput={() => (empty = false)}
 				autocomplete="off"
 				spellcheck="false"
-				aria-invalid={error ? 'true' : undefined}
-				aria-describedby={error ? errorId : undefined}
+				aria-invalid={shown ? 'true' : undefined}
+				aria-describedby={shown ? errorId : undefined}
 				use:focusOnMount={autofocus}
 			/>
 			<div class="rnf-buttons">
-				<button type="submit" class="hk-btn-secondary" disabled={busy || value.trim() === ''}
+				<button type="submit" class="hk-btn-secondary" disabled={busy}
 					>{busy ? busyLabel : submitLabel}</button
 				>
 				{#if oncancel}
@@ -71,8 +83,8 @@
 			</div>
 		</div>
 	</div>
-	{#if error}
-		<p id={errorId} class="hk-field-error">{error}</p>
+	{#if shown}
+		<p id={errorId} class="hk-field-error">{shown}</p>
 	{/if}
 </form>
 

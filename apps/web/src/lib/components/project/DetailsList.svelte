@@ -56,7 +56,9 @@
 						>{relativeTime(revision.created_at)}</span
 					>
 				{/if}
-				<a href={resolve('/projects/[id]/config', { id: project.id })} class="hk-link">View</a>
+				<a href={resolve('/projects/[id]/config', { id: project.id })} class="hk-link view-link"
+					>View</a
+				>
 			</dd>
 		</div>
 		{#if project.agent_default}
@@ -138,5 +140,20 @@
 	.keep {
 		margin-block: -0.375rem;
 		margin-right: -0.625rem;
+	}
+	/* A thumb's 44px, the row's height unchanged. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.view-link {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.keep {
+			margin-inline: 0;
+		}
 	}
 </style>

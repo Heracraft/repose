@@ -381,4 +381,10 @@
 			color: CanvasText;
 		}
 	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.qrow-dismiss {
+			margin-inline: 0;
+		}
+	}
 </style>

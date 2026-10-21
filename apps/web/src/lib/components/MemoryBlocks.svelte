@@ -3,7 +3,7 @@
   filled by what holds memory now, one run per machine. One machine fills
   in the accent; two in the accent and the secondary ink; three or more
   in the series colours, then the secondary ink. A frozen machine's GB
-  are outlined, GB past the plan are amber, and free GB are an empty 3:1
+  are hatched, GB past the plan are amber, and free GB are an empty 3:1
   outline. The fills are not the only carrier: the reading ("28 GB of 32
   GB, over") is the meter's value text, and with two machines or more the
   legend names each run.
@@ -136,9 +136,11 @@
 		box-shadow: none;
 		background: var(--fill);
 	}
-	/* A frozen machine's memory (I-683) still counts against the plan. */
+	/* A frozen machine's memory (I-683) still counts against the plan:
+	   hatched, so at 8px it reads as held and never as a free square. */
 	.ice {
-		box-shadow: inset 0 0 0 1.5px var(--hk-text-3);
+		box-shadow: inset 0 0 0 1px var(--hk-text-3);
+		background: repeating-linear-gradient(135deg, var(--hk-text-3) 0 1px, transparent 1px 3px);
 	}
 	.over {
 		box-shadow: none;
@@ -175,6 +177,12 @@
 		.over {
 			forced-color-adjust: none;
 			background: CanvasText;
+		}
+		/* Held but frozen: grey fill, between the running ink and a free outline. */
+		.ice {
+			forced-color-adjust: none;
+			border-color: GrayText;
+			background: GrayText;
 		}
 	}
 </style>

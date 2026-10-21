@@ -147,11 +147,15 @@ test('the Apply bar says Saved, then Unsaved changes, beside Apply', async ({ pa
 	const panel = page.getByRole('tabpanel', { name: 'Nix' });
 	const bar = page.locator('.hk-bottom-bar');
 	await expect(bar.getByRole('status')).toHaveText('Saved');
-	await expect(bar.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+	const apply = bar.getByRole('button', { name: 'Apply', exact: true });
+	await expect(apply).toBeVisible();
+	// Nothing to apply: Apply is not the screen's primary yet.
+	await expect(apply).toHaveClass(/hk-btn-secondary/);
 	await panel.locator('.cm-content').click();
 	await page.keyboard.press('End');
 	await page.keyboard.type(' ');
 	await expect(bar.getByRole('status')).toHaveText('Unsaved changes');
+	await expect(apply).toHaveClass(/(^|\s)hk-btn(\s|$)/);
 });
 
 test('at lg the revisions sit in a rail beside the editor', async ({ page }) => {
@@ -190,8 +194,13 @@ test('leaving with an unapplied edit asks first', async ({ page }) => {
 	const ask = page.getByRole('alert').filter({ hasText: 'Unsaved changes' });
 	await expect(ask).toBeVisible();
 	await expect(ask.getByRole('button', { name: 'Stay' })).toBeFocused();
+	// One banner per fact: the bar under it does not say it again.
+	await expect(page.locator('.hk-bottom-bar').getByRole('status')).not.toContainText(
+		'Unsaved changes'
+	);
 	await ask.getByRole('button', { name: 'Stay' }).click();
 	await expect(ask).toHaveCount(0);
+	await expect(page.locator('.hk-bottom-bar').getByRole('status')).toHaveText('Unsaved changes');
 	await expect(page).toHaveURL(`/projects/${p.id}/config`);
 
 	await page

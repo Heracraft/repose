@@ -10,7 +10,7 @@
 	import { restoreProject } from '$lib/api/client';
 	import { ApiError, projectLimitText } from '$lib/api/errors';
 	import { toastApiError } from '$lib/api/toast';
-	import { bytes, dateOnly, dateTime, gb, relativeTime } from '$lib/format';
+	import { bytes, dateOnly, dateTime, relativeTime } from '$lib/format';
 	import {
 		DESTROYED_FIRST,
 		DESTROYED_STEP,
@@ -121,7 +121,7 @@
 					<th scope="col" class="hidden md:table-cell">Size</th>
 					<th scope="col" class="hidden sm:table-cell">Destroyed</th>
 					<th scope="col" class="hidden lg:table-cell">Snapshot</th>
-					<th scope="col" class="hidden sm:table-cell">Kept</th>
+					<th scope="col" class="hidden sm:table-cell">Kept until</th>
 					<th scope="col"><span class="hk-sr">Actions</span></th>
 				</tr>
 			</thead>
@@ -150,7 +150,6 @@
 						</td>
 						<td class="hidden whitespace-nowrap md:table-cell">
 							<span class="hk-mono">{d.class}</span>
-							<span class="muted"> · {gb(d.volume_bytes)}</span>
 						</td>
 						<td class="muted hidden whitespace-nowrap sm:table-cell">
 							<time datetime={d.destroyed_at} title={dateTime(d.destroyed_at)}
@@ -164,9 +163,7 @@
 						</td>
 						<td class="hidden whitespace-nowrap sm:table-cell">
 							{#if until}
-								<span class="muted">until</span>
-								{until}
-								<span class="muted">· {timeLeft(d.restorable_until)}</span>
+								<span title={timeLeft(d.restorable_until)}>{until}</span>
 							{/if}
 						</td>
 						<td class="dcell-action">
@@ -292,5 +289,12 @@
 	}
 	.dmore .hk-btn-ghost {
 		margin-left: -0.625rem;
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.dcell-action .hk-btn-ghost,
+		.dmore .hk-btn-ghost {
+			margin-inline: 0;
+		}
 	}
 </style>

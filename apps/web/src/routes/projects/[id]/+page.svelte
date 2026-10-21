@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { frozenSince } from '$lib/frozen';
 	import { onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -78,6 +79,8 @@
 	} from '$lib/api/types';
 
 	const id = page.params.id as string;
+	/** Below 640px the header's action sits under the status line. */
+	const phone = new MediaQuery('max-width: 639.98px');
 
 	let project = $state<Project | undefined>(undefined);
 	let notFound = $state(false);
@@ -144,8 +147,15 @@
 		project = p;
 	}
 
+	/** Ticks of the poll since the api first said the project is gone. */
+	let goneTicks = 0;
+
 	async function refresh() {
+		// Gone: one cheap ask a minute (every sixth 10 s tick), in case it
+		// comes back, and not the six the full load makes.
+		if (notFound && ++goneTicks % 6 !== 0) return;
 		try {
+			if (!project && notFound) await getProject(id);
 			if (!project) await firstLoad();
 			else project = await getProject(id);
 			lastUpdated = new Date();
@@ -222,6 +232,7 @@
 	}
 
 	async function refreshSnapshots() {
+		if (notFound) return;
 		try {
 			snapshots = await listSnapshots(id);
 			snapshotsFailure.ok();
@@ -263,6 +274,7 @@
 	let samplesFailed = $state(false);
 
 	async function refreshSamples(force = false) {
+		if (notFound) return;
 		if (!force && samples?.window === samplesWindow && Date.now() - samplesAt < 55_000) return;
 		const want = samplesWindow;
 		try {
@@ -700,6 +712,51 @@
 				>{part.text}</code
 			>{:else}{part.text}{/if}{/each}{/snippet}
 
+<!-- The header's action: one row at the title's baseline from 640px; on a
+     phone, one row under the status line, in the same place whatever the
+     state (rendered in the tabs snippet there, so PageShell draws none). -->
+{#snippet headActions()}
+	<div class="acts">
+		{#if project?.state === 'stopped'}
+			<button
+				type="button"
+				class="hk-btn"
+				aria-disabled={opBusy ? 'true' : undefined}
+				onclick={onStart}
+			>
+				{opBusy === 'start' ? 'Starting…' : 'Start'}
+			</button>
+		{:else if project?.state === 'error'}
+			<!-- POST /start restarts a machine in error on its newest
+				     configuration (lifecycle.md). -->
+			<button
+				type="button"
+				class="hk-btn"
+				aria-disabled={opBusy ? 'true' : undefined}
+				onclick={onStart}
+			>
+				{opBusy === 'start' ? 'Restarting…' : 'Restart'}
+			</button>
+		{:else if project?.state === 'running'}
+			<label class="hk-check snap-check">
+				<input type="checkbox" bind:checked={stopSnapshotFirst} />
+				Snapshot on stop
+			</label>
+			<button
+				type="button"
+				class="hk-btn-secondary"
+				aria-disabled={opBusy ? 'true' : undefined}
+				onclick={onStopPressed}
+			>
+				{opBusy === 'stop' ? 'Stopping…' : 'Stop'}
+			</button>
+		{:else if project && WAITING[project.state]}
+			<!-- A step under way: the button that will come back, waiting. -->
+			<button type="button" class="hk-btn" aria-disabled="true">{WAITING[project.state]}</button>
+		{/if}
+	</div>
+{/snippet}
+
 <!-- The remote, the state and the size under the title, then the tabs on
      the title's rule. The meta block rides at the top of PageShell's tabs
      snippet until PageShell takes a snippet lede (request to FOUNDATION). -->
@@ -750,6 +807,7 @@
 					</span>
 				{/if}
 			</p>
+			{#if phone.current}{@render headActions()}{/if}
 		</div>
 	{/if}
 	<ProjectTabs {id} />
@@ -795,47 +853,8 @@
 		title={project.name}
 		crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 		{tabs}
+		action={phone.current ? undefined : headActions}
 	>
-		{#snippet action()}
-			{#if project?.state === 'stopped'}
-				<button
-					type="button"
-					class="hk-btn"
-					aria-disabled={opBusy ? 'true' : undefined}
-					onclick={onStart}
-				>
-					{opBusy === 'start' ? 'Starting…' : 'Start'}
-				</button>
-			{:else if project?.state === 'error'}
-				<!-- POST /start restarts a machine in error on its newest
-				     configuration (lifecycle.md). -->
-				<button
-					type="button"
-					class="hk-btn"
-					aria-disabled={opBusy ? 'true' : undefined}
-					onclick={onStart}
-				>
-					{opBusy === 'start' ? 'Restarting…' : 'Restart'}
-				</button>
-			{:else if project?.state === 'running'}
-				<label class="hk-check snap-check">
-					<input type="checkbox" bind:checked={stopSnapshotFirst} />
-					Snapshot on stop
-				</label>
-				<button
-					type="button"
-					class="hk-btn-secondary"
-					aria-disabled={opBusy ? 'true' : undefined}
-					onclick={onStopPressed}
-				>
-					{opBusy === 'stop' ? 'Stopping…' : 'Stop'}
-				</button>
-			{:else if project && WAITING[project.state]}
-				<!-- A step under way: the button that will come back, waiting. -->
-				<button type="button" class="hk-btn" aria-disabled="true">{WAITING[project.state]}</button>
-			{/if}
-		{/snippet}
-
 		{#if hasNotes}
 			<div class="notes">
 				{#if askingStop}
@@ -995,8 +1014,7 @@
 					</button>
 					<button type="button" class="hk-btn-ghost" onclick={closeResize}>Cancel</button>
 					<p class="resize-note">
-						It is {gb(project.volume_bytes)} now. {DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the
-						largest size.
+						{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
 					</p>
 				</form>
 			</section>
@@ -1161,7 +1179,25 @@
 {/if}
 
 <style>
+	/* A command's # note is a constraint the reader needs: it wraps on a
+	   phone, where the command itself scrolls (request to FOUNDATION for
+	   CommandList itself). */
+	.connect :global(.cl .note) {
+		white-space: normal;
+	}
 	/* ---- Head ---- */
+	/* One height for every state's actions (a check and Stop, or a lone
+	   Start), so the status line and the tabs never move with the state. */
+	.acts {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem;
+		min-height: 2.25rem;
+	}
+	.project-meta > .acts {
+		margin-top: 0.75rem;
+	}
 	.project-meta {
 		/* Under the title as its lede: pull back the tabs row's 1.25rem. */
 		margin: -0.875rem 0 1.25rem;
@@ -1284,7 +1320,6 @@
 	.procs {
 		margin-top: 1.5rem;
 		border-top: 1px solid var(--hk-hairline);
-		border-bottom: 1px solid var(--hk-hairline);
 	}
 	.procs summary {
 		display: flex;
@@ -1344,13 +1379,25 @@
 		color: var(--hk-text-2);
 	}
 	.destroy-confirm {
+		position: relative;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: flex-end;
 		gap: 0.5rem;
 	}
+	/* Narrower, ConfirmType stacks its field over Destroy; Keep it takes
+	   the right end of Destroy's row, its text flush with the frame. */
+	@media (max-width: 1023.98px) {
+		.keep {
+			position: absolute;
+			right: -0.625rem;
+			bottom: 0;
+		}
+	}
+	/* ConfirmType puts its field and Destroy on one row from 24rem of its
+	   own width; Keep it rides beside them from 1024px. */
 	.destroy-confirm > :global(form) {
-		flex: 1 1 18rem;
+		flex: 1 1 24rem;
 	}
 	@media (min-width: 1024px) {
 		.destroy-row {
@@ -1363,11 +1410,21 @@
 			flex: none;
 			display: flex;
 			justify-content: flex-end;
-			width: 28rem;
+			width: 34rem;
 			padding-top: 0.125rem;
 		}
 		.destroy-confirm {
+			flex-wrap: nowrap;
+			justify-content: flex-end;
 			width: 100%;
+		}
+		/* The field's 20rem and Destroy: no slack between them and Keep it. */
+		.destroy-confirm > :global(form) {
+			flex: none;
+			width: 25.5rem;
+		}
+		.keep {
+			margin-right: -0.625rem;
 		}
 	}
 
@@ -1378,5 +1435,12 @@
 	.gone-form {
 		margin-top: 1rem;
 		max-width: 40rem;
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.keep {
+			right: 0;
+			margin-inline: 0;
+		}
 	}
 </style>

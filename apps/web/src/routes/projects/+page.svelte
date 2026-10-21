@@ -259,10 +259,8 @@
 
 	/**
 	 * The row whose Stop is waiting for an answer, because stopping it
-	 * would end an agent's turn (I-614). Stop here is revealed on hover
-	 * inside a row whose name link covers the whole row, so in a long
-	 * list the pointer crosses many of them on the way to the one the
-	 * user wants; a stray click had no undo.
+	 * would end an agent's turn (I-614). Every row shows its Stop, so in
+	 * a long list a stray click lands on one easily, and it had no undo.
 	 */
 	let askingStop = $state<string | undefined>(undefined);
 
@@ -909,16 +907,26 @@
 	.muted {
 		color: var(--hk-text-3);
 	}
-	/* Always visible, above the row's link, flush with the frame's edge. */
-	/* Pulled back only by the scroll box's 4px inset: further, the table
-	   would overflow it and scroll sideways when the button takes focus. */
+	/* Always visible, above the row's link, its text flush with the
+	   frame's edge like every ghost on the page. The scroll box grows its
+	   end inset to the ghost's 10px, so the pull stays inside it and the
+	   table does not scroll sideways when the button takes focus. */
+	.list .hk-table-wrap {
+		padding-inline-end: 0.625rem;
+		margin-inline-end: -0.625rem;
+	}
 	.row-action {
 		position: relative;
 		z-index: 1;
-		margin-right: -4px;
-	}
-	.mrow .row-action {
 		margin-right: -0.625rem;
+	}
+	/* Forced colours draw the ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.row-action,
+		.mrow .row-action,
+		.pmore .hk-btn-ghost {
+			margin-inline: 0;
+		}
 	}
 	.confirm-row td {
 		padding-top: 0;
@@ -954,7 +962,15 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-		border-bottom: 1px solid var(--hk-hairline);
+	}
+	/* One rule where two sections meet: right under the questions, the
+	   first row leaves its top rule to the questions' last one. */
+	:global(#questions) + .list:not(:has(.ptools)) .mrow:first-child {
+		border-top: 0;
+	}
+	/* The plan row's top rule closes the list. */
+	.list :global(.hk-empty-row) {
+		border-bottom: 0;
 	}
 	.mrow {
 		position: relative;
@@ -1031,5 +1047,10 @@
 	}
 	.empty :global(.empty-commands) {
 		margin-top: 1rem;
+	}
+	/* The # note wraps on a phone; the command scrolls (request to
+	   FOUNDATION for CommandList itself). */
+	.empty :global(.empty-commands .note) {
+		white-space: normal;
 	}
 </style>

@@ -40,6 +40,25 @@ describe('foldActivity', () => {
 		]);
 	});
 
+	it('keeps every question and failure on its own row', () => {
+		const got = foldActivity([
+			ev('needs_input', 'a', '6', 'Which branch should the review PR target?'),
+			ev('needs_input', 'a', '5', 'Run the migration on staging now?'),
+			ev('error', 'a', '4'),
+			ev('error', 'a', '3'),
+			ev('snapshot_failed', 'a', '2'),
+			ev('snapshot_failed', 'a', '1')
+		]);
+		expect(got.map((r) => `${r.kind}:${r.more}`)).toEqual([
+			'needs_input:0',
+			'needs_input:0',
+			'error:0',
+			'error:0',
+			'snapshot_failed:0',
+			'snapshot_failed:0'
+		]);
+	});
+
 	it('does not change the rows it was given', () => {
 		const rows = [ev('x', 'a', '2'), ev('x', 'a', '1')];
 		foldActivity(rows);

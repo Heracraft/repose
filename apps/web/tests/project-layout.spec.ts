@@ -72,6 +72,8 @@ for (const width of [1024, 1440]) {
 	test(`Restore… opens inside the snapshots section at ${width}`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		const p = await project(`restore-room-${width}`, 2);
+		// Stopped, so the panel offers both outcomes.
+		await stop(p.id);
 		await page.goto(`/projects/${p.id}`);
 		const card = page.getByTestId('snapshots-card');
 		await card.getByRole('button', { name: 'Restore…' }).first().click();
@@ -250,4 +252,36 @@ test('Destroy opens its typed confirm and Keep it gives focus back', async ({ pa
 	await section.getByRole('button', { name: 'Keep it' }).click();
 	await expect(section.getByLabel(/to confirm/)).toHaveCount(0);
 	await expect(open).toBeFocused();
+});
+
+// On a phone the header's action is one row under the status line in
+// every state, so the remote and the state stay under the title.
+test('on a phone the header action sits under the status line', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const p = await project('phone-head', 0);
+	for (const [state, name] of [
+		['running', 'Stop'],
+		['stopped', 'Start']
+	] as const) {
+		if (state === 'stopped') await stop(p.id);
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('project-state')).toHaveText(state);
+		const status = await page.getByTestId('project-state').boundingBox();
+		const action = await page.getByRole('button', { name, exact: true }).boundingBox();
+		const tabs = await page.getByRole('navigation', { name: 'Project' }).boundingBox();
+		expect(action!.y).toBeGreaterThan(status!.y + status!.height);
+		expect(action!.y + action!.height).toBeLessThan(tabs!.y);
+	}
+});
+
+// Machine shows one disk size: the meter's. The volume behind it is read
+// out, not drawn beside a second figure.
+test('Machine draws one disk size', async ({ page }) => {
+	const p = await project('one-disk-size', 0);
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('machine-card');
+	await expect(card.getByRole('meter', { name: 'Disk' })).toBeVisible();
+	await expect(card.getByTestId('disk-volume')).toHaveText(/^\d+ GB disk$/);
+	const volume = await card.getByTestId('disk-volume').boundingBox();
+	expect(volume!.width).toBeLessThanOrEqual(1);
 });

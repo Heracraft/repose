@@ -513,21 +513,23 @@
 						{/if}
 						<span class="cbar-status" role="status">
 							{#if activeTab === 'menu'}
-								{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty}&nbsp;·
+								<!-- While the banner asks, it says "Unsaved changes" once. -->
+								{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty && !heldNavigation}&nbsp;·
 									<span class="cbar-dirty">Unsaved changes</span>{/if}
 							{:else if applying}
 								Building…
 							{:else if nixReadonly}
 								Managed by the menu
 							{:else if nixDirty}
-								<span class="cbar-dirty">Unsaved changes</span>
+								{#if !heldNavigation}<span class="cbar-dirty">Unsaved changes</span>{/if}
 							{:else}
 								Saved
 							{/if}
 						</span>
+						<!-- The screen's primary once there is something to apply. -->
 						<button
 							type="button"
-							class="hk-btn"
+							class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
 							disabled={applying || (activeTab === 'nix' && nixReadonly)}
 							onclick={activeTab === 'menu' ? applyMenu : applyNix}
 						>
@@ -544,7 +546,7 @@
 						<div class="hk-section-head">
 							<h2 id="base-title" class="hk-h2-app">Base updates</h2>
 						</div>
-						<p class="rail-line">On <span class="hk-mono">{project.base_version}</span>.</p>
+						<p class="rail-line">Base <span class="hk-mono">{project.base_version}</span></p>
 						<label class="hk-check">
 							<input
 								type="checkbox"
@@ -571,7 +573,7 @@
 						</label>
 						<p class="rail-link">
 							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-							<a class="hk-link" href={resolve('/settings') + '#machine-nix'}
+							<a class="hk-link mnix-link" href={resolve('/settings') + '#machine-nix'}
 								>Edit machine.nix on your account</a
 							>
 						</p>
@@ -860,5 +862,21 @@
 	}
 	.revs-toggle {
 		margin: 0.5rem 0 0 -0.625rem;
+	}
+	/* A thumb's 44px, the row's height unchanged. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.mnix-link {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.extra-remove,
+		.rev-apply {
+			margin-inline: 0;
+		}
 	}
 </style>

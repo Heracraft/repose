@@ -49,7 +49,9 @@
 
 	function open(snapshotId: string) {
 		openId = snapshotId;
-		newName = '';
+		// A name to start from, as the 404 page's restore offers one; the
+		// api says if it is taken.
+		newName = `${project.slug}-restored`;
 		newError = undefined;
 	}
 
@@ -154,25 +156,29 @@
 										since <span class="whitespace-nowrap">{dateTime(s.created_at)}</span>
 										is lost on {project.slug}.
 									</p>
-									{#if project.state !== 'stopped'}
+									<!-- Over this disk only once it is stopped: until then the
+									     line says so in the typed confirm's place, and focus
+									     goes to the outcome that works now. -->
+									{#if project.state === 'stopped'}
+										<ConfirmType
+											word={project.slug}
+											label="Restore"
+											busyLabel="Restoring…"
+											busy={restoring && kind === 'over'}
+											disabled={busy}
+											onconfirm={() => restore(s.id)}
+											autofocus
+										/>
+									{:else}
 										<p class="panel-note">Stop {project.slug} first to restore over it.</p>
 									{/if}
-									<ConfirmType
-										word={project.slug}
-										label="Restore"
-										busyLabel="Restoring…"
-										busy={restoring && kind === 'over'}
-										disabled={busy || project.state !== 'stopped'}
-										onconfirm={() => restore(s.id)}
-										autofocus
-									/>
 									<div class="panel-rule"></div>
 									<RestoreNameForm
 										id={s.id}
 										bind:value={newName}
 										error={newError}
 										busy={restoring && kind === 'new'}
-										autofocus={false}
+										autofocus={project.state !== 'stopped'}
 										submitLabel="Restore as new"
 										onsubmit={(n) => void restore(s.id, n)}
 										oncancel={close}
@@ -249,7 +255,7 @@
 		color: var(--hk-text);
 	}
 	.panel-note {
-		margin: -0.5rem 0 0.875rem;
+		margin: 0;
 		color: var(--hk-text-2);
 	}
 	.panel-rule {
@@ -258,5 +264,11 @@
 	}
 	.toggle {
 		margin: 0.5rem 0 0 -0.625rem;
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.act .hk-btn-ghost {
+			margin-inline: 0;
+		}
 	}
 </style>

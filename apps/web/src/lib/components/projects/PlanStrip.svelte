@@ -218,10 +218,22 @@
 	.cell--link:hover .fact-label {
 		color: var(--hk-text);
 	}
+	/* On the labels' line, at the row's right end: same size and line box
+	   as a meter label, so the baselines meet. */
 	.billing {
+		align-self: start;
 		margin-top: 0;
-		align-self: center;
+		font-size: 0.8125rem;
 		white-space: nowrap;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.billing {
+			display: inline-flex;
+			align-items: center;
+			justify-self: start;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
 	}
 	/* The list's facts: label left, figure right, a sub line under. */
 	.fact {
@@ -248,5 +260,17 @@
 		margin-top: 0.25rem;
 		font-size: 0.75rem;
 		color: var(--hk-text-3);
+	}
+	/* Forced colours drop the track's colour-mix fill: draw its edge, so
+	   the limit shows (request to FOUNDATION for Meter itself). */
+	@media (forced-colors: active) {
+		.plan :global(.hk-meter-track) {
+			border: 1px solid GrayText;
+			background: Canvas;
+		}
+		.plan :global(.hk-meter-fill) {
+			forced-color-adjust: none;
+			background: CanvasText;
+		}
 	}
 </style>

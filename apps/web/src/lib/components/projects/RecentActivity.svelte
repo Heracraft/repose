@@ -185,4 +185,11 @@
 			white-space: normal;
 		}
 	}
+	/* A thumb's 44px, the row's height unchanged. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.ra-project {
+			padding-block: 0.8125rem;
+			margin-block: -0.8125rem;
+		}
+	}
 </style>

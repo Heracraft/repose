@@ -3,7 +3,7 @@
   sample, I-492) and the disk (the guest's root filesystem, I-567) as
   meters, then this project's egress this billing period. The size's
   cores and memory are on the page's status line, so the section does not
-  repeat them. Under the disk, its size and Resize…, which opens the
+  repeat them. Under the disk, Resize…, which opens the
   page's resize panel across the frame under this row, since a form needs
   room (I-680).
 -->
@@ -92,7 +92,9 @@
 			{/if}
 			<div class="disk-foot">
 				<span class="disk-facts">
-					<span data-testid="disk-volume">{gb(project.volume_bytes)} disk</span>
+					<!-- One size on screen, the meter's (what `repose status`
+					     prints); the volume behind it is for Resize and a reader. -->
+					<span class="hk-sr" data-testid="disk-volume">{gb(project.volume_bytes)} disk</span>
 					{#if full !== null}
 						<span class="disk-full" data-testid="disk-full"
 							><span class="hk-dot hk-dot--warn" aria-hidden="true"></span>{full}% full</span
@@ -176,9 +178,28 @@
 		color: var(--hk-text-2);
 	}
 	.resize {
+		margin-left: auto;
 		margin-right: -0.625rem;
 	}
+	@media (forced-colors: active) {
+		.resize {
+			margin-right: 0;
+		}
+	}
 	.largest {
+		margin-left: auto;
 		text-align: right;
+	}
+	/* Forced colours drop the track's colour-mix fill: draw its edge, so
+	   the limit shows (request to FOUNDATION for Meter itself). */
+	@media (forced-colors: active) {
+		.meters :global(.hk-meter-track) {
+			border: 1px solid GrayText;
+			background: Canvas;
+		}
+		.meters :global(.hk-meter-fill) {
+			forced-color-adjust: none;
+			background: CanvasText;
+		}
 	}
 </style>

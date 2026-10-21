@@ -54,7 +54,15 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 	await page.getByLabel('Value', { exact: true }).fill('x');
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
-	await expect(page.getByText(/\[A-Z\]\[A-Z0-9_\]/)).toBeVisible();
+	await expect(
+		page.getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
+	).toBeVisible();
+	await expect(page.getByLabel('Name', { exact: true })).toBeFocused();
+
+	// Add is never greyed out: an empty name is said under the field.
+	await page.getByLabel('Name', { exact: true }).fill('');
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(page.getByText('Name is required.')).toBeVisible();
 });
 
 test('a value over 64 KB is rejected client-side before it reaches the api', async ({ page }) => {

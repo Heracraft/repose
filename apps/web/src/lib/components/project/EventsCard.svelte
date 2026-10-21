@@ -435,4 +435,10 @@
 			grid-template-columns: auto minmax(0, 1fr) auto;
 		}
 	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.pager {
+			margin-inline: 0;
+		}
+	}
 </style>
