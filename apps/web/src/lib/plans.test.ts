@@ -50,7 +50,8 @@ describe('plans', () => {
 				expect(p.intro, `${p.name} intro`).toEqual({
 					priceCents: Number(go.IntroCents),
 					months: Number(go.IntroMonths),
-					egressGB: Number(go.IntroEgressGB) || Number(go.EgressGB)
+					egressGB: Number(go.IntroEgressGB) || Number(go.EgressGB),
+					limit: Number(go.IntroLimit) || undefined
 				});
 			} else {
 				expect(p.intro, `${p.name} intro`).toBeUndefined();
