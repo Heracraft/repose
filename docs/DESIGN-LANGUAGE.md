@@ -273,7 +273,9 @@ compact footer's 71px row (`--dash-foot-h`), and the grid is at least that
 tall: the rail never runs out of row, so it never slides under the header
 at a page's foot, and its plan sits at one height on every page (829px at
 1440x900). The outage bar's height, while it shows, comes off both. Below 1024 the grid is at least the window under the header, so
-the footer starts under the fold until the page's content arrives (I-664).
+the footer starts under the fold until the page's content arrives (I-664). From 1024 a page whose sections arrive one by one (/projects)
+holds the grid at the full window under the header until they have, so the
+footer is not pushed out of view as each lands.
 
 - Places: Projects, Questions, Billing, Settings. Each is 32px, padding 0
   10px, 7px corners, 13px `--hk-text-2` with a 16px line icon (stroke 1.4) in

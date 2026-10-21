@@ -61,6 +61,7 @@
 	import { stopWarning } from '$lib/busyAgents';
 	import { focusOnMount } from '$lib/focus';
 	import { tabStopWhenScrolls } from '$lib/scroller';
+	import { inDash } from '$lib/dash';
 
 	let projects = $state<Project[] | undefined>(undefined);
 	/** The first load failed; the poll keeps trying, and Retry asks now. */
@@ -100,6 +101,26 @@
 		!!me?.waitlist?.hold_until && new Date(me.waitlist.hold_until).getTime() > Date.now()
 	);
 
+	/**
+	 * Whether Recent activity's first load has answered. Recently destroyed
+	 * sits under it and waits until then: Recent activity mounts after its
+	 * own reads, and mounting above a painted Recently destroyed pushed it
+	 * down 174px, a CLS of 0.044 to 0.056 at 1440 (I-664, I-841).
+	 */
+	let activitySettled = $state(false);
+	/** Whether the first read of the destroyed list has answered. */
+	let destroyedSettled = $state(false);
+
+	// The sections arrive one after another, and the page is long by the
+	// time the last one lands: the footer stays under the fold until then,
+	// so it is not pushed out of view as each arrives (I-664, I-841).
+	const dash = inDash();
+	const release = dash.hold();
+	$effect(() => {
+		if (loadFailed || (activitySettled && destroyedSettled)) release();
+	});
+	$effect(() => release);
+
 	/** Questions agents are waiting on, across every project (I-245). */
 	let questions = $state<Question[]>([]);
 	let questionsFor = $derived(
@@ -138,6 +159,8 @@
 			} else {
 				projects = await listProjects();
 			}
+			// No project, no Recent activity to wait for.
+			if (projects.length === 0) activitySettled = true;
 			// The rail lists the same projects: it follows this poll with no
 			// read of its own (I-841).
 			projectsStore.set(projects);
@@ -173,6 +196,7 @@
 			} catch {
 				destroyedNewest = [];
 			}
+			destroyedSettled = true;
 		}
 		// The account's status moves with a payment, a few times a month,
 		// and the rail reads it every 60s. An account with no project yet
@@ -744,15 +768,17 @@
 				{/if}
 			</div>
 
-			<RecentActivity {projects} />
+			<RecentActivity {projects} onsettled={() => (activitySettled = true)} />
 		{/if}
-		<RecentlyDestroyed
-			{destroyed}
-			hasMore={destroyedHasMore}
-			onmore={moreDestroyed}
-			liveSlugs={(projects ?? []).map((p) => p.slug)}
-			onrestored={() => void refresh()}
-		/>
+		{#if activitySettled}
+			<RecentlyDestroyed
+				{destroyed}
+				hasMore={destroyedHasMore}
+				onmore={moreDestroyed}
+				liveSlugs={(projects ?? []).map((p) => p.slug)}
+				onrestored={() => void refresh()}
+			/>
+		{/if}
 	</LoadState>
 </PageShell>
 

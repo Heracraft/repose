@@ -889,6 +889,39 @@ test.describe('first loads hold still', () => {
 		}
 	});
 
+	// Recent activity mounts once its own reads answer, above Recently
+	// destroyed. With the events slower than the destroyed list, it landed
+	// on a painted Recently destroyed and pushed it 174px down, and each
+	// late section pushed the footer out of view: 0.0523 at 1440, where a
+	// full run had seen 0.0563 by chance (I-841). The order is pinned here
+	// so the check does not depend on which answer comes first, and the
+	// bar is the page's own: held still, it measures 0, and the old order
+	// cleared 0.05 by as little as 0.0005 with fewer destroyed rows.
+	test('/projects at 1440 with the events answering last', async ({ page }) => {
+		await project({ name: 'slow-events-app', remote_url: 'github.com/heracraft/slow-events-app' });
+		for (let i = 0; i < 10; i++) {
+			const gone = await createProject(apiURLFromEnv(), {
+				name: `gone-app-${i}`,
+				remote_url: `github.com/heracraft/gone-app-${i}`
+			});
+			await destroyProject(apiURLFromEnv(), gone.id);
+		}
+		await page.route(/\/v1\/projects\/[^/]+\/events/, async (route) => {
+			await new Promise((r) => setTimeout(r, 600));
+			await route.fallback();
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			const shift = await cls(page, '/projects');
+			await expect(page.getByTestId('recent-activity')).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Recently destroyed' })).toBeVisible();
+			expect(shift).toBeLessThanOrEqual(0.01);
+		} finally {
+			await resetBilling();
+		}
+	});
+
 	test('a payment failure on a fresh browser at 390', async ({ page }) => {
 		await page.addInitScript(() => {
 			try {

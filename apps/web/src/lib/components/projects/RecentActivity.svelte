@@ -17,7 +17,15 @@
 	import type { Project, ProjectEvent } from '$lib/api/types';
 	import { foldActivity, type Folded } from './activity';
 
-	let { projects }: { projects: Project[] } = $props();
+	let {
+		projects,
+		onsettled
+	}: {
+		projects: Project[];
+		/** Called once, when the first load has answered or failed: the
+		 *  page holds what sits under this section until then (I-664). */
+		onsettled?: () => void;
+	} = $props();
 
 	const SHOWN = 5;
 	/** Events asked of each machine: enough that a folded run still leaves five rows. */
@@ -42,6 +50,12 @@
 	let running = $derived(projects.filter((p) => p.state === 'running').length);
 
 	let seq = 0;
+	let settled = false;
+	function settle() {
+		if (settled) return;
+		settled = true;
+		onsettled?.();
+	}
 	async function load() {
 		const mine = ++seq;
 		const targets = asked.map((p) => ({ id: p.id, name: p.name }));
@@ -49,6 +63,9 @@
 			targets.map((p) => listEvents(p.id, { limit: PER_PROJECT }))
 		);
 		if (mine !== seq) return;
+		// The rows land in the next render; the section under this one is
+		// let in with them, in the same pass.
+		settle();
 		const merged: Row[] = [];
 		pages.forEach((r, i) => {
 			if (r.status === 'fulfilled') {

@@ -24385,7 +24385,13 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   The grid's min-height keeps the footer under the fold, and /projects
   holds its lede's line and Settings its Install row until they fill:
   CLS at 390 on /projects 0.24, /settings 0.24, /billing 0.11 went to
-  0.007 or less. A failed payment is amber in the rail and the plan line,
+  0.007 or less. At 1440 /projects measured 0.0523 to 0.0563 when the
+  events answered after the destroyed list: Recent activity mounted above
+  a painted Recently destroyed and pushed it 174px down, and each late
+  section pushed the in-view footer out. Recently destroyed now waits for
+  Recent activity's first answer, and a page filling in holds the footer
+  under the fold (`DashContext.hold`) until its first reads settle, so a
+  long page measures 0 and a short one 0.004, its footer rising 71px once. A failed payment is amber in the rail and the plan line,
   as the banners have it (kit 7); red stays for suspended. Overview still
   reads the 1h samples for Machine's "Memory in use", which the project
   does not carry (amends ia-final 2.4), and keeps them, the config

@@ -93,10 +93,21 @@
 	);
 
 	// Inside the dashboard's grid the page's <main> drops its own frame:
-	// the grid is the frame (PageShell, ErrorView read this).
+	// the grid is the frame (PageShell, ErrorView read this). A page still
+	// filling in holds the footer under the fold (DashContext.hold).
+	let holds = $state(0);
 	const dashContext: DashContext = {
 		get on() {
 			return dashboard;
+		},
+		hold() {
+			holds += 1;
+			let held = true;
+			return () => {
+				if (!held) return;
+				held = false;
+				holds -= 1;
+			};
 		}
 	};
 	setContext(DASH, dashContext);
@@ -161,7 +172,7 @@
 			<!-- The dashboard (I-841): the rail and the page in one frame, a
 			     grid from 1024px. The page column is the size container
 			     `dash`, so pages lay out by its width, not the window's. -->
-			<div class="frame dash" style:--outage-h="{outageH}px">
+			<div class="frame dash" class:dash--filling={holds > 0} style:--outage-h="{outageH}px">
 				<DashRail />
 				<div class="dash-main" class:dash-main--hold={holdMain}>
 					{@render body()}
@@ -222,6 +233,10 @@
 		.dash-main {
 			grid-column: 2;
 			grid-row: 1;
+		}
+		/* A page filling in: the footer waits under the fold (I-664). */
+		.dash--filling {
+			min-height: calc(100dvh - var(--header-h) - var(--outage-h, 0px));
 		}
 	}
 	/* PageShell's padding, so the swap to the page moves nothing (I-664). */
