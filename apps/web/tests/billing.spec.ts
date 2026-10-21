@@ -41,8 +41,8 @@ test.beforeEach(async ({ page }) => {
 test('with billing off the page says so and sells nothing', async ({ page }) => {
 	await page.goto('/billing');
 	await expect(page.getByTestId('billing-disabled')).toHaveText('Billing is not switched on yet');
-	// A state in a card, not a stray line.
-	await expect(page.getByTestId('billing-disabled')).toHaveClass(/\bcard\b/);
+	// A state in the kit's empty row, not a stray line (I-837).
+	await expect(page.getByTestId('billing-disabled')).toHaveClass(/(^|\s)hk-empty-row(\s|$)/);
 	await expect(page.getByRole('button', { name: /Choose/ })).toHaveCount(0);
 	// billing_disabled is a 503 the api gives as an answer, not an outage,
 	// so no outage bar sits over the page (I-390).
@@ -107,7 +107,7 @@ test('with no plan and seats free, the three plans are shown from GET /billing',
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeEnabled();
 	// With no plan asked for, no button is the solid one.
-	await expect(page.locator('[data-testid^="plan-"] .btn')).toHaveCount(0);
+	await expect(page.locator('[data-testid^="plan-"] .hk-btn')).toHaveCount(0);
 	await expect(page.getByRole('main').getByRole('link', { name: 'Refunds' })).toHaveAttribute(
 		'href',
 		'/refunds'
@@ -119,8 +119,10 @@ test('?plan=plus makes Plus the solid button and gives it the focus', async ({ p
 	await page.goto('/billing?plan=plus');
 	const plus = page.getByRole('button', { name: 'Choose Plus' });
 	await expect(plus).toBeFocused();
-	await expect(plus).toHaveClass(/\bbtn\b/);
-	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(/btn-quiet/);
+	await expect(plus).toHaveClass(/(^|\s)hk-btn(\s|$)/);
+	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(
+		/(^|\s)hk-btn-secondary(\s|$)/
+	);
 });
 
 test('Solo costs $39 for 12 months on a first subscription, then $49; a returning account pays $49', async ({
@@ -245,20 +247,25 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	const egress = page.getByTestId('meter-egress-this-period');
 	// A Solo trial inside the founding price keeps the plan's 250 GB (I-672).
 	await expect(egress).toContainText('300 GB of 250 GB');
-	await expect(egress).toContainText('Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.');
+	// The overage is said once, under its meter.
+	await expect(page.getByTestId('egress-over')).toHaveText(
+		'Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.'
+	);
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
 });
 
-test('the egress meter reads a thousand GB as 1 TB and the facts mark the day of the period', async ({
+test('the egress meter reads a thousand GB as 1 TB and This month marks the day of the period', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'pro', egress_gb: 42 });
 	await page.goto('/billing');
 	const egress = page.getByTestId('meter-egress-this-period');
 	await expect(egress).toContainText('42 GB of 1 TB');
-	await expect(page.locator('.facts').getByText(/^Day \d+ of \d+$/)).toBeVisible();
+	// The period is the section's caption (I-837): the day and the reset.
+	const month = page.locator('section', { has: page.getByRole('heading', { name: 'This month' }) });
+	await expect(month.getByText(/^Day \d+ of \d+, resets \d{4}-\d{2}-\d{2}$/)).toBeVisible();
 });
 
 test('the disk meter counts what the projects hold and says what is refused while it is over', async ({
@@ -272,12 +279,17 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await setBilling({ disk_held_gb: 112.4 });
 	await page.reload();
 	await expect(disk).toContainText('112.4 GB of 100 GB · over');
-	await expect(disk).toContainText(
+	// What is refused is a banner under the meters, one sentence (I-837).
+	await expect(page.getByTestId('disk-over')).toHaveText(
 		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
 	);
+	await setBilling({ disk_held_gb: 37.5 });
+	await page.reload();
+	await expect(disk).toContainText('37.5 GB of 100 GB');
+	await expect(page.getByTestId('disk-over')).toHaveCount(0);
 });
 
-test('over its limits at 390, Solo keeps every usage row inside the plan card', async ({
+test('over its limits at 390, Solo keeps every meter inside This month and the page narrow', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -288,16 +300,20 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 		'412.7 GB of 250 GB · over'
 	);
 	const fit = await page.evaluate(() => {
-		const card = document.querySelector('[data-testid="plan"]')!.getBoundingClientRect();
-		const rows = [...document.querySelectorAll('[data-testid="plan"] .u-row')];
-		const inside = rows.every((row) =>
-			[row, ...row.querySelectorAll('*')].every((el) => {
+		const section = document
+			.getElementById('month-h')!
+			.closest('section')!
+			.getBoundingClientRect();
+		const meters = ['meter-running-now', 'meter-disk-held', 'meter-egress-this-period'].map(
+			(id) => document.querySelector(`[data-testid="${id}"]`)!
+		);
+		const inside = meters.every((m) =>
+			[m, ...m.querySelectorAll('*')].every((el) => {
 				const r = el.getBoundingClientRect();
-				return r.left >= card.left - 0.5 && r.right <= card.right + 0.5;
+				return r.left >= section.left - 0.5 && r.right <= section.right + 0.5;
 			})
 		);
 		return {
-			rows: rows.length,
 			inside,
 			// The body's width leaves out the stable scrollbar gutter, which
 			// the root's clientWidth counts on a desktop browser: the page
@@ -306,7 +322,6 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 			bodyWidth: document.body.clientWidth
 		};
 	});
-	expect(fit.rows).toBe(2);
 	expect(fit.inside).toBe(true);
 	expect(fit.scrollWidth).toBeLessThanOrEqual(fit.bodyWidth);
 	await setBilling({ disk_held_gb: -1, egress_gb: 0 });
@@ -403,20 +418,27 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await page.reload();
 	await expect(page.getByTestId('meter-running-now')).toContainText('16 GB of 16 GB');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	// What runs now is set against each smaller plan, in amber.
+	// What runs now is set against each smaller plan, and a downgrade the
+	// account does not fit is not offered: its button waits (I-837).
 	await expect(page.getByTestId('change-plan').getByTestId('plan-solo')).toContainText(
 		'Running 16 GB, holds 8 GB'
 	);
-	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
-	const err = page.getByTestId('change-error');
-	// The api's sentence, the disk counted by what the projects hold (I-585).
-	await expect(err).toContainText(
-		'your account does not fit the Solo plan yet: 16 GB running (it allows 8)'
-	);
-	await expect(err).toContainText('GB of disk held by your projects (it allows 100)');
-	await expect(err).toContainText(
-		'stop machines, or destroy projects or delete files in them, first'
-	);
+	const down = page.getByRole('button', { name: 'Downgrade to Solo' });
+	await expect(down).toHaveAttribute('aria-disabled', 'true');
+	let asked = false;
+	page.on('request', (r) => {
+		if (r.method() === 'POST' && r.url().endsWith('/billing/plan')) asked = true;
+	});
+	// Forced: Playwright waits for an aria-disabled button to enable.
+	await down.click({ force: true });
+	await expect(page.getByTestId('change-error')).toHaveCount(0);
+	expect(asked).toBe(false);
+	// A refusal the page could not foresee (a machine started elsewhere)
+	// is the api's sentence, under the plans.
+	await failNext('POST', '/billing/plan', 'conflict');
+	await page.getByRole('button', { name: 'Upgrade to Pro' }).click();
+	await expect(page.getByTestId('change-error')).toBeVisible();
+	await expect(page.getByTestId('plan').getByRole('heading', { name: 'Plus' })).toBeVisible();
 });
 
 test('on Pro both other plans are downgrades, and Plus is refused while three large machines run', async ({
@@ -439,10 +461,13 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');
 	await expect(page.getByRole('button', { name: /Upgrade/ })).toHaveCount(0);
-	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
-	const err = page.getByTestId('change-error');
-	await expect(err).toContainText(
-		'your account does not fit the Plus plan yet: 24 GB running (it allows 16)'
+	// 24 GB runs and Plus holds 16: the card says so and its button waits.
+	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText(
+		'Running 24 GB, holds 16 GB'
+	);
+	await expect(page.getByRole('button', { name: 'Downgrade to Plus' })).toHaveAttribute(
+		'aria-disabled',
+		'true'
 	);
 	await stopAll();
 });
@@ -457,9 +482,10 @@ test('a downgrade that fits is scheduled for the renewal and can be undone', asy
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	await expect(page.getByTestId('plan-status')).toContainText('Changes to Plus on');
-	// With Plus scheduled, the box offers to keep Pro and still lists Solo.
+	// With Plus scheduled, the Status fact offers to keep Pro (I-837), and
+	// Change plan still lists Solo and says from when Plus applies.
+	await expect(page.getByTestId('change-keep')).toHaveText('Keep Pro');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	await expect(page.getByTestId('change-keep')).toContainText('Plus is scheduled for');
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveCount(0);
 	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText('From ');

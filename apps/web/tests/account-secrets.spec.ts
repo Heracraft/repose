@@ -67,7 +67,7 @@ test('Settings adds and deletes an account secret; a project page shows it', asy
 			.getByText('This project’s own is used')
 	).toHaveCount(0);
 
-	// Delete asks first; Keep it backs out.
+	// Delete… asks first; Keep it backs out.
 	await page.goto('/settings#secrets');
 	await section.getByRole('button', { name: 'Delete COOLIFY_BASE_URL' }).click();
 	const ask = section.getByTestId('confirm-delete-account-secret');

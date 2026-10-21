@@ -33,8 +33,9 @@
 	import { SUPPORT_MAILTO } from '$lib/links';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
+	import Meter from '$lib/components/Meter.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
-	import UsageRing from '$lib/components/UsageRing.svelte';
+	import Snowflake from '$lib/components/Snowflake.svelte';
 	import { frozenSince } from '$lib/frozen';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -58,6 +59,7 @@
 	let settingUp = $state(false);
 	let setupTimedOut = $state(false);
 
+	/** The action under way; every other button waits (aria-disabled, I-766). */
 	let busy = $state<string | undefined>(undefined);
 	let changing = $state(false);
 	let changeError = $state<string | undefined>(undefined);
@@ -94,7 +96,16 @@
 	let diskHeld = $derived(
 		billing ? (billing.usage.disk_held_gb ?? billing.usage.disk_allocated_gb) : 0
 	);
+	// An exempt account has no plan, so /billing's usage carries no limits;
+	// /me's limits are what it works within (the biggest plan's, I-16).
+	let limits = $derived({
+		memory: billing?.usage.memory_gb || me?.limits?.memory_gb || 0,
+		disk: billing?.usage.disk_gb || me?.limits?.disk_gb || 0,
+		egress: billing?.usage.egress_included_gb || me?.limits?.egress_gb || 0
+	});
 	let running = $derived(projects.filter(holdsMemory));
+	let runningOver = $derived(!!billing && billing.usage.running_gb > limits.memory);
+	let diskOver = $derived(!!billing && limits.disk > 0 && diskHeld > limits.disk);
 	let heaviest = $derived(
 		projects
 			.filter((p) => (p.root_used_bytes ?? 0) > 0)
@@ -104,9 +115,8 @@
 	/** "kanali 30 GB, landing-site 12 GB": the largest few, for a note. */
 	const most = (rows: string[][]) => rows.map(([n, v]) => `${n} ${v}`).join(', ');
 	let projectName = $derived(new Map(projects.map((p) => [p.id, p.name])));
-	let egOver = $derived(!!billing && billing.usage.egress_gb > billing.usage.egress_included_gb);
 	let period = $derived(sub ? periodDays(sub) : undefined);
-	/** The first charges are the introductory price (I-497): the big figure is what is charged next. */
+	/** The first charges are the introductory price (I-497): the figure is what is charged next. */
 	let introCharge = $derived(
 		!!sub &&
 			!!plan &&
@@ -114,12 +124,12 @@
 			sub.next_charge_cents != null &&
 			sub.next_charge_cents < plan.price_cents
 	);
+	let latest = $derived(newest(invoices));
 
 	async function load() {
-		// One failure, one report (DESIGN-LANGUAGE "Toasts", I-395): an
-		// account that did not load is toasted only when the billing call
-		// answered, since an outage fails both and the load banner or the
-		// outage bar already says so.
+		// One failure, one report (I-395): an account that did not load is
+		// toasted only when the billing call answered, since an outage fails
+		// both and the load banner or the outage bar already says so.
 		let meError: unknown;
 		const reportMe = () => {
 			if (meError !== undefined && reachability.ok) {
@@ -149,8 +159,8 @@
 			}
 			return;
 		}
+		if (billing.subscription || accountStatus === 'exempt') void loadUsage(billing.subscription);
 		if (billing.subscription) {
-			void loadUsage(billing.subscription);
 			try {
 				invoices = await billingInvoices();
 				invoicePage = Math.min(invoicePage, Math.max(0, invoicePages - 1));
@@ -163,12 +173,13 @@
 	/** The projects under the meters and this period's egress by project.
 	 * Both are extras on a page that stands without them, so a failure
 	 * leaves them out and says nothing. */
-	async function loadUsage(s: Subscription) {
+	async function loadUsage(s: Subscription | null) {
 		try {
 			projects = await listProjects();
 		} catch {
 			projects = [];
 		}
+		if (!s) return;
 		try {
 			const rows = await getUsage(dateOnly(s.period_start), dateOnly(new Date().toISOString()));
 			const sums: Record<string, number> = {};
@@ -223,7 +234,7 @@
 	});
 
 	async function choose(planId: PlanId) {
-		if (!billing) return;
+		if (!billing || busy) return;
 		busy = `choose-${planId}`;
 		try {
 			// Polar's hosted checkout (I-604); it sends the browser back to
@@ -245,6 +256,7 @@
 	}
 
 	async function joinWaitlist() {
+		if (busy) return;
 		busy = 'waitlist';
 		try {
 			await billingJoinWaitlist();
@@ -256,22 +268,29 @@
 		}
 	}
 
-	/** Opens or closes Change plan. The section sits under the plan card,
-	 * often below the fold, so opening it scrolls it into view; the focus
-	 * stays on the button. */
+	/** Opens or closes Change plan. It opens under the Current plan block,
+	 * often below the fold: its heading takes the focus and scrolls into
+	 * view. Closing gives the focus back to the button. */
 	async function toggleChange() {
+		if (busy) return;
 		changing = !changing;
 		changeError = undefined;
 		confirmCancel = false;
-		if (!changing) return;
 		await tick();
+		if (!changing) {
+			document.getElementById('change-plan-toggle')?.focus();
+			return;
+		}
+		const h = document.getElementById('change-plan-h');
 		const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		h?.focus({ preventScroll: true });
 		document
 			.getElementById('change-plan')
-			?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'nearest' });
+			?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
 	}
 
 	async function changePlan(to: PlanId) {
+		if (busy) return;
 		busy = `plan-${to}`;
 		changeError = undefined;
 		try {
@@ -287,6 +306,7 @@
 	}
 
 	async function cancel() {
+		if (busy) return;
 		busy = 'cancel';
 		try {
 			await billingCancel();
@@ -303,6 +323,7 @@
 	}
 
 	async function resume() {
+		if (busy) return;
 		busy = 'resume';
 		try {
 			await billingResume();
@@ -318,6 +339,7 @@
 	}
 
 	async function openPortal(what?: 'payment_method') {
+		if (busy) return;
 		busy = what ?? 'portal';
 		try {
 			const { url } = await billingPortal(what);
@@ -328,6 +350,10 @@
 		}
 	}
 
+	/** aria-disabled while another action runs (I-766): the button keeps
+	 * its focus and its name, and a click does nothing. */
+	const waiting = () => (busy ? 'true' : undefined);
+
 	const counts = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 	const count = (n: number) => counts[n] ?? String(n);
 	// Egress reads as the pricing table writes it: 1000 GB is 1 TB.
@@ -335,21 +361,20 @@
 
 	/** "one large, or two small" for a plan's memory (docs/PRICING.md):
 	 * xl 16 GB, large 8, small 4. */
-	function runsAtOnce(p: Plan): string {
-		const xl = Math.floor(p.memory_gb / 16);
-		const large = Math.floor(p.memory_gb / 8);
+	function runsAtOnce(memoryGB: number): string {
+		const xl = Math.floor(memoryGB / 16);
+		const large = Math.floor(memoryGB / 8);
 		if (xl > 0) return `${count(xl)} xl, ${count(large)} large, or any mix`;
-		return `${count(large)} large, or ${count(Math.floor(p.memory_gb / 4))} small`;
+		return `${count(large)} large, or ${count(Math.floor(memoryGB / 4))} small`;
 	}
 
 	/** Which day of the period today is, of how many. */
-	function periodDays(s: Subscription): { day: number; of: number; elapsed: number } {
+	function periodDays(s: Subscription): { day: number; of: number } {
 		const start = new Date(s.period_start).getTime();
 		const end = new Date(s.period_end).getTime();
 		const of = Math.max(1, Math.round((end - start) / 86_400_000));
-		const elapsed = Math.min(1, Math.max(0, (Date.now() - start) / Math.max(1, end - start)));
 		const day = Math.min(of, Math.floor((Date.now() - start) / 86_400_000) + 1);
-		return { day: Math.max(1, day), of, elapsed };
+		return { day: Math.max(1, day), of };
 	}
 
 	/** What is charged next and when; undefined once nothing more is. */
@@ -361,30 +386,36 @@
 	}
 
 	const apiPlan = (id: PlanId) => billing?.plans.find((p) => p.id === id);
-	const newest = (list: Invoice[]) =>
-		list.reduce<Invoice | undefined>(
+	function newest(list: Invoice[]) {
+		return list.reduce<Invoice | undefined>(
 			(a, b) => (!a || new Date(b.created_at) > new Date(a.created_at) ? b : a),
 			undefined
 		);
+	}
+	/** A downgrade the account does not fit: the api refuses it (over_plan). */
+	const doesNotFit = (fp: PlanFigures) =>
+		!!billing && (billing.usage.running_gb > fp.memoryGB || diskHeld > fp.diskGB);
 </script>
 
 <svelte:head>
-	<title>Billing — repose</title>
+	<title>Billing · repose</title>
 </svelte:head>
 
 <!-- A plan's button in the picker. Only the plan the visitor came for is
      the solid button; a plan without the seats says why where its button
-     would be, so the three buttons still end on one line. -->
+     would be. -->
 {#snippet chooseAction(fp: PlanFigures)}
 	{@const p = apiPlan(fp.id)}
 	{#if p && !p.available && billing}
-		<p class="needs">Needs {p.seats} seats; {seatsFree} free.</p>
+		<p class="refused">
+			<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Needs {p.seats} seats; {seatsFree} free.
+		</p>
 	{:else}
 		<button
 			type="button"
 			id="choose-{fp.id}"
-			class={wantPlan === fp.id ? 'btn' : 'btn-quiet'}
-			disabled={!!busy}
+			class={wantPlan === fp.id ? 'hk-btn' : 'hk-btn-secondary'}
+			aria-disabled={waiting()}
 			onclick={() => choose(fp.id)}
 		>
 			{busy === `choose-${fp.id}` ? 'Opening checkout…' : `Choose ${fp.name}`}
@@ -395,34 +426,31 @@
 <!-- While every seat is held, the plans are shown and none can be bought. -->
 {#snippet waitingAction(fp: PlanFigures)}
 	{#if billing?.waitlist}
-		<button type="button" class="btn-quiet" aria-disabled="true">Waiting for a seat</button>
+		<button type="button" class="hk-btn-secondary" aria-disabled="true">Waiting for a seat</button>
 	{:else}
-		<p class="needs">Needs {fp.seats} {fp.seats === 1 ? 'seat' : 'seats'}; none free.</p>
+		<p class="refused">
+			<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Needs {fp.seats}
+			{fp.seats === 1 ? 'seat' : 'seats'}; none free.
+		</p>
 	{/if}
 {/snippet}
 
-<!-- Change plan: the other plans upgrade or downgrade; the current one is
-     marked, and offers to stay on it while a downgrade is scheduled. -->
+<!-- Change plan: the other plans upgrade or downgrade; the current one
+     carries its badge, a scheduled one says from when. A downgrade the
+     account does not fit says why on its card and waits. -->
 {#snippet changeAction(fp: PlanFigures)}
-	{#if sub && plan}
-		{#if fp.id === sub.plan}
-			{#if scheduledPlan}
-				<button type="button" class="btn" disabled={!!busy} onclick={() => changePlan(sub.plan)}>
-					{busy === `plan-${sub.plan}` ? 'Saving…' : `Keep ${plan.name}`}
-				</button>
-			{:else}
-				<p class="needs">Your plan</p>
-			{/if}
-		{:else if fp.id === scheduledPlan?.id}
-			<p class="needs">From {@render day(sub.period_end)}</p>
+	{#if sub && plan && fp.id !== sub.plan}
+		{#if fp.id === scheduledPlan?.id}
+			<p class="refused">From {@render day(sub.period_end)}</p>
 		{:else}
 			{@const up = fp.seats > plan.seats}
+			{@const refused = !up && doesNotFit(fp)}
 			<button
 				type="button"
-				class={up ? 'btn' : 'btn-quiet'}
-				disabled={!!busy}
+				class="hk-btn-secondary"
+				aria-disabled={refused ? 'true' : waiting()}
 				data-testid="change-to-{fp.id}"
-				onclick={() => changePlan(fp.id)}
+				onclick={() => !refused && changePlan(fp.id)}
 			>
 				{#if busy === `plan-${fp.id}`}
 					{up ? 'Upgrading…' : 'Scheduling…'}
@@ -435,13 +463,128 @@
 {/snippet}
 
 <!-- A date never splits at its hyphens. -->
-{#snippet day(iso: string)}<span class="date">{dateOnly(iso)}</span>{/snippet}
+{#snippet day(iso: string)}<span class="nw">{dateOnly(iso)}</span>{/snippet}
+
+<!-- The plans for sale: the trial and seats line, the cards, the terms. -->
+{#snippet buyLine()}
+	<div class="buy-line">
+		<p>{billing?.plans[0]?.trial_days ?? 7} days free, card at checkout, cancel any time.</p>
+		<p class="seats" data-testid="seats-line">
+			{#if holdActive}
+				Held for you: 1 seat
+			{:else if billing}
+				{billing.seats.free}
+				{billing.seats.free === 1 ? 'seat' : 'seats'} left
+			{/if}
+		</p>
+	</div>
+{/snippet}
 
 {#snippet pricesNote()}
-	<p class="mt-6 text-xs text-ink-muted">
-		Prices in USD before tax; Polar adds the tax for your country at checkout.
-		<a href={resolve('/refunds')} class="link">Refunds</a>.
+	<p class="terms">
+		Prices in USD, before tax. <a href={resolve('/refunds')} class="hk-link">Refunds</a>
 	</p>
+{/snippet}
+
+<!-- This month: what the account holds against its plan (I-674), each
+     cell the Meter's anatomy (label, reading, figure). -->
+{#snippet thisMonth()}
+	{#if billing}
+		<section class="hk-section" aria-labelledby="month-h">
+			<div class="hk-section-head">
+				<h2 id="month-h" class="hk-h2-app">This month</h2>
+				{#if sub && period}
+					<p>
+						Day {period.day} of {period.of}, {sub.cancel_at ? 'ends' : 'resets'}
+						{@render day(sub.period_end)}
+					</p>
+				{/if}
+			</div>
+			<div class="month">
+				<div
+					class="hk-meter cell"
+					class:hk-meter--err={runningOver}
+					data-testid="meter-running-now"
+				>
+					<div class="hk-meter-top">
+						<span class="hk-meter-label">Running now</span>
+						<span class="hk-meter-value"
+							>{gbs(billing.usage.running_gb)} of {gbs(limits.memory)}{#if runningOver}&nbsp;·
+								over{/if}</span
+						>
+					</div>
+					<MemoryBlocks
+						label="Running now"
+						segments={running.map((p) => ({
+							name: p.name,
+							gb: classMemoryGB(p.class),
+							frozen: !!frozenSince(p)
+						}))}
+						limit={limits.memory}
+					/>
+					{#if running.length}
+						<ul class="legend" aria-label="Running now">
+							{#each running as p, i (p.id)}
+								<li>
+									{#if frozenSince(p)}
+										<span class="sw-ice"><Snowflake size={11} /></span>
+									{:else}
+										<i class="sw" class:sw--alt={i % 2 === 1} aria-hidden="true"></i>
+									{/if}
+									<a href={resolve('/projects/[id]', { id: p.id })} class="legend-link">{p.name}</a>
+									<span class="u-num">{classMemoryGB(p.class)} GB</span>
+									{#if frozenSince(p)}<span class="u-num">frozen</span>{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<p class="note">{runsAtOnce(limits.memory)}</p>
+				</div>
+				<div class="cell">
+					<Meter label="Disk held" used={diskHeld} limit={limits.disk} />
+					{#if !diskOver && heaviest.length && diskHeld >= limits.disk * 0.8}
+						<!-- Who holds it, only once it nears the limit. -->
+						<p class="note">Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}</p>
+					{/if}
+				</div>
+				<div class="cell">
+					<Meter
+						label="Egress this period"
+						used={billing.usage.egress_gb}
+						limit={limits.egress}
+						valueText="{egressFigure(billing.usage.egress_gb)} of {egressFigure(limits.egress)}{billing
+							.usage.egress_gb > limits.egress
+							? ' · over'
+							: ''}"
+					/>
+					{#if billing.usage.overage_cents > 0}
+						<p class="note note--over" data-testid="egress-over">
+							<span class="hk-dot hk-dot--warn" aria-hidden="true"></span>Over by {gbs(
+								Math.round((billing.usage.egress_gb - limits.egress) * 10) / 10
+							)}: {money(billing.usage.overage_cents)} on the next invoice at $0.05 a GB.
+						</p>
+					{:else if egressBy.length && billing.usage.egress_gb >= limits.egress * 0.5}
+						<p class="note">
+							Most: {most(
+								egressBy.map((e) => [
+									projectName.get(e.id) ?? 'a destroyed project',
+									gbs(Math.round(e.gb * 10) / 10)
+								])
+							)}
+						</p>
+					{/if}
+				</div>
+			</div>
+			{#if diskOver}
+				<div class="hk-banner month-banner" role="status" data-testid="disk-over">
+					<p>
+						Creating, restoring and forking projects, and growing a disk, are refused until your
+						projects hold less.
+					</p>
+				</div>
+			{/if}
+		</section>
+	{/if}
 {/snippet}
 
 <!-- Back from Polar's checkout, the browser may restore this page as it
@@ -454,111 +597,100 @@
 
 <PageShell title="Billing">
 	{#if billingDisabled}
-		<section class="card" data-testid="billing-disabled">
-			<h2 class="text-xl font-semibold">Billing is not switched on yet</h2>
-		</section>
+		<div class="hk-empty-row" data-testid="billing-disabled">
+			<h2 class="hk-empty-title">Billing is not switched on yet</h2>
+		</div>
 	{:else if !billing}
 		<LoadState status={loadError ? 'failed' : 'loading'} error={loadError} onretry={load} />
 	{:else if settingUp}
-		<div class="card" data-testid="setting-up" aria-live="polite">
-			<h2 class="text-xl font-semibold">Setting up your plan</h2>
-			<p class="mt-2 text-sm text-ink-muted">
-				Your payment went through. The plan appears here in a few seconds.
-			</p>
+		<div class="hk-banner hk-banner--info" data-testid="setting-up" role="status">
+			<p>Setting up your plan…</p>
 		</div>
 	{:else if !sub}
 		{#if setupTimedOut}
-			<div class="banner banner--warn">
-				The plan has not arrived. Your payment went through and nothing is charged twice.
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a mailto, not a route -->
-				<a href={SUPPORT_MAILTO} class="link" data-testid="support-link">Email us</a> and we will finish
-				it by hand.
+			<div class="hk-banner" role="alert">
+				<p>
+					The plan has not arrived. Your payment went through and nothing is charged twice.
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a mailto, not a route -->
+					<a href={SUPPORT_MAILTO} data-testid="support-link">Email us</a> and we will finish it by hand.
+				</p>
 			</div>
 		{/if}
 		{#if accountStatus === 'exempt'}
-			<div class="banner banner--ok">This account is billing-exempt. No plan is needed.</div>
-		{/if}
-		{#if holdActive && billing.waitlist?.hold_until}
-			<div class="banner banner--ok" data-testid="seat-held">
-				Your seat is held until <span class="date">{dateTime(billing.waitlist.hold_until)}</span>
-				({timeUntil(billing.waitlist.hold_until)} left). Choose a plan before then.
+			<!-- Exempt: no plan to buy, so no cards and no buy buttons; what it
+			     holds, against the biggest plan's figures. -->
+			<div class="hk-banner hk-banner--ok" role="status">
+				<p>This account is billing-exempt. No plan is needed.</p>
 			</div>
-		{/if}
-		{#if setupTimedOut || holdActive || anyAvailable}
-			<div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-				<p class="text-sm">
-					{billing.plans[0]?.trial_days ?? 7} days free, card at checkout, cancel any time.
-				</p>
-				<p class="font-mono text-compact text-ink-muted tabular-nums" data-testid="seats-line">
-					{#if holdActive}
-						Held for you: 1 seat
-					{:else}
-						{billing.seats.free}
-						{billing.seats.free === 1 ? 'seat' : 'seats'} left
-					{/if}
-				</p>
-			</div>
-			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={chooseAction} />
-		{:else}
-			<div class="waiting" data-testid="full">
-				{#if billing.waitlist}
-					<!-- The place reads as a stat strip, as the plan's figures do on
-					     /projects: a serif figure, the queue's length beside it. -->
-					<div class="stat-row wait-strip" data-testid="waitlist-place">
-						<div class="stat">
-							<span class="stat-label">Place on the waitlist</span>
-							<span class="stat-value"
-								>{ordinal(billing.waitlist.position)}
-								<span class="wait-of"
-									>of {Math.max(billing.seats.waiting, billing.waitlist.position)} waiting</span
-								></span
-							>
-							<span class="stat-sub"
-								>An email goes to <span class="email">{me?.email ?? 'you'}</span> when a seat frees.</span
-							>
-						</div>
-						<div class="stat">
-							<span class="stat-label">Seats free</span>
-							<span class="stat-value">{billing.seats.free}</span>
-						</div>
-						<div class="stat">
-							<span class="stat-label">Hold after invite</span>
-							<span class="stat-value">72 h</span>
-							<span class="stat-sub">to choose a plan</span>
-						</div>
-					</div>
-				{:else}
-					<h2 class="text-xl font-semibold">repose is full</h2>
-					<p class="mt-2 text-sm text-ink-muted">
-						Every seat is taken and {billing.seats.waiting}
-						{billing.seats.waiting === 1 ? 'person is' : 'people are'} waiting. A seat frees when a plan
-						ends.
+			{@render thisMonth()}
+		{:else if setupTimedOut || holdActive || anyAvailable}
+			{#if holdActive && billing.waitlist?.hold_until}
+				<div class="hk-banner hk-banner--ok" role="status" data-testid="seat-held">
+					<p>
+						Your seat is held until <span class="nw">{dateTime(billing.waitlist.hold_until)}</span>
+						({timeUntil(billing.waitlist.hold_until)} left). Choose a plan before then.
 					</p>
-					<button
-						type="button"
-						class="btn mt-4"
-						disabled={!!busy}
-						onclick={joinWaitlist}
-						data-testid="join-waitlist"
-					>
-						{busy === 'waitlist' ? 'Joining…' : 'Join the waitlist'}
-					</button>
-				{/if}
-			</div>
+				</div>
+			{/if}
+			{@render buyLine()}
+			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={chooseAction} />
+			{@render pricesNote()}
+		{:else}
+			{#if billing.waitlist}
+				<div class="place" data-testid="waitlist-place">
+					<div class="hk-banner hk-banner--info" role="status">
+						<p>
+							{ordinal(billing.waitlist.position)}
+							of {Math.max(billing.seats.waiting, billing.waitlist.position)} waiting. An email goes to
+							<span class="email">{me?.email ?? 'you'}</span> when a seat frees.
+						</p>
+					</div>
+					<dl class="hk-facts hk-facts--row place-facts">
+						<div>
+							<dt>Seats free</dt>
+							<dd>{billing.seats.free}</dd>
+						</div>
+						<div>
+							<dt>Hold after invite</dt>
+							<dd>72 h to choose a plan</dd>
+						</div>
+					</dl>
+				</div>
+			{:else}
+				<section class="full" data-testid="full" aria-labelledby="full-h">
+					<h2 id="full-h" class="hk-h2-app">repose is full</h2>
+					<div class="full-row">
+						<p>
+							Every seat is taken and {billing.seats.waiting}
+							{billing.seats.waiting === 1 ? 'person is' : 'people are'} waiting. A seat frees when a
+							plan ends.
+						</p>
+						<button
+							type="button"
+							class="hk-btn"
+							aria-disabled={waiting()}
+							onclick={joinWaitlist}
+							data-testid="join-waitlist"
+						>
+							{busy === 'waitlist' ? 'Joining…' : 'Join the waitlist'}
+						</button>
+					</div>
+				</section>
+			{/if}
 			<PlanCells plans={figures} introEligible={!!billing.intro_eligible} action={waitingAction} />
+			{@render pricesNote()}
 		{/if}
-		{@render pricesNote()}
 	{:else if plan}
 		{#if accountStatus === 'suspended'}
-			<div class="banner banner--error alert-row" data-testid="status-suspended">
+			<div class="hk-banner hk-banner--err" role="alert" data-testid="status-suspended">
 				<p>
 					Your account is suspended: the payment failed three days ago and your machines were
 					stopped. Once the invoice is paid you can start them again; snapshots are kept 30 days.
 				</p>
 				<button
 					type="button"
-					class="btn btn--sm shrink-0"
-					disabled={!!busy}
+					class="hk-banner-action"
+					aria-disabled={waiting()}
 					onclick={() => openPortal('payment_method')}>Update card and pay</button
 				>
 			</div>
@@ -566,299 +698,145 @@
 			<!-- docs/PRICING.md "Failed payments": starts are refused from day
 			     0 and every machine stops on day 3. The api gives no date of
 			     the failure, so the line counts from it. -->
-			<div class="banner banner--error alert-row" data-testid="status-past-due">
+			<div class="hk-banner hk-banner--err" role="alert" data-testid="status-past-due">
 				<p>
-					<span class="font-medium">Your last payment failed.</span>
-					New starts are refused and running machines keep running. Three days after the failure every
-					machine stops, unless the card is updated.
+					Your last payment failed. New starts are refused and running machines keep running. Three
+					days after the failure every machine stops, unless the card is updated.
 				</p>
 				<button
 					type="button"
-					class="btn btn--sm shrink-0"
-					disabled={!!busy}
+					class="hk-banner-action"
+					aria-disabled={waiting()}
 					onclick={() => openPortal('payment_method')}>Update card</button
 				>
 			</div>
 		{/if}
 
-		<section class="card plan-card" data-testid="plan">
-			<!-- The plan, its price and its state, with the two things a
-			     subscriber comes here to do. -->
-			<div class="plan-head">
-				<div class="min-w-0">
-					<h2 class="plan-name">{plan.name}</h2>
-					<p class="plan-price">
-						<span class="n">{price(introCharge ? sub.next_charge_cents! : plan.price_cents)}</span>
-						<span class="per">/ month</span>
-					</p>
-					{#if introCharge && sub.intro_until}
-						<p class="mt-1.5 font-mono text-compact text-ink-muted" data-testid="intro-until">
-							then {price(plan.price_cents)} a month from {@render day(sub.intro_until)}
-						</p>
-					{/if}
-					<p class="mt-3 text-sm text-ink-muted" data-testid="plan-status">
-						{#if sub.cancel_at}
-							Cancelled. Ends {@render day(sub.cancel_at)}; machines stop then and snapshots stay 30
-							days.
-						{:else if sub.status === 'trialing' && sub.trial_end}
-							<!-- The price it becomes stands under the big figure (I-497). -->
-							Trial. First charge of {price(sub.next_charge_cents ?? plan.price_cents)} on {@render day(
-								sub.trial_end
-							)}.
-						{:else if sub.status === 'past_due'}
-							Payment past due.
-						{:else if sub.next_billed_at}
-							Active. Renews {@render day(sub.next_billed_at)}.
-						{:else}
-							Active.
-						{/if}
-						{#if scheduledPlan}
-							Changes to {scheduledPlan.name} on {@render day(sub.period_end)}.
-						{/if}
-					</p>
-				</div>
-				<div class="plan-actions">
-					{#if sub.cancel_at}
-						<button type="button" id="resume-plan" class="btn" disabled={!!busy} onclick={resume}>
-							{busy === 'resume' ? 'Resuming…' : 'Resume plan'}
-						</button>
-					{:else}
-						<button
-							type="button"
-							class="btn-quiet"
-							aria-expanded={changing}
-							aria-controls="change-plan"
-							disabled={!!busy}
-							onclick={toggleChange}>Change plan</button
+		<section class="current" data-testid="plan" aria-labelledby="plan-h">
+			<p class="hk-label">Current plan</p>
+			<h2 id="plan-h" class="hk-h2 plan-name">{plan.name}</h2>
+			<dl class="hk-facts hk-facts--row facts">
+				<div>
+					<dt>Price</dt>
+					<dd>
+						<span class="plan-price"
+							><span class="n">{price(introCharge ? sub.next_charge_cents! : plan.price_cents)}</span>
+							a month</span
 						>
-					{/if}
-					<button
-						type="button"
-						class="btn-quiet"
-						disabled={!!busy}
-						onclick={() => openPortal()}
-						aria-label={busy === 'portal' ? undefined : 'Manage card and receipts'}
-						>{#if busy === 'portal'}Opening…{:else}<span class="max-sm:hidden"
-								>Manage card and receipts</span
-							><span class="sm:hidden">Card and receipts</span>{/if}</button
-					>
-				</div>
-			</div>
-
-			<!-- What the plan is holding now (I-674): memory as the plan's own
-			     squares, filled by each running machine; disk and egress as a
-			     figure with a small ring. Then the period it is billed for. -->
-			<div class="usage">
-				<div class="mem" data-testid="meter-running-now">
-					<div class="u-head">
-						<span class="u-label">Running now</span>
-						<span class="u-fig" class:u-over={billing.usage.running_gb > billing.usage.memory_gb}
-							><span class="u-n">{gbs(billing.usage.running_gb)}</span>
-							<span class="u-of">
-								of {gbs(
-									billing.usage.memory_gb
-								)}{#if billing.usage.running_gb > billing.usage.memory_gb}&nbsp;· over{/if}</span
-							></span
-						>
-					</div>
-					<div class="mem-pic">
-						<MemoryBlocks
-							label="Running now"
-							segments={running.map((p) => ({
-								name: p.name,
-								gb: classMemoryGB(p.class),
-								frozen: !!frozenSince(p)
-							}))}
-							limit={billing.usage.memory_gb}
-						/>
-					</div>
-					{#if running.length}
-						<ul class="legend" aria-label="Running now">
-							{#each running as p, i (p.id)}
-								<li>
-									<i
-										class="sw"
-										class:sw--alt={i % 2 === 1}
-										class:sw--ice={!!frozenSince(p)}
-										aria-hidden="true"
-									></i>
-									<a href={resolve('/projects/[id]', { id: p.id })} class="hover:underline"
-										>{p.name}</a
-									>
-									<span class="u-num">{classMemoryGB(p.class)} GB</span>
-									{#if frozenSince(p)}<span class="frost-word">frozen</span>{/if}
-								</li>
-							{/each}
-						</ul>
-					{/if}
-					<p class="u-note">{runsAtOnce(plan)}</p>
-				</div>
-
-				<div class="u-rows">
-					<div class="u-row" data-testid="meter-disk-held">
-						<UsageRing
-							label="Disk held"
-							used={diskHeld}
-							limit={billing.usage.disk_gb}
-							format={gbs}
-						/>
-						<span class="u-label">Disk held</span>
-						<span class="u-fig" class:u-over={diskHeld > billing.usage.disk_gb}
-							><span class="u-n">{gbs(diskHeld)}</span>
-							<span class="u-of">
-								of {gbs(billing.usage.disk_gb)}{#if diskHeld > billing.usage.disk_gb}&nbsp;· over{/if}</span
-							></span
-						>
-						{#if diskHeld > billing.usage.disk_gb}
-							<p class="u-note u-note--warn">
-								Creating, restoring and forking projects, and growing a disk, are refused until your
-								projects hold less. A deleted file stops counting within a day, or when its machine
-								stops.
-							</p>
-						{:else if heaviest.length && diskHeld >= billing.usage.disk_gb * 0.8}
-							<!-- Who holds it, only once it nears the limit. -->
-							<p class="u-note">
-								Most: {most(heaviest.map((p) => [p.name, gb(p.root_used_bytes ?? 0)]))}
-							</p>
+						{#if introCharge && sub.intro_until}
+							<span class="sub" data-testid="intro-until"
+								>then {price(plan.price_cents)} a month from {@render day(sub.intro_until)}</span
+							>
 						{/if}
-					</div>
-					<div class="u-row" data-testid="meter-egress-this-period">
-						<UsageRing
-							label="Egress this period"
-							used={billing.usage.egress_gb}
-							limit={billing.usage.egress_included_gb}
-							format={egressFigure}
-						/>
-						<span class="u-label">Egress this period</span>
-						<span class="u-fig" class:u-over={egOver}
-							><span class="u-n">{egressFigure(billing.usage.egress_gb)}</span>
-							<span class="u-of">
-								of {egressFigure(billing.usage.egress_included_gb)}{#if egOver}&nbsp;· over{/if}</span
-							></span
-						>
-						{#if billing.usage.overage_cents > 0}
-							<p class="u-note u-note--warn">
-								Over by {gbs(billing.usage.egress_gb - billing.usage.egress_included_gb)}: {money(
-									billing.usage.overage_cents
-								)} on the next invoice at $0.05 a GB.
-							</p>
-						{:else if egressBy.length && billing.usage.egress_gb >= billing.usage.egress_included_gb * 0.5}
-							<p class="u-note">
-								Most: {most(
-									egressBy.map((e) => [
-										projectName.get(e.id) ?? 'a destroyed project',
-										gbs(Math.round(e.gb * 10) / 10)
-									])
-								)}
-							</p>
-						{/if}
-					</div>
+					</dd>
 				</div>
-			</div>
-
-			<dl class="facts">
-				{#if period}
+				{#if sub.cancel_at || sub.status !== 'past_due' || scheduledPlan}
 					<div>
-						<dt>Period</dt>
-						<dd>{@render day(sub.period_start)} to {@render day(sub.period_end)}</dd>
-						<dd class="fact-sub">Day {period.day} of {period.of}</dd>
-					</div>
-				{/if}
-				<div>
-					<dt>Next charge</dt>
-					{#if nextCharge(sub, plan)}
-						{@const next = nextCharge(sub, plan)!}
+						<dt>Status</dt>
 						<dd>
-							<span data-testid="next-charge">{money(next.cents)}</span> on {@render day(next.on)}
-						</dd>
-						{#if billing.usage.overage_cents > 0}
-							<dd class="fact-sub">plus {money(billing.usage.overage_cents)} egress so far</dd>
-						{/if}
-					{:else}
-						<dd>None</dd>
-						{#if sub.cancel_at}<dd class="fact-sub">Plan ends {@render day(sub.cancel_at)}</dd>{/if}
-					{/if}
-				</div>
-				<div>
-					<dt>Latest invoice</dt>
-					{#if newest(invoices)}
-						{@const inv = newest(invoices)!}
-						<dd>{money(inv.amount_cents)}, {inv.status.replaceAll('_', ' ')}</dd>
-						<dd class="fact-sub">{@render day(inv.created_at)}</dd>
-					{:else}
-						<dd class="text-ink-muted">None yet</dd>
-					{/if}
-				</div>
-			</dl>
-
-			{#if !sub.cancel_at}
-				<div class="plan-foot">
-					<!-- The documented two-step (DESIGN-LANGUAGE.md, "Confirmation"):
-					     the button turns into the question, and Keep it brings it
-					     back with the focus on it (I-393). One panel at a time:
-					     opening the question closes Change plan and the reverse. -->
-					{#if confirmCancel}
-						<div class="text-sm" data-testid="confirm-cancel">
-							<p class="text-ink-muted">
-								Cancel the plan? It ends on {@render day(
-									sub.status === 'trialing' && sub.trial_end ? sub.trial_end : sub.period_end
-								)}. Machines run until then and stop at it; snapshots are kept 30 days after.
-								Nothing is charged after that.
-							</p>
-							<div class="mt-2 flex items-center gap-2">
-								<button type="button" class="btn-danger btn--sm" disabled={!!busy} onclick={cancel}>
-									{busy === 'cancel' ? 'Cancelling…' : 'Cancel plan'}
-								</button>
-								<!-- Focus lands on the safe choice when the question opens. -->
+							<span data-testid="plan-status">
+								{#if sub.cancel_at}
+									Cancelled. Ends {@render day(sub.cancel_at)}; machines stop then and snapshots stay
+									30 days.
+								{:else if sub.status === 'trialing' && sub.trial_end}
+									Trial. First charge of {price(sub.next_charge_cents ?? plan.price_cents)} on {@render day(
+										sub.trial_end
+									)}.
+								{:else if sub.status === 'past_due'}
+									<!-- The banner says the payment failed. -->
+								{:else if sub.next_billed_at}
+									Active. Renews {@render day(sub.next_billed_at)}.
+								{:else}
+									Active.
+								{/if}
+								{#if scheduledPlan}
+									Changes to {scheduledPlan.name} on {@render day(sub.period_end)}.
+								{/if}
+							</span>
+							{#if scheduledPlan}
 								<button
 									type="button"
-									class="btn-ghost"
-									use:focusOnMount
-									onclick={() => {
-										confirmCancel = false;
-										void focusAfterRender('cancel-plan');
-									}}>Keep it</button
+									class="hk-btn-ghost hk-btn-sm keep"
+									data-testid="change-keep"
+									aria-disabled={waiting()}
+									onclick={() => changePlan(sub.plan)}
 								>
-							</div>
-						</div>
-					{:else}
-						<button
-							type="button"
-							id="cancel-plan"
-							class="btn-ghost-danger -ml-2"
-							disabled={!!busy}
-							onclick={() => {
-								changing = false;
-								confirmCancel = true;
-							}}>Cancel plan</button
-						>
-					{/if}
-				</div>
-			{/if}
+									{busy === `plan-${sub.plan}` ? 'Saving…' : `Keep ${plan.name}`}
+								</button>
+							{/if}
+						</dd>
+					</div>
+				{/if}
+				<!-- A trial's Status already names its first charge. -->
+				{#if nextCharge(sub, plan) && sub.status !== 'trialing'}
+					{@const next = nextCharge(sub, plan)!}
+					<div>
+						<dt>Next charge</dt>
+						<dd>
+							<span data-testid="next-charge">{money(next.cents)}</span> on {@render day(next.on)}
+							{#if billing.usage.overage_cents > 0}
+								<span class="sub">plus {money(billing.usage.overage_cents)} egress so far</span>
+							{/if}
+						</dd>
+					</div>
+				{/if}
+				{#if latest}
+					<div>
+						<dt>Latest invoice</dt>
+						<dd>
+							{money(latest.amount_cents)}, {latest.status.replaceAll('_', ' ')}
+							<span class="sub">{@render day(latest.created_at)}</span>
+						</dd>
+					</div>
+				{/if}
+			</dl>
+			<div class="actions">
+				{#if sub.cancel_at}
+					<button
+						type="button"
+						id="resume-plan"
+						class="hk-btn"
+						aria-disabled={waiting()}
+						onclick={resume}
+					>
+						{busy === 'resume' ? 'Resuming…' : 'Resume plan'}
+					</button>
+				{:else}
+					<button
+						type="button"
+						id="change-plan-toggle"
+						class="hk-btn-secondary"
+						aria-expanded={changing}
+						aria-controls="change-plan"
+						aria-disabled={waiting()}
+						onclick={toggleChange}>Change plan</button
+					>
+				{/if}
+				<button
+					type="button"
+					class="hk-btn-secondary"
+					aria-disabled={waiting()}
+					onclick={() => openPortal()}
+					aria-label={busy === 'portal' ? undefined : 'Manage card and receipts'}
+					>{#if busy === 'portal'}Opening…{:else}<span class="max-sm:hidden">Manage card and receipts</span
+						><span class="sm:hidden">Card and receipts</span>{/if}</button
+				>
+			</div>
 		</section>
 
-		<!-- The plans at page width under the card, so each cell has room
-		     for its squares, its figures and its button. -->
 		{#if changing}
 			<section
 				id="change-plan"
-				class="mt-8"
+				class="hk-section"
 				data-testid="change-plan"
 				aria-labelledby="change-plan-h"
 			>
-				<div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-					<h2 id="change-plan-h" class="text-xl font-semibold">Change plan</h2>
-					<p class="text-sm text-ink-muted">
-						Upgrades apply now, prorated. Downgrades apply at renewal on {@render day(
-							sub.period_end
-						)}.
+				<div class="hk-section-head">
+					<h2 id="change-plan-h" class="hk-h2-app" tabindex="-1">Change plan</h2>
+					<p>
+						Upgrades apply now, prorated. Downgrades apply at renewal on {@render day(sub.period_end)}.
 					</p>
 				</div>
-				{#if scheduledPlan}
-					<p class="mb-4 text-sm text-ink-muted" data-testid="change-keep">
-						{scheduledPlan.name} is scheduled for {@render day(sub.period_end)}.
-					</p>
-				{/if}
 				<PlanCells
 					plans={figures}
 					current={sub.plan}
@@ -867,63 +845,21 @@
 					level={3}
 				/>
 				{#if changeError}
-					<p class="field-error" data-testid="change-error">{changeError}</p>
+					<div class="hk-banner hk-banner--err change-error" role="alert" data-testid="change-error">
+						<p>{changeError}</p>
+					</div>
 				{/if}
 			</section>
 		{/if}
 
-		<section class="mt-12" aria-labelledby="invoices-h">
-			<div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-				<h2 id="invoices-h" class="text-xl font-semibold">Invoices</h2>
-				<p class="text-xs text-ink-muted">
-					Receipts and tax: Polar. <a href={resolve('/refunds')} class="link">Refunds</a>
-				</p>
-			</div>
-			{#if invoices.length === 0}
-				<p class="mt-3 text-sm text-ink-muted">No invoices yet.</p>
-			{:else}
-				<table class="table mt-3" aria-label="Invoices">
-					<thead>
-						<tr>
-							<th scope="col">Date</th>
-							<th scope="col" class="max-sm:hidden">Number</th>
-							<th scope="col">Status</th>
-							<th scope="col" class="text-right">Amount</th>
-							<th scope="col" class="text-right"><span class="sr-only">Invoice</span></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each shownInvoices as inv (inv.id)}
-							<tr>
-								<td class="whitespace-nowrap tabular-nums">{dateOnly(inv.created_at)}</td>
-								<td class="font-mono text-compact max-sm:hidden">{inv.number ?? ''}</td>
-								<td>
-									<span class="badge {inv.status === 'paid' ? '' : 'badge--warn'}"
-										>{inv.status.replaceAll('_', ' ')}</span
-									>
-								</td>
-								<td class="text-right tabular-nums">
-									{money(inv.amount_cents)}
-									{#if inv.tax_cents > 0}
-										<span class="block text-xs text-ink-muted">tax {money(inv.tax_cents)}</span>
-									{/if}
-								</td>
-								<td class="text-right">
-									{#if inv.pdf_url}
-										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's invoice PDF, not an app route -->
-										<a href={inv.pdf_url} class="link">PDF</a>
-									{:else if inv.hosted_url}
-										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's hosted invoice, not an app route -->
-										<a href={inv.hosted_url} class="link">View</a>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+		{@render thisMonth()}
+
+		<section class="hk-section" aria-labelledby="invoices-h">
+			<div class="hk-section-head">
+				<h2 id="invoices-h" class="hk-h2-app">Invoices</h2>
 				{#if invoicePages > 1}
-					<nav class="mt-3 flex items-center justify-end gap-3" aria-label="Invoice pages">
-						<span class="font-mono text-compact text-ink-muted tabular-nums"
+					<nav class="pager" aria-label="Invoice pages">
+						<span class="pos"
 							>{invoicePage * INVOICES_PER_PAGE + 1}–{Math.min(
 								invoices.length,
 								(invoicePage + 1) * INVOICES_PER_PAGE
@@ -931,207 +867,297 @@
 						>
 						<button
 							type="button"
-							class="btn-quiet btn--sm"
-							aria-disabled={invoicePage === 0 ? 'true' : undefined}
-							title={invoicePage === 0 ? 'This is the newest page' : undefined}
-							onclick={() => invoicePage > 0 && (invoicePage -= 1)}>Newer</button
+							class="hk-btn-ghost hk-btn-sm"
+							disabled={invoicePage === 0}
+							onclick={() => (invoicePage -= 1)}>Newer</button
 						>
 						<button
 							type="button"
-							class="btn-quiet btn--sm"
-							aria-disabled={invoicePage >= invoicePages - 1 ? 'true' : undefined}
-							title={invoicePage >= invoicePages - 1 ? 'No older invoices' : undefined}
-							onclick={() => invoicePage < invoicePages - 1 && (invoicePage += 1)}>Older</button
+							class="hk-btn-ghost hk-btn-sm"
+							disabled={invoicePage >= invoicePages - 1}
+							onclick={() => (invoicePage += 1)}>Older</button
 						>
 					</nav>
 				{/if}
+			</div>
+			{#if invoices.length === 0}
+				<p class="hk-empty-row">No invoices yet.</p>
+			{:else}
+				<table class="hk-table invoices" aria-label="Invoices">
+					<thead>
+						<tr>
+							<th scope="col" class="c-date">Date</th>
+							<th scope="col" class="c-num">Number</th>
+							<th scope="col" class="c-status">Status</th>
+							<th scope="col" class="c-amount">Amount</th>
+							<th scope="col" class="c-link"><span class="hk-sr">Invoice</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each shownInvoices as inv (inv.id)}
+							<tr>
+								<td class="c-date">{dateOnly(inv.created_at)}</td>
+								<td class="c-num">{inv.number ?? ''}</td>
+								<td class="c-status">
+									{#if inv.status === 'paid'}
+										paid
+									{:else}
+										<span class="hk-badge hk-badge--outline">{inv.status.replaceAll('_', ' ')}</span>
+									{/if}
+								</td>
+								<td class="c-amount">
+									{money(inv.amount_cents)}
+									{#if inv.tax_cents > 0}
+										<span class="tax">tax {money(inv.tax_cents)}</span>
+									{/if}
+								</td>
+								<td class="c-link">
+									{#if inv.pdf_url}
+										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's invoice PDF, not an app route -->
+										<a href={inv.pdf_url} class="hk-link">PDF</a>
+									{:else if inv.hosted_url}
+										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- Polar's hosted invoice, not an app route -->
+										<a href={inv.hosted_url} class="hk-link">View</a>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			{/if}
 		</section>
+
+		{#if !sub.cancel_at}
+			<!-- The page's one destructive action, last (Guide B 1.4). The
+			     documented two-step (I-393): the button turns into the
+			     question, and Keep it brings it back with the focus on it.
+			     One panel at a time: opening the question closes Change plan
+			     and the reverse. -->
+			<section class="cancel" aria-label="Cancel plan">
+				{#if confirmCancel}
+					<div class="hk-confirm" data-testid="confirm-cancel">
+						<p>
+							Cancel the plan? It ends on {@render day(
+								sub.status === 'trialing' && sub.trial_end ? sub.trial_end : sub.period_end
+							)}. Machines run until then and stop at it; snapshots are kept 30 days after. Nothing is
+							charged after that.
+						</p>
+						<div class="hk-confirm-actions">
+							<button
+								type="button"
+								class="hk-btn-danger hk-btn-sm"
+								aria-disabled={waiting()}
+								onclick={cancel}
+							>
+								{busy === 'cancel' ? 'Cancelling…' : 'Cancel plan'}
+							</button>
+							<!-- Focus lands on the safe choice when the question opens. -->
+							<button
+								type="button"
+								class="hk-btn-ghost hk-btn-sm"
+								use:focusOnMount
+								onclick={() => {
+									confirmCancel = false;
+									void focusAfterRender('cancel-plan');
+								}}>Keep it</button
+							>
+						</div>
+					</div>
+				{:else}
+					<button
+						type="button"
+						id="cancel-plan"
+						class="hk-btn-text-danger"
+						aria-disabled={waiting()}
+						onclick={() => {
+							if (busy) return;
+							changing = false;
+							confirmCancel = true;
+						}}>Cancel plan</button
+					>
+				{/if}
+			</section>
+		{/if}
 	{/if}
 </PageShell>
 
 <style>
-	/* A plan that cannot be had here, where its button would be: the
-	   button's box, quiet, with the reason in it. */
-	.needs {
+	.nw {
+		white-space: nowrap;
+	}
+
+	/* The plans for sale. */
+	.buy-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.25rem 1.5rem;
+		margin-bottom: 1rem;
+		font-size: 0.9375rem;
+		color: var(--hk-text-2);
+	}
+	.buy-line p {
+		margin: 0;
+	}
+	.buy-line .seats {
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.terms {
+		margin: 1.25rem 0 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	/* A plan that cannot be had here, where its button would be: one line,
+	   the button's height, so the three feet stay level. */
+	.refused {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		min-height: 2.375rem;
-		padding: 0.25rem 0.75rem;
-		border: 1px dashed var(--rule-strong);
-		border-radius: var(--radius-sm);
+		gap: 0.5rem;
+		min-height: 2.25rem;
+		margin: 0;
 		font-size: 0.8125rem;
-		text-align: center;
-		color: var(--ink-muted);
+		color: var(--hk-text-2);
 	}
-	.waiting {
-		margin-bottom: 1.5rem;
-	}
-	.email {
-		overflow-wrap: anywhere;
-	}
-	/* The queue's length beside the place, in the strip's .plan-of
-	   style (PlanStrip.svelte). */
-	.wait-of {
-		margin-left: 0.125rem;
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		font-weight: 400;
-		letter-spacing: 0;
-		color: var(--ink-muted);
-	}
-	/* On a phone the cells stack: label and figure on one line, as
-	   the plan strip's cells do. */
-	@media (width < 40rem) {
-		.wait-strip .stat {
-			display: grid;
-			grid-template-columns: 1fr auto;
-			align-items: baseline;
-			column-gap: 1rem;
-			padding: 0.75rem 1rem;
-		}
-		.wait-strip .stat-value {
-			margin-top: 0;
-			font-size: var(--text-lg);
-		}
-		.wait-strip .stat-sub {
-			grid-column: 1 / -1;
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.refused {
+			min-height: 2.75rem;
 		}
 	}
-	.alert-row {
+
+	/* Seats full, and the place on the list. */
+	.full {
+		margin-bottom: 2rem;
+	}
+	.full-row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem 1.5rem;
+		margin-top: 0.875rem;
+		padding: 1rem 0;
+		border-top: 1px solid var(--hk-hairline);
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	.alert-row p {
+	.full-row p {
 		flex: 1 1 24rem;
+		margin: 0;
+		font-size: 0.9375rem;
+		color: var(--hk-text-2);
+	}
+	.place {
+		margin-bottom: 2rem;
+	}
+	.place .hk-banner {
+		margin-bottom: 0.5rem;
+	}
+	.place-facts {
+		max-width: 40rem;
+	}
+	.email {
+		overflow-wrap: anywhere;
 	}
 
-	/* The current plan: one card in bands split by hairlines. */
-	.plan-card {
-		padding: 0;
-	}
-	.plan-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1.25rem 2rem;
-		padding: 1.5rem;
+	/* The current plan: a label, the name, its facts in one row, two actions. */
+	.current {
+		margin-bottom: 0;
 	}
 	.plan-name {
-		font-family: var(--font-display);
-		font-size: 1.75rem;
-		font-weight: 700;
-		line-height: 1;
-		letter-spacing: -0.01em;
-		text-transform: uppercase;
+		margin: 0.25rem 0 0;
 	}
-	.plan-price {
-		display: flex;
-		align-items: baseline;
-		gap: 0.375rem;
-		margin-top: 0.625rem;
+	.facts {
+		margin-top: 1.25rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
-	.plan-price .n {
-		font-family: var(--font-display);
-		font-size: 2rem;
-		font-weight: 700;
-		line-height: 1;
-		letter-spacing: -0.02em;
+	@media (min-width: 900px) {
+		.facts {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			gap: 1rem 2rem;
+		}
+	}
+	@media (max-width: 479.98px) {
+		.facts {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+	.facts dd {
 		font-variant-numeric: tabular-nums;
+		text-wrap: pretty;
 	}
-	.plan-price .per {
+	.facts .sub {
+		display: block;
+		margin-top: 0.125rem;
 		font-size: 0.8125rem;
-		color: var(--ink-muted);
+		color: var(--hk-text-3);
 	}
-	.plan-actions {
+	.keep {
+		display: flex;
+		margin: 0.375rem 0 0 -0.75rem;
+	}
+	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: center;
 		gap: 0.5rem;
+		margin-top: 1.5rem;
 	}
-	/* On a phone the two actions share one row at equal width, so they
-	   read as a pair, not a ragged stack. */
-	@media (width < 40rem) {
-		.plan-actions {
+	/* On a phone the two actions share one row at equal width. */
+	@media (max-width: 639.98px) {
+		.actions {
 			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-			width: 100%;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
-		.plan-actions > :global(button) {
-			width: 100%;
+		.actions > button {
+			min-width: 0;
 			padding-inline: 0.5rem;
 		}
 	}
-	.plan-foot {
-		padding: 0.875rem 1.5rem;
-		border-top: 1px solid var(--rule);
-	}
-	.date {
-		white-space: nowrap;
+
+	.change-error {
+		margin: 1rem 0 0;
 	}
 
-	/* Usage: memory with its squares on the left, disk and egress as two
-	   quiet rows on the right. */
-	.usage {
+	/* This month: three cells between two hairlines. */
+	.month {
 		display: grid;
-		border-top: 1px solid var(--rule);
+		gap: 1.5rem;
+		padding: 1.25rem 0;
+		border-top: 1px solid var(--hk-hairline);
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	.mem {
+	@media (min-width: 900px) {
+		.month {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 2.5rem;
+		}
+	}
+	.cell {
 		min-width: 0;
-		padding: 1.5rem;
 	}
-	.u-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 1rem;
+	.note {
+		margin: 0.75rem 0 0;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
 	}
-	.u-label {
-		min-width: 0;
-		font-size: var(--text-sm);
-		color: var(--ink-muted);
+	.note--over {
+		color: var(--hk-text-2);
 	}
-	/* The figure wraps only between the number and its "of LIMIT". */
-	.u-fig {
-		min-width: 0;
-		font-size: 0.9375rem;
-		font-variant-numeric: tabular-nums;
+	.note .hk-dot {
+		margin-right: 0.5rem;
+		vertical-align: 0.0625rem;
 	}
-	.u-n,
-	.u-of {
-		white-space: nowrap;
-	}
-	.mem .u-fig {
-		font-family: var(--font-display);
-		font-size: 1.5rem;
-		font-weight: 600;
-		letter-spacing: -0.01em;
-	}
-	.u-of {
-		margin-left: 0;
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		font-weight: 400;
-		letter-spacing: 0;
-		color: var(--ink-muted);
-	}
-	.u-over .u-of {
-		color: var(--color-amber-800);
-	}
-	.mem-pic {
-		margin-top: 1rem;
+	.month-banner {
+		margin: 1rem 0 0;
 	}
 	.legend {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem 1.25rem;
-		margin-top: 1rem;
+		gap: 0.25rem 1rem;
+		margin: 0.75rem 0 0;
+		padding: 0;
 		list-style: none;
 		font-size: 0.8125rem;
 	}
@@ -1144,113 +1170,134 @@
 	.sw {
 		width: 10px;
 		height: 10px;
-		border-radius: var(--radius-xs);
-		background: var(--accent);
-	}
-	.sw.sw--ice {
-		background: color-mix(in srgb, var(--frost) 22%, var(--surface));
-		box-shadow: inset 0 0 0 1px var(--frost);
-	}
-	.frost-word {
-		font-size: var(--text-xs);
-		color: var(--frost);
+		border-radius: 2px;
+		background: var(--hk-accent);
 	}
 	.sw--alt {
-		background: color-mix(in srgb, var(--accent) 55%, var(--surface));
+		background: color-mix(in srgb, var(--hk-accent) 55%, var(--hk-surface));
+	}
+	.sw-ice {
+		display: inline-flex;
+		color: var(--hk-text-2);
+	}
+	.legend-link {
+		color: var(--hk-text);
+		text-decoration: underline;
+		text-decoration-color: transparent;
+		text-underline-offset: 3px;
+		transition: text-decoration-color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.legend-link:hover {
+		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
 	}
 	.u-num {
-		font-family: var(--font-mono);
-		font-size: var(--text-compact);
+		color: var(--hk-text-3);
 		font-variant-numeric: tabular-nums;
-		color: var(--ink-muted);
 	}
-	.u-note {
-		margin-top: 0.75rem;
-		font-size: var(--text-xs);
-		color: var(--ink-muted);
-	}
-	.u-note--warn {
-		color: var(--color-amber-800);
-	}
-	.u-rows {
-		display: grid;
-		align-content: center;
-		min-width: 0;
-		border-top: 1px solid var(--rule);
-	}
-	.u-row {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		align-items: center;
-		column-gap: 0.75rem;
-		padding: 1.125rem 1.5rem;
-	}
-	.u-row .u-fig {
-		text-align: right;
-	}
-	.u-row + .u-row {
-		border-top: 1px solid var(--rule);
-	}
-	.u-row .u-note {
-		grid-column: 2 / -1;
-		margin-top: 0.375rem;
-		line-height: 1.5;
-	}
-	/* On a phone the figure takes its own line under the label, the ring
-	   beside both, and the note under the figure. */
-	@media (width < 40rem) {
-		.u-row {
-			align-items: start;
-		}
-		.u-row > :global(.uring) {
-			grid-row: 1 / span 2;
-			align-self: start;
-			margin-top: 0.125rem;
-		}
-		.u-row .u-fig {
-			grid-column: 2 / -1;
-			margin-top: 0.125rem;
-			text-align: left;
-		}
-	}
-	@media (prefers-color-scheme: dark) {
-		.u-over .u-of,
-		.u-note--warn {
-			color: var(--color-amber-300);
+	@media (forced-colors: active) {
+		.sw {
+			background: CanvasText;
 		}
 	}
 
-	/* The billing period's facts in one quiet band: small labels, plain
-	   figures, no second big price. */
-	.facts {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-		gap: 1rem 2rem;
-		padding: 1.125rem 1.5rem;
-		border-top: 1px solid var(--rule);
-		background: var(--page);
+	/* Invoices. */
+	.pager {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
 	}
-	.facts dt {
-		font-size: var(--text-xs);
-		color: var(--ink-muted);
-	}
-	.facts dd {
-		margin-top: 0.25rem;
-		font-size: 0.875rem;
+	.pager .pos {
+		margin-right: 0.5rem;
 		font-variant-numeric: tabular-nums;
 	}
-	.facts .fact-sub {
-		margin-top: 0.125rem;
-		font-size: var(--text-xs);
-		color: var(--ink-muted);
+	.invoices {
+		table-layout: fixed;
 	}
-	@media (min-width: 1024px) {
-		.usage {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+	.c-date {
+		width: 16%;
+		white-space: nowrap;
+	}
+	.c-num {
+		width: 22%;
+	}
+	td.c-num {
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+	}
+	.c-status {
+		width: 14%;
+	}
+	td.c-status {
+		color: var(--hk-text-2);
+	}
+	.c-amount {
+		width: 28%;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.tax {
+		display: block;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.c-link {
+		width: 20%;
+		text-align: right;
+	}
+	/* Below 640px a row is two lines: date and amount, then number and
+	   status; the link stays right. */
+	@media (max-width: 639.98px) {
+		.invoices thead {
+			display: none;
 		}
-		.u-rows {
-			border-top: 0;
-			border-left: 1px solid var(--rule);
+		.invoices tr {
+			display: grid;
+			grid-template-columns: auto auto minmax(0, 1fr) auto;
+			grid-template-areas:
+				'date date amount link'
+				'num status amount link';
+			column-gap: 0.5rem;
+			padding: 0.75rem 0;
+			border-top: 1px solid var(--hk-hairline);
 		}
+		.invoices tbody tr:last-child {
+			border-bottom: 1px solid var(--hk-hairline);
+		}
+		.invoices td {
+			display: block;
+			width: auto;
+			padding: 0;
+			border: 0;
+		}
+		.invoices td.c-date {
+			grid-area: date;
+		}
+		.invoices td.c-amount {
+			grid-area: amount;
+		}
+		.invoices td.c-link {
+			grid-area: link;
+			align-self: center;
+			padding-left: 0.75rem;
+		}
+		.invoices td.c-num {
+			grid-area: num;
+			color: var(--hk-text-3);
+		}
+		.invoices td.c-status {
+			grid-area: status;
+			font-size: 0.8125rem;
+			color: var(--hk-text-3);
+		}
+		.invoices td.c-status::before {
+			content: '· ';
+		}
+	}
+
+	.cancel {
+		margin-top: 2.75rem;
+	}
+	.cancel .hk-btn-text-danger {
+		margin-left: -0.625rem;
 	}
 </style>

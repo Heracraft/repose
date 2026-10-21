@@ -14,6 +14,7 @@
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { dateOnly } from '$lib/format';
+	import { focusAfterRender } from '$lib/focus';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import type { Me } from '$lib/api/types';
 
@@ -49,13 +50,9 @@
 	let gchatDirty = $derived(gchatUrl.trim() !== '');
 	let gchat = $derived(me?.notify?.gchat ?? null);
 
-	// Each section is a row of two tracks from lg (I-664): the h2 and one
-	// fact in 280px on the left, the controls on the right, held to 560px
-	// unless they are code. Below lg the two stack. MachineNix draws the
-	// same row with the same classes.
-	const ROW = 'form-section lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-x-12';
-	const FACT = 'mt-1 text-sm text-ink-muted';
-	const BODY = 'mt-4 min-w-0 max-w-[560px] lg:mt-0';
+	// Delete account opens in place of its button (I-386): the typed
+	// handle, then the danger button; Cancel gives the focus back.
+	let confirmDelete = $state(false);
 
 	const supported =
 		typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
@@ -254,230 +251,353 @@
 </svelte:head>
 
 <PageShell title="Settings">
-	<!-- Only what reads /v1/me waits on it: the install line and
-	     machine.nix have their own sources and show while it loads or
-	     after it failed. -->
-	<LoadState
-		status={me ? 'ready' : loadError ? 'failed' : 'loading'}
-		error={loadError}
-		onretry={load}
-		shape="rows"
-	>
-		<!-- The first section draws no rule of its own (.form-section:first-child
-		     in layout.css): the page title's rule is directly above it. The
-		     account was its own page until I-578; /account redirects here. -->
-		{#if me}
-			<section class={ROW} id="account">
-				<div>
-					<h2 class="text-xl font-semibold">Account</h2>
-					<p class={FACT}>Created {dateOnly(me.created_at)}.</p>
-				</div>
-				<div class={BODY}>
-					<dl class="-mt-1.5 border-b border-rule text-sm">
-						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 py-2.5">
-							<dt class="text-ink-muted">Handle</dt>
-							<dd class="font-mono">{me.handle}</dd>
-						</div>
-						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 border-t border-rule py-2.5">
-							<dt class="text-ink-muted">Email</dt>
-							<dd class="min-w-0 break-all">{me.email}</dd>
-						</div>
-						<div class="grid grid-cols-[7rem_minmax(0,1fr)] gap-4 border-t border-rule py-2.5">
-							<dt class="text-ink-muted">GitHub</dt>
-							<dd class={me.github_login ? '' : 'text-ink-muted'}>
-								{me.github_login ?? 'Not linked'}
-							</dd>
-						</div>
-					</dl>
-					<div class="mt-4">
-						<button type="button" class="btn-quiet btn--sm" onclick={() => signOut()}
+	<!-- Each section is a row of two tracks from 1024px (I-837): the h2
+	     and at most one constraint in 15rem on the left, the controls in
+	     40rem on the right, the same for every section. AccountSecrets and
+	     MachineNix draw the same row (set-row). -->
+	<div class="settings">
+		<!-- Only what reads /v1/me waits on it: the install line, machine.nix
+		     and the secrets have their own sources and show while it loads
+		     or after it failed. -->
+		<LoadState
+			status={me ? 'ready' : loadError ? 'failed' : 'loading'}
+			error={loadError}
+			onretry={load}
+			shape="rows"
+		>
+			{#if me}
+				<!-- The account was its own page until I-578; /account redirects here. -->
+				<section class="set-row" id="account">
+					<div class="set-head">
+						<h2 id="account-h" class="hk-h2-app">Account</h2>
+					</div>
+					<div class="set-body">
+						<dl class="hk-facts">
+							<div>
+								<dt>Handle</dt>
+								<dd class="hk-mono">{me.handle}</dd>
+							</div>
+							<div>
+								<dt>Email</dt>
+								<dd>{me.email}</dd>
+							</div>
+							<div>
+								<dt>GitHub</dt>
+								<dd class:quiet={!me.github_login}>{me.github_login ?? 'Not linked'}</dd>
+							</div>
+							<div>
+								<dt>Created</dt>
+								<dd>{dateOnly(me.created_at)}</dd>
+							</div>
+						</dl>
+						<button type="button" class="hk-btn-secondary hk-btn-sm after" onclick={() => signOut()}
 							>Sign out</button
 						>
 					</div>
+				</section>
+
+				<section class="set-row">
+					<div class="set-head">
+						<h2 id="notify-h" class="hk-h2-app">Notifications</h2>
+					</div>
+					<div class="set-body hk-fields">
+						<label class="hk-check">
+							<input type="checkbox" bind:checked={emailOn} onchange={saveEmail} />
+							Email notifications
+						</label>
+						<form onsubmit={saveNtfy}>
+							<label for="ntfy-url" class="hk-field-label">ntfy URL</label>
+							<div class="field-row">
+								<input
+									id="ntfy-url"
+									class="hk-input mono"
+									placeholder="https://ntfy.sh/your-topic"
+									bind:value={ntfyUrl}
+								/>
+								<button
+									type="submit"
+									class="hk-btn-secondary hk-btn-sm"
+									disabled={!ntfyDirty}
+									aria-disabled={savingNtfy ? 'true' : undefined}
+								>
+									{savingNtfy ? 'Saving…' : 'Save'}
+								</button>
+							</div>
+							{#if ntfyDirty && heldNavigation}
+								<div class="hk-banner ask" role="alert">
+									<p>The ntfy URL is not saved. Leave this page anyway?</p>
+									<div class="ask-actions">
+										<button
+											type="button"
+											class="hk-btn-secondary hk-btn-sm"
+											bind:this={stayButton}
+											onclick={stay}>Stay</button
+										>
+										<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}
+											>Leave</button
+										>
+									</div>
+								</div>
+							{:else if ntfyDirty}
+								<p class="field-note">Not saved yet.</p>
+							{/if}
+						</form>
+						<form onsubmit={saveGChat}>
+							<div class="label-row">
+								<label for="gchat-url" class="hk-field-label">Google Chat webhook</label>
+								{#if gchat}
+									<!-- At phone width "space" is dropped so Remove stays on the label line. -->
+									<span class="space"
+										><span class="max-sm:hidden">space&nbsp;</span><span class="hk-mono"
+											>{gchat.space}</span
+										></span
+									>
+									{#if gchat.broken_at}
+										<span class="hk-badge hk-badge--warn"
+											>broken since {dateOnly(gchat.broken_at)}</span
+										>
+									{/if}
+									<button
+										type="button"
+										class="hk-btn-ghost hk-btn-sm remove"
+										aria-disabled={savingGChat ? 'true' : undefined}
+										onclick={() => !savingGChat && removeGChat()}>Remove</button
+									>
+								{/if}
+							</div>
+							<div class="field-row">
+								<input
+									id="gchat-url"
+									type="password"
+									autocomplete="off"
+									spellcheck="false"
+									class="hk-input mono"
+									placeholder={gchat ? 'New webhook URL' : 'https://chat.googleapis.com/v1/spaces/...'}
+									bind:value={gchatUrl}
+								/>
+								<button
+									type="submit"
+									class="hk-btn-secondary hk-btn-sm"
+									disabled={!gchatDirty}
+									aria-disabled={savingGChat ? 'true' : undefined}
+								>
+									{savingGChat ? 'Saving…' : 'Save'}
+								</button>
+							</div>
+							{#if gchat?.broken_at}
+								<p class="field-note">
+									Google refused the webhook. Save a new one, or send a test once it works again.
+								</p>
+							{/if}
+							{#if gchatDirty && !ntfyDirty && heldNavigation}
+								<div class="hk-banner ask" role="alert">
+									<p>The Google Chat webhook is not saved. Leave this page anyway?</p>
+									<div class="ask-actions">
+										<button
+											type="button"
+											class="hk-btn-secondary hk-btn-sm"
+											bind:this={stayButton}
+											onclick={stay}>Stay</button
+										>
+										<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}
+											>Leave</button
+										>
+									</div>
+								</div>
+							{:else if gchatDirty}
+								<p class="field-note">Not saved yet.</p>
+							{/if}
+						</form>
+						<div>
+							{#if testAvailable}
+								<button
+									type="button"
+									class="hk-btn-secondary hk-btn-sm"
+									aria-disabled={testing ? 'true' : undefined}
+									onclick={() => !testing && sendTest()}
+								>
+									{testing ? 'Sending…' : 'Send test'}
+								</button>
+							{:else}
+								<span class="field-note">Test not available yet</span>
+							{/if}
+						</div>
+					</div>
+				</section>
+
+				<section class="set-row">
+					<div class="set-head">
+						<h2 id="tz-h" class="hk-h2-app">Timezone</h2>
+						<p class="set-note"><code>repose run</code> replaces it with your laptop's.</p>
+					</div>
+					<div class="set-body">
+						{#if timezones.length}
+							<select class="hk-select tz" aria-label="Timezone" bind:value={tz} onchange={saveTz}>
+								{#each timezones as z (z)}
+									<option value={z}>{z}</option>
+								{/each}
+							</select>
+						{:else}
+							<input class="hk-input tz" aria-label="Timezone" bind:value={tz} onchange={saveTz} />
+						{/if}
+					</div>
+				</section>
+			{/if}
+		</LoadState>
+
+		<section class="set-row">
+			<div class="set-head">
+				<h2 id="install-h" class="hk-h2-app">Install</h2>
+				<p class="set-note">The CLI, for macOS and Linux.</p>
+			</div>
+			<div class="set-body">
+				<CodeCopy command={INSTALL_COMMAND} what="install command" />
+			</div>
+		</section>
+
+		<MachineNix />
+
+		<AccountSecrets />
+
+		{#if me}
+			<!-- The one irreversible action, last on the page. -->
+			<section class="set-row" id="delete-account">
+				<div class="set-head">
+					<h2 id="delete-h" class="hk-h2-app">Delete account</h2>
+				</div>
+				<div class="set-body">
+					<p class="consequence">
+						Stops every machine at once. Everything, including snapshots, is deleted 30 days later.
+					</p>
+					{#if confirmDelete}
+						<div class="after">
+							<ConfirmType
+								word={me.handle}
+								label="Delete account"
+								busy={deleting}
+								busyLabel="Deleting…"
+								onconfirm={onDelete}
+								oncancel={() => {
+									confirmDelete = false;
+									void focusAfterRender('delete-account-open');
+								}}
+								autofocus
+							/>
+						</div>
+					{:else}
+						<button
+							type="button"
+							id="delete-account-open"
+							class="hk-btn-danger hk-btn-sm after"
+							onclick={() => (confirmDelete = true)}>Delete account…</button
+						>
+					{/if}
 				</div>
 			</section>
 		{/if}
-
-		<section class={ROW}>
-			<div>
-				<h2 class="text-xl font-semibold">Timezone</h2>
-				<p class={FACT}>
-					A machine keeps it until <code class="font-mono text-compact">repose run</code> sets your laptop's.
-				</p>
-			</div>
-			<div class={BODY}>
-				{#if timezones.length}
-					<select
-						class="field w-full sm:w-80"
-						aria-label="Timezone"
-						bind:value={tz}
-						onchange={saveTz}
-					>
-						{#each timezones as z (z)}
-							<option value={z}>{z}</option>
-						{/each}
-					</select>
-				{:else}
-					<input
-						class="field w-full sm:w-80"
-						aria-label="Timezone"
-						bind:value={tz}
-						onchange={saveTz}
-					/>
-				{/if}
-			</div>
-		</section>
-
-		<section class={ROW}>
-			<div>
-				<h2 class="text-xl font-semibold">Notifications</h2>
-				<p class={FACT}>When an agent is done or needs you, on every project.</p>
-			</div>
-			<div class={BODY}>
-				<label class="check-row -mt-1.5">
-					<input type="checkbox" bind:checked={emailOn} onchange={saveEmail} />
-					Email notifications
-				</label>
-				<form class="mt-4" onsubmit={saveNtfy}>
-					<label for="ntfy-url" class="mb-1.5 block text-sm font-medium text-ink">ntfy URL</label>
-					<div class="flex gap-2">
-						<input
-							id="ntfy-url"
-							class="field min-w-0 flex-1"
-							placeholder="https://ntfy.sh/your-topic"
-							bind:value={ntfyUrl}
-						/>
-						<button type="submit" class="btn-quiet shrink-0" disabled={savingNtfy || !ntfyDirty}>
-							{savingNtfy ? 'Saving…' : 'Save'}
-						</button>
-					</div>
-					{#if ntfyDirty && heldNavigation}
-						<div
-							class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
-							role="alert"
-						>
-							<p>The ntfy URL is not saved. Leave this page anyway?</p>
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									class="btn-quiet btn--sm"
-									bind:this={stayButton}
-									onclick={stay}>Stay</button
-								>
-								<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
-							</div>
-						</div>
-					{:else if ntfyDirty}
-						<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
-					{/if}
-				</form>
-				<form class="mt-4" onsubmit={saveGChat}>
-					<div class="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-						<label for="gchat-url" class="block text-sm font-medium text-ink"
-							>Google Chat webhook</label
-						>
-						{#if gchat}
-							<!-- At phone width "space" is dropped so Remove stays on the label line. -->
-							<span class="text-sm text-ink-muted"
-								><span class="max-sm:hidden">space&nbsp;</span><span class="font-mono text-compact"
-									>{gchat.space}</span
-								></span
-							>
-							{#if gchat.broken_at}
-								<span class="badge badge--warn">broken since {dateOnly(gchat.broken_at)}</span>
-							{/if}
-							<!-- Remove sits on the label line so the input and Save keep the ntfy row's tracks. -->
-							<button
-								type="button"
-								class="btn-ghost btn--sm ml-auto"
-								disabled={savingGChat}
-								onclick={removeGChat}>Remove</button
-							>
-						{/if}
-					</div>
-					<div class="flex gap-2">
-						<input
-							id="gchat-url"
-							type="password"
-							autocomplete="off"
-							spellcheck="false"
-							class="field min-w-0 flex-1"
-							placeholder={gchat ? 'New webhook URL' : 'https://chat.googleapis.com/v1/spaces/...'}
-							bind:value={gchatUrl}
-						/>
-						<button type="submit" class="btn-quiet shrink-0" disabled={savingGChat || !gchatDirty}>
-							{savingGChat ? 'Saving…' : 'Save'}
-						</button>
-					</div>
-					{#if gchat?.broken_at}
-						<p class="mt-1.5 text-sm text-ink-muted">
-							Google refused the webhook. Save a new one, or send a test once it works again.
-						</p>
-					{/if}
-					{#if gchatDirty && !ntfyDirty && heldNavigation}
-						<div
-							class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
-							role="alert"
-						>
-							<p>The Google Chat webhook is not saved. Leave this page anyway?</p>
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									class="btn-quiet btn--sm"
-									bind:this={stayButton}
-									onclick={stay}>Stay</button
-								>
-								<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
-							</div>
-						</div>
-					{:else if gchatDirty}
-						<p class="mt-1.5 text-sm text-ink-muted">Not saved yet.</p>
-					{/if}
-				</form>
-				<div class="mt-3">
-					{#if testAvailable}
-						<button type="button" class="btn-ghost -ml-2" disabled={testing} onclick={sendTest}>
-							{testing ? 'Sending…' : 'Send test'}
-						</button>
-					{:else}
-						<span class="text-sm text-ink-faint">Test not available yet</span>
-					{/if}
-				</div>
-			</div>
-		</section>
-	</LoadState>
-
-	<section class={ROW}>
-		<div>
-			<h2 class="text-xl font-semibold">Install</h2>
-			<p class={FACT}>The CLI, for macOS and Linux.</p>
-		</div>
-		<div class={BODY}>
-			<CodeCopy command={INSTALL_COMMAND} what="install command" />
-		</div>
-	</section>
-
-	<MachineNix />
-
-	<AccountSecrets />
-
-	{#if me}
-		<!-- The danger zone, last on the page (DESIGN-LANGUAGE.md "States"). -->
-		<section class={ROW} id="delete-account">
-			<div>
-				<h2 class="text-xl font-semibold text-red-700 dark:text-red-400">Delete account</h2>
-				<p class={FACT}>
-					Stops every machine at once. Everything, including snapshots, is deleted 30 days later.
-				</p>
-			</div>
-			<div class={BODY}>
-				<ConfirmType
-					word={me.handle}
-					label="Delete account"
-					disabled={deleting}
-					onconfirm={onDelete}
-				/>
-			</div>
-		</section>
-	{/if}
+	</div>
 </PageShell>
+
+<style>
+	/* The rows, here and in MachineNix and AccountSecrets. */
+	.settings :global(.set-row) {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		row-gap: 1rem;
+	}
+	.settings :global(.set-row:not(:first-child)) {
+		margin-top: 2.75rem;
+		padding-top: 2rem;
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.settings :global(.set-head) {
+		min-width: 0;
+	}
+	.settings :global(.set-note) {
+		margin: 0.375rem 0 0;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+		text-wrap: pretty;
+	}
+	.settings :global(.set-body) {
+		min-width: 0;
+	}
+	@media (min-width: 1024px) {
+		.settings :global(.set-row) {
+			grid-template-columns: 15rem minmax(0, 40rem);
+			column-gap: 3rem;
+		}
+	}
+	/* Inside a row the first fact or table row drops its own top rule:
+	   the row's hairline is directly above it. */
+	.settings :global(.set-body > .hk-facts > div:first-child),
+	.settings :global(.set-body > .hk-table thead th) {
+		border-top: 0;
+	}
+	.settings :global(.set-body > .hk-facts > div:first-child) {
+		padding-top: 0;
+	}
+
+	.quiet {
+		color: var(--hk-text-3);
+	}
+	.after {
+		margin-top: 1rem;
+	}
+	.mono {
+		font-family: var(--hk-font-mono);
+	}
+	.field-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.field-row .hk-input {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.field-row button {
+		flex: none;
+	}
+	.label-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.75rem;
+		margin-bottom: 0.375rem;
+	}
+	.label-row .hk-field-label {
+		margin-bottom: 0;
+	}
+	.space {
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.remove {
+		margin-left: auto;
+		margin-right: -0.625rem;
+	}
+	.field-note {
+		margin: 0.375rem 0 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.ask {
+		margin: 0.75rem 0 0;
+		justify-content: space-between;
+	}
+	.ask-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.tz {
+		max-width: 20rem;
+	}
+	.consequence {
+		margin: 0;
+		font-size: 0.9375rem;
+		color: var(--hk-text-2);
+	}
+</style>
