@@ -138,7 +138,9 @@ const PAGES: Target[] = [
 		name: '/projects/[id]/secrets',
 		signedIn: true,
 		url: () => `/projects/${projectId}/secrets`,
-		ready: (page) => expect(page.getByRole('heading', { level: 1, name: 'Secrets' })).toBeVisible()
+		// The page keeps the project's name as its title (I-837).
+		ready: (page) =>
+			expect(page.getByRole('heading', { level: 2, name: 'Add a secret' })).toBeVisible()
 	},
 	{
 		name: '/settings',

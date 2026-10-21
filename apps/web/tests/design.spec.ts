@@ -3,28 +3,53 @@
 // (DESIGN-LANGUAGE.md; DECISIONS I-377, I-391, I-392). Lighthouse (tests-a11y)
 // scores the pages at rest; these drive them.
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, fail, unfail } from './helpers';
+import { signIn, createProject, destroyProject, apiURLFromEnv, fail, unfail } from './helpers';
 
 /** Presses Tab until the target holds the focus (at most 80 stops). */
 async function tabTo(page: Page, target: Locator): Promise<void> {
+	const path: string[] = [];
 	for (let i = 0; i < 80; i++) {
 		await page.keyboard.press('Tab');
 		if (await target.evaluate((el) => el === document.activeElement)) return;
+		path.push(
+			await page.evaluate(() => {
+				const a = document.activeElement;
+				return `${a?.tagName.toLowerCase()} ${(a?.getAttribute('aria-label') ?? a?.textContent ?? '').trim().slice(0, 20)}`;
+			})
+		);
 	}
-	throw new Error('80 Tab stops without reaching the target');
+	throw new Error(`80 Tab stops without reaching the target: ${path.slice(0, 30).join(' | ')}`);
 }
 
-/** Tabs to the target and reports whether focus drew a ring on it: an
- *  outline of 2px or more, or a box-shadow it did not have at rest. */
+/** Tabs to the target and reports whether focus drew a ring on it, or on
+ *  its ::after (a row link whose box covers the row): an outline of 2px
+ *  or more, or a box-shadow it did not have at rest. */
 async function ringOnTab(page: Page, target: Locator): Promise<boolean> {
 	const rest = await target.evaluate((el) => getComputedStyle(el).boxShadow);
 	await tabTo(page, target);
 	return target.evaluate((el, rest) => {
+		const drawn = (s: CSSStyleDeclaration) =>
+			s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
 		const s = getComputedStyle(el);
-		const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
-		return outline || (s.boxShadow !== 'none' && s.boxShadow !== rest);
+		return (
+			drawn(s) ||
+			drawn(getComputedStyle(el, '::after')) ||
+			(s.boxShadow !== 'none' && s.boxShadow !== rest)
+		);
 	}, rest);
 }
+
+/** The projects this file makes, destroyed after each test, so the shared
+ *  account stays under its 100-project cap for the files after it. */
+const made: string[] = [];
+async function project(body: { name: string; remote_url: string; class?: string }) {
+	const p = await createProject(apiURLFromEnv(), body);
+	made.push(p.id);
+	return p;
+}
+test.afterEach(async () => {
+	while (made.length) await destroyProject(apiURLFromEnv(), made.pop()!);
+});
 
 test.describe('signed in', () => {
 	test.beforeEach(async ({ page }) => {
@@ -43,7 +68,7 @@ test.describe('signed in', () => {
 	});
 
 	test('the resize panel takes focus and Cancel gives it back', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'focus-resize-app',
 			remote_url: 'github.com/heracraft/focus-resize-app',
 			class: 'small'
@@ -87,7 +112,7 @@ test.describe('signed in', () => {
 	});
 
 	test('forced colours keep the state dot filled in a system colour', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'forced-colours-app',
 			remote_url: 'github.com/heracraft/forced-colours-app'
 		});
@@ -104,7 +129,7 @@ test.describe('signed in', () => {
 	});
 
 	test('forced colours mark the current config tab and no other', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'forced-tabs-app',
 			remote_url: 'github.com/heracraft/forced-tabs-app'
 		});
@@ -136,7 +161,7 @@ test.describe('signed in', () => {
 	test('the Tab path shows a ring on a table link, a filter link, a tab and the Nix editor', async ({
 		page
 	}) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'tab-walk-app',
 			remote_url: 'github.com/heracraft/tab-walk-app'
 		});
@@ -158,23 +183,31 @@ test.describe('signed in', () => {
 			.nth(1);
 		expect(await ringOnTab(page, filter), 'filter link').toBe(true);
 		const rowLink = page.locator('.ptable').getByRole('link', { name: p.name, exact: true });
+		await expect(rowLink).toBeVisible();
 		expect(await ringOnTab(page, rowLink), 'table row link').toBe(true);
 		await page.unroute('**/v1/projects');
 
 		await page.goto(`/projects/${p.id}/config`);
-		const menuTab = page.getByRole('tab', { name: 'Menu' });
-		expect(await ringOnTab(page, menuTab), 'config tab').toBe(true);
-		await page.keyboard.press('ArrowRight');
+		// The tablist is one tab stop, on the selected tab (a project the
+		// earlier specs applied Nix to opens on Nix).
+		const current = page.getByRole('tab', { selected: true });
+		await expect(current).toBeVisible();
+		expect(await ringOnTab(page, current), 'config tab').toBe(true);
 		const nixTab = page.getByRole('tab', { name: 'Nix' });
-		await expect(nixTab).toBeFocused();
-		await page.keyboard.press('Enter');
+		if ((await nixTab.getAttribute('aria-selected')) !== 'true') {
+			await page.keyboard.press('ArrowRight');
+			await expect(nixTab).toBeFocused();
+			await page.keyboard.press('Enter');
+		}
 		await expect(nixTab).toHaveAttribute('aria-selected', 'true');
 		const frame = page.locator('.nix-frame');
 		const rest = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
-		await tabTo(page, page.locator('.nix-editor .cm-content'));
-		const focused = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
-		expect(focused, 'Nix editor').not.toBe(rest);
-		expect(focused).toContain('inset');
+		await tabTo(page, page.getByRole('textbox', { name: 'Nix fragment' }));
+		// The ring eases in over --hk-dur-fast: a 2px inset once it has.
+		expect(rest).not.toMatch(/0px 0px 0px 2px inset/);
+		await expect
+			.poll(() => frame.evaluate((el) => getComputedStyle(el).boxShadow), { message: 'Nix editor' })
+			.toMatch(/0px 0px 0px 2px inset/);
 	});
 });
 
@@ -460,6 +493,8 @@ async function shortTargets(page: Page, scope: string): Promise<string[]> {
 				// A box or a radio inside its label: the label is the target.
 				if (el instanceof HTMLInputElement && el.closest('label')) continue;
 				if (el instanceof HTMLInputElement && /^(hidden|radio|checkbox)$/.test(el.type)) continue;
+				// A hidden file picker a labelled button opens (secrets' "Choose a file").
+				if (el instanceof HTMLInputElement && el.type === 'file' && el.tabIndex < 0) continue;
 				if (r.height < 43.5) {
 					const name = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
 					out.push(`${el.tagName.toLowerCase()} "${name.slice(0, 30)}" ${Math.round(r.height)}px`);
@@ -474,7 +509,7 @@ test.describe('touch targets', () => {
 	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
 	test('every control in the header and in the main is 44px tall', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'touch-app',
 			remote_url: 'github.com/heracraft/touch-app'
 		});
