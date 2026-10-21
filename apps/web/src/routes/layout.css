@@ -6,12 +6,10 @@
 @import '../lib/hk/tokens.css' layer(components);
 @import '../lib/hk/repose.css' layer(components);
 /* The docs' prose and the Nix editor, each owned by its area. Unlayered on
-   purpose: the typography plugin's prose rules sit in a later layer than
-   components, and CodeMirror injects its theme as unlayered styles; a
-   layered rule loses to an unlayered one at any specificity. */
+   purpose: CodeMirror injects its theme as unlayered styles, and a layered
+   rule loses to an unlayered one at any specificity. */
 @import '../lib/components/nix-editor.css';
 @import '../lib/components/doc.css';
-@plugin '@tailwindcss/typography';
 
 /*
  * One system for every page, the Herakraft kit: Noto Serif 400 for display
@@ -45,13 +43,8 @@
 	--font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, Menlo, monospace;
 	--font-display: 'Noto Serif', 'Noto Serif Fallback', Georgia, serif;
 
-	/* Two steps below text-sm: text-compact (13px) and text-2xs (11px, the
-	   floor for any text). Neither sets a line height. */
+	/* One step below text-sm: text-compact (13px), with no line height. */
 	--text-compact: 0.8125rem;
-	--text-2xs: 0.6875rem;
-	/* The docs' and the legal pages' prose (.doc), 17px at 1.7 (I-660). */
-	--text-prose: 1.0625rem;
-	--text-prose--line-height: 1.7;
 
 	/* The kit's radius steps, so a stray rounded-* lands on one of them.
 	   Markup prefers var(--hk-radius-*): 6px and 9px exist only there. */
@@ -67,28 +60,21 @@
 /*
  * The kit's colours as utilities: bg-page, text-ink-2, border-hairline and
  * the rest. Inline, so each utility reads the token at the element and
- * follows the theme. The legacy names (sunken, rule, ink-muted) point at
- * the same tokens, so markup not yet migrated follows the theme too.
+ * follows the theme.
  * Status colours are for text on their washes only (banners, badges).
  */
 @theme inline {
 	--color-page: var(--hk-bg);
 	--color-surface: var(--hk-surface);
 	--color-surface-2: var(--hk-surface-2);
-	--color-sunken: var(--hk-surface-2);
 	--color-hairline: var(--hk-hairline);
-	--color-rule: var(--hk-hairline);
 	--color-line: var(--hk-border);
-	--color-rule-strong: var(--hk-border);
 	--color-line-strong: var(--hk-border-strong);
 	--color-ink: var(--hk-text);
 	--color-ink-2: var(--hk-text-2);
-	--color-ink-muted: var(--hk-text-2);
 	--color-ink-3: var(--hk-text-3);
-	--color-ink-faint: var(--hk-text-3);
 	--color-control: var(--hk-control-edge);
 	--color-accent: var(--hk-accent);
-	--color-accent-strong: var(--hk-accent-hover);
 	--color-ok: var(--hk-ok);
 	--color-warn: var(--hk-warn);
 	--color-err: var(--hk-err);
@@ -197,8 +183,7 @@
 		U+A720-A7FF;
 }
 
-/* Noto Serif 400 (display) and 600 (the wordmark). The 700 cuts and
-   JetBrains Mono go in Phase 3 (I-837), once no page names them. */
+/* Noto Serif 400 (display) and 600 (the wordmark). */
 @font-face {
 	font-family: 'Noto Serif';
 	font-style: normal;
@@ -222,16 +207,6 @@
 @font-face {
 	font-family: 'Noto Serif';
 	font-style: normal;
-	font-weight: 700;
-	font-display: swap;
-	src: url('/fonts/noto-serif-latin-700-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'Noto Serif';
-	font-style: normal;
 	font-weight: 400;
 	font-display: swap;
 	src: url('/fonts/noto-serif-latin-ext-400-normal.woff2') format('woff2');
@@ -246,69 +221,6 @@
 	font-weight: 600;
 	font-display: swap;
 	src: url('/fonts/noto-serif-latin-ext-600-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-@font-face {
-	font-family: 'Noto Serif';
-	font-style: normal;
-	font-weight: 700;
-	font-display: swap;
-	src: url('/fonts/noto-serif-latin-ext-700-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 600;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-600-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: italic;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-400-italic.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 600;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-ext-600-normal.woff2') format('woff2');
 	unicode-range:
 		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
 		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
@@ -360,94 +272,18 @@
 		   them before this file arrives, app-html.test holds them equal). */
 		--page: #fafafa;
 		--ink: #18181b;
-		/* Phase 1 only (I-837): the legacy names re-pointed at the kit's
-		   values, so markup not yet migrated follows the theme. */
-		--surface: #ffffff;
-		--sunken: #f4f4f5;
-		--rule: #ececee;
-		--rule-strong: #e4e4e7;
-		--ink-muted: #52525b;
-		--ink-faint: #636369;
-		--control-edge: #8b8b94;
-		--accent: #1d4ed8;
-		--accent-strong: #1e40af;
-		--focus: #1d4ed8;
-		--selection: rgb(29 78 216 / 0.18);
-		--chart-line: #1d4ed8;
-
-		/* The landing's shapes and pictures (docs/LANDING.md), until LANDING
-		   rewrites them in Phase 2. */
-		--sh-accent: var(--color-blue-500);
-		--sh-grey: var(--color-zinc-400);
-		--sh-light: var(--color-zinc-300);
-		--sh-ink: var(--color-zinc-700);
-		--sh-paper: var(--surface);
-		--pic-accent: var(--color-blue-600);
-		--pic-ink: var(--color-zinc-800);
-		--pic-dim: var(--color-zinc-500);
-		--pic-faint: var(--ink-faint);
-		--pic-stop: var(--color-red-600);
-		--pic-add: var(--color-emerald-600);
-		/* A frozen machine's colour (I-683), until PROJECTS redraws it. */
-		--frost: var(--color-cyan-700);
 	}
 	@media (prefers-color-scheme: dark) {
 		:root:not([data-theme='light']) {
 			color-scheme: dark;
 			--page: #09090b;
 			--ink: #f4f4f5;
-			--surface: #111113;
-			--sunken: #18181b;
-			--rule: #1c1c1f;
-			--rule-strong: #27272a;
-			--ink-muted: #a1a1aa;
-			--ink-faint: #8b8b94;
-			--control-edge: #71717a;
-			--accent: #60a5fa;
-			--accent-strong: #93c5fd;
-			--focus: #60a5fa;
-			--selection: rgb(96 165 250 / 0.25);
-			--chart-line: #60a5fa;
-			--sh-accent: var(--color-blue-400);
-			--sh-grey: var(--color-zinc-500);
-			--sh-light: var(--color-zinc-600);
-			--sh-ink: var(--color-zinc-400);
-			--pic-accent: var(--color-blue-400);
-			--pic-ink: var(--color-zinc-200);
-			--pic-dim: var(--color-zinc-400);
-			--pic-faint: var(--ink-faint);
-			--pic-stop: var(--color-red-400);
-			--pic-add: var(--color-emerald-400);
-			--frost: var(--color-cyan-300);
 		}
 	}
 	:root[data-theme='dark'] {
 		color-scheme: dark;
 		--page: #09090b;
 		--ink: #f4f4f5;
-		--surface: #111113;
-		--sunken: #18181b;
-		--rule: #1c1c1f;
-		--rule-strong: #27272a;
-		--ink-muted: #a1a1aa;
-		--ink-faint: #8b8b94;
-		--control-edge: #71717a;
-		--accent: #60a5fa;
-		--accent-strong: #93c5fd;
-		--focus: #60a5fa;
-		--selection: rgb(96 165 250 / 0.25);
-		--chart-line: #60a5fa;
-		--sh-accent: var(--color-blue-400);
-		--sh-grey: var(--color-zinc-500);
-		--sh-light: var(--color-zinc-600);
-		--sh-ink: var(--color-zinc-400);
-		--pic-accent: var(--color-blue-400);
-		--pic-ink: var(--color-zinc-200);
-		--pic-dim: var(--color-zinc-400);
-		--pic-faint: var(--ink-faint);
-		--pic-stop: var(--color-red-400);
-		--pic-add: var(--color-emerald-400);
-		--frost: var(--color-cyan-300);
 	}
 	:root[data-theme='light'] {
 		color-scheme: light;
@@ -476,14 +312,6 @@
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 	}
-	/* The landing page (routes/landing.css sets it visible) stays hidden
-	   until its own stylesheet applies. In a layer, so landing.css wins. */
-	.rails {
-		visibility: hidden;
-	}
-	::selection {
-		background-color: var(--selection);
-	}
 	h1,
 	h2,
 	h3,
@@ -504,369 +332,15 @@
 		font-feature-settings: normal;
 	}
 	:focus-visible {
-		outline: 2px solid var(--focus);
+		outline: 2px solid var(--hk-accent);
 		outline-offset: 2px;
 	}
 	input[type='checkbox'],
 	input[type='radio'] {
-		accent-color: var(--accent);
+		accent-color: var(--hk-accent);
 	}
 }
 
-/* Phase 1 only (I-837): the legacy components, reading the kit through
-   the aliases above, until every page is migrated. Phase 3 deletes it. */
-@layer components {
-	/* The landing's own classes (rails, sections, stages, cells) are in
-	   routes/landing.css, imported by routes/+page.svelte alone. */
-
-	/* The landing's one motion for shapes: a group lands, one shape after
-	   another, when it comes into view (landOnView in landing/inview.ts
-	   sets data-land; each .land gets its --d delay). */
-	[data-land] .land {
-		transition:
-			opacity 0.3s ease-out var(--d, 0ms),
-			transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms);
-	}
-	[data-land='out'] .land {
-		opacity: 0;
-		transform: translateY(30%) scale(0.5);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		[data-land] .land {
-			transition: none;
-		}
-	}
-
-	/* The skip link (routes/+layout.svelte): off screen until a keyboard
-	   reaches it, then a quiet button in the top-left corner, over the
-	   header. The page's <main> takes focus from it with tabindex=-1 and
-	   draws no ring of its own: the ring would frame the whole page. */
-	.skip-link {
-		@apply sr-only;
-	}
-	.skip-link:focus {
-		@apply not-sr-only fixed top-2 left-5 z-50 rounded-sm border px-3 py-1.5 text-sm font-medium text-ink;
-		border-color: var(--control-edge);
-		background-color: var(--surface);
-	}
-	main[tabindex='-1']:focus {
-		outline: none;
-	}
-
-	/* Inputs */
-	.field {
-		@apply rounded-sm border px-3 py-2 text-sm text-ink placeholder:text-ink-faint;
-		background-color: var(--surface);
-		border-color: var(--control-edge);
-	}
-	/* Focus is the house ring from :focus-visible (a text field matches it on
-	   a click too); a field never restyles its border to show focus. */
-	textarea.field {
-		@apply min-h-24;
-	}
-	select.field {
-		@apply cursor-pointer appearance-none bg-no-repeat pr-9;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2370706b' stroke-width='1.5' stroke-linecap='square'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-		background-position: right 0.625rem center;
-		background-size: 1rem;
-	}
-	input[type='search'].field {
-		@apply bg-no-repeat pl-9;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2370706b' stroke-width='1.5'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E");
-		background-position: left 0.6875rem center;
-		background-size: 1rem;
-	}
-	.field-error {
-		@apply mt-2 text-sm text-red-600 dark:text-red-400;
-	}
-
-	/* A top-level group on a settings page. The first one on a page draws
-	   no rule of its own: PageShell's title rule sits directly above it,
-	   and two hairlines 40px apart read as a gap where something failed to
-	   render. */
-	.form-section {
-		@apply mt-10 border-t pt-6;
-		border-color: var(--rule);
-	}
-	.form-section:first-child {
-		@apply mt-0 border-t-0 pt-0;
-	}
-
-	/* Buttons: rectangular, flat. The transition names its properties:
-	   Tailwind's transition-colors includes outline-color, so the focus
-	   ring faded in from the button's own colour instead of appearing. A
-	   press darkens the fill one step past hover (active:), so a click or
-	   a tap shows it landed. Plain hover: and active:, not enabled:, since
-	   :enabled never matches an <a>, and a link drawn as a button (the
-	   docs header's Dashboard) lost both (I-393). A disabled button stays
-	   inert through the disabled rule below, which outranks these. */
-	.btn,
-	.btn-quiet,
-	.btn-danger {
-		@apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-sm border px-4 py-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50;
-		transition-property: color, background-color, border-color, text-decoration-color;
-		transition-duration: 150ms;
-		transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	.btn {
-		@apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-600 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:active:bg-zinc-400;
-	}
-	.btn-quiet {
-		@apply text-zinc-800 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700;
-		border-color: var(--control-edge);
-		background-color: var(--surface);
-	}
-	.btn-danger {
-		@apply border-red-600 text-red-700 hover:bg-red-50 active:bg-red-100 dark:border-red-400 dark:text-red-400 dark:hover:bg-red-950 dark:active:bg-red-900;
-	}
-	/* A danger button that is ready to do the thing: ConfirmType arms it
-	   once the word matches, so the moment the action becomes possible is
-	   one you can see, not only a grey outline turning red (I-661). White
-	   on red-700 is 7.6:1, on red-600 in the dark 6.4:1. */
-	.btn-danger--armed {
-		@apply border-red-700 bg-red-700 text-white hover:bg-red-800 active:bg-red-900 dark:border-red-600 dark:bg-red-600 dark:text-white dark:hover:bg-red-700 dark:active:bg-red-800;
-	}
-	/* Ghost buttons are words, but a word that does something shows it at
-	   rest: a hairline underline in the control edge's grey (3:1, like any
-	   control's edge), which turns to the text's own colour under the
-	   pointer. Grey and underlined, a ghost button cannot be mistaken for
-	   a link, which is blue. The danger kind's underline is its own red at
-	   45%, so the word and its mark stay one colour. Hover and press apply
-	   to anything not disabled, a link included (:enabled never matches an
-	   <a>), so a disabled one does not answer the pointer. */
-	.btn-ghost,
-	.btn-ghost-danger {
-		@apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-sm underline decoration-1 underline-offset-4 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50;
-		text-decoration-color: var(--control-edge);
-		transition-property: color, text-decoration-color;
-		transition-duration: 150ms;
-		transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	:is(.btn-ghost, .btn-ghost-danger):not(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		text-decoration-color: currentColor;
-	}
-	.btn-ghost {
-		@apply text-ink-muted;
-	}
-	.btn-ghost:not(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		color: var(--ink);
-	}
-	.btn-ghost-danger {
-		@apply text-red-700 dark:text-red-400;
-		text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-	}
-	/* Sizes. The default suits a form; a row, a toolbar or a header bar
-	   takes the compact one. Pages use it instead of !py-* overrides, so one
-	   change here resizes every compact button at once. */
-	.btn--sm {
-		@apply px-3 py-1.5;
-	}
-	/* On a phone a compact button is still a thumb's target: 40px tall,
-	   the header's Sign in and a row's Stop included (I-657). */
-	@media (width < 40rem) {
-		.btn--sm {
-			min-height: 2.5rem;
-		}
-	}
-	/* The large step: the landing's calls to action (the hero's "Get
-	   started", pricing's "Start a free week"), which stand alone on their
-	   row and carry the page's one decision, so they get more room than a
-	   form's button. In place of the !px-5 !py-2.5 overrides they used. */
-	.btn--lg {
-		@apply px-5 py-2.5;
-	}
-
-	/* Disabled, one look for every kind: a quiet outline with faint text.
-	   Faded at 50%, the primary button was a solid grey block (in the dark,
-	   dark text on mid grey) while a danger button was a pale red outline,
-	   and the two read as different things. The outline says "not yet"
-	   the same way on both, and the faint text still reads at 4.5:1 even
-	   though WCAG exempts disabled controls. After the kinds' own rules, so
-	   their hover fills do not come back on a disabled button. */
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']),
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		@apply cursor-not-allowed opacity-100;
-		color: var(--ink-faint);
-		background-color: var(--surface);
-		border-color: var(--rule-strong);
-	}
-
-	/* Small tag. */
-	.badge {
-		@apply inline-flex items-center rounded-xs border px-1.5 py-px font-mono text-ink-muted;
-		font-size: var(--text-2xs);
-		border-color: var(--rule-strong);
-	}
-	.badge--new {
-		@apply border-emerald-600/40 text-emerald-700 dark:border-emerald-400/40 dark:text-emerald-300;
-	}
-	.badge--error {
-		@apply border-red-600/40 text-red-700 dark:border-red-400/40 dark:text-red-300;
-	}
-	/* Waiting on you, or over a limit: a question an agent asked, a
-	   meter past its line (I-659). Amber-800 on --page is 9:1 and
-	   amber-300 on the dark page 9.5:1. */
-	.badge--warn {
-		@apply border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300;
-	}
-
-	/* State marker: a small square, always next to the state's word. A
-	   plain .dot is hollow (stopped, destroyed: nothing inside is running);
-	   the others are filled, and the edge takes the fill's colour. Each
-	   holds 3:1 on the page in both schemes. Busy is ink, not the accent:
-	   blue means "you can act here" (links, focus, selection), and a
-	   machine that is starting or being destroyed is neither. It pulses
-	   only for visitors who have not asked for less motion. */
-	.dot {
-		@apply inline-block h-2 w-2 shrink-0 rounded-xs border bg-transparent;
-		border-color: var(--control-edge);
-	}
-	.dot--good {
-		@apply border-emerald-500 bg-emerald-500 dark:border-emerald-300 dark:bg-emerald-300;
-	}
-	/* In the dark, running is emerald-300 and error red-500: at emerald-400
-	   and red-400 the two had nearly the same lightness, and a red-green
-	   colour-blind eye could not tell them apart. */
-	.dot--error {
-		@apply border-red-600 bg-red-600 dark:border-red-500 dark:bg-red-500;
-	}
-	/* Waits on you: a question (I-693). Amber, as .badge--warn is;
-	   amber-500 holds 3.3:1 on the light surface, amber-300 9:1 on the dark. */
-	.dot--warn {
-		@apply border-amber-500 bg-amber-500 dark:border-amber-300 dark:bg-amber-300;
-	}
-	.dot--busy {
-		@apply border-zinc-700 bg-zinc-700 motion-safe:animate-pulse dark:border-zinc-300 dark:bg-zinc-300;
-	}
-
-	/* A row in a list: a hairline on its top edge. */
-	.row {
-		@apply border-t py-3 first:border-t-0;
-		border-color: var(--rule);
-	}
-
-	/* A hairline box on --surface, one step off the page (DESIGN-LANGUAGE.md,
-	   "Hairlines, not boxes"): the fill groups what is inside it without a
-	   shadow, so a card never reads as a raised panel. With no fill a card
-	   was an outline on paper, and a page of them read as a wireframe
-	   (I-659). */
-	.card {
-		@apply rounded-sm border p-5;
-		border-color: var(--rule);
-		background-color: var(--surface);
-	}
-
-	/* A strip of figures (I-659): the plan's memory, disk and egress on
-	   /billing, a project's size, disk and uptime. One box on --surface,
-	   its cells split by hairlines; below sm the cells stack and the
-	   hairlines turn horizontal. Each cell is a 12px label, a 24px serif
-	   figure in tabular numbers, and an optional note or meter under it. */
-	.stat-row {
-		@apply grid rounded-sm border;
-		grid-auto-flow: row;
-		border-color: var(--rule);
-		background-color: var(--surface);
-	}
-	.stat {
-		@apply min-w-0 p-4;
-		border-color: var(--rule);
-	}
-	.stat + .stat {
-		@apply border-t;
-	}
-	@media (width >= 40rem) {
-		.stat-row {
-			grid-auto-flow: column;
-			grid-auto-columns: minmax(0, 1fr);
-		}
-		.stat + .stat {
-			@apply border-t-0 border-l;
-		}
-	}
-	.stat-label {
-		@apply block text-xs text-ink-muted;
-	}
-	.stat-value {
-		@apply mt-1 block font-display text-2xl font-semibold text-ink tabular-nums;
-	}
-	.stat-sub {
-		@apply mt-1 block text-xs text-ink-muted;
-	}
-	/* A command block on a dashboard page. Its lines scroll sideways, as in
-	   a terminal and as the docs' blocks do (I-345), rather than wrap: the
-	   install line wrapped with "| sh" alone on the last line, which reads
-	   as a second command. Like a docs block it shows the 2px edge bars
-	   (below, with .doc pre) while a line runs past its box, and a block
-	   that scrolls takes a tab stop (tabStopWhenScrolls, lib/scroller.ts):
-	   at 390 the /projects install line was cut at ".../inst" with no sign
-	   it went on. */
-	.codeblock {
-		@apply overflow-x-auto rounded-sm border p-3 font-mono leading-relaxed whitespace-pre text-zinc-800 dark:text-zinc-200;
-		font-size: var(--text-compact);
-		--edge-fill: var(--sunken);
-		background: var(--edge-covers), var(--edge-bars), var(--sunken);
-		border-color: var(--rule);
-	}
-
-	.banner {
-		@apply mb-5 rounded-sm border px-4 py-3 text-sm;
-		border-color: var(--rule-strong);
-		background-color: var(--surface);
-	}
-	.banner--ok {
-		@apply border-emerald-600/40 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-950 dark:text-emerald-200;
-	}
-	.banner--warn {
-		@apply border-amber-600/40 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-950 dark:text-amber-200;
-	}
-	.banner--error {
-		@apply border-red-600/40 bg-red-50 text-red-800 dark:border-red-400/30 dark:bg-red-950 dark:text-red-200;
-	}
-
-	.link {
-		@apply cursor-pointer text-accent underline decoration-1 underline-offset-2 hover:text-accent-strong;
-	}
-	kbd,
-	.kbd {
-		@apply inline-flex items-center rounded-xs border px-1 font-mono text-zinc-700 dark:text-zinc-300;
-		/* 13px: mono under 13px is for badges only (I-395), and a key name is a label. */
-		font-size: var(--text-compact);
-		border-color: var(--rule-strong);
-		background-color: var(--sunken);
-	}
-
-	.check-row {
-		@apply flex items-center gap-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200;
-	}
-	.check-list-row {
-		@apply flex items-start gap-2.5 border-t py-2 first:border-t-0;
-		border-color: var(--rule);
-	}
-	.check-list-row input[type='checkbox'] {
-		@apply mt-1;
-	}
-
-	/* Data tables: hairlines, no fills. */
-	.table {
-		@apply w-full border-collapse text-sm;
-	}
-	.table th {
-		@apply border-b px-3 py-2 text-left text-xs font-medium text-ink-muted;
-		border-color: var(--rule-strong);
-	}
-	.table td {
-		@apply border-b px-3 py-3 align-top;
-		border-color: var(--rule);
-	}
-	.table th:first-child,
-	.table td:first-child {
-		@apply pl-0;
-	}
-	.table th:last-child,
-	.table td:last-child {
-		@apply pr-0;
-	}
-}
 /*
  * Toasts (svelte-sonner, mounted in routes/+layout.svelte with the resolved
  * theme and no richColors). Neutral: the surface, a 1px border, the pop
@@ -932,23 +406,10 @@ body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
  * every background as Canvas and every edge as one system colour, which
  * erases whatever carries a state in a fill or in a transparent-versus-
  * coloured border. Each rule below puts that state back in a system colour
- * the visitor's own theme chose. Unlayered, so the utilities in page markup
- * (border-transparent on the header's links) do not win.
+ * the visitor's own theme chose. Unlayered, so a utility in page markup
+ * does not win.
  */
 @media (forced-colors: active) {
-	/* State dots: filled states in CanvasText, the hollow one an outline. */
-	.dot {
-		forced-color-adjust: none;
-		border-color: CanvasText;
-		background-color: Canvas;
-	}
-	.dot--good,
-	.dot--error,
-	.dot--warn,
-	.dot--busy {
-		background-color: CanvasText;
-	}
-	/* Meters draw their own forced-colour fill (Meter.svelte). */
 	/* The current page in a nav: an underline the other links do not
 	   have, since every link's bottom edge is forced visible. */
 	nav a[aria-current='page'] {
@@ -956,64 +417,13 @@ body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
 		text-decoration-thickness: 2px;
 		text-underline-offset: 0.35em;
 	}
-	/* A transparent edge (a link that is not current in the header, the
-	   dashboard row, a project's tabs or a rail; the docs search before
-	   the list scrolls under it) is drawn in CanvasText like any other, so
-	   every link looked current. It is not drawn at all: in the page's
-	   colour it cut a gap in the rule it lies on. */
-	.border-transparent {
-		border-style: none;
-	}
-	/* The current tab (config's Menu and Nix): its ink underline versus the
-	   others' transparent one was a colour difference, and forced colours
-	   drew every tab's edge in CanvasText, so none was marked (I-393). The
-	   current one takes the Highlight colour at 3px, the others keep none. */
-	[role='tab'] {
-		border-bottom-color: Canvas;
-	}
-	[role='tab'][aria-selected='true'] {
-		border-bottom-width: 3px;
-		border-bottom-color: Highlight;
-	}
-	/* A landing picture's pause button: pressed is its icon (play for
-	   pause) and a Highlight edge, since the accent edge is a colour
-	   difference (I-666). */
-	.pic-pause[aria-pressed='true'] {
-		border-color: Highlight;
-	}
-	/* A select's chevron and the search field's glass are background
-	   images drawn in a fixed grey; the native arrow follows the theme. */
-	select.field {
-		appearance: auto;
-		background-image: none;
-		padding-right: 0.5rem;
-	}
-	input[type='search'].field {
-		background-image: none;
-		padding-left: 0.75rem;
-	}
-	/* A disabled button says so in GrayText, since its opacity is lost. */
-	.btn {
-		border-color: ButtonText;
-	}
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']) {
-		border-color: GrayText;
-		color: GrayText;
-	}
-	.badge,
-	.kbd,
-	kbd {
-		border-color: CanvasText;
-	}
-	/* An amber badge says "waiting on you": its words carry it, and the
-	   edge is drawn heavier so it is not one more grey box. */
-	.badge--warn {
-		border-width: 2px;
-	}
-	/* The armed danger button's red fill is lost; its edge marks it. */
-	.btn-danger--armed {
-		border-color: ButtonText;
-		border-width: 2px;
+	/* A transparent edge (a header link or a page tab that is not
+	   current) is drawn in CanvasText like any other, so every link looked
+	   current. It is not drawn at all: in the page's colour it cut a gap in
+	   the rule it lies on. */
+	.hk-navlink:not([aria-current='page']),
+	.hk-tabs > a:not([aria-current='page']) {
+		border-bottom-style: none;
 	}
 	/* The kit's state dots: filled states in CanvasText with an edge of the
 	   same colour, the idle one an outline (design.spec reads fill = edge). */
@@ -1070,7 +480,8 @@ body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
 	.hk-btn-danger--armed {
 		border: 2px solid ButtonText;
 	}
-	.hk-badge {
+	.hk-badge,
+	kbd {
 		border: 1px solid CanvasText;
 	}
 	.hk-meter-fill {

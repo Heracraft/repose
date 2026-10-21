@@ -380,7 +380,7 @@
 		padding: 0;
 		list-style: none;
 		border-bottom: 1px solid var(--hk-hairline);
-		transition: opacity 120ms;
+		transition: opacity var(--hk-dur-fast) var(--hk-ease);
 	}
 	.events-list:focus-visible {
 		outline-offset: 4px;

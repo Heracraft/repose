@@ -118,7 +118,7 @@
 			{#if width > 0}
 				{#each runs as run, i (i)}
 					{#if run.r.length === 1}
-						<circle cx={x(run.r[0].t)} cy={y(run.r[0].v)} r="2" class="dot" />
+						<circle cx={x(run.r[0].t)} cy={y(run.r[0].v)} r="2" class="pt" />
 					{:else}
 						<path d={run.area} class="area" />
 						<path d={run.line} class="line" />
@@ -208,7 +208,7 @@
 		stroke-linejoin: round;
 		stroke-linecap: round;
 	}
-	.dot {
+	.pt {
 		fill: var(--hk-accent);
 	}
 	.cursor {
@@ -255,7 +255,7 @@
 			stroke: CanvasText;
 		}
 		.area,
-		.dot,
+		.pt,
 		.mark {
 			fill: CanvasText;
 		}

@@ -551,7 +551,7 @@
 	}
 	.hit-mark {
 		padding: 0;
-		border-radius: 2px;
+		border-radius: var(--hk-radius-xs);
 		background: var(--hk-accent-wash);
 		color: var(--hk-text);
 	}

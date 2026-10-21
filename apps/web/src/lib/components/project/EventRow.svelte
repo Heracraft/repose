@@ -35,7 +35,7 @@
 			? (event.summary as GuestState)
 			: undefined
 	);
-	let dot = $derived(
+	let toneDot = $derived(
 		info.tone === 'error' ? 'hk-dot--err' : info.tone === 'attention' ? 'hk-dot--warn' : ''
 	);
 
@@ -59,7 +59,7 @@
 
 <li class="event-row" data-testid="event-row" data-kind={event.kind}>
 	<time class="time" datetime={event.ts} title={dateTime(event.ts)}>{clockTime(event.ts)}</time>
-	<span class="kind"><span class="hk-dot {dot} kdot" aria-hidden="true"></span>{info.label}</span>
+	<span class="kind"><span class="hk-dot {toneDot} kdot" aria-hidden="true"></span>{info.label}</span>
 	<span
 		class="agent"
 		title={event.window && event.window !== event.agent ? `window ${event.window}` : undefined}

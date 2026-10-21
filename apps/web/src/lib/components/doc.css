@@ -597,16 +597,3 @@
 		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
 	}
 }
-
-/* Phase 2 only: the legacy .codeblock (layout.css, the config page's build
-   log until PROJECTS replaces it) still paints its edges from these two
-   lists, which lived here with the old docs rules. Phase 3 deletes this
-   with the legacy layer. */
-.codeblock {
-	--edge-covers:
-		linear-gradient(var(--edge-fill), var(--edge-fill)) left / 0.75rem 100% no-repeat local,
-		linear-gradient(var(--edge-fill), var(--edge-fill)) right / 0.75rem 100% no-repeat local;
-	--edge-bars:
-		linear-gradient(var(--hk-text-3), var(--hk-text-3)) left / 2px 100% no-repeat scroll,
-		linear-gradient(var(--hk-text-3), var(--hk-text-3)) right / 2px 100% no-repeat scroll;
-}
