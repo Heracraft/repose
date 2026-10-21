@@ -73,7 +73,7 @@
 	/* A line that scrolls fades over its last 1.5rem, as CommandList's
 	   do, so a cut command reads as more text (review r4). */
 	.line:global([data-scrolls='true']:not([data-end='true'])) {
-		mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+		mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
 	}
 	.line:focus-visible {
 		outline-offset: 2px;
