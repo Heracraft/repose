@@ -49,13 +49,6 @@
 	gap: 0.75rem;
 	margin-top: 2rem;
 }
-/* On touch the copy button reaches 44px as the button beside it does
-   (CopyButton's lg size has no touch step of its own). */
-@media (pointer: coarse), (max-width: 639.98px) {
-	.landing .hero .ctas > * {
-		min-height: 2.75rem;
-	}
-}
 /* On a phone both hero buttons take the column's width, one above the other. */
 @media (max-width: 479.98px) {
 	.landing .hero .ctas > * {
@@ -157,15 +150,6 @@
 	margin: 0;
 	padding: 0;
 	list-style: none;
-}
-/* On touch CodeCopy's Copy is 44px tall inside a 42px box and draws over
-   the box's edges; until CodeCopy grows its box (requests/foundation.md,
-   review-landing S7), the box here is the button's height plus its border. */
-@media (pointer: coarse), (max-width: 639.98px) {
-	.landing .steps .code-copy {
-		min-height: 2.875rem;
-		padding-block: 0;
-	}
 }
 .landing .steps > li {
 	padding: 0.875rem 0;

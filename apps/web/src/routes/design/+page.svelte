@@ -13,6 +13,9 @@
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import Segmented from '$lib/hk/Segmented.svelte';
+	import PlanCells from '$lib/components/PlanCells.svelte';
+	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import { PLANS } from '$lib/plans';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import type { GuestState } from '$lib/api/types';
 
@@ -259,6 +262,29 @@
 			<Meter label="Egress this period" used={112.4} limit={100} />
 			<Meter label="Memory" used={0} limit={8} />
 		</div>
+		<div class="facts-gap">
+			<MemoryBlocks
+				label="Memory running"
+				segments={[
+					{ name: 'kanali', gb: 16 },
+					{ name: 'landing-site', gb: 8 },
+					{ name: 'todo-app', gb: 4, frozen: true }
+				]}
+				limit={32}
+				legend
+			/>
+		</div>
+	</section>
+
+	<section class="hk-section">
+		<div class="hk-section-head"><h2 class="hk-h2-app">Plans</h2></div>
+		<PlanCells plans={PLANS} introEligible variant="public" level={3} />
+		<div class="facts-gap">
+			<PlanCells plans={PLANS} introEligible={false} variant="public" level={3} />
+		</div>
+		<div class="facts-gap">
+			<PlanCells plans={PLANS} current="plus" compare={{ runningGB: 12, diskHeldGB: 140 }} />
+		</div>
 	</section>
 
 	<section class="hk-section">
@@ -323,7 +349,13 @@
 			>
 		{/if}
 		<div class="confirm-type">
-			<ConfirmType word="todo-app" label="Destroy todo-app" onconfirm={() => {}} />
+			<ConfirmType
+				word="todo-app"
+				label="Destroy"
+				onconfirm={() => {}}
+				oncancel={() => {}}
+				cancelLabel="Keep it"
+			/>
 		</div>
 	</section>
 
@@ -357,8 +389,11 @@
 		<p class="hk-eyebrow">For solo founders and their agents</p>
 		<h3 class="hk-h2">Your dev environment, replicated in the cloud</h3>
 		<p class="hk-lead">
-			<strong>Your code, tools and logins sit on a machine of its own,</strong> where agents run with
-			full permissions and nobody approves commands one by one.
+			<strong
+				>Each project gets a machine of its own, with your code, tools and logins on it.</strong
+			>
+			Agents there run with full permissions, and nobody approves commands one by one. Snapshot it as
+			you go, and you can put a wrecked machine back in minutes.
 		</p>
 		<p class="body">
 			Run <code>repose run</code> in your checkout. The <a class="hk-link" href="#docs">docs</a> have

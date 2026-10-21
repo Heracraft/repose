@@ -478,6 +478,7 @@
 									confirmDelete = false;
 									void focusAfterRender('delete-account-open');
 								}}
+								cancelLabel="Keep it"
 								autofocus
 							/>
 						</div>

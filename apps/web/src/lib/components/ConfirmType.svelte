@@ -15,6 +15,7 @@
 		busy = false,
 		busyLabel,
 		oncancel,
+		cancelLabel = 'Cancel',
 		autofocus = false
 	}: {
 		word: string;
@@ -26,6 +27,8 @@
 		busyLabel?: string;
 		/** When given, a Cancel beside the button closes the panel around it. */
 		oncancel?: () => void;
+		/** The cancel button's text: "Keep it" where the panel guards a loss. */
+		cancelLabel?: string;
 		/**
 		 * Focus the field when the control appears: set by a panel that opens
 		 * in place of the button that asked for it, so focus follows the
@@ -73,7 +76,7 @@
 				{busy && busyLabel ? busyLabel : label}
 			</button>
 			{#if oncancel}
-				<button type="button" class="hk-btn-ghost" onclick={oncancel}>Cancel</button>
+				<button type="button" class="hk-btn-ghost" onclick={oncancel}>{cancelLabel}</button>
 			{/if}
 		</div>
 	</div>

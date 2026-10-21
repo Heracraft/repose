@@ -1151,18 +1151,17 @@
 				</div>
 				<div class="destroy-act">
 					{#if askingDestroy}
-						<div class="destroy-confirm">
-							<ConfirmType
-								word={project.slug}
-								label="Destroy"
-								busyLabel="Destroying…"
-								busy={opBusy === 'destroy'}
-								disabled={!!opBusy}
-								onconfirm={onDestroy}
-								autofocus
-							/>
-							<button type="button" class="hk-btn-ghost keep" onclick={keepIt}>Keep it</button>
-						</div>
+						<ConfirmType
+							word={project.slug}
+							label="Destroy"
+							busyLabel="Destroying…"
+							busy={opBusy === 'destroy'}
+							disabled={!!opBusy}
+							onconfirm={onDestroy}
+							oncancel={keepIt}
+							cancelLabel="Keep it"
+							autofocus
+						/>
 					{:else}
 						<button
 							type="button"
@@ -1179,12 +1178,6 @@
 {/if}
 
 <style>
-	/* A command's # note is a constraint the reader needs: it wraps on a
-	   phone, where the command itself scrolls (request to FOUNDATION for
-	   CommandList itself). */
-	.connect :global(.cl .note) {
-		white-space: normal;
-	}
 	/* ---- Head ---- */
 	/* One height for every state's actions (a check and Stop, or a lone
 	   Start), so the status line and the tabs never move with the state. */
@@ -1378,27 +1371,6 @@
 		font-size: 0.9375rem;
 		color: var(--hk-text-2);
 	}
-	.destroy-confirm {
-		position: relative;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: flex-end;
-		gap: 0.5rem;
-	}
-	/* Narrower, ConfirmType stacks its field over Destroy; Keep it takes
-	   the right end of Destroy's row, its text flush with the frame. */
-	@media (max-width: 1023.98px) {
-		.keep {
-			position: absolute;
-			right: -0.625rem;
-			bottom: 0;
-		}
-	}
-	/* ConfirmType puts its field and Destroy on one row from 24rem of its
-	   own width; Keep it rides beside them from 1024px. */
-	.destroy-confirm > :global(form) {
-		flex: 1 1 24rem;
-	}
 	@media (min-width: 1024px) {
 		.destroy-row {
 			flex-direction: row;
@@ -1413,18 +1385,11 @@
 			width: 34rem;
 			padding-top: 0.125rem;
 		}
-		.destroy-confirm {
-			flex-wrap: nowrap;
-			justify-content: flex-end;
-			width: 100%;
-		}
-		/* The field's 20rem and Destroy: no slack between them and Keep it. */
-		.destroy-confirm > :global(form) {
+		/* ConfirmType lays out by its own width (a size container), so it
+		   needs one: the field, Destroy and Keep it on one row, flush right. */
+		.destroy-act > :global(form) {
 			flex: none;
-			width: 25.5rem;
-		}
-		.keep {
-			margin-right: -0.625rem;
+			width: var(--confirm-w, 31rem);
 		}
 	}
 
@@ -1435,12 +1400,5 @@
 	.gone-form {
 		margin-top: 1rem;
 		max-width: 40rem;
-	}
-	/* Forced colours draw a ghost's border: keep it inside the frame. */
-	@media (forced-colors: active) {
-		.keep {
-			right: 0;
-			margin-inline: 0;
-		}
 	}
 </style>

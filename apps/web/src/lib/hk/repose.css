@@ -709,3 +709,22 @@
 .hk .hk-navlink:focus-visible {
 	outline-offset: -2px;
 }
+
+/* ---------- Forced colours ---------- */
+
+/* The meter track's colour-mix fill and the banner's tinted ground drop in
+   forced colours: draw the track's edge, so a meter at 0 still shows its
+   limit, and the banner's, so it does not float with no edge. */
+@media (forced-colors: active) {
+	.hk .hk-meter-track {
+		border: 1px solid GrayText;
+		background: Canvas;
+	}
+	.hk .hk-meter-fill {
+		forced-color-adjust: none;
+		background: CanvasText;
+	}
+	.hk .hk-banner {
+		border: 1px solid CanvasText;
+	}
+}

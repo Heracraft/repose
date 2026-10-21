@@ -50,7 +50,7 @@ Polar retries the card 2, 7, 14 and 21 days after the first failure. Meanwhile:
 
 The day-3 email's subject is `Your machines were stopped: a payment failed`.
 
-A payment unblocks starts. It doesn't start your machines again; `repose start` does. Your card, billing address and receipts are in Polar's customer portal, behind **Manage card and receipts** on the **Billing** page.
+A payment unblocks starts. It doesn't start your machines again; `repose start` does. Your card, billing address and receipts are in Polar's customer portal, behind **Card and receipts** on the **Billing** page.
 
 ## If the plan never arrives
 

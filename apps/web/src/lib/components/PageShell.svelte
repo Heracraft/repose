@@ -19,7 +19,8 @@
 		crumbs?: Crumb[];
 		/** 'full' spans the frame; 'form' holds the content to 42rem, flush left. 'list' is 'full', kept so older callers compile. */
 		width?: 'full' | 'form' | 'list';
-		lede?: string;
+		/** A line under the title: text, or a snippet for markup (a status line). */
+		lede?: string | Snippet;
 		action?: Snippet;
 		/** Links under the title, on a full-width hairline (ProjectTabs, .hk-tabs): the current one's edge lies on it. */
 		tabs?: Snippet;
@@ -57,7 +58,8 @@
 				<h1 class="hk-h1-app title">
 					{#each parts as part, i (i)}{part}{#if i < parts.length - 1}<wbr />{/if}{/each}
 				</h1>
-				{#if lede}<p class="lede">{lede}</p>{/if}
+				{#if typeof lede === 'string'}<p class="lede">{lede}</p>
+				{:else if lede}<div class="lede">{@render lede()}</div>{/if}
 			</div>
 			{#if action}<div class="action">{@render action()}</div>{/if}
 		</div>
@@ -94,6 +96,15 @@
 	}
 	.crumbs a:hover {
 		color: var(--hk-text);
+	}
+	/* A thumb's 44px; the negative block margin keeps the line's height. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.crumbs a {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
 	}
 	.title-row {
 		display: flex;

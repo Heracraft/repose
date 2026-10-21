@@ -462,8 +462,8 @@
 		/* A jump to a heading lands it 16px under the sticky header. */
 		scroll-padding-top: calc(var(--header-h) + 1rem);
 	}
-	/* Below lg the docs add their 44px sub-bar under the header. */
-	@media (width < 64rem) {
+	/* Below 768px the docs add their 44px sub-bar under the header. */
+	@media (width < 48rem) {
 		:root:has([data-docs-subbar]) {
 			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
 		}

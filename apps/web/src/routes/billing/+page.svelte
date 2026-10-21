@@ -35,7 +35,6 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import Meter from '$lib/components/Meter.svelte';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
-	import Snowflake from '$lib/components/Snowflake.svelte';
 	import { frozenSince } from '$lib/frozen';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -385,15 +384,19 @@
 		return { day: Math.max(1, day), of };
 	}
 
-	/** What is charged next and when; undefined once nothing more is. A
-	 * scheduled plan starts at the renewal, so the renewal charges its
-	 * price: the api's next_charge_cents still prices the current plan
-	 * (internal/billing ChargeCents, requests/foundation.md). */
+	/** The i-th machine's fill among n, as MemoryBlocks draws its run. */
+	function runFill(i: number, n: number): string {
+		if (n <= 1) return 'var(--hk-accent)';
+		if (n === 2) return i === 0 ? 'var(--hk-accent)' : 'var(--hk-text-2)';
+		return i < 3 ? `var(--hk-series-${i + 1})` : 'var(--hk-text-2)';
+	}
+
+	/** What is charged next and when; undefined once nothing more is. The
+	 * api's next_charge_cents prices a scheduled plan from the renewal on. */
 	function nextCharge(s: Subscription, p: Plan): { cents: number; on: string } | undefined {
 		if (s.cancel_at) return undefined;
 		const on = s.status === 'trialing' && s.trial_end ? s.trial_end : s.next_billed_at;
 		if (!on) return undefined;
-		if (scheduledPlan) return { cents: scheduledPlan.price_cents, on };
 		return { cents: s.next_charge_cents ?? p.price_cents, on };
 	}
 
@@ -532,10 +535,12 @@
 						<ul class="legend" aria-label="Running now">
 							{#each running as p, i (p.id)}
 								<li>
+									<!-- The swatch is that machine's run of squares, in MemoryBlocks' fills. -->
 									{#if frozenSince(p)}
-										<span class="sw-ice"><Snowflake size={11} /></span>
+										<i class="sw sw--ice" aria-hidden="true"></i>
 									{:else}
-										<i class="sw" class:sw--alt={i % 2 === 1} aria-hidden="true"></i>
+										<i class="sw" style="--fill: {runFill(i, running.length)}" aria-hidden="true"
+										></i>
 									{/if}
 									<a href={resolve('/projects/[id]', { id: p.id })} class="legend-link">{p.name}</a>
 									<span class="u-num">{classMemoryGB(p.class)} GB</span>
@@ -1172,15 +1177,11 @@
 	.sw {
 		width: 10px;
 		height: 10px;
-		border-radius: 2px;
-		background: var(--hk-accent);
+		background: var(--fill);
 	}
-	.sw--alt {
-		background: color-mix(in srgb, var(--hk-accent) 70%, var(--hk-surface));
-	}
-	.sw-ice {
-		display: inline-flex;
-		color: var(--hk-text-2);
+	.sw--ice {
+		box-shadow: inset 0 0 0 1px var(--hk-text-3);
+		background: repeating-linear-gradient(135deg, var(--hk-text-3) 0 1px, transparent 1px 3px);
 	}
 	.legend-link {
 		color: var(--hk-text);
@@ -1198,7 +1199,12 @@
 	}
 	@media (forced-colors: active) {
 		.sw {
+			forced-color-adjust: none;
 			background: CanvasText;
+		}
+		.sw--ice {
+			box-shadow: none;
+			background: GrayText;
 		}
 	}
 

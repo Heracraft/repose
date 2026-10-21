@@ -167,6 +167,9 @@
 		.hk-copy--md {
 			margin-block: -0.5rem;
 		}
+		.hk-copy--lg {
+			min-height: 2.75rem;
+		}
 	}
 	.hk-copy--dark {
 		color: var(--hk-code-muted);

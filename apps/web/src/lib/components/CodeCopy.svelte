@@ -43,6 +43,14 @@
 		border-radius: var(--hk-radius);
 		background: var(--hk-surface-2);
 	}
+	/* On touch the sm Copy is 44px: the box grows to hold it, border to
+	   border, so its edge never draws over the box's. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.code-copy {
+			min-height: 2.875rem;
+			padding-block: 0;
+		}
+	}
 	.line {
 		flex: 1;
 		min-width: 0;

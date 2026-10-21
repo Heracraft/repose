@@ -83,7 +83,8 @@
 			<p class="p-run">{memoryLine(p.memoryGB)}</p>
 			{#if variant === 'public'}
 				<p class="p-specs p-specs--line">
-					{planSize(p.diskGB)} disk · {planSize(intro ? intro.egressGB : p.egressGB)} egress
+					<span class="nw">{planSize(p.diskGB)} disk ·</span>
+					<span class="nw">{planSize(intro ? intro.egressGB : p.egressGB)} egress</span>
 				</p>
 			{:else}
 				<dl class="p-specs">

@@ -261,16 +261,4 @@
 		font-size: 0.75rem;
 		color: var(--hk-text-3);
 	}
-	/* Forced colours drop the track's colour-mix fill: draw its edge, so
-	   the limit shows (request to FOUNDATION for Meter itself). */
-	@media (forced-colors: active) {
-		.plan :global(.hk-meter-track) {
-			border: 1px solid GrayText;
-			background: Canvas;
-		}
-		.plan :global(.hk-meter-fill) {
-			forced-color-adjust: none;
-			background: CanvasText;
-		}
-	}
 </style>

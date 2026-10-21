@@ -2,8 +2,29 @@
 // a page, forced colours, reduced motion, and the phone column
 // (DESIGN-LANGUAGE.md; DECISIONS I-377, I-391, I-392). Lighthouse (tests-a11y)
 // scores the pages at rest; these drive them.
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, fail, unfail } from './helpers';
+
+/** Presses Tab until the target holds the focus (at most 80 stops). */
+async function tabTo(page: Page, target: Locator): Promise<void> {
+	for (let i = 0; i < 80; i++) {
+		await page.keyboard.press('Tab');
+		if (await target.evaluate((el) => el === document.activeElement)) return;
+	}
+	throw new Error('80 Tab stops without reaching the target');
+}
+
+/** Tabs to the target and reports whether focus drew a ring on it: an
+ *  outline of 2px or more, or a box-shadow it did not have at rest. */
+async function ringOnTab(page: Page, target: Locator): Promise<boolean> {
+	const rest = await target.evaluate((el) => getComputedStyle(el).boxShadow);
+	await tabTo(page, target);
+	return target.evaluate((el, rest) => {
+		const s = getComputedStyle(el);
+		const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
+		return outline || (s.boxShadow !== 'none' && s.boxShadow !== rest);
+	}, rest);
+}
 
 test.describe('signed in', () => {
 	test.beforeEach(async ({ page }) => {
@@ -107,6 +128,53 @@ test.describe('signed in', () => {
 		expect(current.edge.startsWith('3px')).toBe(true);
 		// The other tab's edge is the page's own colour: no mark.
 		expect(other.edge.endsWith(other.page)).toBe(true);
+	});
+
+	// The places a container could clip a ring or a custom ring replaces
+	// the outline (critique-guide 3): a table row's link, a filter link, a
+	// config tab and the focused Nix editor each show one on the Tab path.
+	test('the Tab path shows a ring on a table link, a filter link, a tab and the Nix editor', async ({
+		page
+	}) => {
+		const p = await createProject(apiURLFromEnv(), {
+			name: 'tab-walk-app',
+			remote_url: 'github.com/heracraft/tab-walk-app'
+		});
+		// The filter links show from nine projects: pad the list with copies.
+		await page.route('**/v1/projects', async (route) => {
+			const res = await route.fetch();
+			const list = (await res.json()) as { id: string; name: string; slug: string }[];
+			const padded = [...list];
+			for (let i = 0; padded.length < 10; i++) {
+				padded.push({ ...list[0], id: `${list[0].id}-${i}`, name: `pad-${i}`, slug: `pad-${i}` });
+			}
+			await route.fulfill({ response: res, json: padded });
+		});
+		await page.goto('/projects');
+		await expect(page.getByRole('navigation', { name: 'Filter projects' })).toBeVisible();
+		const filter = page
+			.getByRole('navigation', { name: 'Filter projects' })
+			.getByRole('link')
+			.nth(1);
+		expect(await ringOnTab(page, filter), 'filter link').toBe(true);
+		const rowLink = page.locator('.ptable').getByRole('link', { name: p.name, exact: true });
+		expect(await ringOnTab(page, rowLink), 'table row link').toBe(true);
+		await page.unroute('**/v1/projects');
+
+		await page.goto(`/projects/${p.id}/config`);
+		const menuTab = page.getByRole('tab', { name: 'Menu' });
+		expect(await ringOnTab(page, menuTab), 'config tab').toBe(true);
+		await page.keyboard.press('ArrowRight');
+		const nixTab = page.getByRole('tab', { name: 'Nix' });
+		await expect(nixTab).toBeFocused();
+		await page.keyboard.press('Enter');
+		await expect(nixTab).toHaveAttribute('aria-selected', 'true');
+		const frame = page.locator('.nix-frame');
+		const rest = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
+		await tabTo(page, page.locator('.nix-editor .cm-content'));
+		const focused = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
+		expect(focused, 'Nix editor').not.toBe(rest);
+		expect(focused).toContain('inset');
 	});
 });
 
@@ -365,11 +433,19 @@ test('an unknown path signed out renders Not found and stays put', async ({ page
 });
 
 // Touch targets (Guide B 1.7): at 390 on a touch screen every control a
-// thumb hits measures 44px or more. The header is the shared shell, held
-// on every page now; a page's own <main> joins MAIN_READY when its area
-// lands on the kit (spec 0.1, Phase 2), and every page by Phase 3.
-const TOUCH_PAGES = ['/', '/docs/cli', '/projects', 'project', '/billing', '/settings'];
-const MAIN_READY = new Set<string>(['/no-such-place']);
+// thumb hits measures 44px or more, in the header and in each page's main
+// (every page is on the kit since Phase 3, I-837).
+const TOUCH_PAGES = [
+	'/',
+	'/docs/cli',
+	'/projects',
+	'project',
+	'project/config',
+	'project/secrets',
+	'/billing',
+	'/settings',
+	'/no-such-place'
+];
 
 async function shortTargets(page: Page, scope: string): Promise<string[]> {
 	return page.locator(scope).evaluateAll((roots) => {
@@ -397,21 +473,19 @@ async function shortTargets(page: Page, scope: string): Promise<string[]> {
 test.describe('touch targets', () => {
 	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-	test('every control in the header and in a migrated main is 44px tall', async ({ page }) => {
+	test('every control in the header and in the main is 44px tall', async ({ page }) => {
 		const p = await createProject(apiURLFromEnv(), {
 			name: 'touch-app',
 			remote_url: 'github.com/heracraft/touch-app'
 		});
 		await signIn(page);
-		for (const path of [...TOUCH_PAGES, ...MAIN_READY]) {
-			const url = path === 'project' ? `/projects/${p.id}` : path;
+		for (const path of TOUCH_PAGES) {
+			const url = path.startsWith('project') ? path.replace('project', `/projects/${p.id}`) : path;
 			await page.goto(url);
 			await expect(page.locator('main#main')).toBeVisible();
 			await page.waitForLoadState('networkidle');
 			expect(await shortTargets(page, 'header'), `${url} header`).toEqual([]);
-			if (MAIN_READY.has(path)) {
-				expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
-			}
+			expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
 		}
 	});
 });

@@ -18,7 +18,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [DECISIONS.md](DECISIONS.md) | You want to know *why* something is the way it is, or want to change it. Every settled decision, with the alternatives that lost. |
 | [MILESTONES.md](MILESTONES.md) | You want to know what to build next and what "done" means for each stage. |
 | [CHECKLIST.md](CHECKLIST.md) | You are about to call something finished. The global definition of done. |
-| [LANDING.md](LANDING.md) | You touch the landing page: what it sells, show-don't-tell, real captures, names a stranger understands, where terminals are allowed. |
+| [LANDING.md](LANDING.md) | You touch the landing page: what it sells, its sections, the hero terminal, each fact once, copy rules. |
 | [GLOSSARY.md](GLOSSARY.md) | A word is used in a specific way (guest, host, edge, fragment, closure, project). |
 | [RESEARCH.md](RESEARCH.md) | You want the facts and citations the decisions rest on (Azure nested virt, pricing, nixpkgs coverage, Coolify limits, Logto flows, what agents lose remotely). |
 | [SECURITY.md](SECURITY.md) | You touch anything that crosses a tenant, host, or network boundary. Threat model and the non-negotiables. |

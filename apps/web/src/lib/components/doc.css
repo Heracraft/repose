@@ -587,18 +587,6 @@
 	}
 }
 
-/* ---------- The docs frame ---------- */
-
-/* The sub-bar under the header shows only below 768px (routes/docs/
-   +layout.svelte), so from there a jump to a heading clears the header
-   alone. layout.css adds the bar's 44px below 1024px; this holds the
-   768 to 1023 range to the header's offset. */
-@media (min-width: 768px) {
-	:root:has([data-docs-subbar]) {
-		scroll-padding-top: calc(var(--header-h) + 1rem);
-	}
-}
-
 /* ---------- The docs sidebar's foot ---------- */
 
 /* From 768px the sidebar (routes/docs/+layout.svelte) draws no scrollbar,

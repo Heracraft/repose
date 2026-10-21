@@ -1,6 +1,6 @@
 // Checklist: "Every route in 5.2 exists and renders with the fake API."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
 
 let projectId: string;
 let projectName: string;
@@ -12,6 +12,8 @@ test.beforeAll(async () => {
 	});
 	projectId = p.id;
 	projectName = p.name;
+	// Agents shows only while the machine reports one (spec 2.5).
+	await setAgents(p.id, [{ agent: 'claude', window: 'claude', state: 'working' }]);
 });
 
 test.beforeEach(async ({ page }) => {
@@ -23,10 +25,10 @@ test('/projects renders the projects list', async ({ page }) => {
 	await expect(page.getByRole('link', { name: projectName, exact: true })).toBeVisible();
 });
 
-test('/projects/[id] renders the project detail cards', async ({ page }) => {
+test('/projects/[id] renders the project sections', async ({ page }) => {
 	await page.goto(`/projects/${projectId}`);
 	await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
-	// The cards of I-664: the work in the main column, the machine beside it.
+	// Its sections (I-664, I-837).
 	for (const name of [
 		'Events',
 		'Usage',

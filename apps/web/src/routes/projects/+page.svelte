@@ -129,16 +129,11 @@
 				// a row of stat cells and changes to squares and rings a few
 				// hundred ms later, pushing the table down under the pointer
 				// ("Nothing mounts above painted content", I-680).
-				// The account comes after the list, never beside it: GET /me is
-				// not a passive read, and its answer would clear the outage
-				// bar a failing list raised. It rides inside the first load,
-				// so the past-due banner is in the first paint.
-				const listAndMe = listProjects().then(async (l) => ({
-					l,
-					m: await getMe().catch(() => undefined)
-				}));
-				const [{ l: list, m: account }, qs, bill] = await Promise.all([
-					listAndMe,
+				// The account rides in the first load too, passive like the
+				// rest, so the past-due banner is in the first paint.
+				const [list, account, qs, bill] = await Promise.all([
+					listProjects(),
+					getMe({ passive: true }).catch(() => undefined),
 					listQuestions('pending', { passive: true }).catch(() => undefined),
 					getBilling({ passive: true }).catch((err: unknown) => {
 						if (err instanceof ApiError && err.code === 'billing_disabled') billingOff = true;
@@ -1047,10 +1042,5 @@
 	}
 	.empty :global(.empty-commands) {
 		margin-top: 1rem;
-	}
-	/* The # note wraps on a phone; the command scrolls (request to
-	   FOUNDATION for CommandList itself). */
-	.empty :global(.empty-commands .note) {
-		white-space: normal;
 	}
 </style>

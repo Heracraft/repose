@@ -190,16 +190,4 @@
 		margin-left: auto;
 		text-align: right;
 	}
-	/* Forced colours drop the track's colour-mix fill: draw its edge, so
-	   the limit shows (request to FOUNDATION for Meter itself). */
-	@media (forced-colors: active) {
-		.meters :global(.hk-meter-track) {
-			border: 1px solid GrayText;
-			background: Canvas;
-		}
-		.meters :global(.hk-meter-fill) {
-			forced-color-adjust: none;
-			background: CanvasText;
-		}
-	}
 </style>

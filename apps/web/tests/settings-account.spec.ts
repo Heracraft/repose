@@ -168,12 +168,12 @@ test('account deletion requires typing the exact handle', async ({ page }) => {
 	await page.goto('/settings');
 	await expect(page.getByText('Everything, including snapshots, is deleted 30 days')).toBeVisible();
 
-	// The field opens in place of its button and takes the focus; Cancel
+	// The field opens in place of its button and takes the focus; Keep it
 	// closes it and gives the focus back (I-386, I-837).
 	const open = page.getByRole('button', { name: 'Delete account…', exact: true });
 	await open.click();
 	await expect(page.getByLabel(/to confirm/)).toBeFocused();
-	await page.locator('#delete-account').getByRole('button', { name: 'Cancel' }).click();
+	await page.locator('#delete-account').getByRole('button', { name: 'Keep it' }).click();
 	await expect(open).toBeFocused();
 	await open.click();
 

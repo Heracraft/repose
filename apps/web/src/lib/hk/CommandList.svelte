@@ -37,7 +37,7 @@
 	{/if}
 	<ul class="rows" aria-label={title ?? label ?? 'Commands'}>
 		{#each commands as c (c.command)}
-			<li class="row">
+			<li class="row" class:has-note={!!c.note}>
 				<!-- A tab stop only while the line is wider than the pane. -->
 				<div class="line" use:tabStopWhenScrolls>
 					{#if c.note}<span class="note"># {c.note}</span>{/if}
@@ -89,7 +89,23 @@
 		box-shadow: inset 0 0 0 2px var(--hk-code-focus);
 		border-radius: var(--hk-radius-xs);
 	}
+	/* With a note above it, Copy sits level with the command line: its
+	   centre 18px over the row's foot (0.5rem padding plus half the 20px
+	   line), 44px tall on touch. */
+	.row.has-note {
+		align-items: flex-end;
+	}
+	.row.has-note :global(.hk-copy) {
+		margin-bottom: 0.375rem;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.row.has-note :global(.hk-copy) {
+			margin-bottom: -0.25rem;
+		}
+	}
+	/* The note wraps on a phone; the command scrolls. */
 	.note {
+		white-space: normal;
 		font-size: 0.75rem;
 		font-style: italic;
 		color: var(--hk-code-comment);

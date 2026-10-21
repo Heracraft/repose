@@ -126,7 +126,9 @@ async function requestWithHeaders<T>(
 }
 
 // Users.
-export const getMe = () => request<Me>('/me');
+/** passive: a side read whose answer must not clear the outage bar (I-393). */
+export const getMe = (opts: { passive?: boolean } = {}) =>
+	request<Me>('/me', { passive: opts.passive });
 export const patchMe = (body: {
 	tz?: string;
 	notify?: { email?: boolean; ntfy_url?: string | null; gchat_url?: string | null };
