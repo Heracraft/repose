@@ -13,6 +13,7 @@ import {
 	idSetKey,
 	listSearch,
 	matchesFilter,
+	matchesOnRemote,
 	matchesQuery,
 	orderProjects,
 	readFilter,
@@ -181,9 +182,13 @@ describe('matchesFilter', () => {
 		expect(matchesFilter(stopped, 'up', true)).toBe(true);
 	});
 
-	it('keeps a failed machine under Running, where it leads, and under Stopped', () => {
+	it('keeps a failed machine under Running, where it leads, and not under Stopped', () => {
 		expect(matchesFilter(broken, 'up', false)).toBe(true);
-		expect(matchesFilter(broken, 'off', false)).toBe(true);
+		expect(matchesFilter(broken, 'off', false)).toBe(false);
+	});
+
+	it('keeps a stopped machine with a question under Running only', () => {
+		expect(matchesFilter(stopped, 'off', true)).toBe(false);
 	});
 
 	it('separates running from stopped', () => {
@@ -191,6 +196,20 @@ describe('matchesFilter', () => {
 		expect(matchesFilter(running, 'off', false)).toBe(false);
 		expect(matchesFilter(stopped, 'off', false)).toBe(true);
 		expect(matchesFilter(stopped, 'up', false)).toBe(false);
+	});
+});
+
+describe('matchesOnRemote', () => {
+	const proj = p({
+		name: 'todo-app',
+		slug: 'todo-app',
+		remote_url: 'https://github.com/heracraft/todo-app'
+	});
+	it('is true only when the remote matches and the name and slug do not', () => {
+		expect(matchesOnRemote(proj, 'heracraft/todo')).toBe(true);
+		expect(matchesOnRemote(proj, 'todo')).toBe(false);
+		expect(matchesOnRemote(proj, '')).toBe(false);
+		expect(matchesOnRemote(proj, 'nothing')).toBe(false);
 	});
 });
 
@@ -360,11 +379,13 @@ describe('a large account', () => {
 			expect(v.folded).toBe(n - 3 - RECENT_STOPPED);
 		});
 
-		it(`at ${n}, Stopped lists every machine at rest, capped at 25`, () => {
+		it(`at ${n}, Stopped lists the stopped band, capped at 25, in the count Running links with`, () => {
 			const v = viewOf(n, 'off', '', true);
-			expect(v.matched).toBe(n - 2);
+			// The failed machine leads Running and is not counted twice.
+			expect(v.matched).toBe(n - 3);
+			expect(v.matched).toBe(viewOf(n, 'up').resting);
 			expect(names(v)).toHaveLength(25);
-			expect(names(viewOf(n, 'off', '', true, Infinity))).toHaveLength(n - 2);
+			expect(names(viewOf(n, 'off', '', true, Infinity))).toHaveLength(n - 3);
 		});
 
 		it(`at ${n}, a search with no filter chosen looks through stopped ones too`, () => {

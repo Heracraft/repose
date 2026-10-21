@@ -452,38 +452,47 @@ a guest state to it:
 
 ### Frost
 
-A frozen machine (running, its memory suspended while idle) shows window
-frost where an edge meets a rule, and nowhere else (I-841 amendment
-2026-10-21). It has no band, no slab, no chip and no row fill, and a
-stopped machine keeps its hollow ring however many there are.
+A frozen machine (running, its memory suspended while idle) shows frost
+along a rule, and nowhere else (I-841 amendments 2026-10-21). It has no
+band, no slab, no chip and no row fill, and a stopped machine keeps its
+hollow ring however many there are. No frost ends on an edge the page does
+not draw.
 
-- **Project head:** frost grows in from the far corner, up the right edge
-  and along the tab rule, with a faint cold haze; the column and the text
-  stay clear. Under 640px it keeps to the right gutter and the column's
-  last 20px.
+- **Project head:** window frost rises from the tab rule, at most 56px,
+  under the actions and right of the tabs, with a faint cold haze, and
+  thins to nothing at both ends. Under 640px the head shows the row's
+  cloud along the tab rule instead, 12px tall, inside the column.
 - **Machine section:** the memory meter fills in `--hk-ice-ink` with a lit
-  top edge, and rime needles sit on the bar.
-- **/projects row, table and stacked:** rime needles on the row's bottom
-  rule at its leading end, gone by 200px, with an ice line fading along
-  the rule. Three masks take turns, so frozen rows in a run do not stripe.
+  top edge. Nothing is drawn over the bar.
+- **/projects row, table and stacked:** frost seen through the glass
+  along the row's foot: a cloudy, grained white over a cold tint, with a
+  crust on the rule, 18px tall (12px stacked), clear of the text. It
+  spans the row, is feathered on every side and is gone by 68 percent of
+  the row's width. The row's rule is the only line; a row last in its
+  group lifts the frost off its foot. Three offsets into the cloud take
+  turns, so frozen rows in a run do not stripe.
 - **Rail:** the snowflake in `--hk-ice-ink`. **Memory squares:** frozen GB
   hatched in `--hk-ice-ink`.
 
 `Frost.svelte` is one element in the surface, which carries
-`data-frost-on` (position and isolation); it paints `--hk-frost-shade`
-through the mask as an alpha mask and `--hk-frost-ice` as a luminance
-mask. The masks are SVG data URIs that `apps/web/scripts/frost-masks.mjs`
-writes into `lib/hk/frost-masks.css` (fern sprites placed with `<use>`,
-seeded, so a rerun writes the same bytes; `frost-masks.test.ts` fails on a
-stale or undecodable mask). The ice tokens (`--hk-ice-ink`,
-`--hk-frost-*`) are in repose.css, measured from photos of window frost,
-rime and glacier ice (hue 200 to 220). Only `--hk-ice-ink` carries text
-(5.4:1 light, 10.6:1 dark); no frost sits under text (worst pixel under
-every text run on a frozen surface, 1920, 1440 and 390, both schemes:
-5.44 light, 5.89 dark). The frost forms over 600ms when the machine froze
-in the last minute and thaws in 300ms when it wakes; under reduced motion
-it comes and goes at once. Reduced transparency drops the haze; forced
-colours drop the frost, and the word and the snowflake carry the state.
+`data-frost-on` (position and isolation). On the head it paints
+`--hk-frost-shade` through the crystal mask as an alpha mask and
+`--hk-frost-ice` as a luminance mask; on a row it paints `--hk-frost-haze`
+and `--hk-frost-cloud-ink` through the cloud and feathering gradients. The
+masks are SVG data URIs that `apps/web/scripts/frost-masks.mjs` writes into
+`lib/hk/frost-masks.css` (fern sprites placed with `<use>`, and a fixed
+feTurbulence cloud, seeded, so a rerun writes the same bytes;
+`frost-masks.test.ts` fails on a stale or undecodable mask). The ice tokens
+(`--hk-ice-ink`, `--hk-frost-*`) are in repose.css, measured from photos of
+window frost, rime and glacier ice (hue 200 to 220). In light the crystals
+are a grey-blue shade with white as the highlight, since white alone does
+not show on the page. Only `--hk-ice-ink` carries text (5.4:1 light, 10.6:1
+dark); the worst pixel under text on a frozen surface is 5.44:1 light and
+5.89:1 dark. The frost forms over 600ms when the machine froze in the last
+minute and thaws in 300ms when it wakes; under reduced motion it comes and
+goes at once. Reduced transparency drops the haze and the row's tint;
+forced colours drop the frost, and the word and the snowflake carry the
+state.
 
 A dot keeps `data-tone` and its parent `data-state` for tests and
 stylesheets.
@@ -627,11 +636,12 @@ offers several commands together: Connect on a project page, the empty
 ## Command line
 
 `CodeCopy.svelte`: one lone command on a light page, in a `--hk-surface-2`
-box with a 1px border and 8px corners, as wide as the command from 20rem to
-40rem, Geist Mono 13px ink, an optional muted
-`$ `, and a page-tone small Copy at the end. On touch the box is 46px tall,
-so the 44px Copy sits inside it edge to edge. Long commands scroll sideways
-inside the box. A page keeps one dark anchor, so a lone command is light.
+box with a 1px border and CommandList's 12px corners, as wide as the
+command from 20rem to 40rem, Geist Mono 13px ink, an optional muted `$ `,
+and a ghost small Copy at the end, as on a pane. Long commands scroll
+sideways inside the box; on a phone they wrap, after a slash where they
+can, and Copy is its icon with a 44px hit area, so the whole command
+shows. A page keeps one dark anchor, so a lone command is light.
 
 ## Copy button
 

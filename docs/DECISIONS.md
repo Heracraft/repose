@@ -24496,3 +24496,38 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   3.2:1 step in lightness at one weight, and forced colours keep the 2px
   Highlight edge. Light is unchanged. design.spec pins the dark fill,
   hairline, label step and equal weight, and Connect's width.
+- *Amended 2026-10-21, polish review of the frost and the long list.* At
+  1x the stroked rime strips on a /projects row and on the memory bar read
+  as a scribble, stray glyphs or a glitch, ended on hard 10px box edges,
+  and in light were white on #fafafa, so only a blue smear showed. They
+  are gone. A frozen row now shows frost seen through the glass along its
+  foot: a cloudy, grained white (a fixed 1600x64 feTurbulence field, never
+  tiled, offset three ways so a run does not stripe) over a cold tint, with
+  a crust on the rule, 18px tall (12px stacked) so it clears the text,
+  spanning the row and feathered on every side, fading out by 68 percent
+  of the row's width. The row's own rule is the only line; a row last in
+  its group, which has none, lifts the frost off its foot. The memory bar
+  keeps its ice fill and lit rim and draws nothing over it. The head's
+  crystals no longer climb a corner of the page background that has no
+  edge: they rise from the tab rule only, at most 56px, under the actions
+  and right of the tabs (`calc(100% - 24rem)`, at most 440px), and thin to
+  nothing at both ends. Under 640px the head shows the row's cloud along
+  the tab rule, 12px tall, inside the column, in place of the 40px gutter
+  smear. Light frost is a grey-blue shade (`#5f86a8`) with white at 55
+  percent as the highlight, and the cloud is `--hk-frost-cloud-ink`
+  (`rgb(111 149 186 / 0.5)` light, `rgb(214 232 246 / 0.4)` dark);
+  `--hk-frost-line` is gone. Worst pixel under text on a frozen surface:
+  remote 5.72:1 light and 5.89:1 dark at 1440, the stacked meta 5.44 and
+  5.89 at 390, the tabs 6.87 and 7.13. On the long list: the Stopped
+  filter keeps the "Stopped" band only, so a failed machine, which leads
+  Running under "Needs you", is no longer counted twice ("All 34 stopped"
+  opened "Show all 35"); `projectList.test.ts` pins the Stopped count to
+  Running's link. The table is `table-layout: fixed` with Disk and the
+  action sized to their content, so a filter or a search never moves the
+  columns. A search that matches only a remote shows that remote, on a
+  stopped row and on a phone. The stacked frozen row says how long it has
+  been frozen. The Running, Stopped and All control shares its track on a
+  phone. `CodeCopy` takes CommandList's 12px corners and ghost Copy, and
+  on a phone wraps the command (after a slash where it can) with an
+  icon-only Copy, so `| sh` shows. It stays light: a page keeps one dark
+  anchor, so the near-black pane is not used for a lone command.

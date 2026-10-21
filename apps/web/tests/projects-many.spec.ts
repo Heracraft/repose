@@ -112,8 +112,9 @@ for (const n of [40, 150]) {
 		await expect(rest).toHaveText(`All ${n - 4} stopped`);
 		await rest.click();
 		await expect(page).toHaveURL(/[?&]state=off/);
-		// Stopped: the failed machine and every stopped one, 25 at a time.
-		await expect(page.getByRole('button', { name: `Show all ${n - 3}` })).toBeVisible();
+		// Stopped: every stopped one, 25 at a time, in the count the link
+		// gave; the failed machine leads Running and is not counted again.
+		await expect(page.getByRole('button', { name: `Show all ${n - 4}` })).toBeVisible();
 		expect(await names(page)).toHaveLength(25);
 	});
 

@@ -414,7 +414,8 @@
 	</section>
 
 	<!-- A frozen machine (I-683; I-841 amendment 2026-10-21): the ice ink
-	     word and flake, and window frost where an edge meets a rule. The
+	     word and flake, frost rising from the head's tab rule and along a
+	     row's foot, and the memory bar in ice. The
 	     head and the row are specimens of PageShell's head and a /projects
 	     row; Frost.svelte and lib/hk/frost.css draw the same frost there. -->
 	<section class="hk-section" id="frozen" data-testid="frozen-specimen">
@@ -465,7 +466,7 @@
 			</ul>
 			<section aria-label="Machine">
 				<p class="frost-card-title">Machine</p>
-				<div class="hk-meter-ice" data-frost-on="meter">
+				<div class="hk-meter-ice">
 					<Meter
 						label="Memory in use"
 						used={3.6}
@@ -473,7 +474,6 @@
 						valueText="3.6 GB of 8 GB"
 						testid="frost-mem"
 					/>
-					<Frost kind="meter" since="2026-10-21T00:00:00Z" />
 				</div>
 			</section>
 		</div>

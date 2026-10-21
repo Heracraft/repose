@@ -53,6 +53,7 @@
 		listSearch,
 		band,
 		listView,
+		matchesOnRemote,
 		orderProjects,
 		filterChosen,
 		readFilter,
@@ -722,7 +723,13 @@
 													{@render questionsBadge(p)}
 												</span>
 												{#if remote}
-													<span class="premote" title={remote}>{remote}</span>
+													<!-- A stopped row hides its remote, unless the search
+													     matched on it and nothing else. -->
+													<span
+														class="premote"
+														class:premote--hit={matchesOnRemote(p, query)}
+														title={remote}>{remote}</span
+													>
 												{/if}
 												{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 											</td>
@@ -773,6 +780,7 @@
 									{@const frozen = frozenSince(p)}
 									{@const d = disk(p)}
 									{@const facts = [
+										frozen ? sinceLabel(frozen, 'for', clock.now) : '',
 										p.state === 'stopped'
 											? p.started_at
 												? `last run ${relativeTime(lastActive(p))}`
@@ -792,6 +800,9 @@
 											</span>
 											{@render actionButton(p)}
 										</div>
+										{#if p.remote_url && matchesOnRemote(p, query)}
+											<span class="premote">{normalizeRemoteDisplay(p.remote_url)}</span>
+										{/if}
 										<div class="mrow-meta">
 											<StateDot state={p.state} frozen={!!frozen} />
 											{#each facts as f (f)}<span aria-hidden="true">·</span><span>{f}</span>{/each}
@@ -889,23 +900,47 @@
 		padding-bottom: 0.875rem;
 		vertical-align: top;
 	}
+	/* Fixed widths, so a filter or a search never moves the columns:
+	   Disk and the action are sized to their content, the rest share
+	   what is left. */
+	.ptable {
+		table-layout: fixed;
+	}
+	/* A hidden column keeps its width in a fixed table, so it has none. */
+	.ptable .c-size,
+	.ptable .c-disk {
+		width: 0;
+	}
 	.ptable .c-name {
-		width: 34%;
+		width: 36%;
 	}
 	.ptable .c-state {
-		width: 20%;
-	}
-	.ptable .c-size {
-		width: 16%;
+		width: 26%;
 	}
 	.ptable .c-agents {
-		width: 18%;
+		width: 19%;
 	}
-	.ptable .c-disk {
-		width: 6%;
+	@container dash (min-width: 680px) {
+		.ptable .c-disk {
+			width: 3.5rem;
+		}
+	}
+	@container dash (min-width: 800px) {
+		.ptable .c-name {
+			width: 31%;
+		}
+		.ptable .c-state {
+			width: 22.5%;
+		}
+		.ptable .c-size {
+			width: 14%;
+		}
+		.ptable .c-agents {
+			width: 17%;
+		}
 	}
 	.ptable .c-act {
-		width: 6%;
+		width: 4.25rem;
 		padding-left: 1.5rem;
 		text-align: right;
 		white-space: nowrap;
@@ -1069,7 +1104,7 @@
 	.ptable .prow--rest td.c-act {
 		padding-top: 0.375rem;
 	}
-	.prow--rest .premote {
+	.prow--rest .premote:not(.premote--hit) {
 		display: none;
 	}
 	.prow--rest .c-state {
@@ -1098,6 +1133,10 @@
 		}
 		.pt-filter {
 			width: 100%;
+		}
+		/* The three share the track, so it has no empty end. */
+		.pt-filter > a {
+			flex: 1 1 0;
 		}
 	}
 

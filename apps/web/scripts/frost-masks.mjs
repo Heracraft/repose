@@ -150,12 +150,20 @@ function mask({
 		defs += `<filter id='n' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='.24' numOctaves='3' seed='${seed % 97}'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 9 -4.3'/><feComposite in2='SourceGraphic' operator='in'/></filter>`;
 		crust.forEach((c, i) => {
 			const [x1, y1, x2, y2] = dir[c.dir];
+			if (c.along) {
+				let stops = '';
+				for (let k = 0; k <= 10; k++) {
+					stops += `<stop offset='${k / 10}' stop-color='#fff' stop-opacity='${c.along((c.w * k) / 10 + c.x).toFixed(2)}'/>`;
+				}
+				defs += `<linearGradient id='e${i}'>${stops}</linearGradient><mask id='m${i}'><rect x='${n1(c.x)}' y='${n1(c.y)}' width='${n1(c.w)}' height='${n1(c.h)}' fill='url(#e${i})'/></mask>`;
+			}
 			defs += `<linearGradient id='c${i}' x1='${x1}' y1='${y1}' x2='${x2}' y2='${y2}'><stop offset='0' stop-color='#fff'/><stop offset='.35' stop-color='#fff' stop-opacity='.6'/><stop offset='1' stop-color='#fff' stop-opacity='0'/></linearGradient>`;
 		});
 	}
 	let body = `<use href='#a' stroke='#000' stroke-width='${halo}' opacity='${haloO}'/>`;
 	crust.forEach((c, i) => {
-		body += `<rect x='${n1(c.x)}' y='${n1(c.y)}' width='${n1(c.w)}' height='${n1(c.h)}' fill='url(#c${i})' filter='url(#n)'/>`;
+		const m = c.along ? ` mask='url(#m${i})'` : '';
+		body += `<rect x='${n1(c.x)}' y='${n1(c.y)}' width='${n1(c.w)}' height='${n1(c.h)}' fill='url(#c${i})' filter='url(#n)'${m}/>`;
 	});
 	body += `<use href='#a' stroke='#fff' stroke-width='.85'/>`;
 	if (sparkles) {
@@ -168,7 +176,11 @@ function mask({
 		body += `<g fill='#fff'>${sp}</g>`;
 	}
 	const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><defs>${defs}</defs>${body}</svg>`;
-	// Inside url("…") only % # < > need escaping; the SVG quotes with '.
+	return dataUrl(svg);
+}
+
+/** Inside url("…") only % # < > need escaping; the SVG quotes with '. */
+function dataUrl(svg) {
 	const enc = svg
 		.replace(/%/g, '%25')
 		.replace(/#/g, '%23')
@@ -177,133 +189,73 @@ function mask({
 	return `url("data:image/svg+xml,${enc}")`;
 }
 
-/** The project head's far corner: frost up the right edge and along the
- *  tab rule, heaviest where they meet, fading leftward. */
+/** The project head: frost rising from the tab rule, the one edge drawn
+ *  there, heaviest two thirds of the way along and thinning to nothing at
+ *  both ends, so it never stops on a line the page does not draw. It stays
+ *  low (h), under the head's actions. */
 function head(seed) {
-	const w = 380;
-	const h = 170;
+	const w = 440;
+	const h = 56;
+	const peak = 0.66;
+	// 0 at both ends, 1 at the peak.
+	const env = (x) => {
+		const u = x / w;
+		return u < peak ? Math.pow(u / peak, 1.8) : Math.pow((1 - u) / (1 - peak), 1.2);
+	};
 	return mask({
 		w,
 		h,
 		seed,
-		sprites: [5, 8, 12, 17, 24, 33, 45, 60],
-		sparkles: 22,
+		sprites: [4, 6, 9, 13, 18, 25, 34, 44],
+		sparkles: 16,
 		place: (R) => {
 			const P = [];
-			for (let y = h * 0.1; y < h; y += 2 + R() * 3.5) {
-				const up = Math.pow((y - h * 0.1) / (h * 0.9), 1.5);
-				const k = Math.exp(-(h - y) / 45);
-				let L = (4 + 22 * Math.pow(R(), 2.4)) * (0.4 + 0.6 * up) + 40 * k * R();
-				if (R() < 0.06 * up) L += 22 + 18 * R();
+			for (let x = 2; x < w - 2; x += 1.6 + R() * 2.8) {
+				const f = env(x);
+				if (R() > f + 0.03) continue;
+				let L = 2.5 + 16 * f * Math.pow(R(), 2.2) + 20 * f * f * R();
+				if (R() < 0.05 * f) L += 10 + 8 * R();
 				P.push({
-					x: w + 1,
-					y,
-					ang: 180 + (R() - 0.5) * 120,
-					L,
-					o: (0.6 + 0.4 * R()) * (0.2 + 0.8 * up)
-				});
-			}
-			for (let x = w; x > 0; x -= 2 + R() * 3.5) {
-				const f = Math.pow(x / w, 2);
-				if (R() > f + 0.04) continue;
-				const k = Math.exp(-(w - x) / 55);
-				let L = 3 + 16 * f * Math.pow(R(), 2.4) + 36 * k * R();
-				if (R() < 0.05 * f) L += 18;
-				P.push({ x, y: h + 1, ang: 270 + (R() - 0.5) * 120, L, o: Math.min(1, 0.3 + f) });
-			}
-			for (let i = 0; i < 9; i++) {
-				P.push({
-					x: w + 1,
+					x,
 					y: h + 1,
-					ang: 225 + (R() - 0.5) * 80,
-					L: 30 + 45 * R(),
-					o: 0.7 + 0.3 * R()
+					ang: 270 + (R() - 0.5) * 110,
+					L: Math.min(L, h - 8),
+					o: Math.min(1, 0.15 + f)
 				});
 			}
 			return P;
 		},
-		crust: [
-			{ x: w - 6, y: h * 0.45, w: 6, h: h * 0.55, dir: 'left' },
-			{ x: w * 0.35, y: h - 4, w: w * 0.65, h: 4, dir: 'up' }
-		]
+		crust: [{ x: 0, y: h - 4, w, h: 4, dir: 'up', along: env }]
 	});
 }
 
-/** The head on a phone: the tabs reach the column's edge, so the frost
- *  keeps to the gutter and the last few px of the column. */
-function headNarrow(seed) {
-	const w = 48;
-	const h = 150;
-	return mask({
-		w,
-		h,
-		seed,
-		sprites: [4, 6, 9, 13, 18, 24, 32],
-		sparkles: 8,
-		place: (R) => {
-			const P = [];
-			for (let y = 0; y < h; y += 2 + R() * 3) {
-				const up = y / h;
-				const k = Math.exp(-(h - y) / 28);
-				const L = (3 + 10 * Math.pow(R(), 2)) * up * up + 18 * k * R();
-				P.push({ x: w + 1, y, ang: 180 + (R() - 0.5) * 110, L, o: (0.6 + 0.4 * R()) * up });
-			}
-			for (let x = w; x > 0; x -= 2 + R() * 3) {
-				const f = x / w;
-				P.push({ x, y: h + 1, ang: 270 + (R() - 0.5) * 110, L: 2 + 6 * f * R(), o: f });
-			}
-			for (let i = 0; i < 7; i++) {
-				P.push({
-					x: w + 1,
-					y: h + 1,
-					ang: 215 + (R() - 0.5) * 40,
-					L: 18 + 16 * R(),
-					o: 0.8 + 0.2 * R()
-				});
-			}
-			return P;
-		},
-		crust: [{ x: w - 5, y: h * 0.4, w: 5, h: h * 0.6, dir: 'left' }]
-	});
-}
-
-/** A frozen row's rule, or the memory bar: needles of rime, thickest at
- *  the leading end and gone by reach. */
-function row(seed, reach = 200) {
-	const w = 300;
-	const h = 10;
-	return mask({
-		w,
-		h,
-		seed,
-		sprites: [2, 3, 4.5, 6],
-		needles: true,
-		sparkles: 5,
-		halo: 2,
-		haloO: 0.4,
-		place: (R) => {
-			const P = [];
-			for (let x = 0.5; x < reach; x += 2 + R() * 4) {
-				const f = Math.pow(1 - x / reach, 1.4);
-				if (R() > f + 0.05) continue;
-				const L = 1.5 + 5 * f * Math.pow(R(), 1.3);
-				P.push({ x, y: h, ang: 270 + (R() - 0.5) * 120, L, o: Math.min(1, 0.25 + f) });
-			}
-			return P;
-		},
-		crust: [{ x: 0, y: h - 2, w: 150, h: 2, dir: 'up' }]
-	});
+/** Frost seen through: a cloudy, streaked white in a fixed field, wider
+ *  than any row, so it never tiles. frost.css paints it under a feathered
+ *  mask along an edge (a /projects row's foot, the tab rule on a phone). */
+function cloud(seed) {
+	const w = 1600;
+	const h = 64;
+	const svg =
+		`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>` +
+		`<filter id='c' x='0' y='0' width='100%' height='100%'>` +
+		// Streaks of cloudy frost, longer than they are tall.
+		`<feTurbulence type='fractalNoise' baseFrequency='.014 .09' numOctaves='4' seed='${seed}'/>` +
+		`<feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 2.4 -.9' result='s'/>` +
+		// Grains of rime, where the streaks are.
+		`<feTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' seed='${seed + 1}'/>` +
+		`<feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 7 -3.9'/>` +
+		`<feComposite in2='s' operator='in' result='g'/>` +
+		`<feMerge><feMergeNode in='s'/><feMergeNode in='g'/><feMergeNode in='g'/></feMerge>` +
+		`</filter>` +
+		`<rect width='100%' height='100%' filter='url(#c)'/></svg>`;
+	return dataUrl(svg);
 }
 
 const css = `/* Generated by scripts/frost-masks.mjs; edit that and rerun it. The masks a
    frozen machine's frost is painted through (lib/hk/frost.css). */
 :root {
 	--hk-frost-head: ${head(7)};
-	--hk-frost-head-narrow: ${headNarrow(5)};
-	--hk-frost-meter: ${row(3, 300)};
-	--hk-frost-row-1: ${row(11)};
-	--hk-frost-row-2: ${row(12)};
-	--hk-frost-row-3: ${row(14)};
+	--hk-frost-cloud: ${cloud(9)};
 }
 `;
 

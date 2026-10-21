@@ -18,7 +18,6 @@
 	import { bytes, classMemoryGB, gb, gbs } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 	import { frozenSince } from '$lib/frozen';
-	import Frost from '$lib/components/Frost.svelte';
 
 	let {
 		project,
@@ -66,16 +65,15 @@
 
 	<div class="meters">
 		{#if memUsed !== undefined}
-			<!-- A frozen machine's memory is what is frozen: the bar takes the
-			     ice ink and rime (lib/hk/frost.css). -->
-			<div class:hk-meter-ice={!!frozen} data-frost-on={frozen ? 'meter' : undefined}>
+			<!-- A frozen machine's memory is what is frozen: the bar fills in
+			     ice ink with a lit top edge (lib/hk/frost.css). -->
+			<div class:hk-meter-ice={!!frozen}>
 				<Meter
 					label="Memory in use"
 					used={memUsed / GIB}
 					limit={memBytes / GIB}
 					valueText="{bytes(memUsed)} of {bytes(memBytes)}"
 				/>
-				{#if frozen}<Frost kind="meter" since={frozen} />{/if}
 			</div>
 		{:else}
 			<div class="line">

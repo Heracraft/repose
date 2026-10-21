@@ -87,8 +87,9 @@ export const FILTER_LABELS: Record<Filter, string> = {
  * Whether a project passes the state filter. Running keeps every machine
  * that is up and every one that wants you, a failed one included: its
  * row leads the list under "Needs you", so the default view never hides
- * a machine the user has to act on. Stopped keeps every machine at rest,
- * a failed one too, since its row offers Start like a stopped one.
+ * a machine the user has to act on. Stopped keeps the rest, the machines
+ * of the "Stopped" band, so its count is the one the rail and Running's
+ * "All N stopped" show: a failed machine is counted once, where it leads.
  */
 export function matchesFilter(p: Project, f: Filter, waiting: boolean): boolean {
 	switch (f) {
@@ -97,7 +98,7 @@ export function matchesFilter(p: Project, f: Filter, waiting: boolean): boolean 
 		case 'up':
 			return !atRest(p) || needsYou(p, waiting);
 		case 'off':
-			return atRest(p);
+			return band(p, waiting) === 'off';
 	}
 }
 
@@ -112,6 +113,21 @@ export function matchesQuery(p: Project, query: string): boolean {
 	return (
 		p.name.toLowerCase().includes(q) ||
 		p.slug.toLowerCase().includes(q) ||
+		(p.remote_url ?? '').toLowerCase().includes(q)
+	);
+}
+
+/**
+ * Whether what was typed matches a project only on its remote, so the
+ * row shows the remote that matched even where it hides it (a stopped
+ * row, a stacked row).
+ */
+export function matchesOnRemote(p: Project, query: string): boolean {
+	const q = query.trim().toLowerCase();
+	return (
+		!!q &&
+		!p.name.toLowerCase().includes(q) &&
+		!p.slug.toLowerCase().includes(q) &&
 		(p.remote_url ?? '').toLowerCase().includes(q)
 	);
 }
@@ -211,8 +227,7 @@ export function listView(
 	const f = effectiveFilter(opts.filter, opts.chosen, ordered.length, opts.query);
 	const matched = ordered.filter(
 		(p) =>
-			(f === 'up' ? opts.bandOf(p) !== 'off' : matchesFilter(p, f, opts.waiting(p))) &&
-			matchesQuery(p, opts.query)
+			(f === 'all' || (opts.bandOf(p) === 'off') === (f === 'off')) && matchesQuery(p, opts.query)
 	);
 	let rows: Project[];
 	let folded = 0;

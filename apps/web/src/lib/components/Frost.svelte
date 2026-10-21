@@ -1,7 +1,7 @@
 <!--
   Window frost on a frozen machine's surface (I-683, I-841 amendment
-  2026-10-21): the project head's far corner, the Machine section's memory
-  bar, a /projects row's rule. Drawn through a generated mask
+  2026-10-21): rising from the project head's tab rule, and along a
+  /projects row's foot. Drawn through generated masks
   (lib/hk/frost-masks.css) in the ice tokens, behind the surface's text;
   the surface sets position and isolation ([data-frost-on]). Decorative:
   the word "frozen" and its flake carry the state, and forced colours drop
@@ -18,7 +18,7 @@
 		since,
 		n = 0
 	}: {
-		kind: 'head' | 'meter' | 'row';
+		kind: 'head' | 'row';
 		/** When the machine froze (resting.since). */
 		since: string;
 		/** A row's index: three masks in turn, so adjacent rows differ. */
@@ -39,6 +39,7 @@
 	}
 </script>
 
+<!-- The head draws crystals from 640px and the cloud below it (frost.css). -->
 <span
 	class="hk-frost hk-frost--{kind}"
 	data-frost-mask={kind === 'row' ? (n % 3) + 1 : undefined}
@@ -46,3 +47,11 @@
 	in:frost={{ duration: 600, intro: true }}
 	out:frost={{ duration: 300 }}
 ></span>
+{#if kind === 'head'}
+	<span
+		class="hk-frost hk-frost--edge"
+		aria-hidden="true"
+		in:frost={{ duration: 600, intro: true }}
+		out:frost={{ duration: 300 }}
+	></span>
+{/if}
