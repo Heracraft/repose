@@ -50,7 +50,7 @@ test('Settings adds and deletes an account secret; a project page shows it', asy
 	await page.goto('/settings#secrets');
 	await expect(page).toHaveURL('/settings/secrets');
 	const section = page.locator('#secrets');
-	await expect(section.getByRole('heading', { name: 'Secrets', exact: true })).toBeVisible();
+	await expect(section.getByRole('heading', { name: /^(Secrets|\d+ secrets?)$/ })).toBeVisible();
 	// The form is closed until asked for.
 	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
 	for (const [name, value] of [

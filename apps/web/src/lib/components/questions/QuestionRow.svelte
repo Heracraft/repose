@@ -155,7 +155,7 @@
 		<!-- eslint-disable svelte/no-navigation-without-resolve -- the card builds projectHref with resolve() -->
 		<p class="qrow-closed-line">
 			<span class="qrow-closed-q"
-				>{#if projectHref}<a href={projectHref} class="qrow-project">{q.project}</a><span
+				>{#if projectHref}<a href={projectHref} class="qrow-project hk-tap">{q.project}</a><span
 						aria-hidden="true">&nbsp;·&nbsp;</span
 					>{/if}<span class="qrow-closed-text">{q.text}</span></span
 			>
@@ -192,7 +192,7 @@
 			<p class="qrow-meta">
 				{#if projectHref}
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the card builds it with resolve() -->
-					<a href={projectHref} class="qrow-project">{q.project}</a><span aria-hidden="true"
+					<a href={projectHref} class="qrow-project hk-tap">{q.project}</a><span aria-hidden="true"
 						>&nbsp;·&nbsp;</span
 					>
 				{/if}<span class="qrow-agent">{q.agent}</span><span class="hk-sr">&nbsp;asks</span
@@ -259,7 +259,8 @@
 	.qrow-closed-q {
 		flex: 0 1 auto;
 		min-width: 0;
-		overflow: hidden;
+		/* Sideways only: the project link's touch box reaches past the line. */
+		overflow: clip visible;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}

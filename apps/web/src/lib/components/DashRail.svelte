@@ -17,6 +17,7 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
@@ -67,9 +68,18 @@
 	);
 	let rows = $derived(all.slice(0, ROWS));
 
-	/** The project a /projects/<id>/… path is under, if it is one of the rows. */
+	/** Whether the rail is drawn: the strip below 1024px draws no project rows. */
+	const wide = new MediaQuery('min-width: 1024px');
+
+	/** The project a /projects/<id>/… path is under, if its row is drawn. */
 	let projectId = $derived(/^\/projects\/([^/]+)/.exec(path)?.[1]);
-	let rowCurrent = $derived(!!projectId && rows.some((p) => p.id === projectId));
+	let rowCurrent = $derived(
+		!page.error &&
+			!notFound.on &&
+			wide.current &&
+			!!projectId &&
+			rows.some((p) => p.id === projectId)
+	);
 
 	/** One current item per dashboard page; none on an error page (a signed-in 404). */
 	function current(id: Place): boolean {
@@ -230,9 +240,7 @@
 							<a
 								href={resolve('/projects/[id]', { id: p.id })}
 								class="prow"
-								aria-current={!page.error && !notFound.on && projectId === p.id
-									? 'page'
-									: undefined}
+								aria-current={rowCurrent && projectId === p.id ? 'page' : undefined}
 								aria-label={rowName(p)}
 							>
 								<span class="mark" aria-hidden="true">
@@ -260,22 +268,28 @@
 
 	{#if !onBilling && billingStore.mode !== 'off'}
 		<section class="foot" aria-label="Plan" data-testid="plan-strip">
-			{#if foot}
-				<p class="foot-label">{foot.label}</p>
-				{#if foot.name}<p class="foot-name">{foot.name}</p>{/if}
-				<p class="foot-state" class:foot-state--quiet={!foot.link}>
-					{#if foot.err}<span class="hk-dot hk-dot--err" aria-hidden="true"></span>{/if}
+			<!-- The three lines are there before billing answers, a bar in
+			     each, so the foot's height does not change when they fill. -->
+			<p class="foot-label">
+				{#if foot}{foot.label}{:else}<span class="hk-skel skel-label"></span>{/if}
+			</p>
+			{#if !foot || foot.name}
+				<p class="foot-name">
+					{#if foot}{foot.name}{:else}<span class="hk-skel skel-name"></span>{/if}
+				</p>
+			{/if}
+			<p class="foot-state" class:foot-state--quiet={!foot?.link}>
+				{#if !foot}
+					<span class="hk-skel skel-state"></span>
+				{:else}
+					{#if foot.dot}<span class="hk-dot hk-dot--{foot.dot}" aria-hidden="true"></span>{/if}
 					{#if foot.link}
 						<a href={resolve('/billing')}>{foot.state}</a>
 					{:else}
 						{foot.state}
 					{/if}
-				</p>
-			{:else}
-				<span class="hk-skel skel-label"></span>
-				<span class="hk-skel skel-name"></span>
-				<span class="hk-skel skel-state"></span>
-			{/if}
+				{/if}
+			</p>
 		</section>
 	{/if}
 </div>
@@ -283,7 +297,7 @@
 <div class="plan-line" class:plan-line--reserve={!onBilling && billingStore.reserve}>
 	{#if line}
 		<p>
-			{#if line.err}<span class="hk-dot hk-dot--err" aria-hidden="true"></span>{/if}
+			{#if line.dot}<span class="hk-dot hk-dot--{line.dot}" aria-hidden="true"></span>{/if}
 			<span>{line.text}</span>
 			<a href={resolve('/billing')}>{line.link}</a>
 		</p>
@@ -402,6 +416,12 @@
 		.icon {
 			display: none;
 		}
+		/* The last pill's trailing padding hangs into the gutter, as the
+		   first's leading padding does, so the four fit at 360 with no
+		   sideways drag. */
+		.places li:last-child .place {
+			margin-right: -0.625rem;
+		}
 	}
 
 	/* The plan line: phones and tablets, trouble only; room is kept for
@@ -438,11 +458,13 @@
 			flex-direction: column;
 			align-self: start;
 			top: var(--header-h);
-			/* The grid row's height, at most the window under the header: a
-			   short page (an outage bar above the header included) still ends
-			   at the window's foot, footer and all (review r4). */
-			height: 100%;
-			max-height: calc(100dvh - var(--header-h));
+			/* The window under the header less the compact footer: the grid
+			   is at least this tall, so the rail never runs out of row, never
+			   slides under the header at a page's foot, and its foot sits at
+			   one height on every page (I-841, review IA). While the outage
+			   bar shows above the header its height comes off too, so a
+			   short page still ends at the window's foot (review r4). */
+			height: calc(100dvh - var(--header-h) - var(--dash-foot-h) - var(--outage-h, 0px));
 			margin: 0;
 			padding: 2.25rem 0 1.5rem;
 			box-shadow: none;
@@ -595,20 +617,24 @@
 			text-decoration: underline;
 		}
 		.foot .hk-skel {
-			display: block;
+			display: inline-block;
+			vertical-align: middle;
 			height: 0.75rem;
 			border-radius: var(--hk-radius-xs);
 		}
 		.skel-label {
 			width: 2.5rem;
 		}
-		.skel-name {
+		.foot .skel-name {
 			width: 4rem;
-			height: 1.25rem !important;
-			margin: 0.375rem 0;
+			height: 1.25rem;
 		}
 		.skel-state {
 			width: 9rem;
+		}
+		.foot-label,
+		.foot-state {
+			min-height: 1.25rem;
 		}
 		.plan-line {
 			display: none;

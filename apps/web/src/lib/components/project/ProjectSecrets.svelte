@@ -175,16 +175,12 @@
 
 <section class="hk-section" id="secrets" aria-labelledby="secrets-title">
 	<div class="hk-section-head">
-		<div class="stitle">
-			<h2 id="secrets-title" class="hk-h2-app">Secrets</h2>
-			{#if secrets && secrets.length > 0}
-				<span class="count"
-					>{secrets.length}<span class="hk-sr">
-						{secrets.length === 1 ? 'secret' : 'secrets'}</span
-					></span
-				>
-			{/if}
-		</div>
+		<!-- The head is the count, as on Snapshots and Events: "3 secrets". -->
+		<h2 id="secrets-title" class="hk-h2-app">
+			{secrets && secrets.length > 0
+				? `${secrets.length} ${secrets.length === 1 ? 'secret' : 'secrets'}`
+				: 'Secrets'}
+		</h2>
 		{#if secrets}
 			<button
 				type="button"
@@ -385,17 +381,6 @@
 </section>
 
 <style>
-	.stitle {
-		display: flex;
-		align-items: baseline;
-		gap: 0.625rem;
-	}
-	.count {
-		font-family: var(--hk-font-sans);
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-	}
 	/* The add form: one panel under the head, the fields side by side
 	   from a 640px column. */
 	.sform {

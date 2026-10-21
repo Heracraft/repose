@@ -18,11 +18,15 @@
 	import type { Me } from '$lib/api/types';
 
 	// The timezone saves the moment it changes (DECISIONS I-332).
-	let me = $state<Me | undefined>(undefined);
-	let tz = $state('');
-	let savedTz = '';
+	// The shell's /me read, when it has one, so a visit after the first
+	// paints at once; load() reads it again.
+	const seen = billingStore.me;
+	const seenTz = seen ? seen.tz || Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+	let me = $state<Me | undefined>(seen);
+	let tz = $state(seenTz);
+	let savedTz = seenTz;
 	// The zone the account had when the page loaded.
-	let loadedTz = $state('');
+	let loadedTz = $state(seenTz);
 	let deleting = $state(false);
 	let loadError = $state<string | undefined>(undefined);
 
@@ -105,8 +109,6 @@
 	<title>{title('Settings')}</title>
 </svelte:head>
 
-<!-- Only what reads /v1/me waits on it: the install line has no source
-     and shows while it loads or after it failed. -->
 <LoadState
 	status={me ? 'ready' : loadError ? 'failed' : 'loading'}
 	error={loadError}
@@ -164,15 +166,19 @@
 	{/if}
 </LoadState>
 
-<section class="set-row" id="install">
-	<div class="set-head">
-		<h2 id="install-h" class="hk-h2-app">Install</h2>
-		<p class="set-note">Runs on macOS and Linux.</p>
-	</div>
-	<div class="set-body">
-		<CodeCopy command={INSTALL_COMMAND} what="install command" />
-	</div>
-</section>
+<!-- Install waits with the rest, so the account's rows arriving above it
+     do not push it down (I-664); after a failed read it shows alone. -->
+{#if me || loadError}
+	<section class="set-row" id="install">
+		<div class="set-head">
+			<h2 id="install-h" class="hk-h2-app">Install</h2>
+			<p class="set-note">Runs on macOS and Linux.</p>
+		</div>
+		<div class="set-body">
+			<CodeCopy command={INSTALL_COMMAND} what="install command" />
+		</div>
+	</section>
+{/if}
 
 {#if me}
 	<!-- The one irreversible action, last on the page. -->

@@ -49,9 +49,9 @@ function view(f: BillingFacts, running = 28) {
 	return {
 		mode,
 		foot: foot
-			? [foot.label, foot.name ?? '', foot.state, foot.link ? 'link' : '', foot.err ? 'err' : '']
+			? [foot.label, foot.name ?? '', foot.state, foot.link ? 'link' : '', foot.dot ?? '']
 			: null,
-		line: line ? `${line.text} / ${line.link}` : null
+		line: line ? `${line.text} / ${line.link}${line.dot ? ` (${line.dot})` : ''}` : null
 	};
 }
 
@@ -136,17 +136,17 @@ describe('billing mode, footer and plan line', () => {
 		expect(view(facts(me('active'), scheduled)).foot?.[2]).toBe('Changes to Plus 2026-11-21');
 	});
 
-	it('payment failed and suspended carry a red dot and a link', () => {
+	it('payment failed carries an amber dot, suspended a red one, both a link', () => {
 		const pd = billing({ subscription: sub({ status: 'past_due' }) });
 		expect(view(facts(me('past_due'), pd))).toEqual({
 			mode: 'past_due',
-			foot: ['Plan', 'Pro', 'Payment failed', 'link', 'err'],
-			line: 'Pro · Payment failed / Update card'
+			foot: ['Plan', 'Pro', 'Payment failed', 'link', 'warn'],
+			line: 'Pro · Payment failed / Update card (warn)'
 		});
 		expect(view(facts(me('suspended'), pd))).toEqual({
 			mode: 'suspended',
 			foot: ['Plan', 'Pro', 'Suspended', 'link', 'err'],
-			line: 'Suspended / Update card and pay'
+			line: 'Suspended / Update card and pay (err)'
 		});
 	});
 });

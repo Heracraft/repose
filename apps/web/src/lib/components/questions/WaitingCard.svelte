@@ -282,8 +282,9 @@
 				<li class="waiting-group" class:waiting-group--head={grouped}>
 					{#if grouped}
 						<p class="waiting-project">
-							<a href={resolve('/projects/[id]', { id: g.project_id })} class="waiting-project-link"
-								>{g.project}</a
+							<a
+								href={resolve('/projects/[id]', { id: g.project_id })}
+								class="waiting-project-link hk-tap">{g.project}</a
 							>
 							{#if g.pending > 0}
 								<span class="waiting-project-n hk-num"
@@ -328,7 +329,9 @@
 			{/each}
 		</ul>
 		{#if more > 0}
-			<a href={resolve('/questions')} class="hk-more waiting-more">{more} more on Questions</a>
+			<a href={resolve('/questions')} class="hk-more hk-tap waiting-more"
+				>{more} more on Questions</a
+			>
 		{/if}
 	</section>
 {/if}
@@ -386,9 +389,10 @@
 	.waiting-project-n {
 		color: var(--hk-text-3);
 	}
-	/* The machine's state at the head's far end, as a project row draws it. */
+	/* The machine's state beside its name, so it reads as the project's
+	   and not as a label over the answer buttons at the far end. */
 	.waiting-project-state {
-		margin-left: auto;
+		margin-left: 0.25rem;
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
 	}
@@ -409,6 +413,11 @@
 	}
 	.waiting-more {
 		margin-top: 0.75rem;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.waiting .waiting-more {
+			margin-top: calc(0.75rem + (1lh - 2.75rem) / 2);
+		}
 	}
 	/* A phone drops the window from the row's meta line, so the fold does too. */
 	@media (max-width: 639.98px) {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import { onMount, setContext } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -14,6 +15,7 @@
 	import AppBoundary from '$lib/components/AppBoundary.svelte';
 	import DashRail from '$lib/components/DashRail.svelte';
 	import { legacyTarget } from '$lib/legacyUrls';
+	import { billingStore } from '$lib/billing.svelte';
 	import { DASH, type DashContext } from '$lib/dash';
 
 	let { children } = $props();
@@ -70,6 +72,26 @@
 			(authState.authenticated === true && !isPublic(page.url.pathname))
 	);
 
+	// Below 1024px the plan line sits over the page title and arrives with
+	// billing. On the first load the page waits for that answer, hidden,
+	// so the line paints with it and pushes nothing down (I-664, ia-final
+	// 1.3): a fresh browser has no last mode to reserve room by. A billing
+	// read slower than 2.5s lets the page show and takes the shift.
+	const strip = new MediaQuery('max-width: 1023.98px');
+	let billingLate = $state(false);
+	onMount(() => {
+		const t = setTimeout(() => (billingLate = true), 2500);
+		return () => clearTimeout(t);
+	});
+	// The outage bar's height, taken off the grid's and the rail's so a
+	// short page with the bar above the header still ends at the window's
+	// foot (review r4).
+	let outageH = $state(0);
+
+	let holdMain = $derived(
+		dashboard && strip.current && billingStore.mode === 'unknown' && !billingLate
+	);
+
 	// Inside the dashboard's grid the page's <main> drops its own frame:
 	// the grid is the frame (PageShell, ErrorView read this).
 	const dashContext: DashContext = {
@@ -120,7 +142,7 @@
 	<!-- The live region is always in the page and only its contents change:
 	     a role=status inserted with its text already in it is often read by
 	     no screen reader (I-393). Empty, it draws nothing. -->
-	<div id="outage" role="status">
+	<div id="outage" role="status" bind:offsetHeight={outageH}>
 		{#if !reachability.ok}
 			<!-- A full-bleed strip above the header: the page's edge, not a box
 			     in the column, so square and borderless. -->
@@ -139,9 +161,9 @@
 			<!-- The dashboard (I-841): the rail and the page in one frame, a
 			     grid from 1024px. The page column is the size container
 			     `dash`, so pages lay out by its width, not the window's. -->
-			<div class="frame dash">
+			<div class="frame dash" style:--outage-h="{outageH}px">
 				<DashRail />
-				<div class="dash-main">
+				<div class="dash-main" class:dash-main--hold={holdMain}>
 					{@render body()}
 				</div>
 			</div>
@@ -170,9 +192,14 @@
 		display: flex;
 		flex-direction: column;
 	}
+	/* The grid is at least the window under the header (less the
+	   compact footer from 1024px, where the rail counts on it), so the
+	   footer starts under the fold until a page's content arrives, and
+	   the sticky rail always has the room it needs (review IA). */
 	.dash {
 		display: grid;
 		flex: 1;
+		min-height: calc(100dvh - var(--header-h) - var(--outage-h, 0px));
 		grid-template-columns: minmax(0, 1fr);
 		/* Below 1024 the strip's row and the plan line's keep their height
 		   and the page's row takes the room a short page leaves. */
@@ -182,8 +209,12 @@
 		min-width: 0;
 		container: dash / inline-size;
 	}
+	.dash-main--hold {
+		visibility: hidden;
+	}
 	@media (min-width: 1024px) {
 		.dash {
+			min-height: calc(100dvh - var(--header-h) - var(--dash-foot-h) - var(--outage-h, 0px));
 			grid-template-columns: 12.5rem minmax(0, 1fr);
 			grid-template-rows: 1fr;
 			column-gap: 3rem;

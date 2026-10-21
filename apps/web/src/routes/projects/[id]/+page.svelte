@@ -1,9 +1,38 @@
+<script lang="ts" module>
+	import type { Revision as Rev, Samples as Smp } from '$lib/api/types';
+	/**
+	 * What a switch back from another tab can reuse, per project: the
+	 * memory sample (a minute old at most, as the poll asks), the config
+	 * revisions (read again only when the project names a new one) and the
+	 * egress reading (a minute). Questions and the newest events are read
+	 * on every mount.
+	 */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- a plain cache, read once per mount
+	const kept = new Map<
+		string,
+		{
+			samples?: Smp;
+			samplesAt: number;
+			revisions?: Rev[];
+			egress?: number;
+			egressAt: number;
+			egressFrom?: string;
+		}
+	>();
+	const keep = (id: string) => {
+		let k = kept.get(id);
+		if (!k) kept.set(id, (k = { samplesAt: 0, egressAt: 0 }));
+		return k;
+	};
+</script>
+
 <script lang="ts">
 	// A project's Overview (DECISIONS I-841): what needs you, how to get
 	// in, what runs now, then the facts and Destroy. The layout above owns
 	// the project, its poll, the header and Start/Stop; this tab reads its
-	// questions, the newest 5 events, the memory sample and the config
-	// revision once, together, so nothing lands above what is on screen.
+	// questions, the newest 5 events, the memory sample (Machine's "in
+	// use"; the project carries no memory figure) and the config revision
+	// once, together, so nothing lands above what is on screen.
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -46,29 +75,37 @@
 	let ready = $state(false);
 	let questions = $state<Question[]>([]);
 	let events = $state<ProjectEvent[] | undefined>(undefined);
-	let revisions = $state<Revision[]>([]);
-	let samples = $state<Samples | undefined>(undefined);
-	let samplesAt = 0;
+	const cache = keep(id);
+	let revisions = $state<Revision[]>(cache.revisions ?? []);
+	let samples = $state<Samples | undefined>(cache.samples);
+	let samplesAt = cache.samplesAt;
 
 	/**
 	 * Everything the tab paints, at once: each part falls back to its own
 	 * empty state, so only the project (the layout's) can stop the page.
 	 */
 	async function firstLoad() {
+		const freshSamples = Date.now() - samplesAt < 55_000;
+		const want = ctx.project?.config_revision_id;
+		const haveRevision =
+			!!cache.revisions && (!want || revisions.some((r) => r.revision_id === want));
 		const [qs, ev, smp, revs] = await Promise.all([
 			listProjectQuestions(id).catch(() => [] as Question[]),
 			listEventsPage(id, { limit: LATEST_EVENTS })
 				.then((r) => r.events)
 				.catch(() => undefined),
-			getSamples(id, '1h').catch(() => undefined),
-			listRevisions(id).catch(() => [] as Revision[])
+			freshSamples ? undefined : getSamples(id, '1h').catch(() => undefined),
+			haveRevision ? revisions : listRevisions(id).catch(() => [] as Revision[])
 		]);
 		questions = qs;
 		events = ev;
 		revisions = revs;
+		cache.revisions = revs;
 		if (smp) {
 			samples = smp;
 			samplesAt = Date.now();
+			cache.samples = smp;
+			cache.samplesAt = samplesAt;
 		}
 		ready = true;
 	}
@@ -79,6 +116,8 @@
 		try {
 			samples = await getSamples(id, '1h');
 			samplesAt = Date.now();
+			cache.samples = samples;
+			cache.samplesAt = samplesAt;
 		} catch {
 			// Machine reads "not running" until a sample arrives.
 		}
@@ -103,7 +142,7 @@
 		const want = project?.config_revision_id;
 		if (!ready || !want || revisions.some((r) => r.revision_id === want)) return;
 		void listRevisions(id)
-			.then((r) => (revisions = r))
+			.then((r) => (revisions = cache.revisions = r))
 			.catch(() => {});
 	});
 
@@ -119,16 +158,18 @@
 	 * filtered to it), from the period the shared billing store holds.
 	 * Billing off, or no subscription, has no period, and no reading.
 	 */
-	let egressGb = $state<number | undefined>(undefined);
+	let egressGb = $state<number | undefined>(cache.egress);
 	let periodStart = $derived(billingStore.info?.subscription?.period_start);
 	$effect(() => {
 		const from = periodStart;
 		if (!from) return;
+		if (cache.egressFrom === from && Date.now() - cache.egressAt < 60_000) return;
 		// GET /usage takes days; to is the end of today, so today counts.
 		const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
 		void getUsage(dateOnly(from), dateOnly(tomorrow))
 			.then((days) => {
 				egressGb = days.filter((d) => d.project_id === id).reduce((n, d) => n + d.egress_gb, 0);
+				Object.assign(cache, { egress: egressGb, egressAt: Date.now(), egressFrom: from });
 			})
 			.catch(() => {});
 	});

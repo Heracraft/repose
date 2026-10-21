@@ -186,16 +186,18 @@ test('each Settings tab holds its own sections, the account first', async ({ pag
 	await expect(tabs).toHaveText(['General', 'Notifications', 'Secrets', 'machine.nix']);
 	await expect(tab(page, 'General')).toHaveAttribute('aria-current', 'page');
 
+	// Secrets' head is its count ("2 secrets"); machine.nix has no head
+	// under its own tab (review IA).
 	for (const [name, url, headings] of [
 		['Notifications', '/settings/notifications', ['Email', 'ntfy', 'Google Chat', 'Test']],
-		['Secrets', '/settings/secrets', ['Secrets']],
-		['machine.nix', '/settings/machine-nix', ['machine.nix']]
+		['Secrets', '/settings/secrets', [/^(Secrets|\d+ secrets?)$/]],
+		['machine.nix', '/settings/machine-nix', []]
 	] as const) {
 		await tab(page, name).click();
 		await expect(page).toHaveURL(url);
 		await expect(tab(page, name)).toHaveAttribute('aria-current', 'page');
 		await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-		await expect.poll(h2).toEqual([...headings]);
+		await expect(page.locator('main h2')).toHaveText([...headings]);
 	}
 });
 

@@ -213,7 +213,7 @@
 				<p class="set-note">
 					<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
 					<a
-						class="hk-link"
+						class="hk-link hk-tap"
 						href={resolve('/docs/[slug]', { slug: 'notifications' }) + '#your-phone-with-ntfy'}
 						>Set up a topic</a
 					>
@@ -257,7 +257,7 @@
 					<p class="set-note">
 						<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
 						<a
-							class="hk-link"
+							class="hk-link hk-tap"
 							href={resolve('/docs/[slug]', { slug: 'notifications' }) + '#google-chat'}
 							>Make a webhook</a
 						>

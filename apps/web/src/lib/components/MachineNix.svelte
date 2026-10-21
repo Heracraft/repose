@@ -90,13 +90,11 @@
 	}
 </script>
 
-<!-- Settings → machine.nix (I-841): the head with How it works, the
+<!-- Settings → machine.nix (I-841): where the file lives and How it works, the
      editor in the full column with its state and Save in its foot bar,
      the projects that keep it off under it. -->
-<section class="hk-section" id="machine-nix" aria-labelledby="machine-nix-h">
-	<div class="hk-section-head">
-		<h2 id="machine-nix-h" class="hk-h2-app">machine.nix</h2>
-	</div>
+<section class="hk-section" id="machine-nix" aria-label="machine.nix">
+	<!-- No head: the tab right above says machine.nix. -->
 	<p class="lede">
 		Your laptop keeps it at <code class="path">~/.config/repose/machine.nix</code>.
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
@@ -185,7 +183,7 @@
 		margin-left: 0.25rem;
 	}
 	.lede {
-		margin: -0.25rem 0 1.25rem;
+		margin: 0 0 1.25rem;
 		font-size: 0.875rem;
 		color: var(--hk-text-3);
 		text-wrap: pretty;

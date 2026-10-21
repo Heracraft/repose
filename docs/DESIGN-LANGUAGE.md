@@ -96,9 +96,14 @@ textareas (with 16px text, so iOS does not zoom on focus), every item of a
 joined control, checkbox rows, page tabs, crumb links, copy buttons, and the
 header's links, which take the full 56px row. A ghost action in a table row
 keeps the row's height by a negative block margin (`hk-btn-ghost--touch`).
-Links inside running text are exempt (WCAG 2.5.8's inline exception).
-`design.spec.ts` "touch targets" measures `header` and `main` of nine pages
-at 390 with touch.
+A link that stands alone on its line (a project's name over its questions,
+"2 more on Questions", a docs link beside a section head) takes `hk-tap`
+(repose): a 44px inline-flex box whose negative block margin gives back all
+but one line, so its line keeps its height. Links inside running text are
+exempt (WCAG 2.5.8's inline exception), and so is a row link whose `::after`
+covers its row. `design.spec.ts` "touch targets" measures the controls and
+the standalone links of `header` and `main` on every dashboard page at 390
+with touch.
 
 ## Type
 
@@ -262,8 +267,12 @@ From 1024px the root layout draws `<div class="frame dash">` as a grid,
 `12.5rem minmax(0, 1fr)` with a 3rem gap: the rail at the frame's left edge
 (x=160 at 1440, under the logo), the page 248px past it. The page column is
 714px at 1024, 875px at 1280 and 872px at 1440 with a classic scrollbar. The
-rail is sticky under the header, as tall as its grid row and at most the
-window under the header, so a short page still ends at the window's foot.
+rail is sticky under the header and as tall as the window under it less the
+compact footer's 71px row (`--dash-foot-h`), and the grid is at least that
+tall: the rail never runs out of row, so it never slides under the header
+at a page's foot, and its plan sits at one height on every page (829px at
+1440x900). The outage bar's height, while it shows, comes off both. Below 1024 the grid is at least the window under the header, so
+the footer starts under the fold until the page's content arrives (I-664).
 
 - Places: Projects, Questions, Billing, Settings. Each is 32px, padding 0
   10px, 7px corners, 13px `--hk-text-2` with a 16px line icon (stroke 1.4) in
@@ -283,12 +292,14 @@ window under the header, so a short page still ends at the window's foot.
 - One item is current on every dashboard page and none on an error page,
   a project's 404 included.
   Projects is current on `/projects` only; a project's row is current on
-  every tab of that project, or Projects when the row is past the eight
-  shown; Questions, Billing and Settings on their own pages.
+  every tab of that project, or Projects when the row is not drawn (past
+  the eight shown, or below 1024px, where the strip draws no rows);
+  Questions, Billing and Settings on their own pages.
 - The foot, pinned to the rail's bottom under a hairline, is the plan:
   a 12px label, the plan's name in serif 20px, and one 13px state line. It is
   left off `/billing`, absent while billing is off or the api is down, and a
-  three-bar skeleton until billing answers. No meter.
+  bar in each of its three lines until billing answers, so it keeps its
+  height when they fill. No meter.
 
   | Billing | Label | Name | State line |
   |---|---|---|---|
@@ -301,7 +312,7 @@ window under the header, so a short page still ends at the window's foot.
   | active | Plan | Pro | "28 GB of 32 GB running", "36 GB of 32 GB running · over" |
   | cancelled | Plan | Pro | "Ends 2026-11-21" |
   | change scheduled | Plan | Pro | "Changes to Plus 2026-11-21" |
-  | payment failed | Plan | Pro | red dot, link "Payment failed" |
+  | payment failed | Plan | Pro | amber dot, link "Payment failed" |
   | suspended | Plan | Pro | red dot, link "Suspended" |
 
   Every link goes to `/billing`. Memory running is summed from the projects
@@ -317,11 +328,15 @@ the current place with `scrollLeft`, and drops the icons below 480px. The
 four fit at 360px. Each place is a 44px row with a 32px pill.
 
 Below 1024px, in trouble only, one 13px plan line sits under the strip and
-over the page title: "Pro · Payment failed" with "Update card", "Suspended"
-with "Update card and pay", "No plan" with "Choose a plan", "On the
-waitlist", "repose is full" or "Seat held" with "Billing". Not on
-`/billing`. Its room is kept while the last mode seen (stored per browser)
-was trouble, so it moves nothing when it arrives.
+over the page title: "Pro · Payment failed" with "Update card" (amber dot),
+"Suspended" with "Update card and pay" (red dot), "No plan" with "Choose a
+plan", "On the waitlist", "repose is full" or "Seat held" with "Billing".
+Not on `/billing`. A failed payment is amber in the rail, the plan line and
+the /projects and /billing banners alike; red is for suspended. Its room is
+kept while the last mode seen (stored per browser) was trouble. On the
+first load of the app the page column waits, hidden, until billing answers
+(at most 2.5s), so on a fresh browser too the line paints with the page and
+pushes nothing down.
 
 The page column is the CSS container `dash` (`container: dash /
 inline-size` on `.dash-main`). Page CSS that lays out by the column's width
@@ -481,7 +496,8 @@ Highlight outline.
 `hk-tabs` (repose): a `<nav>` of links on the full-width hairline PageShell
 draws under its `tabs` snippet, 1.5rem apart, 40px tall (44px on touch), 14px
 `--hk-text-2`. The current tab is ink with a 1px ink edge lying on the rule,
-weight unchanged; 1rem apart below 480px, so five fit at 360px. A project's
+weight unchanged. Below 480px they are 1rem apart, and a project's five
+0.625rem apart below 385px, so they fit at 360px. A project's
 Overview, Events, Usage, Snapshots and Config; Settings' General,
 Notifications, Secrets and machine.nix. The layout above the tab pages draws
 the header and the tabs once, so switching tabs keeps them mounted.
@@ -556,7 +572,7 @@ pane is never the loudest thing on the page.
 ## Command list
 
 `CommandList.svelte`: two to four commands in one near-black pane, a 40px row
-each: a muted `$ `, the command in `--hk-code-text`, and its own dark small
+each (44px on touch, as tall as its Copy, so no Copy crosses a hairline): a muted `$ `, the command in `--hk-code-text`, and its own dark small
 Copy named "Copy {what}". A `# note` above a command is 12px italic and wraps
 on a phone while the command scrolls sideways; Copy lines up with the command
 line. A row takes a tab stop only while it overflows. Used where a page
@@ -678,7 +694,9 @@ rail, with no place current.
 
 Every mark that carries state in a fill or a coloured edge has a rule in the
 `forced-colors` block of `layout.css` or `repose.css`: dots in CanvasText with
-the idle one an outline, the current nav link and page tab underlined, the
+the idle one an outline, a waiting (amber) dot square and an error (red)
+dot a diamond so neither reads as running, the current nav link and page
+tab underlined, the
 selected joined-control item in Highlight, the tablist's 3px edges, meters,
 banners, disabled buttons in GrayText, the armed danger button's 2px edge,
 badges and kbd edged. A new stateful mark adds its own rule.
@@ -745,7 +763,7 @@ unless a page says otherwise (I-841).
   - *Snapshots*: the count and "Create snapshot"; the table with "Restore…"
     per row, whose panel opens under its row; "Show all 14".
   - *Config*: Base, Hold base updates and Use your machine.nix as one facts
-    row; Secrets with "Add secret"; Packages, the Menu and Nix tablist with
+    row; Secrets, headed by its count ("3 secrets"), with "Add secret"; Packages, the Menu and Nix tablist with
     the applied status, Apply in the bottom bar; Revisions. Leaving with an
     unapplied edit asks first (Stay, Leave).
 - **/billing**: the payment banners; the current plan (its name in serif,
@@ -761,8 +779,10 @@ unless a page says otherwise (I-841).
   Timezone, Install and Delete account (`#delete-account`), each section a
   12rem head and its controls from a 640px column; *Notifications* is the
   email box, the ntfy and Google Chat fields with their Save, and Send test;
-  *Secrets* is "3 secrets" with "Add secret" and the table; *machine.nix* is
-  the editor across the column with Save and the projects that opt out.
+  *Secrets* is "3 secrets" with "Add secret" and the table; *machine.nix*
+  has no head under its own tab: where the file lives and How it works,
+  then the editor across the column with Save and the projects that opt
+  out.
 
 ## Long lists
 

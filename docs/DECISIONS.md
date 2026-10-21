@@ -24371,6 +24371,30 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   its grid row's, at most the window under the header, so a short page with
   the outage bar above the header still ends at the window's foot (review
   r4); at a fixed `100dvh - 57px` it ran 108px past it.
+- *Fixed after the IA review* (`.dev/notes/ia-review-fixes.md`). The
+  rail is the window under the header less the compact footer's 71px row,
+  and the grid at least that tall: with the grid row's height (above) the
+  rail slid 71px under the header at a long page's foot and its plan sat
+  71px higher on a short page; now the first place stays at y=93 and the
+  plan at one height on every page. While the outage bar shows, its height
+  comes off both, so a short page still ends at the window's foot. Below 1024 a project's row is not drawn, so
+  Projects is current on a project's tabs (no place was before). On the
+  app's first load below 1024 the page column waits, hidden, for billing
+  (2.5s at most), so a plan line seen first on a fresh browser paints with
+  the page: CLS at 390 on /projects in past_due went from 0.31 to 0.0007.
+  The grid's min-height keeps the footer under the fold, and /projects
+  holds its lede's line and Settings its Install row until they fill:
+  CLS at 390 on /projects 0.24, /settings 0.24, /billing 0.11 went to
+  0.007 or less. A failed payment is amber in the rail and the plan line,
+  as the banners have it (kit 7); red stays for suspended. Overview still
+  reads the 1h samples for Machine's "Memory in use", which the project
+  does not carry (amends ia-final 2.4), and keeps them, the config
+  revisions and the egress reading for a minute across tab switches.
+  Project tabs are 1rem apart below 480px and 0.625rem below 385px (the
+  spec's 1rem does not fit 360). Both secret lists are headed by their
+  count; machine.nix has no head under its own tab. Standalone links take
+  a 44px box on touch (`hk-tap`), command rows are 44px on touch, and in
+  forced colours a waiting dot is square and an error dot a diamond.
 - *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
   `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
   the rail's geometry at 1440 and 1024, the strip's end at 101px, one current

@@ -119,8 +119,12 @@
 									title={dateTime(q.answered_at ?? q.created_at)}>{r.when}</time
 								><span aria-hidden="true">&nbsp;·&nbsp;</span>{#if live(q.project_id)}<a
 										href={resolve('/projects/[id]', { id: q.project_id })}
-										class="arow-project">{q.project}</a
-									>{:else}<span class="arow-project">{q.project}</span>{/if}
+										class="arow-project hk-tap">{q.project}</a
+									>{:else}<span class="arow-project">{q.project}</span>{/if}<span class="arow-by"
+									><span class="arow-sep" aria-hidden="true">&nbsp;·&nbsp;</span><span class="hk-sr"
+										>asked by
+									</span><span class="arow-agent">{q.agent}</span></span
+								>
 							</p>
 							<p class="arow-text" title={q.text}>{q.text}</p>
 							<p class="arow-outcome">
@@ -128,9 +132,7 @@
 									>{#if r.answer !== undefined}<span class="arow-answer">{r.answer}</span
 										>{#if r.rest}<span aria-hidden="true">&nbsp;·&nbsp;</span
 											>{r.rest}{/if}{:else}{r.rest}{/if}</span
-								><span aria-hidden="true">&nbsp;·&nbsp;</span><span class="hk-sr"
-									>, asked by
-								</span><span class="arow-agent">{q.agent}</span>
+								>
 							</p>
 						</li>
 					{/each}
@@ -157,9 +159,9 @@
 		list-style: none;
 		border-bottom: 1px solid var(--hk-hairline);
 	}
-	/* One hairline row a question: when and where, then what was asked on
-	   one line, then how it ended. From a 640px column the when and where
-	   take their own column. */
+	/* One hairline row a question: when, where and which agent asked,
+	   then what was asked on one line, then how it ended. From a 640px
+	   column the when, where and who take their own column. */
 	.arow {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
@@ -177,7 +179,9 @@
 		color: var(--hk-text-3);
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
-		overflow: hidden;
+		/* Clipped sideways only: the project link's 44px touch box
+		   reaches over and under the line. */
+		overflow: clip visible;
 		text-overflow: ellipsis;
 	}
 	.arow-project {
@@ -220,6 +224,15 @@
 		}
 		.arow-meta {
 			grid-row: span 2;
+		}
+		/* The agent takes the meta column's second line. */
+		.arow-by {
+			display: block;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.arow-sep {
+			display: none;
 		}
 	}
 	.amore {

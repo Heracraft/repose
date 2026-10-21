@@ -23,12 +23,13 @@
 </nav>
 
 <style>
-	/* Five tabs in the 305px column a 360 screen leaves: 0.625rem apart
-	   below 400px, 1rem below 480px, the kit's 1.5rem from there. */
+	/* Five tabs take 263px of labels: 1rem apart below 480px (327px,
+	   which the 335px row of a 390 screen holds), 0.625rem below 385px so
+	   they fit the 305px a 360 screen leaves, the kit's 1.5rem from 480. */
 	.project-tabs {
 		gap: 0.625rem;
 	}
-	@media (min-width: 400px) {
+	@media (min-width: 385px) {
 		.project-tabs {
 			gap: 1rem;
 		}

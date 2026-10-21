@@ -538,6 +538,22 @@ async function shortTargets(page: Page, scope: string): Promise<string[]> {
 					out.push(`${el.tagName.toLowerCase()} "${name.slice(0, 30)}" ${Math.round(r.height)}px`);
 				}
 			}
+			// A link that stands alone on its line (the only text of its
+			// parent, or an hk-tap or hk-more link) is a control too; one
+			// inside running text is exempt, and a row link whose ::after
+			// covers its row is as tall as the row.
+			for (const a of root.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+				const r = a.getBoundingClientRect();
+				if (!r.width || !r.height || !a.checkVisibility()) continue;
+				if (a.closest('nav, [role=tablist], .hk-tabs, .hk-seg--links')) continue;
+				if (getComputedStyle(a, '::after').position === 'absolute') continue;
+				const text = a.textContent?.trim() ?? '';
+				const alone =
+					a.matches('.hk-tap, .hk-more') || a.parentElement?.textContent?.trim() === text;
+				if (alone && r.height < 43.5) {
+					out.push(`a "${text.slice(0, 30)}" ${Math.round(r.height)}px`);
+				}
+			}
 		}
 		return out;
 	});
@@ -599,11 +615,30 @@ test.describe('the dashboard rail', () => {
 			expect(rail.x).toBeCloseTo(left, 0);
 			expect(rail.width).toBeCloseTo(200, 0);
 			expect(main.x).toBeCloseTo(left + 248, 0);
-			// The rail is as tall as the window under the header, its plan at the foot.
+			// The rail is the window under the header less the compact
+			// footer's 71px row, its plan at the foot.
 			expect(rail.y).toBeCloseTo(57, 0);
-			expect(rail.y + rail.height).toBeCloseTo(900, 0);
+			expect(rail.y + rail.height).toBeCloseTo(900 - 71, 0);
 		});
 	}
+
+	// The rail never slides under the header at a page's foot, and its
+	// plan sits at one height on a long page and a short one (review IA).
+	test('the rail holds still at the foot of a long page and a short one', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const tops: number[] = [];
+		for (const path of ['/projects', '/questions', '/settings/secrets', '/no-such-place']) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+			const first = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link').first();
+			const box = (await first.boundingBox())!;
+			expect(box.y, `${path} first place`).toBeGreaterThanOrEqual(57);
+			tops.push((await page.locator('[data-dash-strip]').boundingBox())!.y);
+		}
+		for (const y of tops) expect(y).toBeCloseTo(57, 0);
+	});
 
 	for (const width of [390, 360]) {
 		test(`the strip under the header holds the four places at ${width}`, async ({ page }) => {
@@ -617,6 +652,12 @@ test.describe('the dashboard rail', () => {
 						.or(nav.getByRole('link', { name: new RegExp(`^${name},`) }))
 				).toBeInViewport({ ratio: 1 });
 			}
+			// They fit: the strip cannot be dragged sideways.
+			const fits = await nav
+				.locator('ul')
+				.first()
+				.evaluate((ul) => ul.scrollWidth <= ul.clientWidth);
+			expect(fits).toBe(true);
 			const strip = (await page.locator('[data-dash-strip]').boundingBox())!;
 			expect(strip.y + strip.height).toBeCloseTo(101, 0);
 			// It sticks under the header.
@@ -675,6 +716,19 @@ test.describe('the dashboard rail', () => {
 			const current = nav.locator('[aria-current="page"]');
 			await expect(current, path).toHaveCount(1);
 			await expect(current, path).toContainText(name);
+		}
+		// The strip draws no project rows, so on a project's tabs Projects
+		// is the current place, shown and named (ia-final 1.2's fallback).
+		for (const width of [390, 768]) {
+			await page.setViewportSize({ width, height: 844 });
+			for (const path of [`/projects/${p.id}`, `/projects/${p.id}/config`]) {
+				await page.goto(path);
+				await expect(page.locator('main#main')).toBeVisible();
+				const current = nav.locator('[aria-current="page"]');
+				await expect(current, `${path} at ${width}`).toHaveCount(1);
+				await expect(current, `${path} at ${width}`).toHaveText('Projects');
+				await expect(current, `${path} at ${width}`).toBeVisible();
+			}
 		}
 	});
 
@@ -777,5 +831,81 @@ test.describe('the dashboard rail', () => {
 		await row.click();
 		await expect(page).toHaveURL(`/projects/${p.id}`);
 		await expect(row).toHaveAttribute('aria-current', 'page');
+	});
+});
+
+// The I-664 check on the dashboard's main pages (ia-final 1.6): a first
+// load moves nothing that is on screen, at 1440 and at 390, and a
+// payment failure seen first on a fresh browser paints its plan line
+// with the page instead of pushing the page down.
+test.describe('first loads hold still', () => {
+	test.beforeEach(async ({ page }) => {
+		await signIn(page);
+		await page.addInitScript(() => {
+			const w = window as unknown as { __cls: number };
+			w.__cls = 0;
+			new PerformanceObserver((list) => {
+				for (const e of list.getEntries() as unknown as {
+					value: number;
+					hadRecentInput: boolean;
+				}[]) {
+					if (!e.hadRecentInput) w.__cls += e.value;
+				}
+			}).observe({ type: 'layout-shift', buffered: true });
+		});
+	});
+
+	async function cls(page: Page, path: string): Promise<number> {
+		await page.goto(path);
+		await expect(page.locator('main#main')).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		await page.waitForTimeout(800);
+		return page.evaluate(() => (window as unknown as { __cls: number }).__cls);
+	}
+
+	test('six pages at 1440 and 390', async ({ page }) => {
+		const p = await project({ name: 'still-app', remote_url: 'github.com/heracraft/still-app' });
+		const paths = [
+			'/projects',
+			'/questions',
+			`/projects/${p.id}`,
+			`/projects/${p.id}/events`,
+			'/billing',
+			'/settings'
+		];
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			for (const [width, height] of [
+				[1440, 900],
+				[390, 844]
+			]) {
+				await page.setViewportSize({ width, height });
+				for (const path of paths) {
+					expect(await cls(page, path), `${path} at ${width}`).toBeLessThanOrEqual(0.05);
+				}
+			}
+		} finally {
+			await resetBilling();
+		}
+	});
+
+	test('a payment failure on a fresh browser at 390', async ({ page }) => {
+		await page.addInitScript(() => {
+			try {
+				localStorage.removeItem('repose-billing-mode');
+			} catch {
+				// Storage blocked: the same cold start.
+			}
+		});
+		await page.setViewportSize({ width: 390, height: 844 });
+		try {
+			await setBilling({ mode: 'past_due', plan: 'pro' });
+			for (const path of ['/projects', '/questions', '/settings']) {
+				expect(await cls(page, path), path).toBeLessThanOrEqual(0.05);
+				await expect(page.locator('.plan-line')).toContainText('Payment failed');
+			}
+		} finally {
+			await resetBilling();
+		}
 	});
 });

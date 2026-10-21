@@ -95,6 +95,23 @@
 	}
 }
 
+/* A link that stands alone on its line (a project's name over its
+   questions, "2 more on Questions", a docs link beside a section head)
+   takes a 44px box on touch; the negative block margin gives back all
+   but one line, so the line it sits on keeps its height (I-841). */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-tap {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.75rem;
+		margin-block: calc((1lh - 2.75rem) / 2);
+	}
+	/* A flex box trims the arrow's leading space; a no-break one stays. */
+	.hk .hk-tap.hk-more::after {
+		content: '\00a0\2192';
+	}
+}
+
 /* ---------- Buttons ---------- */
 
 /* Waiting (I-766): aria-disabled keeps focus where disabled would drop it

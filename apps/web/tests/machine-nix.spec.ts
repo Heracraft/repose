@@ -77,7 +77,7 @@ test("the Config page's switch keeps machine.nix off one machine", async ({ page
 	await page.getByRole('link', { name: /Edit machine\.nix/ }).click();
 	await expect(page).toHaveURL('/settings/machine-nix');
 	await expect(page.locator('#machine-nix').getByText(`Off on ${p.slug}.`)).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'machine.nix' })).toBeInViewport();
+	await expect(page.locator('#machine-nix')).toBeInViewport();
 });
 
 // The links and bookmarks of before I-841 land on the tab.

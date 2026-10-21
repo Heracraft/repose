@@ -62,7 +62,9 @@ test('/projects/[id]/config renders the Menu and Nix tabs and the secrets', asyn
 	await page.goto(`/projects/${projectId}/config`);
 	await expect(page.getByRole('tab', { name: 'Menu' })).toBeVisible();
 	await expect(page.getByRole('tab', { name: 'Nix' })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 2, name: 'Secrets', exact: true })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 2, name: /^(Secrets|\d+ secrets?)$/ })
+	).toBeVisible();
 });
 
 test('/projects/[id]/secrets moves to the secrets on Config', async ({ page }) => {

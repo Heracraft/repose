@@ -76,8 +76,8 @@ export interface FooterLines {
 	/** The state line: text, or a link to /billing. */
 	state: string;
 	link: boolean;
-	/** A red dot before the state line (payment failed, suspended). */
-	err: boolean;
+	/** The dot before the state line: amber for a failed payment, red once suspended (kit 7). */
+	dot?: 'warn' | 'err';
 }
 
 /**
@@ -93,23 +93,22 @@ export function footerLines(
 	if (mode === 'unknown' || mode === 'off' || !billing) return undefined;
 	const sub = billing.subscription;
 	const name = planName(billing, sub?.plan);
-	const plan = (state: string, link = false, err = false): FooterLines => ({
+	const plan = (state: string, link = false, dot?: 'warn' | 'err'): FooterLines => ({
 		label: 'Plan',
 		name,
 		state,
 		link,
-		err
+		dot
 	});
 	const noPlan = (state: string): FooterLines => ({
 		label: 'Plan',
 		name: 'No plan',
 		state,
-		link: true,
-		err: false
+		link: true
 	});
 	switch (mode) {
 		case 'exempt':
-			return { label: 'Running', state: sizeGB(runningGB), link: false, err: false };
+			return { label: 'Running', state: sizeGB(runningGB), link: false };
 		case 'none':
 			return noPlan('Choose a plan');
 		case 'waitlist':
@@ -127,9 +126,9 @@ export function footerLines(
 				`Changes to ${planName(billing, sub!.scheduled_plan)} ${dateOnly(sub!.next_billed_at ?? sub!.period_end)}`
 			);
 		case 'past_due':
-			return plan('Payment failed', true, true);
+			return plan('Payment failed', true, 'warn');
 		case 'suspended':
-			return plan('Suspended', true, true);
+			return plan('Suspended', true, 'err');
 		case 'active': {
 			const limit = billing.usage.memory_gb;
 			if (!limit) return plan(`${sizeGB(runningGB)} running`);
@@ -143,7 +142,8 @@ export interface PlanLine {
 	/** The sentence before the link. */
 	text: string;
 	link: string;
-	err: boolean;
+	/** As FooterLines.dot. */
+	dot?: 'warn' | 'err';
 }
 
 /** The phone's one plan line under the strip, only in trouble (ia-final 1.3). */
@@ -155,19 +155,19 @@ export function planLine(mode: BillingMode, { billing }: BillingFacts): PlanLine
 			return {
 				text: name ? `${name} · Payment failed` : 'Payment failed',
 				link: 'Update card',
-				err: true
+				dot: 'warn'
 			};
 		}
 		case 'suspended':
-			return { text: 'Suspended', link: 'Update card and pay', err: true };
+			return { text: 'Suspended', link: 'Update card and pay', dot: 'err' };
 		case 'none':
-			return { text: 'No plan', link: 'Choose a plan', err: false };
+			return { text: 'No plan', link: 'Choose a plan' };
 		case 'waitlist':
-			return { text: 'On the waitlist', link: 'Billing', err: false };
+			return { text: 'On the waitlist', link: 'Billing' };
 		case 'full':
-			return { text: 'repose is full', link: 'Billing', err: false };
+			return { text: 'repose is full', link: 'Billing' };
 		case 'held':
-			return { text: 'Seat held', link: 'Billing', err: false };
+			return { text: 'Seat held', link: 'Billing' };
 	}
 	return undefined;
 }

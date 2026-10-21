@@ -480,7 +480,9 @@
 	<title>{title('Projects')}</title>
 </svelte:head>
 
-<PageShell title="Projects" lede={summary}>
+<!-- Until the list answers, the lede's line is held empty, so the page
+     under it does not drop 28px when the count arrives (I-664). -->
+<PageShell title="Projects" lede={projects === undefined ? '\u00a0' : summary}>
 	<LoadState
 		status={projects !== undefined ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={refresh}
