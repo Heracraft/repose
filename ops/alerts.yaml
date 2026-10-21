@@ -6,7 +6,7 @@
 #
 # Every alert name is a heading in docs/ops/RUNBOOK.md, and `promtool test
 # rules ops/alerts_test.yaml` has a case per rule. Alertmanager routes them to
-# the owner's Google Chat space through calert, and Watchdog to an Uptime Kuma
+# the owner by email, and Watchdog to an Uptime Kuma
 # push monitor (ops/alertmanager/repose-route.yaml, DECISIONS I-648).
 #
 # Severity: `page` wakes someone (tenants are down or data is at risk),
@@ -784,7 +784,7 @@ groups:
   # The alerting path's own heartbeat (DECISIONS I-648). Watchdog always
   # fires; Alertmanager sends it to an Uptime Kuma push monitor every
   # minute, and Kuma posts to Google Chat when the pushes stop. That is the
-  # only way to hear that Prometheus, Alertmanager, calert or the personal
+  # only way to hear that Prometheus, Alertmanager or the personal
   # server itself has died: every other alert dies with them.
   - name: repose-meta
     interval: 1m

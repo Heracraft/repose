@@ -146,10 +146,11 @@ copy-paste version):
   `ops/prometheus/targets/hosts.yml`, which Prometheus re-reads every minute,
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
-- `ops/alerts.yaml` goes in its rule files, `ops/alertmanager/repose-route.yaml`
-  into Alertmanager, and calert (`ops/alertmanager/calert/`) next to it,
-  which posts to the owner's Google Chat space. Watchdog goes to an Uptime
-  Kuma push monitor (DECISIONS I-648; `ops/README.md` step 3).
+- `ops/alerts.yaml` goes in its rule files and
+  `ops/alertmanager/repose-route.yaml` into Alertmanager, which emails the
+  owner itself; its SMTP password is a Resend API key in
+  `/etc/alertmanager/secrets`. Watchdog goes to an Uptime Kuma push
+  monitor (DECISIONS I-648, I-848; `ops/README.md` step 3).
 - `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
   provisioning; the eight dashboards appear in a `repose` folder.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
@@ -2329,7 +2330,7 @@ drain).
 The people told, the evidence captured and the tenant notice (workstream
 14 §5):
 
-- **Told, in this order:** the owner (Google Chat through calert, then
+- **Told, in this order:** the owner (email from Alertmanager, then
   the incident file); the
   affected tenants; a third party only if their credentials inside the
   guest could have been read (GitHub, OpenAI, Anthropic) so they can

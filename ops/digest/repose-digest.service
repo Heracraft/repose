@@ -3,9 +3,9 @@
 # personal server beside Prometheus and calert; ops/README.md step 3 has
 # the order.
 #
-# It needs psql on PATH and read-only Postgres credentials. The Chat
-# webhook is the one calert already holds, read from a file so it is not
-# in this unit or in the process table.
+# It needs psql on PATH and read-only Postgres credentials. It emails
+# through the same SMTP password Alertmanager uses, read from a file so it
+# is not in this unit or in the process table.
 [Unit]
 Description=repose launch digest to Google Chat
 After=network-online.target
@@ -17,7 +17,7 @@ Type=oneshot
 # environment file, mode 0600, not in this unit.
 EnvironmentFile=/etc/repose-digest.env
 Environment=PROM_URL=http://127.0.0.1:9090
-Environment=CHAT_WEBHOOK_FILE=/etc/alertmanager/secrets/repose-chat-url
+Environment=SMTP_PASSWORD_FILE=/etc/alertmanager/secrets/repose-smtp-password
 ExecStart=/opt/repose/ops/digest/digest.py
 # A digest that cannot reach anything prints question marks and still
 # sends, so a non-zero exit is the webhook itself failing. Do not retry:

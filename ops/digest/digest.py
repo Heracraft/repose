@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The launch digest: one Google Chat message a day with the numbers that
-say whether the launch is working (DECISIONS I-810).
+"""The launch digest: one email a day with the numbers that say whether
+the launch is working (DECISIONS I-810, delivery amended by I-848).
 
 Why this and not alerts: the launch numbers are not alert-shaped. Seat
 fill, MRR, trial conversion and activation are things to read once a day
@@ -10,8 +10,8 @@ either -- a rule's template sees only its own `$value`, so one alert can
 carry exactly one number (ops/alerts.yaml).
 
 Why on the personal server: it is the one place that can reach both
-Prometheus and Postgres, and calert's Chat webhook is already there. This
-script reuses that webhook and adds no secret.
+Prometheus and Postgres. It emails through the same SMTP credentials
+Alertmanager uses, so it adds no secret and no service.
 
     ops/digest/digest.py --dry-run     print the message, send nothing
     ops/digest/digest.py               send it
@@ -19,8 +19,11 @@ script reuses that webhook and adds no secret.
 Environment:
     PROM_URL            default http://127.0.0.1:9090
     DATABASE_URL        the api's Postgres, as a read-only role
-    CHAT_WEBHOOK_FILE   the file calert reads its Chat webhook from
-    CHAT_WEBHOOK        the URL itself, if not in a file
+    SMTP_HOST           default smtp.resend.com:587
+    SMTP_USER           default resend
+    SMTP_PASSWORD_FILE  the file holding the SMTP password
+    DIGEST_FROM         default repose alerts <alerts@repose.herakraft.co>
+    DIGEST_TO           where to send it
 
 Every number is optional. A source that is down prints `?` for its own
 numbers and the rest of the message still goes: a digest that fails
@@ -34,11 +37,13 @@ import argparse
 import json
 import os
 import shutil
+import smtplib
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from email.message import EmailMessage
 
 TIMEOUT = 10
 
@@ -132,7 +137,7 @@ def message() -> str:
 
     running_seats = None if running_gb is None else running_gb / 8.0
     lines = [
-        "*repose, last 24 hours*",
+        "repose, last 24 hours",
         f"seats {n(seats_held)}/{n(seats_total)} sold ({pct(seats_held, seats_total)} fill), "
         f"{n(running_seats, '{:.1f}')} running ({pct(running_gb, None if seats_held is None else seats_held * 8)} of sold)",
         f"MRR ${n(None if mrr is None else mrr / 100)}, in trial ${n(None if trial_mrr is None else trial_mrr / 100)}",
@@ -144,15 +149,31 @@ def message() -> str:
     return "\n".join(lines)
 
 
-def webhook() -> str | None:
-    path = os.environ.get("CHAT_WEBHOOK_FILE")
-    if path:
-        try:
-            with open(path) as f:
-                return f.read().strip()
-        except OSError:
-            return None
-    return os.environ.get("CHAT_WEBHOOK")
+def send(subject: str, body: str) -> str | None:
+    """Email the digest. Returns an error string, or None on success."""
+    to = os.environ.get("DIGEST_TO")
+    path = os.environ.get("SMTP_PASSWORD_FILE")
+    if not to or not path:
+        return "set DIGEST_TO and SMTP_PASSWORD_FILE"
+    try:
+        with open(path) as f:
+            password = f.read().strip()
+    except OSError as e:
+        return f"{path}: {e}"
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = os.environ.get("DIGEST_FROM", "repose alerts <alerts@repose.herakraft.co>")
+    msg["To"] = to
+    msg.set_content(body)
+    host, _, port = os.environ.get("SMTP_HOST", "smtp.resend.com:587").partition(":")
+    try:
+        with smtplib.SMTP(host, int(port or 587), timeout=TIMEOUT) as smtp:
+            smtp.starttls()
+            smtp.login(os.environ.get("SMTP_USER", "resend"), password)
+            smtp.send_message(msg)
+    except (smtplib.SMTPException, OSError, ValueError) as e:
+        return str(e)
+    return None
 
 
 def main() -> int:
@@ -163,20 +184,8 @@ def main() -> int:
     if args.dry_run:
         print(text)
         return 0
-    url = webhook()
-    if not url:
-        print("digest: no CHAT_WEBHOOK_FILE or CHAT_WEBHOOK", file=sys.stderr)
-        return 1
-    req = urllib.request.Request(
-        url,
-        data=json.dumps({"text": text}).encode(),
-        headers={"Content-Type": "application/json; charset=UTF-8"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            r.read()
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
-        print(f"digest: {e}", file=sys.stderr)
+    if err := send("repose: the last 24 hours", text):
+        print(f"digest: {err}", file=sys.stderr)
         return 1
     return 0
 

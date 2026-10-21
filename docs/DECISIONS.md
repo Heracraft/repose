@@ -24354,3 +24354,42 @@ server.** (launch-metrics, 2026-10-19)
   numbers and the message still goes. A digest that fails whenever one
   exporter is down is a digest nobody trusts, and the eight numbers are
   independent.
+
+
+**I-848. Alertmanager emails the owner itself; calert and the Google Chat
+path go.** (launch-metrics, 2026-10-21) Amends I-648's "Chat" bullet. The
+rules, the routing timings, the inhibitions, the Watchdog heartbeat and
+Azure's own emails are unchanged.
+- *The part that nothing watched.* I-648 put calert (a third-party
+  adapter, `ghcr.io/mr-karan/calert`) beside Alertmanager, because
+  Alertmanager has no Google Chat receiver and Chat wants
+  `{"text": ...}`. `Watchdog` is routed straight to the Kuma push and
+  never passes through calert, so a dead calert would have taken all 48
+  other alerts with it while the heartbeat stayed green and Kuma stayed
+  happy. That is the 2026-10-10 outage again -- nine hours, nobody paged,
+  because `ntfy.herakraft.co` answered 503 -- with a different process in
+  the hole. The owner asked whether the channel could be had without a new
+  piece of software to maintain; it can.
+- *Email, which Alertmanager has built in.* `email_configs` in the two
+  receivers, `smtp_*` in the global block. No process, no port, no
+  container, nothing to watch. I-648 already reasoned this way for the
+  other half of the same routing: Azure's alerts email `alert_email`
+  because "the email arrives when everything of the owner's is down".
+  Both now reach one inbox.
+- *Through Resend, which is already there.* The api sends its mail through
+  Resend with `repose.herakraft.co` verified (LAUNCH.md step 2), so
+  alerting reuses it rather than adding a provider: smarthost
+  `smtp.resend.com:587`, username the literal `resend`, password a Resend
+  API key in `/etc/alertmanager/secrets/repose-smtp-password` at 0600 --
+  the same shape as the Kuma push URL beside it. The repository holds no
+  address: `to:` and `smtp_from` are set on the server.
+- *What is lost.* A Chat message is louder than an email and arrives
+  faster on a phone. Alertmanager has built-in Discord and Telegram
+  receivers if the owner later wants a push; neither needs software on the
+  server either. Severity leads the subject so a page reads as one.
+- *The digest follows the channel.* `ops/digest/digest.py` sent through
+  calert's webhook, so it now emails through the same SMTP password, with
+  `smtplib` from the standard library. Still no package to install on that
+  box.
+- Evidence: `amtool check-config` on the merged route, and `ops/check.sh`
+  asserting all six routes land on the renamed receivers.

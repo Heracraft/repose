@@ -30,8 +30,9 @@ policy designed without a month of data is a guess.
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
 - Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, routed by the existing Alertmanager to the owner's
-  Google Chat space through calert (DECISIONS I-648).
+  `../CHECKLIST.md`, emailed to the owner by the existing Alertmanager
+  (DECISIONS I-648, amended by I-848: Chat needed calert beside
+  Alertmanager to translate the webhook, and nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
   Postgres (partition drops, see `interfaces/db-schema.md`).

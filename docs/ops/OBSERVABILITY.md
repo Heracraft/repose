@@ -13,7 +13,7 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
 Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (Grafana Postgres datasource, read-only role)
-personal server        Loki, Prometheus, Grafana, Alertmanager, calert (Google Chat to the owner)
+personal server        Loki, Prometheus, Grafana, Alertmanager (emails the owner)
 ```
 
 Every exporter binds the host's WireGuard address and nothing else; a repose
@@ -114,10 +114,10 @@ anywhere. Three places answer the money questions now.
    wasted, disk against the plan, and the ops still open. Run them with
    `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as `grafana_ro`.
 3. The daily digest (I-810): `ops/digest/digest.py`, a timer on the
-   personal server, one Chat message at 08:00 with the eight numbers worth
-   reading every day in the launch window. It reuses calert's webhook and
-   needs no new secret. A source that is down prints `?` and the rest of
-   the message still goes.
+   personal server, one email at 08:00 with the eight numbers worth
+   reading every day in the launch window. It sends through the same SMTP
+   password Alertmanager uses, so it adds no secret. A source that is down
+   prints `?` and the rest of the message still goes.
 
 Activation is the one of these the product is sold on: `usage_hours` keeps
 `attended_seconds` and `unattended_agent_seconds` per project-hour (I-806),
@@ -274,8 +274,9 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 ## Alerts
 
 The rules in `ops/alerts.yaml`, routed by Alertmanager
-(`ops/alertmanager/repose-route.yaml`) through calert to the owner's Google
-Chat space. A `page` goes out after 20 s and repeats hourly; the rest wait for
+(`ops/alertmanager/repose-route.yaml`), emailed by Alertmanager itself to
+the address Azure's alerts use (I-848; I-648 sent them to Google Chat
+through calert, which put an unwatched process in the alert path). A `page` goes out after 20 s and repeats hourly; the rest wait for
 their group and repeat every 12 hours. The always-firing `Watchdog` goes
 only to an Uptime Kuma push monitor, which posts to the same space when the
 pushes stop, so a dead Prometheus or Alertmanager is heard too, and a
