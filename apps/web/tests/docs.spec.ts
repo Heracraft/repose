@@ -193,3 +193,27 @@ test('the desktop sidebar fits 1440x900 and draws no scrollbar', async ({ page }
 		ratio: 1
 	});
 });
+
+// A search shows its best hits first, at the top of the list, whatever the
+// page list was scrolled to; clearing it goes back to the open page's link.
+test('search hits start at the top of the drawer', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/docs/cli');
+	await page.getByRole('button', { name: /Open the docs menu/ }).click();
+	await page.getByLabel('Search the docs').fill('snap');
+	const results = page.getByRole('list', { name: 'Search results' });
+	const first = results.getByRole('link').first();
+	await expect(first).toBeInViewport();
+	const m = await page.evaluate(() => ({
+		search: document.getElementById('docs-search')!.getBoundingClientRect().bottom,
+		hit: document.querySelector('.hits a')!.getBoundingClientRect().top
+	}));
+	expect(m.hit).toBeGreaterThanOrEqual(m.search);
+	await expect(results.locator('mark').first()).toHaveText(/snap/i);
+	await page.getByLabel('Search the docs').fill('');
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Docs', exact: true })
+			.getByRole('link', { name: 'CLI reference' })
+	).toBeInViewport();
+});

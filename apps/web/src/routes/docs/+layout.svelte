@@ -145,10 +145,23 @@
 		});
 	});
 	// Opening or closing the fold, or a search, changes the list's height.
+	// The hits start at the top of the list, best first, whatever the page
+	// list was scrolled to; clearing the search goes back to the open page.
+	let searching = $derived(query.trim() !== '');
 	$effect(() => {
 		void foldOpen;
-		void query;
-		void tick().then(measure);
+		const q = query.trim();
+		void tick().then(() => {
+			if (q && nav) nav.scrollTop = 0;
+			measure();
+		});
+	});
+	$effect(() => {
+		if (searching) return;
+		void tick().then(() => {
+			revealCurrent();
+			measure();
+		});
 	});
 
 	async function openMenu() {
@@ -189,7 +202,7 @@
      title, and Pricing, which the header drops on a phone. From 768px the
      sidebar is always there and the bar goes (I-655). -->
 <div data-docs-subbar class="subbar sticky top-[57px] z-20 md:hidden">
-	<div class="frame flex h-11 items-center justify-between gap-3">
+	<nav aria-label="Docs bar" class="frame flex h-11 items-center justify-between gap-3">
 		<button
 			bind:this={menuButton}
 			type="button"
@@ -216,7 +229,7 @@
 			<!-- The docs' own Pricing page already says it in the bar's title. -->
 			<a href={pricingHref()} class="subbar-link">Pricing</a>
 		{/if}
-	</div>
+	</nav>
 </div>
 
 {#if menuOpen}
@@ -270,17 +283,21 @@
 			/>
 		</div>
 
-		{#if query.trim()}
+		{#if searching}
 			<ul class="hits mt-2" aria-label="Search results">
 				{#each hits as hit (hit.doc.slug)}
 					<li>
 						<a href={href(hit.doc.slug) + (hit.heading ? `#${hit.heading.id}` : '')}>
 							<span class="hit-title">
-								{hit.doc.title}{#if hit.heading}<span class="hit-heading">
-										› {hit.heading.text}</span
+								{hit.doc.title}{#if hit.heading}<span class="hit-heading"
+										>{` › ${hit.heading.text}`}</span
 									>{/if}
 							</span>
-							<span class="hit-snippet">{hit.snippet}</span>
+							<span class="hit-snippet"
+								>{#each hit.parts as part, i (i)}{#if part.hit}<mark class="hit-mark"
+											>{part.text}</mark
+										>{:else}{part.text}{/if}{/each}</span
+							>
 						</a>
 					</li>
 				{:else}
@@ -307,7 +324,7 @@
 								{group.section}
 								<svg
 									viewBox="0 0 16 16"
-									class="h-4 w-4 text-ink-3 transition-transform group-open/fold:rotate-180 motion-reduce:transition-none"
+									class="fold-chevron h-4 w-4 text-ink-3 group-open/fold:rotate-180"
 									fill="none"
 									stroke="currentColor"
 									stroke-width="1.5"
@@ -354,6 +371,10 @@
 		font-weight: 500;
 		color: var(--hk-text);
 		cursor: pointer;
+		transition: background-color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.subbar-menu:hover {
+		background: var(--hk-hover);
 	}
 	.subbar-chevron {
 		color: var(--hk-text-3);
@@ -401,6 +422,7 @@
 	@media (prefers-reduced-motion: reduce) {
 		.sidebar,
 		.sidebar.is-open,
+		.subbar-menu,
 		.subbar-chevron {
 			transition: none;
 		}
@@ -420,13 +442,19 @@
 			font-size: 0.8125rem;
 		}
 	}
+	/* Chromium's own clear button is not the kit's; Escape clears the field. */
+	.docs-search::-webkit-search-cancel-button {
+		appearance: none;
+	}
 
 	.group-block {
 		margin-top: 1.25rem;
 	}
+	/* The items carry a 2px left rule for the current page; the titles
+	   take the same 2px, so both texts start at one x. */
 	.group-title {
 		margin: 0 0 0.25rem;
-		padding: 0 0.625rem 0 0.75rem;
+		padding: 0 0.625rem 0 calc(0.75rem + 2px);
 		font-size: 0.75rem;
 		line-height: 1.25rem;
 		font-weight: 600;
@@ -520,6 +548,12 @@
 		font-size: 0.75rem;
 		line-height: 1.125rem;
 		color: var(--hk-text-3);
+	}
+	.hit-mark {
+		padding: 0;
+		border-radius: 2px;
+		background: var(--hk-accent-wash);
+		color: var(--hk-text);
 	}
 	.hit-none {
 		padding: 0.5rem 0.625rem;

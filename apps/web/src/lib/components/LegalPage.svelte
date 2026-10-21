@@ -182,14 +182,14 @@
 				<div class="mt-6 border-t border-hairline sm:mt-8">
 					{#if rendered.sections.length > 1}
 						<!-- Below 1280 there is no rail, so the sections fold in here, as on the docs. -->
-						<details class="toc-fold group border-b border-hairline xl:hidden">
+						<details class="doc-fold group border-b border-hairline xl:hidden">
 							<summary
 								class="flex h-11 cursor-pointer list-none items-center justify-between text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden"
 							>
 								On this page
 								<svg
 									viewBox="0 0 16 16"
-									class="h-4 w-4 text-ink-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+									class="fold-chevron h-4 w-4 text-ink-3 group-open:rotate-180"
 									aria-hidden="true"
 									fill="none"
 									stroke="currentColor"
@@ -198,7 +198,7 @@
 									stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg
 								>
 							</summary>
-							<ul class="toc-list pb-4">
+							<ul class="doc-toc pb-4">
 								{#each rendered.sections as h (h.id)}
 									<li><a href={`#${h.id}`}>{h.text}</a></li>
 								{/each}
@@ -219,10 +219,10 @@
 			{#if rendered.sections.length > 1}
 				<nav
 					aria-label="On this page"
-					class="rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+					class="doc-rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 				>
-					<p class="rail-title">On this page</p>
-					<ul class="rail-track">
+					<p class="doc-rail-title">On this page</p>
+					<ul class="doc-rail-track">
 						{#each rendered.sections as h (h.id)}
 							<li>
 								<a href={`#${h.id}`} aria-current={active === h.id ? 'true' : undefined}>{h.text}</a
@@ -239,7 +239,7 @@
 <style>
 	.side-title {
 		margin: 0 0 0.25rem;
-		padding: 0 0.625rem 0 0.75rem;
+		padding: 0 0.625rem 0 calc(0.75rem + 2px);
 		font-size: 0.75rem;
 		line-height: 1.25rem;
 		font-weight: 600;
@@ -291,72 +291,17 @@
 		text-underline-offset: 6px;
 	}
 
-	.toc-list a {
-		display: block;
-		padding: 0.3125rem 0;
-		font-size: 0.875rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		text-decoration: none;
-	}
-	.toc-list a:hover {
-		color: var(--hk-text);
-	}
-	@media (pointer: coarse), (max-width: 639.98px) {
-		.toc-list a {
-			padding-block: 0.75rem;
-		}
-	}
-
-	.rail-title {
-		margin: 0 0 0.75rem;
-		font-size: 0.75rem;
-		line-height: 1rem;
-		font-weight: 600;
-		color: var(--hk-text);
-	}
-	.rail-track {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border-left: 1px solid var(--hk-border);
-	}
-	.rail a {
-		display: block;
-		margin-left: -1px;
-		padding: 0.25rem 0 0.25rem 0.875rem;
-		border-left: 1px solid transparent;
-		font-size: 0.8125rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		text-decoration: none;
-		transition:
-			color var(--hk-dur-fast) var(--hk-ease),
-			border-color var(--hk-dur-fast) var(--hk-ease);
-	}
-	.rail a:hover {
-		color: var(--hk-text);
-	}
-	.rail a[aria-current='true'] {
-		color: var(--hk-text);
-		border-left-color: var(--hk-accent);
-	}
 	@media (prefers-reduced-motion: reduce) {
-		.side a,
-		.rail a {
+		.side a {
 			transition: none;
 		}
 	}
 	@media (forced-colors: active) {
-		.side a,
-		.rail a {
+		.side a {
 			border-left-color: Canvas;
 		}
 		.side a[aria-current='page'] {
 			border-left-color: Highlight;
-		}
-		.rail a[aria-current='true'],
-		.side a[aria-current='page'] {
 			text-decoration: underline;
 			text-decoration-thickness: 2px;
 			text-underline-offset: 0.35em;

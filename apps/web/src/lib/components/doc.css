@@ -12,6 +12,9 @@
 /* ---------- Prose ---------- */
 
 .hk .doc {
+	/* The Copy button's place depends on the column's width, not the
+	   window's (.code .copy below). */
+	container-type: inline-size;
 	font-size: 0.9375rem;
 	line-height: 1.6;
 	color: var(--hk-text-2);
@@ -105,13 +108,14 @@
 	opacity: 1;
 }
 /* A command as a heading (### `repose run [PROJECT]` in cli.md) is the
-   heading's own text in mono, never a chip inside it. */
+   heading's own text in mono, never a chip inside it, at 14px 600 so it
+   reads above the 15px sans under it. */
 .hk .doc :is(h2, h3) > code {
 	padding: 0;
 	border: 0;
 	background: none;
-	font-size: 0.9em;
-	font-weight: 500;
+	font-size: 0.875rem;
+	font-weight: 600;
 	color: var(--hk-text);
 }
 
@@ -147,7 +151,7 @@
 /* A little less side padding than the kit's chip, so a chip before a
    comma does not leave a gap that reads as a space. */
 .hk .doc :not(pre) > code {
-	padding: 0.1em 0.3em;
+	padding: 0.1em 0.2em;
 }
 .hk .doc a code {
 	color: inherit;
@@ -165,7 +169,7 @@
 	padding: 0.875rem 1rem;
 	max-height: 30rem;
 	overflow: auto;
-	border-radius: var(--hk-radius-xl);
+	border-radius: var(--hk-radius-lg);
 	/* The kit's pane edges: an outer ring on a dark page, an inset border. */
 	--hk-pane-edge: 0 0 0 1px var(--hk-code-border-outer), inset 0 0 0 1px var(--hk-code-border);
 	box-shadow: var(--hk-pane-edge);
@@ -204,9 +208,11 @@
 
 /* The block and its Copy button (codeBlock in lib/docs.ts). The button is
    drawn as the kit's dark-tone small copy button, 8px from the pane's top
-   right corner. From 640px a block's first line is written short enough
-   to end before it; on a phone the button takes a strip of its own above
-   the code, 44px tall for a thumb. */
+   right corner. In a text column 624px wide or wider a block's first line
+   is written short enough to end before it (I-345); in a narrower column
+   (a phone, or 768 to about 1000px beside the sidebar) the button takes a
+   strip of its own above the code. On a touch screen that strip is there
+   at every width, 44px tall for a thumb. */
 .hk .doc .code {
 	position: relative;
 	margin: 0 0 1.25rem;
@@ -261,7 +267,19 @@
 	outline: 2px solid var(--hk-code-string);
 	outline-offset: 0;
 }
-@media (pointer: coarse), (max-width: 639.98px) {
+@container (max-width: 38.99rem) {
+	.hk .doc .code .copy {
+		top: 0;
+		right: 0.25rem;
+		height: 2.75rem;
+		padding: 0 0.75rem;
+		background: transparent;
+	}
+	.hk .doc .code pre {
+		padding-top: 2.75rem;
+	}
+}
+@media (pointer: coarse) {
 	.hk .doc .code .copy {
 		top: 0;
 		right: 0.25rem;
@@ -471,6 +489,101 @@
 	}
 	.hk .doc .note {
 		border-left-color: CanvasText;
+	}
+	/* The pane's fill and the icon's mask drop out, so the button keeps
+	   an edge of its own. */
+	.hk .doc .code .copy {
+		border: 1px solid ButtonText;
+	}
+}
+
+/* ---------- Page outline ---------- */
+
+/* The page's sections, shared by DocPage and LegalPage: below 1280 the
+   fold under the toolbar (.doc-fold, .doc-toc), from 1280 the 180px rail
+   at the frame's right edge (.doc-rail). The docs sidebar's Tutorials fold
+   turns its chevron with the same .fold-chevron. */
+.hk .fold-chevron {
+	transition-property: transform, rotate;
+	transition-duration: var(--hk-dur-fast);
+	transition-timing-function: var(--hk-ease);
+}
+.hk .doc-toc a {
+	display: block;
+	padding: 0.3125rem 0;
+	font-size: 0.875rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-3);
+	text-decoration: none;
+	transition: color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .doc-toc a:hover {
+	color: var(--hk-text);
+}
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .doc-fold summary {
+		min-height: 2.75rem;
+	}
+	.hk .doc-toc a {
+		padding-block: 0.75rem;
+	}
+}
+.hk .doc-rail-title {
+	margin: 0 0 0.75rem;
+	font-size: 0.75rem;
+	line-height: 1rem;
+	font-weight: 600;
+	color: var(--hk-text);
+}
+.hk .doc-rail-track,
+.hk .doc-rail-track ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.hk .doc-rail-track {
+	border-left: 1px solid var(--hk-border);
+}
+.hk .doc-rail a {
+	display: block;
+	margin-left: -1px;
+	padding: 0.25rem 0 0.25rem 0.875rem;
+	border-left: 1px solid transparent;
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-3);
+	text-decoration: none;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		border-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .doc-rail a:hover {
+	color: var(--hk-text);
+}
+.hk .doc-rail a[aria-current='true'] {
+	color: var(--hk-text);
+	border-left-color: var(--hk-accent);
+}
+.hk .doc-rail a.doc-rail-sub {
+	padding-left: 1.625rem;
+}
+@media (prefers-reduced-motion: reduce) {
+	.hk .fold-chevron,
+	.hk .doc-toc a,
+	.hk .doc-rail a {
+		transition: none;
+	}
+}
+/* Forced colours draw every edge in one colour, so the current section's
+   edge no longer stands out; an underline marks it. */
+@media (forced-colors: active) {
+	.hk .doc-rail a {
+		border-left-color: Canvas;
+	}
+	.hk .doc-rail a[aria-current='true'] {
+		text-decoration: underline;
+		text-decoration-thickness: 2px;
+		text-underline-offset: 0.35em;
 	}
 }
 

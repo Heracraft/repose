@@ -84,7 +84,8 @@
 	// A pane scrolls sideways past its width and down past 30rem, so either
 	// axis counts. Only a box that overflows gets the tab stop, named after
 	// the section it sits in, checked again when the column changes width,
-	// so where the docs fit Tab skips them.
+	// so where the docs fit Tab skips them. Two under one heading are told
+	// apart by their place: "Code: Start an agent (2)".
 	function sectionOf(box: HTMLElement): string {
 		for (let el: Element | null = box; el && el !== article; el = el.parentElement) {
 			for (let sib = el.previousElementSibling; sib; sib = sib.previousElementSibling) {
@@ -97,15 +98,16 @@
 		if (!article) return;
 		const blocks = [...article.querySelectorAll<HTMLElement>('pre, .table-wrap')];
 		const mark = () => {
+			const seen: Record<string, number> = {};
 			for (const box of blocks) {
 				const scrolls = box.scrollWidth > box.clientWidth || box.scrollHeight > box.clientHeight;
 				if (scrolls) {
 					box.tabIndex = 0;
 					box.setAttribute('role', 'region');
-					box.setAttribute(
-						'aria-label',
-						`${box.tagName === 'PRE' ? 'Code' : 'Table'}: ${sectionOf(box)}`
-					);
+					const label = `${box.tagName === 'PRE' ? 'Code' : 'Table'}: ${sectionOf(box)}`;
+					const n = (seen[label] ?? 0) + 1;
+					seen[label] = n;
+					box.setAttribute('aria-label', n > 1 ? `${label} (${n})` : label);
 				} else {
 					box.removeAttribute('tabindex');
 					box.removeAttribute('role');
@@ -245,14 +247,14 @@
 			{#if toc.length > 1}
 				<!-- Below 1280 there is no rail, so the page's sections fold
 				     in here, one row on the page's hairline. -->
-				<details class="toc-fold group border-b border-hairline xl:hidden">
+				<details class="doc-fold group border-b border-hairline xl:hidden">
 					<summary
 						class="flex h-11 cursor-pointer list-none items-center justify-between text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden"
 					>
 						On this page
 						<svg
 							viewBox="0 0 16 16"
-							class="h-4 w-4 text-ink-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+							class="fold-chevron h-4 w-4 text-ink-3 group-open:rotate-180"
 							aria-hidden="true"
 							fill="none"
 							stroke="currentColor"
@@ -261,7 +263,7 @@
 							stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg
 						>
 					</summary>
-					<ul class="toc-list pb-4">
+					<ul class="doc-toc pb-4">
 						{#each toc as h (h.id)}
 							<li><a href={`#${h.id}`}>{h.text}</a></li>
 						{/each}
@@ -284,7 +286,7 @@
 			<article bind:this={article} class="mt-8">
 				<div class="doc">{@html parts.before}</div>
 				<div class="doc-plans">
-					<PlanCells plans={PLANS} introEligible variant="public" level={3} />
+					<PlanCells plans={PLANS} introEligible variant="public" level={2} />
 				</div>
 				<div class="doc">{@html parts.after}</div>
 			</article>
@@ -326,11 +328,11 @@
 		{#if toc.length > 1}
 			<nav
 				bind:this={rail}
-				class="rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+				class="doc-rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 				aria-label="On this page"
 			>
-				<p class="rail-title">On this page</p>
-				<ul class="rail-track">
+				<p class="doc-rail-title">On this page</p>
+				<ul class="doc-rail-track">
 					{#each outline as { h, subs } (h.id)}
 						<li>
 							<a
@@ -342,7 +344,7 @@
 								<ul>
 									{#each subs as s (s.id)}
 										<li>
-											<a class="rail-sub" href={`#${s.id}`} onclick={(e) => toSection(e, s.id)}
+											<a class="doc-rail-sub" href={`#${s.id}`} onclick={(e) => toSection(e, s.id)}
 												>{s.label}</a
 											>
 										</li>
@@ -364,37 +366,16 @@
 		margin-left: -0.625rem;
 	}
 
-	.toc-list a {
-		display: block;
-		padding: 0.3125rem 0;
-		font-size: 0.875rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		text-decoration: none;
-		transition: color var(--hk-dur-fast) var(--hk-ease);
-	}
-	.toc-list a:hover {
-		color: var(--hk-text);
-	}
-	@media (pointer: coarse), (max-width: 639.98px) {
-		.toc-fold summary {
-			min-height: 2.75rem;
-		}
-		.toc-list a {
-			padding-block: 0.75rem;
-		}
-	}
-
 	.doc-plans {
 		margin: 2rem 0;
 	}
 	/* The cards share the 624px text column at 1440, where the landing and
-	   /billing give them 1120: from 900px a tighter inset and a smaller
-	   price keep "$49 $39 a month" and "8 GB running at once" on one line
-	   in a 197px card. */
+	   /billing give them 1120: from 900px a tighter inset, a smaller price
+	   and a 12px specs line keep "$49 $39 a month", "8 GB running at once"
+	   and "100 GB disk · 250 GB egress" on one line in a 197px card. */
 	@media (min-width: 900px) {
 		.doc-plans :global(.plans .plan) {
-			padding: 1.125rem;
+			padding: 0.9375rem;
 		}
 		.doc-plans :global(.plans .p-price .n) {
 			font-size: 1.75rem;
@@ -402,6 +383,9 @@
 		}
 		.doc-plans :global(.plans .p-run) {
 			font-size: 0.875rem;
+		}
+		.doc-plans :global(.plans .p-specs--line) {
+			font-size: 0.75rem;
 		}
 	}
 
@@ -433,65 +417,9 @@
 		color: var(--hk-accent);
 	}
 
-	.rail-title {
-		margin: 0 0 0.75rem;
-		font-size: 0.75rem;
-		line-height: 1rem;
-		font-weight: 600;
-		color: var(--hk-text);
-	}
-	.rail-track {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-		border-left: 1px solid var(--hk-border);
-	}
-	.rail-track ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.rail a {
-		display: block;
-		margin-left: -1px;
-		padding: 0.25rem 0 0.25rem 0.875rem;
-		border-left: 1px solid transparent;
-		font-size: 0.8125rem;
-		line-height: 1.25rem;
-		color: var(--hk-text-3);
-		text-decoration: none;
-		transition:
-			color var(--hk-dur-fast) var(--hk-ease),
-			border-color var(--hk-dur-fast) var(--hk-ease);
-	}
-	.rail a:hover {
-		color: var(--hk-text);
-	}
-	.rail a[aria-current='true'] {
-		color: var(--hk-text);
-		border-left-color: var(--hk-accent);
-	}
-	.rail a.rail-sub {
-		padding-left: 1.625rem;
-	}
 	@media (prefers-reduced-motion: reduce) {
-		.rail a,
-		.pager-title,
-		.toc-list a {
+		.pager-title {
 			transition: none;
-		}
-	}
-
-	/* Forced colours draw every edge in one colour, so the current
-	   section's edge no longer stands out; an underline marks it. */
-	@media (forced-colors: active) {
-		.rail a {
-			border-left-color: Canvas;
-		}
-		.rail a[aria-current='true'] {
-			text-decoration: underline;
-			text-decoration-thickness: 2px;
-			text-underline-offset: 0.35em;
 		}
 	}
 </style>
