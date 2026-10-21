@@ -24531,3 +24531,49 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   on a phone wraps the command (after a slash where it can) with an
   icon-only Copy, so `| sh` shows. It stays light: a page keeps one dark
   anchor, so the near-black pane is not used for a lone command.
+- *Amended 2026-10-21, a frozen row is one frosted L.* A frozen /projects
+  row now shows the same cloud along its foot, at full strength from x=0,
+  and frost down its leading edge, `max(1rem, 2.25%)` wide (19.6px at
+  1440, 16px on a phone), in a new generated mask `--hk-frost-cloud-side`
+  (96x480, seed 11). The side is densest at the bottom-left corner and
+  thins in pixels as it rises (0.6 at 16px, 0.25 at 34px, 0.12 at the
+  top), so the corner sits under the text on a row of any height. The
+  stopped prototype's 2px bright edge line is gone. Every frozen row
+  stands on a rule: the last row of a group, or a row above its stop
+  confirmation, draws a 1px hairline under its box. The owner rejected a
+  fill over the row body and a top hairline (variant D), so neither is
+  drawn. Hover and focus-within grow the frost in 450ms and recede it in
+  250ms: the foot reaches across the row (full to 40 percent, gone by 98)
+  and 2px taller, the side a third wider; a larger growth broke text
+  contrast. The row's hover fill paints over the frost, so a frozen row is
+  never brighter than another hovered row. Reduced motion is instant, a
+  coarse pointer keeps the rest state, forced colours hide the frost, and
+  phone rows show the same L. The remote line starts over the side frost;
+  its 5th-percentile background pixel holds 5.22:1 light and 5.27:1 dark
+  at rest at 1440, 4.68:1 and 4.56:1 hovered, 5.44:1 and 5.89:1 at 390,
+  and 5.2:1 or more against the mean background in every case. The darkest
+  single grains fall to 2.75:1 (dark, hovered). The frost tokens in
+  `repose.css` are unchanged. Checks: `tests/frozen.spec.ts` (the last
+  frozen row's rule 1px under the row at 1440 and 390; hover partway at
+  120ms, full, then back at rest; reduced motion full at once), with a
+  second build server on `PUBLIC_FLAG_FROZEN=1`; `frost-masks.test.ts`.
+- *Amended 2026-10-21, Memory running is one meter.* The owner, on the
+  memory display: "All the user needs to know is what is used vs max", so
+  the split per project stays on /projects. This retires looks A, B and C,
+  the `?memlook` switch, `MemoryBlocks.svelte` and `lib/memlook.ts`, and
+  I-674's squares for memory. /billing's Memory running is one bar in the
+  Meter anatomy (`MemoryMeter.svelte`): running GB in `--hk-accent`, the
+  fill of Disk held and Egress, so the three meters read as a set; frozen
+  GB in `--hk-ice-ink`, so frozen means the same colour everywhere; what
+  is left is the empty track; GB past the plan are amber
+  (`--hk-warn-dot` 60 percent into `--hk-warn`, 3.2:1 on the light page)
+  after a 1px tick at the plan's limit, with the bar scaled to the total.
+  No hatching and no per-project hues. With nothing running the track is
+  grey. One line under the bar names each figure ("12 GB running",
+  "24 GB frozen", "4 GB over" or "N GB left"); frozen is named only where
+  the dashboard draws frozen machines or frozen GB is above 0, so a
+  production build says running and left or over. Frozen GB is summed
+  from the frozen projects and running is the api's `running_gb` less
+  that. Checks: `MemoryMeter.test.ts` (over, under, zero, no plan
+  memory), `tests/billing.spec.ts` (the split's words, no project name in
+  the meter, the exact value text).

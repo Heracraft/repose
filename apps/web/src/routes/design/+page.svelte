@@ -14,8 +14,7 @@
 	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import Segmented from '$lib/hk/Segmented.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
-	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
-	import { MEM_LOOKS, MEM_LOOK_DEFAULT, MEM_LOOK_NOTES } from '$lib/memlook';
+	import MemoryMeter from '$lib/components/MemoryMeter.svelte';
 	import { PLANS } from '$lib/plans';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import type { GuestState } from '$lib/api/types';
@@ -265,34 +264,13 @@
 			<Meter label="Egress this period" used={112.4} limit={100} />
 			<Meter label="Memory" used={0} limit={8} />
 		</div>
-		<!-- The three looks of Memory running (lib/memlook.ts), on the case the
-		     owner judged: 36 GB of 32, two running, two frozen, 4 GB over. -->
-		<div class="meters facts-gap">
-			{#each MEM_LOOKS as look (look)}
-				<figure class="memlook">
-					<div class="hk-meter">
-						<div class="hk-meter-top">
-							<span class="hk-meter-label">Memory running</span>
-							<span class="hk-meter-value">36 GB of 32 GB · over</span>
-						</div>
-						<MemoryBlocks
-							label="Memory running, look {look}"
-							segments={[
-								{ name: 'job-board', gb: 8 },
-								{ name: 'billing-api', gb: 4 },
-								{ name: 'ml-pipeline', gb: 16, frozen: true },
-								{ name: 'api-gateway', gb: 8, frozen: true }
-							]}
-							limit={32}
-							legend
-							{look}
-						/>
-					</div>
-					<figcaption>
-						{look.toUpperCase()}{look === MEM_LOOK_DEFAULT ? ' (default)' : ''}. {MEM_LOOK_NOTES[look]}
-					</figcaption>
-				</figure>
-			{/each}
+		<!-- Memory running (MemoryMeter.svelte): running in the accent, frozen
+		     in the ice ink, left the empty track, over in amber past the
+		     plan's tick; with nothing running the track is grey. -->
+		<div class="meters facts-gap" data-testid="memory-meters">
+			<MemoryMeter running={12} frozen={24} limit={32} testid="memory-over" />
+			<MemoryMeter running={12} frozen={16} limit={32} testid="memory-under" />
+			<MemoryMeter running={0} limit={16} testid="memory-zero" />
 		</div>
 	</section>
 
@@ -431,9 +409,10 @@
 		</div>
 	</section>
 
-	<!-- A frozen machine (I-683; I-841 amendment 2026-10-21): the ice ink
-	     word and flake, frost rising from the head's tab rule and along a
-	     row's foot, and the memory bar in ice. The
+	<!-- A frozen machine (I-683; I-841 amendments 2026-10-21): the ice ink
+	     word and flake, frost rising from the head's tab rule, a row's
+	     frosted L (along its foot and up its leading edge; the last row
+	     stands on its own rule), and the memory bar in ice. The
 	     head and the row are specimens of PageShell's head and a /projects
 	     row; Frost.svelte and lib/hk/frost.css draw the same frost there. -->
 	<section class="hk-section" id="frozen" data-testid="frozen-specimen">
@@ -451,7 +430,7 @@
 		</div>
 		<table class="hk-table frost-table">
 			<tbody>
-				{#each [['ml-pipeline', 'f', 'for 1h35m'], ['todo-app', 'f', 'for 26h29m'], ['billing-api', 'r', 'up 5m'], ['old-blog', 's', 'last run 3 days ago']] as [name, s, sub], i (name)}
+				{#each [['billing-api', 'r', 'up 5m'], ['old-blog', 's', 'last run 3 days ago'], ['ml-pipeline', 'f', 'for 1h35m'], ['todo-app', 'f', 'for 26h29m']] as [name, s, sub], i (name)}
 					<tr data-frost-on={s === 'f' ? 'row' : undefined}>
 						<td>
 							<span class="frost-row-name">{name}</span>
@@ -599,14 +578,6 @@
 	}
 	.facts-gap {
 		margin-top: 1.5rem;
-	}
-	.memlook {
-		margin: 0;
-	}
-	.memlook figcaption {
-		margin-top: 1rem;
-		font-size: 0.75rem;
-		color: var(--hk-text-3);
 	}
 	.tabs-sample {
 		border-bottom: 1px solid var(--hk-hairline);

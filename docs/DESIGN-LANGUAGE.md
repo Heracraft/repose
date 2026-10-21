@@ -165,8 +165,7 @@ markup.
 | pill | `--hk-radius-pill` | dots, meter track |
 
 Tailwind's `rounded-*` steps map onto these values (`rounded-lg` is 8px), but
-markup uses the tokens. Square corners belong to memory squares and the
-outage bar.
+markup uses the tokens. Square corners belong to the outage bar.
 
 ## Elevation
 
@@ -464,15 +463,26 @@ not draw.
   cloud along the tab rule instead, 12px tall, inside the column.
 - **Machine section:** the memory meter fills in `--hk-ice-ink` with a lit
   top edge. Nothing is drawn over the bar.
-- **/projects row, table and stacked:** frost seen through the glass
-  along the row's foot: a cloudy, grained white over a cold tint, with a
-  crust on the rule, 18px tall (12px stacked), clear of the text. It
-  spans the row, is feathered on every side and is gone by 68 percent of
-  the row's width. The row's rule is the only line; a row last in its
-  group lifts the frost off its foot. Three offsets into the cloud take
-  turns, so frozen rows in a run do not stripe.
-- **Rail:** the snowflake in `--hk-ice-ink`. **Memory squares:** frozen GB
-  hatched in `--hk-ice-ink`.
+- **/projects row, table and stacked:** one frosted L, seen through the
+  glass. Along the row's foot, a cloudy, grained white over a cold tint,
+  with a crust on the rule, 18px tall (12px stacked), clear of the text,
+  full from the leading edge, feathered on every side and gone by 68
+  percent of the row's width. Down the leading edge, the same cloud
+  upright, `max(1rem, 2.25%)` wide (`--hk-frost-cloud-side`), densest in
+  the bottom-left corner and thinning as it rises, in pixels (0.6 at 16px
+  up, 0.25 at 34px, 0.12 at the top), so the corner sits under the text
+  on a row of any height. Every frozen row stands on a rule: the row's
+  own, or for the last row of a group (or one above its stop
+  confirmation) a hairline 1px under its box. No fill over the row body
+  and no top hairline. Three offsets into the cloud take turns, so
+  frozen rows in a run read as separate rows. A pointer over the row, or
+  focus inside it, grows the frost in 450ms and recedes it in 250ms: the
+  foot reaches across the row (full to 40 percent, gone by 98) and 2px
+  taller, the side a third wider. Neither climbs into the text. The row's
+  hover fill paints over the frost, so a frozen row is no brighter than
+  another hovered row. A coarse pointer keeps the rest state.
+- **Rail:** the snowflake in `--hk-ice-ink`. **Memory running:** frozen GB
+  in `--hk-ice-ink` (Meters and Memory running).
 
 `Frost.svelte` is one element in the surface, which carries
 `data-frost-on` (position and isolation). On the head it paints
@@ -488,7 +498,9 @@ window frost, rime and glacier ice (hue 200 to 220). In light the crystals
 are a grey-blue shade with white as the highlight, since white alone does
 not show on the page. Only `--hk-ice-ink` carries text (5.4:1 light, 10.6:1
 dark); the worst pixel under text on a frozen surface is 5.44:1 light and
-5.89:1 dark. The frost forms over 600ms when the machine froze in the last
+5.89:1 dark at rest. On a row's remote, which starts over the side frost,
+the 5th-percentile background pixel holds 5.22:1 light and 5.27:1 dark at
+rest and 4.68:1 and 4.56:1 hovered at 1440. The frost forms over 600ms when the machine froze in the last
 minute and thaws in 300ms when it wakes; under reduced motion it comes and
 goes at once. Reduced transparency drops the haze and the row's tint;
 forced colours drop the frost, and the word and the snowflake carry the
@@ -587,7 +599,7 @@ only for a figure it can read at render time; the dashboard has none today,
 and the landing has none because no public figure is both live and
 reproducible.
 
-## Meters and memory squares
+## Meters and Memory running
 
 `Meter.svelte` on the kit's `hk-meter`: the label left, the value right in
 500 tabular ink, a 6px pill track (`hk-meter-track`) and its fill
@@ -599,15 +611,24 @@ nothing is counted yet, so a first run raises no alarm. The fill's width
 moves in 400ms and holds still under reduced motion. In forced colours the
 track draws a GrayText edge and the fill CanvasText (repose).
 
-Memory is squares, one per GB (`MemoryBlocks.svelte`), passed into a Meter
-through its `track` snippet so every plan figure shares one anatomy. Squares
-are 10px on /billing and 8px in the projects plan row, 2px apart, square
-cornered. One machine's run is the accent; two are the accent and
-`--hk-text-2`; three or more take `--hk-series-1` to `-3`, then `--hk-text-2`,
-with a 12px legend naming each machine. Frozen GB are hatched in
-`--hk-ice-ink`, GB past the plan are `--hk-warn-dot`, and a free GB is a 1px
-`--hk-control-edge` outline. In forced colours running GB are CanvasText,
-frozen GrayText, free an outline.
+Memory running (`MemoryMeter.svelte`, /billing) is one meter in the same
+anatomy: what is used against the plan, nothing per project (the split per
+project lives on /projects). On the 6px track, running GB fill from the
+left in `--hk-accent`, the fill of Disk held and Egress, so the three read
+as a set; frozen GB follow in `--hk-ice-ink`, as on every frozen machine;
+what is left is the empty track; GB past the plan are amber
+(`color-mix(--hk-warn-dot 60%, --hk-warn)`, 3.2:1 on the light page) after
+a 1px tick at the plan's limit that stands 3px above and below the bar,
+and the bar then scales to the total. A 2px gap parts the spans. No
+hatching and no per-project hues. With nothing running the track and
+value take the neutral grey, as Egress at 0. The value reads "36 GB of
+32 GB · over"; one line under the bar names each figure after a small
+colour square: "12 GB running", "24 GB frozen", and "4 GB over" in warn
+or "N GB left". Frozen shows only where the dashboard draws frozen
+machines or frozen GB is above 0. The meter's value text reads the whole
+("36 GB of 32 GB, over: 12 GB running, 24 GB frozen, 4 GB over"). In
+forced colours running is CanvasText, frozen GrayText, over Highlight, and
+the track draws an outline.
 
 ## Code pane
 
@@ -830,7 +851,7 @@ unless a page says otherwise (I-841).
     unapplied edit asks first (Stay, Leave).
 - **/billing**: the payment banners; the current plan (its name in serif,
   then price, status and next charge as one row of facts, then Change plan
-  and Card and receipts); This month (Running now as squares, Disk held and
+  and Card and receipts); This month (Memory running, Disk held and
   Egress this period as meters, between two hairlines); Change plan, opened
   in place with focus on its heading; Invoices; Cancel plan, last, as danger
   text. An account with no plan sees the plan cards with a button each; an
@@ -975,7 +996,7 @@ the patterns `lib/unasked.ts` lists.
 | Imports, `@theme`, `frame`, `@font-face`, first-paint pair, toasts, forced colours | `apps/web/src/routes/layout.css` |
 | First paint, theme script, preloads | `apps/web/src/app.html` (hash in `svelte.config.js`) |
 | Theme state | `lib/theme.svelte.ts`, `lib/components/ThemeSwitch.svelte` |
-| Shared components | `lib/hk/` (CopyButton, CodeBlock, CommandList, Segmented), `lib/components/` (PageShell, LoadState, ErrorView, Meter, StateDot, Snowflake, CodeCopy, ConfirmType, SiteHeader, SiteFooter, DashRail, AccountMenu, Logo, PlanCells, MemoryBlocks) |
+| Shared components | `lib/hk/` (CopyButton, CodeBlock, CommandList, Segmented), `lib/components/` (PageShell, LoadState, ErrorView, Meter, StateDot, Snowflake, CodeCopy, ConfirmType, SiteHeader, SiteFooter, DashRail, AccountMenu, Logo, PlanCells, MemoryMeter) |
 | Docs prose and code | `lib/components/doc.css` (unlayered) |
 | The Nix editor | `lib/components/nix-editor.css` (unlayered: CodeMirror's theme is) |
 | The landing | `routes/+page.svelte`, `routes/landing.css`, `lib/components/landing/` |
