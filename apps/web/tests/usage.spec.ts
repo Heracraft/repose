@@ -68,7 +68,7 @@ test('a stopped machine has no samples to draw', async ({ page }) => {
 		remote_url: 'github.com/heracraft/usage-stopped-app'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await page.getByRole('button', { name: 'Stop' }).click();
+	await page.getByRole('button', { name: 'Stop', exact: true }).click();
 	await expect(page.getByTestId('project-state')).toHaveText('stopped', { timeout: 10_000 });
 	await page.getByTestId('usage-card').getByRole('button', { name: 'Week' }).click();
 	await expect(

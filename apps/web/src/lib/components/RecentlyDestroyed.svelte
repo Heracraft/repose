@@ -108,13 +108,13 @@
 </script>
 
 {#if destroyed.length > 0}
-	<section class="mt-14" aria-labelledby="recently-destroyed">
-		<h2 id="recently-destroyed" class="text-xl font-semibold">Recently destroyed</h2>
-		<p class="mt-1 text-sm text-ink-muted">Each keeps its last snapshot for 30 days.</p>
-		<!-- The projects table's style: the same heads, rules and 16px inset.
-		     One tbody per project, so the name field a Restore opens sits in
+	<section class="hk-section" aria-labelledby="recently-destroyed">
+		<div class="hk-section-head">
+			<h2 id="recently-destroyed" class="hk-h2-app">Recently destroyed</h2>
+		</div>
+		<!-- One tbody per project, so the name field a Restore opens sits in
 		     the project's own group, on a row of its own under it. -->
-		<table class="table dtable mt-4">
+		<table class="hk-table dtable">
 			<thead class="max-sm:sr-only">
 				<tr>
 					<th scope="col">Project</th>
@@ -122,7 +122,7 @@
 					<th scope="col" class="hidden sm:table-cell">Destroyed</th>
 					<th scope="col" class="hidden lg:table-cell">Snapshot</th>
 					<th scope="col" class="hidden sm:table-cell">Kept</th>
-					<th scope="col"><span class="sr-only">Actions</span></th>
+					<th scope="col"><span class="hk-sr">Actions</span></th>
 				</tr>
 			</thead>
 			{#each visible as d (d.id)}
@@ -130,17 +130,17 @@
 				<tbody data-testid="destroyed-row">
 					<tr class:dopen={openFor === d.id}>
 						<td class="dname">
-							<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1 lg:flex-nowrap">
-								<span class="dname-text font-medium" title={d.name}>{d.name}</span>
+							<span class="dname-line">
+								<span class="dname-text" title={d.name}>{d.name}</span>
 								{#if !d.name_free}
-									<span class="badge shrink-0">name in use</span>
+									<span class="hk-badge hk-badge--outline">name in use</span>
 								{/if}
 							</span>
 							<!-- Below sm the other columns are not drawn; their figures
 							     go under the name, the date it is kept until on a line
 							     of its own. -->
-							<span class="mt-0.5 block text-xs text-ink-muted tabular-nums sm:hidden">
-								<span class="font-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
+							<span class="dsub block sm:hidden">
+								<span class="hk-mono">{d.class}</span> · destroyed {relativeTime(d.destroyed_at)}
 								{#if until}
 									<span class="block whitespace-nowrap"
 										>until {until} · {timeLeft(d.restorable_until)}</span
@@ -149,24 +149,24 @@
 							</span>
 						</td>
 						<td class="hidden whitespace-nowrap md:table-cell">
-							<span class="font-mono text-sm">{d.class}</span>
-							<span class="text-ink-muted"> · {gb(d.volume_bytes)}</span>
+							<span class="hk-mono">{d.class}</span>
+							<span class="muted"> · {gb(d.volume_bytes)}</span>
 						</td>
-						<td class="hidden whitespace-nowrap text-ink-muted sm:table-cell">
+						<td class="muted hidden whitespace-nowrap sm:table-cell">
 							<time datetime={d.destroyed_at} title={dateTime(d.destroyed_at)}
 								>{relativeTime(d.destroyed_at)}</time
 							>
 						</td>
-						<td class="hidden whitespace-nowrap text-ink-muted tabular-nums lg:table-cell">
+						<td class="muted hidden whitespace-nowrap lg:table-cell">
 							{dateTime(d.snapshot.created_at)}
 							<span aria-hidden="true">·</span>
-							<span class="font-mono text-compact">{bytes(d.snapshot.bytes)}</span>
+							{bytes(d.snapshot.bytes)}
 						</td>
-						<td class="hidden whitespace-nowrap tabular-nums sm:table-cell">
+						<td class="hidden whitespace-nowrap sm:table-cell">
 							{#if until}
-								<span class="text-ink-muted">until</span>
+								<span class="muted">until</span>
 								{until}
-								<span class="text-ink-muted">· {timeLeft(d.restorable_until)}</span>
+								<span class="muted">· {timeLeft(d.restorable_until)}</span>
 							{/if}
 						</td>
 						<td class="dcell-action">
@@ -174,7 +174,7 @@
 								<button
 									type="button"
 									id={`restore-open-${d.id}`}
-									class="btn-ghost hit -mr-2"
+									class="hk-btn-ghost hk-btn-sm"
 									disabled={busy}
 									onclick={() => open(d)}>Restore…</button
 								>
@@ -199,11 +199,15 @@
 			{/each}
 		</table>
 		{#if more > 0 || hasMore}
-			<div class="mt-3 flex items-baseline gap-3 pl-4">
-				<button type="button" class="btn-ghost -ml-2" disabled={loadingMore} onclick={showMore}
+			<div class="dmore">
+				<button
+					type="button"
+					class="hk-btn-ghost hk-btn-sm"
+					disabled={loadingMore}
+					onclick={showMore}
 					>{loadingMore ? 'Loading…' : hasMore ? 'Show more' : `Show ${more} more`}</button
 				>
-				<span class="text-sm text-ink-muted tabular-nums"
+				<span
 					>{hasMore
 						? `${visible.length} shown`
 						: `${visible.length} of ${destroyed.length} shown`}</span
@@ -214,25 +218,43 @@
 {/if}
 
 <style>
-	/* One line a row, about 45px, so a long list does not take the page. */
-	.dtable td {
-		vertical-align: baseline;
-		padding-top: 0.75rem;
-		padding-bottom: 0.75rem;
+	/* The list's rows read as one line each, so a long list does not take
+	   the page; the last row closes with a hairline. */
+	.dtable {
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	.dtable :is(th, td):first-child {
-		padding-left: 1rem;
+	.dtable tbody + tbody tr:first-child td {
+		border-top: 1px solid var(--hk-hairline);
 	}
-	.dtable :is(th, td):last-child {
-		padding-right: 1rem;
+	.dname-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.5rem;
 	}
-	/* From lg the name takes what the figures leave and a long one ends
-	   in an ellipsis, so a row stays one line; the form under it shows
-	   the whole name. */
-	@media (width >= 64rem) {
+	.dname-text {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--hk-text);
+	}
+	.dsub {
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.muted {
+		color: var(--hk-text-3);
+	}
+	/* From lg the name takes what the figures leave and a long one ends in
+	   an ellipsis, so a row stays one line; the form under it shows it whole. */
+	@media (min-width: 1024px) {
 		.dtable td.dname {
 			width: 100%;
 			max-width: 0;
+		}
+		.dname-line {
+			flex-wrap: nowrap;
 		}
 		.dname-text {
 			min-width: 0;
@@ -243,18 +265,32 @@
 	}
 	/* The row whose name field is open and the field's row read as one. */
 	.dtable tr.dopen td {
-		border-bottom: 0;
-		padding-bottom: 0;
+		padding-bottom: 0.25rem;
 	}
 	.dtable td.dform {
-		padding-top: 0;
+		padding-top: 0.25rem;
+		padding-bottom: 0.875rem;
+		border-top: 0;
 	}
-	/* The ghost button's own padding makes up the cell's. */
 	.dtable td.dcell-action {
 		width: 1px;
-		padding-top: 0.5rem;
-		padding-bottom: 0.5rem;
+		padding-block: 0.375rem;
 		white-space: nowrap;
 		text-align: right;
+	}
+	.dcell-action .hk-btn-ghost {
+		margin-right: -0.625rem;
+	}
+	.dmore {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.dmore .hk-btn-ghost {
+		margin-left: -0.625rem;
 	}
 </style>

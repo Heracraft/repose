@@ -226,7 +226,7 @@ test('Waiting on you groups by project and shows 3 rows before Show all', async 
 	await page.goto('/projects');
 	const card = page.getByTestId('pending-questions');
 	await expect(card.getByRole('heading', { name: 'Waiting on you' })).toBeVisible();
-	await expect(card.locator('.badge--warn')).toHaveText('5');
+	await expect(card.locator('.hk-badge--warn')).toHaveText('5');
 	// beta has waited longest, so it leads; its newest row first.
 	await expect(card.getByRole('link')).toHaveText(['beta', 'alpha']);
 	await expect(card.getByTestId('question')).toHaveCount(3);
@@ -276,6 +276,7 @@ test('Stop on a row stops the project', async ({ page }) => {
 // dashboard, so a generic class there restyled the dashboard: its `.chip`
 // turned the agent chip into a blue mono command chip with no gap
 // (owner's screenshot, 2026-10-12). The landing's names are its own now.
+// An agent on a row is its name in mono at 13px with a dot (I-837).
 test('an agent chip keeps its look after coming from the landing', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'chip-app',
@@ -290,9 +291,10 @@ test('an agent chip keeps its look after coming from the landing', async ({ page
 	await expect(chip).toBeVisible();
 	const look = await chip.evaluate((el) => {
 		const s = getComputedStyle(el);
-		return { display: s.display, fontSize: s.fontSize };
+		return { display: s.display, fontSize: s.fontSize, mono: s.fontFamily.includes('Geist Mono') };
 	});
-	expect(look).toEqual({ display: 'flex', fontSize: '11px' });
+	expect(look).toEqual({ display: 'flex', fontSize: '13px', mono: true });
+	await expect(chip.locator('.hk-dot--busy')).toHaveCount(1);
 	await setAgents(p.id, []);
 });
 
@@ -538,4 +540,88 @@ test('the lede counts a machine in error', async ({ page }) => {
 	});
 	await page.goto('/projects');
 	await expect(page.getByText(/\d+ in error/)).toBeVisible();
+});
+
+// Start and Stop are always on the row, not only under the pointer (I-837):
+// a phone has no hover, and a keyboard user saw nothing until focus.
+test('a row shows its Start or Stop without hovering', async ({ page }) => {
+	const p = await make(apiURLFromEnv(), 'shown-act');
+	await page.goto('/projects');
+	await page.mouse.move(0, 0);
+	const button = row(page, p.name).getByRole('button', { name: `Stop ${p.name}` });
+	await expect(button).toBeVisible();
+	expect(await button.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+});
+
+// Below 640px each project is a stacked row: the name and its Start or
+// Stop on the first line, the action at the frame's right edge; the state
+// and the figures on the second.
+test('the phone row puts the action beside the name and the state under it', async ({ page }) => {
+	const p = await make(apiURLFromEnv(), 'phone-row');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/projects');
+	const li = page.getByRole('list', { name: 'Projects' }).locator('li').filter({ hasText: p.name });
+	const name = await li.getByRole('link', { name: p.name, exact: true }).boundingBox();
+	const action = await li.getByRole('button', { name: `Stop ${p.name}` }).boundingBox();
+	const state = await li.getByText('running', { exact: true }).boundingBox();
+	if (!name || !action || !state) throw new Error('no phone row parts');
+	// One line: the button's middle within the name's line box.
+	expect(Math.abs(action.y + action.height / 2 - (name.y + name.height / 2))).toBeLessThan(6);
+	// Flush with the frame's right edge (20px gutter), its touch padding
+	// pulled back over the gutter. The frame's own box, since a classic
+	// scrollbar's gutter is kept on the page.
+	const edge = await page.evaluate(() => {
+		const main = document.querySelector('main')!;
+		return main.getBoundingClientRect().right - parseFloat(getComputedStyle(main).paddingRight);
+	});
+	expect(action.x + action.width).toBeGreaterThan(edge + 2);
+	expect(action.x + action.width).toBeLessThanOrEqual(edge + 12);
+	expect(action.height).toBeGreaterThanOrEqual(44);
+	expect(state.y).toBeGreaterThan(name.y + name.height - 2);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+// The account's payment state is one banner over the list; the full rule
+// is on /billing (I-837).
+test('past due and suspended each put one banner over the list', async ({ page }) => {
+	await setBilling({ mode: 'past_due', plan: 'solo' });
+	await page.goto('/projects');
+	const due = page.getByTestId('projects-past-due');
+	await expect(due).toHaveText('Your last payment failed. Update card');
+	await expect(due.getByRole('link', { name: 'Update card' })).toHaveAttribute('href', '/billing');
+
+	await setBilling({ mode: 'suspended', plan: 'solo' });
+	await page.reload();
+	const off = page.getByRole('alert').filter({ hasText: 'suspended' });
+	await expect(off).toHaveText('Your account is suspended. Update card and pay');
+	await expect(page.getByTestId('projects-past-due')).toHaveCount(0);
+});
+
+// An account with no project yet: the plan to choose first, then one line
+// and the three commands that make a project, each with its own Copy.
+test('the empty list offers a plan, then the install, login and run commands', async ({ page }) => {
+	await setBilling({ mode: 'none' });
+	await page.route(/\/v1\/projects$/, (route) =>
+		route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.fallback()
+	);
+	await page.route(/\/v1\/projects\/destroyed/, (route) => route.fulfill({ json: [] }));
+	await page.goto('/projects');
+	const plan = page.getByTestId('no-plan');
+	await expect(plan).toContainText('Choose a plan before your first machine can start.');
+	await expect(plan.getByRole('link', { name: 'Choose a plan' })).toHaveAttribute(
+		'href',
+		'/billing'
+	);
+	await expect(page.getByText('No projects yet.')).toBeVisible();
+	await expect(page.getByRole('link', { name: /^Quickstart/ })).toHaveAttribute('href', '/docs');
+	const commands = page.getByRole('list', { name: 'Commands' });
+	await expect(commands.locator('code')).toHaveText([
+		/curl -fsSL https:\/\/repose\.herakraft\.co\/install\.sh \| sh$/,
+		/repose login$/,
+		/repose run$/
+	]);
+	for (const what of ['the install command', 'repose login', 'repose run']) {
+		await expect(commands.getByRole('button', { name: `Copy ${what}` })).toBeVisible();
+	}
+	await expect(page.getByTestId('plan-strip')).toHaveCount(0);
 });

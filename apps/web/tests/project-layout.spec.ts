@@ -1,11 +1,11 @@
-// The project page's cards are as tall as their content, its growing lists
-// are capped, and its forms open with room: the snapshot list holds the
-// newest 8 behind "Show all N", Restore… and Restore as new… stay inside
-// the snapshots card, Agents shows only while the machine runs, and a
-// machine in error offers Restart (DECISIONS I-680, DESIGN-LANGUAGE.md
-// "Card layout").
+// The project page's sections are as tall as their content, its growing
+// lists are capped, and its forms open with room: the snapshot list holds
+// the newest 8 behind "Show all N", Restore… opens one panel inside the
+// snapshots section with both outcomes, Agents shows only while the
+// machine runs, a machine in error offers Restart, and the sections come
+// in the order a visit needs them (DECISIONS I-680, I-837).
 import { test, expect, type Locator } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addEvents } from './helpers';
+import { signIn, createProject, apiURLFromEnv, addEvents, setAgents } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -69,7 +69,7 @@ test('the snapshot list shows the newest 8, and Show all the rest', async ({ pag
 });
 
 for (const width of [1024, 1440]) {
-	test(`Restore… opens inside the snapshots card at ${width}`, async ({ page }) => {
+	test(`Restore… opens inside the snapshots section at ${width}`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		const p = await project(`restore-room-${width}`, 2);
 		await page.goto(`/projects/${p.id}`);
@@ -77,20 +77,28 @@ for (const width of [1024, 1440]) {
 		await card.getByRole('button', { name: 'Restore…' }).first().click();
 		const panel = card.getByTestId('restore-confirm');
 		await expect(panel).toBeVisible();
+		// Focus moves into the panel, on the typed confirm.
+		await expect(panel.getByLabel(/to confirm/)).toBeFocused();
 		await insideCard(card, [
-			panel.getByRole('textbox'),
+			panel.getByLabel(/to confirm/),
 			panel.getByRole('button', { name: 'Restore', exact: true }),
+			panel.getByLabel('Name for the restored project'),
+			panel.getByRole('button', { name: 'Restore as new', exact: true }),
 			panel.getByRole('button', { name: 'Cancel' })
 		]);
 	});
 }
 
-test('Restore as new… keeps its field and buttons inside the card', async ({ page }) => {
+test('Restore as new keeps its field and buttons on one line inside the section', async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const p = await project('as-new-room', 2);
 	await page.goto(`/projects/${p.id}`);
 	const card = page.getByTestId('snapshots-card');
-	await card.getByRole('button', { name: 'Restore as new…' }).first().click();
+	// One action a row: Restore… offers both outcomes.
+	await expect(card.getByRole('button', { name: /Restore as new/ })).toHaveCount(0);
+	await card.getByRole('button', { name: 'Restore…' }).first().click();
 	const field = card.getByLabel('Name for the restored project');
 	const submit = card.getByRole('button', { name: 'Restore as new', exact: true });
 	const cancel = card.getByRole('button', { name: 'Cancel' });
@@ -127,7 +135,7 @@ test('a project in error offers Restart', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0);
 });
 
-test('no card is more than 40px taller than its content at 1440', async ({ page }) => {
+test('no section is more than 40px taller than its content at 1440', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const p = await project('snug-cards', 6);
 	await addEvents(p.id, 12);
@@ -142,7 +150,7 @@ test('no card is more than 40px taller than its content at 1440', async ({ page 
 			);
 		};
 		const out: string[] = [];
-		for (const c of document.querySelectorAll('main .card, main section')) {
+		for (const c of document.querySelectorAll('main section')) {
 			if (!vis(c)) continue;
 			const rc = c.getBoundingClientRect();
 			const pb = parseFloat(getComputedStyle(c).paddingBottom) || 0;
@@ -158,4 +166,88 @@ test('no card is more than 40px taller than its content at 1440', async ({ page 
 		return out;
 	});
 	expect(empty).toEqual([]);
+});
+
+/** Each named section's box, by its level-2 heading. */
+async function boxes(page: import('@playwright/test').Page, names: string[]) {
+	const out: Record<string, { x: number; y: number; w: number }> = {};
+	for (const name of names) {
+		const b = await page
+			.locator('main section')
+			.filter({ has: page.getByRole('heading', { level: 2, name, exact: true }) })
+			.first()
+			.boundingBox();
+		if (!b) throw new Error(`no section ${name}`);
+		out[name] = { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width) };
+	}
+	return out;
+}
+
+const ORDER = [
+	'Connect',
+	'Events',
+	'Agents',
+	'Machine',
+	'Snapshots',
+	'Details',
+	'Usage',
+	'Destroy'
+];
+
+// I-837: the page leads with getting in. At 1440 Connect spans the frame,
+// then Events beside Agents and Machine, Snapshots beside Details, then
+// Usage and Destroy across the frame.
+test('the sections sit in two columns at 1440, Connect first', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const p = await project('order-wide', 2);
+	await setAgents(p.id, [{ agent: 'claude', window: 'claude', state: 'working' }]);
+	await page.goto(`/projects/${p.id}`);
+	await expect(page.getByTestId('agents-card')).toBeVisible();
+	const b = await boxes(page, ORDER);
+	const left = b.Connect.x;
+	expect(b.Connect.w).toBeGreaterThan(1000);
+	const near = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThanOrEqual(1);
+	for (const n of ['Events', 'Snapshots', 'Usage', 'Destroy']) near(b[n].x, left);
+	// The side column: 21rem, 3rem past the wide one.
+	for (const n of ['Agents', 'Machine', 'Details']) {
+		near(b[n].w, 336);
+		near(b[n].x, left + b.Events.w + 48);
+	}
+	expect(b.Events.y).toBe(b.Agents.y);
+	expect(b.Machine.y).toBeGreaterThan(b.Agents.y);
+	expect(b.Snapshots.y).toBe(b.Details.y);
+	expect(b.Connect.y).toBeLessThan(b.Events.y);
+	expect(b.Usage.y).toBeGreaterThan(b.Snapshots.y);
+	expect(b.Destroy.y).toBeGreaterThan(b.Usage.y);
+	expect(b.Usage.w).toBe(b.Connect.w);
+});
+
+// Below 1024px one column, in the DOM order, which is the phone's.
+for (const width of [390, 768]) {
+	test(`the sections stack in one column at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		const p = await project(`order-${width}`, 1);
+		await setAgents(p.id, [{ agent: 'claude', window: 'claude', state: 'idle' }]);
+		await page.goto(`/projects/${p.id}`);
+		await expect(page.getByTestId('agents-card')).toBeVisible();
+		const b = await boxes(page, ORDER);
+		const ys = ORDER.map((n) => b[n].y);
+		expect([...ys].sort((m, n) => m - n)).toEqual(ys);
+		for (const n of ORDER) expect(Math.abs(b[n].x - b.Connect.x)).toBeLessThanOrEqual(1);
+	});
+}
+
+// Destroy no longer carries an open field on every visit: its button
+// names the project and opens the typed confirm, and Keep it closes it.
+test('Destroy opens its typed confirm and Keep it gives focus back', async ({ page }) => {
+	const p = await project('destroy-open', 0);
+	await page.goto(`/projects/${p.id}`);
+	const section = page.getByTestId('destroy-card');
+	await expect(section.getByLabel(/to confirm/)).toHaveCount(0);
+	const open = section.getByRole('button', { name: `Destroy ${p.slug}…` });
+	await open.click();
+	await expect(section.getByLabel(/to confirm/)).toBeFocused();
+	await section.getByRole('button', { name: 'Keep it' }).click();
+	await expect(section.getByLabel(/to confirm/)).toHaveCount(0);
+	await expect(open).toBeFocused();
 });

@@ -160,19 +160,12 @@
 			/>{/if}{part}{/each}{/snippet}
 
 <svelte:head>
-	<title>{project ? `${project.name} secrets — repose` : 'Secrets — repose'}</title>
+	<title>{project ? `Secrets · ${project.name} · repose` : 'Secrets · repose'}</title>
 </svelte:head>
 
-<!-- The project's name is a plain crumb: Overview in the tabs is the way
-     back to the project, so a second link to it would be a duplicate. -->
 <PageShell
-	title="Secrets"
-	crumbs={[
-		{ label: 'Projects', href: resolve('/projects') },
-		// "…" while the name loads; after a failed load there is no name
-		// coming, so the crumb says what it is.
-		{ label: project?.name ?? (loadFailed ? 'Project' : '…') }
-	]}
+	title={project?.name ?? (loadFailed ? 'Secrets' : '…')}
+	crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 >
 	{#snippet tabs()}<ProjectTabs {id} />{/snippet}
 	<LoadState
@@ -180,140 +173,123 @@
 		onretry={load}
 		error={loadError}
 	>
-		<!-- The list and the form side by side from lg (I-664): the list
-		     takes what the frame has left, the form a 22rem card. With no
-		     secrets the dashed box is the column's content, and it runs the
-		     form's height so the two end level. -->
-		<div
-			class="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12 {secrets?.length ===
-				0 && account.length === 0
-				? 'lg:items-stretch'
-				: ''}"
-		>
-			<div class="min-w-0">
-				{#if secrets && secrets.length === 0 && account.length === 0}
-					<!-- The empty state says so (DESIGN-LANGUAGE.md "States"); the form
-					     to add one is beside it, so the sentence is where a secret
-					     lands, not how to add one (I-485). -->
-					<div
-						class="flex h-full flex-col justify-center rounded-sm border border-dashed border-rule-strong px-6 py-12 text-center"
-					>
-						<h2 class="text-xl font-semibold">No secrets yet</h2>
-						<p class="mx-auto mt-2 max-w-md text-sm text-ink-muted">
-							The machine sees each as an environment variable and as a file at
-							<code class="font-mono text-compact whitespace-nowrap text-ink"
-								>/run/repose/secrets/NAME</code
-							>.
-						</p>
+		<!-- The list and the form side by side from 1024px (I-664, I-837):
+		     the list takes what the frame leaves, the form a 21rem column. -->
+		<div class="sgrid">
+			<div class="slist">
+				{#if secrets && secrets.length === 0}
+					<!-- The empty state says where a secret lands; the form to add
+					     one is beside it (I-485). -->
+					<div class="hk-empty-row">
+						<h2 class="hk-empty-title">No secrets yet</h2>
+						<span
+							>The machine sees each as an environment variable and as a file at
+							<code class="whitespace-nowrap">/run/repose/secrets/NAME</code>.</span
+						>
 					</div>
 				{:else if secrets && secrets.length > 0}
-					<!-- pt-5 puts this h2 level with the card's. -->
-					<h2 class="text-xl font-semibold lg:pt-5">
-						{secrets.length}
-						{secrets.length === 1 ? 'secret' : 'secrets'}
-					</h2>
-					<table class="table mt-3">
-						<thead>
-							<tr>
-								<th scope="col">Name</th>
-								<th scope="col" class="hidden w-px whitespace-nowrap sm:table-cell">Updated</th>
-								<th scope="col" class="w-px"><span class="sr-only">Delete</span></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each secrets as s (s.name)}
+					<section class="hk-section" aria-labelledby="secrets-title">
+						<div class="hk-section-head">
+							<h2 id="secrets-title" class="hk-h2-app">
+								{secrets.length}
+								{secrets.length === 1 ? 'secret' : 'secrets'}
+							</h2>
+						</div>
+						<table class="hk-table stable">
+							<thead>
 								<tr>
-									<!-- Below sm the date is a second line under the name, so
-									     the name has the row's width and breaks at its
-									     underscores. -->
-									<td
-										class="font-mono wrap-anywhere align-middle {confirming === s.name
-											? 'border-b-0'
-											: ''}"
-										><span>{@render secretName(s.name)}</span><span
-											class="block font-sans text-xs whitespace-nowrap text-ink-muted tabular-nums sm:hidden"
-											>{dateTime(s.updated_at)}</span
-										></td
-									>
-									<td
-										class="hidden align-middle whitespace-nowrap text-ink-muted tabular-nums sm:table-cell {confirming ===
-										s.name
-											? 'border-b-0'
-											: ''}">{dateTime(s.updated_at)}</td
-									>
-									<td class="text-right align-middle {confirming === s.name ? 'border-b-0' : ''}">
-										{#if confirming !== s.name}
-											<button
-												type="button"
-												id={`delete-${s.name}`}
-												class="btn-ghost-danger -mr-2"
-												aria-label={`Delete ${s.name}`}
-												onclick={() => (confirming = s.name)}>Delete</button
-											>
-										{/if}
-									</td>
+									<th scope="col">Name</th>
+									<th scope="col" class="hidden w-px whitespace-nowrap sm:table-cell">Updated</th>
+									<th scope="col" class="w-px"><span class="hk-sr">Delete</span></th>
 								</tr>
-								{#if confirming === s.name}
-									<tr>
-										<td colspan="3" class="pt-0" data-testid="confirm-delete-secret">
-											<p class="text-ink-muted">
-												Remove <span class="font-mono wrap-anywhere text-ink"
-													>{@render secretName(s.name)}</span
-												>? Running processes that already read it keep their copy until they
-												restart.
-											</p>
-											<div class="mt-2 flex items-center gap-2">
+							</thead>
+							<tbody>
+								{#each secrets as s (s.name)}
+									<tr class:asking={confirming === s.name}>
+										<!-- Below 640px the date is a second line under the name, so
+										     the name has the row's width and breaks at its
+										     underscores. -->
+										<td class="sname"
+											><span>{@render secretName(s.name)}</span><span
+												class="sdate-sub block whitespace-nowrap sm:hidden"
+												>{dateTime(s.updated_at)}</span
+											></td
+										>
+										<td class="sdate hidden whitespace-nowrap sm:table-cell"
+											>{dateTime(s.updated_at)}</td
+										>
+										<td class="sact">
+											{#if confirming !== s.name}
 												<button
 													type="button"
-													class="btn-danger btn--sm"
-													aria-label={`Delete ${s.name} now`}
-													disabled={deleting === s.name}
-													onclick={() => onDelete(s.name)}
-													>{deleting === s.name ? 'Deleting…' : 'Delete'}</button
+													id={`delete-${s.name}`}
+													class="hk-btn-ghost hk-btn-sm"
+													aria-label={`Delete ${s.name}`}
+													onclick={() => (confirming = s.name)}>Delete…</button
 												>
-												<!-- Focus lands on the safe choice when the question opens. -->
-												<button
-													type="button"
-													class="btn-ghost"
-													use:focusOnMount
-													onclick={() => keep(s.name)}>Keep it</button
-												>
-											</div>
+											{/if}
 										</td>
 									</tr>
-								{/if}
-							{/each}
-						</tbody>
-					</table>
+									{#if confirming === s.name}
+										<tr class="confirm-row">
+											<td colspan="3" data-testid="confirm-delete-secret">
+												<div class="hk-confirm">
+													<p>
+														Remove <span class="hk-mono">{@render secretName(s.name)}</span>?
+														Running processes that already read it keep their copy until they
+														restart.
+													</p>
+													<div class="hk-confirm-actions">
+														<button
+															type="button"
+															class="hk-btn-danger hk-btn-sm"
+															aria-label={`Delete ${s.name} now`}
+															disabled={deleting === s.name}
+															onclick={() => onDelete(s.name)}
+															>{deleting === s.name ? 'Deleting…' : 'Delete'}</button
+														>
+														<!-- Focus lands on the safe choice when the question opens. -->
+														<button
+															type="button"
+															class="hk-btn-ghost hk-btn-sm"
+															use:focusOnMount
+															onclick={() => keep(s.name)}>Keep it</button
+														>
+													</div>
+												</div>
+											</td>
+										</tr>
+									{/if}
+								{/each}
+							</tbody>
+						</table>
+					</section>
 				{/if}
 				{#if secrets && account.length > 0}
-					<!-- Set on Settings for every project; a name the project
-					     has itself is its own value here (I-697). -->
-					<section class={secrets.length > 0 ? 'mt-10' : 'lg:pt-5'} data-testid="account-secrets">
-						<h2 class="text-xl font-semibold">From your account</h2>
-						<p class="mt-1 text-sm text-ink-muted">
-							Every project gets these, set in
+					<!-- Set on Settings for every project; a name the project has
+					     itself is its own value here (I-697). -->
+					<section class="hk-section" data-testid="account-secrets" aria-labelledby="acct-title">
+						<div class="hk-section-head">
+							<h2 id="acct-title" class="hk-h2-app">From your account</h2>
 							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-							<a class="link" href={resolve('/settings') + '#secrets'}>Settings</a>.
-						</p>
-						<table class="table mt-3">
+							<a class="hk-link settings-link" href={resolve('/settings') + '#secrets'}>Settings</a>
+						</div>
+						<table class="hk-table stable">
 							<thead>
 								<tr>
 									<th scope="col">Name</th>
 									<th scope="col" class="w-px whitespace-nowrap"
-										><span class="sr-only">On this machine</span></th
+										><span class="hk-sr">On this machine</span></th
 									>
 								</tr>
 							</thead>
 							<tbody>
 								{#each account as s (s.name)}
 									<tr>
-										<td
-											class="font-mono wrap-anywhere align-middle {own.has(s.name)
-												? 'text-ink-muted line-through'
-												: ''}"><span>{@render secretName(s.name)}</span></td
+										<td class="sname" class:overridden={own.has(s.name)}
+											><span>{@render secretName(s.name)}</span></td
 										>
-										<td class="align-middle text-sm whitespace-nowrap text-ink-muted">
+										<td class="soverride">
 											{own.has(s.name) ? 'This project’s own is used' : ''}
 										</td>
 									</tr>
@@ -325,23 +301,23 @@
 			</div>
 
 			<!-- Each field has a visible label and its error is tied to it with
-			     aria-describedby, so a screen reader hears why Add refused. -->
-			<!-- Beside a long list the form stays in view from lg, so Add is
-			     in reach at the list's end. -->
+			     aria-describedby, so a screen reader hears why Add refused.
+			     Beside a long list the form stays in view from 1024px. -->
 			<form
-				class="card {secrets?.length ? 'lg:sticky lg:top-20 lg:self-start' : ''}"
+				class="sform"
+				aria-labelledby="add-title"
 				onsubmit={(e) => {
 					e.preventDefault();
 					void onAdd();
 				}}
 			>
-				<h2 class="text-xl font-semibold">Add a secret</h2>
-				<div class="mt-4 flex flex-col gap-4">
+				<h2 id="add-title" class="hk-h2-app">Add a secret</h2>
+				<div class="hk-fields sfields">
 					<div>
-						<label for="secret-name" class="block text-sm font-medium">Name</label>
+						<label for="secret-name" class="hk-field-label">Name</label>
 						<input
 							id="secret-name"
-							class="field mt-1.5 w-full font-mono uppercase placeholder:normal-case"
+							class="hk-input sname-input"
 							placeholder="API_KEY"
 							autocomplete="off"
 							autocapitalize="characters"
@@ -351,14 +327,14 @@
 							aria-describedby={nameError ? 'secret-name-error' : undefined}
 							oninput={() => (nameError = undefined)}
 						/>
-						{#if nameError}<p id="secret-name-error" class="field-error">{nameError}</p>{/if}
+						{#if nameError}<p id="secret-name-error" class="hk-field-error">{nameError}</p>{/if}
 					</div>
 					<div>
-						<label for="secret-value" class="block text-sm font-medium">Value</label>
+						<label for="secret-value" class="hk-field-label">Value</label>
 						<textarea
 							id="secret-value"
 							rows="3"
-							class="field mt-1.5 block min-h-0 w-full resize-y font-mono disabled:cursor-not-allowed disabled:opacity-60"
+							class="hk-textarea svalue"
 							autocomplete="off"
 							spellcheck="false"
 							disabled={!!file}
@@ -367,42 +343,149 @@
 							aria-describedby={valueError ? 'secret-value-error' : undefined}
 							oninput={() => (valueError = undefined)}
 						></textarea>
-						<!-- The native file widget's "Choose File" and its grey box are
-						     the browser's, not the house's: a ghost button opens the
-						     same picker, and the picked file shows by name. The input
-						     keeps a real label for anything that reaches it. -->
-						<label for="secret-file" class="sr-only">Value from a file</label>
+						<!-- A ghost button opens the file picker, and the picked file
+						     shows by name; the input keeps a real label. -->
+						<label for="secret-file" class="hk-sr">Value from a file</label>
 						<input
 							id="secret-file"
 							type="file"
 							tabindex="-1"
-							class="sr-only"
+							class="hk-sr"
 							bind:this={fileInput}
 							onchange={pickFile}
 						/>
-						<div class="mt-2 flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1">
+						<div class="sfile">
 							{#if file}
-								<span
-									class="min-w-0 font-mono text-compact break-all text-ink"
-									data-testid="secret-file-name">{file.name}</span
+								<span class="sfile-name" data-testid="secret-file-name">{file.name}</span>
+								<span class="sfile-size">{bytes(file.size)}</span>
+								<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={clearFile}
+									>Clear</button
 								>
-								<span class="text-xs text-ink-muted tabular-nums">{bytes(file.size)}</span>
-								<button type="button" class="btn-ghost -ml-1" onclick={clearFile}>Clear</button>
 							{:else}
-								<button type="button" class="btn-ghost -ml-2" onclick={() => fileInput?.click()}
-									>Load from file</button
+								<button
+									type="button"
+									class="hk-btn-ghost hk-btn-sm sfile-load"
+									onclick={() => fileInput?.click()}>Load from file</button
 								>
 							{/if}
 						</div>
-						{#if valueError}<p id="secret-value-error" class="field-error">{valueError}</p>{/if}
+						{#if valueError}<p id="secret-value-error" class="hk-field-error">{valueError}</p>{/if}
 					</div>
 				</div>
-				<div class="mt-5 border-t border-rule pt-4">
-					<button type="submit" class="btn" disabled={saving || !name}>
-						{saving ? 'Storing…' : 'Add'}
-					</button>
-				</div>
+				<button type="submit" class="hk-btn sadd" disabled={saving || !name}>
+					{saving ? 'Storing…' : 'Add'}
+				</button>
 			</form>
 		</div>
 	</LoadState>
 </PageShell>
+
+<style>
+	.sgrid {
+		display: grid;
+		gap: 2.75rem 3rem;
+		align-items: start;
+	}
+	@media (min-width: 1024px) {
+		.sgrid {
+			grid-template-columns: minmax(0, 1fr) 21rem;
+		}
+		.sform {
+			position: sticky;
+			top: calc(var(--hk-header-h) + 1.5rem);
+		}
+	}
+	.slist {
+		min-width: 0;
+	}
+	.slist :global(.hk-empty-row) {
+		justify-content: flex-start;
+		gap: 0.25rem 0.75rem;
+	}
+	.stable {
+		border-bottom: 1px solid var(--hk-hairline);
+	}
+	.sname {
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		overflow-wrap: anywhere;
+	}
+	.sdate,
+	.sdate-sub {
+		font-family: var(--hk-font-sans);
+		font-size: 0.8125rem;
+		font-weight: 400;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.sact {
+		width: 1px;
+		text-align: right;
+		white-space: nowrap;
+	}
+	.stable td.sact {
+		padding-block: 0.375rem;
+	}
+	.sact .hk-btn-ghost {
+		margin-right: -0.625rem;
+	}
+	.confirm-row td {
+		padding-top: 0;
+		border-top: 0;
+	}
+	.hk-section-head > .settings-link {
+		color: var(--hk-accent);
+	}
+	.overridden {
+		color: var(--hk-text-3);
+		text-decoration: line-through;
+	}
+	.soverride {
+		white-space: nowrap;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.sfields {
+		margin-top: 0.875rem;
+	}
+	.sname-input,
+	.svalue {
+		font-family: var(--hk-font-mono);
+	}
+	.sname-input {
+		text-transform: uppercase;
+	}
+	.sname-input::placeholder {
+		text-transform: none;
+	}
+	.svalue {
+		min-height: 0;
+		resize: vertical;
+	}
+	.sfile {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.75rem;
+		min-height: 1.875rem;
+		margin-top: 0.5rem;
+	}
+	.sfile-load {
+		margin-left: -0.625rem;
+	}
+	.sfile-name {
+		min-width: 0;
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		word-break: break-all;
+	}
+	.sfile-size {
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.sadd {
+		margin-top: 1.25rem;
+	}
+</style>

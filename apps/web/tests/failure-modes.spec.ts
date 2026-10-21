@@ -30,8 +30,8 @@ test.afterAll(async () => {
 async function stopIfRunning(page: Page): Promise<void> {
 	const action = page.getByRole('button', { name: /^(Start|Stop)$/ });
 	await expect(action.first()).toBeVisible({ timeout: 10_000 });
-	if (await page.getByRole('button', { name: 'Stop' }).isVisible()) {
-		await page.getByRole('button', { name: 'Stop' }).click();
+	if (await page.getByRole('button', { name: 'Stop', exact: true }).isVisible()) {
+		await page.getByRole('button', { name: 'Stop', exact: true }).click();
 	}
 	await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({
 		timeout: 10_000
@@ -139,7 +139,7 @@ test('disk_limit on a resize is told like a start refusal, with a Change plan li
 	await expect(page.getByRole('button', { name: /^(Start|Stop)$/ }).first()).toBeVisible();
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.getByRole('button', { name: 'Resize…' }).click();
-	await page.locator('select.field').selectOption('320');
+	await page.locator('select.hk-select').selectOption('320');
 	await page.getByRole('button', { name: 'Grow' }).click();
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'disk_limit');

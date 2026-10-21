@@ -134,9 +134,10 @@ test('the Menu and Nix tabs are ARIA tabs the arrow keys move between', async ({
 	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toBeVisible();
 });
 
-// The Apply sits in the editor's own bar, beside its state (I-664), and
-// the editor says when it holds a change that is not applied.
-test('the Nix editor bar says Saved, then Unsaved changes, beside Apply', async ({ page }) => {
+// Apply sits in one bar held to the foot of the window, beside the state
+// of the tab in front (I-664, I-837), which says when a change is not
+// applied.
+test('the Apply bar says Saved, then Unsaved changes, beside Apply', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'nix-bar-app',
 		remote_url: 'github.com/heracraft/nix-bar-app'
@@ -144,7 +145,7 @@ test('the Nix editor bar says Saved, then Unsaved changes, beside Apply', async 
 	await page.goto(`/projects/${p.id}/config`);
 	await page.getByRole('tab', { name: 'Nix' }).click();
 	const panel = page.getByRole('tabpanel', { name: 'Nix' });
-	const bar = panel.locator('.nix-frame');
+	const bar = page.locator('.hk-bottom-bar');
 	await expect(bar.getByRole('status')).toHaveText('Saved');
 	await expect(bar.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
 	await panel.locator('.cm-content').click();
@@ -168,4 +169,35 @@ test('at lg the revisions sit in a rail beside the editor', async ({ page }) => 
 	// The editor is the page's subject: it opens with room to write in
 	// (28rem) even for an empty fragment.
 	expect((await page.locator('.nix-editor').boundingBox())!.height).toBeGreaterThanOrEqual(440);
+});
+
+// An edit not applied holds a navigation away: Stay keeps it, Leave goes
+// on (I-578's guard, on the config page since I-837).
+test('leaving with an unapplied edit asks first', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'nix-guard-app',
+		remote_url: 'github.com/heracraft/nix-guard-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Nix' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' ');
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Overview' })
+		.click();
+	const ask = page.getByRole('alert').filter({ hasText: 'Unsaved changes' });
+	await expect(ask).toBeVisible();
+	await expect(ask.getByRole('button', { name: 'Stay' })).toBeFocused();
+	await ask.getByRole('button', { name: 'Stay' }).click();
+	await expect(ask).toHaveCount(0);
+	await expect(page).toHaveURL(`/projects/${p.id}/config`);
+
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Overview' })
+		.click();
+	await page.getByRole('alert').getByRole('button', { name: 'Leave' }).click();
+	await expect(page).toHaveURL(`/projects/${p.id}`);
 });

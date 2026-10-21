@@ -191,23 +191,22 @@ test('secrets spans the frame at 1440', async ({ page }) => {
 	expect(empty!.y).toBeLessThan(box!.y + box!.height);
 });
 
-// With no secrets the dashed empty state runs the form's height, so the
-// two columns end level.
-test('the empty state ends level with the Add a secret card at 1440', async ({ page }) => {
+// With no secrets the list is one empty row that says where a secret
+// lands; it no longer runs the form's height (I-837).
+test('the empty state is one row level with the top of the form at 1440', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'secrets-level-app',
 		remote_url: 'github.com/heracraft/secrets-level-app'
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`/projects/${p.id}/secrets`);
-	const card = await page
+	const form = await page
 		.locator('form', { has: page.getByRole('heading', { name: 'Add a secret' }) })
 		.boundingBox();
-	const empty = await page
-		.locator('div', { has: page.getByRole('heading', { name: 'No secrets yet' }) })
-		.last()
-		.boundingBox();
-	expect(Math.abs(empty!.y + empty!.height - (card!.y + card!.height))).toBeLessThan(2);
+	const title = await page.getByRole('heading', { level: 2, name: 'No secrets yet' }).boundingBox();
+	if (!form || !title) throw new Error('no form or empty row');
+	expect(title.y).toBeLessThan(form.y + 40);
+	expect(title.height).toBeLessThan(30);
 });
 
 // At 320 a long name breaks after its underscores, never inside a word,

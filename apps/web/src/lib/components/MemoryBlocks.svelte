@@ -1,28 +1,49 @@
 <!--
-  The plan's memory as its own squares (I-674): one square per GB, as the
-  plan cells draw a plan (Units.svelte), filled by what runs now. Each
-  running project fills a run of squares, the runs told apart by two
-  steps of the accent, so the picture says both how much is running and
-  which machine holds it. Empty squares are what is free. Past the limit
-  the extra squares are amber. The figure beside it carries the reading.
+  The plan's memory as its own squares (I-674, I-837): one square per GB,
+  filled by what holds memory now, one run per machine. One machine fills
+  in the accent; two in the accent and the secondary ink; three or more
+  in the series colours, then the secondary ink. A frozen machine's GB
+  are outlined, GB past the plan are amber, and free GB are an empty 3:1
+  outline. The fills are not the only carrier: the reading ("28 GB of 32
+  GB, over") is the meter's value text, and with two machines or more the
+  legend names each run.
 -->
 <script lang="ts">
 	let {
 		label,
 		segments,
 		limit,
-		perRow = 32
+		perRow = 32,
+		size = 10,
+		meter = true,
+		legend = false
 	}: {
 		label: string;
 		/** What runs, in order: one run of squares each. */
 		segments: { name: string; gb: number; frozen?: boolean }[];
 		limit: number;
 		perRow?: number;
+		/** The square's side in px: 10 on /billing, 8 in the projects' plan row. */
+		size?: 8 | 10;
+		/**
+		 * The squares carry role=meter themselves. False when a Meter wraps
+		 * them as its figure and is the meter (one meter, one name).
+		 */
+		meter?: boolean;
+		/** A key under the squares naming each machine's run, when two or more run. */
+		legend?: boolean;
 	} = $props();
 
 	let used = $derived(segments.reduce((n, s) => n + s.gb, 0));
 	let total = $derived(Math.max(limit, used));
-	/** Each square's run: its index in segments, or -1 when free. */
+
+	/** The fill of the i-th machine's run, by how many runs there are. */
+	function fill(i: number, n: number): string {
+		if (n <= 1) return 'var(--hk-accent)';
+		if (n === 2) return i === 0 ? 'var(--hk-accent)' : 'var(--hk-text-2)';
+		return i < 3 ? `var(--hk-series-${i + 1})` : 'var(--hk-text-2)';
+	}
+
 	let squares = $derived.by(() => {
 		const out: { seg: number; over: boolean; name?: string; frozen?: boolean }[] = [];
 		segments.forEach((s, i) => {
@@ -38,77 +59,121 @@
 				? `: ${segments.map((s) => `${s.name} ${s.gb} GB${s.frozen ? ' frozen' : ''}`).join(', ')}`
 				: '')
 	);
+	let cols = $derived(Math.min(total, perRow));
+	// Half a row where 32 squares do not fit their box.
+	let narrow = $derived(Math.min(total, Math.ceil(perRow / 2)));
 </script>
 
-<div class="fit">
+<div class="fit" class:fit--8={size === 8} style="--sq: {size}px">
 	<div
 		class="blocks"
-		style="--cols: {Math.min(total, perRow)}; --cols-narrow: {Math.min(total, 16)}"
-		role="meter"
-		aria-label={label}
-		aria-valuemin={0}
-		aria-valuemax={limit}
-		aria-valuenow={Math.min(used, limit)}
-		aria-valuetext={reading}
+		style="--cols: {cols}; --cols-narrow: {narrow}"
+		role={meter ? 'meter' : undefined}
+		aria-label={meter ? label : undefined}
+		aria-valuemin={meter ? 0 : undefined}
+		aria-valuemax={meter ? limit : undefined}
+		aria-valuenow={meter ? Math.min(used, limit) : undefined}
+		aria-valuetext={meter ? reading : undefined}
+		aria-hidden={meter ? undefined : 'true'}
 	>
 		{#each squares as q, i (i)}
 			<i
-				class:on={q.seg >= 0}
-				class:alt={q.seg % 2 === 1}
+				class:on={q.seg >= 0 && !q.frozen && !q.over}
+				class:ice={q.seg >= 0 && q.frozen && !q.over}
 				class:over={q.over}
-				class:ice={q.frozen}
-				title={q.name ? `${q.name}` : undefined}
+				style={q.seg >= 0 && !q.frozen && !q.over
+					? `--fill: ${fill(q.seg, segments.length)}`
+					: undefined}
+				title={q.name}
 			></i>
 		{/each}
 	</div>
+	{#if legend && segments.length > 1}
+		<ul class="legend" aria-label="{label} by machine">
+			{#each segments as s, i (`${s.name}-${i}`)}
+				<li>
+					<i
+						class:on={!s.frozen}
+						class:ice={s.frozen}
+						style={s.frozen ? undefined : `--fill: ${fill(i, segments.length)}`}
+						aria-hidden="true"
+					></i>{s.name}<span class="gb">{s.gb} GB{s.frozen ? ', frozen' : ''}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 </div>
 
 <style>
-	/* The squares lay out by the box they sit in, not the viewport: a
-	   narrow cell beside a side column took 32 to a row past its edge. */
+	/* The squares lay out by the box they sit in, not the viewport. */
 	.fit {
 		container-type: inline-size;
 	}
 	.blocks {
 		display: grid;
-		grid-template-columns: repeat(var(--cols), 10px);
-		gap: 3px;
+		grid-template-columns: repeat(var(--cols), var(--sq));
+		gap: 2px;
 		width: max-content;
 	}
-	/* Sixteen to a row in a box under 413px, what 32 squares take. */
-	@container (width < 413px) {
-		.blocks {
-			grid-template-columns: repeat(var(--cols-narrow), 10px);
+	/* 32 squares of 10px take 382px, of 8px 318px. */
+	@container (width < 382px) {
+		.fit:not(.fit--8) .blocks {
+			grid-template-columns: repeat(var(--cols-narrow), var(--sq));
+		}
+	}
+	@container (width < 318px) {
+		.fit--8 .blocks {
+			grid-template-columns: repeat(var(--cols-narrow), var(--sq));
 		}
 	}
 	i {
 		display: block;
-		width: 10px;
-		height: 10px;
-		border-radius: var(--radius-xs);
-		box-shadow: inset 0 0 0 1px var(--rule-strong);
+		width: var(--sq);
+		height: var(--sq);
+		box-shadow: inset 0 0 0 1px var(--hk-control-edge);
 	}
 	.on {
 		box-shadow: none;
-		background: var(--accent);
+		background: var(--fill);
 	}
-	.on.alt {
-		background: color-mix(in srgb, var(--accent) 55%, var(--surface));
+	/* A frozen machine's memory (I-683) still counts against the plan. */
+	.ice {
+		box-shadow: inset 0 0 0 1.5px var(--hk-text-3);
 	}
-	/* A frozen machine's memory (I-683): its squares turn to ice, an edge
-	   of frost over a pale fill; they still count against the plan. */
-	.on.ice {
-		background: color-mix(in srgb, var(--frost) 22%, var(--surface));
-		box-shadow: inset 0 0 0 1px var(--frost);
+	.over {
+		box-shadow: none;
+		background: var(--hk-warn-dot);
 	}
-	.on.over {
-		background: var(--color-amber-600);
+	.legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1rem;
+		margin: 0.625rem 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.75rem;
+		color: var(--hk-text-2);
+	}
+	.legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+	}
+	.legend i {
+		--sq: 8px;
+	}
+	.gb {
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
 	}
 	@media (forced-colors: active) {
 		i {
+			box-shadow: none;
 			border: 1px solid GrayText;
 		}
-		.on {
+		.on,
+		.over {
+			forced-color-adjust: none;
 			background: CanvasText;
 		}
 	}

@@ -187,7 +187,7 @@ test('restore as new has a labelled name field and fits a phone screen', async (
 	await page.goto(`/projects/${p.id}`);
 
 	const row = page.getByTestId('snapshot-row');
-	await row.getByRole('button', { name: 'Restore as new…' }).click();
+	await row.getByRole('button', { name: 'Restore…' }).click();
 	const name = row.getByLabel('Name for the restored project');
 	await expect(name).toBeVisible();
 	await expect(row.getByRole('button', { name: 'Restore as new' })).toBeDisabled();
@@ -206,6 +206,7 @@ test('destroy requires the exact slug and redirects to the projects list', async
 	});
 	await page.goto(`/projects/${p.id}`);
 
+	await page.getByRole('button', { name: `Destroy ${p.slug}…` }).click();
 	const destroyBtn = page.getByRole('button', { name: 'Destroy', exact: true });
 	await expect(destroyBtn).toBeDisabled();
 
@@ -228,6 +229,7 @@ test('a destroyed project can be restored from the projects list', async ({ page
 		remote_url: 'github.com/heracraft/restore-app'
 	});
 	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: `Destroy ${p.slug}…` }).click();
 	await page.getByLabel(/to confirm/).fill(p.slug);
 	await page.getByRole('button', { name: 'Destroy', exact: true }).click();
 	await expect(page).toHaveURL('/projects', { timeout: 10_000 });
@@ -431,10 +433,7 @@ test('Restore as new opens the project it made', async ({ page }) => {
 		body: '{}'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await page
-		.getByRole('button', { name: /Restore as new/ })
-		.first()
-		.click();
+	await page.getByRole('button', { name: 'Restore…' }).first().click();
 	const name = `restored-${Math.random().toString(36).slice(2, 8)}`;
 	await page.getByLabel('Name for the restored project').fill(name);
 	await page.getByRole('button', { name: 'Restore as new', exact: true }).click();
