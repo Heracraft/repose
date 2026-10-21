@@ -12,6 +12,7 @@ test('settings round-trips timezone, email toggle and ntfy URL, and the test but
 	page
 }) => {
 	await page.goto('/settings');
+	await expect(page).toHaveTitle('Settings · repose');
 
 	// DECISIONS I-332: the checkbox and the timezone save on change, with a
 	// toast; the ntfy URL has its own Save.
@@ -150,11 +151,12 @@ test('settings carries the account section first and no heading twice', async ({
 	await expect(account.getByText('Email')).toBeVisible();
 	await expect(account.getByText('GitHub')).toBeVisible();
 	await expect(page.getByRole('heading', { level: 2, name: 'Delete account' })).toBeVisible();
+	// Notifications second, the section people come back to (I-837).
 	const headings = await page.locator('main h2').allInnerTexts();
 	expect(headings).toEqual([
 		'Account',
-		'Timezone',
 		'Notifications',
+		'Timezone',
 		'Install',
 		'machine.nix',
 		'Secrets',
@@ -166,7 +168,16 @@ test('account deletion requires typing the exact handle', async ({ page }) => {
 	await page.goto('/settings');
 	await expect(page.getByText('Everything, including snapshots, is deleted 30 days')).toBeVisible();
 
-	const deleteBtn = page.getByRole('button', { name: 'Delete account' });
+	// The field opens in place of its button and takes the focus; Cancel
+	// closes it and gives the focus back (I-386, I-837).
+	const open = page.getByRole('button', { name: 'Delete account…', exact: true });
+	await open.click();
+	await expect(page.getByLabel(/to confirm/)).toBeFocused();
+	await page.locator('#delete-account').getByRole('button', { name: 'Cancel' }).click();
+	await expect(open).toBeFocused();
+	await open.click();
+
+	const deleteBtn = page.getByRole('button', { name: 'Delete account', exact: true });
 	await expect(deleteBtn).toBeDisabled();
 
 	await page.getByLabel(/to confirm/).fill('not-my-handle');
@@ -179,16 +190,27 @@ test('account deletion requires typing the exact handle', async ({ page }) => {
 	await expect(page).toHaveURL('/', { timeout: 10_000 });
 });
 
-// I-664: Settings fills the frame. Each section is two tracks from lg, and
-// the machine.nix editor runs to the frame's right edge, so no 672px
-// column is left with 312px of paper beside it.
-test('settings spans the frame at 1440', async ({ page }) => {
+// I-837: every section is two tracks from 1024px, the h2 in 15rem and
+// the controls in one 40rem column, the machine.nix editor included, so
+// the right edges line up from the account's facts to the editor.
+test('settings sections share one 40rem column at 1440', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/settings');
 	const editor = page.locator('#machine-nix .nix-frame');
 	await expect(editor).toBeVisible();
-	const box = await editor.boundingBox();
-	expect(box!.x + box!.width).toBeGreaterThanOrEqual(1200);
+	const install = page.locator('section', { has: page.getByRole('heading', { name: 'Install' }) });
+	const box = (await editor.boundingBox())!;
+	const facts = (await page.locator('#account dl').boundingBox())!;
+	const line = (await install.locator('pre').boundingBox())!;
+	expect(Math.round(box.width)).toBe(640);
+	expect(Math.abs(box.x - facts.x)).toBeLessThan(1);
+	expect(Math.abs(box.x + box.width - (facts.x + facts.width))).toBeLessThan(1);
+	expect(line.x).toBeGreaterThanOrEqual(box.x);
+	// The h2 column is 15rem and the gap 3rem: the controls start 288px in.
+	const h2 = (await page
+		.getByRole('heading', { level: 2, name: 'Account', exact: true })
+		.boundingBox())!;
+	expect(Math.round(box.x - h2.x)).toBe(288);
 	// The account's key and value sit side by side, not 672px apart.
 	const handle = page.locator('#account dt', { hasText: 'Handle' });
 	const value = page.locator('#account dd').first();
@@ -198,8 +220,9 @@ test('settings spans the frame at 1440', async ({ page }) => {
 	expect(Math.abs(v!.y - k!.y)).toBeLessThan(4);
 });
 
-// The Save buttons are quiet ones: at rest the one disabled look, and once
-// there is a change the enabled .btn-quiet, which must not look disabled.
+// The Save buttons are secondary ones: at rest the flat disabled look, and
+// once there is a change the enabled .hk-btn-secondary, which must not look
+// disabled.
 test('a Save with a change to save does not look disabled', async ({ page }) => {
 	await page.goto('/settings');
 	const save = page
@@ -209,7 +232,7 @@ test('a Save with a change to save does not look disabled', async ({ page }) => 
 	const resting = await colour();
 	await page.getByLabel('ntfy URL').fill('https://ntfy.sh/repose-look');
 	await expect(save).toBeEnabled();
-	// The colour transitions over 150 ms (layout.css), so one read taken right
+	// The colour transitions over 150 ms (the kit's buttons), so one read taken right
 	// after the button is enabled can still see the resting colour: this failed
 	// once in each full run of the suite on the r20261015-2 tree and never when
 	// the file ran alone. The matcher below retries until the colour changes.

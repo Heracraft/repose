@@ -6,7 +6,6 @@
 	import { onMount, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { toast } from 'svelte-sonner';
 	import { leaveAnyway, leavingAnyway } from '$lib/leave';
 	import { getPersonal, putPersonal } from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
@@ -75,7 +74,6 @@
 			} else {
 				saved = `Saved. ${rebuildSummary(res.projects)}`.trim();
 			}
-			toast.success('machine.nix saved.');
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				conflict = true;
@@ -92,28 +90,23 @@
 	}
 </script>
 
-<!-- One of Settings' two-track rows (its h2 and fact on the left, the
-     control on the right from lg), drawn here with the same classes. The
-     editor takes the whole right track: it holds code, and a long line
-     wraps less in 790px than in 560. -->
-<section
-	class="form-section lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-x-12"
-	id="machine-nix"
->
-	<div>
-		<h2 class="text-xl font-semibold">machine.nix</h2>
-		<p class="mt-1 text-sm text-ink-muted">
-			A home-manager module every machine of your account gets. Your laptop keeps it at
-			<code class="font-mono text-compact whitespace-nowrap">~/.config/repose/machine.nix</code>.
+<!-- One of Settings' rows (set-row, styled by routes/settings): the h2
+     and the path on the left, the editor in the 40rem column on the right,
+     its state and Save under it. -->
+<section class="set-row" id="machine-nix">
+	<div class="set-head">
+		<h2 id="machine-nix-h" class="hk-h2-app">machine.nix</h2>
+		<p class="set-note">
+			Your laptop keeps it at <code class="path">~/.config/repose/machine.nix</code>.
 		</p>
-		<p class="mt-2 text-sm">
+		<p class="set-note">
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-			<a class="link" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
+			<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
 				>How it works</a
 			>
 		</p>
 	</div>
-	<div class="mt-4 min-w-0 lg:mt-0">
+	<div class="set-body">
 		<LoadState
 			status={personal ? 'ready' : loadError ? 'failed' : 'loading'}
 			error={loadError}
@@ -122,15 +115,16 @@
 		>
 			{#if personal}
 				{#if personal.opted_out && personal.opted_out.length > 0}
-					<p class="mb-3 text-sm text-ink-muted">Off on {personal.opted_out.join(', ')}.</p>
+					<p class="off">Off on {personal.opted_out.join(', ')}.</p>
 				{/if}
-				<NixEditor bind:value={text} {errorLine} label="machine.nix">
-					{#snippet footer()}
-						<!-- The state on the left, said once as it changes; the
-						     revision the account holds and Save on the right. -->
-						<span role="status">
+				<NixEditor bind:value={text} {errorLine} label="machine.nix" />
+				<div class="foot">
+					<!-- The state, said once as it changes, and the revision the
+					     account holds on one line; Save on the right. -->
+					<span class="left">
+						<span role="status" class="state">
 							{#if dirty}
-								<span class="text-ink">Unsaved changes</span>
+								<span class="dirty">Unsaved changes</span>
 							{:else if saved}
 								{saved}
 							{:else if personal?.created_at}
@@ -139,55 +133,50 @@
 								You have none yet.
 							{/if}
 						</span>
-						<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
-							{#if personal?.created_at}
-								<span class="tabular-nums">
-									{dateTime(personal.created_at)}
-									{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
-								</span>
-							{/if}
-							<button
-								type="button"
-								class="btn-quiet btn--sm"
-								disabled={saving || !dirty || conflict}
-								onclick={save}
-							>
-								{saving ? 'Saving…' : 'Save'}
-							</button>
-						</span>
-					{/snippet}
-				</NixEditor>
+						{#if personal?.created_at}
+							<span class="when">
+								{dateTime(personal.created_at)}
+								{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
+							</span>
+						{/if}
+					</span>
+					<span class="right">
+						<button
+							type="button"
+							class="hk-btn-secondary hk-btn-sm"
+							disabled={!dirty || conflict}
+							aria-disabled={saving ? 'true' : undefined}
+							onclick={() => !saving && save()}
+						>
+							{saving ? 'Saving…' : 'Save'}
+						</button>
+					</span>
+				</div>
 				{#if conflict}
-					<div class="banner banner--warn mt-3 mb-0" role="alert">
-						<p>
-							machine.nix on your account changed after this page loaded, probably pushed from your
-							laptop. Load that copy to edit it; your changes here are dropped.
-						</p>
-						<button type="button" class="btn-ghost mt-2 -ml-2" onclick={load}
+					<div class="hk-banner after" role="alert">
+						<p>machine.nix changed after this page loaded. Loading it drops your changes here.</p>
+						<button type="button" class="hk-banner-action" onclick={load}
 							>Load the account's copy</button
 						>
 					</div>
 				{/if}
 				{#if error}
-					<div class="banner banner--error mt-3 mb-0" role="alert">
-						<p class="font-mono text-compact whitespace-pre-wrap">{error}</p>
+					<div class="hk-banner hk-banner--err after" role="alert">
+						<p class="build-error">{error}</p>
 					</div>
 				{/if}
 				{#if heldNavigation}
 					<!-- The same one-row question as the ntfy URL's on Settings. -->
-					<div
-						class="banner banner--warn mt-3 mb-0 flex flex-wrap items-center justify-between gap-3"
-						role="alert"
-					>
+					<div class="hk-banner after" role="alert">
 						<p>machine.nix is not saved. Leave this page anyway?</p>
-						<div class="flex items-center gap-2">
+						<div class="ask">
 							<button
 								type="button"
-								class="btn-quiet btn--sm"
+								class="hk-btn-secondary hk-btn-sm"
 								bind:this={stayButton}
 								onclick={() => (heldNavigation = undefined)}>Stay</button
 							>
-							<button type="button" class="btn-ghost" onclick={leave}>Leave</button>
+							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
 						</div>
 					</div>
 				{/if}
@@ -195,3 +184,57 @@
 		</LoadState>
 	</div>
 </section>
+
+<style>
+	.path {
+		white-space: nowrap;
+	}
+	.off {
+		margin: 0 0 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.foot {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+		margin-top: 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.dirty {
+		color: var(--hk-text);
+	}
+	.left {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 0.75rem;
+		min-width: 0;
+		flex: 1 1 0;
+	}
+	.right {
+		display: flex;
+		align-items: center;
+		margin-left: auto;
+	}
+	.when {
+		font-variant-numeric: tabular-nums;
+	}
+	.after {
+		margin: 0.75rem 0 0;
+		justify-content: space-between;
+	}
+	.build-error {
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		white-space: pre-wrap;
+	}
+	.ask {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+</style>

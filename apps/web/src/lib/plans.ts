@@ -42,8 +42,12 @@ export interface PlanFigures {
 	diskGB: number;
 	/** Egress a month, after any introductory offer. */
 	egressGB: number;
-	/** The introductory offer, for an account's first subscription (I-497). */
-	intro?: { priceCents: number; months: number; egressGB: number };
+	/**
+	 * The introductory offer, for an account's first subscription (I-497).
+	 * `limit` is how many subscriptions may hold it at once (plans.go's
+	 * IntroLimit, Solo's first 30, I-672); the api's plans do not carry it.
+	 */
+	intro?: { priceCents: number; months: number; egressGB: number; limit?: number };
 }
 
 /** internal/billing/plans.go's Solo, Plus and Pro, in that order. */
@@ -58,7 +62,7 @@ export const PLANS: PlanFigures[] = [
 		diskGB: 100,
 		egressGB: 250,
 		// The founding price, for the first 30 Solo subscribers (I-672).
-		intro: { priceCents: 3900, months: 12, egressGB: 250 }
+		intro: { priceCents: 3900, months: 12, egressGB: 250, limit: 30 }
 	},
 	{
 		id: 'plus',
@@ -89,7 +93,9 @@ export function fromApi(p: ApiPlan): PlanFigures {
 			? {
 					priceCents: p.intro_price_cents,
 					months: p.intro_months,
-					egressGB: p.intro_egress_gb || p.egress_gb
+					egressGB: p.intro_egress_gb || p.egress_gb,
+					// The api sends no limit; the web's figure is plans.go's.
+					limit: PLANS.find((q) => q.id === p.id)?.intro?.limit
 				}
 			: undefined;
 	return {
@@ -112,6 +118,10 @@ export function memoryLine(gb: number): string {
 
 /** A plan's disk or egress: "100 GB", "1 TB". */
 export const planSize = sizeGB;
+
+/** How long an invitation holds a seat, in hours: internal/api/waitlist's
+ * HoldDuration, which the api does not send. plans.test.ts parses it. */
+export const HOLD_HOURS = 72;
 
 /** The ordinal of a place on the waitlist: "1st", "2nd", "13th", "22nd". */
 export function ordinal(n: number): string {
