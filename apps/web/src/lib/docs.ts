@@ -72,15 +72,19 @@ export function slugify(text: string): string {
 }
 
 function plain(markdown: string): string {
-	return markdown
-		.replace(/<!--[\s\S]*?-->/g, ' ')
-		.replace(/```[\s\S]*?```/g, ' ')
-		.replace(/`([^`]*)`/g, '$1')
-		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-		.replace(/^\s*[#>|-]+/gm, ' ')
-		.replace(/[*|]/g, ' ')
-		.replace(/\s+/g, ' ')
-		.trim();
+	return (
+		markdown
+			.replace(/<!--[\s\S]*?-->/g, ' ')
+			.replace(/```[\s\S]*?```/g, ' ')
+			// A table's rule row ("| --- | :---: |") is markup, not words.
+			.replace(/^\s*\|?(\s*:?-{3,}:?\s*\|)+\s*:?-*:?\s*$/gm, ' ')
+			.replace(/`([^`]*)`/g, '$1')
+			.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+			.replace(/^\s*[#>|-]+/gm, ' ')
+			.replace(/[*|]/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+	);
 }
 
 function escapeHTML(text: string): string {
@@ -308,16 +312,23 @@ export interface SearchHit {
 	doc: Doc;
 	heading?: DocHeading;
 	snippet: string;
+	/** The snippet cut into runs; a run that is one of the query's words has `hit`. */
+	parts: { text: string; hit: boolean }[];
+}
+
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
  * Every word of the query must appear on the page. Hits in a title rank
  * first, then in a heading, then in the text; the snippet is the text
- * around the first word's first match.
+ * around the first word's first match, cut at word edges.
  */
 export function search(query: string, limit = 8): SearchHit[] {
 	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
 	if (!words.length) return [];
+	const marks = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
 	const hits: { hit: SearchHit; score: number }[] = [];
 	for (const doc of DOCS) {
 		if (!words.every((w) => doc.text.includes(w))) continue;
@@ -327,15 +338,63 @@ export function search(query: string, limit = 8): SearchHit[] {
 		const heading = doc.headings.find((h) => words.some((w) => h.text.toLowerCase().includes(w)));
 		if (heading) score += 5;
 		const at = doc.text.indexOf(words[0]);
-		const start = Math.max(0, at - 50);
+		let start = Math.max(0, at - 50);
+		if (start > 0) {
+			const space = doc.plain.indexOf(' ', start);
+			start = space >= 0 && space < at ? space + 1 : at;
+		}
+		let end = Math.min(doc.plain.length, at + 90);
+		if (end < doc.plain.length) {
+			const space = doc.plain.lastIndexOf(' ', end);
+			if (space > at) end = space;
+		}
 		const snippet =
 			(start > 0 ? '…' : '') +
-			doc.plain.slice(start, at + 90).trim() +
-			(at + 90 < doc.text.length ? '…' : '');
-		hits.push({ hit: { doc, heading, snippet }, score });
+			doc.plain.slice(start, end).trim() +
+			(end < doc.plain.length ? '…' : '');
+		const parts = snippet
+			.split(marks)
+			.filter(Boolean)
+			.map((text) => ({ text, hit: words.includes(text.toLowerCase()) }));
+		hits.push({ hit: { doc, heading, snippet, parts }, score });
 	}
 	return hits
 		.sort((a, b) => b.score - a.score)
 		.slice(0, limit)
 		.map((h) => h.hit);
+}
+
+/** The length of the prefix two strings share. */
+function sharedPrefix(a: string, b: string): number {
+	let n = 0;
+	while (n < a.length && n < b.length && a[n] === b[n]) n++;
+	return n;
+}
+
+/**
+ * The docs 404's "Closest pages" (Guide B 12.22): up to `limit` pages whose
+ * slug, title or one of their words shares the longest prefix with the slug
+ * asked for, at least its first four letters (all of it when shorter), in
+ * sidebar order among equals. No page close enough gives the Quickstart.
+ */
+export function closestDocs(slug: string, limit = 6): Doc[] {
+	const want = slugify(slug);
+	const floor = Math.min(4, want.length);
+	const scored: { doc: Doc; score: number; at: number }[] = [];
+	DOCS.forEach((doc, at) => {
+		const title = slugify(doc.title);
+		// The whole slug or title beats one of its words by half a letter,
+		// so /docs/agent gives Agents before "Lend the agents your Chrome";
+		// words of three letters or fewer ("and", "the") match nothing.
+		const whole = Math.max(sharedPrefix(want, doc.slug), sharedPrefix(want, title));
+		const words = [...doc.slug.split('-'), ...title.split('-')].filter((w) => w.length > 3);
+		const part = Math.max(0, ...words.map((k) => sharedPrefix(want, k)));
+		const score = whole >= part ? whole + (whole ? 0.5 : 0) : part;
+		if (floor > 0 && score >= floor) scored.push({ doc, score, at });
+	});
+	if (!scored.length) return DOCS.filter((d) => d.slug === 'index');
+	return scored
+		.sort((a, b) => b.score - a.score || a.at - b.at)
+		.slice(0, limit)
+		.map((s) => s.doc);
 }

@@ -19,11 +19,20 @@ test('docs are readable while signed out, with search and prev/next', async ({ p
 	await expect(page).toHaveURL(/\/docs\/notifications/);
 });
 
-test('an unknown docs page says so, with a 404', async ({ page }) => {
+// The docs 404 keeps the docs shell and offers the pages closest to the
+// slug asked for, or the Quickstart when none is close (spec 2.2).
+test('an unknown docs page says so, with a 404 and the closest pages', async ({ page }) => {
 	const response = await page.goto('/docs/no-such-page');
 	expect(response?.status()).toBe(404);
-	await expect(page.getByRole('heading', { name: 'No such page' })).toBeVisible();
-	await expect(page.getByText("There's no docs page called “no-such-page”.")).toBeVisible();
+	await expect(page).toHaveTitle('Not found · repose docs');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('complementary', { name: 'Docs menu' })).toBeAttached();
+	await expect(page.locator('main').getByRole('list').getByRole('link')).toHaveText(['Quickstart']);
+
+	await page.goto('/docs/secret');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await page.locator('main').getByRole('link', { name: 'Secrets and security' }).click();
+	await expect(page).toHaveURL('/docs/secrets');
 });
 
 test('an experimental page says so under its title', async ({ page }) => {
@@ -183,4 +192,28 @@ test('the desktop sidebar fits 1440x900 and draws no scrollbar', async ({ page }
 	await expect(aside.getByRole('link', { name: 'herdr on your machine' })).toBeInViewport({
 		ratio: 1
 	});
+});
+
+// A search shows its best hits first, at the top of the list, whatever the
+// page list was scrolled to; clearing it goes back to the open page's link.
+test('search hits start at the top of the drawer', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/docs/cli');
+	await page.getByRole('button', { name: /Open the docs menu/ }).click();
+	await page.getByLabel('Search the docs').fill('snap');
+	const results = page.getByRole('list', { name: 'Search results' });
+	const first = results.getByRole('link').first();
+	await expect(first).toBeInViewport();
+	const m = await page.evaluate(() => ({
+		search: document.getElementById('docs-search')!.getBoundingClientRect().bottom,
+		hit: document.querySelector('.hits a')!.getBoundingClientRect().top
+	}));
+	expect(m.hit).toBeGreaterThanOrEqual(m.search);
+	await expect(results.locator('mark').first()).toHaveText(/snap/i);
+	await page.getByLabel('Search the docs').fill('');
+	await expect(
+		page
+			.getByRole('navigation', { name: 'Docs', exact: true })
+			.getByRole('link', { name: 'CLI reference' })
+	).toBeInViewport();
 });

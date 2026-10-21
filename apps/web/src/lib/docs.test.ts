@@ -5,6 +5,7 @@ import {
 	MOVED,
 	NOBREAK_MAX,
 	SECTIONS,
+	closestDocs,
 	docBySlug,
 	highlightNix,
 	movedDoc,
@@ -90,6 +91,25 @@ describe('user docs', () => {
 		expect(search('zzzz-not-a-word')).toEqual([]);
 		// A line commented out in a page is not searchable.
 		expect(search('live product for other people')).toEqual([]);
+	});
+
+	it('cuts a snippet at word edges, without table rules, and marks the words', () => {
+		for (const q of ['snap', 'cores memory', 'snapshot']) {
+			for (const hit of search(q)) {
+				expect(hit.snippet).not.toMatch(/-{3,}/);
+				expect(hit.parts.map((p) => p.text).join('')).toBe(hit.snippet);
+				const body = hit.snippet.replace(/^…/, '').replace(/…$/, '');
+				const at = hit.doc.plain.indexOf(body);
+				expect(at, `${q} in ${hit.doc.slug}`).toBeGreaterThanOrEqual(0);
+				if (at > 0) expect(hit.doc.plain[at - 1]).toMatch(/\s/);
+				const end = at + body.length;
+				if (end < hit.doc.plain.length) expect(hit.doc.plain[end]).toMatch(/\s/);
+				expect(hit.parts.some((p) => p.hit)).toBe(true);
+				for (const p of hit.parts.filter((p) => p.hit)) {
+					expect(q.split(' ')).toContain(p.text.toLowerCase());
+				}
+			}
+		}
 	});
 
 	it('sends a moved page on to its new slug', () => {
@@ -234,5 +254,36 @@ describe('user docs', () => {
 		const html = docBySlug('tutorial-git')!.html;
 		expect(html).toContain('<code class="language-text">');
 		expect(html).not.toContain('class="line"');
+	});
+});
+
+// The docs 404 lists the pages closest to the slug asked for (spec 2.2).
+describe('closestDocs', () => {
+	const slugs = (s: string) => closestDocs(s).map((d) => d.slug);
+
+	it('ranks the longest shared prefix first', () => {
+		expect(slugs('secret')[0]).toBe('secrets');
+		expect(slugs('cli-ref')[0]).toBe('cli');
+	});
+
+	it('matches a word of a title or slug', () => {
+		expect(slugs('chrome')).toContain('your-chrome');
+		expect(slugs('lifecycl')).toContain('lifecycle');
+	});
+
+	it('puts a whole slug before a word of a title, and skips short words', () => {
+		expect(slugs('agent')[0]).toBe('agents');
+		expect(slugs('and')).toEqual(['index']);
+	});
+
+	it('holds to six pages, in sidebar order among equals', () => {
+		const tutorials = DOCS.filter((d) => d.slug.startsWith('tutorial-')).map((d) => d.slug);
+		expect(slugs('tutorial')).toEqual(tutorials.slice(0, 6));
+		expect(closestDocs('tutorial').length).toBeLessThanOrEqual(6);
+	});
+
+	it('falls back to the Quickstart when nothing shares four letters', () => {
+		expect(slugs('zzzz')).toEqual(['index']);
+		expect(slugs('')).toEqual(['index']);
 	});
 });

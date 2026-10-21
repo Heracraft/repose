@@ -225,7 +225,7 @@ Once a week the machine deletes the nix store paths it downloaded or built itsel
 
 ## Seeing what the machine is doing
 
-The dashboard's **Usage** card draws four charts over the last hour, day or week:
+The project page's **Usage** section draws four charts over the last hour, day or week:
 
 - **CPU**: the share of the machine's cores in use.
 - **Memory**: memory in use without the page cache, of the size's memory.

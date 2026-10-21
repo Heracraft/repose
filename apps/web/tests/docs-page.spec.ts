@@ -80,25 +80,50 @@ test("an experimental page's banner links to the feedback board", async ({ page 
 	).toHaveAttribute('href', 'https://repose.fider.io');
 });
 
-// On a phone the Copy button sits in the code block's top right corner, in a
-// strip of its own above the first line, so it never hides that line's end.
-test('on a phone the Copy button sits in the code block corner, over no code', async ({ page }) => {
+// In a column narrower than 624px (a phone, or 768 to about 1000px wide
+// beside the sidebar) the Copy button sits in the code block's top right
+// corner, in a strip of its own above the first line, so it never hides
+// that line's end.
+for (const width of [390, 768]) {
+	test(`at ${width} the Copy button sits in the code block corner, over no code`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 844 });
+		await page.goto('/docs');
+		const m = await page
+			.locator('article .code')
+			.first()
+			.evaluate((el) => {
+				const pre = el.querySelector('pre')!.getBoundingClientRect();
+				const copy = el.querySelector('.copy')!.getBoundingClientRect();
+				const line = el.querySelector('.l1')!.getBoundingClientRect();
+				return {
+					top: copy.top - pre.top,
+					right: pre.right - copy.right,
+					lineBelowCopy: line.top - copy.bottom
+				};
+			});
+		expect(m.top).toBeLessThanOrEqual(8);
+		expect(m.right).toBeLessThanOrEqual(8);
+		expect(m.lineBelowCopy).toBeGreaterThanOrEqual(0);
+	});
+}
+
+// Two panes that scroll under one heading get two names (axe landmark-unique).
+test('scrolling panes on a phone have unique names', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
-	await page.goto('/docs');
-	const m = await page
-		.locator('article .code')
-		.first()
-		.evaluate((el) => {
-			const pre = el.querySelector('pre')!.getBoundingClientRect();
-			const copy = el.querySelector('.copy')!.getBoundingClientRect();
-			const line = el.querySelector('.l1')!.getBoundingClientRect();
-			return {
-				top: copy.top - pre.top,
-				right: pre.right - copy.right,
-				lineBelowCopy: line.top - copy.bottom
-			};
-		});
-	expect(m.top).toBeLessThanOrEqual(8);
-	expect(m.right).toBeLessThanOrEqual(8);
-	expect(m.lineBelowCopy).toBeGreaterThanOrEqual(0);
+	for (const path of ['/docs', '/docs/cli', '/docs/tutorial-herdr']) {
+		await page.goto(path);
+		const names = await page
+			.locator('article [role="region"]')
+			.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+		expect(names.length, path).toBeGreaterThan(0);
+		expect(new Set(names).size, path).toBe(names.length);
+	}
+});
+
+// The plan cards sit under the h1, so their names are h2s (axe heading-order).
+test('the Pricing page names its plans one level under the title', async ({ page }) => {
+	await page.goto('/docs/billing');
+	await expect(page.getByTestId('plan-solo').getByRole('heading', { level: 2 })).toHaveText('Solo');
 });

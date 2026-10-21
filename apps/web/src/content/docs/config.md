@@ -67,7 +67,7 @@ repose config edit            # edit in $EDITOR, apply on save
 repose config apply ./repose.nix
 ```
 
-The dashboard's Config page has the same file under its **Nix** tab. While the menu manages the project, that editor is read-only until **Edit as Nix**.
+The dashboard's Config page has the same file under its **Nix** tab. While the menu manages the project, that editor is read-only until **Edit as Nix**. Going to another page with an edit you have not applied asks first; **Stay** keeps the edit.
 
 ```nix
 { pkgs, ... }:
