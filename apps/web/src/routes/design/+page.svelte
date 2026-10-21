@@ -425,7 +425,7 @@
 		gap: 1.25rem;
 		justify-items: start;
 	}
-	.stack > :global(.hk-code) {
+	.stack > :global(.hk-code:not(.cl)) {
 		width: 100%;
 	}
 	.meters {

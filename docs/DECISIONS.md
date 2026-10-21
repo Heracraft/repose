@@ -24412,3 +24412,18 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   I-578's menu contents, I-655's and I-679's header places, the page orders
   and where questions sit of I-664, I-680 and I-693, and I-837's
   DESIGN-LANGUAGE page list.
+- *Amended 2026-10-21, owner review (polish).* Command panes and command
+  lines are as wide as their longest command: `CommandList` from 22rem to
+  40rem, `CodeCopy` from 20rem to 40rem, both capped at the column on a
+  phone, so a Copy sits beside its command. At 1440 Connect was a 872px
+  pane with the first Copy 690px from `repose run`; it is now 352px, and
+  the Settings install line, the landing's two steps, the empty /projects
+  commands and /design follow from the shared components. In dark the
+  selected item of every joined control (theme switch, project and event
+  filters, Menu and Nix, Hour, Day and Week) is a quiet zinc-800 fill with
+  a zinc-700 inset hairline and a soft shadow, as the recruiting dashboard
+  draws it; the zinc-400 ring read as a bright frame. Selection stays more
+  than colour: the selected label is #fafafa over the others' #8b8b94, a
+  3.2:1 step in lightness at one weight, and forced colours keep the 2px
+  Highlight edge. Light is unchanged. design.spec pins the dark fill,
+  hairline, label step and equal weight, and Connect's width.

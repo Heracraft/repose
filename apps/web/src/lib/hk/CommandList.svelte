@@ -68,6 +68,14 @@
 </div>
 
 <style>
+	/* The pane is as wide as its longest row, from 22rem to 40rem, so each
+	   Copy sits beside its command and not across the page from it. On a
+	   phone it takes the column; a longer command scrolls inside it. */
+	.hk-code.cl {
+		width: fit-content;
+		min-width: min(100%, 22rem);
+		max-width: min(100%, 40rem);
+	}
 	.title {
 		color: var(--hk-code-key);
 		font-weight: 500;

@@ -166,6 +166,76 @@ test.describe('signed in', () => {
 		expect(other.edge.endsWith(other.page)).toBe(true);
 	});
 
+	// In dark the selected item of a joined control is a quiet zinc-800 fill
+	// with a zinc-700 inset hairline, not the zinc-400 ring the owner called
+	// ugly (2026-10-21); its label stays 3:1 lighter than the others, so the
+	// selection is a lightness step at one weight, not hue alone.
+	test('in dark a selected joined item is a quiet fill with a 3:1 lighter label', async ({
+		page
+	}) => {
+		const p = await project({
+			name: 'dark-seg-app',
+			remote_url: 'github.com/heracraft/dark-seg-app'
+		});
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await page.goto(`/projects/${p.id}/usage`);
+		const range = page.locator('.hk-seg--buttons').first();
+		await expect(range.locator('button[aria-pressed="true"]')).toBeVisible();
+		const look = await range.evaluate((el) => {
+			const lum = (c: string) => {
+				const [r, g, b] = c
+					.match(/\d+(\.\d+)?/g)!
+					.slice(0, 3)
+					.map(Number);
+				const f = (v: number) => {
+					const s = v / 255;
+					return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+				};
+				return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+			};
+			const on = el.querySelector('button[aria-pressed="true"]')!;
+			const off = el.querySelector('button[aria-pressed="false"]')!;
+			const s = getComputedStyle(on);
+			return {
+				fill: s.backgroundColor,
+				shadow: s.boxShadow,
+				step: (lum(s.color) + 0.05) / (lum(getComputedStyle(off).color) + 0.05),
+				weights: [s.fontWeight, getComputedStyle(off).fontWeight]
+			};
+		});
+		expect(look.fill).toBe('rgb(39, 39, 42)');
+		expect(look.shadow).toContain('rgb(63, 63, 70)');
+		expect(look.shadow).not.toContain('rgb(161, 161, 170)');
+		expect(look.step).toBeGreaterThanOrEqual(3);
+		expect(look.weights[0]).toBe(look.weights[1]);
+	});
+
+	// The Connect pane is as wide as its commands (owner, 2026-10-21): at
+	// 1440 each Copy sits within a few characters of the longest command.
+	test('Connect is as wide as its commands, not the column', async ({ page }) => {
+		const p = await project({
+			name: 'connect-width-app',
+			remote_url: 'github.com/heracraft/connect-width-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(`/projects/${p.id}`);
+		const pane = page.getByRole('list', { name: 'Connect' }).locator('xpath=..');
+		await expect(pane).toBeVisible();
+		const m = await pane.evaluate((el) => {
+			const col = el.parentElement!.getBoundingClientRect().width;
+			const w = el.getBoundingClientRect().width;
+			const gaps = [...el.querySelectorAll('li')].map((li) => {
+				const code = li.querySelector('code')!.getBoundingClientRect();
+				const copy = li.querySelector('button')!.getBoundingClientRect();
+				return copy.left - code.right;
+			});
+			return { col, w, gaps };
+		});
+		expect(m.w).toBeLessThanOrEqual(640);
+		expect(m.w).toBeLessThan(m.col);
+		for (const g of m.gaps) expect(g).toBeLessThan(200);
+	});
+
 	// The places a container could clip a ring or a custom ring replaces
 	// the outline (critique-guide 3): a table row's link, a filter link, a
 	// config tab and the focused Nix editor each show one on the Tab path.
