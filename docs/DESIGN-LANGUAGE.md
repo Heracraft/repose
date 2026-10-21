@@ -99,7 +99,8 @@ keeps the row's height by a negative block margin (`hk-btn-ghost--touch`).
 A link that stands alone on its line (a project's name over its questions,
 "2 more on Questions", a docs link beside a section head) takes `hk-tap`
 (repose): a 44px inline-flex box whose negative block margin gives back all
-but one line, so its line keeps its height. Links inside running text are
+but one line, so its line keeps its height; on a kit `hk-more` link it
+binds the arrow with a no-break space. Links inside running text are
 exempt (WCAG 2.5.8's inline exception), and so is a row link whose `::after`
 covers its row. `design.spec.ts` "touch targets" measures the controls and
 the standalone links of `header` and `main` on every dashboard page at 390

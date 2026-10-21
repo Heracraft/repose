@@ -110,7 +110,7 @@
 	>
 		{#if personal}
 			<div class="editor">
-				<NixEditor bind:value={text} {errorLine} label="machine.nix" floor="var(--mn-floor)" />
+				<NixEditor bind:value={text} {errorLine} label="machine.nix" floor="var(--hk-nix-floor)" />
 			</div>
 			<div class="foot">
 				<!-- The state, said once as it changes, and the revision the
@@ -193,11 +193,11 @@
 	}
 	/* The editor is the page's subject: room to write in. */
 	.editor {
-		--mn-floor: 20rem;
+		--hk-nix-floor: 20rem;
 	}
 	@container dash (min-width: 640px) {
 		.editor {
-			--mn-floor: 28rem;
+			--hk-nix-floor: 28rem;
 		}
 	}
 	.off {

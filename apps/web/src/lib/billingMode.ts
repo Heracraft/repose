@@ -76,8 +76,8 @@ export interface FooterLines {
 	/** The state line: text, or a link to /billing. */
 	state: string;
 	link: boolean;
-	/** The dot before the state line: amber for a failed payment, red once suspended (kit 7). */
-	dot?: 'warn' | 'err';
+	/** The tone of the dot before the state line: amber for a failed payment, red once suspended (kit 7). */
+	tone?: 'warn' | 'err';
 }
 
 /**
@@ -93,12 +93,12 @@ export function footerLines(
 	if (mode === 'unknown' || mode === 'off' || !billing) return undefined;
 	const sub = billing.subscription;
 	const name = planName(billing, sub?.plan);
-	const plan = (state: string, link = false, dot?: 'warn' | 'err'): FooterLines => ({
+	const plan = (state: string, link = false, tone?: 'warn' | 'err'): FooterLines => ({
 		label: 'Plan',
 		name,
 		state,
 		link,
-		dot
+		tone
 	});
 	const noPlan = (state: string): FooterLines => ({
 		label: 'Plan',
@@ -142,8 +142,8 @@ export interface PlanLine {
 	/** The sentence before the link. */
 	text: string;
 	link: string;
-	/** As FooterLines.dot. */
-	dot?: 'warn' | 'err';
+	/** As FooterLines.tone. */
+	tone?: 'warn' | 'err';
 }
 
 /** The phone's one plan line under the strip, only in trouble (ia-final 1.3). */
@@ -155,11 +155,11 @@ export function planLine(mode: BillingMode, { billing }: BillingFacts): PlanLine
 			return {
 				text: name ? `${name} · Payment failed` : 'Payment failed',
 				link: 'Update card',
-				dot: 'warn'
+				tone: 'warn'
 			};
 		}
 		case 'suspended':
-			return { text: 'Suspended', link: 'Update card and pay', dot: 'err' };
+			return { text: 'Suspended', link: 'Update card and pay', tone: 'err' };
 		case 'none':
 			return { text: 'No plan', link: 'Choose a plan' };
 		case 'waitlist':

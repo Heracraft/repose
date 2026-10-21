@@ -282,7 +282,7 @@
 				{#if !foot}
 					<span class="hk-skel skel-state"></span>
 				{:else}
-					{#if foot.dot}<span class="hk-dot hk-dot--{foot.dot}" aria-hidden="true"></span>{/if}
+					{#if foot.tone}<span class="hk-dot hk-dot--{foot.tone}" aria-hidden="true"></span>{/if}
 					{#if foot.link}
 						<a href={resolve('/billing')}>{foot.state}</a>
 					{:else}
@@ -297,7 +297,7 @@
 <div class="plan-line" class:plan-line--reserve={!onBilling && billingStore.reserve}>
 	{#if line}
 		<p>
-			{#if line.dot}<span class="hk-dot hk-dot--{line.dot}" aria-hidden="true"></span>{/if}
+			{#if line.tone}<span class="hk-dot hk-dot--{line.tone}" aria-hidden="true"></span>{/if}
 			<span>{line.text}</span>
 			<a href={resolve('/billing')}>{line.link}</a>
 		</p>

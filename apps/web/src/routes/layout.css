@@ -455,10 +455,10 @@ body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
 	   waiting on you (amber) a square, gone wrong (red) a diamond, so a
 	   rail row that waits is not read as one that runs (review IA). */
 	.hk-dot--warn {
-		border-radius: 1px;
+		border-radius: 0;
 	}
 	.hk-dot--err {
-		border-radius: 1px;
+		border-radius: 0;
 		transform: rotate(45deg) scale(0.85);
 	}
 	/* Joined controls: the selected item takes a Highlight edge, since its

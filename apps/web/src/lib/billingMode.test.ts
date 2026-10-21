@@ -49,9 +49,9 @@ function view(f: BillingFacts, running = 28) {
 	return {
 		mode,
 		foot: foot
-			? [foot.label, foot.name ?? '', foot.state, foot.link ? 'link' : '', foot.dot ?? '']
+			? [foot.label, foot.name ?? '', foot.state, foot.link ? 'link' : '', foot.tone ?? '']
 			: null,
-		line: line ? `${line.text} / ${line.link}${line.dot ? ` (${line.dot})` : ''}` : null
+		line: line ? `${line.text} / ${line.link}${line.tone ? ` (${line.tone})` : ''}` : null
 	};
 }
 
