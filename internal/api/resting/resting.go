@@ -208,11 +208,14 @@ const quietSQL = `(not ` + idle.UsedSQL + ` and cpu_ns < $5 and net_rx + net_tx 
 //
 // An open `repose-ask` question holds a machine awake (DECISIONS I-822).
 // A question is stored with a wall-clock expiry inside the guest
-// (internal/guestd/questions), and the wake steps that clock forward by
-// the whole rest: a machine that rested an hour would expire every open
-// question in the second the user came back, and the agent waiting on one
-// would be told nobody answered. The agent is in `needs_input`, which the
-// rule otherwise lets rest, so this term is what makes that safe.
+// (internal/guestd/questions), and the guest's clock keeps running while
+// it rests -- measured on host-stg-01 across a 35 minute pause -- while
+// the sweep that expires questions cannot, because the vCPUs are
+// stopped. So a machine that rested an hour comes back with every open
+// question already past its expiry, and the first sweep after the wake
+// closes them: the agent waiting on one is told nobody answered. The
+// agent is in `needs_input`, which the rule otherwise lets rest, so this
+// term is what makes that safe.
 const candidatesSQL = `with cand as (
 	select p.id, p.host_id, p.guest_id from projects p join hosts h on h.id = p.host_id
 	 where p.state = 'running' and p.destroyed_at is null and not p.host_unreachable

@@ -24245,24 +24245,43 @@ and an idle machine is not free -- `.claude-wrapped` at its prompt took
   for the rest of the shape: a guest whose hypervisor is paused keeps its
   bbolt state `running`, because the state enum is fixed.
 - *Off until a host is told otherwise.* hostd names `pause` in
-  `Hello.features` only where `repose.host.pauseIdle` is set (`--pause-idle`), so the
-  api pauses nothing on a host that has not been switched on. This is
-  I-652's and I-686's pattern, and it exists because of the one thing
-  nobody has measured: I-652 records that with Cloud Hypervisor 53 and
-  virtiofsd 1.14 a VM **must not be resumed after a snapshot**, since its
-  virtio-fs stops answering. A plain pause and resume of a guest with two
-  vhost-user devices is a different path and is measured on no repose
-  host. Until it is, the switch is how a host opts in, and the live check
-  in `../workstreams/18-idle-pause.md` is what closes it.
+  `Hello.features` only where `repose.host.pauseIdle` is set
+  (`--pause-idle`), so the api pauses nothing on a host that has not been
+  switched on. This is I-652's and I-686's pattern.
+- *The mechanism is measured now* (host-stg-01, 2026-10-21, hostd
+  6ff9739, Cloud Hypervisor 53, a `small` guest with both vhost-user
+  devices). I-652 records that a VM **must not be resumed after a
+  snapshot**, because its virtio-fs stops answering; a plain pause is a
+  different path and this is what it does. Held 60 s, 120 s, 300 s and
+  2,101 s: `/nix/store` still read after every one and a binary from it
+  still ran, the boot id never changed, both tmux sessions kept their
+  creation times, and a loop writing a timestamp every two seconds came
+  back with a gap of exactly the pause (61, 300, 2,101 s). `vm.resume`
+  took **9 to 10 ms**, whatever the hold. The figures and what is still
+  owed are `../workstreams/18-idle-pause.md` §7.
 - *The one promise it breaks.* An outbound connection the guest left idle
-  across a rest may be gone: repose's Azure NAT gateway drops a flow
-  idle for 30 minutes (`nat_idle_timeout_minutes`), and a remote server
-  drops one on its own timeout, on any host. Processes, memory and files
-  survive; a socket that timed out does not, and the job on the other end
-  of it must reconnect. Whether Claude Code, Codex and an MCP server do
-  reconnect is unverified, which is why the rule's network term is 64 KiB
-  a minute rather than zero, why `keep_awake` exists (I-820), and why
-  `lifecycle.md` says it in the user's own words.
+  across a rest does not survive one: an echo connection held open across
+  the 2,101 s pause above was gone when the guest came back, and the
+  program holding it read the close rather than hanging (one trial, one
+  far end, so which of the Azure NAT gateway's 30 minutes
+  (`nat_idle_timeout_minutes`) and the far end's own timeout ended it is
+  not separated). Processes, memory and files survive; a socket does not,
+  and the job on the other end of it must reconnect. Whether Claude Code,
+  Codex and an MCP server do reconnect is still unverified, which is why
+  the rule's network term is 64 KiB a minute rather than zero, why
+  `keep_awake` exists (I-820), and why `lifecycle.md` says it in the
+  user's own words.
+- *The guest's clock does not stop,* which the first draft of this entry
+  and of I-822 had wrong. `vm.pause` stops the vCPUs, not the TSC the
+  guest reads time from: across a 120 s pause and a 2,101 s pause the
+  guest's `CLOCK_REALTIME` stayed inside a host-clock bracket taken
+  around the reading, and its uptime advanced by the full wall time.
+  I-233's 10 s of lag is a *snapshot and restore*, where the saved clock
+  is restored with the image, and the freeze's own step is for that path.
+  The step the wake does on this path is therefore a safety net that
+  corrects nothing, and the consequences I-822 names are **not** caused by
+  a clock jump: they are caused by real time passing with nothing in the
+  guest running.
 - *Metrics.* `repose_host_guests_resting`,
   `repose_host_guest_pause_total{reason,outcome}`,
   `repose_host_guest_wake_seconds` and

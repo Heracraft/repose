@@ -114,9 +114,9 @@ Its state is still `running`, and nothing is ended: every process, open file and
 
 Anything that reaches the machine wakes it first, and that first connection takes a second or two: `attach`, `run`, `ssh`, `code`, your editor, a forwarded port, a [secret](/docs/secrets) you set, a configuration change, a [scheduled job](/docs/machine#scheduled-jobs) on the machine coming due.
 
-The machine's clock stops with its cores and is set forward to the real time as it wakes. A program of yours that compares wall-clock times sees the frozen stretch as time that passed, and anything whose deadline fell inside it runs at the wake.
+The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
-Connections the machine itself had open to the internet may not survive. The server drops an outbound connection idle for 30 minutes, and the far end can drop one sooner; a program that reconnects carries on, and one that doesn't has to be restarted.
+Connections the machine itself had open to the internet don't survive a long freeze. The server drops an outbound connection idle for 30 minutes and the far end can drop one sooner, and the program on the machine sees the connection closed when it next uses it: one that reconnects carries on, one that doesn't has to be restarted. Keep the machine awake for a job that has to hold a connection open.
 
 To keep one machine out of this, [keep it awake](/docs/config#keeping-a-machine-awake).
 

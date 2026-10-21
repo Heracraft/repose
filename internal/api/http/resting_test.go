@@ -188,12 +188,13 @@ func TestRestRuleHoldsEveryTerm(t *testing.T) {
 			r.upFor(t, time.Minute)
 		}},
 		// An open repose-ask question holds a machine awake (I-822): the
-		// wake steps the guest's clock forward by the whole rest, which
-		// would expire every open question in the second the user came
-		// back and tell the agent nobody answered. The agent is in
-		// needs_input, which the rule otherwise lets rest, so this term
-		// is what makes that safe -- and it was the one term with no
-		// test.
+		// guest's clock keeps running while it rests while the sweep
+		// that expires questions cannot, so a machine that rested an
+		// hour comes back with every open question already past its
+		// expiry and the agent waiting on one is told nobody answered.
+		// The agent is in needs_input, which the rule otherwise lets
+		// rest, so this term is what makes that safe -- and it was the
+		// one term with no test.
 		{"an open repose-ask question", quiet, func(t *testing.T, r *restingEnv) {
 			if _, err := r.e.h.Pool.Exec(r.e.h.Ctx,
 				`insert into questions (id, project_id, guest_id, event_id, agent, text, state, expires_at)

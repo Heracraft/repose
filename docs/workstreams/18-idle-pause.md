@@ -97,9 +97,10 @@ A running project may rest when all of these hold:
 - `keep_awake` is false;
 - no op is open for it, and no gateway session is open;
 - no `repose-ask` question of its is still open (I-822): a question
-  carries a wall-clock expiry inside the guest, and the wake steps that
-  clock forward by the whole rest, so a machine that rested an hour would
-  expire every open question in the second the user came back;
+  carries a wall-clock expiry inside the guest, the guest's clock keeps
+  running while it rests (measured, §7) and the sweep that expires
+  questions cannot, so a machine that rested an hour comes back with
+  every open question already past its expiry;
 - each of its last 15 one-minute samples has `guestd_ok`,
   `ssh_sessions = 0`, `tmux_clients = 0`, every agent in `idle` or
   `needs_input` (anything else, `unknown` included, counts as working),
@@ -306,23 +307,22 @@ otherwise) and `ops/alerts.yaml` the wake alert.
       and `run-and-attach.md` both say "a second or two" and must be
       corrected if the figures disagree; `GuestWakeSlow`'s 5 s threshold
       rests on the same guess.
-- [ ] **That a guest with two vhost-user devices answers at all after a
-      plain `vm.pause` and `vm.resume`.** This gates everything: I-652
-      records that a *snapshotted* VM must not be resumed, because its
-      virtio-fs stops answering, and every program in a guest runs from
-      `/nix/store` over virtio-fs. A plain pause is a different path and
-      is measured nowhere. **Owed**; it is why `repose.host.pauseIdle` is
-      off by default.
-- [ ] The guest's clock after a wake, and whether a user timer due during
-      a rest fires. **Owed, the same live run.** hostd arms its wake 60 s
-      before the elapse it read, assuming systemd recalculates a calendar
-      timer after a `CLOCK_REALTIME` step; that assumption is untested.
-- [ ] An outbound connection idle across a rest: what breaks after 25, 35
-      and 60 minutes, and whether Claude Code and an MCP server recover.
-      **Owed.** `lifecycle.md` states the 30-minute NAT drop from
-      `infra/azure/modules/network/variables.tf:94`; the host keeps its
-      conntrack entry for 86,400 s, so packets after the wake are dropped
-      rather than reset and the job hangs instead of failing.
+- [x] **That a guest with two vhost-user devices answers at all after a
+      plain `vm.pause` and `vm.resume`.** Measured on host-stg-01,
+      2026-10-21: it answers after every hold up to 35 minutes, 1,216
+      store paths listed and a binary from the store run, with the boot id
+      unchanged. §7 has the figures. I-652's finding is a *snapshotted*
+      VM, a different path.
+- [x] The guest's clock after a wake, and whether a user timer due during
+      a rest fires. Measured (§7): the clock does not stop, so there is
+      nothing to correct and the step is a safety net; a timer due inside
+      a 300 s pause fired at the resume, 221 s late, which is what makes
+      hostd's armed wake necessary rather than an optimisation.
+- [~] An outbound connection idle across a rest. Measured at 35 minutes
+      (§7): gone, and the program read it closed rather than hanging.
+      Still owed: a 25-minute hold, to separate the NAT gateway's 30
+      minutes from the far end's own timeout, and what Claude Code and an
+      MCP server do with the close.
 - [x] `GuestdLost` does not page for a resting machine. Evidence: the
       promtool case "GuestdLost stays quiet for a host whose guests are
       frozen", shown red by flipping `repose_host_guestd_lost` to 1.
@@ -390,3 +390,55 @@ Azure still calls the VM running. The restart is the owner's. It is worth
 an incident note of its own: nothing alerted, and a host that loses its
 NIC and never comes back is what `HostUnreachable` and `HostScrapeDown`
 exist for.
+
+## 7. What the host said (host-stg-01, 2026-10-21)
+
+Measured on the staging host after a reboot brought it back: a
+`Standard_D8s_v7`, hostd `6ff9739` (not this branch -- the pause is
+`vm.pause` on the guest's own API socket, so the mechanism needs nothing
+of this branch deployed), Cloud Hypervisor 53, one `small` guest built
+from base `793e3c1f` with both vhost-user devices and the login share.
+Pauses driven with `curl -X PUT .../vm.pause` and `vm.resume` on
+`/var/lib/repose/guests/<id>/ch.sock`; the guest read through `hostdev
+exec`.
+
+| | |
+|---|---|
+| Boot, for scale | 9,245 ms total (volume 757, prepare 319, ready 4,111, paths 1,350, setup 2,706) |
+| Holds | 60 s, 120 s, 300 s, 2,101 s (35 min) |
+| **`vm.resume`** | **9 to 10 ms**, the same at every hold |
+| **virtio-fs after the resume** | **answers** at every hold: 1,216 store paths listed and a binary from the store ran (`uname -r`) |
+| Boot id | unchanged across every pause: it never rebooted |
+| A process that counted | came back with a gap of exactly the pause (61, 300, 2,101 s) |
+| tmux | both sessions alive, with their original creation times |
+| **The guest's clock** | **does not stop.** After 120 s and after 2,101 s the guest's `CLOCK_REALTIME` fell inside a host-clock bracket taken around the reading, and its uptime advanced by the full wall time |
+| A timer due during a rest | **fires at the resume, late by the overshoot**: due at `…659`, paused `…580` to `…880`, fired `…880` -- 221 s late |
+| An outbound connection | **gone.** An echo connection to the internet that answered a probe before the pause read closed after the 2,101 s one |
+
+What this settles:
+
+- **The gate.** I-652's "a VM must not be resumed" is a *snapshotted* VM,
+  whose virtio-fs stops answering. A plain pause is a different path and
+  it is sound: every program in a guest runs from `/nix/store` over
+  virtiofs, and it still did after 35 minutes paused.
+- **The clock step corrects nothing** on this path, which the first draft
+  of I-818 and I-822 had wrong in its mechanism. The consequences those
+  entries name are real but their cause is real time passing with nothing
+  in the guest running, not a clock that jumps. The step stays as a safety
+  net and the reasoning is corrected where it was written down.
+- **hostd's armed wake is necessary.** Without it a scheduled job is late
+  by the length of the rest, which is `machine.md`'s promise broken; 221 s
+  late on a 300 s pause is the measurement.
+- **A held outbound connection does not survive a long rest**, and the
+  program saw it closed rather than hanging. One trial against one far
+  end, so this does not separate the Azure NAT gateway's 30 minutes from
+  the far end's own timeout, and it says nothing yet about whether Claude
+  Code or an MCP server reconnects.
+
+Still owed, and none of it is the mechanism: the wake as a user feels it
+end to end (this branch's hostd is not on that host, so the figure here is
+the resume alone, and the 9 ms says the cost is the control-plane round
+trips rather than the hypervisor); the same matrix with the branch's own
+`PauseGuest`/`WakeGuest` and `hostd pause|wake` against a real control
+socket; a 25-minute hold to separate the NAT's timeout from a far end's;
+and what the agents do with a dropped socket.

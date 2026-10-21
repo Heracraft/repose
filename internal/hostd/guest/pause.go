@@ -442,10 +442,17 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 		m.log(g).Error("wake failed", "event", "guest_resting", "phase", "resume", "err", err.Error())
 		return nil, errf(CodeGuestUnresponsive, "cloud-hypervisor vm.resume: %v", err)
 	}
-	// The guest's clock stopped with its vCPUs; set it to the host's
-	// before anything in the guest reads it (I-233 saw 10 s of drift
-	// after a short freeze). This is the freeze's own step, through the
-	// Exec that already exists rather than a new guestd request (S5).
+	// The clock step, and the desktop's stamps with it, through the Exec
+	// that already exists rather than a new guestd request (S5).
+	//
+	// The step corrects nothing on this path and is kept as a safety net:
+	// measured on host-stg-01 (2026-10-21, CH 53), a plain vm.pause does
+	// not stop the clock the guest reads -- it stops the vCPUs, not the
+	// TSC -- so across a 120 s and a 2,101 s pause the guest's
+	// CLOCK_REALTIME stayed inside a host bracket and its uptime advanced
+	// by the full wall time. I-233's 10 s of lag is a snapshot and
+	// restore, where the clock comes back with the image; that is the
+	// freeze's path, not this one.
 	// From here the vCPUs are running, so the guest is not resting
 	// whatever guestd does. The mark goes now rather than at the end:
 	// left behind, it makes the sampler repeat the pre-pause signals for
@@ -471,8 +478,11 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	// minutes idle; after a rest of an hour those stamps read an hour
 	// old the moment the clock moves, and the check would kill the
 	// browser -- its tabs, its logins and the agents' CDP connections --
-	// within a minute of the user coming back. Nobody was idle while the
-	// machine was asleep, so the wake restores the baseline.
+	// within a minute of the user coming back -- not because the clock
+	// jumped, which it does not (above), but because the time really
+	// passed and nothing in the guest could touch a stamp while it did.
+	// Nobody was idle while the machine was asleep, so the wake restores
+	// the baseline.
 	//
 	// The stamps are touched by path and left dev's, which is what
 	// repose-desktop-stamp does (I-727): that command is in the desktop
