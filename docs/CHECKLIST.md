@@ -101,12 +101,15 @@ entry and this list with it. Counts as of 2026-10-21.
       '\b(text|bg|border|ring|fill|stroke|outline|decoration|from|via|to|divide|placeholder|caret|accent)-(zinc|gray|slate|stone|neutral|blue|sky|cyan|teal|emerald|green|lime|yellow|amber|orange|red|rose|pink|fuchsia|purple|violet|indigo)-[0-9]{2,3}\b'
       $W --glob '*.svelte'` prints 0 lines; `rg -n '#[0-9a-fA-F]{3,8}\b' $W
       --glob '*.{svelte,css}' --glob '!**/lib/hk/**' --glob
-      '!**/routes/layout.css' --glob '!**/routes/design/**'` prints 0 lines,
+      '!**/routes/layout.css' --glob '!**/routes/design/**' --glob
+      '!**/components/landing/**'` prints 0 lines,
       and `rg -n '#[0-9a-fA-F]{3,8}\b' $W/routes/layout.css` prints only the
       first-paint pair, 6 lines (`--page` and `--ink` in light, the dark
       media block and `[data-theme='dark']`); `rg -n
       'var\(--(page|ink|surface|sunken|rule|accent|frost|sh-|pic-)' $W --glob
-      '*.svelte'` prints 0 lines.
+      '*.svelte' --glob '!**/components/landing/**'` prints 0 lines. The
+      landing's drawn pictures (`lib/components/landing`) keep their own
+      palette, mapped onto the kit in `landing/pictures.css` (I-843).
 - [ ] Status colour stays in badges, dots and banners. Evidence: `rg -n
       'color:\s*var\(--hk-(ok|warn|err)\)' $W --glob '*.{svelte,css}' --glob
       '!**/lib/hk/**' --glob '!**/routes/design/**'` prints only the outage
@@ -114,8 +117,11 @@ entry and this list with it. Counts as of 2026-10-21.
       which are banners, 2 lines.
 - [ ] One scheme mechanism. Evidence: `rg -ln 'prefers-color-scheme' $W`
       prints only `app.html`, `lib/app-html.test.ts`, `lib/hk/tokens.css`,
-      `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts` and
-      `routes/layout.css`, 7 files; `rg -n
+      `lib/hk/repose.css`, `lib/theme.svelte.ts`, `lib/theme.test.ts`,
+      `routes/layout.css`, and the pictures `landing/Hero.svelte`,
+      `landing/Browser.svelte`, `landing/Localhost.svelte` and
+      `landing/pictures.css`, which pair each OS rule with the switch's
+      `data-theme` rule (I-843), 11 files; `rg -n
       'class="dark|classList\.(add|toggle)\(.dark' $W` and `rg -n
       'theme="system"|richColors' $W --glob '*.svelte'` print 0 lines.
 - [ ] The inline script's hash is in the CSP, and the first paint matches the
@@ -124,36 +130,39 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] Headings are serif 400 and weight stops at 600. Evidence: `rg -n
       'font-(semibold|bold|extrabold|black)\b|<b>' $W --glob '*.svelte'`
       prints 0 lines; `rg -n '<strong' $W --glob '*.svelte' --glob
-      '!**/routes/design/**'` prints only the landing lead
-      (`routes/+page.svelte`), 1 line; `rg -nP
+      '!**/routes/design/**'` prints 0 lines; `rg -nP
       'font-weight:\s*(700|800|900|bold)' $W --glob '*.{svelte,css}' --glob
-      '!**/lib/hk/tokens.css'` prints 0 lines.
+      '!**/lib/hk/tokens.css' --glob '!**/components/landing/**'` prints 0
+      lines (a picture draws a captured app's bold as the app does).
 - [ ] Fonts are first-party and the kit's three. Evidence: `rg -n
       'fonts\.(googleapis|gstatic)' apps/web/src apps/web/static
       apps/web/svelte.config.js --glob '!**/lib/hk/tokens.css'` prints 0
       lines (the kit's file names Google Fonts in a comment); `rg -n
       'JetBrains Mono' apps/web/src apps/web/static --glob
-      '!**/lib/hk/tokens.css'` prints 0 lines; a page load's network panel
+      '!**/lib/hk/tokens.css' --glob '!**/components/landing/**'` prints 0
+      lines; a page load's network panel
       shows only the site's host.
 - [ ] Radii are the kit's. Evidence: `rg -n
       'rounded-(sm|md|lg|xl|2xl|3xl)\b|rounded-\[' $W --glob '*.svelte'`
       prints 0 lines; `rg -nP
       'border-radius:\s*+(?!var\(--hk-radius|0[;\s]|50%|inherit|9999?px)' $W
-      --glob '*.{svelte,css}' --glob '!**/lib/hk/tokens.css'` prints 0 lines
-      (`\s*+` is possessive: a plain `\s*` backtracks and lets every
+      --glob '*.{svelte,css}' --glob '!**/lib/hk/tokens.css' --glob
+      '!**/components/landing/**'` prints 0 lines (`\s*+` is possessive: a plain `\s*` backtracks and lets every
       declaration through).
 - [ ] Elevation is three levels. Evidence: `rg -n
       '\bshadow-(sm|md|lg|xl|2xl|inner)\b' $W --glob '*.svelte'` prints 0
       lines; `rg -nUP 'box-shadow:\s*+(?!none|var\(--hk-|inset
       -?[0-9.]+(px)? -?[0-9.]+(px)? 0 (-?[0-9.]+px )?var\(--hk-|0 0 0
       [0-9.]+px var\(--hk-)' $W --glob '*.{svelte,css}' --glob
-      '!**/lib/hk/**'` prints 0 lines (`-U` reads a shadow that prettier
+      '!**/lib/hk/**' --glob '!**/components/landing/**'` prints 0 lines (`-U` reads a shadow that prettier
       broke over several lines from its first value).
 - [ ] Motion uses the kit's curve and durations, and nothing moves on hover.
       Evidence: `rg -nP 'transition[^;]*\b\d+m?s\b' $W --glob
-      '*.{svelte,css}' --glob '!**/lib/hk/**'` prints 0 lines; `rg -n
+      '*.{svelte,css}' --glob '!**/lib/hk/**' --glob
+      '!**/components/landing/**'` prints 0 lines; `rg -n
       'duration-[0-9]|hover:(-?translate|scale)' $W --glob '*.svelte'` prints
-      0 lines; `rg -n 'animejs' apps/web/package.json $W` prints 0 lines;
+      0 lines; `rg -ln 'animejs' apps/web/package.json $W` prints only
+      `apps/web/package.json` and the landing's pictures (I-843);
       under reduced motion `document.getAnimations()` is empty on `/`,
       `/projects` and a project page (design.spec, landing-motion.spec).
 - [ ] Sizes come from the scale. Evidence: `rg -n
@@ -168,7 +177,8 @@ entry and this list with it. Counts as of 2026-10-21.
       sed 's/.*:\.//' | sort -u | while read c; do rg -qP
       "(?<![\w-])$c(?![\w-])" docs/DESIGN-LANGUAGE.md || echo "$c"; done`
       prints 0 lines; `rg -n --glob '*.svelte' -e '--[a-z]+-[a-z]+:' $W | rg
-      -v -e '--hk-|--i:|--n:|--cols:|--d:'` prints 0 lines (with `-e`: after
+      -v -e '--hk-|--i:|--n:|--cols:|--d:' | rg -v 'components/landing/'`
+      prints 0 lines (with `-e`: after
       a bare `--`, rg reads `--glob` as a path).
 - [ ] No native or modal dialogs. Evidence: `rg -n
       'window\.confirm|[^.\w/]confirm\(|<dialog|showModal' $W --glob

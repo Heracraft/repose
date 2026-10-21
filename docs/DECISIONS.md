@@ -24531,3 +24531,31 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   on a phone wraps the command (after a slash where it can) with an
   icon-only Copy, so `| sh` shows. It stays light: a page keeps one dark
   anchor, so the near-black pane is not used for a lone command.
+
+**I-843. The landing gets main's drawn pictures back, in Herakraft UI.**
+(landing-restore, 2026-10-21) *Made during implementation.* Amends I-837.
+The owner called I-837's landing "a complete downgrade" and asked for the
+old content in the new style, keeping the new copy-command controls.
+- *What comes back.* Main's pictures (Hero, OneCommand, ComesBack,
+  Localhost, Browser, Editor, Ready), their motion controller, pause
+  buttons and assets, main's hero lead, and the agents heading "The agents
+  you use, and the tools they need, on first boot". anime.js returns as a
+  dependency.
+- *What stays from I-837.* The kit's type, colours, buttons and theme
+  switch; the hero's "Copy install command" button with the command shown
+  under it; `CodeCopy` rows for `repose login` and `repose run`;
+  `PlanCells`; the questions. The rails, ticks, shape marks and frieze
+  of main's page do not come back.
+- *How the pictures take the kit.* They keep their colour names
+  (`--pic-*`, `--sh-*`, `--ink`, `--surface`, `--sunken`, `--rule`);
+  `routes/landing.css` maps each onto an `--hk-*` token or a zinc step on
+  `.landing`, in both schemes and under the switch. Stages and frames take
+  the kit's 12px radius, windows 6px.
+- *The hero terminal leaves the landing.* `Terminal.svelte` stays for
+  `/design`. Main's rule that terminals appear only in the grid and the
+  agents picture applies again.
+- *Main's install step goes.* The hero shows the install command, and
+  "Each fact once" (I-837) holds, so the commands section is "Sign in,
+  then run" with two rows.
+- *Pause button on touch.* It is a 44px button with the 28px chip drawn
+  inside, so the touch-target check holds (Guide B, 44px on touch).

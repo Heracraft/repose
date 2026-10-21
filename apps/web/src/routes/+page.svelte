@@ -1,5 +1,6 @@
 <script lang="ts">
 	import './landing.css';
+	import '$lib/components/landing/pictures.css';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -11,8 +12,14 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Terminal from '$lib/components/landing/Terminal.svelte';
-	import { AGENTS_LIST, RESTART } from '$lib/components/landing/session';
+	import Hero from '$lib/components/landing/Hero.svelte';
+	import OneCommand from '$lib/components/landing/OneCommand.svelte';
+	import ComesBack from '$lib/components/landing/ComesBack.svelte';
+	import Localhost from '$lib/components/landing/Localhost.svelte';
+	import Browser from '$lib/components/landing/Browser.svelte';
+	import Editor from '$lib/components/landing/Editor.svelte';
+	import Ready from '$lib/components/landing/Ready.svelte';
+	import { RESTART } from '$lib/components/landing/session';
 
 	let signingIn = $state(false);
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
@@ -105,11 +112,9 @@
 			<p class="hk-eyebrow">For solo founders and their agents</p>
 			<h1 class="hk-h1">Your dev environment, replicated in the cloud</h1>
 			<p class="hk-lead">
-				<strong
-					>Each project gets a machine of its own, with your code, tools and logins on it.</strong
-				>
-				Agents there run with full permissions, and nobody approves commands one by one. Snapshot it as
-				you go, and you can put a wrecked machine back in minutes.
+				Your code, tools and logins sit on a machine of its own, where agents run with full
+				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
+				a wrecked machine back in minutes.
 			</p>
 			<div class="ctas">
 				{@render authAction('Get started', 'Open the dashboard')}
@@ -120,16 +125,81 @@
 				<span class="nowrap">{install[2].trimStart()}</span>
 			</p>
 		</div>
-		<Terminal />
+		<div class="stage hero-stage">
+			<Hero />
+		</div>
 	</section>
 
-	<section class="sec split">
-		<div class="side">
+	<section class="sec">
+		<div class="sec-head">
 			<h2 class="hk-h2">Your laptop's setup, in one command</h2>
 			<p class="side-text">
 				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
 				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</p>
+		</div>
+		<div class="stage">
+			<OneCommand animated />
+		</div>
+	</section>
+
+	<section class="sec" id="features">
+		<div class="sec-head">
+			<h2 class="hk-h2">On every machine</h2>
+		</div>
+		<ul class="cells">
+			<li>
+				<ComesBack />
+				<h3 class="hk-h3">Let it break the whole machine</h3>
+				<p>
+					repose snapshots the machine nightly, and you can take one yourself any time. Restoring it
+					brings back the databases, logins and uncommitted work in minutes.
+				</p>
+				<p class="cell-cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
+			</li>
+			<li>
+				<Localhost />
+				<h3 class="hk-h3">The machine's ports on your localhost</h3>
+				<p>
+					Ports from 1024 up appear on your localhost while you're attached. When you're not,
+					forward one by hand. Cookies and OAuth redirects behave as they do locally.
+				</p>
+				<p class="cell-cmd"><span aria-hidden="true">$</span> repose open 3000</p>
+			</li>
+			<li>
+				<Browser />
+				<h3 class="hk-h3">Watch the agent's browser, and take over</h3>
+				<p>The agent's Chromium, on your laptop. Click in it to take over.</p>
+				<p class="cell-cmd"><span aria-hidden="true">$</span> repose browser</p>
+			</li>
+			<li>
+				<Editor />
+				<h3 class="hk-h3">Open it in your editor</h3>
+				<p>Every machine is an SSH host. Neovim on it, VS Code, Cursor or Zed over SSH.</p>
+				<p class="cell-cmd"><span aria-hidden="true">$</span> repose code your-project</p>
+			</li>
+		</ul>
+	</section>
+
+	<section class="sec">
+		<div class="sec-head">
+			<h2 class="hk-h2">The agents you use, and the tools they need, on first boot</h2>
+			<p class="more">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
+					>Everything installed</a
+				>
+			</p>
+		</div>
+		<div class="stage">
+			<Ready />
+		</div>
+	</section>
+
+	<section class="sec split">
+		<div class="side">
+			<h2 class="hk-h2">Sign in, then run</h2>
 		</div>
 		<ol class="steps">
 			{#each steps as step (step.title)}
@@ -139,60 +209,6 @@
 				</li>
 			{/each}
 		</ol>
-	</section>
-
-	<section class="sec split" id="features">
-		<div class="side">
-			<h2 class="hk-h2">On every machine</h2>
-		</div>
-		<ul class="cells">
-			<li>
-				<h3 class="hk-h3">Let it break the whole machine</h3>
-				<p>
-					repose snapshots the machine nightly, and you can take one yourself any time. Restoring it
-					brings back the databases, logins and uncommitted work in minutes.
-				</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
-			</li>
-			<li>
-				<h3 class="hk-h3">The machine's ports on your localhost</h3>
-				<p>
-					Ports from 1024 up appear on your localhost while you're attached. When you're not,
-					forward one by hand. Cookies and OAuth redirects behave as they do locally.
-				</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose open 3000</p>
-			</li>
-			<li>
-				<h3 class="hk-h3">Watch the agent's browser, and take over</h3>
-				<p>The agent's Chromium, on your laptop. Click in it to take over.</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose browser</p>
-			</li>
-			<li>
-				<h3 class="hk-h3">Open it in your editor</h3>
-				<p>Every machine is an SSH host. Neovim on it, VS Code, Cursor or Zed over SSH.</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose code your-project</p>
-			</li>
-		</ul>
-	</section>
-
-	<section class="sec split">
-		<div class="side">
-			<h2 class="hk-h2">Agents on first boot</h2>
-			<p class="more">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
-					>Everything installed</a
-				>
-			</p>
-		</div>
-		<ul class="agents" aria-label="Agents">
-			{#each AGENTS_LIST as agent (agent.flag)}
-				<li>
-					<span class="name">{agent.name}</span><code class="flag">--agent {agent.flag}</code>
-				</li>
-			{/each}
-		</ul>
 	</section>
 
 	<section class="sec" id="pricing">

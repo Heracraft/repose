@@ -1,0 +1,141 @@
+/*
+ * The drawn pictures' palette and shared primitives (DECISIONS I-843).
+ * Imported by routes/+page.svelte beside landing.css. The pictures under
+ * this folder draw from a fixed set of zinc steps and the kit's one blue,
+ * so this folder, like routes/design, is outside the look greps'
+ * hex and custom-property checks (docs/CHECKLIST.md).
+ */
+
+/* ---------- The pictures' palette ----------
+
+   The drawn pictures (components/landing: Hero, OneCommand, ComesBack and
+   the rest) read the names below. Each maps onto a kit token, so the
+   pictures take the kit's zinc steps and its one blue, and follow the
+   theme switch as the rest of the page does. */
+
+.landing {
+	--ink: var(--hk-text);
+	--ink-muted: var(--hk-text-2);
+	--ink-faint: var(--hk-text-3);
+	--surface: var(--hk-surface);
+	--sunken: var(--hk-surface-2);
+	--stage: var(--hk-surface-2);
+	--rule: var(--hk-border);
+	--rule-strong: var(--hk-border-strong);
+	--control-edge: var(--hk-text-4);
+	--font-mono: var(--hk-font-mono);
+	--font-sans: var(--hk-font-sans);
+	--font-display: var(--hk-font-display);
+	--radius: var(--hk-radius-6);
+	--radius-xs: var(--hk-radius-xs);
+	--shot-head: 28px;
+	--stage-y: 40px;
+	--color-blue-400: #60a5fa;
+	--color-blue-600: #2563eb;
+	--color-emerald-500: #10b981;
+	--sh-accent: #3b82f6;
+	--sh-grey: #a1a1aa;
+	--sh-light: #d4d4d8;
+	--sh-ink: #3f3f46;
+	--sh-paper: var(--hk-surface);
+	--pic-accent: var(--hk-accent);
+	--pic-ink: #27272a;
+	--pic-dim: #71717a;
+	--pic-faint: var(--hk-text-3);
+	--pic-stop: var(--hk-err);
+	--pic-add: var(--hk-ok);
+	--pic-wall: var(--pic-ink);
+}
+/* Dark: the stage lowest, a window's head a step up, its body a step
+   above that, so a window reads raised off its stage. */
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .landing {
+		--stage: #0e0e10;
+		--sunken: #131316;
+		--surface: #18181b;
+		--rule: #27272a;
+		--rule-strong: #3f3f46;
+		--sh-accent: #60a5fa;
+		--sh-grey: #71717a;
+		--sh-light: #52525b;
+		--sh-ink: #a1a1aa;
+		--pic-ink: #e4e4e7;
+		--pic-dim: #a1a1aa;
+		--pic-wall: var(--pic-dim);
+	}
+}
+:root[data-theme='dark'] .landing,
+:root.dark .landing {
+	--stage: #0e0e10;
+	--sunken: #131316;
+	--surface: #18181b;
+	--rule: #27272a;
+	--rule-strong: #3f3f46;
+	--sh-accent: #60a5fa;
+	--sh-grey: #71717a;
+	--sh-light: #52525b;
+	--sh-ink: #a1a1aa;
+	--pic-ink: #e4e4e7;
+	--pic-dim: #a1a1aa;
+	--pic-wall: var(--pic-dim);
+}
+
+/* ---------- Picture primitives ----------
+
+   One frame for the four cell pictures: a fixed height, each picture
+   standing its windows in it at one inset and running them off its bottom
+   edge. A window is a hairline at --rule-strong (a machine's at --pic-wall)
+   under the --shot-head head that names where it runs (WinHead.svelte). */
+.landing .shot {
+	--shot-h: 17rem;
+	--shot-in: 12px;
+	position: relative;
+	height: var(--shot-h);
+	overflow: hidden;
+	border: 1px solid var(--hk-border);
+	border-radius: var(--hk-radius-lg);
+	background: var(--stage);
+}
+@media (max-width: 480px) {
+	.landing .shot {
+		--shot-in: 10px;
+	}
+}
+.landing .shot-win {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	border: 1px solid var(--rule-strong);
+	border-radius: var(--radius);
+	background: var(--surface);
+	overflow: hidden;
+	color: var(--pic-ink);
+}
+.landing .shot-win.open {
+	border-bottom: 0;
+	border-radius: var(--radius) var(--radius) 0 0;
+}
+.landing :has(> .shot-head[data-who='machine']) {
+	border-color: var(--pic-wall);
+}
+/* The pictures' one chip: a command or a port in the accent. While it
+   fires only its ground changes; the text turns at once. */
+.landing .pic-chip {
+	display: inline-block;
+	flex: none;
+	padding: 2px 8px;
+	border: 1px solid var(--pic-accent);
+	border-radius: var(--radius);
+	background: var(--surface);
+	font-family: var(--hk-font-mono);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 18px;
+	color: var(--pic-accent);
+	white-space: pre;
+	transition: background-color 0.18s;
+}
+.landing .pic-chip.fire {
+	background: var(--pic-accent);
+	color: var(--surface);
+}
