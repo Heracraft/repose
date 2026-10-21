@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 // above it that draws PageShell (a project's tabs and Settings' tabs draw
 // their header once in their layout, I-841).
 const routes = fileURLToPath(new URL('../routes', import.meta.url));
-const SHELLS = ['PageShell', 'DocPage', 'LegalPage', 'ErrorView'];
+const SHELLS = ['PageShell', 'DocPage', 'LegalPage', 'ErrorView', 'ProjectFrame'];
 
 function pages(dir: string): string[] {
 	return readdirSync(dir).flatMap((name) => {

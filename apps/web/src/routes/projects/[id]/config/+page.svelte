@@ -1,9 +1,12 @@
 <script lang="ts">
+	// A project's Config tab (DECISIONS I-841): the base and machine.nix
+	// switches, the project's secrets, the packages (the menu or the Nix
+	// fragment) with Apply in a bar at the window's foot, then the
+	// revisions. The layout above holds the project and the header.
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { leaveAnyway, leavingAnyway } from '$lib/leave';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import {
 		getConfig,
@@ -11,7 +14,6 @@
 		getCatalog,
 		listRevisions,
 		applyRevision,
-		getProject,
 		patchProject,
 		opLogUrl,
 		getOp
@@ -26,16 +28,16 @@
 		parseMenuSelection,
 		menuEditable
 	} from '$lib/menuSelection';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
-	import ProjectMeta from '$lib/components/project/ProjectMeta.svelte';
+	import ProjectSecrets from '$lib/components/project/ProjectSecrets.svelte';
+	import { useProject } from '$lib/components/project/context.svelte';
 	import NixEditor from '$lib/components/NixEditor.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
-	import type { CatalogItem, Config, Project, Revision } from '$lib/api/types';
+	import type { CatalogItem, Config, Revision } from '$lib/api/types';
 
-	const id = page.params.id as string;
+	const ctx = useProject();
+	const id = ctx.id;
+	let project = $derived(ctx.project);
 
-	let project = $state<Project | undefined>(undefined);
 	let config = $state<Config | undefined>(undefined);
 	let catalog = $state<CatalogItem[]>([]);
 	let revisions = $state<Revision[]>([]);
@@ -74,32 +76,14 @@
 		selectedPackages.size + selectedServices.size + extraPackages.length
 	);
 
-	// The rail lists the newest revisions; the rest wait behind one toggle.
+	// The newest revisions show; the rest wait behind one toggle.
 	const REVISIONS_SHOWN = 8;
 	let allRevisions = $state(false);
 	let shownRevisions = $derived(allRevisions ? revisions : revisions.slice(0, REVISIONS_SHOWN));
 
-	// From lg the editor is the page's subject beside a short rail, so it
-	// opens with room to write (28rem) whatever the fragment's length.
+	// From lg the editor opens with room to write (28rem) whatever the
+	// fragment's length.
 	const wide = new MediaQuery('min-width: 64rem');
-
-	/**
-	 * The revisions box takes a tab stop while its list is taller than it
-	 * (Show all, from lg) and gives it up when the list fits, so a
-	 * keyboard can scroll to the oldest revision (axe
-	 * scrollable-region-focusable).
-	 */
-	function tabStopWhenTall(node: HTMLElement) {
-		const mark = () => {
-			if (node.scrollHeight > node.clientHeight) node.tabIndex = 0;
-			else node.removeAttribute('tabindex');
-		};
-		mark();
-		const ro = new ResizeObserver(mark);
-		ro.observe(node);
-		if (node.firstElementChild) ro.observe(node.firstElementChild);
-		return { destroy: () => ro.disconnect() };
-	}
 
 	// Nix tab state.
 	let fragmentText = $state('');
@@ -127,8 +111,7 @@
 
 	async function load() {
 		try {
-			[project, config, catalog, revisions] = await Promise.all([
-				getProject(id),
+			[config, catalog, revisions] = await Promise.all([
 				getConfig(id),
 				getCatalog(),
 				listRevisions(id)
@@ -147,7 +130,7 @@
 			savedMenuKey = menuKey;
 			loadFailed = false;
 		} catch (err) {
-			if (!project || !config) {
+			if (!config) {
 				loadFailed = true;
 				loadError = loadErrorText(err, 'Could not load the config.');
 			} else {
@@ -156,7 +139,13 @@
 		}
 	}
 
-	onMount(load);
+	onMount(() => {
+		void load();
+		// The Apply bar holds the page's primary: the header's Start draws
+		// secondary while this tab is open.
+		ctx.holdPrimary = true;
+		return () => (ctx.holdPrimary = false);
+	});
 
 	// The two tabs switch a panel in place (the URL stays), so they are
 	// ARIA tabs: one tab stop for the pair, and the arrow keys, Home and
@@ -301,7 +290,7 @@
 		const on = box.checked;
 		personalSaving = true;
 		try {
-			project = await patchProject(id, { personal_opt_out: !on });
+			ctx.set(await patchProject(id, { personal_opt_out: !on }));
 			toast.success(
 				on
 					? 'machine.nix is on for this machine; it switches in the background.'
@@ -309,7 +298,7 @@
 			);
 			revisions = await listRevisions(id);
 		} catch (err) {
-			box.checked = !project.personal_opt_out;
+			box.checked = !ctx.project?.personal_opt_out;
 			toastApiError(err, 'Could not change the machine.nix switch.');
 		} finally {
 			personalSaving = false;
@@ -324,9 +313,9 @@
 		const next = box.checked;
 		holdSaving = true;
 		try {
-			project = await patchProject(id, { hold_base_updates: next });
+			ctx.set(await patchProject(id, { hold_base_updates: next }));
 		} catch (err) {
-			box.checked = project.hold_base_updates;
+			box.checked = !!ctx.project?.hold_base_updates;
 			toastApiError(err, 'Could not change the hold flag.');
 		} finally {
 			holdSaving = false;
@@ -334,357 +323,333 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{project ? `Config · ${project.name} · repose` : 'Config · repose'}</title>
-</svelte:head>
+{#if project}
+	<!-- What changes how the machine is built: the base and its hold, and
+	     whether your machine.nix is layered on. -->
+	<div class="cfacts" data-testid="config-facts">
+		<div class="cfact-row">
+			<p class="cfact">Base <span class="hk-mono">{project.base_version}</span></p>
+			<label class="hk-check">
+				<input
+					type="checkbox"
+					checked={project.hold_base_updates}
+					disabled={holdSaving}
+					onchange={(e) => void toggleHold(e.currentTarget)}
+				/>
+				Hold base updates
+			</label>
+		</div>
+		<div class="cfact-row">
+			<label class="hk-check">
+				<input
+					type="checkbox"
+					checked={!project.personal_opt_out}
+					disabled={personalSaving}
+					onchange={(e) => void togglePersonal(e.currentTarget)}
+				/>
+				Use your machine.nix on this machine
+			</label>
+			<a class="hk-link mnix-link" href={resolve('/settings/machine-nix')}>Edit machine.nix</a>
+		</div>
+	</div>
 
-<PageShell
-	title={project?.name ?? (loadFailed ? 'Config' : '…')}
-	crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
->
-	{#snippet tabs()}
-		{#if project}<ProjectMeta {project} />{/if}
-		<ProjectTabs {id} />
-	{/snippet}
+	<ProjectSecrets projectId={id} />
+{/if}
+
+<section class="hk-section packages" aria-labelledby="packages-title">
 	<LoadState
 		status={project && config ? 'ready' : loadFailed ? 'failed' : 'loading'}
 		onretry={load}
 		error={loadError}
 	>
 		{#if project && config}
-			<!-- Two columns from 1024px: what you edit, and a rail of the
-			     switches and the history (I-664, I-837). -->
-			<div class="cgrid">
-				<div class="cmain">
-					<!-- The two tabs switch a panel in place (the URL stays), so they
-					     are ARIA tabs: one tab stop for the pair, the arrow keys, Home
-					     and End move between them. Only the current tab names a panel. -->
-					<div class="chead">
-						<div class="hk-tablist" role="tablist" aria-label="Config editor">
-							{#each TABS as [tab, name] (tab)}
-								<button
-									type="button"
-									role="tab"
-									id="config-tab-{tab}"
-									aria-selected={activeTab === tab}
-									aria-controls={activeTab === tab ? `config-panel-${tab}` : undefined}
-									tabindex={activeTab === tab ? 0 : -1}
-									bind:this={tabButtons[tab]}
-									onkeydown={onTabKey}
-									onclick={() => (activeTab = tab)}>{name}</button
-								>
-							{/each}
-						</div>
-						{#if config.applied_at}
-							<span class="applied">Applied {dateTime(config.applied_at)}</span>
-						{/if}
-					</div>
-
-					{#if activeTab === 'menu'}
-						<div
-							class="cpanel"
-							role="tabpanel"
-							id="config-panel-menu"
-							aria-labelledby="config-tab-menu"
-						>
-							{#if !menuOn}
-								<div class="hk-banner" role="status">
-									<p>
-										The menu is off for this project: its config was written by hand. Applying the
-										file a new project starts with, on the Nix tab, turns it back on (<a
-											class="hk-link"
-											href={resolve('/docs/[slug]', { slug: 'config' })}>Config</a
-										>).
-									</p>
-								</div>
-							{:else}
-								<input
-									type="search"
-									class="hk-input hk-input--search"
-									placeholder="Search packages and services…"
-									aria-label="Search packages and services"
-									bind:value={search}
-								/>
-								{#each [...groups.entries()] as [group, items] (group)}
-									<div class="cgroup">
-										<h2 class="group-title">
-											{group}<span class="group-n">{items.length}</span>
-										</h2>
-										<div class="citems">
-											{#each items as item (item.id)}
-												<div class="citem">
-													<label class="hk-check citem-check">
-														<input
-															type="checkbox"
-															checked={isSelected(item)}
-															onchange={(e) => toggleItem(item, e.currentTarget.checked)}
-														/>
-														<span class="citem-text">
-															<span class="citem-name">{item.label}</span>
-															<span class="citem-desc">{item.description}</span>
-														</span>
-													</label>
-													{#if item.options?.length && isSelected(item)}
-														<select
-															class="hk-select citem-select"
-															aria-label={`${item.label} ${item.options[0].id}`}
-															value={menuOptions[item.id] ?? item.options[0].default}
-															onchange={(e) => (menuOptions[item.id] = e.currentTarget.value)}
-														>
-															{#each item.options[0].values as v (v)}
-																<option value={v}>{v}</option>
-															{/each}
-														</select>
-													{/if}
-												</div>
-											{/each}
-										</div>
-									</div>
-								{:else}
-									{#if search.trim()}
-										<div class="hk-empty-row">
-											<span>No package matches “{search.trim()}”.</span>
-										</div>
-									{/if}
-								{/each}
-								{#if extraPackages.length}
-									<div class="cgroup">
-										<h2 class="group-title">
-											Extra packages<span class="group-n">{extraPackages.length}</span>
-										</h2>
-										<ul class="extras">
-											{#each extraPackages as pkg (pkg)}
-												<li class="extra">
-													<span class="hk-mono">{pkg}</span>
-													<!-- Undone by adding the package back before Apply. -->
-													<button
-														type="button"
-														class="hk-btn-ghost hk-btn-sm extra-remove"
-														aria-label={`Remove ${pkg}`}
-														onclick={() => (extraPackages = extraPackages.filter((p) => p !== pkg))}
-														>Remove</button
-													>
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{/if}
-							{/if}
-						</div>
-					{:else}
-						<div
-							class="cpanel"
-							role="tabpanel"
-							id="config-panel-nix"
-							aria-labelledby="config-tab-nix"
-						>
-							{#if nixReadonly}
-								<div class="hk-banner" role="status">
-									<p>This project is managed by the menu. Editing here takes over from the menu.</p>
-									<button type="button" class="hk-banner-action" onclick={editAsNix}
-										>Edit as Nix</button
-									>
-								</div>
-							{/if}
-							<NixEditor
-								bind:value={fragmentText}
-								floor={wide.current ? '28rem' : undefined}
-								readonly={nixReadonly}
-								errorLine={fragmentErrorLine(buildError)}
-							/>
-						</div>
-					{/if}
-
-					{#if currentOpId}
-						<section class="hk-section build" aria-labelledby="build-title">
-							<div class="hk-section-head">
-								<h2 id="build-title" class="hk-h2-app">Build log</h2>
-							</div>
-							<div class="hk-code">
-								<pre class="hk-code-body build-log" bind:this={logEl}>{buildLines.join('\n')}</pre>
-							</div>
-							{#if buildDone && buildError}
-								<div class="hk-banner hk-banner--err build-result" role="alert">
-									<p class="build-error">{buildError}</p>
-								</div>
-							{:else if buildDone}
-								<p class="build-ok" role="status">
-									<span class="hk-dot hk-dot--on" aria-hidden="true"></span>Applied.
-								</p>
-							{/if}
-						</section>
-					{/if}
-
-					<!-- One bar for both tabs, held to the foot of the window, so
-					     Apply is in reach from any group (Guide B 12.23). -->
-					<div class="hk-bottom-bar cbar">
-						{#if heldNavigation}
-							<div class="hk-banner cguard" role="alert">
-								<p>Unsaved changes. Leave this page anyway?</p>
-								<span class="cguard-buttons">
-									<button
-										type="button"
-										class="hk-btn-secondary hk-btn-sm"
-										bind:this={stayButton}
-										onclick={() => (heldNavigation = undefined)}>Stay</button
-									>
-									<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button
-									>
-								</span>
-							</div>
-						{/if}
-						<span class="cbar-status" role="status">
-							{#if activeTab === 'menu' && !menuOn}
-								Menu off
-							{:else if activeTab === 'menu'}
-								<!-- While the banner asks, it says "Unsaved changes" once. -->
-								{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty && !heldNavigation}&nbsp;·
-									<span class="cbar-dirty">Unsaved changes</span>{/if}
-							{:else if applying}
-								Building…
-							{:else if nixReadonly}
-								Managed by the menu
-							{:else if nixDirty && !heldNavigation}
-								<span class="cbar-dirty">Unsaved changes</span>
-							{/if}
-						</span>
-						<!-- The screen's primary once there is something to apply. -->
-						<button
-							type="button"
-							class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
-							disabled={applying ||
-								(activeTab === 'nix' && (nixReadonly || !nixDirty)) ||
-								(activeTab === 'menu' && (!menuOn || !menuDirty))}
-							onclick={activeTab === 'menu' ? applyMenu : applyNix}
-						>
-							{applying ? 'Applying…' : 'Apply'}
-						</button>
+			<!-- The two tabs switch a panel in place (the URL stays), so they
+			     are ARIA tabs: one tab stop for the pair, the arrow keys, Home
+			     and End move between them. Only the current tab names a panel. -->
+			<div class="hk-section-head chead">
+				<div class="chead-left">
+					<h2 id="packages-title" class="hk-h2-app">Packages</h2>
+					<div class="hk-tablist" role="tablist" aria-label="Config editor">
+						{#each TABS as [tab, name] (tab)}
+							<button
+								type="button"
+								role="tab"
+								id="config-tab-{tab}"
+								aria-selected={activeTab === tab}
+								aria-controls={activeTab === tab ? `config-panel-${tab}` : undefined}
+								tabindex={activeTab === tab ? 0 : -1}
+								bind:this={tabButtons[tab]}
+								onkeydown={onTabKey}
+								onclick={() => (activeTab = tab)}>{name}</button
+							>
+						{/each}
 					</div>
 				</div>
+				{#if config.applied_at}
+					<span class="applied">Applied {dateTime(config.applied_at)}</span>
+				{/if}
+			</div>
 
-				<!-- The rail: what changes how the machine is built, and what it
-				     was built from. From 1024px it stays in view beside the
-				     editor, and the full revision list scrolls inside itself. -->
-				<div class="crail">
-					<section class="hk-section" aria-labelledby="base-title">
-						<div class="hk-section-head">
-							<h2 id="base-title" class="hk-h2-app">Base updates</h2>
+			{#if activeTab === 'menu'}
+				<div
+					class="cpanel"
+					role="tabpanel"
+					id="config-panel-menu"
+					aria-labelledby="config-tab-menu"
+				>
+					{#if !menuOn}
+						<div class="hk-banner" role="status">
+							<p>
+								The menu is off for this project: its config was written by hand. Applying the file
+								a new project starts with, on the Nix tab, turns it back on (<a
+									class="hk-link"
+									href={resolve('/docs/[slug]', { slug: 'config' })}>Config</a
+								>).
+							</p>
 						</div>
-						<p class="rail-line">Base <span class="hk-mono">{project.base_version}</span></p>
-						<label class="hk-check">
-							<input
-								type="checkbox"
-								checked={project.hold_base_updates}
-								disabled={holdSaving}
-								onchange={(e) => void toggleHold(e.currentTarget)}
-							/>
-							Hold base updates
-						</label>
-					</section>
-
-					<section class="hk-section" aria-labelledby="mnix-title">
-						<div class="hk-section-head">
-							<h2 id="mnix-title" class="hk-h2-app">machine.nix</h2>
-						</div>
-						<label class="hk-check">
-							<input
-								type="checkbox"
-								checked={!project.personal_opt_out}
-								disabled={personalSaving}
-								onchange={(e) => void togglePersonal(e.currentTarget)}
-							/>
-							Use your machine.nix on this machine
-						</label>
-						<p class="rail-link">
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-							<a class="hk-link mnix-link" href={resolve('/settings') + '#machine-nix'}
-								>Edit machine.nix on your account</a
-							>
-						</p>
-					</section>
-
-					<section class="hk-section" aria-labelledby="rev-title">
-						<div class="hk-section-head">
-							<h2 id="rev-title" class="hk-h2-app">Revisions</h2>
-						</div>
-						{#if revisions.length === 0}
-							<div class="hk-empty-row"><span>No revisions yet.</span></div>
-						{:else}
-							<!-- The full list scrolls inside itself from 1024px; while it
-							     does, the box takes a tab stop so a keyboard reaches its end. -->
-							<div
-								class="revs"
-								class:revs--all={allRevisions}
-								use:tabStopWhenTall
-								role={allRevisions && wide.current ? 'region' : undefined}
-								aria-label={allRevisions && wide.current ? 'Revisions' : undefined}
-							>
-								<ul class="rev-list">
-									{#each shownRevisions as rev (rev.revision_id)}
-										{@const live =
-											rev.status === 'applied' && rev.revision_id === config?.revision_id}
-										<li class="rev">
-											<span class="rev-date">{dateTime(rev.created_at)}</span>
-											<span class="rev-status"
-												>{#if rev.status === 'failed'}<span
-														class="hk-dot hk-dot--err"
-														aria-hidden="true"
-													></span>{/if}{live ? 'current' : rev.status}</span
-											>
-											{#if rev.status !== 'building' && !live}
-												<button
-													type="button"
-													class="hk-btn-ghost hk-btn-sm rev-apply"
-													disabled={applying}
-													onclick={() => reapply(rev)}
-													>{reapplying === rev.revision_id ? 'Re-applying…' : 'Re-apply'}</button
+					{:else}
+						<input
+							type="search"
+							class="hk-input hk-input--search"
+							placeholder="Search packages and services…"
+							aria-label="Search packages and services"
+							bind:value={search}
+						/>
+						{#each [...groups.entries()] as [group, items] (group)}
+							<div class="cgroup">
+								<h3 class="group-title">
+									{group}<span class="group-n">{items.length}</span>
+								</h3>
+								<div class="citems">
+									{#each items as item (item.id)}
+										<div class="citem">
+											<label class="hk-check citem-check">
+												<input
+													type="checkbox"
+													checked={isSelected(item)}
+													onchange={(e) => toggleItem(item, e.currentTarget.checked)}
+												/>
+												<span class="citem-text">
+													<span class="citem-name">{item.label}</span>
+													<span class="citem-desc">{item.description}</span>
+												</span>
+											</label>
+											{#if item.options?.length && isSelected(item)}
+												<select
+													class="hk-select citem-select"
+													aria-label={`${item.label} ${item.options[0].id}`}
+													value={menuOptions[item.id] ?? item.options[0].default}
+													onchange={(e) => (menuOptions[item.id] = e.currentTarget.value)}
 												>
+													{#each item.options[0].values as v (v)}
+														<option value={v}>{v}</option>
+													{/each}
+												</select>
 											{/if}
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							{#if search.trim()}
+								<div class="hk-empty-row">
+									<span>No package matches “{search.trim()}”.</span>
+								</div>
+							{/if}
+						{/each}
+						{#if extraPackages.length}
+							<div class="cgroup">
+								<h3 class="group-title">
+									Extra packages<span class="group-n">{extraPackages.length}</span>
+								</h3>
+								<ul class="extras">
+									{#each extraPackages as pkg (pkg)}
+										<li class="extra">
+											<span class="hk-mono">{pkg}</span>
+											<!-- Undone by adding the package back before Apply. -->
+											<button
+												type="button"
+												class="hk-btn-ghost hk-btn-sm extra-remove"
+												aria-label={`Remove ${pkg}`}
+												onclick={() => (extraPackages = extraPackages.filter((p) => p !== pkg))}
+												>Remove</button
+											>
 										</li>
 									{/each}
 								</ul>
 							</div>
-							{#if revisions.length > REVISIONS_SHOWN}
-								<button
-									type="button"
-									class="hk-btn-ghost hk-btn-sm revs-toggle"
-									aria-expanded={allRevisions}
-									onclick={() => (allRevisions = !allRevisions)}
-									>{allRevisions ? 'Show fewer' : `Show all ${revisions.length}`}</button
-								>
-							{/if}
 						{/if}
-					</section>
+					{/if}
 				</div>
+			{:else}
+				<div class="cpanel" role="tabpanel" id="config-panel-nix" aria-labelledby="config-tab-nix">
+					{#if nixReadonly}
+						<div class="hk-banner" role="status">
+							<p>This project is managed by the menu. Editing here takes over from the menu.</p>
+							<button type="button" class="hk-banner-action" onclick={editAsNix}>Edit as Nix</button
+							>
+						</div>
+					{/if}
+					<NixEditor
+						bind:value={fragmentText}
+						floor={wide.current ? '28rem' : undefined}
+						readonly={nixReadonly}
+						errorLine={fragmentErrorLine(buildError)}
+					/>
+				</div>
+			{/if}
+
+			{#if currentOpId}
+				<section class="build" aria-labelledby="build-title">
+					<h3 id="build-title" class="build-title">Build log</h3>
+					<div class="hk-code">
+						<pre class="hk-code-body build-log" bind:this={logEl}>{buildLines.join('\n')}</pre>
+					</div>
+					{#if buildDone && buildError}
+						<div class="hk-banner hk-banner--err build-result" role="alert">
+							<p class="build-error">{buildError}</p>
+						</div>
+					{:else if buildDone}
+						<p class="build-ok" role="status">
+							<span class="hk-dot hk-dot--on" aria-hidden="true"></span>Applied.
+						</p>
+					{/if}
+				</section>
+			{/if}
+
+			<!-- One bar for both tabs, held to the foot of the window while the
+			     packages are in view, so Apply is in reach from any group
+			     (Guide B 12.23). -->
+			<div class="hk-bottom-bar cbar">
+				{#if heldNavigation}
+					<div class="hk-banner cguard" role="alert">
+						<p>Unsaved changes. Leave this page anyway?</p>
+						<span class="cguard-buttons">
+							<button
+								type="button"
+								class="hk-btn-secondary hk-btn-sm"
+								bind:this={stayButton}
+								onclick={() => (heldNavigation = undefined)}>Stay</button
+							>
+							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
+						</span>
+					</div>
+				{/if}
+				<span class="cbar-status" role="status">
+					{#if activeTab === 'menu' && !menuOn}
+						Menu off
+					{:else if activeTab === 'menu'}
+						<!-- While the banner asks, it says "Unsaved changes" once. -->
+						{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty && !heldNavigation}&nbsp;·
+							<span class="cbar-dirty">Unsaved changes</span>{/if}
+					{:else if applying}
+						Building…
+					{:else if nixReadonly}
+						Managed by the menu
+					{:else if nixDirty && !heldNavigation}
+						<span class="cbar-dirty">Unsaved changes</span>
+					{/if}
+				</span>
+				<!-- The screen's primary once there is something to apply. -->
+				<button
+					type="button"
+					class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
+					disabled={applying ||
+						(activeTab === 'nix' && (nixReadonly || !nixDirty)) ||
+						(activeTab === 'menu' && (!menuOn || !menuDirty))}
+					onclick={activeTab === 'menu' ? applyMenu : applyNix}
+				>
+					{applying ? 'Applying…' : 'Apply'}
+				</button>
 			</div>
 		{/if}
 	</LoadState>
-</PageShell>
+</section>
+
+{#if project && config}
+	<section class="hk-section" aria-labelledby="rev-title">
+		<div class="hk-section-head">
+			<h2 id="rev-title" class="hk-h2-app">Revisions</h2>
+		</div>
+		{#if revisions.length === 0}
+			<div class="hk-empty-row"><span>No revisions yet.</span></div>
+		{:else}
+			<ul class="rev-list">
+				{#each shownRevisions as rev (rev.revision_id)}
+					{@const live = rev.status === 'applied' && rev.revision_id === config?.revision_id}
+					<li class="rev">
+						<span class="rev-date">{dateTime(rev.created_at)}</span>
+						<span class="rev-status"
+							>{#if rev.status === 'failed'}<span class="hk-dot hk-dot--err" aria-hidden="true"
+								></span>{/if}{live ? 'current' : rev.status}</span
+						>
+						{#if rev.status !== 'building' && !live}
+							<button
+								type="button"
+								class="hk-btn-ghost hk-btn-sm rev-apply"
+								disabled={applying}
+								onclick={() => reapply(rev)}
+								>{reapplying === rev.revision_id ? 'Re-applying…' : 'Re-apply'}</button
+							>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			{#if revisions.length > REVISIONS_SHOWN}
+				<button
+					type="button"
+					class="hk-btn-ghost hk-btn-sm revs-toggle"
+					aria-expanded={allRevisions}
+					onclick={() => (allRevisions = !allRevisions)}
+					>{allRevisions ? 'Show fewer' : `Show all ${revisions.length}`}</button
+				>
+			{/if}
+		{/if}
+	</section>
+{/if}
 
 <style>
-	.cgrid {
+	/* ---- Facts ---- */
+	/* Two lines under the tabs' rule: the base and its hold, then
+	   machine.nix and the way to edit it. */
+	.cfacts {
 		display: grid;
-		gap: 2.75rem 3rem;
-		align-items: start;
+		margin-top: -0.75rem;
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	@media (min-width: 1024px) {
-		.cgrid {
-			grid-template-columns: minmax(0, 1fr) 18rem;
-		}
-		.crail {
-			position: sticky;
-			top: calc(var(--hk-header-h) + 1.5rem);
-		}
-	}
-	.cmain,
-	.crail {
-		min-width: 0;
-	}
-	.chead {
+	.cfact-row {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		justify-content: space-between;
+		gap: 0.25rem 1.5rem;
+		min-height: 2.75rem;
+		padding: 0.25rem 0;
+		font-size: 0.875rem;
+	}
+	.cfact-row + .cfact-row {
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.cfact {
+		margin: 0;
+		color: var(--hk-text-3);
+	}
+	.cfact .hk-mono {
+		color: var(--hk-text);
+	}
+	.mnix-link {
+		font-size: 0.8125rem;
+	}
+
+	/* ---- Packages ---- */
+	.chead {
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1rem;
+	}
+	.chead-left {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.5rem 1rem;
 	}
 	.applied {
@@ -699,6 +664,7 @@
 		margin-bottom: 1rem;
 	}
 	@media (max-width: 639.98px) {
+		.chead-left,
 		.chead .hk-tablist {
 			display: grid;
 			grid-template-columns: 1fr 1fr;
@@ -711,7 +677,7 @@
 		margin-top: 2rem;
 	}
 	/* Guide B's group header: 11px caps with a count. A heading element
-	   (tests read "Extra packages" as one), in the sans. */
+	   under Packages (tests read "Extra packages" as one), in the sans. */
 	.group-title {
 		display: flex;
 		align-items: baseline;
@@ -733,7 +699,7 @@
 		display: grid;
 		border-bottom: 1px solid var(--hk-hairline);
 	}
-	@media (min-width: 768px) {
+	@container dash (min-width: 640px) {
 		.citems {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 			column-gap: 2rem;
@@ -795,6 +761,15 @@
 	}
 
 	/* ---- Build ---- */
+	.build {
+		margin-top: 2rem;
+	}
+	.build-title {
+		margin: 0 0 0.5rem;
+		font-family: var(--hk-font-sans);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
 	.build-log {
 		height: 14rem;
 		margin: 0;
@@ -836,28 +811,7 @@
 		gap: 0.25rem;
 	}
 
-	/* ---- Rail ---- */
-	.rail-line {
-		margin: 0 0 0.5rem;
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
-	}
-	.rail-line .hk-mono {
-		color: var(--hk-text);
-	}
-	.crail :global(.hk-check) {
-		font-size: 0.875rem;
-	}
-	.rail-link {
-		margin: 0.5rem 0 0;
-		font-size: 0.8125rem;
-	}
-	@media (min-width: 1024px) {
-		.revs--all {
-			max-height: 24rem;
-			overflow-y: auto;
-		}
-	}
+	/* ---- Revisions ---- */
 	.rev-list {
 		margin: 0;
 		padding: 0;
