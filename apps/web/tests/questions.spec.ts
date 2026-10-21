@@ -57,9 +57,11 @@ test('no card without a pending question; an option button answers', async ({ pa
 	await expect(row.getByRole('button', { name: 'no', exact: true })).toBeVisible();
 	await row.getByRole('button', { name: 'yes', exact: true }).click();
 
-	// The row collapses to one line naming the answer and where it came from.
-	await expect(row).toHaveText('Answered yes from the dashboard');
-	await expect(card.getByRole('status')).toHaveText('Answered yes from the dashboard');
+	// The row collapses to one line: the question, muted, and the answer.
+	// An answer from the dashboard does not say so (review r1 dash-r1-8).
+	await expect(row.getByTestId('question-outcome')).toHaveText('Answered yes');
+	await expect(row).toContainText('Drop the legacy sessions table?');
+	await expect(card.getByRole('status')).toHaveText('Answered yes');
 	await expect(row.getByRole('button')).toHaveCount(0);
 	// The keyboard goes to the card's title, the last question gone.
 	await expect(card.getByRole('heading', { name: 'Waiting on you' })).toBeFocused();
@@ -92,7 +94,8 @@ test('a free-text question takes a typed answer; Dismiss dismisses', async ({ pa
 	await expect(field).toHaveValue('4173\n');
 	await field.press('Backspace');
 	await field.press('Enter');
-	await expect(first).toHaveText('Answered 4173 from the dashboard');
+	await expect(first.getByTestId('question-outcome')).toHaveText('Answered 4173');
+	await expect(first).toContainText('Which port should the dev server use?');
 	// The keyboard goes on to the next question.
 	const second = card.locator(`[data-qid="${q2.id}"]`);
 	await expect(second.getByLabel('Your answer')).toBeFocused();
@@ -101,7 +104,7 @@ test('a free-text question takes a typed answer; Dismiss dismisses', async ({ pa
 	await expect(dismiss).toHaveAttribute('title', 'The agent stops waiting');
 	await expect(dismiss).toHaveText('Dismiss');
 	await dismiss.click();
-	await expect(second).toHaveText('Dismissed');
+	await expect(second.getByTestId('question-outcome')).toHaveText('Dismissed');
 
 	const all = await questionsOf(p.id);
 	expect(all.find((x) => x.id === q1.id)).toMatchObject({
@@ -132,12 +135,12 @@ test('a question answered in the terminal says so, then leaves', async ({ page }
 	await closeQuestion(q2.id, 'withdrawn');
 	// The card's poll finds both gone and asks the api how they closed.
 	await page.clock.runFor(10_500);
-	await expect(card.getByTestId('question').filter({ hasText: 'terminal' })).toHaveText(
-		'Answered in the terminal'
-	);
-	await expect(card.getByTestId('question').filter({ hasText: 'Withdrawn' })).toHaveText(
-		'Withdrawn by the agent'
-	);
+	await expect(
+		card.getByTestId('question').filter({ hasText: 'terminal' }).getByTestId('question-outcome')
+	).toHaveText('Answered in the terminal');
+	await expect(
+		card.getByTestId('question').filter({ hasText: 'Withdrawn' }).getByTestId('question-outcome')
+	).toHaveText('Withdrawn by the agent');
 	await expect(card.getByText('2', { exact: true })).toHaveCount(0);
 	await page.clock.runFor(8_500);
 	await expect(page.getByTestId('questions')).toHaveCount(0);
@@ -156,7 +159,9 @@ test('a question the api closed with no source does not say you dismissed it', a
 	// asker_gone, interrupted and a machine stop are a plain cancel (I-690).
 	await closeQuestion(q.id, 'asker_gone');
 	await page.clock.runFor(10_500);
-	await expect(card.getByTestId('question')).toHaveText('The agent stopped waiting');
+	await expect(card.getByTestId('question').getByTestId('question-outcome')).toHaveText(
+		'The agent stopped waiting'
+	);
 });
 
 test('a row closed elsewhere holds its place and focus until its line arrives', async ({
@@ -198,7 +203,9 @@ test('a row closed elsewhere holds its place and focus until its line arrives', 
 	await expect(field).toBeFocused();
 
 	release();
-	await expect(card.locator(`[data-qid="${q2.id}"]`)).toHaveText('Answered in the terminal');
+	await expect(card.locator(`[data-qid="${q2.id}"]`).getByTestId('question-outcome')).toHaveText(
+		'Answered in the terminal'
+	);
 	await expect(card.locator(`[data-qid="${q1.id}"] textarea`)).toBeFocused();
 });
 

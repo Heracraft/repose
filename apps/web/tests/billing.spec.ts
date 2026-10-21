@@ -75,8 +75,8 @@ test('with no plan and seats free, the three plans are shown from GET /billing',
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
 	await expect(solo.getByText('$39', { exact: true })).toBeVisible();
-	await expect(solo.getByTestId('intro-solo')).toHaveText('$39 for 12 months');
-	await expect(solo.getByText('then $49 from month 13')).toBeVisible();
+	await expect(solo.getByTestId('intro-solo')).toHaveText('For 12 months');
+	await expect(solo.locator('.p-then')).toHaveText('For 12 months, then $49');
 	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
 	await expect(solo.getByText('8 GB running at once')).toBeVisible();
 	// The founding price keeps Solo's 250 GB egress (I-672); 100 GB is the disk.
@@ -464,7 +464,7 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 		'Fits two xl, four large, or any mix.'
 	);
 	// What runs is listed under the meter, each with its size.
-	await expect(page.getByRole('list', { name: 'Running now' })).toContainText('pro-a');
+	await expect(page.getByRole('list', { name: 'Memory running' })).toContainText('pro-a');
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');

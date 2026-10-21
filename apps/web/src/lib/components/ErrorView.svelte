@@ -58,4 +58,13 @@
 	.links .hk-more {
 		margin-top: 0;
 	}
+	/* 44px touch targets, as the landing's section links have. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.links {
+			row-gap: 0;
+		}
+		.links .hk-more {
+			padding-block: 0.6875rem;
+		}
+	}
 </style>

@@ -156,7 +156,7 @@ test('a pending question shows in Waiting on you and on its row, and is answered
 	await expect(row(page, p.name).getByText('1 question', { exact: true })).toBeVisible();
 
 	await item.getByRole('button', { name: 'yes', exact: true }).click();
-	await expect(item).toHaveText('Answered yes from the dashboard');
+	await expect(item.getByTestId('question-outcome')).toHaveText('Answered yes');
 	const res = await fetch(`${apiURLFromEnv()}/projects/${p.id}/questions`, {
 		headers: { Authorization: 'Bearer playwright' }
 	});
@@ -185,7 +185,7 @@ test('a question answered in the terminal says so on /projects, then leaves', as
 	await closeQuestion(q.id, 'terminal');
 	// The page's poll finds it gone; the card asks the account's full list how.
 	await page.clock.runFor(10_500);
-	await expect(item).toHaveText('Answered in the terminal');
+	await expect(item.getByTestId('question-outcome')).toHaveText('Answered in the terminal');
 	await page.clock.runFor(8_500);
 	await expect(item).toHaveCount(0);
 });

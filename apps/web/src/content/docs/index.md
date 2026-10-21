@@ -71,6 +71,6 @@ repose stop
 
 Run in your checkout, `repose stop` fetches the agent's commits first, as `git fetch repose` would. Stopping costs nothing; what the project holds counts toward [your plan's disk](/docs/billing#what-a-plan-means). The next `repose run` or `repose attach` starts it again in about 12 seconds with your files where you left them.
 
-## The dashboard
+## Light and dark
 
 **System**, **Light** and **Dark** at the foot of every page set the theme for this browser; **System** follows your computer's setting.

@@ -517,13 +517,13 @@
 					data-testid="meter-running-now"
 				>
 					<div class="hk-meter-top">
-						<span class="hk-meter-label">Running now</span>
+						<span class="hk-meter-label">Memory running</span>
 						<span class="hk-meter-value"
 							>{gbs(billing.usage.running_gb)} of {gbs(limits.memory)}{#if runningOver}&nbsp;· over{/if}</span
 						>
 					</div>
 					<MemoryBlocks
-						label="Running now"
+						label="Memory running"
 						segments={running.map((p) => ({
 							name: p.name,
 							gb: classMemoryGB(p.class),
@@ -532,7 +532,7 @@
 						limit={limits.memory}
 					/>
 					{#if running.length}
-						<ul class="legend" aria-label="Running now">
+						<ul class="legend" aria-label="Memory running">
 							{#each running as p, i (p.id)}
 								<li>
 									<!-- The swatch is that machine's run of squares, in MemoryBlocks' fills. -->
@@ -543,10 +543,17 @@
 										></i>
 									{/if}
 									<a href={resolve('/projects/[id]', { id: p.id })} class="legend-link">{p.name}</a>
-									<span class="u-num">{classMemoryGB(p.class)} GB</span>
-									{#if frozenSince(p)}<span class="u-num">frozen</span>{/if}
+									<span class="u-num"
+										>{classMemoryGB(p.class)} GB{frozenSince(p) ? ', frozen' : ''}</span
+									>
 								</li>
 							{/each}
+							{#if runningOver}
+								<li>
+									<i class="sw sw--over" aria-hidden="true"></i>Over the plan
+									<span class="u-num">{gbs(billing.usage.running_gb - limits.memory)}</span>
+								</li>
+							{/if}
 						</ul>
 					{/if}
 					<p class="note">{runsAtOnce(limits.memory)}</p>
@@ -716,7 +723,9 @@
 			<!-- docs/PRICING.md "Failed payments": starts are refused from day
 			     0 and every machine stops on day 3. The api gives no date of
 			     the failure, so the line counts from it. -->
-			<div class="hk-banner hk-banner--err" role="alert" data-testid="status-past-due">
+			<!-- Warn, as on /projects and kit section 7: err is for suspended
+			     (review r1 sys-4). -->
+			<div class="hk-banner" role="alert" data-testid="status-past-due">
 				<p>
 					Your last payment failed. New starts are refused and running machines keep running. Three
 					days after the failure every machine stops, unless the card is updated.
@@ -784,8 +793,10 @@
 						</dd>
 					</div>
 				{/if}
-				<!-- A trial's Status already names its first charge. -->
-				{#if nextCharge(sub, plan) && sub.status !== 'trialing'}
+				<!-- A trial's Status already names its first charge. A failed
+				     payment's banner is the charge that matters, so no renewal
+				     shows beside it (review r1 R1-A5). -->
+				{#if nextCharge(sub, plan) && sub.status !== 'trialing' && sub.status !== 'past_due' && accountStatus !== 'suspended'}
 					{@const next = nextCharge(sub, plan)!}
 					<div>
 						<dt>Next charge</dt>
@@ -949,8 +960,8 @@
 						<p>
 							Cancel the plan? It ends on {@render day(
 								sub.status === 'trialing' && sub.trial_end ? sub.trial_end : sub.period_end
-							)}. Machines run until then and stop at it; snapshots are kept 30 days after. Nothing
-							is charged after that.
+							)}. Machines stop then and snapshots are kept 30 days after. Nothing is charged after
+							that.
 						</p>
 						<div class="hk-confirm-actions">
 							<button
@@ -1183,6 +1194,12 @@
 		box-shadow: inset 0 0 0 1px var(--hk-text-3);
 		background: repeating-linear-gradient(135deg, var(--hk-text-3) 0 1px, transparent 1px 3px);
 	}
+	.sw--over {
+		box-shadow:
+			0 0 0 1px var(--hk-warn-dot),
+			inset 0 0 0 1px var(--hk-warn-dot);
+		background: transparent;
+	}
 	.legend-link {
 		color: var(--hk-text);
 		text-decoration: underline;
@@ -1252,7 +1269,7 @@
 		width: 20%;
 		text-align: right;
 	}
-	/* A row's lone link and a project's name under Running now take a
+	/* A row's lone link and a project's name under Memory running take a
 	   thumb's height without growing their rows. */
 	@media (pointer: coarse), (max-width: 639.98px) {
 		.c-link a,

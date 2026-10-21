@@ -300,6 +300,11 @@
 		text-align: right;
 		white-space: nowrap;
 	}
+	/* The project Secrets table's row recipe, so the two lists match
+	   (review r1 sys-2). */
+	.list td.c-act {
+		padding-block: 0.375rem;
+	}
 	.c-act button {
 		margin-right: -0.625rem;
 	}

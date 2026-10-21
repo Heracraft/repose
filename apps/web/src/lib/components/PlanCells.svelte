@@ -71,12 +71,12 @@
 					{#if variant === 'public'}
 						First {intro.months} months{#if intro.limit}, first {intro.limit} subscribers{/if}
 					{:else}
-						<span data-testid="intro-{p.id}"
-							>{price(intro.priceCents)} for {intro.months} months</span
-						>, then {price(p.priceCents)}
-						{#if intro.egressGB !== p.egressGB}and <span class="nw">{planSize(p.egressGB)}</span>
-							egress{/if}
-						from <span class="nw">month {intro.months + 1}</span>
+						<!-- The price above already reads the intro figure, so the line
+						     says only how long and what follows (review r1 R1-A4). -->
+						<span data-testid="intro-{p.id}">For {intro.months} months</span>, then {price(
+							p.priceCents
+						)}{#if intro.egressGB !== p.egressGB}
+							and <span class="nw">{planSize(p.egressGB)}</span> egress{/if}
 					{/if}
 				</p>
 			{/if}
@@ -274,7 +274,22 @@
 		width: 100%;
 	}
 
-	/* From 900px three across, the cards sharing their seven rows. */
+	/* From 900px three across, the cards sharing their seven rows. The
+	   public cards hold four short lines and no button, so they go three
+	   across from 640px; stacked at the full frame they were mostly blank
+	   (review r1 P7). */
+	@media (min-width: 640px) and (max-width: 899.98px) {
+		.plans--public {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			grid-template-rows: repeat(7, auto);
+			row-gap: 0;
+		}
+		.plans--public .plan {
+			grid-row: span 7;
+			grid-template-rows: subgrid;
+			padding: 1.25rem;
+		}
+	}
 	@media (min-width: 900px) {
 		.plans {
 			grid-template-columns: repeat(3, minmax(0, 1fr));

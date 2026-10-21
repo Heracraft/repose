@@ -144,7 +144,6 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-family: var(--hk-font-mono);
 		font-size: 0.8125rem;
 		color: var(--hk-text);
 		text-decoration: underline;

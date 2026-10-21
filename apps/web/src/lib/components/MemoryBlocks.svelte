@@ -3,8 +3,9 @@
   filled by what holds memory now, one run per machine. One machine fills
   in the accent; two in the accent and the secondary ink; three or more
   in the series colours, then the secondary ink. A frozen machine's GB
-  are hatched, GB past the plan are amber, and free GB are an empty 3:1
-  outline. The fills are not the only carrier: the reading ("28 GB of 32
+  are hatched, and free GB are an empty 3:1 outline. GB past the plan
+  keep their machine's fill and take an amber ring, so every legend
+  swatch still has its squares (review r1 R1-A6, sys-3). The fills are not the only carrier: the reading ("28 GB of 32
   GB, over") is the meter's value text, and with two machines or more the
   legend names each run.
 -->
@@ -78,12 +79,10 @@
 	>
 		{#each squares as q, i (i)}
 			<i
-				class:on={q.seg >= 0 && !q.frozen && !q.over}
-				class:ice={q.seg >= 0 && q.frozen && !q.over}
+				class:on={q.seg >= 0 && !q.frozen}
+				class:ice={q.seg >= 0 && q.frozen}
 				class:over={q.over}
-				style={q.seg >= 0 && !q.frozen && !q.over
-					? `--fill: ${fill(q.seg, segments.length)}`
-					: undefined}
+				style={q.seg >= 0 && !q.frozen ? `--fill: ${fill(q.seg, segments.length)}` : undefined}
 				title={q.name}
 			></i>
 		{/each}
@@ -100,6 +99,13 @@
 					></i>{s.name}<span class="gb">{s.gb} GB{s.frozen ? ', frozen' : ''}</span>
 				</li>
 			{/each}
+			{#if used > limit}
+				<li>
+					<i class="over" aria-hidden="true"></i>Over the plan<span class="gb"
+						>{used - limit} GB</span
+					>
+				</li>
+			{/if}
 		</ul>
 	{/if}
 </div>
@@ -142,9 +148,16 @@
 		box-shadow: inset 0 0 0 1px var(--hk-text-3);
 		background: repeating-linear-gradient(135deg, var(--hk-text-3) 0 1px, transparent 1px 3px);
 	}
+	/* Past the plan: the machine's own fill, ringed in amber. The ring
+	   sits in the 2px gap, so a run past the line reads as one amber
+	   frame. */
 	.over {
-		box-shadow: none;
-		background: var(--hk-warn-dot);
+		box-shadow:
+			0 0 0 1px var(--hk-warn-dot),
+			inset 0 0 0 1px var(--hk-warn-dot);
+	}
+	.over:not(.on, .ice) {
+		background: transparent;
 	}
 	.legend {
 		display: flex;

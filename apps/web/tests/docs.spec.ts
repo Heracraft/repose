@@ -168,6 +168,32 @@ test("the phone drawer shows the search and the current page's link", async ({ p
 	expect((await search.boundingBox())!.y).toBeGreaterThanOrEqual(101);
 });
 
+// Closing the phone drawer keeps the reader's place: focus goes back to
+// the sticky menu button without scrolling the page to it (review r1 P1).
+// While it is open, Tab stays in the drawer, since the article behind the
+// scrim is inert (P2).
+test('the phone drawer closes in place and holds Tab', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto('/docs/sync');
+	await page.evaluate(() => window.scrollTo(0, 1500));
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(1500);
+	const button = page.locator('[data-docs-subbar]').getByRole('button', { name: /docs menu/ });
+	// A script click, so Playwright's own scroll-into-view does not move
+	// the page before the close is measured.
+	await button.evaluate((el: HTMLElement) => el.click());
+	const article = page.locator('#docs-nav + div');
+	await expect(article).toHaveJSProperty('inert', true);
+	await expect(page.locator('.site-footer')).toHaveJSProperty('inert', true);
+	await page.keyboard.press('Escape');
+	await expect(button).toBeFocused();
+	expect(await page.evaluate(() => window.scrollY)).toBe(1500);
+	await expect(article).toHaveJSProperty('inert', false);
+	await button.evaluate((el: HTMLElement) => el.click());
+	await page.locator('.scrim').dispatchEvent('click');
+	await expect(button).toBeFocused();
+	expect(await page.evaluate(() => window.scrollY)).toBe(1500);
+});
+
 // The owner saw a scrollbar flash over the sidebar on the first visit to
 // the docs, gone at the first move (I-660): from lg up the sidebar draws
 // none, and at 1440x900 its list fits whole with Tutorials folded.

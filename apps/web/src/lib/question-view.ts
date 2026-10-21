@@ -11,9 +11,9 @@ export const EXPIRY_SHOWN_MS = 10 * 60_000;
 /** How long an answered row stays, as one line, before it leaves. */
 export const CLOSED_LINE_MS = 8_000;
 
-/** Where an answer came from, as the end of "Answered yes …". */
+/** Where an answer came from, as the end of "Answered yes …". An answer
+ *  from the dashboard says nothing more: the reader is on it. */
 const FROM: Partial<Record<QuestionVia, string>> = {
-	dashboard: 'from the dashboard',
 	cli: 'from the CLI',
 	email: 'by email',
 	ntfy: 'in ntfy',

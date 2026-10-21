@@ -35,7 +35,7 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="mt-6"><a class="hk-more mt-0" href={resolve('/docs')}>Quickstart</a></p>
+			<p class="mt-6"><a class="hk-more alone mt-0" href={resolve('/docs')}>Quickstart</a></p>
 		{/if}
 	</main>
 	<div class="hidden xl:block" aria-hidden="true"></div>
@@ -77,6 +77,22 @@
 	}
 	.closest a:hover {
 		text-decoration-color: currentColor;
+	}
+	/* On touch the whole 44px hairline row is the link's target; the
+	   link's name stays the page title (review r1 P6). */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.closest li {
+			position: relative;
+			align-items: center;
+		}
+		.closest a::after {
+			content: '';
+			position: absolute;
+			inset: 0;
+		}
+		.alone {
+			padding-block: 0.6875rem;
+		}
 	}
 	.closest span {
 		flex: none;

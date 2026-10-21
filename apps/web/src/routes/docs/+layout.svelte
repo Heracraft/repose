@@ -14,6 +14,7 @@
 	let nav: HTMLElement | undefined = $state();
 	let searchBox: HTMLElement | undefined = $state();
 	let menuButton: HTMLButtonElement | undefined = $state();
+	let content: HTMLElement | undefined = $state();
 
 	// The sidebar lists pages and nothing else, so its height is the same on
 	// every page; the open page's sections are in DocPage's rail (I-396).
@@ -174,7 +175,9 @@
 	function closeMenu(returnFocus = true) {
 		if (!menuOpen) return;
 		menuOpen = false;
-		if (returnFocus) menuButton?.focus();
+		// The button sticks under the header; a plain focus() scrolls the
+		// page to bring it in, and the reader loses their place.
+		if (returnFocus) menuButton?.focus({ preventScroll: true });
 	}
 
 	// The page behind an open drawer doesn't scroll.
@@ -183,8 +186,24 @@
 		const root = document.documentElement;
 		const before = root.style.overflow;
 		root.style.overflow = 'hidden';
+		// Tab stays in the drawer: the article column and the footer behind
+		// the scrim go inert. The header and the sub-bar stay live, so the
+		// menu button still closes it (kit 1.8).
+		const behind = [content, ...document.querySelectorAll<HTMLElement>('.site-footer')].filter(
+			(el): el is HTMLElement => !!el
+		);
+		for (const el of behind) el.inert = true;
+		// From 768px the sidebar is the menu; a window widened with the
+		// drawer open closes it, so nothing stays inert.
+		const wide = window.matchMedia('(min-width: 768px)');
+		const onWide = () => {
+			if (wide.matches) closeMenu(false);
+		};
+		wide.addEventListener('change', onWide);
 		return () => {
+			wide.removeEventListener('change', onWide);
 			root.style.overflow = before;
+			for (const el of behind) el.inert = false;
 		};
 	});
 </script>
@@ -346,7 +365,7 @@
 		{/if}
 	</aside>
 
-	<div class="min-w-0">
+	<div class="min-w-0" bind:this={content}>
 		{@render children()}
 	</div>
 </div>

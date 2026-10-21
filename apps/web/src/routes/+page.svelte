@@ -44,7 +44,8 @@
 		}
 	}
 
-	// On a phone the install line breaks at its spaces, never inside the URL.
+	// On a phone the install line breaks at its spaces, never inside the URL
+	// and never between the pipe and its target.
 	const install = INSTALL_COMMAND.split(/(https:\/\/\S+)/);
 
 	// Each row shows exactly what its Copy puts on the clipboard, and that
@@ -115,7 +116,8 @@
 				<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
 			</div>
 			<p class="install">
-				{install[0]}<span class="nowrap">{install[1]}</span>{install[2]}
+				{install[0]}<span class="nowrap">{install[1]}</span>
+				<span class="nowrap">{install[2].trimStart()}</span>
 			</p>
 		</div>
 		<Terminal />

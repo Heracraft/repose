@@ -23,7 +23,8 @@
 		toggleSelection,
 		groupCatalog,
 		buildMenuSelection,
-		parseMenuSelection
+		parseMenuSelection,
+		menuEditable
 	} from '$lib/menuSelection';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ProjectTabs from '$lib/components/ProjectTabs.svelte';
@@ -42,6 +43,7 @@
 		['nix', 'Nix']
 	] as const;
 	let activeTab = $state<'menu' | 'nix'>('nix');
+	let tabPicked = false;
 	let search = $state('');
 	let loadFailed = $state(false);
 	let loadError = $state<string | undefined>(undefined);
@@ -103,6 +105,9 @@
 	let nixDirty = $derived(!!config && fragmentText !== (config.fragment ?? ''));
 	let nixOverrideEditable = $state(false);
 	let nixReadonly = $derived(!!config?.menu && !nixOverrideEditable);
+	// A fragment written by hand turns the menu off; the starting file and
+	// one the menu wrote keep it on (the api's "custom fragment" rule).
+	let menuOn = $derived(!!config && menuEditable(config));
 
 	// Build/apply state, shared by both tabs.
 	let applying = $state(false);
@@ -127,7 +132,10 @@
 				getCatalog(),
 				listRevisions(id)
 			]);
-			activeTab = config?.menu ? 'menu' : 'nix';
+			// The first load picks the tab; a reload after a build keeps the
+			// one the reader is on.
+			if (!tabPicked) activeTab = config && menuEditable(config) ? 'menu' : 'nix';
+			tabPicked = true;
 			fragmentText = config?.fragment ?? '';
 			const menu = parseMenuSelection(config?.menu);
 			const services = new Set(catalog.filter((c) => c.kind === 'service').map((c) => c.id));
@@ -375,78 +383,82 @@
 							id="config-panel-menu"
 							aria-labelledby="config-tab-menu"
 						>
-							{#if config.menu === null || config.menu === undefined}
+							{#if !menuOn}
 								<div class="hk-banner" role="status">
 									<p>
-										This project's config was edited by hand; applying from the menu will replace
-										it.
+										The menu is off for this project: its config was written by hand. Applying the
+										file a new project starts with, on the Nix tab, turns it back on (<a
+											class="hk-link"
+											href={resolve('/docs/[slug]', { slug: 'config' })}>Config</a
+										>).
 									</p>
 								</div>
-							{/if}
-							<input
-								type="search"
-								class="hk-input hk-input--search"
-								placeholder="Search packages and services…"
-								aria-label="Search packages and services"
-								bind:value={search}
-							/>
-							{#each [...groups.entries()] as [group, items] (group)}
-								<div class="cgroup">
-									<h2 class="group-title">
-										{group}<span class="group-n">{items.length}</span>
-									</h2>
-									<div class="citems">
-										{#each items as item (item.id)}
-											<div class="citem">
-												<label class="hk-check citem-check">
-													<input
-														type="checkbox"
-														checked={isSelected(item)}
-														onchange={(e) => toggleItem(item, e.currentTarget.checked)}
-													/>
-													<span class="citem-text">
-														<span class="citem-name">{item.label}</span>
-														<span class="citem-desc">{item.description}</span>
-													</span>
-												</label>
-												{#if item.options?.length && isSelected(item)}
-													<select
-														class="hk-select citem-select"
-														aria-label={`${item.label} ${item.options[0].id}`}
-														value={menuOptions[item.id] ?? item.options[0].default}
-														onchange={(e) => (menuOptions[item.id] = e.currentTarget.value)}
-													>
-														{#each item.options[0].values as v (v)}
-															<option value={v}>{v}</option>
-														{/each}
-													</select>
-												{/if}
-											</div>
-										{/each}
+							{:else}
+								<input
+									type="search"
+									class="hk-input hk-input--search"
+									placeholder="Search packages and services…"
+									aria-label="Search packages and services"
+									bind:value={search}
+								/>
+								{#each [...groups.entries()] as [group, items] (group)}
+									<div class="cgroup">
+										<h2 class="group-title">
+											{group}<span class="group-n">{items.length}</span>
+										</h2>
+										<div class="citems">
+											{#each items as item (item.id)}
+												<div class="citem">
+													<label class="hk-check citem-check">
+														<input
+															type="checkbox"
+															checked={isSelected(item)}
+															onchange={(e) => toggleItem(item, e.currentTarget.checked)}
+														/>
+														<span class="citem-text">
+															<span class="citem-name">{item.label}</span>
+															<span class="citem-desc">{item.description}</span>
+														</span>
+													</label>
+													{#if item.options?.length && isSelected(item)}
+														<select
+															class="hk-select citem-select"
+															aria-label={`${item.label} ${item.options[0].id}`}
+															value={menuOptions[item.id] ?? item.options[0].default}
+															onchange={(e) => (menuOptions[item.id] = e.currentTarget.value)}
+														>
+															{#each item.options[0].values as v (v)}
+																<option value={v}>{v}</option>
+															{/each}
+														</select>
+													{/if}
+												</div>
+											{/each}
+										</div>
 									</div>
-								</div>
-							{/each}
-							{#if extraPackages.length}
-								<div class="cgroup">
-									<h2 class="group-title">
-										Extra packages<span class="group-n">{extraPackages.length}</span>
-									</h2>
-									<ul class="extras">
-										{#each extraPackages as pkg (pkg)}
-											<li class="extra">
-												<span class="hk-mono">{pkg}</span>
-												<!-- Undone by adding the package back before Apply. -->
-												<button
-													type="button"
-													class="hk-btn-ghost hk-btn-sm extra-remove"
-													aria-label={`Remove ${pkg}`}
-													onclick={() => (extraPackages = extraPackages.filter((p) => p !== pkg))}
-													>Remove</button
-												>
-											</li>
-										{/each}
-									</ul>
-								</div>
+								{/each}
+								{#if extraPackages.length}
+									<div class="cgroup">
+										<h2 class="group-title">
+											Extra packages<span class="group-n">{extraPackages.length}</span>
+										</h2>
+										<ul class="extras">
+											{#each extraPackages as pkg (pkg)}
+												<li class="extra">
+													<span class="hk-mono">{pkg}</span>
+													<!-- Undone by adding the package back before Apply. -->
+													<button
+														type="button"
+														class="hk-btn-ghost hk-btn-sm extra-remove"
+														aria-label={`Remove ${pkg}`}
+														onclick={() => (extraPackages = extraPackages.filter((p) => p !== pkg))}
+														>Remove</button
+													>
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
 							{/if}
 						</div>
 					{:else}
@@ -512,7 +524,9 @@
 							</div>
 						{/if}
 						<span class="cbar-status" role="status">
-							{#if activeTab === 'menu'}
+							{#if activeTab === 'menu' && !menuOn}
+								Menu off
+							{:else if activeTab === 'menu'}
 								<!-- While the banner asks, it says "Unsaved changes" once. -->
 								{selectedCount} selected{#if applying}&nbsp;· Building…{:else if menuDirty && !heldNavigation}&nbsp;·
 									<span class="cbar-dirty">Unsaved changes</span>{/if}
@@ -530,7 +544,9 @@
 						<button
 							type="button"
 							class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
-							disabled={applying || (activeTab === 'nix' && nixReadonly)}
+							disabled={applying ||
+								(activeTab === 'nix' && nixReadonly) ||
+								(activeTab === 'menu' && (!menuOn || !menuDirty))}
 							onclick={activeTab === 'menu' ? applyMenu : applyNix}
 						>
 							{applying ? 'Applying…' : 'Apply'}

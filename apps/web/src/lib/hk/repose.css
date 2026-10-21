@@ -54,6 +54,16 @@
 .hk :is(.hk-input, .hk-select, .hk-textarea):disabled {
 	border-color: var(--hk-border);
 }
+/* Focus: a solid 1px accent ring on the accent edge (about 6:1) carries
+   the cue, and the kit's 3px wash sits outside it. The kit's own focus,
+   a 55% edge and the wash, is 1.6:1 and fainter than the 3:1 edge it
+   replaces (Guide B 1.8, review r1 P3). */
+.hk :is(.hk-input, .hk-select, .hk-textarea):focus {
+	border-color: var(--hk-accent);
+	box-shadow:
+		0 0 0 1px var(--hk-accent),
+		0 0 0 4px var(--hk-ring);
+}
 .hk :is(.hk-input, .hk-select, .hk-textarea)[aria-invalid='true'] {
 	border-color: var(--hk-err);
 }
@@ -105,7 +115,9 @@
 .hk :is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true'],
 .hk
 	:is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true']:is(:hover, :active) {
-	color: var(--hk-text-3);
+	/* The 3:1 control edge: a clear step from the enabled ink (7:1),
+	   still 3:1 for a control nobody can use yet (review r1 dash-r1-6). */
+	color: var(--hk-control-edge);
 	opacity: 1;
 }
 .hk .hk-btn-secondary[aria-disabled='true'],
@@ -252,6 +264,18 @@
 	margin: 0;
 }
 
+/* The ghost's 44px target belongs to touch only, as Guide B 12.1 has
+   it; the kit's rule applies it at every width, which made a row with a
+   Delete 49px on a desktop (review r1 sys-2). */
+@media not ((pointer: coarse) or (max-width: 639.98px)) {
+	.hk .hk-btn-ghost--touch {
+		min-height: 0;
+		min-width: 0;
+		margin-block: 0;
+		padding-inline: 0.625rem;
+	}
+}
+
 /* ---------- Inputs ---------- */
 
 /* A search field: the magnifier in the kit chevron's #71717a, which reads
@@ -265,6 +289,12 @@
 }
 .hk .hk-check {
 	min-height: 1.5rem;
+}
+/* A label that wraps must not squeeze its box (the kit sets no
+   flex-shrink, review r1 dash-r1-2). A label of several lines sets
+   align-items: flex-start and a top margin itself. */
+.hk .hk-check input {
+	flex-shrink: 0;
 }
 @media (pointer: coarse), (max-width: 639.98px) {
 	.hk .hk-check {

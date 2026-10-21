@@ -869,7 +869,10 @@
 	.pname:focus-visible {
 		outline: none;
 	}
+	/* The row has no side padding, so the ring stands 8px outside it and
+	   clears the name, the remote and the action (review r1 dash-r1-3). */
 	.pname:focus-visible::after {
+		inset: 0 -0.5rem;
 		outline: 2px solid var(--hk-accent);
 		outline-offset: -2px;
 		border-radius: var(--hk-radius-sm);

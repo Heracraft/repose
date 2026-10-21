@@ -21,6 +21,11 @@
 	onMount(() => {
 		void signedInEmail().then((e) => (email = e));
 	});
+	// The places this menu holds are marked current here, since below 640px
+	// (Settings) or 360px (Billing) the header row no longer shows them
+	// (review r1 R1-A2).
+	const here = (path: string) =>
+		page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
 	let wrap: HTMLElement | undefined = $state();
 	let button: HTMLButtonElement | undefined = $state();
 	let panel: HTMLElement | undefined = $state();
@@ -90,6 +95,8 @@
 		bind:this={button}
 		type="button"
 		class="account-button hk-btn-secondary hk-btn-sm min-w-26 gap-1"
+		class:here-settings={here('/settings')}
+		class:here-billing={here('/billing')}
 		aria-expanded={open}
 		aria-controls="{id}-panel"
 		onclick={() => (open ? hide(true) : show())}
@@ -107,19 +114,39 @@
 	>
 	<div bind:this={panel} id="{id}-panel" hidden={!open} class="account-panel">
 		{#if email}<p class="account-email">{email}</p>{/if}
-		<a href={resolve('/billing')} class="{ITEM} min-[360px]:hidden">Billing</a>
+		<a
+			href={resolve('/billing')}
+			class="{ITEM} min-[360px]:hidden"
+			aria-current={here('/billing') ? 'page' : undefined}>Billing</a
+		>
 		<a href={resolve('/docs')} class="{ITEM} sm:hidden">Docs</a>
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the feedback board is off-site -->
 		<a href={FEEDBACK_URL} class="{ITEM} sm:hidden">Feedback</a>
-		<a href={resolve('/settings')} class={ITEM}>Settings</a>
+		<a
+			href={resolve('/settings')}
+			class={ITEM}
+			aria-current={here('/settings') ? 'page' : undefined}>Settings</a
+		>
 		<button type="button" class={ITEM} onclick={() => signOut()}>Sign out</button>
 	</div>
 </div>
 
 <style>
+	/* hk-btn-sm's 30px, the public header's Dashboard button's height, so
+	   the slot does not move between the two headers (review r1 sys-6). */
 	.account-button {
-		height: 2rem;
 		font-size: 0.8125rem;
+	}
+	/* The current place, when the header row has no room for its link. */
+	@media (max-width: 639.98px) {
+		.account-button.here-settings {
+			color: var(--hk-accent);
+		}
+	}
+	@media (max-width: 359.98px) {
+		.account-button.here-billing {
+			color: var(--hk-accent);
+		}
 	}
 	.chevron {
 		width: 0.875rem;
@@ -166,6 +193,10 @@
 		text-align: left;
 		text-decoration: none;
 		cursor: pointer;
+	}
+	.account-panel :global(.account-item[aria-current='page']) {
+		font-weight: 500;
+		color: var(--hk-accent);
 	}
 	.account-panel :global(.account-item:hover) {
 		background: var(--hk-hover);

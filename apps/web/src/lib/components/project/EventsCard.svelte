@@ -73,6 +73,7 @@
 	import { dayLabel } from '$lib/format';
 	import type { EventFilter } from '$lib/events';
 	import EventRow from './EventRow.svelte';
+	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import {
 		readEventsState,
 		eventsSearch,
@@ -115,6 +116,8 @@
 	let baseTotal = $state<number | undefined>(undefined);
 	let newerCount = $state(0);
 	let announce = $state('');
+	/** Why the last load of a page not yet on screen failed. */
+	let loadError = $state<string | undefined>(undefined);
 
 	let card = $state<HTMLElement | undefined>(undefined);
 	let list = $state<HTMLUListElement | undefined>(undefined);
@@ -164,8 +167,10 @@
 			loaded = got;
 			baseTotal = got.total;
 			newerCount = 0;
+			loadError = undefined;
 			failure.ok();
 		} catch (err) {
+			if (k === key) loadError = loadErrorText(err, 'Could not load events.');
 			failure.fail(err);
 		} finally {
 			if (k === key) loading = false;
@@ -196,7 +201,10 @@
 	/** The newest page reloads its rows; a deeper one only counts. */
 	async function poll() {
 		const k = key;
-		if (loading || loaded?.key !== k) return;
+		if (loading) return;
+		// A page whose load failed is loaded again, so the list comes back
+		// once the api does (review r1 sys-1).
+		if (loaded?.key !== k) return load(view, k);
 		const s = view;
 		try {
 			if (isNewest(s)) {
@@ -327,7 +335,15 @@
 	<!-- New rows on the newest page are said here, once each poll. -->
 	<p class="hk-sr" role="status">{announce}</p>
 
-	{#if loaded && events.length === 0}
+	{#if !loaded}
+		<LoadState
+			status={loadError ? 'failed' : 'loading'}
+			error={loadError}
+			shape="rows"
+			label="Loading events…"
+			onretry={() => load(view, key)}
+		/>
+	{:else if events.length === 0}
 		<div class="hk-empty-row">
 			<span>{view.kind ? 'No events of this kind.' : 'No events yet.'}</span>
 		</div>

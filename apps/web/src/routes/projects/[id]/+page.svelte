@@ -773,39 +773,39 @@
 				<span class="status-state" data-testid="project-state"
 					><StateDot state={project.state} frozen={!!frozen} /></span
 				>
+				<!-- Frozen reads as the list does, "frozen for 1h35m", with the
+				     size facts every other state shows (review r1 dash-r1-4). -->
 				{#if frozen}
-					<span class="status-frozen" data-testid="frozen"
-						>Frozen for {uptime(frozen)}. It wakes when you connect.</span
+					<span class="status-frozen" data-testid="frozen" title="It wakes when you connect."
+						>for {uptime(frozen)}</span
 					>
-				{:else}
-					<span class="status-facts">
-						<span aria-hidden="true">·</span>
-						<span class="hk-mono" data-testid="project-class">{project.class}</span>
-						{#if vcpus}
-							<span aria-hidden="true">·</span>
-							<span>{vcpus} {vcpus === 1 ? 'core' : 'cores'}</span>
-							<span aria-hidden="true">·</span>
-							<span>{classMemoryGB(project.class)} GB</span>
-						{/if}
-						{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
-							<!-- The stored choice is the next start's; a running machine
-							     may still run tmux until it stops (I-502). -->
-							<span aria-hidden="true">·</span>
-							<span class="hk-mono">herdr</span>
-						{/if}
-						{#if project.state === 'running'}
-							<span aria-hidden="true">·</span>
-							<span>up {uptime(project.started_at)}</span>
-						{/if}
-						{#if project.expires_at}
-							<span aria-hidden="true">·</span>
-							<span class="hk-badge hk-badge--outline" data-testid="project-temporary"
-								>temporary</span
-							>
-							<span class="whitespace-nowrap">{tempLeft(project.expires_at)}</span>
-						{/if}
-					</span>
 				{/if}
+				<span class="status-facts">
+					<span aria-hidden="true">·</span>
+					<span class="hk-mono" data-testid="project-class">{project.class}</span>
+					{#if vcpus}
+						<span aria-hidden="true">·</span>
+						<span>{vcpus} {vcpus === 1 ? 'core' : 'cores'}</span>
+						<span aria-hidden="true">·</span>
+						<span>{classMemoryGB(project.class)} GB</span>
+					{/if}
+					{#if project.multiplexer === 'herdr' && project.state === 'stopped'}
+						<!-- The stored choice is the next start's; a running machine
+							     may still run tmux until it stops (I-502). -->
+						<span aria-hidden="true">·</span>
+						<span class="hk-mono">herdr</span>
+					{/if}
+					{#if project.state === 'running' && !frozen}
+						<span aria-hidden="true">·</span>
+						<span>up {uptime(project.started_at)}</span>
+					{/if}
+					{#if project.expires_at}
+						<span aria-hidden="true">·</span>
+						<span class="hk-badge hk-badge--outline" data-testid="project-temporary">temporary</span
+						>
+						<span class="whitespace-nowrap">{tempLeft(project.expires_at)}</span>
+					{/if}
+				</span>
 			</p>
 			{#if phone.current}{@render headActions()}{/if}
 		</div>
@@ -951,7 +951,11 @@
 								}
 							]
 						: []),
-					{ command: `ssh ${project.slug}.repose`, what: 'the ssh command' },
+					// A plain ssh never starts a stopped machine; repose ssh does
+					// (ssh-and-editors.md, review r1 dash-r1-5).
+					project.state === 'running'
+						? { command: `ssh ${project.slug}.repose`, what: 'the ssh command' }
+						: { command: `repose ssh ${project.slug}`, what: 'the repose ssh command' },
 					{ command: `repose code ${project.slug}`, what: 'the repose code command' }
 				]}
 			/>
@@ -1220,6 +1224,7 @@
 		display: contents;
 	}
 	.status-frozen {
+		margin-left: -0.25rem;
 		font-size: 0.875rem;
 		color: var(--hk-text-2);
 	}

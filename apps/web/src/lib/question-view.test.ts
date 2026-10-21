@@ -36,7 +36,7 @@ describe('closedLine', () => {
 			closedLine(q({ id: 'a', state: 'answered', answer, answered_via }));
 		expect(a('dashboard')).toEqual({
 			answer: 'yes',
-			text: 'Answered yes from the dashboard',
+			text: 'Answered yes',
 			tone: 'answered'
 		});
 		expect(a('cli').text).toBe('Answered yes from the CLI');

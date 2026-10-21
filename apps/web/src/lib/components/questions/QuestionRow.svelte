@@ -150,15 +150,26 @@
 
 {#if closed}
 	<li class="qrow qrow--closed" data-testid="question" data-qid={q.id} data-state={q.state}>
+		<!-- The question stays beside the outcome, so with two open the
+		     reader can tell which one took the answer (review r1 dash-r1-8). -->
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- the card builds projectHref with resolve() -->
 		<p class="qrow-closed-line">
-			{#if closed.answer !== undefined}
-				Answered <span class="qrow-answer-word">{closed.answer}</span>{closed.text.slice(
-					'Answered '.length + closed.answer.length
-				)}
-			{:else}
-				{closed.text}
-			{/if}
+			<span class="qrow-closed-q"
+				>{#if projectHref}<a href={projectHref} class="qrow-project">{q.project}</a><span
+						aria-hidden="true">&nbsp;·&nbsp;</span
+					>{/if}<span class="qrow-closed-text">{q.text}</span></span
+			>
+			<span class="qrow-closed-outcome" data-testid="question-outcome">
+				{#if closed.answer !== undefined}
+					Answered <span class="qrow-answer-word">{closed.answer}</span>{closed.text.slice(
+						'Answered '.length + closed.answer.length
+					)}
+				{:else}
+					{closed.text}
+				{/if}
+			</span>
 		</p>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</li>
 {:else}
 	<li class="qrow" data-testid="question" data-qid={q.id} data-state="pending" bind:this={rowEl}>
@@ -238,9 +249,26 @@
 		padding: 0.625rem 0;
 	}
 	.qrow-closed-line {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
 		margin: 0;
 		font-size: 0.875rem;
 		color: var(--hk-text-3);
+	}
+	.qrow-closed-q {
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.qrow-closed-q .qrow-project {
+		font-size: 0.8125rem;
+	}
+	.qrow-closed-outcome {
+		flex: none;
+		max-width: 60%;
 		overflow-wrap: anywhere;
 	}
 	.qrow-answer-word {

@@ -558,6 +558,13 @@
 	.field-row button {
 		flex: none;
 	}
+	/* Send test and Save stand as tall as the 36px field beside them; on
+	   touch both are 44px already (review r1 R1-A3). */
+	@media (min-width: 640px) and (not (pointer: coarse)) {
+		.field-row button {
+			height: 2.25rem;
+		}
+	}
 	.label-row {
 		display: flex;
 		flex-wrap: wrap;
