@@ -127,45 +127,27 @@
 			cancelAnimationFrame(frame);
 		};
 	});
-
-	// The rail's rows: the docs rail's type, 28px tall, on a hairline, the
-	// current one ink with a 1px ink edge laid on that hairline.
-	const ROW =
-		'-ml-px block border-l py-1 pl-3 text-sm leading-5 transition-[color,border-color] duration-150';
-	const ROW_IDLE = 'border-transparent text-ink-muted hover:text-ink';
-	const ROW_CURRENT = 'border-ink text-ink';
-
-	// The policies' list in the left column, in the docs sidebar's type: a
-	// 26px row, the current one ink on --sunken.
-	const SIDE = 'block rounded-sm px-2 py-[3px] text-sm';
-	const SIDE_IDLE = 'text-ink-muted hover:text-ink';
-	const SIDE_CURRENT = 'bg-sunken font-medium text-ink';
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- the policy links are built with resolve() above; the rest are #fragments -->
 
 <!-- The root layout draws the header and the footer. The policies sit in
      the docs' frame (I-660), so a reader going from /docs/cli to /terms
-     sees the text in the same place: from lg a 220px column under the
-     logo with the three policies in the docs sidebar's type, a 48px gap,
-     then the text; from xl the text, 48px and a 180px "On this page"
+     sees the text in the same place: from 768px a 220px column under the
+     logo with the three policies in the docs sidebar's look, a 48px gap,
+     then the text; from 1280px the text, 48px and a 180px "On this page"
      rail at the frame's right edge. At 1440 that is 160, 428 to 1052 and
-     1100 to 1280. Below xl the text holds to 42rem and the sections fold
-     under the effective date; below lg the policies are one line of
-     links there. The title sits 40px under the header's rule. -->
-<div class="frame lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-x-12">
-	<!-- Sticks at 57px, under the header and its hairline, its label level
-	     with the rail's. -->
-	<div class="hidden lg:block">
-		<nav aria-label="Policies" class="sticky top-[57px] pt-11 pb-10">
-			<p class="mb-1 px-2 text-sm font-medium text-ink">Policies</p>
+     1100 to 1280. Below 1280 the text holds to 42rem and the sections fold
+     under the effective date; below 768px the policies are one row of
+     links there. -->
+<div class="frame md:grid md:grid-cols-[220px_minmax(0,1fr)] md:gap-x-12">
+	<div class="hidden md:block">
+		<nav aria-label="Policies" class="side sticky top-[57px] pt-8 pr-2 pb-10">
+			<p class="side-title">Policies</p>
 			<ul>
 				{#each links as link (link.href)}
 					<li>
-						<a
-							href={link.href}
-							aria-current={page.url.pathname === link.href ? 'page' : undefined}
-							class="{SIDE} {page.url.pathname === link.href ? SIDE_CURRENT : SIDE_IDLE}"
+						<a href={link.href} aria-current={page.url.pathname === link.href ? 'page' : undefined}
 							>{link.label}</a
 						>
 					</li>
@@ -175,78 +157,75 @@
 	</div>
 
 	<div class="xl:grid xl:grid-cols-[minmax(0,1fr)_180px] xl:gap-x-12">
-		<main id="main" class="max-w-[42rem] min-w-0 pt-10 pb-24 xl:max-w-none">
+		<main
+			id="main"
+			tabindex="-1"
+			class="max-w-[42rem] min-w-0 pt-9 pb-24 outline-none xl:max-w-none"
+		>
 			<article bind:this={article}>
-				<div class="doc prose max-w-none">
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- the title comes from this repo's own markdown, as the body below does -->
-					<h1 class="mb-4">{@html rendered.title}</h1>
-				</div>
-				<div class="mb-10 flex flex-col gap-4 text-sm">
-					{#if meta.effective}
-						<p class="text-ink-muted">Effective {longDate(meta.effective)}</p>
-					{/if}
-					{#if meta.status}
-						<p class="banner banner--warn mb-0 self-start">Draft: {meta.status}</p>
-					{/if}
-					<nav aria-label="Policies" class="flex gap-5 lg:hidden">
-						{#each links as link (link.href)}
-							<a
-								href={link.href}
-								aria-current={page.url.pathname === link.href ? 'page' : undefined}
-								class={page.url.pathname === link.href
-									? 'text-ink underline decoration-1 underline-offset-4'
-									: 'text-ink-muted hover:text-ink'}>{link.label}</a
-							>
-						{/each}
-					</nav>
+				<p class="hk-eyebrow">Policies</p>
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -- the title comes from this repo's own markdown, as the body below does -->
+				<h1 class="hk-h2 mt-2">{@html rendered.title}</h1>
+				{#if meta.effective}
+					<p class="mt-2 text-compact text-ink-3">Effective {longDate(meta.effective)}</p>
+				{/if}
+				{#if meta.status}
+					<p class="hk-banner mt-5 mb-0">Draft: {meta.status}</p>
+				{/if}
+				<nav aria-label="Policies" class="phone-links mt-5 flex gap-5 md:hidden">
+					{#each links as link (link.href)}
+						<a href={link.href} aria-current={page.url.pathname === link.href ? 'page' : undefined}
+							>{link.label}</a
+						>
+					{/each}
+				</nav>
+				<div class="mt-6 border-t border-hairline sm:mt-8">
 					{#if rendered.sections.length > 1}
-						<!-- Below xl there is no rail, so the sections fold in here, as on the docs. -->
-						<details class="group rounded-sm border border-rule xl:hidden">
+						<!-- Below 1280 there is no rail, so the sections fold in here, as on the docs. -->
+						<details class="toc-fold group border-b border-hairline xl:hidden">
 							<summary
-								class="flex cursor-pointer list-none items-center justify-between px-4 py-2 font-medium [&::-webkit-details-marker]:hidden"
+								class="flex h-11 cursor-pointer list-none items-center justify-between text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden"
 							>
 								On this page
 								<svg
-									viewBox="0 0 20 20"
-									class="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180 motion-reduce:transition-none"
+									viewBox="0 0 16 16"
+									class="h-4 w-4 text-ink-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
 									aria-hidden="true"
 									fill="none"
-									><path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.5" /></svg
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg
 								>
 							</summary>
-							<ul class="space-y-1.5 border-t border-rule px-4 py-3">
+							<ul class="toc-list pb-4">
 								{#each rendered.sections as h (h.id)}
-									<li>
-										<a href={`#${h.id}`} class="text-ink-muted hover:text-ink">{h.text}</a>
-									</li>
+									<li><a href={`#${h.id}`}>{h.text}</a></li>
 								{/each}
 							</ul>
 						</details>
 					{/if}
 				</div>
-				<div class="doc prose max-w-none">
+				<div class="doc mt-8">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -- `raw` only ever comes from this repo's own src/content/legal/*.md via a ?raw import, never from a user or the api -->
 					{@html rendered.html}
 				</div>
 			</article>
 		</main>
 
-		<!-- The docs rail's place and type: it sticks at 57px, draws no
+		<!-- The docs rail's place and look: it sticks at 57px, draws no
 		     scrollbar, and scrolls by wheel when the window is short. -->
 		<div class="hidden xl:block">
 			{#if rendered.sections.length > 1}
 				<nav
 					aria-label="On this page"
-					class="sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-11 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+					class="rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 				>
-					<p class="text-sm font-medium text-ink">On this page</p>
-					<ul class="mt-3 border-l border-rule">
+					<p class="rail-title">On this page</p>
+					<ul class="rail-track">
 						{#each rendered.sections as h (h.id)}
 							<li>
-								<a
-									href={`#${h.id}`}
-									aria-current={active === h.id ? 'true' : undefined}
-									class="{ROW} {active === h.id ? ROW_CURRENT : ROW_IDLE}">{h.text}</a
+								<a href={`#${h.id}`} aria-current={active === h.id ? 'true' : undefined}>{h.text}</a
 								>
 							</li>
 						{/each}
@@ -256,3 +235,131 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.side-title {
+		margin: 0 0 0.25rem;
+		padding: 0 0.625rem 0 0.75rem;
+		font-size: 0.75rem;
+		line-height: 1.25rem;
+		font-weight: 600;
+		color: var(--hk-text);
+	}
+	.side ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.side a {
+		display: block;
+		padding: 0.3125rem 0.625rem 0.3125rem 0.75rem;
+		border-left: 2px solid transparent;
+		border-radius: var(--hk-radius-6);
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-2);
+		text-decoration: none;
+		transition:
+			color var(--hk-dur-fast) var(--hk-ease),
+			background-color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.side a:hover {
+		color: var(--hk-text);
+		background: var(--hk-hover);
+	}
+	.side a[aria-current='page'] {
+		color: var(--hk-accent);
+		background: var(--hk-accent-wash);
+		border-left-color: var(--hk-accent);
+		border-radius: 0 var(--hk-radius-6) var(--hk-radius-6) 0;
+	}
+
+	/* Below 768px: one row of the three policies, the current one ink with
+	   an underline, the others muted. 44px tall for a thumb. */
+	.phone-links a {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.75rem;
+		font-size: 0.875rem;
+		color: var(--hk-text-3);
+		text-decoration: none;
+	}
+	.phone-links a[aria-current='page'] {
+		color: var(--hk-text);
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 6px;
+	}
+
+	.toc-list a {
+		display: block;
+		padding: 0.3125rem 0;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+		text-decoration: none;
+	}
+	.toc-list a:hover {
+		color: var(--hk-text);
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.toc-list a {
+			padding-block: 0.75rem;
+		}
+	}
+
+	.rail-title {
+		margin: 0 0 0.75rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 600;
+		color: var(--hk-text);
+	}
+	.rail-track {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-left: 1px solid var(--hk-border);
+	}
+	.rail a {
+		display: block;
+		margin-left: -1px;
+		padding: 0.25rem 0 0.25rem 0.875rem;
+		border-left: 1px solid transparent;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+		text-decoration: none;
+		transition:
+			color var(--hk-dur-fast) var(--hk-ease),
+			border-color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.rail a:hover {
+		color: var(--hk-text);
+	}
+	.rail a[aria-current='true'] {
+		color: var(--hk-text);
+		border-left-color: var(--hk-accent);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.side a,
+		.rail a {
+			transition: none;
+		}
+	}
+	@media (forced-colors: active) {
+		.side a,
+		.rail a {
+			border-left-color: Canvas;
+		}
+		.side a[aria-current='page'] {
+			border-left-color: Highlight;
+		}
+		.rail a[aria-current='true'],
+		.side a[aria-current='page'] {
+			text-decoration: underline;
+			text-decoration-thickness: 2px;
+			text-underline-offset: 0.35em;
+		}
+	}
+</style>

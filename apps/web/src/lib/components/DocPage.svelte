@@ -27,12 +27,12 @@
 	});
 	let allSubs = $derived(doc.slug === 'cli');
 
-	// A page's "plans" comment block (the Pricing page's
-	// table) is drawn as the plan cells, from lib/plans.ts as on the
-	// landing and /billing, so the three cannot disagree (I-663). The
-	// table stays in the markdown for /docs/<slug>.md, where an agent reads it.
-	// Built from strings: an HTML comment opener in the script is a parse
-	// error in the dev server's compiler.
+	// A page's "plans" comment block (the Pricing page's table) is drawn as
+	// the plan cards, from lib/plans.ts as on the landing and /billing, so
+	// the three cannot disagree (I-663). The table stays in the markdown for
+	// /docs/<slug>.md, where an agent reads it. Built from strings: an HTML
+	// comment opener in the script is a parse error in the dev server's
+	// compiler.
 	const PLANS_BLOCK = new RegExp(
 		'<' + String.raw`!-- plans\b[\s\S]*?-->[\s\S]*?<` + String.raw`!-- /plans -->`
 	);
@@ -52,39 +52,65 @@
 	$effect(() => {
 		if (!article) return;
 		const el = article;
+		const timers = new WeakMap<HTMLButtonElement, ReturnType<typeof setTimeout>>();
 		const onClick = async (e: MouseEvent) => {
 			const button = (e.target as Element).closest<HTMLButtonElement>('button.copy');
 			if (!button) return;
 			try {
 				await navigator.clipboard.writeText(button.dataset.copy ?? '');
 				button.textContent = 'Copied';
+				button.classList.add('is-copied');
 				copyStatus = 'Copied to the clipboard.';
 			} catch {
 				button.textContent = 'Copy failed';
 				copyStatus = 'Could not copy to the clipboard.';
 			}
-			setTimeout(() => {
-				button.textContent = 'Copy';
-				copyStatus = '';
-			}, 1500);
+			clearTimeout(timers.get(button));
+			timers.set(
+				button,
+				setTimeout(() => {
+					button.textContent = 'Copy';
+					button.classList.remove('is-copied');
+					copyStatus = '';
+				}, 1200)
+			);
 		};
 		el.addEventListener('click', onClick);
 		return () => el.removeEventListener('click', onClick);
 	});
 
-	// A code block or table wider than its box scrolls, and a scroller the
-	// keyboard cannot reach is one a keyboard user cannot read to its end
-	// (axe scrollable-region-focusable; only Chromium focuses one on its
-	// own). Only a box that overflows gets the tab stop, checked again when
-	// the column changes width, so at 1440, where the docs fit, Tab skips
-	// them.
+	// A code pane or table that scrolls is one a keyboard user cannot read
+	// to its end unless it takes focus (axe scrollable-region-focusable).
+	// A pane scrolls sideways past its width and down past 30rem, so either
+	// axis counts. Only a box that overflows gets the tab stop, named after
+	// the section it sits in, checked again when the column changes width,
+	// so where the docs fit Tab skips them.
+	function sectionOf(box: HTMLElement): string {
+		for (let el: Element | null = box; el && el !== article; el = el.parentElement) {
+			for (let sib = el.previousElementSibling; sib; sib = sib.previousElementSibling) {
+				if (/^H[23]$/.test(sib.tagName)) return (sib.textContent ?? '').replace(/^#/, '').trim();
+			}
+		}
+		return doc.title;
+	}
 	$effect(() => {
 		if (!article) return;
 		const blocks = [...article.querySelectorAll<HTMLElement>('pre, .table-wrap')];
 		const mark = () => {
 			for (const box of blocks) {
-				if (box.scrollWidth > box.clientWidth) box.tabIndex = 0;
-				else box.removeAttribute('tabindex');
+				const scrolls = box.scrollWidth > box.clientWidth || box.scrollHeight > box.clientHeight;
+				if (scrolls) {
+					box.tabIndex = 0;
+					box.setAttribute('role', 'region');
+					box.setAttribute(
+						'aria-label',
+						`${box.tagName === 'PRE' ? 'Code' : 'Table'}: ${sectionOf(box)}`
+					);
+				} else {
+					box.removeAttribute('tabindex');
+					box.removeAttribute('role');
+					box.removeAttribute('aria-label');
+				}
 			}
 		};
 		mark();
@@ -180,105 +206,113 @@
 	function href(slug: string): string {
 		return slug === 'index' ? resolve('/docs') : resolve('/docs/[slug]', { slug });
 	}
+	let markdown = $derived(resolve('/docs/[slug].md', { slug: doc.slug }));
 </script>
 
-<!-- eslint-disable svelte/no-navigation-without-resolve -- every internal href here comes from href(), which builds it with resolve() -->
+<!-- eslint-disable svelte/no-navigation-without-resolve -- every internal href here comes from href() or resolve() -->
 
 <svelte:head>
 	<title>{doc.slug === 'index' ? 'repose docs' : `${doc.title} · repose docs`}</title>
 	<meta name="description" content={doc.description} />
+	<link rel="alternate" type="text/markdown" href={markdown} />
 </svelte:head>
 
-<!-- One measure: prose, code blocks, tables and the h2 rules share the
+<!-- One measure: prose, code panes, tables and the plan cards share the
      text column's right edge. The cell DocPage fills starts 48px right of
-     the sidebar; from xl it is the text, 48px and a 180px "On this page"
-     rail at the frame's right edge, so at 1440 the text is 428 to 1052
-     (624px) and the rail 1100 to 1280 (I-660). The rail's column is drawn
-     on every page, empty when a page has one section or none, so the text
-     and the rail sit at the same x on every page (I-396). Below xl the
-     text holds to 42rem and the sections fold under the description. -->
+     the sidebar; from 1280px it is the text, 48px and a 180px "On this
+     page" rail at the frame's right edge, so at 1440 the text is 428 to
+     1052 (624px) and the rail 1100 to 1280 (I-660). The rail's column is
+     drawn on every page, empty when a page has one section or none, so the
+     text and the rail sit at the same x on every page (I-396). Below 1280
+     the text holds to 42rem and the sections fold under the toolbar. -->
 <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_180px] xl:gap-x-12">
-	<main id="main" class="max-w-[42rem] min-w-0 pt-10 pb-24 xl:max-w-none">
-		<h1 class="text-4xl font-semibold tracking-[-0.01em]">{doc.title}</h1>
+	<main id="main" tabindex="-1" class="max-w-[42rem] min-w-0 pt-9 pb-24 outline-none xl:max-w-none">
+		<p class="hk-eyebrow">{doc.section}</p>
+		<h1 class="hk-h2 mt-2">{doc.title}</h1>
+		{#if doc.description}
+			<p class="hk-lead mt-2">{doc.description}</p>
+		{/if}
+		<div class="mt-5 flex items-center">
+			<a
+				class="hk-btn-ghost hk-btn-sm doc-tool"
+				href={markdown}
+				type="text/markdown"
+				data-sveltekit-reload>View as Markdown</a
+			>
+		</div>
+
+		<div class="mt-6 border-t border-hairline sm:mt-8">
+			{#if toc.length > 1}
+				<!-- Below 1280 there is no rail, so the page's sections fold
+				     in here, one row on the page's hairline. -->
+				<details class="toc-fold group border-b border-hairline xl:hidden">
+					<summary
+						class="flex h-11 cursor-pointer list-none items-center justify-between text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden"
+					>
+						On this page
+						<svg
+							viewBox="0 0 16 16"
+							class="h-4 w-4 text-ink-3 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+							aria-hidden="true"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg
+						>
+					</summary>
+					<ul class="toc-list pb-4">
+						{#each toc as h (h.id)}
+							<li><a href={`#${h.id}`}>{h.text}</a></li>
+						{/each}
+					</ul>
+				</details>
+			{/if}
+		</div>
+
 		{#if doc.experimental}
-			<p class="banner banner--warn mt-4" data-testid="experimental">
-				Experimental. This setup is new and can change or stop working. Tell us what breaks on the <a
-					class="link"
-					href={FEEDBACK_URL}>feedback board</a
-				>.
+			<p class="hk-banner mt-8 mb-0" data-testid="experimental">
+				<span
+					>Experimental. This setup is new and can change or stop working. Tell us what breaks on
+					the <a href={FEEDBACK_URL}>feedback board</a>.</span
+				>
 			</p>
 		{/if}
-		{#if doc.description}
-			<p class="mt-3 text-lg text-pretty text-ink-muted">{doc.description}</p>
-		{/if}
 
-		{#if toc.length > 1}
-			<!-- Below xl there is no rail, so the page's sections fold in here. -->
-			<details class="group mt-6 rounded-sm border border-rule xl:hidden">
-				<summary
-					class="flex cursor-pointer list-none items-center justify-between px-4 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden"
-				>
-					On this page
-					<svg
-						viewBox="0 0 20 20"
-						class="h-4 w-4 text-ink-muted transition-transform group-open:rotate-180 motion-reduce:transition-none"
-						aria-hidden="true"
-						fill="none"><path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.5" /></svg
-					>
-				</summary>
-				<ul class="space-y-1.5 border-t border-rule px-4 py-3 text-sm">
-					{#each toc as h (h.id)}
-						<li>
-							<a href={`#${h.id}`} class="text-ink-muted hover:text-ink">{h.text}</a>
-						</li>
-					{/each}
-				</ul>
-			</details>
-		{/if}
-
-		<article
-			bind:this={article}
-			class="doc prose prose-code:before:content-none prose-code:after:content-none mt-8 max-w-none"
-		>
-			<!-- eslint-disable svelte/no-at-html-tags -- doc.html is rendered from this repo's own src/content/docs/*.md at build time, never from a user or the api -->
-			{#if parts}
-				{@html parts.before}
-				<div class="doc-plans not-prose my-8">
-					<PlanCells plans={PLANS} introEligible />
+		<!-- eslint-disable svelte/no-at-html-tags -- doc.html is rendered from this repo's own src/content/docs/*.md at build time, never from a user or the api -->
+		{#if parts}
+			<article bind:this={article} class="mt-8">
+				<div class="doc">{@html parts.before}</div>
+				<div class="doc-plans">
+					<PlanCells plans={PLANS} introEligible variant="public" level={3} />
 				</div>
-				{@html parts.after}
-			{:else}
-				{@html doc.html}
-			{/if}
-			<!-- eslint-enable svelte/no-at-html-tags -->
-		</article>
+				<div class="doc">{@html parts.after}</div>
+			</article>
+		{:else}
+			<article bind:this={article} class="doc mt-8">{@html doc.html}</article>
+		{/if}
+		<!-- eslint-enable svelte/no-at-html-tags -->
 
 		<!-- Always in the page, so the words that appear in it are announced. -->
 		<p class="sr-only" role="status">{copyStatus}</p>
 
 		<nav
 			bind:this={pager}
-			class="mt-16 grid gap-4 border-t border-rule pt-6 sm:grid-cols-2"
+			class="pager mt-12 grid gap-x-8 sm:grid-cols-2"
 			aria-label="Previous and next page"
 		>
 			{#if prev}
-				<a
-					href={href(prev.slug)}
-					class="group rounded-sm border border-rule px-4 py-3 transition-colors duration-150 hover:border-rule-strong motion-reduce:transition-none"
-				>
-					<span class="block text-xs text-ink-muted">Previous</span>
-					<span class="mt-0.5 block font-medium group-hover:underline">{prev.title}</span>
+				<a href={href(prev.slug)}>
+					<span class="pager-label">Previous</span>
+					<span class="pager-title">{prev.title}</span>
 				</a>
 			{:else}
-				<span></span>
+				<span class="max-sm:hidden"></span>
 			{/if}
 			{#if next}
-				<a
-					href={href(next.slug)}
-					class="group rounded-sm border border-rule px-4 py-3 text-right transition-colors duration-150 hover:border-rule-strong motion-reduce:transition-none"
-				>
-					<span class="block text-xs text-ink-muted">Next</span>
-					<span class="mt-0.5 block font-medium group-hover:underline">{next.title}</span>
+				<a href={href(next.slug)} class="sm:text-right">
+					<span class="pager-label">Next</span>
+					<span class="pager-title">{next.title}</span>
 				</a>
 			{/if}
 		</nav>
@@ -292,30 +326,23 @@
 		{#if toc.length > 1}
 			<nav
 				bind:this={rail}
-				class="sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-11 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+				class="rail sticky top-[57px] max-h-[calc(100dvh-57px)] overflow-y-auto overscroll-contain pt-9 pb-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 				aria-label="On this page"
 			>
-				<p class="text-sm font-medium text-ink">On this page</p>
-				<ul class="mt-3 border-l border-rule">
+				<p class="rail-title">On this page</p>
+				<ul class="rail-track">
 					{#each outline as { h, subs } (h.id)}
 						<li>
 							<a
 								href={`#${h.id}`}
 								aria-current={active === h.id ? 'true' : undefined}
-								onclick={(e) => toSection(e, h.id)}
-								class="-ml-px block border-l py-1 pl-3 text-sm leading-5 transition-[border-color,color] duration-150 motion-reduce:transition-none {active ===
-								h.id
-									? 'border-ink text-ink'
-									: 'border-transparent text-ink-muted hover:text-ink'}">{h.text}</a
+								onclick={(e) => toSection(e, h.id)}>{h.text}</a
 							>
 							{#if subs.length && (allSubs || active === h.id)}
 								<ul>
 									{#each subs as s (s.id)}
 										<li>
-											<a
-												href={`#${s.id}`}
-												onclick={(e) => toSection(e, s.id)}
-												class="block py-1 pl-6 text-compact leading-5 text-ink-muted transition-[border-color,color] duration-150 hover:text-ink motion-reduce:transition-none"
+											<a class="rail-sub" href={`#${s.id}`} onclick={(e) => toSection(e, s.id)}
 												>{s.label}</a
 											>
 										</li>
@@ -331,46 +358,137 @@
 </div>
 
 <style>
-	/* A figure in a table ("100 GB", "$29*", class num from lib/docs.ts)
-	   keeps its number and unit on one line, in tabular figures. */
-	article :global(:is(td, th).num) {
-		white-space: nowrap;
-		font-variant-numeric: tabular-nums;
+	/* The toolbar's one link sits flush with the text's left edge: the
+	   ghost button's padding is pulled back. */
+	.doc-tool {
+		margin-left: -0.625rem;
 	}
 
-	/* Code on a phone: 12px, so more of a line shows. The Copy button keeps
-	   the 40px strip above the code that layout.css gives it below 40rem:
-	   laid over the first line it hid that line's end until you scrolled
-	   (I-394, I-395). */
-	@media (width < 40rem) {
-		article :global(pre) {
-			font-size: 0.75rem;
+	.toc-list a {
+		display: block;
+		padding: 0.3125rem 0;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+		text-decoration: none;
+		transition: color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.toc-list a:hover {
+		color: var(--hk-text);
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.toc-fold summary {
+			min-height: 2.75rem;
+		}
+		.toc-list a {
+			padding-block: 0.75rem;
 		}
 	}
 
-	/* The plan cells in the text column: from md the three share 624px
-	   at 1440 (672 at most below xl), where /billing's cells have 1120.
-	   A tighter inset and a smaller name and price keep a cell's name
-	   beside its squares and "Egress a month" on one line with its
-	   figure. Below md the cells stack as everywhere. */
-	@media (min-width: 768px) {
-		.doc-plans :global(.plans) {
-			--p-x: 1.125rem;
-			--p-name: 1.25rem;
-			--p-price: 2.25rem;
+	.doc-plans {
+		margin: 2rem 0;
+	}
+	/* The cards share the 624px text column at 1440, where the landing and
+	   /billing give them 1120: from 900px a tighter inset and a smaller
+	   price keep "$49 $39 a month" and "8 GB running at once" on one line
+	   in a 197px card. */
+	@media (min-width: 900px) {
+		.doc-plans :global(.plans .plan) {
+			padding: 1.125rem;
 		}
-		.doc-plans :global(.p-run) {
+		.doc-plans :global(.plans .p-price .n) {
+			font-size: 1.75rem;
+			line-height: 2.25rem;
+		}
+		.doc-plans :global(.plans .p-run) {
 			font-size: 0.875rem;
 		}
-		.doc-plans :global(.p-spec dt) {
-			white-space: nowrap;
+	}
+
+	.pager {
+		row-gap: 0;
+	}
+	.pager a {
+		display: block;
+		padding: 1rem 0;
+		border-top: 1px solid var(--hk-hairline);
+		text-decoration: none;
+	}
+	.pager-label {
+		display: block;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+	}
+	.pager-title {
+		display: block;
+		margin-top: 0.125rem;
+		font-size: 0.9375rem;
+		line-height: 1.5rem;
+		font-weight: 500;
+		color: var(--hk-text);
+		transition: color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.pager a:hover .pager-title {
+		color: var(--hk-accent);
+	}
+
+	.rail-title {
+		margin: 0 0 0.75rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 600;
+		color: var(--hk-text);
+	}
+	.rail-track {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-left: 1px solid var(--hk-border);
+	}
+	.rail-track ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.rail a {
+		display: block;
+		margin-left: -1px;
+		padding: 0.25rem 0 0.25rem 0.875rem;
+		border-left: 1px solid transparent;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text-3);
+		text-decoration: none;
+		transition:
+			color var(--hk-dur-fast) var(--hk-ease),
+			border-color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.rail a:hover {
+		color: var(--hk-text);
+	}
+	.rail a[aria-current='true'] {
+		color: var(--hk-text);
+		border-left-color: var(--hk-accent);
+	}
+	.rail a.rail-sub {
+		padding-left: 1.625rem;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.rail a,
+		.pager-title,
+		.toc-list a {
+			transition: none;
 		}
 	}
 
 	/* Forced colours draw every edge in one colour, so the current
-	   section's ink edge no longer stands out; an underline marks it. */
+	   section's edge no longer stands out; an underline marks it. */
 	@media (forced-colors: active) {
-		nav a[aria-current='true'] {
+		.rail a {
+			border-left-color: Canvas;
+		}
+		.rail a[aria-current='true'] {
 			text-decoration: underline;
 			text-decoration-thickness: 2px;
 			text-underline-offset: 0.35em;

@@ -123,7 +123,7 @@ A question can be answered in five places:
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Google Chat:** the card has a button for each option. It opens a page with the question and a button; pressing it answers.
 - **Email:** the email has a link for each option, which opens the same page. Replying to the email doesn't work.
-- **The dashboard:** waiting questions show under **Waiting on you** at the top of the Projects page and of the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
+- **The dashboard:** waiting questions show under **Waiting on you** on the Projects page and on the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses.
 
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.

@@ -134,7 +134,7 @@ repose snapshots restore SNAPSHOT_ID --as todo-app-old
 
 The new project boots with its `shell` window alone; agent windows reopen only in the project they were recorded in.
 
-The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…**, which opens the project it makes, and shows the newest 8 with **Show all** for the rest. **Restore…** wants the project stopped and asks you to type its name, as **Destroy** does.
+The dashboard's snapshot list has **Create snapshot** and, on each snapshot, **Restore…**, which restores over the project or, with **Restore as new**, into a new project that then opens. It shows the newest 8 with **Show all** for the rest. Restoring over the project wants it stopped and asks you to type its name, as **Destroy** does.
 
 A restore checks what it reads against the SHA-256 recorded when the snapshot was taken. If they differ it stops with `snapshot checksum mismatch` and deletes the disk it was writing, so nothing boots on it. A snapshot taken before 2026-10-03 has no digest and restores unchecked.
 

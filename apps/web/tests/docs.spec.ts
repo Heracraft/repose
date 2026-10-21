@@ -19,11 +19,20 @@ test('docs are readable while signed out, with search and prev/next', async ({ p
 	await expect(page).toHaveURL(/\/docs\/notifications/);
 });
 
-test('an unknown docs page says so, with a 404', async ({ page }) => {
+// The docs 404 keeps the docs shell and offers the pages closest to the
+// slug asked for, or the Quickstart when none is close (spec 2.2).
+test('an unknown docs page says so, with a 404 and the closest pages', async ({ page }) => {
 	const response = await page.goto('/docs/no-such-page');
 	expect(response?.status()).toBe(404);
-	await expect(page.getByRole('heading', { name: 'No such page' })).toBeVisible();
-	await expect(page.getByText("There's no docs page called “no-such-page”.")).toBeVisible();
+	await expect(page).toHaveTitle('Not found · repose docs');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('complementary', { name: 'Docs menu' })).toBeAttached();
+	await expect(page.locator('main').getByRole('list').getByRole('link')).toHaveText(['Quickstart']);
+
+	await page.goto('/docs/secret');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await page.locator('main').getByRole('link', { name: 'Secrets and security' }).click();
+	await expect(page).toHaveURL('/docs/secrets');
 });
 
 test('an experimental page says so under its title', async ({ page }) => {

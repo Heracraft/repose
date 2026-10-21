@@ -1,289 +1,511 @@
-/* Moved verbatim from routes/layout.css (I-837, Phase 1); DOCS owns it now.
-   Imported unlayered by layout.css: the typography plugin's prose rules sit
-   in a later layer than components, and a layered rule loses to an
-   unlayered one at any specificity. */
+/* The user docs (/docs, DocPage.svelte) and the policies (LegalPage.svelte):
+   prose rendered from src/content by lib/docs.ts and lib/codespan.ts, drawn
+   with the Herakraft kit's tokens (I-837, spec 2.2). The renderer's class
+   names (.code, .copy, .prompt, .output, .note, .table-wrap, .num, .nobreak,
+   .anchor, .tok-*) are tested markup (docs.test.ts); this file styles them
+   and never renames them.
 
-/* The user docs (/docs) and the legal pages (LegalPage.svelte): prose from
-   src/content, in the site's own palette rather than the typography
-   plugin's defaults. Outside any layer
-   on purpose: the plugin's rules sit in a later layer than components, and
-   a layered rule loses to an unlayered one whatever its specificity. */
-.doc {
-	/* Prose reads at the text-prose step, 17px at 1.7 (I-660). Set on the
-	   block, so the plugin's em margins and the inline code chip scale
-	   with it; tables, code blocks and the effective date set their own. */
-	font-size: var(--text-prose);
-	line-height: var(--text-prose--line-height);
-	/* The typography plugin's colours, mapped onto the house tokens. Its
-	   prose-zinc is Tailwind's stock cool zinc (hue 286), not the re-toned
-	   warm one, and prose-invert made the dark h2 pure white where --ink is
-	   zinc-100. Set here, unlayered, these win over the plugin's own. */
-	--tw-prose-body: var(--color-zinc-700);
-	--tw-prose-headings: var(--ink);
-	--tw-prose-lead: var(--ink-muted);
-	--tw-prose-links: var(--ink);
-	--tw-prose-bold: var(--ink);
-	--tw-prose-counters: var(--ink-muted);
-	--tw-prose-bullets: var(--control-edge);
-	--tw-prose-hr: var(--rule);
-	--tw-prose-quotes: var(--ink);
-	--tw-prose-quote-borders: var(--rule-strong);
-	--tw-prose-captions: var(--ink-muted);
-	--tw-prose-kbd: var(--ink);
-	--tw-prose-code: var(--ink);
-	--tw-prose-pre-code: var(--ink);
-	--tw-prose-pre-bg: var(--sunken);
-	--tw-prose-th-borders: var(--rule-strong);
-	--tw-prose-td-borders: var(--rule);
+   Imported unlayered by layout.css. The rules start at `.hk .doc`, so they
+   outrank the kit's `.hk :where(h1, h2, h3)` heading rule and its inline
+   code chip, which sit in the components layer. */
+
+/* ---------- Prose ---------- */
+
+.hk .doc {
+	font-size: 0.9375rem;
+	line-height: 1.6;
+	color: var(--hk-text-2);
+	overflow-wrap: break-word;
 }
-/* The dark body colour follows the theme switch (I-837, Phase 1 move):
-   the OS's dark unless the page says light, or a stored Dark. */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) .doc {
-		--tw-prose-body: var(--color-zinc-300);
-	}
+.hk .doc > :first-child {
+	margin-top: 0;
 }
-:root[data-theme='dark'] .doc {
-	--tw-prose-body: var(--color-zinc-300);
+.hk .doc p {
+	margin: 0 0 1rem;
 }
-/* One heading weight, 600, as on the dashboard and the DocPage title: the
-   plugin set h1 at 800 and h2 at 700, so a policy's title was heavier than
-   any other page's. */
-.doc :where(h1, h2, h3, h4) {
-	@apply font-semibold;
+.hk .doc strong {
+	font-weight: 600;
+	color: var(--hk-text);
 }
-/* A policy's title is the h1 inside its markdown: the page title's 36px
-   with its -0.01em tracking, as PageShell and DocPage draw theirs, at
-   every width (DESIGN-LANGUAGE.md, "Type"; I-660). */
-.doc :where(h1) {
-	@apply text-4xl tracking-[-0.01em];
-	line-height: 1.2;
+.hk .doc :is(ul, ol) {
+	margin: 0 0 1rem;
+	padding-left: 1.25rem;
 }
-/* No scroll-margin here: html's scroll-padding-top clears the sticky
-   header for every jump, and the two added up. */
-.doc :where(h2, h3) {
-	@apply relative;
+.hk .doc ul {
+	list-style: disc;
 }
-.doc :where(h2) {
-	@apply mt-12 border-t pt-8 text-2xl;
-	border-color: var(--rule);
+.hk .doc ol {
+	list-style: decimal;
 }
-.doc :where(h2:first-child) {
-	@apply mt-0 border-t-0 pt-0;
+.hk .doc li {
+	margin: 0.375rem 0;
+	padding-left: 0.25rem;
 }
-.doc .anchor {
-	@apply absolute -left-5 font-normal text-ink-faint no-underline opacity-0 transition-opacity;
+.hk .doc li::marker {
+	color: var(--hk-text-4);
 }
-.doc :where(h2, h3):hover .anchor,
-.doc .anchor:focus-visible {
-	@apply opacity-100;
+.hk .doc ol > li::marker {
+	color: var(--hk-text-3);
+	font-variant-numeric: tabular-nums;
 }
-.doc a:not(.anchor) {
-	@apply text-accent decoration-1 underline-offset-2 hover:text-accent-strong;
+.hk .doc li > :is(p, ul, ol) {
+	margin-bottom: 0.375rem;
 }
-.doc :not(pre) > code {
-	@apply rounded-xs px-1 py-px font-normal text-zinc-800 before:content-none after:content-none dark:text-zinc-200;
-	background-color: var(--sunken);
-	font-size: 0.88em;
+.hk .doc hr {
+	margin: 2.75rem 0;
+	border: 0;
+	border-top: 1px solid var(--hk-hairline);
 }
-/* A command, flag or path (inline code with no space in it, 30 characters
-   or fewer; lib/docs.ts marks it) never breaks across lines: a line that
-   ended at "--" left the flag's name at the start of the next. 30
-   characters fit the column at 360, and docs.test.ts holds the limit. Code
-   with spaces, a flag with its argument or an error message quoted whole,
-   wraps at its spaces only: each short word in it is a .nobreak span, so
-   "--api-url URL" cannot end a line at "--" (I-393). A longer span such
-   as a URL wraps at its slashes or, if it has none, anywhere, so no chip
-   pushes the page wider than the phone. */
-.doc code.nobreak,
-.doc code .nobreak {
-	@apply whitespace-nowrap;
+
+/* Section titles: the serif at 24px. No rule above them: the page's one
+   hairline sits under the toolbar, and a rule per h2 drew a box per
+   section. Anchors clear the sticky header through html's
+   scroll-padding-top. */
+.hk .doc h2 {
+	position: relative;
+	margin: 2.75rem 0 0.875rem;
+	font-family: var(--hk-font-display);
+	font-size: 1.5rem;
+	line-height: 1.9375rem;
+	font-weight: 400;
+	letter-spacing: -0.015em;
+	color: var(--hk-text);
+	text-wrap: balance;
 }
-.doc :not(pre) > code:not(.nobreak) {
-	overflow-wrap: anywhere;
+.hk .doc h3 {
+	position: relative;
+	margin: 2rem 0 0.5rem;
+	font-family: var(--hk-font-sans);
+	font-size: 0.9375rem;
+	line-height: 1.5rem;
+	font-weight: 600;
+	letter-spacing: -0.005em;
+	color: var(--hk-text);
+}
+.hk .doc h2 + h3 {
+	margin-top: 1.25rem;
+}
+.hk .doc :is(h2, h3):first-child {
+	margin-top: 0;
+}
+/* The heading's self-link: a "#" in the gutter, shown on hover and focus. */
+.hk .doc .anchor {
+	position: absolute;
+	left: -1.25rem;
+	width: 1.25rem;
+	font-family: var(--hk-font-sans);
+	font-weight: 400;
+	color: var(--hk-text-4);
+	text-decoration: none;
+	opacity: 0;
+	transition: opacity var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .doc :is(h2, h3):hover .anchor,
+.hk .doc .anchor:focus-visible {
+	opacity: 1;
 }
 /* A command as a heading (### `repose run [PROJECT]` in cli.md) is the
-   heading's own text in mono, not a code chip inside it. */
-/* Element selectors, not :where: this must outrank the chip rule above. */
-.doc h2 > code,
-.doc h3 > code {
-	@apply bg-transparent p-0 font-semibold text-ink;
+   heading's own text in mono, never a chip inside it. */
+.hk .doc :is(h2, h3) > code {
+	padding: 0;
+	border: 0;
+	background: none;
 	font-size: 0.9em;
+	font-weight: 500;
+	color: var(--hk-text);
 }
-.doc pre {
-	@apply rounded-sm border leading-6 text-zinc-800 dark:text-zinc-200;
-	font-size: var(--text-compact);
-	tab-size: 2;
-	/* A long line scrolls, as in a terminal; the docs are written to fit the
-	   column (DECISIONS I-345, docs.test.ts). */
+
+/* Links in running text: accent, underlined at 35%, solid on hover. */
+.hk .doc a:not(.anchor) {
+	color: var(--hk-accent);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		text-decoration-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .doc a:not(.anchor):hover {
+	color: var(--hk-accent-hover);
+	text-decoration-color: currentColor;
+}
+
+/* Inline code is the kit's chip (repose.css drops its border). A command,
+   flag or path (no space, 30 characters or fewer; lib/codespan.ts marks
+   it) never breaks across lines: a line that ended at "--" left the flag's
+   name on the next. Code with spaces wraps at its spaces only, each short
+   word a .nobreak span; a longer span such as a URL wraps anywhere, so no
+   chip pushes the page wider than a phone (I-393). */
+.hk .doc code.nobreak,
+.hk .doc code .nobreak {
+	white-space: nowrap;
+}
+.hk .doc :not(pre) > code:not(.nobreak) {
+	overflow-wrap: anywhere;
+}
+/* A little less side padding than the kit's chip, so a chip before a
+   comma does not leave a gap that reads as a space. */
+.hk .doc :not(pre) > code {
+	padding: 0.1em 0.3em;
+}
+.hk .doc a code {
+	color: inherit;
+}
+
+/* ---------- Code panes ---------- */
+
+/* Near-black in both themes (Guide B 12.7): the pane is the page's one
+   dark surface. Lines scroll sideways and never wrap; the docs are written
+   to 70 columns, 62 under the Copy button (DECISIONS I-345, docs.test.ts),
+   so the panes carry no line numbers. */
+.hk .doc pre {
+	position: relative;
+	margin: 0 0 1.25rem;
+	padding: 0.875rem 1rem;
+	max-height: 30rem;
+	overflow: auto;
+	border-radius: var(--hk-radius-xl);
+	/* The kit's pane edges: an outer ring on a dark page, an inset border. */
+	--hk-pane-edge: 0 0 0 1px var(--hk-code-border-outer), inset 0 0 0 1px var(--hk-code-border);
+	box-shadow: var(--hk-pane-edge);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-code-text);
 	white-space: pre;
+	tab-size: 2;
+	scrollbar-width: thin;
+	scrollbar-color: var(--hk-code-scrollbar) transparent;
+	/* A pane wider or taller than its box shows a 2px bar at each cut edge,
+	   so a cut line such as "(2 new comm" reads as more to scroll to; a
+	   phone's overlay scrollbar shows only while the pane moves. The bars
+	   stay put ("scroll"); covers in the pane's own colour scroll with the
+	   text ("local") and hide a bar once that edge is reached, so a pane
+	   that fits shows none (I-395). */
+	--hk-edge-fill: var(--hk-code-bg);
+	--hk-edge-bar: var(--hk-code-dim);
+	background: var(--hk-edge-covers), var(--hk-edge-bars), var(--hk-code-bg);
+}
+.hk .doc pre code {
+	display: block;
+	width: max-content;
+	min-width: 100%;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	font-size: inherit;
+	color: inherit;
+}
+.hk .doc pre:focus-visible {
+	outline: none;
+	--hk-pane-edge: 0 0 0 1px var(--hk-code-border-outer), inset 0 0 0 2px var(--hk-code-focus);
+}
+
+/* The block and its Copy button (codeBlock in lib/docs.ts). The button is
+   drawn as the kit's dark-tone small copy button, 8px from the pane's top
+   right corner. From 640px a block's first line is written short enough
+   to end before it; on a phone the button takes a strip of its own above
+   the code, 44px tall for a thumb. */
+.hk .doc .code {
+	position: relative;
+	margin: 0 0 1.25rem;
+}
+.hk .doc .code pre {
+	margin: 0;
+}
+.hk .doc .code .copy {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	z-index: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	height: 1.5rem;
+	padding: 0 0.5rem;
+	border: 0;
+	border-radius: var(--hk-radius-6);
+	background: var(--hk-code-bg);
+	font-family: var(--hk-font-sans);
+	font-size: 0.75rem;
+	font-weight: 500;
+	line-height: 1;
+	color: var(--hk-code-muted);
+	cursor: pointer;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .doc .code .copy::before {
+	content: '';
+	width: 0.875rem;
+	height: 0.875rem;
+	flex: none;
+	background: currentColor;
+	-webkit-mask: var(--hk-copy-icon) center / contain no-repeat;
+	mask: var(--hk-copy-icon) center / contain no-repeat;
+	--hk-copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5.5' y='5.5' width='8' height='8' rx='1.5'/%3E%3Cpath d='M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2'/%3E%3C/svg%3E");
+}
+.hk .doc .code .copy.is-copied::before {
+	--hk-copy-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E");
+}
+.hk .doc .code .copy:hover {
+	color: var(--hk-code-text);
+	background: color-mix(in srgb, var(--hk-code-text) 8%, var(--hk-code-bg));
+}
+.hk .doc .code .copy.is-copied {
+	color: var(--hk-code-ok);
+}
+.hk .doc .code .copy:focus-visible {
+	outline: 2px solid var(--hk-code-string);
+	outline-offset: 0;
+}
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .doc .code .copy {
+		top: 0;
+		right: 0.25rem;
+		height: 2.75rem;
+		padding: 0 0.75rem;
+		background: transparent;
+	}
+	.hk .doc .code pre {
+		padding-top: 2.75rem;
+	}
+}
+@media (max-width: 639.98px) {
+	.hk .doc pre {
+		font-size: 0.75rem;
+	}
+}
+
+/* Shell sessions: the prompt and the output step back, the command reads
+   in the pane's text colour. */
+.hk .doc pre :is(.prompt, .output) {
+	color: var(--hk-code-muted);
+}
+.hk .doc pre .prompt {
+	user-select: none;
+}
+
+/* Highlighting (lib/docs.ts): lezer's tok-* classes onto the kit's code
+   palette. Strings blue, literals amber, keywords and punctuation zinc-400,
+   names zinc-300, comments muted italic, the rest the pane's text. */
+.hk .doc pre :is(.tok-string, .tok-string2, .tok-url) {
+	color: var(--hk-code-string);
+}
+.hk .doc pre :is(.tok-number, .tok-bool, .tok-atom) {
+	color: var(--hk-code-number);
+}
+.hk .doc pre .tok-comment {
+	color: var(--hk-code-comment);
+	font-style: italic;
+}
+.hk .doc pre :is(.tok-keyword, .tok-operator, .tok-punctuation) {
+	color: var(--hk-code-keyword);
+}
+.hk .doc pre :is(.tok-propertyName, .tok-variableName) {
+	color: var(--hk-code-key);
+}
+
+/* ---------- Tables ---------- */
+
+.hk .doc .table-wrap {
+	position: relative;
+	margin: 0 0 1.5rem;
 	overflow-x: auto;
-	/* A block wider than its box shows a 2px bar at each edge that hides
-	   text, so a cut line such as "(2 new comm" reads as more to scroll to:
-	   a phone's overlay scrollbar shows only while the block moves. The
-	   bars stay put ("scroll"); two fill-coloured covers scroll with the
-	   text ("local") and sit over a bar once that edge is reached, so a
-	   block that fits shows none. One-colour layers only: a bar, not a
-	   shade, as DESIGN-LANGUAGE "Corners" allows (I-395). */
-	--edge-fill: var(--sunken);
-	background: var(--edge-covers), var(--edge-bars), var(--sunken);
-	border-color: var(--rule);
+	--hk-edge-fill: var(--hk-bg);
+	--hk-edge-bar: var(--hk-text-3);
+	background: var(--hk-edge-covers), var(--hk-edge-bars);
 }
-.doc .table-wrap {
-	@apply my-6 overflow-x-auto;
-	/* The same edge bars as a code block: a table that still overflows at
-	   390 shows where its cut text continues. */
-	--edge-fill: var(--page);
-	background: var(--edge-covers), var(--edge-bars);
+.hk .doc .table-wrap:focus-visible {
+	outline: 2px solid var(--hk-accent);
+	outline-offset: 2px;
 }
-/* The layers behind both. A custom property holding a layer list
-   resolves per element, so --edge-fill is the element's own fill. */
-.doc pre,
-.doc .table-wrap,
-.codeblock {
-	--edge-covers:
-		linear-gradient(var(--edge-fill), var(--edge-fill)) left / 0.75rem 100% no-repeat local,
-		linear-gradient(var(--edge-fill), var(--edge-fill)) right / 0.75rem 100% no-repeat local;
-	--edge-bars:
-		linear-gradient(var(--ink-faint), var(--ink-faint)) left / 2px 100% no-repeat scroll,
-		linear-gradient(var(--ink-faint), var(--ink-faint)) right / 2px 100% no-repeat scroll;
+/* The covers and bars behind a pane and a table. A custom property that
+   holds a layer list resolves per element, so --hk-edge-fill is the
+   element's own fill. */
+.hk .doc :is(pre, .table-wrap) {
+	--hk-edge-covers:
+		linear-gradient(var(--hk-edge-fill), var(--hk-edge-fill)) left / 0.75rem 100% no-repeat local,
+		linear-gradient(var(--hk-edge-fill), var(--hk-edge-fill)) right / 0.75rem 100% no-repeat local;
+	--hk-edge-bars:
+		linear-gradient(var(--hk-edge-bar), var(--hk-edge-bar)) left / 2px 100% no-repeat scroll,
+		linear-gradient(var(--hk-edge-bar), var(--hk-edge-bar)) right / 2px 100% no-repeat scroll;
 }
-.doc .table-wrap table {
-	@apply my-0 text-sm;
+.hk .doc table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-2);
 }
-.doc th {
-	@apply text-left font-medium text-ink-muted;
+.hk .doc th {
+	padding: 0 0.75rem 0.5rem;
+	border-bottom: 1px solid var(--hk-border);
+	font-size: 0.75rem;
+	font-weight: 500;
+	text-align: left;
+	vertical-align: bottom;
+	color: var(--hk-text-3);
 }
-/* From sm up the term column (a command, a key, "day 33") stays on one
-   line. Code in a description wraps like code in prose, at its spaces
-   or anywhere in a long span: kept on one line too, it pushed the
-   /docs/cli Secrets table to 690px in a 624px column. */
-@media (width >= 40rem) {
-	.doc td:first-child,
-	.doc td:first-child code {
-		@apply whitespace-nowrap;
+.hk .doc td {
+	padding: 0.625rem 0.75rem;
+	border-top: 1px solid var(--hk-hairline);
+	vertical-align: top;
+}
+.hk .doc tbody tr:first-child td {
+	border-top: 0;
+}
+.hk .doc :is(th, td):first-child {
+	padding-left: 0;
+}
+.hk .doc :is(th, td):last-child {
+	padding-right: 0;
+}
+.hk .doc td:first-child {
+	color: var(--hk-text);
+}
+/* A figure ("100 GB", "$29*", class num from lib/docs.ts) sits right, in
+   tabular figures, its number and unit on one line. */
+.hk .doc :is(td, th).num {
+	text-align: right;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+/* From 640px the term column (a command, a key, "day 33") stays on one
+   line. Code in a description wraps like code in prose: kept on one line,
+   it pushed the /docs/cli Secrets table to 690px in a 624px column. */
+@media (min-width: 640px) {
+	.hk .doc td:first-child,
+	.hk .doc td:first-child code {
+		white-space: nowrap;
 	}
 }
 /* On a phone a reference table of two or three columns stacks each row:
-   the term on its own line, a middle cell (a Default) muted beside it,
-   and the description under both at the full width. Side by side, the
-   term column took all but 75px of a 350px table and cut the
-   description ("repose snapshots restore SNAPSHOT_ID", I-395), and the
-   config.toml and environment variable tables ran 70px past 335. A
-   wider table holds figures read across a row (plans, sizes), which
-   need their headings, so it keeps its grid at tighter cell padding
-   and scrolls only past that. */
-@media (width < 40rem) {
-	.doc .table-wrap:not(:has(th:nth-child(4))) {
+   the term on its own line, a middle cell (a Default) muted beside it, and
+   the description under both at full width. A wider table holds figures
+   read across a row (plans, sizes), which need their headings, so it keeps
+   its grid at tighter padding and scrolls only past that (I-395). */
+@media (max-width: 639.98px) {
+	.hk .doc .table-wrap:not(:has(th:nth-child(4))) {
 		& thead {
-			@apply sr-only;
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
 		}
 		& table,
 		& tbody {
-			@apply block;
+			display: block;
 		}
 		& tr {
-			@apply flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5;
+			display: flex;
+			flex-wrap: wrap;
+			align-items: baseline;
+			gap: 0.25rem 0.75rem;
+			padding: 0.625rem 0;
+			border-top: 1px solid var(--hk-hairline);
+		}
+		& tbody tr:first-child {
+			border-top: 0;
 		}
 		& td {
-			@apply min-w-0 p-0;
+			min-width: 0;
+			padding: 0;
+			border: 0;
 		}
 		& td:first-child {
-			@apply font-medium text-ink;
+			font-weight: 500;
 		}
 		& td:first-child code {
 			white-space: normal;
 			overflow-wrap: anywhere;
 		}
 		& td:not(:first-child, :last-child) {
-			@apply text-ink-muted;
+			font-size: 0.75rem;
+			color: var(--hk-text-3);
 		}
 		& td:last-child:not(:first-child) {
-			@apply basis-full;
+			flex-basis: 100%;
 		}
 	}
-	.doc .table-wrap:has(th:nth-child(4)) :is(th, td) {
-		@apply px-1.5 first:pl-0 last:pr-0;
+	.hk .doc .table-wrap:has(th:nth-child(4)) :is(th, td) {
+		padding-inline: 0.375rem;
 	}
-	.doc .table-wrap:has(th:nth-child(4)) td:not(:first-child) code {
+	.hk .doc .table-wrap:has(th:nth-child(4)) :is(th, td):first-child {
+		padding-left: 0;
+	}
+	.hk .doc .table-wrap:has(th:nth-child(4)) :is(th, td):last-child {
+		padding-right: 0;
+	}
+	.hk .doc .table-wrap:has(th:nth-child(4)) td:not(:first-child) code {
 		white-space: normal;
 		overflow-wrap: anywhere;
 	}
 }
-.doc .note {
-	@apply my-6 rounded-sm border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-900 dark:bg-amber-950/60 dark:text-amber-100;
+
+/* ---------- Callout ---------- */
+
+/* A note (a blockquote in the markdown): the kit's callout, a 2px accent
+   rule on the accent wash. */
+.hk .doc .note {
+	margin: 0 0 1.25rem;
+	padding: 0.75rem 1rem;
+	border-left: 2px solid var(--hk-accent);
+	border-radius: 0 var(--hk-radius) var(--hk-radius) 0;
+	background: var(--hk-accent-wash);
+	color: var(--hk-text-2);
 }
-.doc .note p {
-	@apply my-0;
+.hk .doc .note > :last-child {
+	margin-bottom: 0;
 }
 
-/* A docs code block and its copy button (codeBlock in lib/docs.ts). From sm
-   up the first line of a block is written short enough to end before the
-   button; on a phone the column is narrower than most lines, so the button
-   gets a strip of its own above the code. */
-.doc .code {
-	@apply relative;
-}
-@media (width < 40rem) {
-	.doc .code pre {
-		@apply pt-10;
+/* ---------- Forced colours ---------- */
+
+@media (forced-colors: active) {
+	.hk .doc pre {
+		border: 1px solid CanvasText;
+	}
+	.hk .doc .note {
+		border-left-color: CanvasText;
 	}
 }
-/* 28px tall, over the 24px target size: at py-0.5 it was 22px. */
-.doc .code .copy {
-	@apply absolute top-2 right-2 inline-flex h-7 cursor-pointer items-center rounded-xs border px-2 text-xs text-ink-muted hover:text-ink;
-	background-color: var(--page);
-	border-color: var(--control-edge);
-}
-.doc .code .copy:hover {
-	border-color: var(--ink-muted);
-}
-.doc pre .prompt,
-.doc pre .output {
-	@apply text-ink-muted;
-}
-.doc pre .prompt {
-	@apply select-none;
+
+/* ---------- The docs frame ---------- */
+
+/* The sub-bar under the header shows only below 768px (routes/docs/
+   +layout.svelte), so from there a jump to a heading clears the header
+   alone. layout.css adds the bar's 44px below 1024px; this holds the
+   768 to 1023 range to the header's offset. */
+@media (min-width: 768px) {
+	:root:has([data-docs-subbar]) {
+		scroll-padding-top: calc(var(--header-h) + 1rem);
+	}
 }
 
-/* Code in the docs (highlight in lib/docs.ts): lezer's tok-* classes, in
-   the re-toned palette and mostly in weight rather than hue. Keywords are
-   ink at 600, names are full ink over the block's zinc-800, literals take
-   the two quiet hues the house already has (emerald, amber), and comments
-   and punctuation step back to the faint grey. No blue: in the docs blue is
-   a link. Every tone holds 4.5:1 on --sunken in both schemes. */
-.doc pre .tok-keyword {
-	@apply font-semibold text-ink;
-}
-.doc pre .tok-string,
-.doc pre .tok-string2 {
-	@apply text-emerald-700 dark:text-emerald-300;
-}
-.doc pre .tok-comment {
-	@apply text-ink-faint italic;
-}
-.doc pre .tok-number,
-.doc pre .tok-bool,
-.doc pre .tok-atom {
-	@apply text-amber-700 dark:text-amber-300;
-}
-.doc pre .tok-propertyName,
-.doc pre .tok-variableName.tok-definition {
-	@apply text-ink;
-}
-.doc pre .tok-url {
-	@apply text-emerald-700 underline dark:text-emerald-300;
-}
-.doc pre .tok-punctuation {
-	@apply text-ink-faint;
-}
+/* ---------- The docs sidebar's foot ---------- */
 
-/* The docs sidebar from lg up draws no scrollbar (routes/docs/+layout),
-   so while more of its list is below, its foot fades out over 24px to say
-   so. A mask, not a painted gradient: it draws no colour of its own, only
-   lets the list's own text thin out (I-660). */
-@media (width >= 64rem) {
+/* From 768px the sidebar (routes/docs/+layout.svelte) draws no scrollbar,
+   so while more of its list is below, its foot fades over 24px to say so.
+   A mask, so it draws no colour of its own (I-660). */
+@media (min-width: 768px) {
 	#docs-nav[data-fade] {
 		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
 	}
+}
+
+/* Phase 2 only: the legacy .codeblock (layout.css, the config page's build
+   log until PROJECTS replaces it) still paints its edges from these two
+   lists, which lived here with the old docs rules. Phase 3 deletes this
+   with the legacy layer. */
+.codeblock {
+	--edge-covers:
+		linear-gradient(var(--edge-fill), var(--edge-fill)) left / 0.75rem 100% no-repeat local,
+		linear-gradient(var(--edge-fill), var(--edge-fill)) right / 0.75rem 100% no-repeat local;
+	--edge-bars:
+		linear-gradient(var(--hk-text-3), var(--hk-text-3)) left / 2px 100% no-repeat scroll,
+		linear-gradient(var(--hk-text-3), var(--hk-text-3)) right / 2px 100% no-repeat scroll;
 }

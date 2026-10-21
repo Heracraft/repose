@@ -5,6 +5,7 @@ import {
 	MOVED,
 	NOBREAK_MAX,
 	SECTIONS,
+	closestDocs,
 	docBySlug,
 	highlightNix,
 	movedDoc,
@@ -234,5 +235,31 @@ describe('user docs', () => {
 		const html = docBySlug('tutorial-git')!.html;
 		expect(html).toContain('<code class="language-text">');
 		expect(html).not.toContain('class="line"');
+	});
+});
+
+// The docs 404 lists the pages closest to the slug asked for (spec 2.2).
+describe('closestDocs', () => {
+	const slugs = (s: string) => closestDocs(s).map((d) => d.slug);
+
+	it('ranks the longest shared prefix first', () => {
+		expect(slugs('secret')[0]).toBe('secrets');
+		expect(slugs('cli-ref')[0]).toBe('cli');
+	});
+
+	it('matches a word of a title or slug', () => {
+		expect(slugs('chrome')).toContain('your-chrome');
+		expect(slugs('lifecycl')).toContain('lifecycle');
+	});
+
+	it('holds to six pages, in sidebar order among equals', () => {
+		const tutorials = DOCS.filter((d) => d.slug.startsWith('tutorial-')).map((d) => d.slug);
+		expect(slugs('tutorial')).toEqual(tutorials.slice(0, 6));
+		expect(closestDocs('tutorial').length).toBeLessThanOrEqual(6);
+	});
+
+	it('falls back to the Quickstart when nothing shares four letters', () => {
+		expect(slugs('zzzz')).toEqual(['index']);
+		expect(slugs('')).toEqual(['index']);
 	});
 });

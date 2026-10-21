@@ -339,3 +339,33 @@ export function search(query: string, limit = 8): SearchHit[] {
 		.slice(0, limit)
 		.map((h) => h.hit);
 }
+
+/** The length of the prefix two strings share. */
+function sharedPrefix(a: string, b: string): number {
+	let n = 0;
+	while (n < a.length && n < b.length && a[n] === b[n]) n++;
+	return n;
+}
+
+/**
+ * The docs 404's "Closest pages" (Guide B 12.22): up to `limit` pages whose
+ * slug, title or one of their words shares the longest prefix with the slug
+ * asked for, at least its first four letters (all of it when shorter), in
+ * sidebar order among equals. No page close enough gives the Quickstart.
+ */
+export function closestDocs(slug: string, limit = 6): Doc[] {
+	const want = slugify(slug);
+	const floor = Math.min(4, want.length);
+	const scored: { doc: Doc; score: number; at: number }[] = [];
+	DOCS.forEach((doc, at) => {
+		const title = slugify(doc.title);
+		const keys = [doc.slug, title, ...doc.slug.split('-'), ...title.split('-')];
+		const score = Math.max(0, ...keys.map((k) => sharedPrefix(want, k)));
+		if (floor > 0 && score >= floor) scored.push({ doc, score, at });
+	});
+	if (!scored.length) return DOCS.filter((d) => d.slug === 'index');
+	return scored
+		.sort((a, b) => b.score - a.score || a.at - b.at)
+		.slice(0, limit)
+		.map((s) => s.doc);
+}
