@@ -171,6 +171,15 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		a.resting.CountWake = func(reason, result string) {
 			a.m.RestingWakeTotal.WithLabelValues(reason, result).Inc()
 		}
+		// The dry run (I-844): what the rule picked, split by whether its
+		// host acts on it. The gauge is this minute's picture; the counter
+		// integrates into machine-hours.
+		a.resting.CountCandidates = func(paused, would int) {
+			a.m.RestingCandidates.WithLabelValues("paused").Set(float64(paused))
+			a.m.RestingCandidates.WithLabelValues("would_rest").Set(float64(would))
+			a.m.RestingCandidateMinutesTotal.WithLabelValues("paused").Add(float64(paused))
+			a.m.RestingCandidateMinutesTotal.WithLabelValues("would_rest").Add(float64(would))
+		}
 	}
 	a.events.SetResting(a.resting)
 	a.questions.Waker = a.resting

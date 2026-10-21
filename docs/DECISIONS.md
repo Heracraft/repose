@@ -24456,3 +24456,45 @@ measured pausable shares and the seat counts are §9 of
 corrected by `../proposals/2026-10-14-host-cpu-capacity.md`. Until those
 three are settled, a frozen machine holds its plan memory exactly as a
 running one does.
+
+**I-844. The rest rule is evaluated everywhere and obeyed only where the
+host says so, so a fleet can be read before it is touched.**
+(idle-pause-dryrun, 2026-10-21; amends I-818's rule) The `pause` feature
+gated the rule itself: `candidatesSQL` had `$3 = any(h.features)` in its
+WHERE clause, so a host with `repose.host.pauseIdle` off produced no rows,
+and the api knew nothing about what the rule would have done. That is the
+wrong place for the gate. The rule now runs for every running project and
+each candidate carries `HostPauses`; the pause is sent only where it is
+true, and the rest are counted.
+- *Why it matters more than it looks.* The only figures anyone has for how
+  much of a fleet would rest are the proposal's, from three accounts over
+  fourteen days: 29.0 percent of running minutes for the active account
+  under the strict rule, 90.1 percent for a forgotten machine, 47.7
+  percent fleet-wide as an upper bound that leans on that forgotten
+  machine (`../proposals/2026-10-11-pause-idle-machines.md` §5). Nothing
+  has measured it since, and the seat arithmetic in §9 rests on it. With
+  the gate in the WHERE clause the first real measurement would have
+  arrived only after a host was switched on -- which is to say, after the
+  first tenant's machine was frozen.
+- *What it publishes.* `repose_api_resting_candidates{result}` is this
+  minute's picture (`paused`, `would_rest`), and
+  `repose_api_resting_candidate_minutes_total{result}` adds a
+  candidate-minute per tick, so the counter integrates into the
+  machine-hours a fleet would have rested. One log line when the picture
+  changes, not one a minute: at a tick a minute an unchanging fleet writes
+  1,440 identical lines a day. The line carries counts and ids, never
+  anything a tenant typed.
+- *It costs a machine nothing.* A candidate on a host that does not pause
+  is counted and dropped: no command, no marker on the row, nothing any
+  client reads. `TestRestRuleCountsAHostThatDoesNotPause` pins that, and
+  fails with the old gate restored ("the rule stopped seeing the
+  machine").
+- *The label is `result`, not `acts`.* `internal/obs/metrics`' own lint
+  refuses a label outside its low-cardinality list and panics at
+  registration, which is how the first name was caught; `paused` and
+  `would_rest` read better anyway.
+*Rejected:* a `--resting-dry-run` flag (a flag is a thing to forget to
+turn on, and the measurement is worth having for ever, not for one
+window); logging every candidate every tick (1,440 lines a day saying the
+same thing); and counting on the host instead, which cannot see the
+projects whose host never pauses -- the ones the measurement is about.

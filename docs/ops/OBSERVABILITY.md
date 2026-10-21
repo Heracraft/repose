@@ -120,6 +120,18 @@ rollup count it exactly as a busy guest. A frozen guest's CPU series goes
 to about zero while its memory series does not move, which is the pair to
 look for in "Per-guest resources" before concluding a machine is wedged.
 
+Before a host is switched on, the rule still runs for its machines and
+says what it would have done (I-844):
+`repose_api_resting_candidates{result="would_rest"}` is how many machines
+it picked this minute and left alone, and
+`increase(repose_api_resting_candidate_minutes_total{result="would_rest"}[7d]) / 60`
+is the machine-hours a week of them adds up to. That is the number the
+feature is argued from -- the proposal estimated 29 to 48 percent of
+running time from three accounts -- so read it for a week before asking
+for `repose.host.pauseIdle` on a host that carries anyone. Loki
+`{component="api"} | json | event="resting_rule"` writes one line each
+time the picture changes.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),

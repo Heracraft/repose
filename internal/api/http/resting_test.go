@@ -499,3 +499,53 @@ func TestAnswerWakesAFrozenMachineFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestRestRuleCountsAHostThatDoesNotPause is the dry run (DECISIONS
+// I-844): the rule evaluates for every running project, and a project
+// whose host does not take pauses is picked, counted and sent nothing.
+// Before this the feature sat in the rule's WHERE clause, so a fleet with
+// the switch off produced no rows and the days before a release said
+// nothing about what the rule would do.
+func TestRestRuleCountsAHostThatDoesNotPause(t *testing.T) {
+	r := newRestingEnv(t, "dryrun")
+	ctx := r.e.h.Ctx
+	r.upFor(t, time.Hour)
+	r.quietStretch(t, quiet)
+
+	// The host stops naming the feature, which is what every host does
+	// until `repose.host.pauseIdle` is set on it.
+	if _, err := r.e.h.Pool.Exec(ctx,
+		"update hosts set features = array_remove(features, $1) where id = (select host_id from projects where id = $2)",
+		resting.Feature, r.p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	cs, err := r.e.h.Resting.Candidates(ctx, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 1 || cs[0].ProjectID != r.p.ID {
+		t.Fatalf("the rule stopped seeing the machine: %+v", cs)
+	}
+	if cs[0].HostPauses {
+		t.Fatal("the candidate says its host pauses; the feature was removed")
+	}
+
+	var paused, would int
+	r.e.h.Resting.CountCandidates = func(p, w int) { paused, would = p, w }
+	n, err := r.e.h.Resting.Once(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("Once sent %d pauses to a host that does not take them", n)
+	}
+	if paused != 0 || would != 1 {
+		t.Fatalf("counted paused=%d would_rest=%d, want 0 and 1", paused, would)
+	}
+	// And nothing touched the machine: no marker, so no client reads it
+	// as frozen.
+	if r.e.h.Project(r.p.ID).RestingSince != nil {
+		t.Fatal("a machine on a host that does not pause was marked resting")
+	}
+}
