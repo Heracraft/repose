@@ -1,12 +1,22 @@
-// DECISIONS I-669: the feature grid's four pictures share one frame (height,
-// inset, head, bottom line; ComesBack's closed window inset alike at the
-// bottom, I-675), the Editor shows all 78 columns at card width,
-// the Browser's log sits under its viewport, and Localhost starts on
-// Chromium's refused page with localhost:5173 already in the bar. I-676:
-// Localhost's two pages never show at once.
+// DECISIONS I-837: "On every machine" is four cells, each a claim, one
+// paragraph and the command that does it. A visitor without the CLI cannot
+// run a command, so the cells carry no copy button. Two columns from 768px,
+// one below; "Agents on first boot" lists agents.md's table.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 
-const cells = '.land-cells > .land-cell';
+const DOCS = fileURLToPath(new URL('../src/content/docs/', import.meta.url));
+
+const cells = '#features .cells > li';
+
+const CELLS: [string, string][] = [
+	['Let it break the whole machine', '$ repose snapshots create'],
+	["The machine's ports on your localhost", '$ repose open 3000'],
+	["Watch the agent's browser, and take over", '$ repose browser'],
+	['Open it in your editor', '$ repose code your-project']
+];
 
 async function grid(page: Page, width: number) {
 	await page.setViewportSize({ width, height: 900 });
@@ -14,136 +24,94 @@ async function grid(page: Page, width: number) {
 	await page.locator('#features').scrollIntoViewIfNeeded();
 }
 
-for (const width of [1440, 390]) {
-	test(`the four grid pictures share one frame at ${width}`, async ({ page }) => {
+test('four cells, each a claim and its command, no copy button', async ({ page }) => {
+	await grid(page, 1440);
+	await expect(page.locator(`${cells} h3`)).toHaveText(CELLS.map(([h]) => h));
+	await expect(page.locator(`${cells} .cell-cmd`)).toHaveText(CELLS.map(([, c]) => c));
+	await expect(page.locator(`${cells} button`)).toHaveCount(0);
+});
+
+// Every command a cell shows is one cli.md documents.
+test("each cell's command is in cli.md", async () => {
+	const cli = readFileSync(join(DOCS, 'cli.md'), 'utf8');
+	for (const [, cmd] of CELLS) {
+		const words = cmd.replace(/^\$ /, '').split(' ').slice(0, 2).join(' ');
+		expect(cli, words).toContain(words);
+	}
+});
+
+for (const [width, cols] of [
+	[1440, 2],
+	[1024, 2],
+	[768, 2],
+	[390, 1]
+] as const) {
+	test(`the cells run in ${cols} column(s) at ${width}`, async ({ page }) => {
 		await grid(page, width);
-		const shots = page.locator(`${cells} .shot`);
-		await expect(shots).toHaveCount(4);
-		const boxes = await shots.evaluateAll((els) =>
-			els.map((shot) => {
-				const s = shot.getBoundingClientRect();
-				const win = shot.querySelector('.shot-win')!.getBoundingClientRect();
-				const head = shot.querySelector('.shot-head')!.getBoundingClientRect();
-				const wins = [...shot.querySelectorAll('.shot-win.open')].map((w) =>
-					Math.round(w.getBoundingClientRect().bottom - s.bottom)
-				);
-				return {
-					h: Math.round(s.height),
-					top: Math.round(win.top - s.top),
-					left: Math.round(win.left - s.left),
-					// the picture's right edge: its rightmost window or tile
-					right: Math.round(
-						s.right -
-							Math.max(
-								...[...shot.querySelectorAll('.shot-win, .snap')].map(
-									(w) => w.getBoundingClientRect().right
-								)
-							)
-					),
-					head: Math.round(head.height),
-					open: wins,
-					// a closed picture: its lowest window or tile above the
-					// frame's inner bottom edge (a folded tile's box runs on
-					// under its clip, so only the newest counts)
-					bottom: Math.round(
-						s.bottom -
-							1 -
-							Math.max(
-								...[...shot.querySelectorAll('.shot-win, .snap:not(.old)')].map(
-									(w) => w.getBoundingClientRect().bottom
-								)
-							)
-					)
-				};
+		const boxes = await page.locator(cells).evaluateAll((els) =>
+			els.map((e) => {
+				const r = e.getBoundingClientRect();
+				return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) };
 			})
 		);
-		const [first] = boxes;
-		for (const b of boxes) {
-			expect(b.h).toBe(first.h);
-			expect(b.top).toBe(first.top);
-			expect(b.left).toBe(first.left);
-			expect(b.right).toBe(first.right);
-			expect(b.head).toBe(28);
-			// one window in each runs off the frame's bottom edge (the
-			// frame's 1px border is the line it meets), or, closed
-			// (ComesBack), stands the top's inset above it
-			expect(b.open.length).toBeLessThanOrEqual(1);
-			if (b.open.length) expect(b.open[0]).toBeGreaterThanOrEqual(-1);
-			else expect(Math.abs(b.bottom - (b.top - 1))).toBeLessThanOrEqual(1);
+		expect(boxes).toHaveLength(4);
+		const xs = new Set(boxes.map((b) => b.x));
+		expect(xs.size).toBe(cols);
+		if (cols === 2) {
+			// Rows line up: cells 1 and 2 share a top, so do 3 and 4.
+			expect(boxes[0].y).toBe(boxes[1].y);
+			expect(boxes[2].y).toBe(boxes[3].y);
+			expect(boxes[0].w).toBe(boxes[1].w);
 		}
-	});
-}
-
-for (const width of [1440, 1024, 820, 390, 360]) {
-	test(`ComesBack shows every row's label whole at ${width}`, async ({ page }) => {
-		await grid(page, width);
-		const cut = await page
-			.locator('.land-cells .m-row .nm, .land-cells .m-row .val')
+		// A 24px claim runs to three lines at most.
+		const lines = await page
+			.locator(`${cells} h3`)
 			.evaluateAll((els) =>
-				els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent)
+				els.map((e) =>
+					Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight))
+				)
 			);
-		expect(cut).toEqual([]);
-		await expect(page.locator('.land-cells .m-row')).toHaveCount(6);
+		for (const n of lines) expect(n).toBeLessThanOrEqual(3);
 	});
 }
 
-test('the Editor shows every column of the screen at card width', async ({ page }) => {
-	await grid(page, 1440);
-	const over = await page
-		.locator('.land-cells .screen .ln')
-		.evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).length);
-	expect(over).toBe(0);
-	await expect(page.locator('.land-cells .screen .ln')).toHaveCount(20);
+test("the agents list is agents.md's table", async ({ page }) => {
+	const md = readFileSync(join(DOCS, 'agents.md'), 'utf8');
+	// The first table, from its "| Agent | `--agent` |" header to its end.
+	const table = md.slice(md.indexOf('| Agent ')).split('\n\n')[0];
+	const rows = [...table.matchAll(/^\| ([^|`]+?)\s+\| `([^`]+)`/gm)]
+		.map((m) => [m[1], m[2]])
+		.filter(([name]) => name !== 'Agent');
+	expect(rows.length).toBeGreaterThanOrEqual(5);
+	await page.goto('/');
+	const list = page.getByRole('list', { name: 'Agents' });
+	await expect(list.locator('.name')).toHaveText(rows.map(([n]) => n));
+	await expect(list.locator('.flag')).toHaveText(rows.map(([, f]) => f));
+	const section = page.locator('section', {
+		has: page.getByRole('heading', { name: 'Agents on first boot' })
+	});
+	await expect(section.getByRole('link', { name: 'All agents' })).toHaveAttribute(
+		'href',
+		'/docs/agents'
+	);
+	await expect(section.getByRole('link', { name: 'Everything installed' })).toHaveAttribute(
+		'href',
+		'/docs/machine#whats-installed'
+	);
 });
 
-test("the Browser's log sits under its viewport, not over the page", async ({ page }) => {
-	await grid(page, 1440);
-	const [vp, term] = await Promise.all([
-		page.locator('.land-cells .vp').boundingBox(),
-		page.locator('.land-cells .bw .term').boundingBox()
+test('the questions open, one answer at a time as asked', async ({ page }) => {
+	const index = readFileSync(join(DOCS, 'index.md'), 'utf8');
+	const restart = index.match(/starts it again in (about \d+ seconds)/)![1];
+	await page.goto('/');
+	const q = page.locator('section', { has: page.getByRole('heading', { name: 'Questions' }) });
+	await expect(q.locator('summary')).toHaveText([
+		'Do my files survive a stop?',
+		'Is my Claude Code login copied from my laptop?',
+		'Does the CLI run on Windows?'
 	]);
-	expect(term!.y).toBeGreaterThanOrEqual(vp!.y + vp!.height - 1);
-});
-
-test('Localhost leaves its still through the seam, and never shows two pages at once', async ({
-	page
-}) => {
-	await grid(page, 1440);
-	const frame = page.locator('.shot.shot-box', { has: page.locator('.lh') });
-	await frame.scrollIntoViewIfNeeded();
-	// Take the grid's turn: point at it, then leave; it plays 2s later,
-	// from its still frame, so its first cycle starts at the seam (I-676).
-	const box = (await frame.boundingBox())!;
-	await page.mouse.move(box.x + 30, box.y + 40);
-	await page.mouse.move(box.x + 40, box.y + 50);
-	await page.mouse.move(2, 2);
-	await expect(frame).toHaveAttribute('data-motion', 'play', { timeout: 5000 });
-	// Sample through the seam's exit, the first frame and the reload: the
-	// refused page and the app are never both over 0.2 (the app's headline
-	// over "This site can't be reached"), and the Local line stays.
-	const samples: { home: number; err: number; tr: number; url: string | null }[] = [];
-	for (let i = 0; i < 40; i++) {
-		samples.push(
-			await frame.evaluate((f) => ({
-				home: Number(getComputedStyle(f.querySelector('.home')!).opacity),
-				err: Number(getComputedStyle(f.querySelector('.err')!).opacity),
-				tr: Number(getComputedStyle(f.querySelector('.tr')!).opacity),
-				url: f.querySelector('.url')!.textContent
-			}))
-		);
-		await page.waitForTimeout(100);
-	}
-	for (const s of samples) {
-		expect(Math.min(s.home, s.err)).toBeLessThanOrEqual(0.2);
-		expect(s.tr).toBe(1);
-		expect(s.url).toBe('localhost:5173');
-	}
-	// The loop's first frame: the refused page, dimmed, and no app.
-	expect(samples.some((s) => s.home === 0 && s.err === 0.6)).toBe(true);
-	// The forward lands and the page reloads to the app.
-	await expect
-		.poll(async () => frame.locator('.home').evaluate((e) => getComputedStyle(e).opacity), {
-			timeout: 6000
-		})
-		.toBe('1');
+	const first = q.locator('details').first();
+	await expect(first.locator('p')).toBeHidden();
+	await first.locator('summary').click();
+	await expect(first.locator('p')).toContainText(`starts the machine again in ${restart}`);
 });
