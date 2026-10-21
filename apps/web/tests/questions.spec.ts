@@ -1,9 +1,10 @@
 // A question an agent asked with repose-ask (DECISIONS I-245) shows in
-// the "Waiting on you" card on the project page and is answered there: an
-// option button, free text, or Dismiss (I-693). A question closed
-// anywhere else leaves one line saying how. The fake api records what the
-// dashboard sent.
-import { test, expect } from '@playwright/test';
+// the "Waiting on you" card on the project page and on /questions, and is
+// answered there: an option button, free text, or Dismiss (I-693). A
+// question closed anywhere else leaves one line saying how. The rail's
+// Questions place carries the count and each project's row turns amber
+// (I-841). The fake api records what the dashboard sent.
+import { test, expect, type Page } from '@playwright/test';
 import {
 	signIn,
 	createProject,
@@ -36,7 +37,7 @@ test('no card without a pending question; an option button answers', async ({ pa
 		remote_url: 'github.com/heracraft/ask-app'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Connect' })).toBeVisible();
 	await expect(page.getByTestId('questions')).toHaveCount(0);
 
 	const q = await addQuestion(p.id, {
@@ -47,7 +48,8 @@ test('no card without a pending question; an option button answers', async ({ pa
 	await page.reload();
 	const card = page.getByRole('region', { name: 'Waiting on you' });
 	await expect(card).toHaveAttribute('data-testid', 'questions');
-	await expect(card.getByText('1', { exact: true })).toBeVisible();
+	// The count is the rail's, once a screen; the card's head has none.
+	await expect(card.locator('.hk-badge')).toHaveCount(0);
 	const row = card.getByTestId('question');
 	await expect(row).toContainText('claude');
 	await expect(row).toContainText('asked just now');
@@ -141,7 +143,6 @@ test('a question answered in the terminal says so, then leaves', async ({ page }
 	await expect(
 		card.getByTestId('question').filter({ hasText: 'Withdrawn' }).getByTestId('question-outcome')
 	).toHaveText('Withdrawn by the agent');
-	await expect(card.getByText('2', { exact: true })).toHaveCount(0);
 	await page.clock.runFor(8_500);
 	await expect(page.getByTestId('questions')).toHaveCount(0);
 });
@@ -355,4 +356,142 @@ test('a short question with options answers on its own line at 1440', async ({ p
 		.getByTestId('question')
 		.evaluateAll((els) => els.reduce((n, el) => n + el.getBoundingClientRect().height, 0));
 	expect(rows).toBeLessThanOrEqual(180);
+});
+
+/** Narrows the account's pending list to these questions; the suite shares one account. */
+async function onlyPending(page: Page, ids: string[]) {
+	await page.route(/\/questions\?state=pending$/, async (route) => {
+		const res = await route.fetch();
+		const body = (await res.json()) as { questions: { id: string }[] };
+		body.questions = body.questions.filter((q) => ids.includes(q.id));
+		await route.fulfill({ response: res, json: body });
+	});
+}
+
+// The count is on Questions, not Projects; the title says it to a
+// background tab; the asking project's rail row turns amber (I-841).
+test('the rail counts questions on Questions and marks the asking project', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'rail-ask-app',
+		remote_url: 'github.com/heracraft/rail-ask-app'
+	});
+	const q1 = await addQuestion(p.id, {
+		agent: 'claude',
+		text: 'Rail one?',
+		options: ['yes', 'no']
+	});
+	const q2 = await addQuestion(p.id, { agent: 'codex', text: 'Rail two?' });
+	await onlyPending(page, [q1.id, q2.id]);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/projects');
+	const nav = page.getByRole('navigation', { name: 'Dashboard' });
+	const questions = nav.getByRole('link', { name: 'Questions, 2 waiting' });
+	await expect(questions).toHaveAttribute('href', '/questions');
+	await expect(questions.getByTestId('pending-questions')).toHaveText('2');
+	await expect(nav.getByRole('link', { name: 'Projects', exact: true })).toBeVisible();
+	await expect(page).toHaveTitle('(2) Projects · repose');
+	const rowLink = nav.getByRole('link', { name: `${p.name}, running, waiting on you` });
+	// The rail lists 8 projects; an asking one sorts to the top.
+	await expect(rowLink).toBeVisible();
+	await expect(rowLink.locator('[data-tone="warn"]')).toHaveCount(1);
+
+	await questions.click();
+	await expect(page).toHaveURL('/questions');
+	await expect(page.getByRole('heading', { level: 1, name: 'Questions' })).toBeVisible();
+	await expect(page).toHaveTitle('(2) Questions · repose');
+	await expect(questions).toHaveAttribute('aria-current', 'page');
+	await closeQuestion(q1.id);
+	await closeQuestion(q2.id);
+});
+
+// /questions: every waiting question under its project's name, count and
+// state, answered in place; the answer then shows under Answered (I-841).
+test('/questions groups by project and answers in place', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const a = await createProject(api, { name: 'qpage-a', remote_url: 'github.com/h/qpage-a' });
+	const b = await createProject(api, { name: 'qpage-b', remote_url: 'github.com/h/qpage-b' });
+	const qa1 = await addQuestion(a.id, {
+		agent: 'claude',
+		text: 'Merge the docs PR?',
+		options: ['yes', 'no']
+	});
+	const qa2 = await addQuestion(a.id, { agent: 'codex', text: 'Which test runner?' });
+	const qb = await addQuestion(b.id, {
+		agent: 'pi',
+		text: 'Keep the cache dir?',
+		options: ['keep', 'drop']
+	});
+	await onlyPending(page, [qa1.id, qa2.id, qb.id]);
+	await page.goto('/questions');
+	const card = page.getByTestId('questions');
+	await expect(card.getByRole('heading', { name: 'Waiting on you' })).toBeVisible();
+	await expect(card.getByTestId('question')).toHaveCount(3);
+	// One head a project: its link, its count and its machine's state.
+	// (Which leads is layoutQuestions', unit-tested in question-view.test.ts.)
+	const heads = card.locator('.waiting-project');
+	await expect(heads).toHaveCount(2);
+	const headA = heads.filter({ has: page.getByRole('link', { name: a.name, exact: true }) });
+	await expect(headA).toContainText('2 questions');
+	await expect(headA).toContainText('running');
+	await expect(headA.getByRole('link')).toHaveAttribute('href', `/projects/${a.id}`);
+	const headB = heads.filter({ has: page.getByRole('link', { name: b.name, exact: true }) });
+	await expect(headB).toContainText('1 question');
+
+	const row = card.locator(`[data-qid="${qb.id}"]`);
+	await row.getByRole('button', { name: 'keep', exact: true }).click();
+	await expect(row.getByTestId('question-outcome')).toHaveText('Answered keep');
+	const answered = page.getByRole('region', { name: 'Answered' });
+	await expect(answered).toContainText('Last 7 days');
+	const done = answered.locator(`[data-qid="${qb.id}"]`);
+	await expect(done.getByTestId('answered-outcome')).toHaveText('keep');
+	await expect(done).toContainText('Keep the cache dir?');
+	await expect(done.getByRole('link', { name: b.name })).toHaveAttribute(
+		'href',
+		`/projects/${b.id}`
+	);
+	await closeQuestion(qa1.id);
+	await closeQuestion(qa2.id);
+});
+
+// Answered words each outcome as the closing line does, with where the
+// answer came from, for the last 7 days only.
+test('Answered names each outcome and where it came from', async ({ page }) => {
+	const now = Date.now();
+	const mk = (i: number, over: Record<string, unknown>) => ({
+		id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+		project_id: '00000000-0000-4000-9000-000000000001',
+		project: 'alpha',
+		agent: 'claude',
+		window: 'claude',
+		text: `Closed question ${i}?`,
+		options: ['yes', 'no'],
+		state: 'answered',
+		answer: 'yes',
+		answered_via: 'email',
+		created_at: new Date(now - (i + 5) * 60_000).toISOString(),
+		expires_at: new Date(now + 3600_000).toISOString(),
+		answered_at: new Date(now - i * 60_000).toISOString(),
+		...over
+	});
+	const all = [
+		mk(1, {}),
+		mk(2, { answered_via: 'terminal', answer: null }),
+		mk(3, { state: 'cancelled', answer: null, answered_via: 'dashboard' }),
+		mk(4, { answered_at: new Date(now - 8 * 86_400_000).toISOString() })
+	];
+	await page.route(/\/questions\?state=pending$/, (route) =>
+		route.fulfill({ json: { questions: [] } })
+	);
+	await page.route(/\/questions\?state=all$/, (route) =>
+		route.fulfill({ json: { questions: all } })
+	);
+	await page.goto('/questions');
+	await expect(page.getByTestId('questions-empty')).toHaveText('No questions waiting.');
+	await expect(page).toHaveTitle('Questions · repose');
+	const outcomes = page.getByRole('region', { name: 'Answered' }).getByTestId('answered-outcome');
+	await expect(outcomes).toHaveText(['yes · by email', 'Answered in the terminal', 'Dismissed']);
+	// A project not in the account's list keeps its name, unlinked.
+	await expect(
+		page.getByRole('region', { name: 'Answered' }).getByRole('link', { name: 'alpha' })
+	).toHaveCount(0);
 });
