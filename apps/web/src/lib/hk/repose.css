@@ -334,8 +334,8 @@
 /* ---------- Joined controls ---------- */
 
 /* The selected item of every joined control carries a 3:1 ring in light,
-   so selection is never a 1.3:1 fill alone (Guide B 1.8). In dark the kit's
-   own selected look (zinc-700 fill, zinc-400 ring) applies. */
+   so selection is never a 1.3:1 fill alone (Guide B 1.8). Dark has its own
+   look, below. */
 .hk .hk-seg label:has(input:checked),
 .hk .hk-seg .hk-seg-thumb {
 	box-shadow:
@@ -480,9 +480,12 @@
 		0 1px 2px rgb(0 0 0 / 0.06);
 }
 
-/* Dark: the selected item of every joined control is the kit's dark
-   selected segment (zinc-700 fill, zinc-50 text, zinc-400 inset ring), so
-   it holds 3:1 and is never a near-white slab. */
+/* Dark: the selected item of every joined control is a quiet raised fill,
+   zinc-800 with a zinc-700 inset hairline and a soft shadow, as in the
+   recruiting dashboard; the zinc-400 ring it replaced read as a bright
+   frame (owner, 2026-10-21). Selection is not colour alone: the selected
+   label is #fafafa and the others --hk-text-3 (#8b8b94), a 3.2:1 step in
+   lightness at one weight, and forced colours draw a Highlight edge. */
 :root[data-theme='dark']
 	.hk
 	:is(
@@ -492,9 +495,11 @@
 		.hk-seg--buttons > button[aria-pressed='true'],
 		.hk-tablist [role='tab'][aria-selected='true']
 	) {
-	background: #3f3f46;
+	background: #27272a;
 	color: #fafafa;
-	box-shadow: inset 0 0 0 1px #a1a1aa;
+	box-shadow:
+		inset 0 0 0 1px #3f3f46,
+		0 1px 2px rgb(0 0 0 / 0.5);
 }
 @media (prefers-color-scheme: dark) {
 	:root:not(.light):not([data-theme='light'])
@@ -506,9 +511,11 @@
 			.hk-seg--buttons > button[aria-pressed='true'],
 			.hk-tablist [role='tab'][aria-selected='true']
 		) {
-		background: #3f3f46;
+		background: #27272a;
 		color: #fafafa;
-		box-shadow: inset 0 0 0 1px #a1a1aa;
+		box-shadow:
+			inset 0 0 0 1px #3f3f46,
+			0 1px 2px rgb(0 0 0 / 0.5);
 	}
 }
 :root[data-theme='dark'] .hk .hk-seg--slide[data-ready] label:has(input:checked) {

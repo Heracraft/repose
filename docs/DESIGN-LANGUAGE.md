@@ -84,7 +84,8 @@ Text is 4.5:1 on its ground and a control's edge or a state mark is 3:1
 The kit's input edge, `--hk-border`, is 1.27:1, so every input, select and
 textarea takes `--hk-control-edge`, 3:1 in both themes. The selected item of
 a joined control carries a 1px `--hk-control-edge` ring in light, so
-selection is never a 1.3:1 fill alone. A meter's fill can sit under 3:1
+selection is never a 1.3:1 fill alone; in dark its label is 3:1 lighter than
+the unselected ones. A meter's fill can sit under 3:1
 (amber is 2.06:1 on the light page); its value text and `aria-valuetext`
 carry the number. `pnpm a11y` audits 13 pages in both themes at 1440 and 390.
 
@@ -475,8 +476,10 @@ while dirty (I-332).
 All share one look: a `--hk-surface-2` track with 3px padding and a 1px
 inset hairline, items 30px (24px with `hk-seg--sm`) at 13px 500
 `--hk-text-3`, and the selected item on `--hk-surface` in ink with the 3:1
-ring. In the dark the selected item is `#3f3f46` with a `#a1a1aa` inset ring
-and `#fafafa` text. Focus is a 2px accent outline inside the item, so the
+ring. In the dark the selected item is a quiet `#27272a` fill with a
+`#3f3f46` inset hairline, a soft shadow and `#fafafa` text; its label is 3.2:1
+lighter than the others' `#8b8b94` at the same weight, so selection is a
+lightness step, not hue (I-841, amended 2026-10-21). Focus is a 2px accent outline inside the item, so the
 track never clips it. In forced colours the selected item takes a 2px
 Highlight outline.
 
@@ -574,7 +577,8 @@ pane is never the loudest thing on the page.
 
 ## Command list
 
-`CommandList.svelte`: two to four commands in one near-black pane, a 40px row
+`CommandList.svelte`: two to four commands in one near-black pane, as wide
+as its longest command from 22rem to 40rem (the column on a phone), a 40px row
 each (44px on touch, as tall as its Copy, so no Copy crosses a hairline): a muted `$ `, the command in `--hk-code-text`, and its own dark small
 Copy named "Copy {what}". A `# note` above a command is 12px italic and wraps
 on a phone while the command scrolls sideways; Copy lines up with the command
@@ -585,7 +589,8 @@ offers several commands together: Connect on a project page, the empty
 ## Command line
 
 `CodeCopy.svelte`: one lone command on a light page, in a `--hk-surface-2`
-box with a 1px border and 8px corners, Geist Mono 13px ink, an optional muted
+box with a 1px border and 8px corners, as wide as the command from 20rem to
+40rem, Geist Mono 13px ink, an optional muted
 `$ `, and a page-tone small Copy at the end. On touch the box is 46px tall,
 so the 44px Copy sits inside it edge to edge. Long commands scroll sideways
 inside the box. A page keeps one dark anchor, so a lone command is light.

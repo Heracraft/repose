@@ -40,11 +40,15 @@
 </div>
 
 <style>
+	/* As wide as its command, from 20rem to 40rem, so Copy sits beside the
+	   command (as CommandList does); a phone's column caps it first. */
 	.code-copy {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		min-width: 0;
+		width: fit-content;
+		min-width: min(100%, 20rem);
+		max-width: min(100%, 40rem);
 		padding: 0.5rem 0.5rem 0.5rem 0.75rem;
 		border: 1px solid var(--hk-border);
 		border-radius: var(--hk-radius);
