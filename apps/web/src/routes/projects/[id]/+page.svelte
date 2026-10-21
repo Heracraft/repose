@@ -649,11 +649,14 @@
 
 	let revision = $derived(revisions.find((r) => r.revision_id === project?.config_revision_id));
 
-	/** The sentence after "code: " in last_error, as the projects list shows it. */
+	/** The sentence after "code: " in last_error. The api writes it lowercase
+	 * ("stopping <slug> failed: ..."); the banner opens a sentence, so its
+	 * first letter is raised. The list's sub-line keeps it as stored. */
 	let errorReason = $derived.by(() => {
 		if (!project || project.state !== 'error' || !project.last_error) return '';
 		const i = project.last_error.indexOf(': ');
-		return i > 0 ? project.last_error.slice(i + 2) : project.last_error;
+		const r = i > 0 ? project.last_error.slice(i + 2) : project.last_error;
+		return r.charAt(0).toUpperCase() + r.slice(1);
 	});
 
 	/** The link a payment_required reason wants, on the billing page. */

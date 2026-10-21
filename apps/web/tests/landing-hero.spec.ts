@@ -130,6 +130,42 @@ test('at 1440 the terminal sits beside the copy, sized to its lines', async ({ p
 	expect(right.y + right.height).toBeLessThanOrEqual(900);
 });
 
+// The headline sets in three lines beside the terminal from 1280 and in
+// two above it below 1280, and no terminal line wraps (review r4: four
+// lines beside a short pane leaned the hero left).
+for (const [width, beside, lines_] of [
+	[1440, true, 3],
+	[1280, true, 3],
+	[1024, false, 2],
+	[768, false, 2]
+] as const) {
+	test(`at ${width} the headline takes ${lines_} lines, terminal ${beside ? 'beside' : 'under'} it`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const h1 = page.locator('.hero h1');
+		const n = await h1.evaluate((e) => {
+			const lh = parseFloat(getComputedStyle(e).lineHeight);
+			return Math.round(e.getBoundingClientRect().height / lh);
+		});
+		expect(n).toBe(lines_);
+		const left = (await page.locator('.hero-copy').boundingBox())!;
+		const term = (await page.locator('.term').boundingBox())!;
+		if (beside) expect(term.x).toBeGreaterThan(left.x + left.width);
+		else expect(term.y).toBeGreaterThanOrEqual(left.y + left.height);
+		// Every line of the replay holds one row.
+		const wrapped = await lines(page).evaluateAll(
+			(els) =>
+				els.filter(
+					(e) =>
+						e.getBoundingClientRect().height > 2 * parseFloat(getComputedStyle(e).lineHeight) - 1
+				).length
+		);
+		expect(wrapped).toBe(0);
+	});
+}
+
 test('at 390 the terminal follows the install line, full width, and nothing scrolls sideways', async ({
 	page
 }) => {

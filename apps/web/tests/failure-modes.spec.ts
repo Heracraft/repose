@@ -212,6 +212,7 @@ test('capacity on Start shows the documented message', async ({ page }) => {
 test('a 5xx from the api shows the persistent bar, which clears once the api recovers', async ({
 	page
 }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await fail('GET', '/projects', 'internal');
 	// The rule is lifted whatever happens here: left on, it fails every
 	// later spec that lists projects (CI on b2524af4).
@@ -225,6 +226,9 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 		// Said inside the live region that was on the page before it (I-393).
 		await expect(page.getByRole('status').filter({ has: bar })).toHaveAttribute('id', 'outage');
 		await expect(page.getByText('Cannot reach the API')).toHaveCount(0);
+		// The strip sits in the page's column: the short page still ends at
+		// the window's foot, footer included (review r4).
+		expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(900);
 		await expect(
 			page.getByText('Could not load projects. The API failed on its side; try again shortly.')
 		).toHaveCount(1);

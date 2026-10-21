@@ -14,9 +14,12 @@
 		gb,
 		normalizeRemoteDisplay,
 		relativeTime,
+		sinceLabel,
 		tempLeft,
+		upLabel,
 		uptime
 	} from '$lib/format';
+	import { clock } from '$lib/clock.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
@@ -242,7 +245,15 @@
 		return i > 0 ? p.last_error.slice(i + 2) : p.last_error;
 	}
 
-	onMount(() => pollWhileVisible(refresh));
+	onMount(() => {
+		// The State cell's "up 3m" moves with the 30-second clock, not the poll.
+		const stopClock = clock.use();
+		const stopPoll = pollWhileVisible(refresh);
+		return () => {
+			stopClock();
+			stopPoll();
+		};
+	});
 
 	// One Start or Stop per row at a time; the label says it while it runs.
 	let pending = $state<Record<string, RowAction>>({});
@@ -424,13 +435,13 @@
 	{@const frozen = frozenSince(p)}
 	<StateDot state={p.state} frozen={!!frozen} />
 	{#if frozen}
-		<span class="sub">for {uptime(frozen)}</span>
+		<span class="sub">{sinceLabel(frozen, 'for', clock.now)}</span>
 	{:else if p.state === 'running' && p.idle}
 		<!-- Nobody on it for a day, holding its memory against the plan
 		     (I-262, I-289, I-617). -->
 		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{:else if p.state === 'running'}
-		<span class="sub">up {uptime(p.started_at)}</span>
+		<span class="sub">{upLabel(p.started_at, clock.now)}</span>
 	{:else if p.state === 'stopped'}
 		<span class="sub"
 			>{p.started_at
@@ -816,13 +827,16 @@
 		width: 14%;
 	}
 	.ptable .c-agents {
-		width: 18%;
+		width: 15%;
 	}
 	.ptable .c-disk {
 		width: 7%;
 	}
+	/* Clear of the right-aligned disk figure, so "1 GB" and "2h ago" read
+	   as two columns (review r4). */
 	.ptable .c-snap {
-		width: 9%;
+		width: 12%;
+		padding-left: 2rem;
 	}
 	.ptable .c-act {
 		width: 6%;

@@ -62,6 +62,33 @@ test('the dashboard header links to the docs', async ({ page }) => {
 	await expect(docs).toHaveAttribute('href', '/docs');
 });
 
+// The Account button sits in the sticky header; Escape returns focus to it
+// without scrolling the page to the top (review r4).
+for (const width of [1440, 390]) {
+	test(`closing the Account menu with Escape keeps the scroll at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 400 });
+		await signIn(page);
+		await page.goto('/settings');
+		await expect(page.getByRole('heading', { level: 2, name: 'Delete account' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		// Well inside the page, so a late change in its height cannot move it.
+		await page.evaluate(() => window.scrollTo(0, 400));
+		const y = await page.evaluate(() => window.scrollY);
+		expect(y).toBe(400);
+		const account = page.getByRole('button', { name: 'Account', exact: true });
+		// A mouse click where the button is: locator.click() scrolls a sticky
+		// element "into view" itself and would move the page first.
+		const box = (await account.boundingBox())!;
+		await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+		await expect(page.locator('.account-panel')).toBeVisible();
+		expect(await page.evaluate(() => window.scrollY)).toBe(y);
+		await page.keyboard.press('Escape');
+		await expect(page.locator('.account-panel')).toBeHidden();
+		await expect(account).toBeFocused();
+		expect(await page.evaluate(() => window.scrollY)).toBe(y);
+	});
+}
+
 // DECISIONS I-331: sign-out leaves the signed-in page as it is until the
 // browser goes to Logto's end-session page; it never renders the landing
 // page in between.

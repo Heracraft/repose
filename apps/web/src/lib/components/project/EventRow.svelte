@@ -10,7 +10,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
-	import { eventKind } from '$lib/events';
+	import { eventKind, toneDot as dotFor } from '$lib/events';
 	import { clockTime, dateTime } from '$lib/format';
 	import type { GuestState, ProjectEvent } from '$lib/api/types';
 
@@ -35,9 +35,7 @@
 			? (event.summary as GuestState)
 			: undefined
 	);
-	let toneDot = $derived(
-		info.tone === 'error' ? 'hk-dot--err' : info.tone === 'attention' ? 'hk-dot--warn' : ''
-	);
+	let toneDot = $derived(dotFor(info.tone));
 
 	// The summary turns into a button only when two lines cut it short; a
 	// button on every row would be a tab stop that does nothing.
@@ -59,7 +57,9 @@
 
 <li class="event-row" data-testid="event-row" data-kind={event.kind}>
 	<time class="time" datetime={event.ts} title={dateTime(event.ts)}>{clockTime(event.ts)}</time>
-	<span class="kind"><span class="hk-dot {toneDot} kdot" aria-hidden="true"></span>{info.label}</span>
+	<span class="kind"
+		><span class="hk-dot {toneDot} kdot" aria-hidden="true"></span>{info.label}</span
+	>
 	<span
 		class="agent"
 		title={event.window && event.window !== event.agent ? `window ${event.window}` : undefined}

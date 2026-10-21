@@ -233,6 +233,9 @@
 			justify-self: start;
 			min-height: 2.75rem;
 			margin-block: -0.6875rem;
+			/* The arrow (::after) is a flex item here and drops its leading
+			   space; the gap puts it back, "Billing →" (review r4). */
+			column-gap: 0.25em;
 		}
 	}
 	/* The list's facts: label left, figure right, a sub line under. */

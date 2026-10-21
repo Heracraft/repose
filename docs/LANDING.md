@@ -39,7 +39,10 @@ headline starting under the logo. In order:
    of its own, with your code, tools and logins on it.") and whose second
    carries "full permissions"; "Get started" and "Copy install command";
    the install command in mono under them, exactly what the button
-   copies. On the right, the terminal (below).
+   copies. From 1280px the terminal (below) sits on the right of a
+   36rem copy column, where the headline sets in three lines; narrower,
+   it sits under the copy and the headline takes two lines (review r4:
+   at 1024 to 1279 the headline took four lines beside a short pane).
 2. **"Your laptop's setup, in one command"** (the owner's I-772 heading
    and paragraph), with two steps on hairline rows: Sign in
    (`repose login`) and Run in any checkout (`repose run`). Each row
@@ -167,7 +170,7 @@ transitions on hover and the questions' plus turning 45 degrees over
 
 - Judge the assembled page, not a component in isolation: screenshot it at
   1440×900 and 390px, light and dark, and look before calling anything done.
-  Check 1024, 768 and 360 for the column changes.
+  Check 1280, 1024, 768 and 360 for the column changes.
 - Look at captures at their real size. A full-page capture read after
   being scaled to a fifth hides what a visitor sees at once (a lopsided
   hero got through that way, 2026-09-27). Capture the viewport, or crop

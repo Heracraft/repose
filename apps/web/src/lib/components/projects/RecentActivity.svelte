@@ -12,7 +12,7 @@
 	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { listEvents } from '$lib/api/client';
-	import { eventKind } from '$lib/events';
+	import { eventKind, toneDot } from '$lib/events';
 	import { clockTime, dateTime, dayLabel, relativeTime } from '$lib/format';
 	import type { Project, ProjectEvent } from '$lib/api/types';
 	import { foldActivity, type Folded } from './activity';
@@ -97,7 +97,9 @@
 				{@const k = eventKind(e.kind, e.agent)}
 				<li class="ra-row">
 					<time class="ra-time" datetime={e.ts} title={dateTime(e.ts)}>{when(e.ts)}</time>
-					<span class="ra-kind">{k.label}</span>
+					<span class="ra-kind"
+						><span class="hk-dot {toneDot(k.tone)} kdot" aria-hidden="true"></span>{k.label}</span
+					>
 					<a href={resolve('/projects/[id]', { id: e.project.id })} class="ra-project"
 						><span class="hk-sr">Project </span>{e.project.name}</a
 					>
@@ -137,6 +139,13 @@
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
 		white-space: nowrap;
+	}
+	/* The kind's 6px cue, as on a project's Events list (EventRow). */
+	.kdot {
+		width: 6px;
+		height: 6px;
+		margin-right: 0.375rem;
+		vertical-align: 0.0625rem;
 	}
 	.ra-project {
 		justify-self: start;

@@ -40,13 +40,15 @@
 	async function show() {
 		open = true;
 		await tick();
-		items()[0]?.focus();
+		items()[0]?.focus({ preventScroll: true });
 	}
 
 	function hide(returnFocus: boolean) {
 		if (!open) return;
 		open = false;
-		if (returnFocus) button?.focus();
+		// The button sits in the sticky header: a plain focus() scrolls the page
+		// to the button's static place, the top (review r4).
+		if (returnFocus) button?.focus({ preventScroll: true });
 	}
 
 	// A navigation (Settings, or Back) closes it.
@@ -71,7 +73,7 @@
 		e.preventDefault();
 		const at = list.indexOf(document.activeElement as HTMLElement);
 		const step = e.key === 'ArrowDown' ? 1 : -1;
-		list[(at + step + list.length) % list.length].focus();
+		list[(at + step + list.length) % list.length].focus({ preventScroll: true });
 	}
 </script>
 

@@ -21,12 +21,23 @@
 	gap: 2.5rem;
 	padding: 3rem 0 3.5rem;
 }
-@media (min-width: 1024px) {
+/* Two columns from 1280px. The copy column is 36rem, wide enough for the
+   headline in three lines at the kit's 56px ("replicated in the cloud"
+   is 567px), and the terminal keeps about 496px, its longest line
+   unwrapped. Narrower, the headline went to four lines beside a short
+   pane and the hero leaned left (review r4), so below 1280 the terminal
+   sits under the copy. */
+@media (min-width: 1280px) {
 	.landing .hero {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-		gap: 4rem;
+		grid-template-columns: minmax(0, 36rem) minmax(0, 1fr);
+		gap: 3rem;
 		align-items: center;
 		padding: 5rem 0;
+	}
+}
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+	.landing .hero {
+		padding: 4rem 0 4.5rem;
 	}
 }
 .landing .hero-copy {
@@ -35,8 +46,10 @@
 .landing .hero .hk-eyebrow {
 	margin: 0 0 1rem;
 }
+/* 11em holds "Your dev environment," on one line: two lines where the
+   column allows, three in the 36rem column beside the terminal. */
 .landing .hero h1 {
-	max-width: 16ch;
+	max-width: 11em;
 	margin: 0;
 }
 .landing .hero .hk-lead {

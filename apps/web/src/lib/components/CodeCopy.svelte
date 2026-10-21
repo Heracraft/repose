@@ -23,11 +23,18 @@
 		/** Show a muted "$ " before the command. */
 		prompt?: boolean;
 	} = $props();
+
+	/** A line scrolled to its end shows its last characters unfaded. */
+	function markEnd(e: Event) {
+		const el = e.currentTarget as HTMLElement;
+		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+	}
 </script>
 
 <div class="code-copy">
-	<pre class="line" use:tabStopWhenScrolls>{#if prompt}<span class="prompt" aria-hidden="true"
-				>$&nbsp;</span
+	<pre class="line" use:tabStopWhenScrolls onscroll={markEnd}>{#if prompt}<span
+				class="prompt"
+				aria-hidden="true">$&nbsp;</span
 			>{/if}{command}</pre>
 	<CopyButton text={copy ?? command} label="Copy" ariaLabel="Copy {what}" tone="page" size="sm" />
 </div>
@@ -62,6 +69,11 @@
 		line-height: 1.25rem;
 		color: var(--hk-text);
 		white-space: pre;
+	}
+	/* A line that scrolls fades over its last 1.5rem, as CommandList's
+	   do, so a cut command reads as more text (review r4). */
+	.line:global([data-scrolls='true']:not([data-end='true'])) {
+		mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
 	}
 	.line:focus-visible {
 		outline-offset: 2px;

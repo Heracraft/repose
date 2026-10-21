@@ -78,29 +78,30 @@
 	mobileOffset={{ left: '20px', right: '20px', top: '12px', bottom: '20px' }}
 />
 
-<!-- The live region is always in the page and only its contents change:
-     a role=status inserted with its text already in it is often read by
-     no screen reader (I-393). Empty, it draws nothing. -->
-<div id="outage" role="status">
-	{#if !reachability.ok}
-		<!-- A full-bleed strip above the header: the page's edge, not a box
-		     in the column, so square and borderless. -->
-		<div class="outage">
-			<p class="frame">
-				{reachability.reason === 'network'
-					? 'Cannot reach the API. Retrying…'
-					: 'The API is failing right now. Retrying…'}
-			</p>
-		</div>
-	{/if}
-</div>
-
 <!-- The header is on every page from the first paint, before the sign-in
      check answers, and the footer under every page; a short page keeps
-     the footer at the window's foot (DECISIONS I-655). A private page
+     the footer at the window's foot (DECISIONS I-655), with the outage
+     strip in the same column so it never pushes the footer past the
+     window (review r4). A private page
      whose check has not answered shows its skeleton in the frame where
      its content will be. -->
 <div class="flex min-h-dvh flex-col">
+	<!-- The live region is always in the page and only its contents change:
+	     a role=status inserted with its text already in it is often read by
+	     no screen reader (I-393). Empty, it draws nothing. -->
+	<div id="outage" role="status">
+		{#if !reachability.ok}
+			<!-- A full-bleed strip above the header: the page's edge, not a box
+			     in the column, so square and borderless. -->
+			<div class="outage">
+				<p class="frame">
+					{reachability.reason === 'network'
+						? 'Cannot reach the API. Retrying…'
+						: 'The API is failing right now. Retrying…'}
+				</p>
+			</div>
+		{/if}
+	</div>
 	<SiteHeader {dashboard} />
 	<div class="flex-1">
 		{#if showChildren}

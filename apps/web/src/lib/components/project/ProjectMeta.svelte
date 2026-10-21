@@ -6,7 +6,16 @@
 	import type { Project } from '$lib/api/types';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { frozenSince } from '$lib/frozen';
-	import { classMemoryGB, classVCPUs, normalizeRemoteDisplay, tempLeft, uptime } from '$lib/format';
+	import { onMount } from 'svelte';
+	import { clock } from '$lib/clock.svelte';
+	import {
+		classMemoryGB,
+		classVCPUs,
+		normalizeRemoteDisplay,
+		sinceLabel,
+		tempLeft,
+		upLabel
+	} from '$lib/format';
 
 	let { project }: { project: Project } = $props();
 
@@ -15,6 +24,8 @@
 	let vcpus = $derived(classVCPUs(project.class) || undefined);
 	/** When the machine was frozen while idle, behind the flag (I-683). */
 	let frozen = $derived(frozenSince(project));
+	// "up 3m" moves with the 30-second clock, not the poll.
+	onMount(() => clock.use());
 </script>
 
 <div class="project-meta">
@@ -32,7 +43,7 @@
 	     facts every other state shows (review r1 dash-r1-4). -->
 		{#if frozen}
 			<span class="status-frozen" data-testid="frozen" title="It wakes when you connect."
-				>for {uptime(frozen)}</span
+				>{sinceLabel(frozen, 'for', clock.now)}</span
 			>
 		{/if}
 		<span class="status-facts">
@@ -52,7 +63,7 @@
 			{/if}
 			{#if project.state === 'running' && !frozen}
 				<span aria-hidden="true">·</span>
-				<span>up {uptime(project.started_at)}</span>
+				<span>{upLabel(project.started_at, clock.now)}</span>
 			{/if}
 			{#if project.expires_at}
 				<span aria-hidden="true">·</span>
@@ -92,9 +103,8 @@
 	.status-facts {
 		display: contents;
 	}
+	/* "for 1h38m" is a duration like "up 14h8m": the facts' size and ink. */
 	.status-frozen {
 		margin-left: -0.25rem;
-		font-size: 0.875rem;
-		color: var(--hk-text-2);
 	}
 </style>

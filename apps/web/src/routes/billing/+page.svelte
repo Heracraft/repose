@@ -1087,8 +1087,9 @@
 	.place {
 		margin-bottom: 2rem;
 	}
+	/* The banner and the facts row under it are two blocks (review r4). */
 	.place .hk-banner {
-		margin-bottom: 0.5rem;
+		margin-bottom: 1.5rem;
 	}
 	.email {
 		overflow-wrap: anywhere;
@@ -1105,10 +1106,19 @@
 		margin-top: 1.25rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
+	/* From 900px the one to three facts take their content's width in one
+	   row, so Status and Next charge stay on one line where they fit,
+	   with no empty tracks after them (review r4). */
 	@media (min-width: 900px) {
 		.facts {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-			gap: 1rem 2rem;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 1rem 3rem;
+		}
+		.facts > div {
+			flex: 0 1 auto;
+			min-width: 9rem;
+			max-width: 40rem;
 		}
 	}
 	@media (max-width: 479.98px) {
@@ -1144,6 +1154,13 @@
 		.actions > button {
 			min-width: 0;
 			padding-inline: 0.5rem;
+		}
+	}
+	/* Below 360px "Card and receipts" outgrows half the row: each action
+	   takes the full row, as the landing's hero buttons do (review r4). */
+	@media (max-width: 359.98px) {
+		.actions {
+			grid-template-columns: minmax(0, 1fr);
 		}
 	}
 
@@ -1253,25 +1270,28 @@
 	.invoices {
 		table-layout: fixed;
 	}
+	/* Short columns take their content's width and Status the slack, so
+	   each amount sits one gap from its link and Status follows Number
+	   (review r4). */
 	.c-date {
-		width: 16%;
+		width: 7.5rem;
 		white-space: nowrap;
 	}
 	.c-num {
-		width: 22%;
+		width: 10rem;
 	}
 	td.c-num {
 		font-family: var(--hk-font-mono);
 		font-size: 0.8125rem;
 	}
 	.c-status {
-		width: 14%;
+		width: auto;
 	}
 	td.c-status {
 		color: var(--hk-text-2);
 	}
 	.c-amount {
-		width: 28%;
+		width: 8rem;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 	}
@@ -1281,7 +1301,7 @@
 		color: var(--hk-text-3);
 	}
 	.c-link {
-		width: 20%;
+		width: 4rem;
 		text-align: right;
 	}
 	/* A row's lone link and a project's name under Memory running take a
@@ -1307,7 +1327,9 @@
 		}
 		.invoices tr {
 			display: grid;
-			grid-template-columns: auto auto minmax(0, 1fr) auto;
+			/* A fixed link track, so PDF and View rows end their amounts at
+			   one x (review r4). */
+			grid-template-columns: auto auto minmax(0, 1fr) 3rem;
 			grid-template-areas:
 				'date date amount link'
 				'num status amount link';
@@ -1333,7 +1355,7 @@
 		.invoices td.c-link {
 			grid-area: link;
 			align-self: center;
-			padding-left: 0.75rem;
+			justify-self: end;
 		}
 		.invoices td.c-num {
 			grid-area: num;
