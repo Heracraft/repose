@@ -3,12 +3,12 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { handleSignInCallback } from '$lib/auth.svelte';
+	import { handleSignInCallback, takeReturnPath } from '$lib/auth.svelte';
 
 	onMount(async () => {
 		try {
 			await handleSignInCallback(location.href);
-			await goto(resolve('/projects'));
+			await goto(resolve(takeReturnPath() ?? '/projects'));
 		} catch {
 			toast.error('Sign-in was cancelled or failed; try again.');
 			await goto(resolve('/'));

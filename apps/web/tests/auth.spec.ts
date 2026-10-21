@@ -38,6 +38,19 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await expect(page).toHaveURL('/projects');
 });
 
+// Landing C10 (I-837): "Start a free week" under the plans signs in and
+// comes back to Billing, where the plans are; the hero's Get started
+// still comes back to Projects.
+test('Start a free week signs in and comes back to Billing', async ({ page }) => {
+	await page.goto('/');
+	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	await pricing.getByRole('button', { name: 'Start a free week' }).click();
+	await page.waitForURL(/\/oidc\/auth/);
+	await page.getByRole('button', { name: 'Continue as heracraft' }).click();
+	await expect(page).toHaveURL('/billing');
+	expect(await page.evaluate(() => sessionStorage.getItem('repose-return-to'))).toBeNull();
+});
+
 // DECISIONS I-568, I-655: the dashboard's header is the site header, which
 // links to the docs at every width (design.spec.ts checks the phones).
 test('the dashboard header links to the docs', async ({ page }) => {

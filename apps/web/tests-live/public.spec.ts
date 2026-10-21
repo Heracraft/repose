@@ -65,7 +65,7 @@ test('landing pricing matches PRICING.md', async ({ page }) => {
 	const seats = page.getByTestId('seats-line');
 	if ((await seats.count()) > 0) {
 		await expect(seats).toHaveText(
-			/^(\d+ seats? of 8 GB left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/
+			/^(\d+ seats? left|Full for now\. \d+ waiting; join the list and you're emailed when a seat frees\.)$/
 		);
 	}
 });

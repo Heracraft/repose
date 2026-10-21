@@ -38,8 +38,7 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('32 GB running at once')).toBeVisible();
 	await expect(pricing.getByText('500 GB disk · 1 TB egress')).toBeVisible();
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
-	// A seat is 8 GB of running memory, a count apart from Solo's founding places.
-	await expect(page.getByTestId('seats-line')).toHaveText('18 seats of 8 GB left');
+	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
 	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
 	// The notice period and the 12-month hold left the landing with I-772.
 	// They are kept in terms.md (the site footer's Terms), billing.md and
@@ -63,7 +62,7 @@ test('with no founding places left, Solo shows $49 and no founding line', async 
 test('one seat free: the line is singular', async ({ page }) => {
 	await setBilling({ seats: { total: 30, held: 29, waiting: 0 } });
 	await page.goto('/');
-	await expect(page.getByTestId('seats-line')).toHaveText('1 seat of 8 GB left');
+	await expect(page.getByTestId('seats-line')).toHaveText('1 seat left');
 	await resetBilling();
 });
 
@@ -71,9 +70,8 @@ test('when full, the line says so with the number waiting', async ({ page }) => 
 	await setBilling({ seats: { total: 30, held: 30, waiting: 41 } });
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	// Signing up then joins the waitlist and starts no week, so the button says that.
-	await expect(pricing.getByRole('button', { name: 'Join the waitlist' })).toBeVisible();
-	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toHaveCount(0);
+	// The waitlist and seat copy stays as it is (spec 2.1, owner's call).
+	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
 	await expect(page.getByTestId('seats-line')).toContainText('Full for now. 41 waiting;');
 	await expect(page.getByTestId('seats-line')).toContainText(
 		"join the list and you're emailed when a seat frees."

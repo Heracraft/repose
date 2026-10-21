@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { authState, signIn } from '$lib/auth.svelte';
+	import { authState, signIn, type ReturnPath } from '$lib/auth.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
@@ -33,11 +33,11 @@
 		}
 	});
 
-	async function onSignIn() {
+	async function onSignIn(returnTo?: ReturnPath) {
 		if (signingIn) return;
 		signingIn = true;
 		try {
-			await signIn();
+			await signIn(returnTo);
 		} catch {
 			signingIn = false;
 			toast.error('Sign-in was cancelled or failed; try again.');
@@ -77,7 +77,7 @@
 	<span class="swap"><span>{shown}</span><span aria-hidden="true">{other}</span></span>
 {/snippet}
 
-{#snippet authAction(signedOut: string, signedIn: string)}
+{#snippet authAction(signedOut: string, signedIn: string, returnTo?: ReturnPath)}
 	{#if authState.authenticated}
 		<a href={resolve('/projects')} class="hk-btn hk-btn-lg hk-btn--touch"
 			>{@render authLabel(signedIn, signedOut)}</a
@@ -87,7 +87,7 @@
 			type="button"
 			class="hk-btn hk-btn-lg hk-btn--touch"
 			aria-disabled={signingIn ? 'true' : undefined}
-			onclick={onSignIn}>{@render authLabel(signedOut, signedIn)}</button
+			onclick={() => onSignIn(returnTo)}>{@render authLabel(signedOut, signedIn)}</button
 		>
 	{/if}
 {/snippet}
@@ -200,19 +200,13 @@
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 		<div class="cta-row">
-			<!-- With no seat free, signing up joins the waitlist and starts no
-			     week (/billing, waitlisted), so the button says that. -->
-			{@render authAction(
-				seats?.free === 0 ? 'Join the waitlist' : 'Start a free week',
-				'Open the dashboard'
-			)}
+			<!-- Signing up here comes back to Billing, where the plans are. -->
+			{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
 			{#if !authState.authenticated && seats}
 				<p class="seats" data-testid="seats-line">
 					{#if seats.free > 0}
-						<!-- A seat is 8 GB of running memory (limits.md), counted apart
-						     from Solo's founding places on the card above. -->
 						{seats.free}
-						{seats.free === 1 ? 'seat' : 'seats'} of 8 GB left
+						{seats.free === 1 ? 'seat' : 'seats'} left
 					{:else}
 						Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
 					{/if}

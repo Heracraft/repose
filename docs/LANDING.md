@@ -52,10 +52,9 @@ headline starting under the logo. In order:
    with "All agents" and "Everything installed" links.
 5. **Pricing** (`#pricing`). "Launch prices. Seven days free.",
    `PlanCells` in its public variant (the one drawing of the plans,
-   I-663), then "Start a free week" ("Join the waitlist" when no seat is
-   free, since signing up then starts no week) and the seats line from
-   `GET /public/seats`, which names its unit ("18 seats of 8 GB left") so
-   it does not read as Solo's founding places.
+   I-663), then "Start a free week" and the seats line from
+   `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
+   as it is until the owner decides the 2026-10-17 notes).
 6. **Questions.** Three, each answered from `content/docs/index.md`; the
    restart time is read from it at build time.
 
