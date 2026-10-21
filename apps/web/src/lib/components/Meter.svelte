@@ -1,15 +1,13 @@
 <!--
   One share of a plan's limit (Guide B 12.11): memory running, disk held,
-  egress this period. Label left, value right, the figure under them: a
-  6px bar, or the `track` snippet in its place (MemoryBlocks), so every
-  plan cell shares one anatomy. The fill is the accent while comfortable,
+  egress this period. Label left, value right, a 6px bar under them, the
+  anatomy MemoryMeter shares. The fill is the accent while comfortable,
   amber under 20% left, red under 5% left or past the limit, and grey when
   nothing is counted yet. The value text carries the number and the state
   ("112.4 GB of 100 GB · over"), so the fill's colour is never the only
   signal; aria-valuetext reads the same words.
 -->
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import { share } from '$lib/format';
 
 	let {
@@ -19,8 +17,7 @@
 		unit = 'GB',
 		valueText,
 		testid,
-		stack = false,
-		track
+		stack = false
 	}: {
 		label: string;
 		used: number;
@@ -33,8 +30,6 @@
 		testid?: string;
 		/** The value under the label rather than beside it: a long value. */
 		stack?: boolean;
-		/** Replaces the bar: a figure drawn by the caller (MemoryBlocks). */
-		track?: Snippet;
 	} = $props();
 
 	const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
@@ -74,12 +69,8 @@
 		aria-valuenow={Math.min(used, limit)}
 		aria-valuetext={reading}
 	>
-		{#if track}
-			{@render track()}
-		{:else}
-			<div class="hk-meter-track">
-				<div class="hk-meter-fill" style:width="{fill * 100}%"></div>
-			</div>
-		{/if}
+		<div class="hk-meter-track">
+			<div class="hk-meter-fill" style:width="{fill * 100}%"></div>
+		</div>
 	</div>
 </div>

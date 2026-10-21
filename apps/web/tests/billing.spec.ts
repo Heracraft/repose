@@ -497,8 +497,16 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await expect(page.getByTestId('meter-running-now')).toContainText(
 		'Fits two xl, four large, or any mix.'
 	);
-	// What runs is listed under the meter, each with its size.
-	await expect(page.getByRole('list', { name: 'Memory running' })).toContainText('pro-a');
+	// Under the meter, used against the plan in words; the split per
+	// project is on /projects.
+	const split = page.getByTestId('meter-running-now').getByTestId('memory-split');
+	await expect(split).toContainText('24 GB running');
+	await expect(split).toContainText('8 GB left');
+	await expect(split).not.toContainText('pro-a');
+	await expect(page.getByRole('meter', { name: 'Memory running' })).toHaveAttribute(
+		'aria-valuetext',
+		'24 GB of 32 GB: 24 GB running, 8 GB left'
+	);
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');

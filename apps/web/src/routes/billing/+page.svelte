@@ -36,7 +36,7 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import Meter from '$lib/components/Meter.svelte';
-	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import MemoryMeter from '$lib/components/MemoryMeter.svelte';
 	import { frozenSince } from '$lib/frozen';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
@@ -104,8 +104,14 @@
 		disk: billing?.usage.disk_gb || me?.limits?.disk_gb || 0,
 		egress: billing?.usage.egress_included_gb || me?.limits?.egress_gb || 0
 	});
-	let running = $derived(projects.filter(holdsMemory));
-	let runningOver = $derived(!!billing && billing.usage.running_gb > limits.memory);
+	// Memory running, split into what frozen machines hold and the rest;
+	// the total is the api's, so the meter agrees with the plan's gate.
+	let memFrozen = $derived(
+		projects
+			.filter((p) => holdsMemory(p) && frozenSince(p))
+			.reduce((n, p) => n + classMemoryGB(p.class), 0)
+	);
+	let memRunning = $derived(Math.max(0, (billing?.usage.running_gb ?? 0) - memFrozen));
 	let diskOver = $derived(!!billing && limits.disk > 0 && diskHeld > limits.disk);
 	let heaviest = $derived(
 		projects
@@ -526,30 +532,10 @@
 				{/if}
 			</div>
 			<div class="month">
-				<div
-					class="hk-meter cell"
-					class:hk-meter--err={runningOver}
-					data-testid="meter-running-now"
-				>
-					<div class="hk-meter-top">
-						<span class="hk-meter-label">Memory running</span>
-						<span class="hk-meter-value"
-							>{gbs(billing.usage.running_gb)} of {gbs(limits.memory)}{#if runningOver}&nbsp;· over{/if}</span
-						>
-					</div>
-					<MemoryBlocks
-						label="Memory running"
-						legendLabel="Memory running"
-						legend
-						segments={running.map((p) => ({
-							name: p.name,
-							gb: classMemoryGB(p.class),
-							frozen: !!frozenSince(p),
-							href: resolve('/projects/[id]', { id: p.id })
-						}))}
-						limit={limits.memory}
-					/>
-					<p class="note">{runsAtOnce(limits.memory)}</p>
+				<div class="cell">
+					<MemoryMeter running={memRunning} frozen={memFrozen} limit={limits.memory}>
+						<p class="note">{runsAtOnce(limits.memory)}</p>
+					</MemoryMeter>
 				</div>
 				<div class="cell">
 					<Meter label="Disk held" used={diskHeld} limit={limits.disk} />
