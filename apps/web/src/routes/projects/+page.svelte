@@ -40,6 +40,7 @@
 	import RecentActivity from '$lib/components/projects/RecentActivity.svelte';
 	import { runRowAction, type RowAction } from '$lib/components/projects/actions';
 	import {
+		BAND_LABELS,
 		FILTERS,
 		FILTER_LABELS,
 		PROJECTS_SHOWN,
@@ -49,11 +50,13 @@
 		idSetKey,
 		lastActive,
 		listSearch,
-		matchesFilter,
-		matchesQuery,
+		band,
+		listView,
 		orderProjects,
+		filterChosen,
 		readFilter,
 		readQuery,
+		type Band,
 		type Filter
 	} from '$lib/projectList';
 	import type { DestroyedProject, Project, Question } from '$lib/api/types';
@@ -351,6 +354,7 @@
 	// The filter and the search live in the URL, so Back steps between
 	// them and a reload keeps the list the user was reading.
 	let filter = $derived(readFilter(page.url.searchParams));
+	let chosen = $derived(filterChosen(page.url.searchParams));
 	let query = $derived(readQuery(page.url.searchParams));
 	/** What the search box holds while the URL catches up with it. */
 	let typed = $state<string | undefined>(undefined);
@@ -363,6 +367,8 @@
 	// disappears, then held: a machine the user stops keeps its place
 	// instead of sliding away under the pointer that pressed Stop.
 	let held = $state<string[]>([]);
+	/** The band each row was in when the order was taken, held with it. */
+	let heldBands = $state(new Map<string, Band>());
 	// The key is a $derived so the effect runs again only when the set of
 	// projects actually changes; depending on `projects` itself would
 	// re-run it on every 10s poll, which is the whole point of holding.
@@ -370,19 +376,28 @@
 	$effect(() => {
 		void orderKey;
 		untrack(() => {
-			held = orderProjects(projects ?? [], waitingOn).map((p) => p.id);
+			const ordered = orderProjects(projects ?? [], waitingOn);
+			held = ordered.map((p) => p.id);
+			heldBands = new Map(ordered.map((p) => [p.id, band(p, waitingOn(p))]));
 		});
 	});
-	// Filtered first, so "Show all N" counts what is on screen.
-	let matched = $derived(
-		(projects ?? [])
-			.filter((p) => matchesFilter(p, filter, waitingOn(p)) && matchesQuery(p, query))
-			.sort(byHeldOrder(held))
-	);
-	/** Rows drawn: the first PROJECTS_SHOWN until "Show all" is pressed. */
+	const bandOf = (p: Project): Band => heldBands.get(p.id) ?? band(p, waitingOn(p));
+	/** Rows drawn: Stopped and All show PROJECTS_SHOWN until "Show all" is pressed. */
 	let showAll = $state(false);
-	let rows = $derived(showAll ? matched : matched.slice(0, PROJECTS_SHOWN));
-	let capped = $derived(matched.length - rows.length);
+	let view = $derived(
+		listView([...(projects ?? [])].sort(byHeldOrder(held)), {
+			filter,
+			chosen,
+			query,
+			waiting: waitingOn,
+			bandOf,
+			cap: showAll ? Number.POSITIVE_INFINITY : PROJECTS_SHOWN
+		})
+	);
+	let drawn = $derived(view.groups.reduce((n, g) => n + g.rows.length, 0));
+	let capped = $derived(view.folded > 0 ? 0 : view.matched - drawn);
+	/** Band heads, where more than one band is drawn. */
+	let heads = $derived(view.groups.length > 1);
 	/** The toolbar is drawn once the list is long enough to need it. */
 	let toolbar = $derived((projects?.length ?? 0) > TOOLBAR_FROM);
 
@@ -396,8 +411,9 @@
 		// 200ms: a URL write per keystroke fills the history and re-runs
 		// the page's load for a list that is already in memory.
 		debounce = setTimeout(() => {
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve()
-			void goto(`${resolve('/projects')}${listSearch(page.url.searchParams, filter, value)}`, {
+			const search = listSearch(page.url.searchParams, chosen ? filter : undefined, value);
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- starts with resolve()
+			void goto(`${resolve('/projects')}${search}`, {
 				keepFocus: true,
 				noScroll: true,
 				replaceState: true
@@ -630,7 +646,7 @@
 								<!-- eslint-disable svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
 								<a
 									href={filterHref(f)}
-									aria-current={filter === f ? 'page' : undefined}
+									aria-current={view.filter === f ? 'page' : undefined}
 									data-sveltekit-noscroll
 									data-sveltekit-keepfocus
 									data-sveltekit-replacestate>{FILTER_LABELS[f]}</a
@@ -641,7 +657,7 @@
 					</div>
 				{/if}
 
-				{#if matched.length === 0}
+				{#if drawn === 0}
 					<div class="hk-empty-row" data-testid="no-matches">
 						<span>No project matches.</span>
 						<a href={resolve('/projects')} class="hk-link">Clear</a>
@@ -649,7 +665,9 @@
 				{:else}
 					<!-- From a 600px column, a table, laid out by the column's width
 					     (@container dash, I-841). Where it scrolls sideways it is a
-					     named region with a tab stop. -->
+					     named region with a tab stop. Past one band, each band has
+					     a head row; Running ends on the stopped machines that ran
+					     last and a link to the rest. -->
 					<div class="hk-table-wrap ptable-wrap" use:tabStopWhenScrolls={'Projects'}>
 						<table class="hk-table hk-table--hover ptable">
 							<thead>
@@ -662,107 +680,153 @@
 									<th scope="col" class="c-act"><span class="hk-sr">Actions</span></th>
 								</tr>
 							</thead>
-							<tbody>
-								{#each rows as p (p.id)}
-									{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-									<tr class="prow">
-										<td class="c-name">
-											<span class="pname-line">
-												<!-- The name's ::after covers the row, so a click
-												     anywhere in it opens the project. -->
-												<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
-												{#if p.expires_at}
-													<!-- repose run --temp (I-347): destroyed with no snapshot. -->
-													<span class="hk-badge hk-badge--outline">temporary</span>
-												{/if}
-												{@render questionsBadge(p)}
-											</span>
-											{#if remote}
-												<span class="premote" title={remote}>{remote}</span>
-											{/if}
-										</td>
-										<td class="c-state">{@render stateCell(p)}</td>
-										<td class="c-size whitespace-nowrap">
-											<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
-													class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
-												>{/if}
-										</td>
-										<td class="c-agents">
-											<AgentChips agents={p.signals?.agents} asked={!!questionsFor.get(p.id)} />
-										</td>
-										<td class="c-disk hk-num-col whitespace-nowrap">{@render diskCell(p)}</td>
-										<td class="c-act">{@render actionButton(p)}</td>
-									</tr>
-									{#if askingStop === p.id}
-										<tr class="confirm-row" data-testid="confirm-stop">
-											<td colspan="6">{@render confirmStop(p)}</td>
+							{#each view.groups as g (g.band)}
+								<tbody data-band={g.band}>
+									{#if heads}
+										<tr class="band-row">
+											<th scope="rowgroup" colspan="6">
+												<span class="band-head">
+													<span>{BAND_LABELS[g.band]}</span>
+													{#if g.band === 'off' && view.folded > 0}
+														<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
+														<a href={filterHref('off')} class="band-all" data-testid="all-stopped"
+															>All {view.resting} stopped</a
+														>
+													{/if}
+												</span>
+											</th>
 										</tr>
 									{/if}
-								{/each}
-							</tbody>
+									{#each g.rows as p (p.id)}
+										{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
+										<tr class="prow" class:prow--rest={p.state === 'stopped'}>
+											<td class="c-name">
+												<span class="pname-line">
+													<!-- The name's ::after covers the row, so a click
+													     anywhere in it opens the project. -->
+													<a
+														href={resolve('/projects/[id]', { id: p.id })}
+														class="pname"
+														title={p.state === 'stopped' && remote ? remote : undefined}>{p.name}</a
+													>
+													{#if p.expires_at}
+														<!-- repose run --temp (I-347): destroyed with no snapshot. -->
+														<span class="hk-badge hk-badge--outline">temporary</span>
+													{/if}
+													{@render questionsBadge(p)}
+												</span>
+												{#if remote}
+													<span class="premote" title={remote}>{remote}</span>
+												{/if}
+											</td>
+											<td class="c-state">{@render stateCell(p)}</td>
+											<td class="c-size whitespace-nowrap">
+												<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
+														class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
+													>{/if}
+											</td>
+											<td class="c-agents">
+												<AgentChips agents={p.signals?.agents} asked={!!questionsFor.get(p.id)} />
+											</td>
+											<td class="c-disk hk-num-col whitespace-nowrap">{@render diskCell(p)}</td>
+											<td class="c-act">{@render actionButton(p)}</td>
+										</tr>
+										{#if askingStop === p.id}
+											<tr class="confirm-row" data-testid="confirm-stop">
+												<td colspan="6">{@render confirmStop(p)}</td>
+											</tr>
+										{/if}
+									{/each}
+								</tbody>
+							{/each}
 						</table>
 					</div>
 
 					<!-- Below a 600px column, stacked rows: the name and its Start or
 					     Stop on the first line, the state and the figures on the second. -->
-					<ul class="mlist" aria-label="Projects">
-						{#each rows as p (p.id)}
-							{@const agents = p.signals?.agents ?? []}
-							{@const frozen = frozenSince(p)}
-							{@const d = disk(p)}
-							{@const facts = [
-								`${p.class}${classMemoryGB(p.class) ? ` · ${classMemoryGB(p.class)} GB` : ''}`,
-								agents.map((a) => a.agent).join(', '),
-								d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
-							].filter(Boolean)}
-							<li class="mrow">
-								<div class="mrow-line">
-									<span class="mrow-name">
-										<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
-										{#if p.expires_at}<span class="hk-badge hk-badge--outline">temporary</span>{/if}
-										{@render questionsBadge(p)}
-									</span>
-									{@render actionButton(p)}
-								</div>
-								<div class="mrow-meta">
-									<StateDot state={p.state} frozen={!!frozen} />
-									{#each facts as f (f)}<span aria-hidden="true">·</span><span>{f}</span>{/each}
-								</div>
-								<!-- A temporary machine's countdown and the unused warning
-								     are losses the reader cannot undo, so the stacked row
-								     carries them as the table's state cell does. -->
-								{#if p.expires_at || (p.state === 'running' && p.idle) || p.host_unreachable || reason(p)}
-									<div class="mrow-sub">
-										{#if p.host_unreachable}<span>server not answering</span>{/if}
-										{#if p.state === 'running' && p.idle}<span>unused {uptime(p.idle.since)}</span
-											>{/if}
-										{#if p.expires_at}<span>{tempLeft(p.expires_at)}</span>{/if}
-										{#if reason(p)}<span>{@render ticks(reason(p))}</span>{/if}
-									</div>
-								{/if}
-								{#if askingStop === p.id}
-									<div class="mrow-confirm" data-testid="confirm-stop">
-										{@render confirmStop(p)}
-									</div>
-								{/if}
-							</li>
+					<div class="mlist">
+						{#each view.groups as g (g.band)}
+							{#if heads}
+								<p class="band-head mband" id="mband-{g.band}">
+									<span>{BAND_LABELS[g.band]}</span>
+									{#if g.band === 'off' && view.folded > 0}
+										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
+										<a href={filterHref('off')} class="band-all">All {view.resting} stopped</a>
+									{/if}
+								</p>
+							{/if}
+							<ul
+								class="mgroup"
+								data-band={g.band}
+								aria-label={heads ? undefined : 'Projects'}
+								aria-labelledby={heads ? `mband-${g.band}` : undefined}
+							>
+								{#each g.rows as p (p.id)}
+									{@const agents = p.signals?.agents ?? []}
+									{@const frozen = frozenSince(p)}
+									{@const d = disk(p)}
+									{@const facts = [
+										p.state === 'stopped'
+											? p.started_at
+												? `last run ${relativeTime(lastActive(p))}`
+												: `made ${relativeTime(p.created_at)}`
+											: '',
+										`${p.class}${classMemoryGB(p.class) ? ` · ${classMemoryGB(p.class)} GB` : ''}`,
+										agents.map((a) => a.agent).join(', '),
+										d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
+									].filter(Boolean)}
+									<li class="mrow">
+										<div class="mrow-line">
+											<span class="mrow-name">
+												<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
+												{#if p.expires_at}<span class="hk-badge hk-badge--outline">temporary</span
+													>{/if}
+												{@render questionsBadge(p)}
+											</span>
+											{@render actionButton(p)}
+										</div>
+										<div class="mrow-meta">
+											<StateDot state={p.state} frozen={!!frozen} />
+											{#each facts as f (f)}<span aria-hidden="true">·</span><span>{f}</span>{/each}
+										</div>
+										<!-- A temporary machine's countdown and the unused warning
+										     are losses the reader cannot undo, so the stacked row
+										     carries them as the table's state cell does. -->
+										{#if p.expires_at || (p.state === 'running' && p.idle) || p.host_unreachable || reason(p)}
+											<div class="mrow-sub">
+												{#if p.host_unreachable}<span>server not answering</span>{/if}
+												{#if p.state === 'running' && p.idle}<span
+														>unused {uptime(p.idle.since)}</span
+													>{/if}
+												{#if p.expires_at}<span>{tempLeft(p.expires_at)}</span>{/if}
+												{#if reason(p)}<span>{@render ticks(reason(p))}</span>{/if}
+											</div>
+										{/if}
+										{#if askingStop === p.id}
+											<div class="mrow-confirm" data-testid="confirm-stop">
+												{@render confirmStop(p)}
+											</div>
+										{/if}
+									</li>
+								{/each}
+							</ul>
 						{/each}
-					</ul>
+					</div>
 				{/if}
 
-				<!-- The list grows to 100 (I-569), so it is capped like every
-				     other growing list on the dashboard. -->
-				{#if capped > 0 || showAll}
+				<!-- Stopped and All grow to 100 (I-569), so they are capped like
+				     every other growing list on the dashboard. -->
+				{#if capped > 0 || (showAll && view.matched > PROJECTS_SHOWN)}
 					<div class="pmore">
 						<button
 							type="button"
 							class="hk-btn-ghost hk-btn-sm"
 							onclick={() => (showAll = !showAll)}
 						>
-							{showAll ? 'Show fewer' : `Show all ${matched.length}`}
+							{showAll ? 'Show fewer' : `Show all ${view.matched}`}
 						</button>
 						{#if capped > 0}
-							<span>{rows.length} of {matched.length}</span>
+							<span>{drawn} of {view.matched}</span>
 						{/if}
 					</div>
 				{/if}
@@ -939,6 +1003,75 @@
 		background: transparent;
 	}
 
+	/* ---- Band heads (past one band) ----
+	   The rail's group head, in the column: 11px 500 uppercase in
+	   --hk-text-3, so a band reads as a label over its rows, not a row. */
+	.band-row th {
+		padding: 1.75rem 0 0.5rem;
+		border-bottom: 0;
+	}
+	.ptable tbody:first-of-type .band-row th {
+		padding-top: 1rem;
+	}
+	.band-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		margin: 0;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--hk-text-3);
+	}
+	.band-all {
+		font-size: 0.8125rem;
+		letter-spacing: 0;
+		text-transform: none;
+		color: var(--hk-accent);
+		text-decoration: none;
+	}
+	.band-all:hover {
+		text-decoration: underline;
+	}
+	.mband {
+		padding: 1.5rem 0 0.5rem;
+	}
+	.mband:first-child {
+		padding-top: 0.5rem;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.band-all {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.75rem;
+		}
+	}
+
+	/* ---- Stopped rows: one line each ----
+	   An account is mostly stopped machines, so a stopped row takes one
+	   line: the name, and "last run" beside the state. Its remote is in
+	   the name's title, and the search still finds it. */
+	.ptable .prow--rest td {
+		padding-top: 0.625rem;
+		padding-bottom: 0.625rem;
+	}
+	.ptable .prow--rest td.c-act {
+		padding-top: 0.375rem;
+	}
+	.prow--rest .premote {
+		display: none;
+	}
+	.prow--rest .c-state {
+		white-space: nowrap;
+	}
+	.prow--rest .sub {
+		display: inline;
+		margin: 0 0 0 0.5rem;
+	}
+
 	/* ---- The toolbar ---- */
 	.ptools {
 		display: flex;
@@ -961,7 +1094,7 @@
 	}
 
 	/* ---- Stacked rows (below 640px) ---- */
-	.mlist {
+	.mgroup {
 		margin: 0;
 		padding: 0;
 		list-style: none;

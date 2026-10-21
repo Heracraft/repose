@@ -27,7 +27,7 @@
 	import { projectsStore } from '$lib/projects.svelte';
 	import { billingStore } from '$lib/billing.svelte';
 	import { footerLines, planLine } from '$lib/billingMode';
-	import { orderProjects } from '$lib/projectList';
+	import { band, orderProjects } from '$lib/projectList';
 	import { classMemoryGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import { frozenSince } from '$lib/frozen';
@@ -60,19 +60,45 @@
 	};
 
 	const path = $derived(page.url.pathname);
+	/** Whether the rail is drawn: the strip below 1024px draws no project rows. */
+	const wide = new MediaQuery('min-width: 1024px');
+	/** The project a /projects/<id>/… path is under. */
+	let projectId = $derived(/^\/projects\/([^/]+)/.exec(path)?.[1]);
 	const under = (p: string, href: string) => p === href || p.startsWith(`${href}/`);
 
 	let waiting = $derived(pendingQuestions.count);
 	let all = $derived(
 		orderProjects(projectsStore.list ?? [], (p) => pendingQuestions.waiting(p.id))
 	);
-	let rows = $derived(all.slice(0, ROWS));
+	/**
+	 * The rows drawn. Up to ROWS projects, all of them. Past that, the
+	 * ones that want you and the ones that are up, up to ROWS, then one
+	 * fold row: an account holds up to 100 projects, mostly stopped, and
+	 * the rail is a switcher for the machines in use, not an index. The
+	 * project whose page is open is drawn too, after them, so its row can
+	 * be the current one.
+	 */
+	let awake = $derived(
+		all.length <= ROWS
+			? all
+			: all.filter((p) => band(p, pendingQuestions.waiting(p.id)) !== 'off').slice(0, ROWS)
+	);
+	let pinned = $derived(
+		wide.current &&
+			!page.error &&
+			!notFound.on &&
+			projectId &&
+			!awake.some((p) => p.id === projectId)
+			? all.find((p) => p.id === projectId)
+			: undefined
+	);
+	let rows = $derived(pinned ? [...awake, pinned] : awake);
+	/** Projects not drawn; when every one is at rest the fold row names them so. */
+	let hidden = $derived(all.filter((p) => !rows.includes(p)));
+	let hiddenAtRest = $derived(
+		hidden.every((p) => band(p, pendingQuestions.waiting(p.id)) === 'off')
+	);
 
-	/** Whether the rail is drawn: the strip below 1024px draws no project rows. */
-	const wide = new MediaQuery('min-width: 1024px');
-
-	/** The project a /projects/<id>/… path is under, if its row is drawn. */
-	let projectId = $derived(/^\/projects\/([^/]+)/.exec(path)?.[1]);
 	let rowCurrent = $derived(
 		!page.error &&
 			!notFound.on &&
@@ -228,7 +254,7 @@
 			{/each}
 		</ul>
 
-		{#if rows.length > 0}
+		{#if all.length > 0}
 			<div class="group">
 				<p class="group-head" id="rail-projects">
 					Projects <span class="hk-num">{all.length}</span>
@@ -256,9 +282,17 @@
 							</a>
 						</li>
 					{/each}
-					{#if all.length > ROWS}
+					{#if hidden.length > 0}
 						<li>
-							<a href={resolve('/projects')} class="prow more">All {all.length}</a>
+							{#if hiddenAtRest}
+								<a
+									href="{resolve('/projects')}?state=off"
+									class="prow more"
+									data-testid="rail-stopped">{hidden.length} stopped</a
+								>
+							{:else}
+								<a href={resolve('/projects')} class="prow more">All {all.length}</a>
+							{/if}
 						</li>
 					{/if}
 				</ul>

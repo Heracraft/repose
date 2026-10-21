@@ -24401,6 +24401,34 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   count; machine.nix has no head under its own tab. Standalone links take
   a 44px box on touch (`hk-tap`), command rows are 44px on touch, and in
   forced colours a waiting dot is square and an error dot a diamond.
+- *Many projects, mostly stopped (amendment, 2026-10-21).* The owner asked
+  whether the dashboard holds up for an account with many projects, most of
+  them stopped, and had already decided "Project list defaults to Running"
+  (2026-10-17). Measured on the fake stack with 150 projects (4 up, 1 in
+  error, 145 stopped): /projects drew 25 rows, 20 of them stopped machines
+  two lines tall, 3289px at 1440 and 3980px at 390, and the rail spent its
+  eight rows on the first stopped ones. Past 8 projects the list now
+  defaults to **Running**: every machine that is up or wants you (an
+  agent's question, a failure), then the 5 stopped machines that ran last,
+  then "All 145 stopped" to `?state=off`. Each band has a head row (Needs
+  you, Running, Stopped) when more than one is drawn. The filters are
+  Running, Stopped and All; Needs you goes, since its rows lead Running, and
+  `?state=waiting` reads as Running. A search typed with no filter chosen
+  looks through every project; Running chosen beside a search is written
+  out as `state=up`. A stopped row is one line, its remote in the name's
+  title, so Stopped and All show 25 rows in about 1100px. The held order
+  holds each row's band too, so a machine stopped from its row stays under
+  Running until the set of projects changes. The rail lists, past 8
+  projects, what is up or wants you (8 at most), the open project's row
+  when it is not among them, then one fold row: "145 stopped" to
+  `?state=off`, or "All 150" when running rows are left out too. At 150
+  projects /projects is 2181px at 1440 (was 3289) with 13 table rows (was
+  25); its reads are unchanged (one list, the questions, events from the
+  10 machines started last at most, the destroyed list once a minute).
+  Accounts of 8 projects or fewer see every project, no toolbar, as before.
+  Checks: `lib/projectList.test.ts` (Running, Stopped and search at 40 and
+  150), `tests/projects-many.spec.ts` (default view, counts, search and
+  rail at 40 and 150, page.route accounts past the fake's 100).
 - *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
   `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
   the rail's geometry at 1440 and 1024, the strip's end at 101px, one current

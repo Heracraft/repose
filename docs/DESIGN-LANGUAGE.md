@@ -285,8 +285,11 @@ footer is not pushed out of view as each lands.
   (`data-testid="pending-questions"`); its name says it ("Questions, 2
   waiting"). Projects carries no count.
 - Under a hairline, "Projects" with the count of projects in 11px 500
-  uppercase `--hk-text-3`, then up to 8 projects in the projects list's
-  order, then "All 12" when there are more. A row is a 6px dot and the name in
+  uppercase `--hk-text-3`, then the projects in the projects list's order:
+  all of them up to 8. Past 8, the ones that are up or want you (8 at
+  most), the open project's row when it is not among them, then one fold
+  row in `--hk-text-3`: "145 stopped" to `/projects?state=off`, or "All
+  150" to `/projects` when running rows are left out too. A row is a 6px dot and the name in
   13px on one line. The dot is amber while an agent on that project waits
   on you, otherwise the state dot's tone (ink running, hollow stopped, pulse
   for a step under way, red error); a frozen machine shows the snowflake. One
@@ -733,7 +736,11 @@ unless a page says otherwise (I-841).
 - **/projects**: the lede "3 running · 5 projects"; the billing banner when a
   payment failed or the account is suspended; Waiting on you with the first
   question and "N more on Questions" when more wait; the projects table, with
-  search and the four filters past 8 projects, a "1 question" badge on a row
+  search and the Running, Stopped and All filters past 8 projects (Running
+  the default: what is up or wants you, then the 5 stopped machines that
+  ran last and "All N stopped"; band heads Needs you, Running, Stopped in
+  the rail's 11px uppercase when more than one band is drawn; a stopped row
+  one line), a "1 question" badge on a row
   whose agent asks, Start or Stop as a ghost button on each row, and stop's
   inline confirm under its row; Recent activity, five rows with repeats of
   one kind on one project folded and questions and failures never folded;
@@ -789,8 +796,9 @@ unless a page says otherwise (I-841).
 
 ## Long lists
 
-A list that grows is capped and offers the rest: projects 25 ("Show all
-N"), snapshots 8, config revisions 8, Recently destroyed 10 ("Show more"),
+A list that grows is capped and offers the rest: projects under Stopped
+and All 25 ("Show all N"), stopped projects under Running 5 ("All N
+stopped"), the rail's projects 8 ("N stopped" or "All N"), snapshots 8, config revisions 8, Recently destroyed 10 ("Show more"),
 Recent activity 5, waiting questions on /projects 1 ("N more on
 Questions"), answered questions 7 days. Events and invoices page with a
 "Page 1 of 5" or "1–6 of 12" position at the foot of the list.
