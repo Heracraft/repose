@@ -4,8 +4,8 @@
   Colour only where the user is needed: amber for "needs you", red for
   "went wrong". Running is a filled ink dot, a step under way pulses with a
   halo (still under reduced motion), stopped is a hollow 3:1 ring. A frozen
-  machine (I-683) shows the snowflake and "frozen" in the secondary text
-  colour in place of the dot and "running". data-state and data-tone let
+  machine (I-683) shows the snowflake and "frozen" in the ice ink in
+  place of the dot and "running". data-state and data-tone let
   a stylesheet or a test read the state without this component knowing.
 -->
 <script lang="ts">
@@ -57,6 +57,6 @@
 	}
 	.frozen {
 		gap: 0.375rem;
-		color: var(--hk-text-2);
+		color: var(--hk-ice-ink);
 	}
 </style>

@@ -24429,6 +24429,47 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   Checks: `lib/projectList.test.ts` (Running, Stopped and search at 40 and
   150), `tests/projects-many.spec.ts` (default view, counts, search and
   rail at 40 and 150, page.route accounts past the fake's 100).
+- *A frozen machine's frost, amendment 2026-10-21.* The owner asked for a
+  sleek, realistic frozen effect ("icy blurred background with realistic
+  ice colors. Or maybe only the edge"). Five looks were prototyped behind a
+  dev switch (ink, rime, pane, window, glaze) and judged at 1x by three
+  reviewers on realism, calm and cost (`.dev/notes/frost-judge-*.md`).
+  Window frost read as frost without being told and the others read as a
+  tint, glass, cloud or static; a slab or a card that exists only while
+  frozen moved the layout and broke the column; a texture on a `<tr>`
+  background painted once per cell (5.8x to 7.2x the paint with every row
+  frozen). The pick combines their best parts. Window frost grows in from
+  an edge, so it is drawn only where an edge meets a rule: the project
+  head's far corner (up the right edge and along the tab rule, with a
+  faint cold haze, inside the column; under 640px in the right gutter and
+  the column's last 20px), rime needles on the Machine section's memory
+  bar, whose fill takes the ice ink with a lit top edge, and rime needles
+  on a /projects row's bottom rule at its leading end, gone by 200px. The
+  word "frozen", its snowflake (the rail's too) and frozen memory squares
+  take `--hk-ice-ink` (`#456b86` light, 5.4:1; `#a1c1de` dark, 10.6:1),
+  which supersedes I-683's `--hk-text-2`. No surface changes size or
+  position when a machine freezes or wakes, and a stopped machine keeps
+  its hollow ring however many there are. The frost is one element
+  (`Frost.svelte`) inside the surface, which carries `data-frost-on`; it
+  paints `--hk-frost-shade` through a mask in alpha mode (frost and halo)
+  and `--hk-frost-ice` through the same mask in luminance mode (the frost
+  alone), so one mask serves both themes and the colours stay tokens. The
+  masks are SVG data URIs (CSP `img-src data:`) of fern sprites placed with
+  `<use>` and a clumped feTurbulence crust, written by
+  `apps/web/scripts/frost-masks.mjs` with a seeded random into
+  `lib/hk/frost-masks.css`; each is one fixed image, never tiled, so no
+  repeat shows, and three row masks take turns so a run of frozen rows
+  does not stripe. Nothing sits under text: the worst pixel under every
+  text run on a frozen surface, at 1920, 1440 and 390 in both schemes, is
+  5.44:1 light and 5.89:1 dark (floor 4.8). The frost forms over 600ms when
+  the machine froze in the last minute and thaws in 300ms when it wakes,
+  neither under reduced motion; reduced transparency drops the haze;
+  forced colours drop the frost and the word and snowflake carry the
+  state. The `?frost=` switch, the losing looks and the rail's ice bead are
+  gone. Frozen and its frost stay out of a production build (frozen.spec);
+  `lib/hk/frost-masks.test.ts` fails on a stale or undecodable mask. This
+  replaces the DESIGN-LANGUAGE line "a frozen machine has no band, no cyan
+  and no row fill" with its "Frost" section.
 - *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
   `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
   the rail's geometry at 1440 and 1024, the strip's end at 101px, one current

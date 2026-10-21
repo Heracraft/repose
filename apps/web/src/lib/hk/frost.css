@@ -1,0 +1,146 @@
+/* A frozen machine's frost (I-683; I-841 amendment 2026-10-21). A frozen
+   machine is running with its memory suspended while idle, and wakes when
+   you connect. Window frost grows in from an edge, so that is where it is
+   drawn: the project head's far corner, rising from the tab rule; the
+   Machine section's memory bar; a /projects row's rule, at its leading
+   end. Nothing else on the page changes, and a stopped machine keeps its
+   hollow ring.
+
+   The frost is one element (Frost.svelte) inside the surface, which opts
+   in with data-frost-on: the surface is the containing block and isolates
+   the frost behind its text. ::before paints --hk-frost-shade through the
+   mask as an alpha mask (the frost and its cold halo); ::after paints
+   --hk-frost-ice through it as a luminance mask (the frost alone). The
+   masks are generated (lib/hk/frost-masks.css, scripts/frost-masks.mjs);
+   the colours are tokens in repose.css, measured from photos of window
+   frost, rime and glacier ice. Each mask is one fixed image, rasterised
+   once and never tiled, so it has no visible repeat, and its cost does not
+   grow with the list: stopped rows draw nothing.
+
+   Unlayered (like doc.css), so a rule here meets component styles on
+   specificity, not on layer order. */
+
+.hk [data-frost-on] {
+	position: relative;
+	isolation: isolate;
+}
+
+.hk .hk-frost {
+	position: absolute;
+	z-index: -1;
+	pointer-events: none;
+	--frost-mask: none;
+	--frost-size: 100% 100%;
+	--frost-at: right bottom;
+}
+.hk .hk-frost::before,
+.hk .hk-frost::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	-webkit-mask-image: var(--frost-mask);
+	mask-image: var(--frost-mask);
+	-webkit-mask-size: var(--frost-size);
+	mask-size: var(--frost-size);
+	-webkit-mask-position: var(--frost-at);
+	mask-position: var(--frost-at);
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+}
+.hk .hk-frost::before {
+	background: var(--hk-frost-shade);
+	mask-mode: alpha;
+}
+.hk .hk-frost::after {
+	background: var(--hk-frost-ice);
+	mask-mode: luminance;
+}
+
+/* The head: the far corner, where the right edge meets the tab rule. The
+   rule is the tabs' border, painted over the frost, so the frost grows
+   from it. The haze is the cold the frost gives off. */
+.hk .hk-frost--head {
+	right: 0;
+	bottom: 0;
+	width: min(23.75rem, 60%);
+	height: 170px;
+	--frost-mask: var(--hk-frost-head);
+	--frost-size: 380px 170px;
+	background: radial-gradient(farthest-side at 100% 100%, var(--hk-frost-haze), transparent);
+}
+/* On a phone the tabs reach the column's edge: the frost keeps to the
+   gutter and the column's last 20px, as on the edge of the glass. */
+@media (max-width: 639.98px) {
+	.hk .hk-frost--head {
+		right: calc(-1 * var(--hk-gutter));
+		width: 40px;
+		height: 150px;
+		--frost-mask: var(--hk-frost-head-narrow);
+		--frost-size: 48px 150px;
+		background: radial-gradient(farthest-side at 100% 100%, var(--hk-frost-haze), transparent);
+	}
+}
+
+/* The Machine section: rime on the memory bar, the memory that is frozen,
+   between the bar and its label. The wrapper ends at the bar's foot. */
+.hk .hk-frost--meter {
+	left: 0;
+	bottom: 6px;
+	width: 100%;
+	height: 10px;
+	--frost-mask: var(--hk-frost-meter);
+	--frost-size: 300px 10px;
+	--frost-at: left bottom;
+}
+
+/* A row: rime on its bottom rule at the leading end, in the row's bottom
+   padding, under no text. The row is its containing block (.prow and
+   .mrow are relative), so the frost spans the row, not the cell. Three
+   masks in turn, so a run of frozen rows does not stripe. */
+.hk .hk-frost--row {
+	left: 0;
+	bottom: 0;
+	width: 300px;
+	height: 10px;
+	--frost-mask: var(--hk-frost-row-1);
+	--frost-size: 300px 10px;
+	--frost-at: left bottom;
+	background:
+		linear-gradient(90deg, var(--hk-frost-line), transparent) left bottom / 100% 1px no-repeat,
+		radial-gradient(farthest-side at 0 100%, var(--hk-frost-haze), transparent);
+}
+.hk .hk-frost--row[data-frost-mask='2'] {
+	--frost-mask: var(--hk-frost-row-2);
+}
+.hk .hk-frost--row[data-frost-mask='3'] {
+	--frost-mask: var(--hk-frost-row-3);
+}
+/* The stacked row has 10px under its last line: the same rime at 60%. */
+.hk .mrow .hk-frost--row {
+	width: 180px;
+	height: 6px;
+	--frost-size: 180px 6px;
+}
+
+/* The memory a frozen machine holds is what is frozen: its meter fills in
+   ice ink with a lit top edge, unless it is short of room (amber, red). */
+.hk .hk-meter-ice .hk-meter:not(.hk-meter--warn, .hk-meter--err, .hk-meter--neutral) {
+	--m: var(--hk-ice-ink);
+}
+.hk .hk-meter-ice .hk-meter:not(.hk-meter--warn, .hk-meter--err) .hk-meter-fill {
+	box-shadow: inset 0 1px 0 var(--hk-frost-rim);
+}
+
+/* Haze is translucency: under reduced transparency only the frost stays. */
+@media (prefers-reduced-transparency: reduce) {
+	.hk .hk-frost {
+		background: none;
+	}
+}
+/* Forced colours: no frost. The word "frozen" and the flake carry the
+   state, in the system's text colour. */
+@media (forced-colors: active) {
+	.hk .hk-frost {
+		display: none;
+	}
+}

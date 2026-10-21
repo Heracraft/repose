@@ -592,7 +592,7 @@
 			align-items: center;
 			justify-content: center;
 			width: 0.75rem;
-			color: var(--hk-text-2);
+			color: var(--hk-ice-ink);
 		}
 		.mark .hk-dot {
 			width: 6px;

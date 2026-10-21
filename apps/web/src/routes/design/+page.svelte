@@ -18,6 +18,8 @@
 	import { PLANS } from '$lib/plans';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import type { GuestState } from '$lib/api/types';
+	import Snowflake from '$lib/components/Snowflake.svelte';
+	import Frost from '$lib/components/Frost.svelte';
 
 	const states: GuestState[] = ['running', 'creating', 'starting', 'stopping', 'stopped', 'error'];
 	let range = $state<'hour' | 'day' | 'week'>('day');
@@ -410,9 +412,153 @@
 			<button type="button" class="hk-btn">Apply</button>
 		</div>
 	</section>
+
+	<!-- A frozen machine (I-683; I-841 amendment 2026-10-21): the ice ink
+	     word and flake, and window frost where an edge meets a rule. The
+	     head and the row are specimens of PageShell's head and a /projects
+	     row; Frost.svelte and lib/hk/frost.css draw the same frost there. -->
+	<section class="hk-section" id="frozen" data-testid="frozen-specimen">
+		<div class="hk-section-head"><h2 class="hk-h2-app">Frozen</h2></div>
+		<div class="frost-head" data-frost-on="head">
+			<p class="frost-title hk-h1-app">ml-pipeline</p>
+			<p class="frost-meta">
+				<StateDot state="running" frozen />
+				<span>for 1h35m · <span class="hk-mono">large</span> · 8 GB</span>
+			</p>
+			<p class="frost-tabs">
+				<span class="frost-tab-on">Overview</span><span>Events</span><span>Usage</span>
+			</p>
+			<Frost kind="head" since="2026-10-21T00:00:00Z" />
+		</div>
+		<table class="hk-table frost-table">
+			<tbody>
+				{#each [['ml-pipeline', 'f', 'for 1h35m'], ['todo-app', 'f', 'for 26h29m'], ['billing-api', 'r', 'up 5m'], ['old-blog', 's', 'last run 3 days ago']] as [name, s, sub], i (name)}
+					<tr data-frost-on={s === 'f' ? 'row' : undefined}>
+						<td>
+							<span class="frost-row-name">{name}</span>
+							<span class="frost-sub hk-mono">github.com/heracraft/{name}</span>
+							{#if s === 'f'}<Frost kind="row" since="2026-10-21T00:00:00Z" n={i} />{/if}
+						</td>
+						<td
+							><StateDot state={s === 's' ? 'stopped' : 'running'} frozen={s === 'f'} /><span
+								class="frost-sub">{sub}</span
+							></td
+						>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+		<div class="frost-split">
+			<ul class="frost-rail" aria-label="Rail marks">
+				<li>
+					<span class="frost-mark" aria-hidden="true"><Snowflake size={12} /></span>ml-pipeline
+				</li>
+				<li>
+					<span class="frost-mark" aria-hidden="true"><span class="hk-dot hk-dot--on"></span></span
+					>billing-api
+				</li>
+				<li>
+					<span class="frost-mark" aria-hidden="true"
+						><span class="hk-dot hk-dot--idle"></span></span
+					>old-blog
+				</li>
+			</ul>
+			<section aria-label="Machine">
+				<p class="frost-card-title">Machine</p>
+				<div class="hk-meter-ice" data-frost-on="meter">
+					<Meter
+						label="Memory in use"
+						used={3.6}
+						limit={8}
+						valueText="3.6 GB of 8 GB"
+						testid="frost-mem"
+					/>
+					<Frost kind="meter" since="2026-10-21T00:00:00Z" />
+				</div>
+			</section>
+		</div>
+	</section>
 </PageShell>
 
 <style>
+	.frost-head {
+		margin-bottom: 1.25rem;
+		border-bottom: 1px solid var(--hk-hairline);
+	}
+	.frost-title {
+		margin: 0;
+		font-family: var(--hk-font-display);
+		font-weight: 400;
+	}
+	.frost-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.5rem 0 1rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+	}
+	.frost-tabs {
+		display: flex;
+		gap: 1.5rem;
+		margin: 0;
+		padding-bottom: 0.625rem;
+		font-size: 0.875rem;
+		color: var(--hk-text-2);
+	}
+	.frost-tab-on {
+		color: var(--hk-text);
+	}
+	.frost-table td {
+		padding-block: 0.875rem;
+		vertical-align: top;
+	}
+	.frost-row-name {
+		font-weight: 500;
+	}
+	.frost-sub {
+		display: block;
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.frost-split {
+		display: grid;
+		grid-template-columns: 9rem 1fr;
+		gap: 1.25rem;
+		align-items: start;
+		margin-top: 1.25rem;
+	}
+	.frost-rail {
+		display: grid;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
+	.frost-rail li {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+	}
+	.frost-mark {
+		display: inline-flex;
+		justify-content: center;
+		width: 0.75rem;
+		color: var(--hk-ice-ink);
+	}
+	.frost-mark .hk-dot {
+		width: 6px;
+		height: 6px;
+	}
+	.frost-card-title {
+		margin: 0 0 0.75rem;
+		font-family: var(--hk-font-display);
+		font-size: 1.125rem;
+	}
 	.g-row {
 		display: flex;
 		flex-wrap: wrap;

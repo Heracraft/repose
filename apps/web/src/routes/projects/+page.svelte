@@ -25,6 +25,7 @@
 	import { clock } from '$lib/clock.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
+	import Frost from '$lib/components/Frost.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { splitTicks } from '$lib/components/project/ticks';
@@ -697,9 +698,14 @@
 											</th>
 										</tr>
 									{/if}
-									{#each g.rows as p (p.id)}
+									{#each g.rows as p, i (p.id)}
 										{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-										<tr class="prow" class:prow--rest={p.state === 'stopped'}>
+										{@const frozen = frozenSince(p)}
+										<tr
+											class="prow"
+											class:prow--rest={p.state === 'stopped'}
+											data-frost-on={frozen ? 'row' : undefined}
+										>
 											<td class="c-name">
 												<span class="pname-line">
 													<!-- The name's ::after covers the row, so a click
@@ -718,6 +724,7 @@
 												{#if remote}
 													<span class="premote" title={remote}>{remote}</span>
 												{/if}
+												{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 											</td>
 											<td class="c-state">{@render stateCell(p)}</td>
 											<td class="c-size whitespace-nowrap">
@@ -761,7 +768,7 @@
 								aria-label={heads ? undefined : 'Projects'}
 								aria-labelledby={heads ? `mband-${g.band}` : undefined}
 							>
-								{#each g.rows as p (p.id)}
+								{#each g.rows as p, i (p.id)}
 									{@const agents = p.signals?.agents ?? []}
 									{@const frozen = frozenSince(p)}
 									{@const d = disk(p)}
@@ -775,7 +782,7 @@
 										agents.map((a) => a.agent).join(', '),
 										d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
 									].filter(Boolean)}
-									<li class="mrow">
+									<li class="mrow" data-frost-on={frozen ? 'row' : undefined}>
 										<div class="mrow-line">
 											<span class="mrow-name">
 												<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
@@ -807,6 +814,7 @@
 												{@render confirmStop(p)}
 											</div>
 										{/if}
+										{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 									</li>
 								{/each}
 							</ul>
@@ -1134,6 +1142,9 @@
 	.mrow-meta :global(.state) {
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
+	}
+	.mrow-meta :global(.state[data-frozen]) {
+		color: var(--hk-ice-ink);
 	}
 	.mrow-sub {
 		display: flex;

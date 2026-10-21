@@ -17,6 +17,8 @@
 	import { diskFullPercent } from '$lib/disk';
 	import { bytes, classMemoryGB, gb, gbs } from '$lib/format';
 	import type { Project } from '$lib/api/types';
+	import { frozenSince } from '$lib/frozen';
+	import Frost from '$lib/components/Frost.svelte';
 
 	let {
 		project,
@@ -53,6 +55,7 @@
 	let diskSize = $derived(project.root_size_bytes || project.volume_bytes);
 	let full = $derived(diskFullPercent(project));
 	/** A volume only grows: Resize… shows while a larger size is left. */
+	let frozen = $derived(frozenSince(project));
 	let canGrow = $derived(DISK_SIZES_GB.some((s) => s * GIB > project.volume_bytes));
 </script>
 
@@ -63,12 +66,17 @@
 
 	<div class="meters">
 		{#if memUsed !== undefined}
-			<Meter
-				label="Memory in use"
-				used={memUsed / GIB}
-				limit={memBytes / GIB}
-				valueText="{bytes(memUsed)} of {bytes(memBytes)}"
-			/>
+			<!-- A frozen machine's memory is what is frozen: the bar takes the
+			     ice ink and rime (lib/hk/frost.css). -->
+			<div class:hk-meter-ice={!!frozen} data-frost-on={frozen ? 'meter' : undefined}>
+				<Meter
+					label="Memory in use"
+					used={memUsed / GIB}
+					limit={memBytes / GIB}
+					valueText="{bytes(memUsed)} of {bytes(memBytes)}"
+				/>
+				{#if frozen}<Frost kind="meter" since={frozen} />{/if}
+			</div>
 		{:else}
 			<div class="line">
 				<span class="line-label">Memory in use</span>

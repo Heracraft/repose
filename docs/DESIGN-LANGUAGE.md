@@ -293,7 +293,8 @@ footer is not pushed out of view as each lands.
   150" to `/projects` when running rows are left out too. A row is a 6px dot and the name in
   13px on one line. The dot is amber while an agent on that project waits
   on you, otherwise the state dot's tone (ink running, hollow stopped, pulse
-  for a step under way, red error); a frozen machine shows the snowflake. One
+  for a step under way, red error); a frozen machine shows the snowflake in
+  `--hk-ice-ink`. One
   signal per row, no count. The name says it: "job-board, running, waiting on
   you".
 - One item is current on every dashboard page and none on an error page,
@@ -447,11 +448,45 @@ a guest state to it:
 | stopped, destroyed, unused | hollow 1.5px `--hk-control-edge` ring | `hk-dot--idle` (repose) |
 | needs input, host unreachable | amber | `hk-dot--warn` |
 | error | red | `hk-dot--err` |
-| frozen | the 12px snowflake and "frozen" in `--hk-text-2` in place of dot and word | `data-frozen` |
+| frozen | the 12px snowflake and "frozen" in `--hk-ice-ink` in place of dot and word | `data-frozen` |
 
-A frozen machine has no band, no cyan and no row fill; frozen is a normal
-state of a running machine. A dot keeps `data-tone` and its parent
-`data-state` for tests and stylesheets.
+### Frost
+
+A frozen machine (running, its memory suspended while idle) shows window
+frost where an edge meets a rule, and nowhere else (I-841 amendment
+2026-10-21). It has no band, no slab, no chip and no row fill, and a
+stopped machine keeps its hollow ring however many there are.
+
+- **Project head:** frost grows in from the far corner, up the right edge
+  and along the tab rule, with a faint cold haze; the column and the text
+  stay clear. Under 640px it keeps to the right gutter and the column's
+  last 20px.
+- **Machine section:** the memory meter fills in `--hk-ice-ink` with a lit
+  top edge, and rime needles sit on the bar.
+- **/projects row, table and stacked:** rime needles on the row's bottom
+  rule at its leading end, gone by 200px, with an ice line fading along
+  the rule. Three masks take turns, so frozen rows in a run do not stripe.
+- **Rail:** the snowflake in `--hk-ice-ink`. **Memory squares:** frozen GB
+  hatched in `--hk-ice-ink`.
+
+`Frost.svelte` is one element in the surface, which carries
+`data-frost-on` (position and isolation); it paints `--hk-frost-shade`
+through the mask as an alpha mask and `--hk-frost-ice` as a luminance
+mask. The masks are SVG data URIs that `apps/web/scripts/frost-masks.mjs`
+writes into `lib/hk/frost-masks.css` (fern sprites placed with `<use>`,
+seeded, so a rerun writes the same bytes; `frost-masks.test.ts` fails on a
+stale or undecodable mask). The ice tokens (`--hk-ice-ink`,
+`--hk-frost-*`) are in repose.css, measured from photos of window frost,
+rime and glacier ice (hue 200 to 220). Only `--hk-ice-ink` carries text
+(5.4:1 light, 10.6:1 dark); no frost sits under text (worst pixel under
+every text run on a frozen surface, 1920, 1440 and 390, both schemes:
+5.44 light, 5.89 dark). The frost forms over 600ms when the machine froze
+in the last minute and thaws in 300ms when it wakes; under reduced motion
+it comes and goes at once. Reduced transparency drops the haze; forced
+colours drop the frost, and the word and the snowflake carry the state.
+
+A dot keeps `data-tone` and its parent `data-state` for tests and
+stylesheets.
 
 ## Fields
 
@@ -561,7 +596,7 @@ are 10px on /billing and 8px in the projects plan row, 2px apart, square
 cornered. One machine's run is the accent; two are the accent and
 `--hk-text-2`; three or more take `--hk-series-1` to `-3`, then `--hk-text-2`,
 with a 12px legend naming each machine. Frozen GB are hatched in
-`--hk-text-3`, GB past the plan are `--hk-warn-dot`, and a free GB is a 1px
+`--hk-ice-ink`, GB past the plan are `--hk-warn-dot`, and a free GB is a 1px
 `--hk-control-edge` outline. In forced colours running GB are CanvasText,
 frozen GrayText, free an outline.
 

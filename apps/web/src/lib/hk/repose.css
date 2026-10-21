@@ -47,6 +47,40 @@
 	--hk-on-err: #09090b;
 }
 
+/* Ice: a frozen machine's colours (lib/hk/frost.css; I-841 amendment
+   2026-10-21), measured from photos of window frost, rime and glacier ice:
+   hue 200 to 220, never a saturated cyan. Only --hk-ice-ink carries text
+   (the word "frozen" and its flake); the frost tokens are decorative. In
+   the light the frost is white and shows by its blue shade; at night it is
+   a pale blue-white over a deep blue halo. */
+.hk {
+	--hk-ice-ink: #456b86; /* 5.4:1 on #fafafa, 5.7:1 on white */
+	--hk-frost-ice: #ffffff;
+	--hk-frost-shade: #6f95bc;
+	--hk-frost-haze: rgb(156 192 224 / 0.3);
+	--hk-frost-line: #c3d6e8;
+	--hk-frost-rim: rgb(255 255 255 / 0.5);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk {
+		--hk-ice-ink: #a1c1de; /* 10.6:1 on #09090b */
+		--hk-frost-ice: rgb(214 232 246 / 0.82);
+		--hk-frost-shade: rgb(63 111 158 / 0.7);
+		--hk-frost-haze: rgb(91 140 191 / 0.2);
+		--hk-frost-line: #4f7499;
+		--hk-frost-rim: rgb(238 245 251 / 0.6);
+	}
+}
+:root[data-theme='dark'] .hk,
+:root.dark .hk {
+	--hk-ice-ink: #a1c1de;
+	--hk-frost-ice: rgb(214 232 246 / 0.82);
+	--hk-frost-shade: rgb(63 111 158 / 0.7);
+	--hk-frost-haze: rgb(91 140 191 / 0.2);
+	--hk-frost-line: #4f7499;
+	--hk-frost-rim: rgb(238 245 251 / 0.6);
+}
+
 /* Every control a user types into or picks from has a 3:1 edge. */
 .hk :is(.hk-input, .hk-select, .hk-textarea) {
 	border-color: var(--hk-control-edge);
