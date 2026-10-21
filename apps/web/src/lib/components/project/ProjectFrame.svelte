@@ -269,7 +269,7 @@
 		title={project?.name ?? 'Project'}
 		crumbs={[{ label: 'Projects', href: resolve('/projects') }]}
 		{tabs}
-		frozen={!!project && !!frozenSince(project)}
+		frozen={project ? frozenSince(project) : undefined}
 		action={phone.current ? undefined : headActions}
 	>
 		{#if hasNotes}

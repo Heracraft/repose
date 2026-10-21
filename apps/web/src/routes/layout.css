@@ -10,7 +10,8 @@
    rule loses to an unlayered one at any specificity. */
 @import '../lib/components/nix-editor.css';
 @import '../lib/components/doc.css';
-/* A frozen machine's look, dev prototypes (I-841 amendment). */
+/* A frozen machine's frost and its generated masks (I-841 amendment). */
+@import '../lib/hk/frost-masks.css';
 @import '../lib/hk/frost.css';
 
 /*

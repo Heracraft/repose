@@ -1,6 +1,7 @@
-// The frozen look (DECISIONS I-683) is a mock behind a flag: the dev
-// server shows it, a production build never does, even when an api sends
-// `resting`. This suite runs the production build, so it guards that.
+// The frozen look (DECISIONS I-683; its frost, the I-841 amendment of
+// 2026-10-21) is a mock behind a flag: the dev server shows it, a
+// production build never does, even when an api sends `resting`. This
+// suite runs the production build, so it guards that.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, setResting } from './helpers';
 
@@ -22,10 +23,10 @@ test('a production build shows no frozen machine, even when the api says resting
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('project-state')).toHaveText('running');
 	await expect(page.getByTestId('frozen')).toHaveCount(0);
-	// The frost prototypes (?frost=, lib/frost.svelte.ts) are dev only too.
-	await page.goto(`/projects/${p.id}?frost=pane`);
-	await expect(page.getByTestId('project-state')).toHaveText('running');
-	await expect(page.locator('[data-frost-on]')).toHaveCount(0);
-	await expect(page.locator('html')).not.toHaveAttribute('data-frost');
+	// Nor its frost (Frost.svelte): not on the head, the Machine section or a row.
+	await expect(page.locator('.hk-frost, [data-frost-on]')).toHaveCount(0);
+	await page.goto('/projects');
+	await expect(page.getByRole('link', { name: p.name, exact: true })).toBeVisible();
+	await expect(page.locator('.hk-frost, [data-frost-on]')).toHaveCount(0);
 	await setResting(p.id, -1);
 });

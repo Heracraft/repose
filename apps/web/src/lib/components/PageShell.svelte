@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import Frost from './Frost.svelte';
 	import { inDash } from '$lib/dash';
 
 	interface Crumb {
@@ -14,7 +15,7 @@
 		lede,
 		action,
 		tabs,
-		frozen = false,
+		frozen,
 		children
 	}: {
 		title: string;
@@ -26,8 +27,8 @@
 		action?: Snippet;
 		/** Links under the title, on a full-width hairline (ProjectTabs, .hk-tabs): the current one's edge lies on it. */
 		tabs?: Snippet;
-		/** The page is a frozen machine's: a frost look may draw on the head (lib/hk/frost.css). */
-		frozen?: boolean;
+		/** The page is a frozen machine's, frozen at this time: frost grows on the head's far corner (Frost.svelte). */
+		frozen?: string;
 		children: Snippet;
 	} = $props();
 
@@ -73,6 +74,7 @@
 			{#if action}<div class="action">{@render action()}</div>{/if}
 		</div>
 		{#if tabs}<div class="tabs">{@render tabs()}</div>{/if}
+		{#if frozen}<Frost kind="head" since={frozen} />{/if}
 	</div>
 	<div class="body" class:body--form={width === 'form'}>
 		{@render children()}

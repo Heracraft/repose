@@ -25,6 +25,7 @@
 	import { clock } from '$lib/clock.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
+	import Frost from '$lib/components/Frost.svelte';
 	import CommandList from '$lib/hk/CommandList.svelte';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { splitTicks } from '$lib/components/project/ticks';
@@ -663,9 +664,10 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each rows as p (p.id)}
+								{#each rows as p, i (p.id)}
 									{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-									<tr class="prow" data-frost-on={frozenSince(p) ? 'row' : undefined}>
+									{@const frozen = frozenSince(p)}
+									<tr class="prow" data-frost-on={frozen ? 'row' : undefined}>
 										<td class="c-name">
 											<span class="pname-line">
 												<!-- The name's ::after covers the row, so a click
@@ -680,6 +682,7 @@
 											{#if remote}
 												<span class="premote" title={remote}>{remote}</span>
 											{/if}
+											{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 										</td>
 										<td class="c-state">{@render stateCell(p)}</td>
 										<td class="c-size whitespace-nowrap">
@@ -706,7 +709,7 @@
 					<!-- Below a 600px column, stacked rows: the name and its Start or
 					     Stop on the first line, the state and the figures on the second. -->
 					<ul class="mlist" aria-label="Projects">
-						{#each rows as p (p.id)}
+						{#each rows as p, i (p.id)}
 							{@const agents = p.signals?.agents ?? []}
 							{@const frozen = frozenSince(p)}
 							{@const d = disk(p)}
@@ -745,6 +748,7 @@
 										{@render confirmStop(p)}
 									</div>
 								{/if}
+								{#if frozen}<Frost kind="row" since={frozen} n={i} />{/if}
 							</li>
 						{/each}
 					</ul>
@@ -1002,9 +1006,8 @@
 		font-size: 0.8125rem;
 		color: var(--hk-text-2);
 	}
-	/* Ice ink under a frost look (lib/hk/frost.css). */
 	.mrow-meta :global(.state[data-frozen]) {
-		color: var(--hk-frozen-ink, var(--hk-text-2));
+		color: var(--hk-ice-ink);
 	}
 	.mrow-sub {
 		display: flex;

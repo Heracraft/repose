@@ -17,7 +17,6 @@
 	import { legacyTarget } from '$lib/legacyUrls';
 	import { billingStore } from '$lib/billing.svelte';
 	import { DASH, type DashContext } from '$lib/dash';
-	import { syncFrost } from '$lib/frost.svelte';
 
 	let { children } = $props();
 
@@ -63,8 +62,6 @@
 		const target = to ? legacyTarget(to.url) : null;
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- legacyTarget answers a same-origin path built from the table
 		if (target) void goto(target, { replaceState: true, noScroll: false });
-		// Dev prototypes of the frozen look: ?frost=<look> (lib/frost.svelte.ts).
-		if (to) syncFrost(to.url);
 	});
 
 	let showChildren = $derived(authState.authenticated === true || !isPrivate(page.url.pathname));

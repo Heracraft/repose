@@ -1234,8 +1234,8 @@
 		background: var(--fill);
 	}
 	.sw--ice {
-		box-shadow: inset 0 0 0 1px var(--hk-text-3);
-		background: repeating-linear-gradient(135deg, var(--hk-text-3) 0 1px, transparent 1px 3px);
+		box-shadow: inset 0 0 0 1px var(--hk-ice-ink);
+		background: repeating-linear-gradient(135deg, var(--hk-ice-ink) 0 1px, transparent 1px 3px);
 	}
 	.sw--over {
 		box-shadow:
