@@ -90,109 +90,130 @@
 	}
 </script>
 
-<!-- One of Settings' rows (set-row, styled by routes/settings): the h2
-     and the path on the left, the editor in the 40rem column on the right,
-     its state and Save under it. -->
-<section class="set-row" id="machine-nix">
-	<div class="set-head">
+<!-- Settings → machine.nix (I-841): the head with How it works, the
+     editor in the full column with its state and Save in its foot bar,
+     the projects that keep it off under it. -->
+<section class="hk-section" id="machine-nix" aria-labelledby="machine-nix-h">
+	<div class="hk-section-head">
 		<h2 id="machine-nix-h" class="hk-h2-app">machine.nix</h2>
-		<p class="set-note">
-			Your laptop keeps it at <code class="path">~/.config/repose/machine.nix</code>.
-		</p>
-		<p class="set-note">
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-			<a class="hk-link" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
-				>How it works</a
-			>
-		</p>
 	</div>
-	<div class="set-body">
-		<LoadState
-			status={personal ? 'ready' : loadError ? 'failed' : 'loading'}
-			error={loadError}
-			onretry={load}
-			shape="rows"
+	<p class="lede">
+		Your laptop keeps it at <code class="path">~/.config/repose/machine.nix</code>.
+		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
+		<a class="hk-link how" href={resolve('/docs/[slug]', { slug: 'config' }) + '#your-machine-nix'}
+			>How it works</a
 		>
-			{#if personal}
-				{#if personal.opted_out && personal.opted_out.length > 0}
-					<p class="off">Off on {personal.opted_out.join(', ')}.</p>
-				{/if}
-				<NixEditor bind:value={text} {errorLine} label="machine.nix" />
-				<div class="foot">
-					<!-- The state, said once as it changes, and the revision the
-					     account holds on one line; Save on the right. -->
-					<span class="left">
-						<span role="status" class="state">
-							{#if dirty}
-								<span class="dirty">Unsaved changes</span>
-							{:else if saved}
-								{saved}
-							{:else if personal?.created_at}
-								Saved
-							{:else}
-								You have none yet.
-							{/if}
-						</span>
-						{#if personal?.created_at}
-							<span class="when">
-								{dateTime(personal.created_at)}
-								{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
-							</span>
+	</p>
+	<LoadState
+		status={personal ? 'ready' : loadError ? 'failed' : 'loading'}
+		error={loadError}
+		onretry={load}
+		shape="rows"
+	>
+		{#if personal}
+			<div class="editor">
+				<NixEditor bind:value={text} {errorLine} label="machine.nix" floor="var(--mn-floor)" />
+			</div>
+			<div class="foot">
+				<!-- The state, said once as it changes, and the revision the
+				     account holds; Save on the right, the page's one primary,
+				     waiting until there is a change. -->
+				<span class="left">
+					<span role="status" class="state">
+						{#if dirty}
+							<span class="dirty">Unsaved changes</span>
+						{:else if saved}
+							{saved}
+						{:else if personal?.created_at}
+							Saved
+						{:else}
+							You have none yet.
 						{/if}
 					</span>
-					<span class="right">
+					{#if personal?.created_at}
+						<span class="when">
+							{dateTime(personal.created_at)}
+							{personal.source === 'cli' ? 'from your laptop' : 'on the dashboard'}
+						</span>
+					{/if}
+				</span>
+				<button
+					type="button"
+					class="hk-btn"
+					aria-disabled={!dirty || conflict || saving ? 'true' : undefined}
+					onclick={() => dirty && !conflict && !saving && save()}
+				>
+					{saving ? 'Saving…' : 'Save'}
+				</button>
+			</div>
+			{#if conflict}
+				<div class="hk-banner after" role="alert">
+					<p>machine.nix changed after this page loaded. Loading it drops your changes here.</p>
+					<button type="button" class="hk-banner-action" onclick={load}
+						>Load the account's copy</button
+					>
+				</div>
+			{/if}
+			{#if error}
+				<div class="hk-banner hk-banner--err after" role="alert">
+					<p class="build-error">{error}</p>
+				</div>
+			{/if}
+			{#if heldNavigation}
+				<div class="hk-banner after" role="alert">
+					<p>machine.nix is not saved. Leave this page anyway?</p>
+					<div class="ask">
 						<button
 							type="button"
 							class="hk-btn-secondary hk-btn-sm"
-							disabled={!dirty || conflict}
-							aria-disabled={saving ? 'true' : undefined}
-							onclick={() => !saving && save()}
+							bind:this={stayButton}
+							onclick={() => (heldNavigation = undefined)}>Stay</button
 						>
-							{saving ? 'Saving…' : 'Save'}
-						</button>
-					</span>
+						<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
+					</div>
 				</div>
-				{#if conflict}
-					<div class="hk-banner after" role="alert">
-						<p>machine.nix changed after this page loaded. Loading it drops your changes here.</p>
-						<button type="button" class="hk-banner-action" onclick={load}
-							>Load the account's copy</button
-						>
-					</div>
-				{/if}
-				{#if error}
-					<div class="hk-banner hk-banner--err after" role="alert">
-						<p class="build-error">{error}</p>
-					</div>
-				{/if}
-				{#if heldNavigation}
-					<!-- The same one-row question as the ntfy URL's on Settings. -->
-					<div class="hk-banner after" role="alert">
-						<p>machine.nix is not saved. Leave this page anyway?</p>
-						<div class="ask">
-							<button
-								type="button"
-								class="hk-btn-secondary hk-btn-sm"
-								bind:this={stayButton}
-								onclick={() => (heldNavigation = undefined)}>Stay</button
-							>
-							<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={leave}>Leave</button>
-						</div>
-					</div>
-				{/if}
 			{/if}
-		</LoadState>
-	</div>
+			{#if personal.opted_out && personal.opted_out.length > 0}
+				<p class="off">Off on {personal.opted_out.join(', ')}.</p>
+			{/if}
+		{/if}
+	</LoadState>
 </section>
 
 <style>
+	.how {
+		margin-left: 0.25rem;
+	}
+	.lede {
+		margin: -0.25rem 0 1.25rem;
+		font-size: 0.875rem;
+		color: var(--hk-text-3);
+		text-wrap: pretty;
+	}
 	.path {
 		white-space: nowrap;
 	}
+	/* The editor is the page's subject: room to write in. */
+	.editor {
+		--mn-floor: 20rem;
+	}
+	@container dash (min-width: 640px) {
+		.editor {
+			--mn-floor: 28rem;
+		}
+	}
 	.off {
-		margin: 0 0 0.75rem;
+		margin: 1rem 0 0;
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
+	}
+	.left {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 0.75rem;
+		min-width: 0;
+		flex: 1 1 0;
 	}
 	.foot {
 		display: flex;
@@ -206,19 +227,6 @@
 	}
 	.dirty {
 		color: var(--hk-text);
-	}
-	.left {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0 0.75rem;
-		min-width: 0;
-		flex: 1 1 0;
-	}
-	.right {
-		display: flex;
-		align-items: center;
-		margin-left: auto;
 	}
 	.when {
 		font-variant-numeric: tabular-nums;
@@ -236,5 +244,14 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+	}
+	/* A thumb's 44px for the lone link in the head. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.how {
+			display: inline-flex;
+			align-items: center;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
 	}
 </style>

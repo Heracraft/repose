@@ -9,7 +9,7 @@ order: 16
 
 Email is on from the start and goes to the address on your account. Every notification email ends with a **Stop these emails** link; it opens a page with an **Unsubscribe** button and works for 90 days. `repose notify set --email off` stops them, `--email on` brings them back.
 
-Notification settings cover every project on your account. The dashboard's **Settings** page has the same controls, plus **Send test**.
+Notification settings cover every project on your account. The dashboard has the same controls under **Settings** → **Notifications**, plus **Send test**, which names each channel the test reached and why any refused it.
 
 ## Your phone, with ntfy
 
@@ -123,7 +123,7 @@ A question can be answered in five places:
 - **ntfy:** if the question has options, the notification has a button for each. Tapping one answers it. No login is needed.
 - **Google Chat:** the card has a button for each option. It opens a page with the question and a button; pressing it answers.
 - **Email:** the email has a link for each option, which opens the same page. Replying to the email doesn't work.
-- **The dashboard:** waiting questions show under **Waiting on you** on the Projects page and on the project's page, with a button per option or a text box. In the text box, Enter sends and Shift+Enter starts a new line.
+- **The dashboard:** waiting questions are on the dashboard's **Questions** page, which also lists the last week's answers, and on the project's page, with a button per option or a text box. The Projects page shows the first one. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses.
 
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
