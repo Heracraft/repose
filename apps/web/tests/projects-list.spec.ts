@@ -1,6 +1,7 @@
-// /projects as the dashboard's home (I-659): the plan strip, the questions
-// waiting, rows that open their project from anywhere in them, and Start
-// or Stop on a row.
+// /projects as the dashboard's home (I-659, I-841): the lede, the first
+// question waiting and a link to the rest on /questions, rows that open
+// their project from anywhere in them, and Start or Stop on a row. The
+// plan lives in the rail's foot now (design.spec, billing.spec).
 import { test, expect, type Page } from '@playwright/test';
 import {
 	signIn,
@@ -32,96 +33,76 @@ function row(page: Page, name: string) {
 		.filter({ has: page.getByRole('link', { name, exact: true }) });
 }
 
-test('the plan strip shows the memory running with a meter', async ({ page }) => {
-	// The project first: a plan past its memory refuses a new one.
+// The plan left the page for the rail's foot (I-841): the lede counts
+// machines and projects and names no plan.
+test('the lede counts what runs and names no plan', async ({ page }) => {
 	await createProject(apiURLFromEnv(), {
-		name: 'strip-app',
-		remote_url: 'github.com/heracraft/strip-app'
+		name: 'lede-app',
+		remote_url: 'github.com/heracraft/lede-app'
 	});
 	await setBilling({ mode: 'active', plan: 'pro' });
 	await page.goto('/projects');
-	const strip = page.getByTestId('plan-strip');
-	await expect(
-		strip.getByRole('link', { name: /^Memory running, \d+ GB of 32 GB/ })
-	).toHaveAttribute('href', '/billing');
-	const meter = strip.getByRole('meter', { name: 'Memory running' });
-	await expect(meter).toBeVisible();
-	await expect(meter).toHaveAttribute('aria-valuetext', /GB of 32 GB/);
+	const lede = page.locator('main .lede');
+	await expect(lede).toHaveText(
+		/^(\d+ running|No machines running)( · \d+ in error)? · \d+ projects?$/
+	);
+	await expect(lede).not.toContainText('Pro');
+	await expect(page.locator('main').getByTestId('plan-strip')).toHaveCount(0);
 });
 
-test("with billing off the strip is one row of the list's facts, with no meter", async ({
-	page
-}) => {
-	await createProject(apiURLFromEnv(), {
-		name: 'strip-off-app',
-		remote_url: 'github.com/heracraft/strip-off-app'
-	});
-	await page.setViewportSize({ width: 1280, height: 900 });
-	await page.goto('/projects');
-	const strip = page.getByTestId('plan-strip');
-	await expect(strip.getByRole('link', { name: /^Memory running, \d+ GB$/ })).toBeVisible();
-	await expect(strip.getByRole('meter')).toHaveCount(0);
-	// Equal cells side by side: every label on one line across the band.
-	const labels = ['Memory running', 'Machines running', 'Agents needing input', 'Disk in use'];
-	const tops: number[] = [];
-	for (const l of labels) {
-		const box = await strip.getByText(l, { exact: true }).boundingBox();
-		if (!box) throw new Error(`no ${l}`);
-		tops.push(Math.round(box.y));
-	}
-	expect(new Set(tops).size).toBe(1);
-});
-
-// An agent asking through repose-ask needs input as much as one whose
-// window waits: the strip counts it, as the callout above it does.
-test('Agents needing input counts a pending question', async ({ page }) => {
+// Last snapshot moved to a project's Overview and Snapshots tab (I-841).
+test('the table has no Last snapshot column', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
-		name: 'strip-ask-app',
-		remote_url: 'github.com/heracraft/strip-ask-app'
+		name: 'cols-app',
+		remote_url: 'github.com/heracraft/cols-app'
 	});
-	await addQuestion(p.id, { agent: 'claude', text: 'Count me?', options: ['yes', 'no'] });
+	litter.push(p.id);
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/projects');
-	const cell = page
-		.getByTestId('plan-strip')
-		.locator('a, div')
-		.filter({ has: page.getByText('Agents needing input', { exact: true }) })
-		.last();
-	await expect(cell).toContainText(p.name);
-	await expect(cell).not.toContainText(/needing input\s*0/);
+	await expect(row(page, p.name)).toBeVisible();
+	await expect(page.locator('.ptable thead th')).toHaveText([
+		'Project',
+		'State',
+		'Size',
+		'Agents',
+		'Disk',
+		'Actions'
+	]);
 });
 
-// The plan's 32 squares once ran past the Memory cell between 768 and
-// about 860, where the cell beside the side column is under 413px.
-test('with Pro and 15 projects at 768 the memory squares stay in their cell', async ({ page }) => {
-	await createProject(apiURLFromEnv(), {
-		name: 'strip-many-app',
-		remote_url: 'github.com/heracraft/strip-many-app'
+// The rail leaves the page 700px at 1024 (I-841): the table lays out by
+// that column, not the window, so every row's Start or Stop stays in view.
+test('at 1024 the table fits the column beside the rail', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'fit-1024-app',
+		remote_url: 'github.com/heracraft/fit-1024-app'
 	});
-	await setBilling({ mode: 'active', plan: 'pro' });
-	await page.route(/\/v1\/projects$/, async (route) => {
-		if (route.request().method() !== 'GET') return route.fallback();
-		const res = await route.fetch();
-		const [first] = (await res.json()) as Record<string, unknown>[];
-		const json = Array.from({ length: 15 }, (_, i) => ({
-			...first,
-			id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
-			name: `many-${i + 1}`,
-			slug: `many-${i + 1}`,
-			class: i < 3 ? 'large' : 'small',
-			state: i < 5 ? 'running' : 'stopped'
-		}));
-		await route.fulfill({ response: res, json });
-	});
-	await page.setViewportSize({ width: 768, height: 900 });
+	litter.push(p.id);
+	await page.setViewportSize({ width: 1024, height: 800 });
 	await page.goto('/projects');
-	const strip = page.getByTestId('plan-strip');
-	const meter = strip.getByRole('meter', { name: 'Memory running' });
-	await expect(meter).toBeVisible();
-	const cell = await strip.getByRole('link', { name: /^Memory running/ }).boundingBox();
-	const squares = await meter.boundingBox();
-	if (!cell || !squares) throw new Error('no memory cell');
-	expect(squares.x + squares.width).toBeLessThanOrEqual(cell.x + cell.width);
+	const r = row(page, p.name);
+	await expect(r).toBeVisible();
+	const wrap = page.locator('.ptable-wrap');
+	await expect(wrap).toHaveAttribute('data-scrolls', 'false');
+	const main = await page.locator('.dash-main').boundingBox();
+	const stop = await r.getByRole('button', { name: `Stop ${p.name}` }).boundingBox();
+	if (!main || !stop) throw new Error('no column or button');
+	expect(stop.x + stop.width).toBeLessThanOrEqual(main.x + main.width + 12);
+	// Size gives way first in a column under 800px.
+	await expect(page.locator('.ptable thead th.c-size')).toBeHidden();
+	await expect(page.locator('.ptable thead th.c-disk')).toBeVisible();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 });
+
+/** Narrows the account's pending list to the given questions, so the card's first row is known. */
+async function onlyPending(page: Page, ids: string[]) {
+	await page.route(/\/questions\?state=pending$/, async (route) => {
+		const res = await route.fetch();
+		const body = (await res.json()) as { questions: { id: string }[] };
+		body.questions = body.questions.filter((q) => ids.includes(q.id));
+		await route.fulfill({ response: res, json: body });
+	});
+}
 
 test('a pending question shows in Waiting on you and on its row, and is answered in place', async ({
 	page
@@ -135,21 +116,19 @@ test('a pending question shows in Waiting on you and on its row, and is answered
 		text: 'Ship the list page?',
 		options: ['yes', 'no']
 	});
+	await onlyPending(page, [q.id]);
 	await page.goto('/projects');
 
 	const card = page.getByRole('region', { name: 'Waiting on you' });
-	await expect(card).toHaveAttribute('data-testid', 'pending-questions');
-	// Other files' questions wait in the same account; past 3 rows the
-	// rest are behind Show all.
-	await expect(card.getByTestId('question').first()).toBeVisible();
-	const all = card.getByRole('button', { name: /^Show all \d+$/ });
-	if (await all.isVisible()) await all.click();
+	await expect(card).toHaveAttribute('data-testid', 'questions');
+	// The rail's Questions place has the count; the card's head has none.
+	await expect(card.locator('.hk-badge')).toHaveCount(0);
 	const item = card.locator(`[data-qid="${q.id}"]`);
 	await expect(item).toContainText('Ship the list page?');
-	await expect(item).toBeVisible();
 	await expect(item).toContainText('claude');
-	// The project's name links to it, in the row or over its group.
-	await expect(card.getByRole('link', { name: p.name, exact: true }).first()).toHaveAttribute(
+	await expect(card.getByRole('link', { name: /more on Questions/ })).toHaveCount(0);
+	// The project's name leads the row's meta line and links to it.
+	await expect(item.getByRole('link', { name: p.name, exact: true })).toHaveAttribute(
 		'href',
 		`/projects/${p.id}`
 	);
@@ -173,12 +152,10 @@ test('a question answered in the terminal says so on /projects, then leaves', as
 		remote_url: 'github.com/heracraft/asked-term-app'
 	});
 	const q = await addQuestion(p.id, { agent: 'claude', text: 'Which port?' });
+	await onlyPending(page, [q.id]);
 	await page.clock.install();
 	await page.goto('/projects');
 	const card = page.getByRole('region', { name: 'Waiting on you' });
-	await expect(card.getByTestId('question').first()).toBeVisible();
-	const all = card.getByRole('button', { name: /^Show all \d+$/ });
-	if (await all.isVisible()) await all.click();
 	const item = card.locator(`[data-qid="${q.id}"]`);
 	await expect(item).toContainText('Which port?');
 
@@ -188,9 +165,14 @@ test('a question answered in the terminal says so on /projects, then leaves', as
 	await expect(item.getByTestId('question-outcome')).toHaveText('Answered in the terminal');
 	await page.clock.runFor(8_500);
 	await expect(item).toHaveCount(0);
+	await expect(page.getByTestId('questions')).toHaveCount(0);
 });
 
-test('Waiting on you groups by project and shows 3 rows before Show all', async ({ page }) => {
+// /projects shows one question, the one waiting longest's project's
+// newest, then a link to the rest on /questions (I-841).
+test('Waiting on you shows the first question and links the rest on Questions', async ({
+	page
+}) => {
 	const now = Date.now();
 	const mk = (
 		i: number,
@@ -224,17 +206,28 @@ test('Waiting on you groups by project and shows 3 rows before Show all', async 
 		route.fulfill({ json: { questions } })
 	);
 	await page.goto('/projects');
-	const card = page.getByTestId('pending-questions');
+	const card = page.getByTestId('questions');
 	await expect(card.getByRole('heading', { name: 'Waiting on you' })).toBeVisible();
-	await expect(card.locator('.hk-badge--warn')).toHaveText('5');
-	// beta has waited longest, so it leads; its newest row first.
-	await expect(card.getByRole('link')).toHaveText(['beta', 'alpha']);
-	await expect(card.getByTestId('question')).toHaveCount(3);
-	await expect(card.getByTestId('question').nth(0)).toContainText('Question 4 from opencode?');
-	await card.getByRole('button', { name: 'Show all 5' }).click();
-	await expect(card.getByTestId('question')).toHaveCount(5);
-	await card.getByRole('button', { name: 'Show fewer' }).click();
-	await expect(card.getByTestId('question')).toHaveCount(3);
+	await expect(card.locator('.hk-badge')).toHaveCount(0);
+	// beta has waited longest, so it leads; its newest question first.
+	await expect(card.getByTestId('question')).toHaveCount(1);
+	await expect(card.getByTestId('question')).toContainText('Question 4 from opencode?');
+	await expect(card.getByTestId('question').getByRole('link', { name: 'beta' })).toBeVisible();
+	const more = card.getByRole('link', { name: '4 more on Questions' });
+	await expect(more).toHaveAttribute('href', '/questions');
+	await more.click();
+	await expect(page).toHaveURL('/questions');
+	await expect(page.getByTestId('questions').getByTestId('question')).toHaveCount(5);
+
+	// One more waiting: "1 more", singular figures throughout.
+	await page.unroute(/\/questions\?state=pending$/);
+	await page.route(/\/questions\?state=pending$/, (route) =>
+		route.fulfill({ json: { questions: questions.slice(0, 2) } })
+	);
+	await page.goto('/projects');
+	await expect(
+		page.getByTestId('questions').getByRole('link', { name: '1 more on Questions' })
+	).toBeVisible();
 });
 
 test("clicking a row's empty area opens the project", async ({ page }) => {
@@ -473,9 +466,12 @@ test('a stopped row says when it last ran, and shows no agent column filler', as
 	const p = await make(api, 'rest-app', { stopped: true });
 	await page.goto('/projects');
 	// Narrowed to this test's project: the suite shares one account and
-	// the list is capped at 25.
-	await page.getByLabel('Search projects').fill('rest-app');
-	await expect(page).toHaveURL(/[?&]q=rest-app/);
+	// the list is capped at 25. The search is drawn past 8 projects only.
+	await names(page);
+	if ((await page.getByLabel('Search projects').count()) > 0) {
+		await page.getByLabel('Search projects').fill('rest-app');
+		await expect(page).toHaveURL(/[?&]q=rest-app/);
+	}
 	const r = row(page, p.name);
 	await expect(r).toContainText(/last run|made/);
 	// "none" belongs to a machine that is up and running nothing; a
@@ -618,6 +614,12 @@ test('past due and suspended each put one banner over the list', async ({ page }
 	const off = page.getByRole('alert').filter({ hasText: 'suspended' });
 	await expect(off).toHaveText('Your account is suspended. Update card and pay');
 	await expect(page.getByTestId('projects-past-due')).toHaveCount(0);
+
+	// Below 1024 the plan line under the strip says it, so the banner
+	// gives way: one sentence a screen (I-841).
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(page.locator('.plan-line')).toContainText('Suspended');
+	await expect(page.getByTestId('projects-suspended')).toBeHidden();
 });
 
 // An account with no project yet: the plan to choose first, then one line
@@ -646,5 +648,5 @@ test('the empty list offers a plan, then the install, login and run commands', a
 	for (const what of ['the install command', 'repose login', 'repose run']) {
 		await expect(commands.getByRole('button', { name: `Copy ${what}` })).toBeVisible();
 	}
-	await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+	await expect(page.locator('main').getByTestId('plan-strip')).toHaveCount(0);
 });
