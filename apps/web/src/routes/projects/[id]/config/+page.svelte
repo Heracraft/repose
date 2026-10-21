@@ -436,6 +436,12 @@
 											{/each}
 										</div>
 									</div>
+								{:else}
+									{#if search.trim()}
+										<div class="hk-empty-row">
+											<span>No package matches “{search.trim()}”.</span>
+										</div>
+									{/if}
 								{/each}
 								{#if extraPackages.length}
 									<div class="cgroup">
@@ -534,10 +540,8 @@
 								Building…
 							{:else if nixReadonly}
 								Managed by the menu
-							{:else if nixDirty}
-								{#if !heldNavigation}<span class="cbar-dirty">Unsaved changes</span>{/if}
-							{:else}
-								Saved
+							{:else if nixDirty && !heldNavigation}
+								<span class="cbar-dirty">Unsaved changes</span>
 							{/if}
 						</span>
 						<!-- The screen's primary once there is something to apply. -->
@@ -545,7 +549,7 @@
 							type="button"
 							class={(activeTab === 'menu' ? menuDirty : nixDirty) ? 'hk-btn' : 'hk-btn-secondary'}
 							disabled={applying ||
-								(activeTab === 'nix' && nixReadonly) ||
+								(activeTab === 'nix' && (nixReadonly || !nixDirty)) ||
 								(activeTab === 'menu' && (!menuOn || !menuDirty))}
 							onclick={activeTab === 'menu' ? applyMenu : applyNix}
 						>

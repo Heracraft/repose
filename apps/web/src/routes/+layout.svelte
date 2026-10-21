@@ -122,7 +122,7 @@
 		font-weight: 500;
 	}
 	.outage p {
-		margin: 0;
+		margin-block: 0;
 		padding-block: 0.5rem;
 		text-align: center;
 	}

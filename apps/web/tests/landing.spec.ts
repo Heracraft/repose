@@ -102,8 +102,27 @@ test('the install command shows once, and its button copies it', async ({ page, 
 	expect(
 		await page.locator('main').evaluate((m, i) => m.textContent!.split(i).length - 1, install)
 	).toBe(1);
-	await page.getByRole('button', { name: 'Copy install command' }).click();
+	const button = page.getByRole('button', { name: 'Copy install command' });
+	const handle = await button.elementHandle();
+	await button.click();
 	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(install);
+	// "Copied" centres with its check as one group in the wider button.
+	const gaps = await handle!.evaluate((el) => {
+		const box = el.getBoundingClientRect();
+		const layer = el.querySelector('.layer:not(.off)')!;
+		const icon = layer.querySelector('.icon')!.getBoundingClientRect();
+		const range = document.createRange();
+		range.selectNodeContents(layer);
+		const all = range.getBoundingClientRect();
+		return {
+			word: layer.textContent!.trim(),
+			iconFirst: Math.abs(icon.left - all.left) < 0.5,
+			off: Math.abs(all.left - box.left - (box.right - all.right))
+		};
+	});
+	expect(gaps.word).toBe('Copied');
+	expect(gaps.iconFirst).toBe(true);
+	expect(gaps.off).toBeLessThan(1);
 });
 
 test('the headline starts under the logo', async ({ page }) => {

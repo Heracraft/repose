@@ -220,6 +220,24 @@ test('the desktop sidebar fits 1440x900 and draws no scrollbar', async ({ page }
 	});
 });
 
+// Near the footer the sidebar gets shorter instead of riding up under the
+// header, so the search stays in reach at the end of a page.
+test('at the end of a page the docs search stays under the header', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/docs/billing');
+	await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const nav = document.querySelector('#docs-nav')!.getBoundingClientRect();
+				const search = document.querySelector('#docs-search')!.getBoundingClientRect();
+				const footer = document.querySelector('.site-footer')!.getBoundingClientRect();
+				return { top: nav.top, search: search.top >= 57, clear: nav.bottom <= footer.top + 1 };
+			})
+		)
+		.toEqual({ top: 57, search: true, clear: true });
+});
+
 // A search shows its best hits first, at the top of the list, whatever the
 // page list was scrolled to; clearing it goes back to the open page's link.
 test('search hits start at the top of the drawer', async ({ page }) => {

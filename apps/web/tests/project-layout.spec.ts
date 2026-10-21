@@ -120,6 +120,26 @@ test('a stopped project has no Agents card', async ({ page }) => {
 	await expect(page.getByTestId('agents-card')).toHaveCount(0);
 });
 
+// The current tab's 1px ink edge lies on the title rule: the scrolling
+// tab row keeps it inside its box, so it is drawn and the row has no
+// vertical scroll (spec section 2, Page tabs).
+test("the current tab's edge lies on the rule", async ({ page }) => {
+	const p = await project('tabs-edge', 0);
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto(`/projects/${p.id}`);
+		const m = await page.locator('.hk-tabs').evaluate((nav) => {
+			const a = nav.querySelector('[aria-current="page"]')!.getBoundingClientRect();
+			const rule = nav.parentElement!.getBoundingClientRect();
+			return {
+				noScroll: nav.scrollHeight === nav.clientHeight,
+				onRule: Math.abs(a.bottom - rule.bottom) < 0.5
+			};
+		});
+		expect(m, `at ${width}`).toEqual({ noScroll: true, onRule: true });
+	}
+});
+
 test('a project in error offers Restart', async ({ page }) => {
 	const p = await project('error-layout', 0);
 	await page.route(`**/v1/projects/${p.id}`, async (route) => {

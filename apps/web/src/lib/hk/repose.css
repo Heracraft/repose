@@ -251,6 +251,18 @@
 	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
 	text-underline-offset: 3px;
 }
+/* On touch the inline action keeps its line height and takes a 44px tall
+   hit box, as the layout's `hit` utility does. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-banner-action {
+		position: relative;
+	}
+	.hk .hk-banner-action::before {
+		content: '';
+		position: absolute;
+		inset: -11px 0;
+	}
+}
 .hk .hk-banner-action:hover,
 .hk .hk-banner a:hover {
 	text-decoration-color: currentColor;
@@ -500,10 +512,16 @@
 
 /* A project's views (ProjectTabs): a row on the title rule, current in ink
    with a 1px ink edge lying on the rule, weight unchanged. */
+/* The row scrolls sideways on a narrow screen, and a scroll box clips both
+   axes: the 1px padding keeps the current tab's edge, which hangs 1px below
+   the row, inside the box, and the -1px margin puts it back on the rule. */
 .hk .hk-tabs {
 	display: flex;
 	gap: 1.5rem;
 	overflow-x: auto;
+	overflow-y: hidden;
+	padding-bottom: 1px;
+	margin-bottom: -1px;
 	scrollbar-width: none;
 }
 .hk .hk-tabs > a {

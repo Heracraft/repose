@@ -100,7 +100,28 @@
 		}
 	}
 
+	// From md the sidebar sticks under the header. Its height follows the
+	// end of the docs grid, so near the footer it gets shorter, and its top,
+	// with the search, stays at 57px; a fixed 100dvh height made sticky push
+	// it up under the header by the footer's height.
+	const HEADER = 57;
+	let navHeight = $state<number | undefined>();
+	let sizing = false;
+	function sizeNav() {
+		if (sizing) return;
+		sizing = true;
+		requestAnimationFrame(() => {
+			sizing = false;
+			const grid = nav?.parentElement;
+			if (!grid) return;
+			const end =
+				grid.getBoundingClientRect().bottom - parseFloat(getComputedStyle(grid).paddingBottom);
+			navHeight = Math.max(0, Math.min(window.innerHeight, end) - HEADER);
+		});
+	}
+
 	onMount(() => {
+		sizeNav();
 		// The saved scroll comes back only when the current link would not
 		// show without it: a list that shows the link at the top stays at
 		// the top, so the sidebar does not open scrolled for no reason.
@@ -141,6 +162,7 @@
 		void page.url.href;
 		menuOpen = false;
 		void tick().then(() => {
+			sizeNav();
 			revealCurrent();
 			measure();
 		});
@@ -209,6 +231,8 @@
 </script>
 
 <svelte:window
+	onscroll={sizeNav}
+	onresize={sizeNav}
 	onkeydown={(e) => {
 		if (e.key === 'Escape' && menuOpen) closeMenu();
 	}}
@@ -279,9 +303,10 @@
 		tabindex="-1"
 		aria-label="Docs menu"
 		data-fade={fade ? '' : undefined}
+		style:--docs-nav-h={navHeight === undefined ? undefined : `${navHeight}px`}
 		class="sidebar fixed top-[101px] bottom-0 left-0 z-20 w-[min(20rem,85vw)] overflow-y-auto overscroll-contain px-5 pb-10 outline-none {menuOpen
 			? 'is-open visible translate-x-0'
-			: 'invisible -translate-x-full'} md:visible md:sticky md:top-[57px] md:bottom-auto md:z-auto md:h-[calc(100dvh-57px)] md:w-[220px] md:translate-x-0 md:pt-8 md:pr-2 md:pb-8 md:pl-0 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden"
+			: 'invisible -translate-x-full'} md:visible md:sticky md:top-[57px] md:bottom-auto md:z-auto md:h-[var(--docs-nav-h,calc(100dvh-57px))] md:w-[220px] md:translate-x-0 md:pt-8 md:pr-2 md:pb-8 md:pl-0 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden"
 	>
 		<!-- The search sticks to the top of the sidebar, so a list taller
 		     than a phone's drawer scrolls under it and the search stays in

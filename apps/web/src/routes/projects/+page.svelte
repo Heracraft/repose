@@ -42,6 +42,7 @@
 		byHeldOrder,
 		holdsMemory,
 		idSetKey,
+		lastActive,
 		listSearch,
 		matchesFilter,
 		matchesQuery,
@@ -432,7 +433,7 @@
 	{:else if p.state === 'stopped'}
 		<span class="sub"
 			>{p.started_at
-				? `last run ${relativeTime(p.started_at)}`
+				? `last run ${relativeTime(lastActive(p))}`
 				: `made ${relativeTime(p.created_at)}`}</span
 		>
 	{/if}

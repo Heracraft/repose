@@ -62,6 +62,37 @@
 	$effect(() => () => clearTimeout(timer));
 </script>
 
+{#snippet copyIcon()}
+	<svg
+		class="i-copy"
+		viewBox="0 0 16 16"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.4"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+	>
+		<rect x="5.25" y="5.25" width="8" height="8" rx="1.75" />
+		<path
+			d="M10.75 5.25V4a1.75 1.75 0 0 0-1.75-1.75H4A1.75 1.75 0 0 0 2.25 4v5c0 .97.78 1.75 1.75 1.75h1.25"
+		/>
+	</svg>
+{/snippet}
+
+{#snippet checkIcon()}
+	<svg
+		class="i-check"
+		viewBox="0 0 16 16"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.6"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+	>
+		<path d="M3.5 8.5l3 3 6-7" pathLength="1" />
+	</svg>
+{/snippet}
+
 <button
 	type="button"
 	class="hk-copy hk-copy--{tone} hk-copy--{size} {klass}"
@@ -71,40 +102,20 @@
 	aria-label={ariaLabel ?? (label ? undefined : 'Copy')}
 	title={label ? undefined : copied ? 'Copied' : (ariaLabel ?? 'Copy')}
 >
-	<span class="icon" aria-hidden="true">
-		<svg
-			class="i-copy"
-			viewBox="0 0 16 16"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.4"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<rect x="5.25" y="5.25" width="8" height="8" rx="1.75" />
-			<path
-				d="M10.75 5.25V4a1.75 1.75 0 0 0-1.75-1.75H4A1.75 1.75 0 0 0 2.25 4v5c0 .97.78 1.75 1.75 1.75h1.25"
-			/>
-		</svg>
-		<svg
-			class="i-check"
-			viewBox="0 0 16 16"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="1.6"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		>
-			<path d="M3.5 8.5l3 3 6-7" pathLength="1" />
-		</svg>
-	</span>
 	{#if label}
-		<!-- Both words share one grid cell, so the button keeps the wider
-		     width and nothing beside it moves on copy. -->
+		<!-- Two layers in one grid cell, each an icon and its word, so the
+		     button keeps the wider width, nothing beside it moves on copy, and
+		     "Copied" centres with its check as one group. -->
 		<span class="text" aria-hidden={ariaLabel ? 'true' : undefined}>
-			<span class:off={copied}>{label}</span>
-			<span class:off={!copied} aria-hidden="true">Copied</span>
+			<span class="layer" class:off={copied}>
+				<span class="icon" aria-hidden="true">{@render copyIcon()}</span>{label}
+			</span>
+			<span class="layer" class:off={!copied} aria-hidden="true">
+				<span class="icon" aria-hidden="true">{@render checkIcon()}</span>Copied
+			</span>
 		</span>
+	{:else}
+		<span class="icon" aria-hidden="true">{@render copyIcon()}{@render checkIcon()}</span>
 	{/if}
 	<span class="hk-sr" aria-live="polite">{copied ? 'Copied' : ''}</span>
 </button>
@@ -240,10 +251,23 @@
 	}
 	.text {
 		display: grid;
+		gap: inherit;
 	}
-	.text > span {
+	.text > .layer {
 		grid-area: 1 / 1;
-		text-align: center;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: inherit;
+	}
+	/* In a labelled face each layer holds one icon, which is the one shown. */
+	.layer .i-copy,
+	.layer .i-check {
+		opacity: 1;
+		transform: none;
+	}
+	.layer:not(.off) .i-check path {
+		stroke-dashoffset: 0;
 	}
 	.text > .off {
 		visibility: hidden;

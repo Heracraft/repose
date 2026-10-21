@@ -137,7 +137,9 @@ test('the Menu and Nix tabs are ARIA tabs the arrow keys move between', async ({
 // Apply sits in one bar held to the foot of the window, beside the state
 // of the tab in front (I-664, I-837), which says when a change is not
 // applied.
-test('the Apply bar says Saved, then Unsaved changes, beside Apply', async ({ page }) => {
+test('the Apply bar says Unsaved changes beside Apply, which waits for a change', async ({
+	page
+}) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'nix-bar-app',
 		remote_url: 'github.com/heracraft/nix-bar-app'
@@ -146,16 +148,31 @@ test('the Apply bar says Saved, then Unsaved changes, beside Apply', async ({ pa
 	await page.getByRole('tab', { name: 'Nix' }).click();
 	const panel = page.getByRole('tabpanel', { name: 'Nix' });
 	const bar = page.locator('.hk-bottom-bar');
-	await expect(bar.getByRole('status')).toHaveText('Saved');
+	// Nothing to apply: the bar says nothing (the tab's head says when it
+	// was applied), and Apply is off, as on the Menu tab.
+	await expect(bar.getByRole('status')).toHaveText('');
 	const apply = bar.getByRole('button', { name: 'Apply', exact: true });
 	await expect(apply).toBeVisible();
-	// Nothing to apply: Apply is not the screen's primary yet.
+	await expect(apply).toBeDisabled();
 	await expect(apply).toHaveClass(/hk-btn-secondary/);
 	await panel.locator('.cm-content').click();
 	await page.keyboard.press('End');
 	await page.keyboard.type(' ');
 	await expect(bar.getByRole('status')).toHaveText('Unsaved changes');
+	await expect(apply).toBeEnabled();
 	await expect(apply).toHaveClass(/(^|\s)hk-btn(\s|$)/);
+});
+
+test('a Menu search that matches nothing says so', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'menu-none-app',
+		remote_url: 'github.com/heracraft/menu-none-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('searchbox', { name: 'Search packages and services' }).fill('zzzz');
+	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toContainText(
+		'No package matches “zzzz”.'
+	);
 });
 
 test('at lg the revisions sit in a rail beside the editor', async ({ page }) => {
