@@ -1,5 +1,5 @@
 <!--
-  A project's snapshots, newest first (I-837): when each was taken, its
+  A project's snapshots on its Snapshots tab, newest first (I-837, I-841): when each was taken, its
   size, why (stop, a schedule, by hand) and when it expires. One action a
   row, Restore…, which opens one panel under that row offering both
   outcomes: over this disk, behind the same typed confirm as Destroy, or
@@ -97,7 +97,14 @@
 
 <section class="hk-section" aria-labelledby="snapshots-title" data-testid="snapshots-card">
 	<div class="hk-section-head">
-		<h2 id="snapshots-title" class="hk-h2-app">Snapshots</h2>
+		<!-- On the Snapshots tab the head is the count: "8 snapshots". -->
+		<h2 id="snapshots-title" class="hk-h2-app count">
+			{snapshots.length === 0
+				? 'Snapshots'
+				: snapshots.length === 1
+					? '1 snapshot'
+					: `${snapshots.length} snapshots`}
+		</h2>
 		{#if snapshots.length > 0}{@render create()}{/if}
 	</div>
 	{#if snapshots.length === 0}
@@ -203,6 +210,9 @@
 </section>
 
 <style>
+	.count {
+		font-variant-numeric: tabular-nums;
+	}
 	.snaps {
 		border-bottom: 1px solid var(--hk-hairline);
 	}

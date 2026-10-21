@@ -64,4 +64,4 @@ ssh todo-app.repose 'du -sh ~/.t3/runtime/versions'
 
 **The page doesn't load.** Check the service on the machine with `ssh todo-app.repose 'systemctl --user status t3code'`, and that `repose open 3773` is still running on your laptop.
 
-**A Codex thread answers but says the command host is unavailable.** Older bases shipped Codex without the part it runs commands through. A newer base has it; if the project's Config page has [**Hold base updates**](/docs/config#revisions-and-base-updates) ticked, untick it.
+**A Codex thread answers but says the command host is unavailable.** Older bases shipped Codex without the part it runs commands through. A newer base has it; if the project's **Config** tab has [**Hold base updates**](/docs/config#revisions-and-base-updates) ticked, untick it.

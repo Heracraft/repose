@@ -1,5 +1,5 @@
 <!--
-  A project's events in pages of 10, newest first (I-662). The page's
+  The Events tab (I-841): a project's events in pages of 10, newest first (I-662). The page's
   place lives in the URL (eventsUrl.ts), so Back steps between pages and a
   reload keeps the page. Newest, Newer and Older move by the api's cursors;
   the position is "Page 3 of 8" from the api's count. With one page there
@@ -145,7 +145,7 @@
 
 	/** This page's URL with the pager at s, the rest of the query kept. */
 	function href(s: typeof view): string {
-		return `${resolve('/projects/[id]', { id: projectId })}${eventsSearch(page.url.searchParams, s)}`;
+		return `${resolve('/projects/[id]/events', { id: projectId })}${eventsSearch(page.url.searchParams, s)}`;
 	}
 
 	function to(s: typeof view, focus = true) {
@@ -305,14 +305,11 @@
 	bind:this={card}
 >
 	<div class="hk-section-head head">
-		<div class="title">
-			<h2 id="events-title" class="hk-h2-app">Events</h2>
-			{#if total !== undefined}
-				<span class="total" data-testid="events-total"
-					>{total === 1 ? '1 event' : `${total} events`}</span
-				>
-			{/if}
-		</div>
+		<!-- The tab is Events, so the head is the count: "60 events". An
+		     api with no count (older than I-662) gets the word alone. -->
+		<h2 id="events-title" class="hk-h2-app" data-testid="events-total">
+			{total === undefined ? 'Events' : total === 1 ? '1 event' : `${total} events`}
+		</h2>
 		<!-- The filter changes the URL, so its choices are links with
 		     aria-current. An api with no count ignores kind, so it gets none. -->
 		{#if !loaded || total !== undefined}
@@ -336,13 +333,17 @@
 	<p class="hk-sr" role="status">{announce}</p>
 
 	{#if !loaded}
-		<LoadState
-			status={loadError ? 'failed' : 'loading'}
-			error={loadError}
-			shape="rows"
-			label="Loading events…"
-			onretry={() => load(view, key)}
-		/>
+		<!-- A page's height while it loads, so the pager and the footer are
+		     not drawn in view and then pushed down (layout shift, I-664). -->
+		<div class="events-wait">
+			<LoadState
+				status={loadError ? 'failed' : 'loading'}
+				error={loadError}
+				shape="rows"
+				label="Loading events…"
+				onretry={() => load(view, key)}
+			/>
+		</div>
 	{:else if events.length === 0}
 		<div class="hk-empty-row">
 			<span>{view.kind ? 'No events of this kind.' : 'No events yet.'}</span>
@@ -376,14 +377,7 @@
 	.head {
 		align-items: center;
 	}
-	.title {
-		display: flex;
-		align-items: baseline;
-		gap: 0.75rem;
-	}
-	.total {
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
+	.head h2 {
 		font-variant-numeric: tabular-nums;
 	}
 	@media (max-width: 767.98px) {
@@ -407,11 +401,13 @@
 	/* 10 rows of 41px and one day heading; a page across midnight grows
 	   by a heading. A short last page keeps the list's height, so the
 	   section under it does not jump. */
-	.events-list.hold {
+	.events-list.hold,
+	.events-wait {
 		min-height: calc(10 * 2.5625rem + 2.25rem);
 	}
 	@media (max-width: 639.98px) {
-		.events-list.hold {
+		.events-list.hold,
+		.events-wait {
 			min-height: calc(10 * 4rem + 2.25rem);
 		}
 	}

@@ -1,5 +1,7 @@
 // Checklist: "Start, Stop, Destroy, Resize call the right routes and show
-// op progress."
+// op progress." Start and Stop are in the project's header on every tab,
+// Resize, Keep and Destroy on its Overview, Restore on its Snapshots tab
+// (DECISIONS I-841).
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
 
@@ -156,7 +158,7 @@ test('restoring a snapshot over the disk asks for the slug, like Destroy', async
 	page.on('request', (r) => {
 		if (r.url().endsWith('/restore')) restores++;
 	});
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/snapshots`);
 	await expect(page.getByTestId('project-state')).toHaveText('running');
 
 	const row = page.getByTestId('snapshot-row');
@@ -187,7 +189,7 @@ test('restore as new has a labelled name field and fits a phone screen', async (
 		remote_url: 'github.com/heracraft/snap-new-app'
 	});
 	await oneSnapshot(page, p.id);
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/snapshots`);
 
 	const row = page.getByTestId('snapshot-row');
 	await row.getByRole('button', { name: 'Restore…' }).click();
@@ -440,7 +442,7 @@ test('Restore as new opens the project it made', async ({ page }) => {
 		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
 		body: '{}'
 	});
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/snapshots`);
 	await page.getByRole('button', { name: 'Restore…' }).first().click();
 	const name = `restored-${Math.random().toString(36).slice(2, 8)}`;
 	await page.getByLabel('Name for the restored project').fill(name);
@@ -451,4 +453,27 @@ test('Restore as new opens the project it made', async ({ page }) => {
 	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/, { timeout: 20_000 });
 	await expect(page).not.toHaveURL(new RegExp(`/projects/${p.id}$`));
 	await expect(page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
+});
+
+// Start from any tab: the header and its op stay mounted while the tabs
+// switch, so the state the op reaches shows on the tab you moved to.
+test('Start on one tab, watch it finish on another', async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'start-elsewhere',
+		remote_url: 'github.com/h/start-elsewhere'
+	});
+	await fetch(`${api}/projects/${p.id}/stop`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ snapshot: false })
+	});
+	await page.goto(`/projects/${p.id}/snapshots`);
+	await expect(page.getByTestId('project-state')).toHaveText('stopped', { timeout: 10_000 });
+	await page.getByRole('button', { name: 'Start', exact: true }).click();
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Events' })
+		.click();
+	await expect(page.getByTestId('project-state')).toHaveText('running', { timeout: 15_000 });
 });
