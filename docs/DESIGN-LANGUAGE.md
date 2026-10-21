@@ -624,9 +624,11 @@ pane is never the loudest thing on the page.
 
 ## Command list
 
-`CommandList.svelte`: two to four commands in one near-black pane, as wide
+`CommandList.svelte`: two to four commands in one pane that follows the theme
+(`--hk-surface-2` with a `--hk-border` edge, as CodeCopy; a command list is a
+control, not a code sample, so it is not near-black on a light page), as wide
 as its longest command from 22rem to 40rem (the column on a phone), a 40px row
-each (44px on touch, as tall as its Copy, so no Copy crosses a hairline): a muted `$ `, the command in `--hk-code-text`, and its own dark small
+each (44px on touch, as tall as its Copy, so no Copy crosses a hairline): a muted `$ `, the command in `--hk-text`, and its own ghost small
 Copy named "Copy {what}". A `# note` above a command is 12px italic and wraps
 on a phone while the command scrolls sideways; Copy lines up with the command
 line. A row takes a tab stop only while it overflows. Used where a page

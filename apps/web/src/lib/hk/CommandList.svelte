@@ -59,7 +59,6 @@
 					text={c.command}
 					label={narrow.current ? undefined : 'Copy'}
 					ariaLabel="Copy {c.what}"
-					tone="dark"
 					size="sm"
 				/>
 			</li>
@@ -71,7 +70,21 @@
 	/* The pane is as wide as its longest row, from 22rem to 40rem, so each
 	   Copy sits beside its command and not across the page from it. On a
 	   phone it takes the column; a longer command scrolls inside it. */
+	/* A command list is a control on the page, not a code sample, so it
+	   follows the theme as CodeCopy does: light on a light page, dark on a
+	   dark one (owner, 2026-10-21). The code-pane tokens are remapped here,
+	   so the rules below keep their names. */
 	.hk-code.cl {
+		--hk-code-bg: var(--hk-surface-2);
+		--hk-code-bar: var(--hk-surface);
+		--hk-code-border: var(--hk-border);
+		--hk-code-border-outer: transparent;
+		--hk-code-text: var(--hk-text);
+		--hk-code-key: var(--hk-text-2);
+		--hk-code-muted: var(--hk-text-3);
+		--hk-code-comment: var(--hk-text-3);
+		--hk-code-scrollbar: var(--hk-border-strong);
+		--hk-code-focus: var(--hk-ring);
 		width: fit-content;
 		min-width: min(100%, 22rem);
 		max-width: min(100%, 40rem);
@@ -125,6 +138,17 @@
 	   line), 44px tall on touch. */
 	.row.has-note {
 		align-items: flex-end;
+	}
+	/* Copy is a ghost, as in CodeCopy: the pane is the frame. */
+	.row :global(.hk-copy.hk-copy--labelled:not(.is-copied)) {
+		border-color: transparent;
+		background: transparent;
+		color: var(--hk-text-2);
+	}
+	.row :global(.hk-copy.hk-copy--labelled:not(.is-copied):hover) {
+		border-color: transparent;
+		background: var(--hk-hover);
+		color: var(--hk-text);
 	}
 	.row.has-note :global(.hk-copy) {
 		margin-bottom: 0.375rem;
