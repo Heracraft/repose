@@ -24170,3 +24170,35 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-842. A dropped file is copied up to 50 MB; a pasted image stays at 20
+MB.** (drop-plain, 2026-10-21) The owner dropped a 21 MB `pg_dump` on an
+attached terminal with v0.1.39 and got the laptop's path, not a copy.
+- *What the cap was.* One constant, `pasteMaxBytes` (20 MB), capped both
+  a clipboard image and a dropped file. `dropMaxBytes` is now the drop's
+  own limit, 50 MB. The image path keeps 20 MB, and so does the macOS
+  clipboard watcher's PNG limit in `clipwatch.go`, which is a copy of a
+  screenshot and nothing else.
+- *Why 50 MB and not more.* The copy runs on the input proxy's own loop,
+  so keys typed after a drop are buffered and reach the pane after the
+  transfer. The cap is what keeps that wait short. A dump or an archive
+  is an ordinary thing to drag onto a terminal, so 20 MB was too low;
+  `repose cp`, which has no cap and holds up nothing, stays the path for
+  anything larger.
+- *Why the refusal was invisible.* A refused drop says why with `tmux
+  display-message`. On tmux 3.7c, the guest's own version, a plain status
+  message is cleared by the next key press, and that key still reaches
+  the pane: a drop followed by Enter erases the explanation before it is
+  read. `-N` holds the message for its full delay but swallows every key
+  while it shows (measured both ways on 3.7c with a client on a pty), so
+  it is not an option. The owner chose the higher cap and a line in the
+  docs over any change to the message, so the channel is unchanged.
+- *What the docs say.* /docs/limits gains a "Files you drop or paste"
+  section with both numbers, since the drop cap was on the
+  run-and-attach page only, and /docs/run-and-attach now says 50 MB.
+- *Not fixed, deliberately.* The two exits in `dropHandler.files` that
+  fall back to the raw paste with no message at all: a path that fails
+  its second `dropFile` check, and a file that cannot be stat'ed. Nor
+  `plainDrop`'s first-byte test, which runs before its trim, so a drop
+  that arrives with a leading space is read as text while the bracketed
+  form accepts it. Both are real and neither is what the owner hit.

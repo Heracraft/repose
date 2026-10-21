@@ -361,7 +361,9 @@ with two exceptions:
   2.1.280). A file inside the checkout the CLI was run from (its git
   toplevel, when that checkout is the project's) whose guest copy under
   `$HOME/<slug>` has the same size is not copied: its guest path is
-  typed. Over 20 files or a file over 20 MB: nothing copied, the original
+  typed. Over 20 files or a file over 50 MB (`dropMaxBytes`, over a
+  pasted image's 20 MB because a dragged file is as often a dump or an
+  archive as a screenshot, I-842): nothing copied, the original
   paste goes through, and `tmux display-message` says why. A copy is
   named there too ("copied report.pdf to the machine"), so no file
   leaves the laptop unseen (I-468).

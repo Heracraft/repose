@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -327,5 +328,77 @@ func TestDropFileFollowsLinks(t *testing.T) {
 		if localDropFile(c.path) != ok {
 			t.Errorf("localDropFile(%s) disagrees with dropFile", c.path)
 		}
+	}
+}
+
+// I-842: a dropped file is copied up to 50 MB, over the 20 MB a pasted
+// image takes, since what a user drags over is as often a dump as a
+// screenshot. Over that nothing is copied, the paste goes through as the
+// terminal sent it, and the status line says why.
+func TestDropSizeCap(t *testing.T) {
+	f, dir := pasteFixture(t)
+	laptop := t.TempDir()
+	sparse := func(name string, size int64) string {
+		t.Helper()
+		p := filepath.Join(laptop, name)
+		fh, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fh.Truncate(size); err != nil {
+			t.Fatal(err)
+		}
+		if err := fh.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	var mu sync.Mutex
+	var notices []string
+	h := newDropHandler(f.target, testSlug, f.local)
+	h.notify = func(msg string) {
+		mu.Lock()
+		defer mu.Unlock()
+		notices = append(notices, msg)
+	}
+	said := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Join(notices, "\n")
+	}
+
+	// 21 MB: refused before I-842, copied now.
+	big := sparse("backup.dump", 21<<20)
+	raw := []byte("\x1b[200~" + big + "\x1b[201~")
+	got := h.files(inputAction{kind: actFiles, raw: raw, files: []string{big}})
+	copies, _ := filepath.Glob(filepath.Join(dir, "*backup.dump"))
+	if len(copies) != 1 {
+		t.Fatalf("a 21 MB drop left %v in the guest's paste dir; the status line said %q", copies, said())
+	}
+	if fi, err := os.Stat(copies[0]); err != nil || fi.Size() != 21<<20 {
+		t.Fatalf("the guest's copy is %v (%v), want 21 MB", fi, err)
+	}
+	if !bytes.Contains(got, []byte(copies[0])) {
+		t.Fatalf("the paste typed into the session is %q, want the guest path %q", got, copies[0])
+	}
+	if !strings.Contains(said(), "copied backup.dump to the machine") {
+		t.Fatalf("the copy was not named on the status line: %q", said())
+	}
+
+	// Over 50 MB: nothing copied, the drop goes through as it came.
+	huge := sparse("dump-too-big.dump", dropMaxBytes+1)
+	raw = []byte("\x1b[200~" + huge + "\x1b[201~")
+	got = h.files(inputAction{kind: actFiles, raw: raw, files: []string{huge}})
+	if !bytes.Equal(got, raw) {
+		t.Fatalf("a refused drop typed %q, want the paste as it came %q", got, raw)
+	}
+	if all, _ := filepath.Glob(filepath.Join(dir, "*dump-too-big*")); len(all) != 0 {
+		t.Fatalf("a file over the cap was copied: %v", all)
+	}
+	// At a byte over the cap both sizes round to the same 50.0 MB, so the
+	// wording checked here is the part that names the limit.
+	want := "dropped files are copied up to 50.0 MB. Use repose cp for larger ones."
+	if !strings.Contains(said(), want) {
+		t.Fatalf("the status line said %q, want %q", said(), want)
 	}
 }
