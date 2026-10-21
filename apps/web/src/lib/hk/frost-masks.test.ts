@@ -23,7 +23,7 @@ describe('frost masks', () => {
 	it('are every mask frost.css paints through', () => {
 		const frost = readFileSync(join(here, 'frost.css'), 'utf8');
 		const used = new Set(
-			[...frost.matchAll(/var\((--hk-frost-(?:head|cloud))\)/g)].map((m) => m[1])
+			[...frost.matchAll(/var\((--hk-frost-(?:head|cloud|cloud-side))\)/g)].map((m) => m[1])
 		);
 		expect([...used].sort()).toEqual(masks.map((m) => m[1]).sort());
 	});

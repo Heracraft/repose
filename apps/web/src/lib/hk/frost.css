@@ -2,16 +2,17 @@
    machine is running with its memory suspended while idle, and wakes when
    you connect. Window frost grows in from an edge, so that is where it is
    drawn: on the project head, rising from the tab rule; on a /projects
-   row, along its foot. The Machine section's memory bar fills in ice.
-   Nothing else on the page changes, and a stopped machine keeps its
-   hollow ring.
+   row, along its foot and up its leading edge. The Machine section's
+   memory bar fills in ice. Nothing else on the page changes, and a
+   stopped machine keeps its hollow ring.
 
    The frost is one element (Frost.svelte) inside the surface, which opts
    in with data-frost-on: the surface is the containing block and isolates
    the frost behind its text. ::before paints --hk-frost-shade through the
    mask as an alpha mask (the frost and its cold halo); ::after paints
    --hk-frost-ice through it as a luminance mask (the frost alone). A row
-   paints a tint and a cloud of frost instead, through feathered masks.
+   paints a tint and a cloud of frost instead, through feathered masks, in
+   two elements: its foot and its leading edge.
    The masks are generated (lib/hk/frost-masks.css, scripts/frost-masks.mjs);
    the colours are tokens in repose.css, measured from photos of window
    frost, rime and glacier ice. Each mask is one fixed image, rasterised
@@ -91,10 +92,9 @@
 
 /* A frozen row on /projects, and the head on a phone: frost seen through
    the glass, a cloudy streak of white over a cold tint, thickest at the
-   foot and gone 18px up, clear of the text. It spans the row and fades
-   out by two thirds of its width, from a soft start, so every side is
-   feathered: the row's own rule is the only line. The cloud is 1600px
-   wide, so even at the third offset it covers more than the frost does. */
+   foot and gone 18px up, clear of the text. On the head it is feathered on
+   every side, so the tab rule is the only line. The cloud is 1600px wide,
+   so even at the third offset it covers more than the frost does. */
 .hk .hk-frost--row,
 .hk .hk-frost--edge {
 	left: 0;
@@ -106,10 +106,6 @@
 	--frost-at: left bottom;
 	--frost-feather: linear-gradient(90deg, transparent, #fff 3rem, #fff 22%, transparent 68%);
 	--frost-foot: linear-gradient(0deg, #fff 2px, rgb(255 255 255 / 0.55) 45%, transparent);
-}
-/* The stacked row has 10px under its last line. */
-.hk .mrow .hk-frost--row {
-	height: 12px;
 }
 .hk .hk-frost--row::before,
 .hk .hk-frost--edge::before,
@@ -130,22 +126,6 @@
 .hk .hk-frost--edge::before {
 	background:
 		linear-gradient(0deg, var(--hk-frost-cloud-ink), transparent 3px), var(--hk-frost-haze);
-}
-/* A row last in its group has no rule under it: the frost lifts off the
-   row's foot, so it does not stop on a line nobody drew. */
-.hk tr:last-child > td > .hk-frost--row,
-.hk li:last-child > .hk-frost--row {
-	--frost-foot: linear-gradient(
-		0deg,
-		transparent,
-		#fff 8px,
-		rgb(255 255 255 / 0.5) 40%,
-		transparent
-	);
-}
-.hk tr:last-child > td > .hk-frost--row::before,
-.hk li:last-child > .hk-frost--row::before {
-	background: var(--hk-frost-haze);
 }
 /* The frost itself, the cloud through the same feather. */
 .hk .hk-frost--row::after,
@@ -172,13 +152,141 @@
 	mask-composite: intersect, intersect;
 	background: var(--hk-frost-cloud-ink);
 }
-/* Three offsets into the field in turn, so a run of frozen rows does not
+
+/* A row's frost is one frosted L: the cloud along its foot and up its
+   leading edge, densest in the corner where the two meet, so it marks the
+   whole row and the body stays clear glass. The foot sits on the row's
+   rule; a row with none under it (last in its group, or over its stop
+   confirmation) draws one, a hairline 1px below its box where the next
+   row's rule would be.
+
+   A pointer over the row, or focus inside it, grows the frost in 450ms
+   (--frost-g, 0 to 1): the foot reaches across the row, the edge widens
+   by a third. Neither climbs into the text, which keeps 4.5:1 over the
+   frost. It recedes in 250ms. The row's fill is any row's hover fill,
+   painted over the frost, so a frozen row is no brighter than another
+   under the pointer. Reduced motion jumps; a touch screen keeps the rest
+   state. */
+@property --frost-g {
+	syntax: '<number>';
+	inherits: true;
+	initial-value: 0;
+}
+.hk [data-frost-on='row'] {
+	--frost-g: 0;
+	transition: --frost-g 250ms cubic-bezier(0.4, 0, 1, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+	.hk [data-frost-on='row']:is(:hover, :focus-within) {
+		--frost-g: 1;
+		transition: --frost-g 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+	}
+}
+.hk [data-frost-on='row']:has(:focus-visible) {
+	--frost-g: 1;
+	transition: --frost-g 450ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+	.hk [data-frost-on='row']:is(*, :hover, :focus-within, :has(:focus-visible)) {
+		transition: none;
+	}
+}
+.hk .hk-frost--row {
+	height: calc(18px + var(--frost-g) * 2px);
+	/* Full from the leading edge, where the side comes down to meet it. */
+	--frost-feather: linear-gradient(
+		90deg,
+		#fff,
+		#fff calc(22% + var(--frost-g) * 18%),
+		transparent calc(68% + var(--frost-g) * 30%)
+	);
+}
+/* The stacked row has 10px under its last line. */
+.hk .mrow .hk-frost--row {
+	height: calc(12px + var(--frost-g) * 4px);
+}
+.hk :is(tr:last-child, tr:has(+ .confirm-row)) > td > .hk-frost--row,
+.hk li:last-child > .hk-frost--row {
+	bottom: -1px;
+	background: linear-gradient(var(--hk-hairline), var(--hk-hairline)) bottom / 100% 1px no-repeat;
+}
+
+/* The leading edge: the same cloud turned upright, from the foot to the
+   top of the row, solid on the edge and gone 2 to 3 percent in (16px at
+   least). It thins as it rises, in pixels, not percent, so the corner is
+   dense below the text and the text above it reads at 4.5:1 on a row of
+   any height. */
+.hk .hk-frost--side {
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: calc(max(1rem, 2.25%) * (1 + var(--frost-g) * 0.3));
+	--frost-mask: var(--hk-frost-cloud-side);
+	--frost-size: 96px 480px;
+	--frost-at: left 0 bottom 0;
+	--frost-feather: linear-gradient(90deg, #fff, #fff 20%, rgb(255 255 255 / 0.5) 55%, transparent);
+	--frost-rise: linear-gradient(
+		0deg,
+		#fff,
+		rgb(255 255 255 / 0.6) 16px,
+		rgb(255 255 255 / 0.25) 34px,
+		rgb(255 255 255 / 0.12)
+	);
+}
+.hk .hk-frost--side::before,
+.hk .hk-frost--side::after {
+	-webkit-mask-image: var(--frost-mask), var(--frost-feather), var(--frost-rise);
+	mask-image: var(--frost-mask), var(--frost-feather), var(--frost-rise);
+	-webkit-mask-size:
+		var(--frost-size),
+		100% 100%,
+		100% 100%;
+	mask-size:
+		var(--frost-size),
+		100% 100%,
+		100% 100%;
+	-webkit-mask-position:
+		var(--frost-at),
+		0 0,
+		0 0;
+	mask-position:
+		var(--frost-at),
+		0 0,
+		0 0;
+	-webkit-mask-composite: source-in, source-in;
+	mask-composite: intersect, intersect;
+	mask-mode: alpha;
+}
+/* The tint on the edge needs no cloud, and no crust: the row has no rule
+   down its side for one to sit on. */
+.hk .hk-frost--side::before {
+	-webkit-mask-image: var(--frost-feather), var(--frost-rise);
+	mask-image: var(--frost-feather), var(--frost-rise);
+	-webkit-mask-size: 100% 100%;
+	mask-size: 100% 100%;
+	-webkit-mask-position: 0 0;
+	mask-position: 0 0;
+	-webkit-mask-composite: source-in;
+	mask-composite: intersect;
+	background: var(--hk-frost-haze);
+}
+.hk .hk-frost--side::after {
+	background: var(--hk-frost-cloud-ink);
+}
+
+/* Three offsets into the fields in turn, so a run of frozen rows does not
    stripe. */
 .hk .hk-frost--row[data-frost-mask='2'] {
 	--frost-at: -250px bottom;
 }
 .hk .hk-frost--row[data-frost-mask='3'] {
 	--frost-at: -500px bottom;
+}
+.hk .hk-frost--side[data-frost-mask='2'] {
+	--frost-at: left -30px bottom -150px;
+}
+.hk .hk-frost--side[data-frost-mask='3'] {
+	--frost-at: left -60px bottom -300px;
 }
 /* On a phone the tabs reach both edges of the column: the head's frost is
    the same cloud along the tab rule, from the right, behind the tabs. */
@@ -209,8 +317,8 @@
 
 /* Haze is translucency: under reduced transparency only the frost stays. */
 @media (prefers-reduced-transparency: reduce) {
-	.hk .hk-frost,
-	.hk :is(.hk-frost--row, .hk-frost--edge)::before {
+	.hk .hk-frost--head,
+	.hk :is(.hk-frost--row, .hk-frost--side, .hk-frost--edge)::before {
 		background: none;
 	}
 }

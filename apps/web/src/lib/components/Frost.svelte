@@ -1,8 +1,8 @@
 <!--
   Window frost on a frozen machine's surface (I-683, I-841 amendment
-  2026-10-21): rising from the project head's tab rule, and along a
-  /projects row's foot. Drawn through generated masks
-  (lib/hk/frost-masks.css) in the ice tokens, behind the surface's text;
+  2026-10-21): rising from the project head's tab rule, and on a
+  /projects row along its foot and up its leading edge, one frosted L.
+  Drawn through generated masks (lib/hk/frost-masks.css) in the ice tokens, behind the surface's text;
   the surface sets position and isolation ([data-frost-on]). Decorative:
   the word "frozen" and its flake carry the state, and forced colours drop
   the frost. It forms over 600ms when the machine froze in the last
@@ -39,7 +39,8 @@
 	}
 </script>
 
-<!-- The head draws crystals from 640px and the cloud below it (frost.css). -->
+<!-- The head draws crystals from 640px and the cloud below it; a row, its
+     foot and its leading edge (frost.css). -->
 <span
 	class="hk-frost hk-frost--{kind}"
 	data-frost-mask={kind === 'row' ? (n % 3) + 1 : undefined}
@@ -47,7 +48,15 @@
 	in:frost={{ duration: 600, intro: true }}
 	out:frost={{ duration: 300 }}
 ></span>
-{#if kind === 'head'}
+{#if kind === 'row'}
+	<span
+		class="hk-frost hk-frost--side"
+		data-frost-mask={(n % 3) + 1}
+		aria-hidden="true"
+		in:frost={{ duration: 600, intro: true }}
+		out:frost={{ duration: 300 }}
+	></span>
+{:else}
 	<span
 		class="hk-frost hk-frost--edge"
 		aria-hidden="true"
