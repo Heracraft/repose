@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-793 entries.
+794 entries.
 
 ## Scope
 
@@ -637,7 +637,7 @@ pointer, not a summary.
 - **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15868
 - **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15893
 - **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L15995
-- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; L16057
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; amended by I-841; L16057
 - **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16087
 - **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16118
 - **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16157
@@ -692,7 +692,7 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18237
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18384
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18408
-- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; L18427
+- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; amended by I-841; L18427
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18471
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18492
 - **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18500
@@ -701,10 +701,10 @@ pointer, not a summary.
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18595
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18602
 - **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; amended by I-837; L18646
-- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; amended by I-837; L18675
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; amended by I-837; amended by I-841; L18675
 - **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; amended by I-837; L18762
-- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; amended by I-837; L18799
-- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; amended by I-837; L18826
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; amended by I-837; amended by I-841; L18799
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; amended by I-837; amended by I-841; L18826
 - **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; amended by I-837; L18856
 - **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18907
 - **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18947
@@ -749,7 +749,7 @@ pointer, not a summary.
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21061
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21077
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21091
-- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; L21104
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; amended by I-841; L21104
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L21115
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L21124
 - **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L21130
@@ -824,4 +824,5 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; L24174
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; L24174
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24301

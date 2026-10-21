@@ -195,7 +195,7 @@ entry and this list with it. Counts as of 2026-10-21.
       test:integration tests/design.spec.ts` passes; a panel that opens in
       place of a button adds its focus check there (I-392).
 - [ ] The accessibility gate passes: `pnpm build`, then `pnpm a11y` in
-      `apps/web`, 52 runs (13 pages, light and dark, 1440 and 390), with
+      `apps/web`, 76 runs (19 pages, light and dark, 1440 and 390), with
       `KNOWN_FAILURES` empty or each entry carrying a reason and, where it
       fails at one width only, that width.
 - [ ] Judged at real size: viewport captures or crops at 1x, 1440 and 390

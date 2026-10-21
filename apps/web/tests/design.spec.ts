@@ -3,7 +3,18 @@
 // (DESIGN-LANGUAGE.md; DECISIONS I-377, I-391, I-392). Lighthouse (tests-a11y)
 // scores the pages at rest; these drive them.
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { signIn, createProject, destroyProject, apiURLFromEnv, fail, unfail } from './helpers';
+import {
+	signIn,
+	createProject,
+	destroyProject,
+	apiURLFromEnv,
+	fail,
+	unfail,
+	addQuestion,
+	closeQuestion,
+	setBilling,
+	resetBilling
+} from './helpers';
 
 /** Presses Tab until the target holds the focus (at most 80 stops). */
 async function tabTo(page: Page, target: Locator): Promise<void> {
@@ -216,7 +227,7 @@ test.describe('signed in', () => {
 // Feedback link in the header and the footer of every page.
 const FRAME_PAGES = ['/', '/docs/cli', '/terms', '/projects'];
 
-for (const width of [320, 360, 390, 1440]) {
+for (const width of [320, 360, 390, 1024, 1440]) {
 	test(`the header row fits at ${width} on every kind of page`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 800 });
 		await signIn(page);
@@ -229,12 +240,14 @@ for (const width of [320, 360, 390, 1440]) {
 			const items = nav.locator(':scope > a:visible, :scope > div > :visible');
 			const count = await items.count();
 			if (path === '/projects') {
-				// Signed in, the places sit beside the logo and Pricing goes
-				// (I-679): Docs, Feedback, GitHub and Account from sm; below
-				// it Account alone, which holds Docs and Feedback.
+				// Signed in, Pricing goes (I-679): Docs, Feedback, GitHub and
+				// Account from sm; below it Account alone, which holds Docs
+				// and Feedback. The places are in the rail or strip (I-841).
 				expect(count, path).toBe(width >= 640 ? 4 : 1);
 				const places = page.getByRole('navigation', { name: 'Dashboard' });
-				await expect(places.getByRole('link', { name: /^Projects/ })).toBeInViewport({ ratio: 1 });
+				await expect(places.getByRole('link', { name: 'Projects', exact: true })).toBeInViewport({
+					ratio: 1
+				});
 			} else {
 				// Docs, Feedback and the account slot at every width; Pricing
 				// from 400px and GitHub from sm.
@@ -448,9 +461,11 @@ test('an unknown path signed in keeps the dashboard header and offers Projects',
 	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
 	await expect(page).toHaveTitle('Not found · repose');
 	await expect(page.locator('main#main')).toHaveCount(1);
-	await expect(
-		page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link', { name: /^Projects/ })
-	).toBeVisible();
+	// The rail stays beside the error (Guide B 12.22, I-841), with no
+	// place current.
+	const places = page.getByRole('navigation', { name: 'Dashboard' });
+	await expect(places.getByRole('link', { name: 'Projects', exact: true })).toBeVisible();
+	await expect(places.locator('[aria-current="page"]')).toHaveCount(0);
 	await page.getByRole('link', { name: 'Back to Projects' }).click();
 	await expect(page).toHaveURL('/projects');
 });
@@ -472,11 +487,17 @@ const TOUCH_PAGES = [
 	'/',
 	'/docs/cli',
 	'/projects',
+	'/questions',
 	'project',
+	'project/events',
+	'project/usage',
+	'project/snapshots',
 	'project/config',
-	'project/secrets',
 	'/billing',
 	'/settings',
+	'/settings/notifications',
+	'/settings/secrets',
+	'/settings/machine-nix',
 	'/no-such-place'
 ];
 
@@ -521,6 +542,223 @@ test.describe('touch targets', () => {
 			await page.waitForLoadState('networkidle');
 			expect(await shortTargets(page, 'header'), `${url} header`).toEqual([]);
 			expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
+			// The strip's places are links: each is a 44px row (I-841).
+			const strip = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link');
+			for (const h of await strip.evaluateAll((els) =>
+				els.filter((el) => el.checkVisibility()).map((el) => el.getBoundingClientRect().height)
+			)) {
+				expect(h, `${url} strip`).toBeGreaterThanOrEqual(43.5);
+			}
 		}
+	});
+});
+
+// The dashboard's rail (DECISIONS I-841): Projects, Questions, Billing and
+// Settings beside the page from 1024px, a sticky strip under the header
+// below it, the projects by name and the plan at the rail's foot.
+test.describe('the dashboard rail', () => {
+	test.beforeEach(async ({ page }) => {
+		await signIn(page);
+	});
+
+	/** The frame's left edge: the 1200px frame centred, plus its gutter. */
+	const frameLeft = (page: Page) =>
+		page.evaluate(() => {
+			const cw = document.querySelector('header')!.getBoundingClientRect().width;
+			const gutter = Math.min(40, Math.max(20, 0.03 * innerWidth));
+			return (cw - Math.min(cw, 1200)) / 2 + gutter;
+		});
+
+	for (const width of [1440, 1024]) {
+		test(`the rail is 200px at the frame's edge and the page 48px past it at ${width}`, async ({
+			page
+		}) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.goto('/projects');
+			await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+			const left = await frameLeft(page);
+			const rail = (await page.locator('[data-dash-strip]').boundingBox())!;
+			const main = (await page.locator('main#main').boundingBox())!;
+			expect(rail.x).toBeCloseTo(left, 0);
+			expect(rail.width).toBeCloseTo(200, 0);
+			expect(main.x).toBeCloseTo(left + 248, 0);
+			// The rail is as tall as the window under the header, its plan at the foot.
+			expect(rail.y).toBeCloseTo(57, 0);
+			expect(rail.y + rail.height).toBeCloseTo(900, 0);
+		});
+	}
+
+	for (const width of [390, 360]) {
+		test(`the strip under the header holds the four places at ${width}`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 844 });
+			await page.goto('/projects');
+			const nav = page.getByRole('navigation', { name: 'Dashboard' });
+			for (const name of ['Projects', 'Questions', 'Billing', 'Settings']) {
+				await expect(
+					nav
+						.getByRole('link', { name, exact: true })
+						.or(nav.getByRole('link', { name: new RegExp(`^${name},`) }))
+				).toBeInViewport({ ratio: 1 });
+			}
+			const strip = (await page.locator('[data-dash-strip]').boundingBox())!;
+			expect(strip.y + strip.height).toBeCloseTo(101, 0);
+			// It sticks under the header.
+			await page.evaluate(() => scrollTo(0, 600));
+			await expect
+				.poll(async () => (await page.locator('[data-dash-strip]').boundingBox())!.y)
+				.toBeCloseTo(57, 0);
+		});
+	}
+
+	test('no dashboard page scrolls sideways', async ({ page }) => {
+		const p = await project({ name: 'wide-app', remote_url: 'github.com/heracraft/wide-app' });
+		for (const width of [320, 390, 768, 1024, 1280]) {
+			await page.setViewportSize({ width, height: 900 });
+			for (const path of [
+				'/projects',
+				'/questions',
+				`/projects/${p.id}`,
+				'/billing',
+				'/settings'
+			]) {
+				await page.goto(path);
+				await expect(page.locator('main#main')).toBeVisible();
+				await page.waitForLoadState('networkidle');
+				const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+				expect(wide, `${path} at ${width}`).toBeLessThanOrEqual(0);
+			}
+		}
+	});
+
+	test('one place is current on every dashboard page', async ({ page }) => {
+		const p = await project({
+			name: 'current-app',
+			remote_url: 'github.com/heracraft/current-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		// A project page's current item is its rail row, or Projects when
+		// the row is past the eight the rail lists.
+		const row = new RegExp(`${p.name}|^Projects$`);
+		const routes: [string, string | RegExp][] = [
+			['/projects', 'Projects'],
+			['/questions', 'Questions'],
+			['/billing', 'Billing'],
+			['/settings', 'Settings'],
+			['/settings/notifications', 'Settings'],
+			['/settings/secrets', 'Settings'],
+			['/settings/machine-nix', 'Settings'],
+			[`/projects/${p.id}`, row],
+			[`/projects/${p.id}/config`, row],
+			[`/projects/${p.id}/events`, row]
+		];
+		const nav = page.getByRole('navigation', { name: 'Dashboard' });
+		for (const [path, name] of routes) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			const current = nav.locator('[aria-current="page"]');
+			await expect(current, path).toHaveCount(1);
+			await expect(current, path).toContainText(name);
+		}
+	});
+
+	// One primary at most per page (ia-final 2.3, Guide B 1.4).
+	test('each page has at most its one primary button', async ({ page }) => {
+		const p = await project({
+			name: 'primary-app',
+			remote_url: 'github.com/heracraft/primary-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const pages: [string, number][] = [
+			['/projects', 0],
+			['/questions', 0],
+			['/settings', 0],
+			['/settings/notifications', 0],
+			['/settings/secrets', 0],
+			['/settings/machine-nix', 1],
+			['/billing', 1],
+			[`/projects/${p.id}`, 1],
+			[`/projects/${p.id}/events`, 1],
+			[`/projects/${p.id}/config`, 1]
+		];
+		for (const [path, most] of pages) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			const n = await page.locator('main .hk-btn').filter({ visible: true }).count();
+			expect(n, path).toBeLessThanOrEqual(most);
+		}
+	});
+
+	test('the title counts the questions waiting', async ({ page }) => {
+		const p = await project({ name: 'title-app', remote_url: 'github.com/heracraft/title-app' });
+		const asked = [
+			await addQuestion(p.id, { agent: 'claude', text: 'First?', options: ['yes', 'no'] }),
+			await addQuestion(p.id, { agent: 'codex', text: 'Second?' })
+		];
+		try {
+			await page.goto('/questions');
+			const badge = page.getByTestId('pending-questions');
+			await expect(badge).toBeVisible();
+			const n = Number(await badge.textContent());
+			expect(n).toBeGreaterThanOrEqual(2);
+			await expect(page).toHaveTitle(`(${n}) Questions · repose`);
+			await expect(
+				page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link', {
+					name: `Questions, ${n} waiting`
+				})
+			).toBeVisible();
+			// The project's rail row turns amber and says so.
+			await expect(
+				page.getByRole('link', { name: new RegExp(`^${p.name}, \\w+, waiting on you$`) })
+			).toBeVisible();
+		} finally {
+			for (const q of asked) await closeQuestion(q.id);
+		}
+	});
+
+	test('the rail foot shows the plan, and leaves it off Billing', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			await page.goto('/projects');
+			const foot = page.getByTestId('plan-strip');
+			await expect(foot).toContainText('Plan');
+			await expect(foot).toContainText('Pro');
+			await expect(foot).toContainText(/\d+ GB of 32 GB running/);
+			await page.goto('/billing');
+			await expect(page.getByRole('heading', { level: 1, name: 'Billing' })).toBeVisible();
+			await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+
+			await setBilling({ mode: 'past_due', plan: 'pro' });
+			await page.goto('/settings');
+			const failed = page.getByTestId('plan-strip').getByRole('link', { name: 'Payment failed' });
+			await expect(failed).toHaveAttribute('href', '/billing');
+			// Below 1024px the trouble shows as one line under the strip.
+			await page.setViewportSize({ width: 390, height: 844 });
+			await expect(page.getByRole('link', { name: 'Update card' }).first()).toBeVisible();
+		} finally {
+			await resetBilling();
+		}
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+		// Billing switched off: no plan to show.
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+	});
+
+	test('a project row in the rail opens the project and is current there', async ({ page }) => {
+		const p = await project({
+			name: 'rail-row-app',
+			remote_url: 'github.com/heracraft/rail-row-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		const row = page
+			.getByRole('navigation', { name: 'Dashboard' })
+			.getByRole('link', { name: new RegExp(`^${p.name}, `) });
+		await row.click();
+		await expect(page).toHaveURL(`/projects/${p.id}`);
+		await expect(row).toHaveAttribute('aria-current', 'page');
 	});
 });

@@ -7,7 +7,7 @@ hairline rows on the page colour, and near-black code panes in both themes.
 
 Herakraft UI (Guide B, `branding/docs/ui-guide/GUIDE-B-herakraft-ui.md`) is
 the parent spec. This file records what repose took from it, the numbers it
-ships with, and where it departs and why (DECISIONS I-837). The code is in
+ships with, and where it departs and why (DECISIONS I-837, I-841). The code is in
 `apps/web/src/lib/hk/` and `apps/web/src/routes/layout.css`; when this file
 and the code disagree, one of them is wrong, and a change to the rules goes
 through a DECISIONS entry. `CHECKLIST.md` "For every change to the web
@@ -242,23 +242,98 @@ end at 101px, and the item counts design.spec reads depend on one row.
 - Signed out: the logo, then Docs, Pricing (hidden below 400px), Feedback,
   GitHub (from 640px) and Sign in. Signed in on a public page, the slot is a
   Dashboard link in the same small secondary look.
-- Signed in on a dashboard page: the logo and the Dashboard nav (Projects;
-  Billing, hidden below 360px; Settings, hidden below 640px), then Docs,
-  Feedback (from 640px), GitHub (from 640px) and Account.
+- Signed in on a dashboard page: the logo, then Docs, Feedback (from
+  640px), GitHub (from 640px) and Account. The places are in the rail.
 - Header links (`hk-navlink`) are 14px `--hk-text-2`. The current one is the
   accent with a 1px accent edge lying on the header's rule, weight unchanged,
   `aria-current="page"`; the edge is the cue that does not depend on colour.
-- The Projects link carries a `hk-badge--warn` count of waiting questions,
-  and its name says it ("Projects, 2 questions waiting").
 - The account slot keeps one width for its three forms. Sign in is a small
   secondary button. Account is a 32px pill with a chevron that opens a menu
   on `--hk-surface` with the pop shadow: the email on its first line, then
-  the places the header hides at that width, Settings and Sign out.
+  below 640px Docs and Feedback, then Sign out. No places: the rail or the
+  strip shows them at every width (I-841).
 
-There is no left rail on the dashboard. Three places do not need a column,
-and a rail with its gap takes 248px from the projects table and the project
-page's two-column rows. On a project page the header marks the place
-(Projects, in the accent) and the page tabs mark the view (in ink).
+## Rail
+
+The dashboard's places are a rail beside the page (I-841, Guide B 11.6),
+`DashRail.svelte`, one `nav aria-label="Dashboard"` drawn two ways.
+
+From 1024px the root layout draws `<div class="frame dash">` as a grid,
+`12.5rem minmax(0, 1fr)` with a 3rem gap: the rail at the frame's left edge
+(x=160 at 1440, under the logo), the page 248px past it. The page column is
+714px at 1024, 875px at 1280 and 872px at 1440 with a classic scrollbar. The
+rail is sticky under the header and as tall as the window under it.
+
+- Places: Projects, Questions, Billing, Settings. Each is 32px, padding 0
+  10px, 7px corners, 13px `--hk-text-2` with a 16px line icon (stroke 1.4) in
+  `--hk-text-3`. The current one is ink on `--hk-surface-2` with an inset 1px
+  hairline and its icon in the accent, weight unchanged, `aria-current`.
+- Questions carries a `hk-badge--warn` with the count of waiting questions
+  (`data-testid="pending-questions"`); its name says it ("Questions, 2
+  waiting"). Projects carries no count.
+- Under a hairline, "Projects" with the count of projects in 11px 500
+  uppercase `--hk-text-3`, then up to 8 projects in the projects list's
+  order, then "All 12" when there are more. A row is a 6px dot and the name in
+  13px on one line. The dot is amber while an agent on that project waits
+  on you, otherwise the state dot's tone (ink running, hollow stopped, pulse
+  for a step under way, red error); a frozen machine shows the snowflake. One
+  signal per row, no count. The name says it: "job-board, running, waiting on
+  you".
+- One item is current on every dashboard page and none on an error page.
+  Projects is current on `/projects` only; a project's row is current on
+  every tab of that project, or Projects when the row is past the eight
+  shown; Questions, Billing and Settings on their own pages.
+- The foot, pinned to the rail's bottom under a hairline, is the plan:
+  a 12px label, the plan's name in serif 20px, and one 13px state line. It is
+  left off `/billing`, absent while billing is off or the api is down, and a
+  three-bar skeleton until billing answers. No meter.
+
+  | Billing | Label | Name | State line |
+  |---|---|---|---|
+  | exempt | Running | none | "28 GB" |
+  | no plan | Plan | No plan | link "Choose a plan" |
+  | on the waitlist | Plan | No plan | link "On the waitlist" |
+  | every seat taken | Plan | No plan | link "repose is full" |
+  | seat held | Plan | No plan | link "Seat held" |
+  | trial | Plan | Solo | "Trial until 2026-10-28" |
+  | active | Plan | Pro | "28 GB of 32 GB running", "36 GB of 32 GB running · over" |
+  | cancelled | Plan | Pro | "Ends 2026-11-21" |
+  | change scheduled | Plan | Pro | "Changes to Plus 2026-11-21" |
+  | payment failed | Plan | Pro | red dot, link "Payment failed" |
+  | suspended | Plan | Pro | red dot, link "Suspended" |
+
+  Every link goes to `/billing`. Memory running is summed from the projects
+  list, so a start shows before the next billing read.
+
+The rail starts at 1024px, a named exception to Guide B's 768px: at 768 the
+page column would be 470px, under the projects table's and a project
+Overview's one-column floor. Below 1024px the same nav is a strip under the
+header, sticky at 57px, 44px tall, so header and strip end at 101px, the
+docs sub-bar's line. It holds the four places only, scrolls sideways and
+never wraps, fades an edge by 2.5rem only while places lie past it, centres
+the current place with `scrollLeft`, and drops the icons below 480px. The
+four fit at 360px. Each place is a 44px row with a 32px pill.
+
+Below 1024px, in trouble only, one 13px plan line sits under the strip and
+over the page title: "Pro · Payment failed" with "Update card", "Suspended"
+with "Update card and pay", "No plan" with "Choose a plan", "On the
+waitlist", "repose is full" or "Seat held" with "Billing". Not on
+`/billing`. Its room is kept while the last mode seen (stored per browser)
+was trouble, so it moves nothing when it arrives.
+
+The page column is the CSS container `dash` (`container: dash /
+inline-size` on `.dash-main`). Page CSS that lays out by the column's width
+uses `@container dash (min-width: …)`; viewport media queries stay for touch
+sizes and type steps. PageShell and ErrorView drop their own `frame` inside
+the grid (the `dash` context, `lib/dash.ts`).
+
+The shell owns the dashboard's shared reads (I-841): `pendingQuestions`
+(`lib/questions.svelte.ts`, the pending list every 30s while in view),
+`projectsStore` (`lib/projects.svelte.ts`, every 60s in view, a page's own
+poll sets it) and `billingStore` (`lib/billing.svelte.ts`, /me and /billing
+every 60s in view, passive). A hidden tab reads none of them. Every
+dashboard `<title>` comes from `title()` in `lib/title.ts`, which prefixes
+"(2) " while two questions wait.
 
 ## Footer and the theme switch
 
@@ -365,6 +440,9 @@ plain border. `hk-input--search` (repose) adds a magnifier on the left in
 stack in `hk-fields`. Inputs are `width: 100%`, so markup sizes them
 (`max-w-80`).
 
+A list's add form (a secret) is closed until a small secondary "Add …"
+button in the section head opens it inline above the list (I-841).
+
 ## Checkboxes
 
 `hk-check` is a label around a native 16px box with `accent-color` the
@@ -401,7 +479,10 @@ Highlight outline.
 `hk-tabs` (repose): a `<nav>` of links on the full-width hairline PageShell
 draws under its `tabs` snippet, 1.5rem apart, 40px tall (44px on touch), 14px
 `--hk-text-2`. The current tab is ink with a 1px ink edge lying on the rule,
-weight unchanged. A project's Overview, Config and Secrets.
+weight unchanged; 1rem apart below 480px, so five fit at 360px. A project's
+Overview, Events, Usage, Snapshots and Config; Settings' General,
+Notifications, Secrets and machine.nix. The layout above the tab pages draws
+the header and the tabs once, so switching tabs keeps them mounted.
 
 ## Tables
 
@@ -587,8 +668,9 @@ line or form, then "Back to Projects" for a signed-in user or "Docs" and
 "Home" otherwise. No lead sentence and never a framework message. The root
 `+error.svelte`, the layout's error boundary (with Reload) and a missing
 project all use it, inside the site's header and footer. An unknown path
-renders it for everyone; only `/projects`, `/billing` and `/settings` send a
-signed-out visitor to `/`.
+renders it for everyone; only `/projects`, `/questions`, `/billing` and
+`/settings` send a signed-out visitor to `/`. A signed-in error keeps the
+rail, with no place current.
 
 ## Forced colours
 
@@ -603,7 +685,8 @@ badges and kbd edged. A new stateful mark adds its own rule.
 
 ## Page head
 
-`PageShell.svelte`: `<main id="main" tabindex="-1" class="frame">`, crumbs
+`PageShell.svelte`: `<main id="main" tabindex="-1">` (with `frame` outside
+the dashboard's grid), crumbs
 13px `--hk-text-3` with middots (44px tall on touch), `h1.hk-h1-app` with a
 `<wbr>` after each `-`, `_` and `.` so a slug breaks at its separators, the
 page's one action on the title's baseline from 640px and under it on a
@@ -621,73 +704,87 @@ no card. Rows inside are hairlines. A panel (`hk-panel`, 12px corners, a
 
 ## The pages
 
-Order at 1440, top to bottom. A phone shows the same order in one column.
+Order at 1440, top to bottom. A phone shows the same order in one column
+unless a page says otherwise (I-841).
 
-- **/projects**: the billing banner when a payment failed or the account is
-  suspended; Waiting on you (questions as hairline rows, the section's badge
-  carrying the count); the projects table, with search and the four filters
-  past 8 projects, Start or Stop as a ghost button always shown on each row,
-  and stop's inline confirm under its row; the plan row (Memory running as
-  squares, Disk held and Egress this period as meters, then "Billing"), one
-  row between two hairlines; Recent activity, five rows with repeats of one
-  kind on one project folded and questions and failures never folded;
-  Recently destroyed with "Kept until" and "Restore…". An empty account sees
-  its billing line, "No projects yet." with the Quickstart link, and one
-  command pane with the install, `repose login` and `repose run` commands.
-- **A project**: the exception banners (last error, refusal, host
-  unreachable, abuse stop, boot fallback), which stay first because each one
-  changes what Connect will do; Connect, one command pane of `repose run`,
-  `ssh <name>.repose` and `repose code <name>`; Waiting on you; then from
-  1024px two columns (`minmax(0, 1fr) 21rem`): Events beside Agents (while
-  it runs and reports one) and Machine, Snapshots beside Details; Usage, four
-  80px charts across; Destroy, behind its button. The header holds the
-  remote in Geist Mono as the lede and a status line (StateDot, size, cores,
-  memory, uptime, or the frozen sentence); its action is Stop with
-  "Snapshot on stop", Start or Restart. On a phone the action sits one row
-  under the status line in every state. One "Restore…" per snapshot opens a
-  panel offering the restore over the project (typed name) or, with
-  "Restore as new", into a new project.
-- **Config**: the project's name as the title and Config as the current tab.
-  From 1024px the editor column and an 18rem rail. The editor column holds
-  the Menu and Nix tablist with the applied status beside it; Menu is the
-  hand-edit banner, a search and `hk-check` rows in two columns; Nix is the
-  Nix editor as a near-black code surface, at least 28rem tall. The rail
-  holds Base updates, machine.nix and Revisions. Apply sits in the bottom
-  bar. Leaving with an unapplied edit asks first (Stay, Leave).
-- **Secrets**: the project's name as the title. From 1024px the list and a
-  21rem form. Each secret is a hairline row with a ghost "Delete…" that opens
-  the inline confirm; the account's secrets follow, struck where the project
-  has its own.
+- **/projects**: the lede "3 running · 5 projects"; the billing banner when a
+  payment failed or the account is suspended; Waiting on you with the first
+  question and "N more on Questions" when more wait; the projects table, with
+  search and the four filters past 8 projects, a "1 question" badge on a row
+  whose agent asks, Start or Stop as a ghost button on each row, and stop's
+  inline confirm under its row; Recent activity, five rows with repeats of
+  one kind on one project folded and questions and failures never folded;
+  Recently destroyed with "Kept until" and "Restore…". No plan row: the plan
+  is at the rail's foot. An empty account sees its billing line, "No
+  projects yet." with the Quickstart link, and one command pane with the
+  install, `repose login` and `repose run` commands.
+- **/questions**: Waiting on you, every pending question grouped by project
+  (the group head is the project's link and state dot), each with its
+  options, text box, Send and Dismiss; Answered, the last 7 days, one
+  hairline row each ("10:17 · job-board", the question, then "yes · by
+  email", "Dismissed" or "Answered in the terminal"). Empty: "No questions
+  waiting."
+- **A project** (`projects/[id]/+layout.svelte`): crumb Projects, the name as
+  the title, the remote in Geist Mono, the status line, the action (Stop with
+  "Snapshot on stop", Start or Restart, the project's one primary on every
+  tab), then the tabs Overview, Events, Usage, Snapshots, Config. A destroyed
+  project shows "Destroyed …" and the restore form with no tabs.
+  - *Overview*: the exception banners (last error with a link to Errors,
+    refusal, host unreachable, abuse stop, boot fallback); Waiting on you
+    with this project's questions; Connect, one command pane of `repose
+    run`, `ssh <name>.repose` and `repose code <name>`; then, from a 760px
+    column, Latest events (5, "All events") beside Agents and Machine;
+    Details; Destroy. On a phone: banners, Waiting on you, Connect, Agents,
+    Machine, Latest events, Details, Destroy.
+  - *Events*: the count and the All, Agents, Errors, Machine filter; day
+    groups; the pager, its `events_*` keys in the address (I-662).
+  - *Usage*: Hour, Day, Week; CPU, Memory, Waiting for a core, Waiting for
+    the server, two by two from a 640px column; Busiest processes.
+  - *Snapshots*: the count and "Create snapshot"; the table with "Restore…"
+    per row, whose panel opens under its row; "Show all 14".
+  - *Config*: Base, Hold base updates and Use your machine.nix as one facts
+    row; Secrets with "Add secret"; Packages, the Menu and Nix tablist with
+    the applied status, Apply in the bottom bar; Revisions. Leaving with an
+    unapplied edit asks first (Stay, Leave).
 - **/billing**: the payment banners; the current plan (its name in serif,
   then price, status and next charge as one row of facts, then Change plan
   and Card and receipts); This month (Running now as squares, Disk held and
   Egress this period as meters, between two hairlines); Change plan, opened
   in place with focus on its heading; Invoices; Cancel plan, last, as danger
   text. An account with no plan sees the plan cards with a button each; an
-  exempt account sees its banner and the meters and no plan to buy.
-- **/settings**: Account, Notifications, Timezone, Install, machine.nix,
-  Secrets, Delete account. From 1024px each section is a 15rem head column and
-  a 40rem control column, sections on hairlines 2.75rem apart; the
-  machine.nix editor stays in the 40rem column with a 10rem minimum height.
+  exempt account sees its banner and the meters and no plan to buy. No rail
+  foot and no plan line here.
+- **/settings** (`settings/+layout.svelte`, tabs General, Notifications,
+  Secrets, machine.nix): *General* is Account (`#account`, with Sign out),
+  Timezone, Install and Delete account (`#delete-account`), each section a
+  12rem head and its controls from a 640px column; *Notifications* is the
+  email box, the ntfy and Google Chat fields with their Save, and Send test;
+  *Secrets* is "3 secrets" with "Add secret" and the table; *machine.nix* is
+  the editor across the column with Save and the projects that opt out.
 
 ## Long lists
 
 A list that grows is capped and offers the rest: projects 25 ("Show all
 N"), snapshots 8, config revisions 8, Recently destroyed 10 ("Show more"),
-Recent activity 5, waiting questions 3. Events and invoices page with a
+Recent activity 5, waiting questions on /projects 1 ("N more on
+Questions"), answered questions 7 days. Events and invoices page with a
 "Page 1 of 5" or "1–6 of 12" position at the foot of the list.
 
 ## One primary
 
 A screen has one `hk-btn` at most. Row actions are ghost buttons; a section's
-own action is a small secondary. The primary is what the page is for:
-Start on a stopped project, Apply on config, Choose a plan on an empty
-account.
+own action is a small secondary. The primary is what the page is for: Start
+or Restart in a project's header, Apply on Config while an edit waits (the
+header's button turns secondary meanwhile), Save on machine.nix, the
+billing mode's one action. /projects, /questions and the other Settings
+tabs have none. design.spec counts them per page.
 
 ## Titles
 
-`<title>` is the page, then the project where there is one, then "repose",
-joined by middots: "Billing · repose", "Config · job-board · repose".
+`<title>` is the page, then the project or Settings where there is one, then
+"repose", joined by middots, through `title()`: "Billing · repose", "Events ·
+job-board · repose", "Notifications · Settings · repose". While questions
+wait it starts with their count: "(2) Projects · repose".
 
 # Docs and legal pages
 
@@ -793,7 +890,7 @@ the patterns `lib/unasked.ts` lists.
 | Imports, `@theme`, `frame`, `@font-face`, first-paint pair, toasts, forced colours | `apps/web/src/routes/layout.css` |
 | First paint, theme script, preloads | `apps/web/src/app.html` (hash in `svelte.config.js`) |
 | Theme state | `lib/theme.svelte.ts`, `lib/components/ThemeSwitch.svelte` |
-| Shared components | `lib/hk/` (CopyButton, CodeBlock, CommandList, Segmented), `lib/components/` (PageShell, LoadState, ErrorView, Meter, StateDot, Snowflake, CodeCopy, ConfirmType, SiteHeader, SiteFooter, DashNav, AccountMenu, Logo, PlanCells, MemoryBlocks) |
+| Shared components | `lib/hk/` (CopyButton, CodeBlock, CommandList, Segmented), `lib/components/` (PageShell, LoadState, ErrorView, Meter, StateDot, Snowflake, CodeCopy, ConfirmType, SiteHeader, SiteFooter, DashRail, AccountMenu, Logo, PlanCells, MemoryBlocks) |
 | Docs prose and code | `lib/components/doc.css` (unlayered) |
 | The Nix editor | `lib/components/nix-editor.css` (unlayered: CodeMirror's theme is) |
 | The landing | `routes/+page.svelte`, `routes/landing.css`, `lib/components/landing/` |

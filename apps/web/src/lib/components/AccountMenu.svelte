@@ -7,8 +7,10 @@
 	import { FEEDBACK_URL } from '$lib/links';
 
 	// The account slot on a signed-in page (DECISIONS I-655): a disclosure,
-	// not an ARIA menu, holding Settings and Sign out, and on a phone the
-	// header links that the one row has no room for (I-679). Sign out is one step
+	// not an ARIA menu, holding who is signed in and Sign out, and below
+	// 640px the header links the one row has no room for (I-679). The
+	// places (Billing, Settings) are in the rail or strip at every width
+	// (I-841), so they are not here. Sign out is one step
 	// away from every page and never sits in a row where a stray tap ends
 	// the session. No modal and no trap: Tab leaves it and it closes.
 	const id = $props.id();
@@ -21,11 +23,6 @@
 	onMount(() => {
 		void signedInEmail().then((e) => (email = e));
 	});
-	// The places this menu holds are marked current here, since below 640px
-	// (Settings) or 360px (Billing) the header row no longer shows them
-	// (review r1 R1-A2).
-	const here = (path: string) =>
-		page.url.pathname === path || page.url.pathname.startsWith(`${path}/`);
 	let wrap: HTMLElement | undefined = $state();
 	let button: HTMLButtonElement | undefined = $state();
 	let panel: HTMLElement | undefined = $state();
@@ -51,7 +48,7 @@
 		if (returnFocus) button?.focus({ preventScroll: true });
 	}
 
-	// A navigation (Settings, or Back) closes it.
+	// A navigation (Docs, or Back) closes it.
 	let lastHref = page.url.href;
 	$effect(() => {
 		const href = page.url.href;
@@ -97,8 +94,6 @@
 		bind:this={button}
 		type="button"
 		class="account-button hk-btn-secondary hk-btn-sm min-w-26 gap-1"
-		class:here-settings={here('/settings')}
-		class:here-billing={here('/billing')}
 		aria-expanded={open}
 		aria-controls="{id}-panel"
 		onclick={() => (open ? hide(true) : show())}
@@ -116,19 +111,9 @@
 	>
 	<div bind:this={panel} id="{id}-panel" hidden={!open} class="account-panel">
 		{#if email}<p class="account-email">{email}</p>{/if}
-		<a
-			href={resolve('/billing')}
-			class="{ITEM} min-[360px]:hidden"
-			aria-current={here('/billing') ? 'page' : undefined}>Billing</a
-		>
 		<a href={resolve('/docs')} class="{ITEM} sm:hidden">Docs</a>
 		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the feedback board is off-site -->
 		<a href={FEEDBACK_URL} class="{ITEM} sm:hidden">Feedback</a>
-		<a
-			href={resolve('/settings')}
-			class={ITEM}
-			aria-current={here('/settings') ? 'page' : undefined}>Settings</a
-		>
 		<button type="button" class={ITEM} onclick={() => signOut()}>Sign out</button>
 	</div>
 </div>
@@ -138,17 +123,6 @@
 	   the slot does not move between the two headers (review r1 sys-6). */
 	.account-button {
 		font-size: 0.8125rem;
-	}
-	/* The current place, when the header row has no room for its link. */
-	@media (max-width: 639.98px) {
-		.account-button.here-settings {
-			color: var(--hk-accent);
-		}
-	}
-	@media (max-width: 359.98px) {
-		.account-button.here-billing {
-			color: var(--hk-accent);
-		}
 	}
 	.chevron {
 		width: 0.875rem;
@@ -195,10 +169,6 @@
 		text-align: left;
 		text-decoration: none;
 		cursor: pointer;
-	}
-	.account-panel :global(.account-item[aria-current='page']) {
-		font-weight: 500;
-		color: var(--hk-accent);
 	}
 	.account-panel :global(.account-item:hover) {
 		background: var(--hk-hover);

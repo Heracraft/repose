@@ -304,6 +304,12 @@
 			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
 		}
 	}
+	/* Below 1024px the dashboard adds its 44px strip under the header (I-841). */
+	@media (width < 64rem) {
+		:root:has([data-dash-strip]) {
+			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
+		}
+	}
 	body {
 		min-height: 100dvh;
 		background-color: var(--page);

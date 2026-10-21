@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './layout.css';
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { onMount, setContext } from 'svelte';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { Toaster } from 'svelte-sonner';
@@ -12,6 +12,9 @@
 	import SiteFooter from '$lib/components/SiteFooter.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import AppBoundary from '$lib/components/AppBoundary.svelte';
+	import DashRail from '$lib/components/DashRail.svelte';
+	import { legacyTarget } from '$lib/legacyUrls';
+	import { DASH, type DashContext } from '$lib/dash';
 
 	let { children } = $props();
 
@@ -22,7 +25,7 @@
 	}
 	// The signed-in places. Only these send a signed-out visitor home; any
 	// other path renders (an unknown one, its 404) for everyone.
-	const isPrivate = (p: string) => /^\/(projects|billing|settings)(\/|$)/.test(p);
+	const isPrivate = (p: string) => /^\/(projects|questions|billing|settings)(\/|$)/.test(p);
 
 	onMount(() => {
 		void initAuth();
@@ -50,6 +53,15 @@
 		}
 	});
 
+	// An old URL whose section became a tab or a page of its own moves
+	// there, the first load included, replacing the history entry so Back
+	// leaves instead of bouncing (DECISIONS I-841, lib/legacyUrls.ts).
+	afterNavigate(({ to }) => {
+		const target = to ? legacyTarget(to.url) : null;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- legacyTarget answers a same-origin path built from the table
+		if (target) void goto(target, { replaceState: true, noScroll: false });
+	});
+
 	let showChildren = $derived(authState.authenticated === true || !isPrivate(page.url.pathname));
 	// A dashboard page: a private one, or any non-public page (a 404) for a
 	// signed-in visitor, so a signed-in 404 keeps the dashboard's header.
@@ -57,6 +69,15 @@
 		isPrivate(page.url.pathname) ||
 			(authState.authenticated === true && !isPublic(page.url.pathname))
 	);
+
+	// Inside the dashboard's grid the page's <main> drops its own frame:
+	// the grid is the frame (PageShell, ErrorView read this).
+	const dashContext: DashContext = {
+		get on() {
+			return dashboard;
+		}
+	};
+	setContext(DASH, dashContext);
 </script>
 
 <!-- The first thing a keyboard reaches on every page: past the header's
@@ -77,6 +98,16 @@
 	}}
 	mobileOffset={{ left: '20px', right: '20px', top: '12px', bottom: '20px' }}
 />
+
+{#snippet body()}
+	{#if showChildren}
+		<AppBoundary>{@render children()}</AppBoundary>
+	{:else if authState.authenticated === undefined}
+		<main id="main" tabindex="-1" class="auth-wait" class:frame={!dashboard}>
+			<LoadState status="loading" shape="page" onretry={() => {}} />
+		</main>
+	{/if}
+{/snippet}
 
 <!-- The header is on every page from the first paint, before the sign-in
      check answers, and the footer under every page; a short page keeps
@@ -104,12 +135,18 @@
 	</div>
 	<SiteHeader {dashboard} />
 	<div class="flex-1">
-		{#if showChildren}
-			<AppBoundary>{@render children()}</AppBoundary>
-		{:else if authState.authenticated === undefined}
-			<main id="main" tabindex="-1" class="frame auth-wait">
-				<LoadState status="loading" shape="page" onretry={() => {}} />
-			</main>
+		{#if dashboard}
+			<!-- The dashboard (I-841): the rail and the page in one frame, a
+			     grid from 1024px. The page column is the size container
+			     `dash`, so pages lay out by its width, not the window's. -->
+			<div class="frame dash">
+				<DashRail />
+				<div class="dash-main">
+					{@render body()}
+				</div>
+			</div>
+		{:else}
+			{@render body()}
 		{/if}
 	</div>
 	<SiteFooter compact={dashboard} />
@@ -126,6 +163,24 @@
 		margin-block: 0;
 		padding-block: 0.5rem;
 		text-align: center;
+	}
+	.dash {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.dash-main {
+		min-width: 0;
+		container: dash / inline-size;
+	}
+	@media (min-width: 1024px) {
+		.dash {
+			grid-template-columns: 12.5rem minmax(0, 1fr);
+			column-gap: 3rem;
+		}
+		.dash-main {
+			grid-column: 2;
+			grid-row: 1;
+		}
 	}
 	/* PageShell's padding, so the swap to the page moves nothing (I-664). */
 	.auth-wait {

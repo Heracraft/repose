@@ -9,6 +9,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authState } from '$lib/auth.svelte';
+	import { inDash } from '$lib/dash';
 
 	let {
 		status,
@@ -26,9 +27,17 @@
 
 	// Projects is no way back from /projects itself.
 	let onProjects = $derived(page.url.pathname === resolve('/projects'));
+	// In the dashboard's grid the rail stays beside the error (Guide B 12.22, I-841).
+	const dash = inDash();
 </script>
 
-<main id="main" tabindex="-1" class="frame error-view">
+<main
+	id="main"
+	tabindex="-1"
+	class="error-view"
+	class:frame={!dash.on}
+	class:error-view--dash={dash.on}
+>
 	<p class="hk-eyebrow"><span class="hk-mono">{status}</span></p>
 	<h1 class="hk-h2 title">{title}</h1>
 	{#if children}<div class="extra">{@render children()}</div>{/if}
@@ -49,6 +58,15 @@
 	.error-view {
 		padding-top: 5rem;
 		padding-bottom: 6rem;
+	}
+	/* Beside the rail: the title starts where a page's does. */
+	.error-view--dash {
+		padding-top: 1.75rem;
+	}
+	@media (min-width: 640px) {
+		.error-view--dash {
+			padding-top: 2.25rem;
+		}
 	}
 	.title {
 		margin: 0.75rem 0 0;

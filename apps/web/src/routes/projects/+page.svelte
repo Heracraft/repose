@@ -31,7 +31,6 @@
 	import { DESTROYED_PAGE } from '$lib/destroyed';
 	import RecentlyDestroyed from '$lib/components/RecentlyDestroyed.svelte';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
-	import PlanStrip from '$lib/components/projects/PlanStrip.svelte';
 	import WaitingCard from '$lib/components/questions/WaitingCard.svelte';
 	import { pendingQuestions } from '$lib/questions.svelte';
 	import AgentChips from '$lib/components/projects/AgentChips.svelte';
@@ -549,7 +548,6 @@
 						: me?.billing.status === 'none'
 							? 'none'
 							: undefined}
-			{@const planFigures = !banner && !billingOff && !!billing && billing.usage.memory_gb > 0}
 			<div class="empty">
 				{#if banner === 'held' && me?.waitlist?.hold_until}
 					<div class="hk-banner hk-banner--ok" role="status" data-testid="seat-held">
@@ -590,11 +588,6 @@
 						}
 					]}
 				/>
-				{#if planFigures}
-					<div class="plan-row">
-						<PlanStrip projects={[]} {billing} />
-					</div>
-				{/if}
 			</div>
 		{:else if projects}
 			{#if refusal}
@@ -792,10 +785,6 @@
 						{/if}
 					</div>
 				{/if}
-			</div>
-
-			<div class="plan-row">
-				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
 			</div>
 
 			<RecentActivity {projects} />
@@ -1036,9 +1025,6 @@
 	}
 	.pmore .hk-btn-ghost {
 		margin-left: -0.625rem;
-	}
-	.plan-row {
-		margin-top: 2.75rem;
 	}
 	.refusal-stops {
 		display: flex;
