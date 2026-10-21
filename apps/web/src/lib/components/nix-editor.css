@@ -1,55 +1,139 @@
-/* Moved verbatim from routes/layout.css (I-837, Phase 1); PROJECTS owns it now.
-   Imported unlayered by layout.css: CodeMirror injects its theme as
-   unlayered styles, and those beat anything inside a layer. */
+/* The Nix editor (CodeMirror 6) as a near-black code surface in both
+   themes (I-837, Guide B 10.5): the code pane's tokens, so it needs no
+   dark branch. Imported unlayered by layout.css: CodeMirror injects its
+   theme as unlayered styles, and those beat anything inside a layer. The
+   frame carries the pane, its rings and the focus ring; the editor inside
+   is transparent. */
 
-/* Nix editor (CodeMirror 6). Unlayered on purpose: CodeMirror injects its
-   theme as unlayered styles, and those beat anything inside a layer. Code
-   sits on --sunken everywhere else (.codeblock, the docs' pre), so the
-   editor does too: on --surface it was a 320px pure white block on the
-   warm page in the light (I-393). The current line lifts one step toward
-   the reader: to --surface in the light; in the dark --surface is the
-   darker of the two, so the line mixes 5% --ink into --sunken instead,
-   which keeps --ink-faint's line number at 4.5:1 where --rule would not
-   (I-395). */
+.nix-frame {
+	overflow: hidden;
+	border-radius: var(--hk-radius-lg);
+	background: var(--hk-code-bg);
+	box-shadow:
+		0 0 0 1px var(--hk-code-border-outer),
+		inset 0 0 0 1px var(--hk-code-border);
+	color: var(--hk-code-text);
+	transition: box-shadow var(--hk-dur-fast) var(--hk-ease);
+}
+/* Focus is a 2px ring inside the pane, on top of the caret (Guide B 10.5). */
+.nix-frame:has(.cm-editor.cm-focused) {
+	box-shadow:
+		0 0 0 1px var(--hk-code-border-outer),
+		inset 0 0 0 2px var(--hk-code-focus);
+}
+
 .nix-editor .cm-editor {
-	@apply h-full rounded-sm border text-sm;
-	background-color: var(--sunken);
-	border-color: var(--control-edge);
+	height: 100%;
+	background: transparent;
+	color: var(--hk-code-text);
+	font-size: 0.8125rem;
 }
 .nix-editor .cm-editor.cm-focused {
-	@apply border-zinc-900 outline-2 outline-offset-2 dark:border-zinc-300;
-	outline-color: var(--focus);
+	outline: none;
 }
-/* The gutter is a solid strip with its own edge, and the code starts
-   0.5rem past it: a long line scrolled sideways slides under that edge
-   instead of running into the line numbers. --rule on --sunken was too
-   faint to read as an edge at 1x, so it takes the strong rule. */
+.nix-editor .cm-editor .cm-scroller {
+	font-family: var(--hk-font-mono);
+	line-height: 1.25rem;
+	scrollbar-color: var(--hk-code-scrollbar) transparent;
+	scrollbar-width: thin;
+}
+/* The gutter is the pane's own colour with an edge, and the code starts
+   0.75rem past it: a long line scrolled sideways slides under the edge. */
 .nix-editor .cm-editor .cm-gutters {
-	@apply text-ink-faint;
-	background-color: var(--sunken);
-	border-right: 1px solid var(--rule-strong);
+	background: var(--hk-code-bg);
+	color: var(--hk-code-dim);
+	border-right: 1px solid var(--hk-code-border);
 }
 .nix-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
-	@apply pr-2 pl-2.5;
+	padding: 0 0.625rem 0 0.875rem;
+	font-variant-numeric: tabular-nums;
 }
 .nix-editor .cm-editor .cm-content {
-	@apply pl-2 font-mono text-ink;
+	/* 4px above and below: machine-nix.spec holds the empty editor under
+	   five lines plus 12px. */
+	padding: 0.25rem 0 0.25rem 0.75rem;
+	font-family: var(--hk-font-mono);
+	caret-color: var(--hk-code-text);
+	color: var(--hk-code-text);
+}
+.nix-editor .cm-editor .cm-cursor,
+.nix-editor .cm-editor .cm-dropCursor {
+	border-left-color: var(--hk-code-text);
+}
+.nix-editor .cm-editor .cm-selectionBackground,
+.nix-editor .cm-editor.cm-focused .cm-selectionBackground,
+.nix-editor .cm-editor .cm-content ::selection {
+	background: rgb(147 197 253 / 0.25);
 }
 .nix-editor .cm-editor .cm-activeLine,
 .nix-editor .cm-editor .cm-activeLineGutter {
-	background-color: var(--surface);
+	background: rgb(255 255 255 / 0.03);
 }
-/* Dark follows the theme switch (I-837, Phase 1 move). */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) .nix-editor .cm-editor .cm-activeLine,
-	:root:not([data-theme='light']) .nix-editor .cm-editor .cm-activeLineGutter {
-		background-color: color-mix(in oklab, var(--ink) 5%, var(--sunken));
+.nix-editor .cm-editor .cm-activeLineGutter {
+	color: var(--hk-code-text);
+}
+.nix-editor .cm-editor .cm-matchingBracket {
+	background: rgb(255 255 255 / 0.08);
+	color: inherit;
+	outline: 1px solid var(--hk-code-border);
+}
+/* A build error names a fragment.nix line: its wash and a 2px edge. */
+.nix-editor .cm-editor .cm-line-error {
+	background: var(--hk-code-5xx-wash);
+	box-shadow: inset 2px 0 0 var(--hk-code-5xx);
+}
+.nix-editor .cm-editor .cm-placeholder {
+	color: var(--hk-code-muted);
+}
+/* Tokens from @replit/codemirror-lang-nix through classHighlighter, mapped
+   as the docs' code panes map them. */
+.nix-editor .tok-string,
+.nix-editor .tok-string2 {
+	color: var(--hk-code-string);
+}
+.nix-editor .tok-number,
+.nix-editor .tok-bool,
+.nix-editor .tok-atom {
+	color: var(--hk-code-number);
+}
+.nix-editor .tok-comment {
+	color: var(--hk-code-comment);
+	font-style: italic;
+}
+.nix-editor .tok-keyword {
+	color: var(--hk-code-keyword);
+}
+.nix-editor .tok-punctuation,
+.nix-editor .tok-operator {
+	color: var(--hk-code-punct);
+}
+.nix-editor .tok-propertyName,
+.nix-editor .tok-variableName2 {
+	color: var(--hk-code-key);
+}
+
+/* The caller's bar under the code (MachineNix's status and Save): a code
+   bar inside the pane. */
+.nix-frame .nix-footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 0.75rem;
+	min-height: 2.75rem;
+	padding: 0.5rem 0.75rem 0.5rem 1rem;
+	border-top: 1px solid var(--hk-code-border);
+	background: var(--hk-code-bar);
+	color: var(--hk-code-muted);
+	font-size: 0.8125rem;
+}
+
+@media (forced-colors: active) {
+	.nix-frame {
+		border: 1px solid CanvasText;
 	}
-}
-:root[data-theme='dark'] .nix-editor .cm-editor .cm-activeLine,
-:root[data-theme='dark'] .nix-editor .cm-editor .cm-activeLineGutter {
-	background-color: color-mix(in oklab, var(--ink) 5%, var(--sunken));
-}
-.nix-editor .cm-line-error {
-	@apply bg-red-100 dark:bg-red-950;
+	.nix-frame:has(.cm-editor.cm-focused) {
+		outline: 2px solid Highlight;
+		outline-offset: 2px;
+	}
 }

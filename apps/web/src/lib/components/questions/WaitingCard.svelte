@@ -231,37 +231,39 @@
 {/snippet}
 
 {#if open.length > 0 || closed.size > 0}
+	<!-- A section on the page's paper, no frame (I-837): its count badge is
+	     the one amber mark, the same count the header's Projects badge shows. -->
 	<section
-		class="card waiting"
+		class="hk-section waiting"
 		id="questions"
 		data-testid={testid}
 		aria-labelledby="questions-title"
 		bind:this={section}
 	>
-		<div class="flex items-center gap-2.5">
-			<h2 id="questions-title" class="text-xl font-semibold" tabindex="-1" bind:this={heading}>
+		<div class="hk-section-head waiting-head">
+			<h2 id="questions-title" class="hk-h2-app" tabindex="-1" bind:this={heading}>
 				Waiting on you
 			</h2>
 			{#if waiting.length > 0}
 				<span
-					class="badge badge--warn tabular-nums"
+					class="hk-badge hk-badge--warn waiting-count"
 					aria-label="{waiting.length} {plural(waiting.length)}">{waiting.length}</span
 				>
 			{/if}
 		</div>
 		<!-- Always in the page, so the line put in it is announced. -->
-		<p class="sr-only" role="status">{said}</p>
-		<ul class="mt-2">
+		<p class="hk-sr" role="status">{said}</p>
+		<ul class="waiting-list">
 			{#each shown as g (g.project_id)}
 				<li class="waiting-group" class:waiting-group--head={grouped}>
 					{#if grouped}
-						<p class="waiting-project text-sm">
+						<p class="waiting-project">
 							<a href={resolve('/projects/[id]', { id: g.project_id })} class="waiting-project-link"
 								>{g.project}</a
 							>
 							{#if g.pending > 0}
-								<span class="text-ink-muted tabular-nums"
-									>{g.pending}<span class="sr-only"> {plural(g.pending)}</span></span
+								<span class="waiting-project-n"
+									>{g.pending}<span class="hk-sr"> {plural(g.pending)}</span></span
 								>
 							{/if}
 						</p>
@@ -275,17 +277,17 @@
 										{@render row(f, !projectId && !grouped)}
 									{/each}
 								{:else}
-									<li class="waiting-fold text-sm text-ink-muted">
+									<li class="waiting-fold">
 										<span
 											>{r.folded.length} earlier {plural(r.folded.length)} from
-											<span class="font-mono text-compact">{r.question.agent}</span
+											<span class="waiting-fold-agent">{r.question.agent}</span
 											>{#if r.question.window && r.question.window !== r.question.agent}<span
 													class="waiting-fold-window">&nbsp;· {r.question.window}</span
 												>{/if}</span
 										>
 										<button
 											type="button"
-											class="btn-ghost hit -mx-2"
+											class="hk-btn-ghost hk-btn-sm waiting-fold-show"
 											onclick={() => unfolded.add(r.question.id)}>Show</button
 										>
 									</li>
@@ -297,59 +299,91 @@
 			{/each}
 		</ul>
 		{#if cap > 0 && total > cap}
-			<button type="button" class="btn-ghost hit -mx-2 mt-1" onclick={() => (showAll = !showAll)}
-				>{showAll ? 'Show fewer' : `Show all ${total}`}</button
+			<button
+				type="button"
+				class="hk-btn-ghost hk-btn-sm waiting-all"
+				onclick={() => (showAll = !showAll)}>{showAll ? 'Show fewer' : `Show all ${total}`}</button
 			>
 		{/if}
 	</section>
 {/if}
 
 <style>
-	/* A phone drops the window from the row's meta line, so the fold does too. */
-	@media (width < 40rem) {
-		.waiting-fold-window {
-			display: none;
-		}
+	.waiting-head {
+		justify-content: flex-start;
+		align-items: center;
+		gap: 0.625rem;
 	}
-	/* Rows split by hairlines; no rule down the side (I-693). */
-	.waiting :global(.qrow + .qrow),
-	.waiting :global(.qrow + .waiting-fold),
-	.waiting :global(.waiting-fold + .qrow) {
-		border-top: 1px solid var(--rule);
+	.waiting-count {
+		font-variant-numeric: tabular-nums;
 	}
-	.waiting-group + .waiting-group {
-		border-top: 1px solid var(--rule);
+	.waiting-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-bottom: 1px solid var(--hk-hairline);
+	}
+	.waiting-list ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	/* Each row hairline-topped, the first included: the head has no rule. */
+	.waiting :global(.qrow),
+	.waiting-fold {
+		border-top: 1px solid var(--hk-hairline);
 	}
 	.waiting-group--head {
-		padding-top: 0.75rem;
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.waiting-group--head :global(.qrow:first-child) {
+		border-top: 0;
+		padding-top: 0.25rem;
 	}
 	.waiting-project {
 		display: flex;
 		align-items: baseline;
 		gap: 0.5rem;
+		margin: 0;
+		padding-top: 0.875rem;
+		font-size: 0.8125rem;
 	}
 	.waiting-project-link {
 		font-weight: 500;
-		color: var(--ink);
+		color: var(--hk-text);
 		text-decoration: underline;
-		text-decoration-color: var(--rule-strong);
-		text-decoration-thickness: 1px;
-		text-underline-offset: 4px;
+		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+		text-underline-offset: 3px;
 	}
 	.waiting-project-link:hover {
 		text-decoration-color: currentColor;
 	}
+	.waiting-project-n {
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
 	.waiting-fold {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		flex-wrap: wrap;
 		gap: 0.25rem 0.75rem;
-		padding: 0.5rem 0 0.75rem 1.25rem;
+		padding: 0.5rem 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
 	}
-	/* A phone's rows use the marker's column, so the fold does too. */
-	@media (width < 40rem) {
-		.waiting-fold {
-			padding-left: 0;
+	.waiting-fold-agent {
+		font-family: var(--hk-font-mono);
+	}
+	.waiting-fold-show {
+		margin-block: -0.25rem;
+	}
+	.waiting-all {
+		margin: 0.5rem 0 0 -0.625rem;
+	}
+	/* A phone drops the window from the row's meta line, so the fold does too. */
+	@media (max-width: 639.98px) {
+		.waiting-fold-window {
+			display: none;
 		}
 	}
 </style>

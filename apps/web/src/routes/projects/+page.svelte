@@ -19,7 +19,9 @@
 	} from '$lib/format';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
-	import CodeCopy from '$lib/components/CodeCopy.svelte';
+	import CommandList from '$lib/hk/CommandList.svelte';
+	import { INSTALL_COMMAND } from '$lib/links';
+	import { splitTicks } from '$lib/components/project/ticks';
 	import { abuseStopReason } from '$lib/abuse';
 	import { bootFallbackReason } from '$lib/bootfail';
 	import { DISK_FULL_PERCENT, diskPercent } from '$lib/disk';
@@ -37,7 +39,6 @@
 		FILTER_LABELS,
 		PROJECTS_SHOWN,
 		TOOLBAR_FROM,
-		atRest,
 		byHeldOrder,
 		holdsMemory,
 		idSetKey,
@@ -82,8 +83,13 @@
 		destroyedOlder = [...destroyedOlder, ...page];
 		if (page.length < DESTROYED_PAGE) destroyedDone = true;
 	}
-	/** The account, for the seats and waitlist state of a user with no project yet (I-290). */
+	/**
+	 * The account: its billing status for the past-due and suspended
+	 * banners, and the seats and waitlist state of a user with no project
+	 * yet (I-290).
+	 */
 	let me = $state<Me | undefined>(undefined);
+	let lastMe = 0;
 	let holdActive = $derived(
 		!!me?.waitlist?.hold_until && new Date(me.waitlist.hold_until).getTime() > Date.now()
 	);
@@ -123,14 +129,26 @@
 				// a row of stat cells and changes to squares and rings a few
 				// hundred ms later, pushing the table down under the pointer
 				// ("Nothing mounts above painted content", I-680).
-				const [list, qs, bill] = await Promise.all([
-					listProjects(),
+				// The account comes after the list, never beside it: GET /me is
+				// not a passive read, and its answer would clear the outage
+				// bar a failing list raised. It rides inside the first load,
+				// so the past-due banner is in the first paint.
+				const listAndMe = listProjects().then(async (l) => ({
+					l,
+					m: await getMe().catch(() => undefined)
+				}));
+				const [{ l: list, m: account }, qs, bill] = await Promise.all([
+					listAndMe,
 					listQuestions('pending', { passive: true }).catch(() => undefined),
 					getBilling({ passive: true }).catch((err: unknown) => {
 						if (err instanceof ApiError && err.code === 'billing_disabled') billingOff = true;
 						return undefined;
 					})
 				]);
+				if (account) {
+					me = account;
+					lastMe = Date.now();
+				}
 				if (qs) {
 					questions = qs;
 					pendingQuestions.set(qs.length);
@@ -176,11 +194,14 @@
 				destroyedNewest = [];
 			}
 		}
-		if (projects.length === 0) {
+		// The account's status moves with a payment, a few times a month;
+		// the 60s step the destroyed list keeps is enough for it.
+		if (!first && (projects.length === 0 || Date.now() - lastMe >= 60_000)) {
 			try {
 				me = await getMe();
+				lastMe = Date.now();
 			} catch {
-				me = undefined;
+				// The banner it drew stays.
 			}
 		}
 		await side;
@@ -238,10 +259,8 @@
 
 	/**
 	 * The row whose Stop is waiting for an answer, because stopping it
-	 * would end an agent's turn (I-614). Stop here is revealed on hover
-	 * inside a row whose name link covers the whole row, so in a long
-	 * list the pointer crosses many of them on the way to the one the
-	 * user wants; a stray click had no undo.
+	 * would end an agent's turn (I-614). Every row shows its Stop, so in
+	 * a long list a stray click lands on one easily, and it had no undo.
 	 */
 	let askingStop = $state<string | undefined>(undefined);
 
@@ -289,7 +308,7 @@
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'payment_required') explainRefusal(err);
 			else if (err instanceof ApiError && err.code === 'capacity')
-				refusal = { message: 'No capacity right now, try again in a few minutes.', projects: [] };
+				refusal = { message: 'No capacity right now.', projects: [] };
 			else throw err;
 		}
 		await refresh();
@@ -398,68 +417,55 @@
 	$effect(() => () => clearTimeout(debounce));
 </script>
 
+{#snippet ticks(text: string)}{#each splitTicks(text) as part, i (i)}{#if part.code}<code
+				>{part.text}</code
+			>{:else}{part.text}{/if}{/each}{/snippet}
+
+<!-- The state cell: the dot and its word, then one 12px line of what the
+     state means right now. -->
 {#snippet stateCell(p: Project)}
 	{@const frozen = frozenSince(p)}
 	<StateDot state={p.state} frozen={!!frozen} />
 	{#if frozen}
-		<!-- Frozen while idle (I-683, behind a flag): how long, in the
-		     frost colour; it wakes when someone connects. -->
-		<div class="frost-sub mt-0.5 text-xs tabular-nums">for {uptime(frozen)}</div>
+		<span class="sub">for {uptime(frozen)}</span>
 	{:else if p.state === 'running' && p.idle}
 		<!-- Nobody on it for a day, holding its memory against the plan
 		     (I-262, I-289, I-617). -->
-		<div class="mt-0.5 text-xs text-amber-700 tabular-nums dark:text-amber-400">
-			unused {uptime(p.idle.since)}
-		</div>
+		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{:else if p.state === 'running'}
-		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">up {uptime(p.started_at)}</div>
+		<span class="sub">up {uptime(p.started_at)}</span>
 	{:else if p.state === 'stopped'}
-		<!-- A stopped row carried no time at all, so thirty of them read
-		     the same and the order over them could not be seen. -->
-		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">
-			{p.started_at
+		<span class="sub"
+			>{p.started_at
 				? `last run ${relativeTime(p.started_at)}`
-				: `made ${relativeTime(p.created_at)}`}
-		</div>
+				: `made ${relativeTime(p.created_at)}`}</span
+		>
 	{/if}
 	{#if p.host_unreachable}
-		<!-- A host going unreachable takes every machine on it, so this is
-		     a several-rows-at-once state; the project page had the banner
-		     and the list said nothing, showing a green dot and a climbing
-		     uptime for a machine that cannot be started. -->
-		<div class="mt-0.5 text-xs text-amber-700 dark:text-amber-400">server not answering</div>
+		<!-- A host going unreachable takes every machine on it at once. -->
+		<span class="sub">server not answering</span>
 	{/if}
 	{#if p.expires_at}
-		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">{tempLeft(p.expires_at)}</div>
+		<span class="sub">{tempLeft(p.expires_at)}</span>
 	{/if}
 	{#if reason(p)}
-		<div class="mt-0.5 max-w-xs text-xs text-red-700 dark:text-red-400">{reason(p)}</div>
+		<span class="sub sub--reason">{@render ticks(reason(p))}</span>
 	{/if}
 {/snippet}
 
 {#snippet diskCell(p: Project)}
-	<!-- What the guest holds, as a figure: a bar per row was noise next to
-	     the plan's own figure above (I-674). Amber only near full. -->
+	<!-- What the guest holds, as a figure; past 90% it says how full. -->
 	{@const d = disk(p)}
 	{#if d}
-		{@const full = d.pct >= DISK_FULL_PERCENT}
-		<span
-			class="font-mono text-compact tabular-nums"
-			class:disk--full={full}
-			class:text-ink-muted={!full}
-			title={d.title}>{full ? `${d.pct}% full` : d.used}</span
-		>
+		<span title={d.title}>{d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used}</span>
 	{/if}
 {/snippet}
 
-{#snippet actionButton(p: Project, always: boolean)}
+{#snippet actionButton(p: Project)}
 	{@const a = actionFor(p)}
 	{#if a}
-		<!-- One word for the face and the accessible name: they drifted, so
-		     mid-operation the button read "Stopping…" and was named "Stop",
-		     which breaks voice control (WCAG 2.5.3). aria-disabled, not
-		     disabled: a disabled element drops focus to <body> and a
-		     keyboard user lost their place for the whole op (I-391). -->
+		<!-- One word for the face and the accessible name (WCAG 2.5.3);
+		     aria-disabled while it runs, so focus stays (I-391). -->
 		{@const word =
 			pending[p.id] === 'stop'
 				? 'Stopping…'
@@ -470,8 +476,7 @@
 						: 'Start'}
 		<button
 			type="button"
-			class="row-action btn-quiet btn--sm"
-			class:row-action--shown={always || !!pending[p.id]}
+			class="hk-btn-ghost hk-btn-sm row-action"
 			aria-disabled={pending[p.id] ? 'true' : undefined}
 			aria-label="{word} {p.name}"
 			onclick={() => pressed(p, a)}>{word}</button
@@ -479,8 +484,32 @@
 	{/if}
 {/snippet}
 
+{#snippet confirmStop(p: Project)}
+	<div class="hk-confirm">
+		<p>{stopWarning(p)}</p>
+		<div class="hk-confirm-actions">
+			<button type="button" class="hk-btn-danger hk-btn-sm" onclick={() => stopNow(p)}
+				>Stop anyway</button
+			>
+			<button
+				type="button"
+				class="hk-btn-ghost hk-btn-sm"
+				use:focusOnMount
+				onclick={() => (askingStop = undefined)}>Keep it running</button
+			>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet questionsBadge(p: Project)}
+	{@const n = questionsFor.get(p.id)}
+	{#if n}
+		<span class="hk-badge hk-badge--warn">{n} question{n === 1 ? '' : 's'}</span>
+	{/if}
+{/snippet}
+
 <svelte:head>
-	<title>Projects — repose</title>
+	<title>Projects · repose</title>
 </svelte:head>
 
 <PageShell title="Projects" lede={summary}>
@@ -489,6 +518,20 @@
 		onretry={refresh}
 		error={loadError}
 	>
+		<!-- The account's payment state, one sentence each; the full rule is
+		     on /billing. -->
+		{#if me?.billing.status === 'suspended'}
+			<div class="hk-banner hk-banner--err" role="alert" data-testid="projects-suspended">
+				<p>
+					Your account is suspended. <a href={resolve('/billing')}>Update card and pay</a>
+				</p>
+			</div>
+		{:else if me?.billing.status === 'past_due'}
+			<div class="hk-banner" role="status" data-testid="projects-past-due">
+				<p>Your last payment failed. <a href={resolve('/billing')}>Update card</a></p>
+			</div>
+		{/if}
+
 		{#if projects && projects.length === 0}
 			{@const banner =
 				me?.waitlist && holdActive && me.waitlist.hold_until
@@ -499,67 +542,70 @@
 							? 'none'
 							: undefined}
 			{@const planFigures = !banner && !billingOff && !!billing && billing.usage.memory_gb > 0}
-			<!-- One card across the frame, as the plan strip is: what to run on
-			     the left, the plan's figures or what stands before a first
-			     machine beside it. -->
-			<div class="empty" class:empty--side={!!banner || planFigures}>
-				<div class="empty-main">
-					<h2 class="text-xl font-semibold">No projects yet</h2>
-					<p class="mt-2 text-ink-muted">
-						A git checkout becomes a project, with a machine of its own, the first time you run this
-						in it.
-					</p>
-					<div class="mt-4">
-						<CodeCopy command="repose run" what="repose run" />
-					</div>
-				</div>
-				<!-- The side column is the banner itself, its colours to the
-				     card's edge, so no box sits inside the card's box. -->
+			<div class="empty">
 				{#if banner === 'held' && me?.waitlist?.hold_until}
-					<div class="empty-side banner banner--ok" data-testid="seat-held">
-						Your seat is held until {dateTime(me.waitlist.hold_until)}.
-						<a href={resolve('/billing')} class="link">Choose a plan</a> before then.
+					<div class="hk-banner hk-banner--ok" role="status" data-testid="seat-held">
+						<p>
+							Your seat is held until {dateTime(me.waitlist.hold_until)}.
+							<a href={resolve('/billing')}>Choose a plan</a> before then.
+						</p>
 					</div>
 				{:else if banner === 'waitlist' && me?.waitlist}
-					<div class="empty-side banner banner--warn" data-testid="waitlist-place">
-						repose is full. You’re number {me.waitlist.position} on the waitlist; we’ll email
-						{me.email} when a seat frees, and you’ll have 72 hours to choose a plan.
+					<div class="hk-banner hk-banner--info" role="status" data-testid="waitlist-place">
+						<p>
+							repose is full. You’re number {me.waitlist.position} on the waitlist; we’ll email
+							{me.email} when a seat frees, and you’ll have 72 hours to choose a plan.
+						</p>
 					</div>
 				{:else if banner === 'none'}
-					<div class="empty-side empty-side--plain banner" data-testid="no-plan">
-						<a href={resolve('/billing')} class="link">Choose a plan</a> before your first machine can
-						start. Seven days free, card at checkout.
+					<div class="hk-empty-row" data-testid="no-plan">
+						<span
+							>Choose a plan before your first machine can start. Seven days free, card at checkout.</span
+						>
+						<a href={resolve('/billing')} class="hk-btn hk-btn-sm">Choose a plan</a>
 					</div>
-				{:else if planFigures}
-					<div class="empty-side empty-side--strip">
-						<PlanStrip projects={[]} {billing} flat />
+				{/if}
+				<div class="hk-empty-row">
+					<span>No projects yet.</span>
+					<a href={resolve('/docs')} class="hk-more empty-more">Quickstart</a>
+				</div>
+				<CommandList
+					class="empty-commands"
+					label="Commands"
+					commands={[
+						{ command: INSTALL_COMMAND, what: 'the install command' },
+						{ command: 'repose login', what: 'repose login' },
+						{
+							command: 'repose run',
+							what: 'repose run',
+							note: 'in a git checkout on your laptop'
+						}
+					]}
+				/>
+				{#if planFigures}
+					<div class="plan-row">
+						<PlanStrip projects={[]} {billing} />
 					</div>
 				{/if}
 			</div>
 		{:else if projects}
-			<div class="flex flex-col gap-6">
-				<WaitingCard bind:questions cap={3} testid="pending-questions" />
-				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
-			</div>
-
-			<!-- A search and the state filters, once the list is long enough to
-			     need them. The filters are links with aria-current, drawn like
-			     the project's tabs (DESIGN-LANGUAGE "Tabs"), and both halves
-			     live in the URL. -->
 			{#if refusal}
-				<div class="banner banner--warn mt-6" data-testid="row-refusal">
+				<!-- A plan or capacity refusal from a row, drawn as the project
+				     page draws it: the api's sentence, a link to /billing, and a
+				     Stop for each machine holding the memory. -->
+				<div class="hk-banner refusal" role="status" data-testid="row-refusal">
 					<p>
 						{withoutBillingURL(refusal.message)}
 						{#if refusal.reason}
-							<a href={resolve('/billing')} class="link">See your plan</a>
+							<a href={resolve('/billing')}>See your plan</a>
 						{/if}
 					</p>
 					{#if refusal.projects.length > 0}
-						<div class="mt-2 flex flex-wrap gap-2">
+						<div class="refusal-stops">
 							{#each refusal.projects as named (named.id)}
 								<button
 									type="button"
-									class="btn-quiet btn--sm"
+									class="hk-btn-secondary hk-btn-sm"
 									disabled={!!pending[named.id]}
 									onclick={() =>
 										stopNow((projects ?? []).find((q) => q.id === named.id) ?? ({} as Project))}
@@ -571,264 +617,184 @@
 				</div>
 			{/if}
 
-			{#if toolbar}
-				<div class="ptools mt-8">
-					<input
-						type="search"
-						class="field pt-search"
-						aria-label="Search projects"
-						placeholder="Search"
-						value={searchBox}
-						oninput={(e) => onSearch(e.currentTarget.value)}
-					/>
-					<nav aria-label="Filter projects" class="flex gap-5 text-sm">
-						{#each FILTERS as f (f)}
-							{@const on = filter === f}
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
-							<a
-								href={filterHref(f)}
-								aria-current={on ? 'page' : undefined}
-								data-sveltekit-noscroll
-								data-sveltekit-keepfocus
-								data-sveltekit-replacestate
-								class="-mb-px border-b py-2 transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {on
-									? 'border-ink text-ink'
-									: 'border-transparent text-ink-muted hover:text-ink'}">{FILTER_LABELS[f]}</a
-							>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						{/each}
-					</nav>
-				</div>
-			{/if}
+			<WaitingCard bind:questions cap={3} testid="pending-questions" />
 
-			{#if matched.length === 0}
-				<p class="mt-8 text-ink-muted" data-testid="no-matches">
-					No project matches. <a href={resolve('/projects')} class="link">Clear</a>
-				</p>
-			{/if}
+			<div class="hk-section list">
+				<!-- A search and the state filters, once the list is long enough
+				     to need them; both live in the URL. -->
+				{#if toolbar}
+					<div class="ptools">
+						<input
+							type="search"
+							class="hk-input hk-input--search pt-search"
+							aria-label="Search projects"
+							placeholder="Search"
+							value={searchBox}
+							oninput={(e) => onSearch(e.currentTarget.value)}
+						/>
+						<nav aria-label="Filter projects" class="hk-seg--links pt-filter">
+							{#each FILTERS as f (f)}
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
+								<a
+									href={filterHref(f)}
+									aria-current={filter === f ? 'page' : undefined}
+									data-sveltekit-noscroll
+									data-sveltekit-keepfocus
+									data-sveltekit-replacestate>{FILTER_LABELS[f]}</a
+								>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{/each}
+						</nav>
+					</div>
+				{/if}
 
-			<!-- From sm up, a table. A region with a name and a tab stop: between
-			     sm and lg the table can still run past the frame, and a keyboard
-			     can only scroll what it can focus. -->
-			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div
-				class="mt-6 hidden overflow-x-auto sm:block"
-				role="region"
-				aria-label="Projects"
-				tabindex="0"
-			>
-				<table class="table ptable">
-					<thead>
-						<tr>
-							<th scope="col">Project</th>
-							<th scope="col">State</th>
-							<th scope="col" class="hidden lg:table-cell">Size</th>
-							<th scope="col">Agents</th>
-							<th scope="col" class="hidden md:table-cell">Disk</th>
-							<th scope="col" class="hidden xl:table-cell">Last snapshot</th>
-							<th scope="col"><span class="sr-only">Actions</span></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each rows as p (p.id)}
-							{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-							<tr class="prow" class:prow--frozen={!!frozenSince(p)}>
-								<td class="pcell-name">
-									<div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-										<!-- Underlined at rest, in a quiet rule colour: the name is
-										     the row's link, and its ::after spreads over the whole
-										     row, so a click anywhere in it opens the project. -->
-										<a href={resolve('/projects/[id]', { id: p.id })} class="pname font-medium"
-											>{p.name}</a
-										>
-										{#if p.expires_at}
-											<!-- repose run --temp (I-347): destroyed with no snapshot. -->
-											<span class="badge">temporary</span>
-										{/if}
-										{#if questionsFor.get(p.id)}
-											{@const n = questionsFor.get(p.id)!}
-											<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
-										{/if}
-									</div>
-									{#if remote}
-										<div
-											class="premote mt-0.5 truncate font-mono text-compact text-ink-muted"
-											title={remote}
-										>
-											{remote}
-										</div>
-									{/if}
-								</td>
-								<td class="whitespace-nowrap">{@render stateCell(p)}</td>
-								<td class="hidden whitespace-nowrap lg:table-cell">
-									<span class="font-mono text-sm">{p.class}</span>
-									{#if classMemoryGB(p.class)}
-										<span class="text-ink-muted"> · {classMemoryGB(p.class)} GB</span>
-									{/if}
-								</td>
-								<td>
-									<AgentChips
-										agents={p.signals?.agents}
-										ssh={p.signals?.ssh_sessions}
-										live={!atRest(p)}
-									/>
-								</td>
-								<td class="hidden whitespace-nowrap md:table-cell">{@render diskCell(p)}</td>
-								<td class="hidden whitespace-nowrap text-ink-muted xl:table-cell">
-									{#if p.last_snapshot_at}
-										<time datetime={p.last_snapshot_at} title={dateTime(p.last_snapshot_at)}
-											>{relativeTime(p.last_snapshot_at)}</time
-										>
-									{:else}
-										<span class="text-ink-faint">none</span>
-									{/if}
-								</td>
-								<td class="pcell-actions">
-									<span class="inline-flex items-center gap-2">
-										{@render actionButton(p, false)}
-										<svg
-											class="pchev"
-											width="16"
-											height="16"
-											viewBox="0 0 16 16"
-											fill="none"
-											aria-hidden="true"
-											><path
-												d="M6 3.5 10.5 8 6 12.5"
-												stroke="currentColor"
-												stroke-width="1.5"
-											/></svg
-										>
-									</span>
-								</td>
-							</tr>
-							{#if askingStop === p.id}
-								<tr data-testid="confirm-stop">
-									<td colspan="7" class="pt-0">
-										<div class="banner banner--warn">
-											<p>{stopWarning(p)}</p>
-											<div class="mt-2 flex items-center gap-3">
-												<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
-													>Stop anyway</button
-												>
-												<button
-													type="button"
-													class="btn-ghost hit"
-													use:focusOnMount
-													onclick={() => (askingStop = undefined)}>Keep it running</button
-												>
-											</div>
-										</div>
-									</td>
+				{#if matched.length === 0}
+					<div class="hk-empty-row" data-testid="no-matches">
+						<span>No project matches.</span>
+						<a href={resolve('/projects')} class="hk-link">Clear</a>
+					</div>
+				{:else}
+					<!-- From 640px, a table: a region with a name and a tab stop,
+					     since between 640 and 1024 it may scroll sideways. -->
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+					<div
+						class="hk-table-wrap hidden sm:block"
+						role="region"
+						aria-label="Projects"
+						tabindex="0"
+					>
+						<table class="hk-table hk-table--hover ptable">
+							<thead>
+								<tr>
+									<th scope="col" class="c-name">Project</th>
+									<th scope="col" class="c-state">State</th>
+									<th scope="col" class="c-size hidden lg:table-cell">Size</th>
+									<th scope="col" class="c-agents">Agents</th>
+									<th scope="col" class="c-disk hk-num-col hidden md:table-cell">Disk</th>
+									<th scope="col" class="c-snap hidden xl:table-cell">Last snapshot</th>
+									<th scope="col" class="c-act"><span class="hk-sr">Actions</span></th>
 								</tr>
-							{/if}
+							</thead>
+							<tbody>
+								{#each rows as p (p.id)}
+									{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
+									<tr class="prow">
+										<td class="c-name">
+											<span class="pname-line">
+												<!-- The name's ::after covers the row, so a click
+												     anywhere in it opens the project. -->
+												<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
+												{#if p.expires_at}
+													<!-- repose run --temp (I-347): destroyed with no snapshot. -->
+													<span class="hk-badge hk-badge--outline">temporary</span>
+												{/if}
+												{@render questionsBadge(p)}
+											</span>
+											{#if remote}
+												<span class="premote" title={remote}>{remote}</span>
+											{/if}
+										</td>
+										<td class="c-state">{@render stateCell(p)}</td>
+										<td class="c-size hidden whitespace-nowrap lg:table-cell">
+											<span class="hk-mono">{p.class}</span>{#if classMemoryGB(p.class)}<span
+													class="muted">&nbsp;· {classMemoryGB(p.class)} GB</span
+												>{/if}
+										</td>
+										<td class="c-agents">
+											<AgentChips agents={p.signals?.agents} asked={!!questionsFor.get(p.id)} />
+										</td>
+										<td class="c-disk hk-num-col hidden whitespace-nowrap md:table-cell"
+											>{@render diskCell(p)}</td
+										>
+										<td class="c-snap muted hidden whitespace-nowrap xl:table-cell">
+											{#if p.last_snapshot_at}
+												<time datetime={p.last_snapshot_at} title={dateTime(p.last_snapshot_at)}
+													>{relativeTime(p.last_snapshot_at)}</time
+												>
+											{:else}
+												<span class="hk-sr">none</span>
+											{/if}
+										</td>
+										<td class="c-act">{@render actionButton(p)}</td>
+									</tr>
+									{#if askingStop === p.id}
+										<tr class="confirm-row" data-testid="confirm-stop">
+											<td colspan="7">{@render confirmStop(p)}</td>
+										</tr>
+									{/if}
+								{/each}
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Below 640px, stacked rows: the name and its Start or Stop on
+					     the first line, the state and the figures on the second. -->
+					<ul class="mlist sm:hidden" aria-label="Projects">
+						{#each rows as p (p.id)}
+							{@const agents = p.signals?.agents ?? []}
+							{@const frozen = frozenSince(p)}
+							{@const d = disk(p)}
+							{@const facts = [
+								`${p.class}${classMemoryGB(p.class) ? ` · ${classMemoryGB(p.class)} GB` : ''}`,
+								agents.map((a) => a.agent).join(', '),
+								d ? (d.pct >= DISK_FULL_PERCENT ? `${d.pct}% full` : d.used) : ''
+							].filter(Boolean)}
+							<li class="mrow">
+								<div class="mrow-line">
+									<span class="mrow-name">
+										<a href={resolve('/projects/[id]', { id: p.id })} class="pname">{p.name}</a>
+										{#if p.expires_at}<span class="hk-badge hk-badge--outline">temporary</span>{/if}
+										{@render questionsBadge(p)}
+									</span>
+									{@render actionButton(p)}
+								</div>
+								<div class="mrow-meta">
+									<StateDot state={p.state} frozen={!!frozen} />
+									{#each facts as f (f)}<span aria-hidden="true">·</span><span>{f}</span>{/each}
+								</div>
+								<!-- A temporary machine's countdown and the unused warning
+								     are losses the reader cannot undo, so the stacked row
+								     carries them as the table's state cell does. -->
+								{#if p.expires_at || (p.state === 'running' && p.idle) || p.host_unreachable || reason(p)}
+									<div class="mrow-sub">
+										{#if p.host_unreachable}<span>server not answering</span>{/if}
+										{#if p.state === 'running' && p.idle}<span>unused {uptime(p.idle.since)}</span
+											>{/if}
+										{#if p.expires_at}<span>{tempLeft(p.expires_at)}</span>{/if}
+										{#if reason(p)}<span>{@render ticks(reason(p))}</span>{/if}
+									</div>
+								{/if}
+								{#if askingStop === p.id}
+									<div class="mrow-confirm" data-testid="confirm-stop">
+										{@render confirmStop(p)}
+									</div>
+								{/if}
+							</li>
 						{/each}
-					</tbody>
-				</table>
+					</ul>
+				{/if}
+
+				<!-- The list grows to 100 (I-569), so it is capped like every
+				     other growing list on the dashboard. -->
+				{#if capped > 0 || showAll}
+					<div class="pmore">
+						<button
+							type="button"
+							class="hk-btn-ghost hk-btn-sm"
+							onclick={() => (showAll = !showAll)}
+						>
+							{showAll ? 'Show fewer' : `Show all ${matched.length}`}
+						</button>
+						{#if capped > 0}
+							<span>{rows.length} of {matched.length}</span>
+						{/if}
+					</div>
+				{/if}
 			</div>
 
-			<!-- Below sm, a stacked list: each project one link, its action
-			     on its first line. -->
-			<ul class="mt-6 border-t border-rule-strong sm:hidden" aria-label="Projects">
-				{#each rows as p (p.id)}
-					{@const remote = p.remote_url ? normalizeRemoteDisplay(p.remote_url) : ''}
-					{@const agents = p.signals?.agents ?? []}
-					{@const act = actionFor(p)}
-					<!-- The row is one link; Start or Stop sits on its first line's
-				     right edge, outside the link, as a tab stop of its own. -->
-					<li class="relative border-b border-rule" class:mrow--frozen={!!frozenSince(p)}>
-						<a href={resolve('/projects/[id]', { id: p.id })} class="mrow" class:mrow--act={!!act}>
-							<span class="flex items-baseline justify-between gap-3">
-								<span class="flex min-w-0 items-baseline gap-2">
-									<span class="truncate font-medium">{p.name}</span>
-									{#if p.expires_at}<span class="badge shrink-0">temporary</span>{/if}
-								</span>
-								<span class="shrink-0 text-sm"
-									><StateDot state={p.state} frozen={!!frozenSince(p)} /></span
-								>
-							</span>
-							<span
-								class="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-compact text-ink-muted"
-							>
-								<span class="shrink-0 whitespace-nowrap">
-									{p.class}{#if frozenSince(p)}&nbsp;· frozen {uptime(
-											frozenSince(p)!
-										)}{:else if p.state === 'running'}&nbsp;· up {uptime(
-											p.started_at
-										)}{:else if p.state === 'stopped'}&nbsp;· {p.started_at
-											? `last run ${relativeTime(p.started_at)}`
-											: `made ${relativeTime(p.created_at)}`}{/if}
-								</span>
-								{#if remote}<span aria-hidden="true">·</span>
-									<span class="min-w-0 truncate">{remote}</span>{/if}
-							</span>
-							<!-- A temporary machine's countdown and the unused warning are
-							     losses the reader cannot undo, so the stacked row carries
-							     them as the table's state cell does. -->
-							{#if p.expires_at || (p.state === 'running' && p.idle)}
-								<span class="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs tabular-nums">
-									{#if p.state === 'running' && p.idle}
-										<span class="text-amber-700 dark:text-amber-400"
-											>unused {uptime(p.idle.since)}</span
-										>
-									{/if}
-									{#if p.expires_at}
-										<span class="text-ink-muted">{tempLeft(p.expires_at)}</span>
-									{/if}
-								</span>
-							{/if}
-							{#if agents.length > 0 || questionsFor.get(p.id) || (p.signals?.ssh_sessions ?? 0) > 0}
-								<span class="mt-2 flex flex-wrap items-center gap-1.5">
-									{#if questionsFor.get(p.id)}
-										{@const n = questionsFor.get(p.id)!}
-										<span class="badge badge--warn">{n} question{n === 1 ? '' : 's'}</span>
-									{/if}
-									{#if agents.length > 0 || (p.signals?.ssh_sessions ?? 0) > 0}
-										<AgentChips {agents} ssh={p.signals?.ssh_sessions} />
-									{/if}
-								</span>
-							{/if}
-							{#if reason(p)}
-								<span class="mt-1 block text-xs text-red-700 dark:text-red-400">{reason(p)}</span>
-							{/if}
-						</a>
-						{#if act}
-							<span class="mrow-action">{@render actionButton(p, true)}</span>
-						{/if}
-						{#if askingStop === p.id}
-							<div class="banner banner--warn mx-4 mb-4" data-testid="confirm-stop">
-								<p>{stopWarning(p)}</p>
-								<div class="mt-2 flex items-center gap-3">
-									<button type="button" class="btn-danger btn--sm" onclick={() => stopNow(p)}
-										>Stop anyway</button
-									>
-									<button
-										type="button"
-										class="btn-ghost hit"
-										use:focusOnMount
-										onclick={() => (askingStop = undefined)}>Keep it running</button
-									>
-								</div>
-							</div>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-
-			<!-- The list is the one that grows to 100 (I-569), so it is capped
-			     like every other growing list on the dashboard. -->
-			{#if capped > 0 || showAll}
-				<div class="mt-4 flex items-baseline gap-3">
-					<button type="button" class="btn-ghost" onclick={() => (showAll = !showAll)}>
-						{showAll ? 'Show fewer' : `Show all ${matched.length}`}
-					</button>
-					{#if capped > 0}
-						<span class="text-sm text-ink-muted tabular-nums"
-							>{rows.length} of {matched.length}</span
-						>
-					{/if}
-				</div>
-			{/if}
+			<div class="plan-row">
+				<PlanStrip {projects} billing={billingOff ? undefined : billing} {questions} />
+			</div>
 
 			<RecentActivity {projects} />
 		{/if}
@@ -843,194 +809,248 @@
 </PageShell>
 
 <style>
-	/* Cells sit on their first line's baseline, so a name, a state and a
-	   size read as one line across the row. */
-	.ptable th {
-		white-space: nowrap;
-	}
+	/* ---- The table (from 640px) ---- */
 	.ptable td {
-		vertical-align: baseline;
 		padding-top: 0.875rem;
 		padding-bottom: 0.875rem;
+		vertical-align: top;
 	}
-	/* Inset 16px at both ends, as the strip's and the callout's text is,
-	   so a hovered row's fill has room around its first and last words. */
-	.ptable :is(th, td):first-child {
-		padding-left: 1rem;
+	.ptable .c-name {
+		width: 30%;
 	}
-	.ptable :is(th, td):last-child {
-		padding-right: 0.75rem;
+	.ptable .c-state {
+		width: 16%;
 	}
-	/* The search and the filters on one line, under the strip and over the
-	   list; on a phone the search takes the row and the filters sit under
-	   it, so neither is squeezed. */
-	.ptools {
-		display: flex;
-		flex-wrap: wrap;
-		/* Bottom-aligned, so the current filter's underline lands on the
-		   toolbar's own rule, as the project's tabs do. */
-		align-items: flex-end;
-		justify-content: space-between;
-		column-gap: 1.5rem;
-		border-bottom: 1px solid var(--rule);
+	.ptable .c-size {
+		width: 14%;
 	}
-	.pt-search {
-		width: 100%;
-		max-width: 18rem;
-		margin-bottom: 0.5rem;
+	.ptable .c-agents {
+		width: 18%;
 	}
-	@media (width >= 40rem) {
-		.pt-search {
-			width: 16rem;
-		}
+	.ptable .c-disk {
+		width: 7%;
+	}
+	.ptable .c-snap {
+		width: 9%;
+	}
+	.ptable .c-act {
+		width: 6%;
+		text-align: right;
+		white-space: nowrap;
+	}
+	.ptable td.c-act {
+		padding-top: 0.6875rem;
+		padding-bottom: 0;
 	}
 	.prow {
 		position: relative;
-		transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 	}
-	.prow:hover,
-	.prow:has(.pname:focus-visible) {
-		background-color: color-mix(in srgb, var(--sunken) 60%, transparent);
-	}
-	/* A frozen machine's row (I-683): a cold wash and an ice edge on its
-	   left, so the whole row reads as frozen, not only its state word. */
-	.prow--frozen,
-	.mrow--frozen {
-		background-color: color-mix(in srgb, var(--frost) 6%, transparent);
-		box-shadow: inset 2px 0 0 var(--frost);
-	}
-	.prow--frozen:hover,
-	.prow--frozen:has(.pname:focus-visible) {
-		background-color: color-mix(in srgb, var(--frost) 10%, transparent);
-	}
-	.frost-sub {
-		color: var(--frost);
-	}
-	/* The remote is cut with an ellipsis (its whole value in the title)
-	   until lg, so the table fits the frame from sm up; from lg it takes
-	   its column. */
-	.pcell-name,
-	.premote {
-		max-width: 14rem;
-	}
-	@media (width >= 64rem) {
-		.pcell-name {
-			max-width: none;
-		}
-		.premote {
-			max-width: 40rem;
-		}
+	.pname-line,
+	.mrow-name {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+		min-width: 0;
 	}
 	.pname {
-		color: var(--ink);
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--hk-text);
+		text-decoration: none;
+	}
+	.prow:hover .pname,
+	.mrow:hover .pname {
 		text-decoration: underline;
-		text-decoration-color: var(--rule-strong);
-		text-decoration-thickness: 1px;
-		text-underline-offset: 4px;
+		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+		text-underline-offset: 3px;
 	}
-	.prow:hover .pname {
-		text-decoration-color: currentColor;
-	}
-	/* The name's link covers the row; the Start or Stop button sits above. */
+	/* The name's link covers its row; the row's action sits above it. */
 	.pname::after {
 		content: '';
 		position: absolute;
 		inset: 0;
 	}
-	/* Fixed, so the columns hold still as Stop turns to Start. */
-	.pcell-actions {
-		width: 5.5rem;
+	.pname:focus-visible {
+		outline: none;
+	}
+	.pname:focus-visible::after {
+		outline: 2px solid var(--hk-accent);
+		outline-offset: -2px;
+		border-radius: var(--hk-radius-sm);
+	}
+	.premote {
+		display: block;
+		max-width: 22rem;
+		margin-top: 0.125rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
-		text-align: right;
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.c-state :global(.state) {
+		font-size: 0.875rem;
+	}
+	.sub {
+		display: block;
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.sub--reason {
+		max-width: 14rem;
+		white-space: normal;
+	}
+	.muted {
+		color: var(--hk-text-3);
+	}
+	/* Always visible, above the row's link, its text flush with the
+	   frame's edge like every ghost on the page. The scroll box grows its
+	   end inset to the ghost's 10px, so the pull stays inside it and the
+	   table does not scroll sideways when the button takes focus. */
+	.list .hk-table-wrap {
+		padding-inline-end: 0.625rem;
+		margin-inline-end: -0.625rem;
 	}
 	.row-action {
 		position: relative;
-		z-index: 10;
-		opacity: 0;
-		transition:
-			opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
-			background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+		z-index: 1;
+		margin-right: -0.625rem;
 	}
-	.prow:hover .row-action,
-	.prow:focus-within .row-action,
-	.row-action--shown {
-		opacity: 1;
-	}
-	@media (hover: none) {
-		.row-action {
-			opacity: 1;
+	/* Forced colours draw the ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.row-action,
+		.mrow .row-action,
+		.pmore .hk-btn-ghost {
+			margin-inline: 0;
 		}
 	}
-	.pchev {
-		color: var(--ink-faint);
-		opacity: 0;
-		transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	.confirm-row td {
+		padding-top: 0;
+		border-top: 0;
 	}
-	.prow:hover .pchev {
-		opacity: 1;
-	}
-
-	.disk--full {
-		color: var(--color-amber-800);
-	}
-	@media (prefers-color-scheme: dark) {
-		.disk--full {
-			color: var(--color-amber-300);
-		}
-	}
-
-	.mrow {
-		display: block;
-		padding: 0.75rem 0;
-		color: inherit;
-	}
-	/* Room on the right for the button over the first line. */
-	.mrow--act {
-		padding-right: 5.75rem;
-	}
-	.mrow-action {
-		position: absolute;
-		top: 0.25rem;
-		right: 0;
-	}
-
-	.empty {
-		display: grid;
-		overflow: hidden;
-		border: 1px solid var(--rule);
-		border-radius: var(--radius-md);
-		background: var(--surface);
-	}
-	.empty-main {
-		min-width: 0;
-		padding: 1.5rem;
-	}
-	.empty-main > * {
-		max-width: 36rem;
-	}
-	.empty-side {
-		min-width: 0;
-		margin: 0;
-		padding: 1.5rem;
-		border-width: 1px 0 0;
-		border-style: solid;
-		border-color: var(--rule);
-		border-radius: 0;
-	}
-	.empty-side--plain {
-		border-color: var(--rule);
+	.prow:has(+ .confirm-row) td {
 		background: transparent;
 	}
-	/* The strip draws its own cells and padding. */
-	.empty-side--strip {
-		padding: 0;
+
+	/* ---- The toolbar ---- */
+	.ptools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem 1.5rem;
+		margin-bottom: 1rem;
 	}
-	@media (width >= 64rem) {
-		.empty--side {
-			grid-template-columns: minmax(0, 1fr) 22rem;
+	.pt-search {
+		max-width: 18rem;
+	}
+	@media (max-width: 639.98px) {
+		.pt-search {
+			max-width: none;
 		}
-		.empty-side {
-			border-width: 0 0 0 1px;
+		.pt-filter {
+			width: 100%;
 		}
+	}
+
+	/* ---- Stacked rows (below 640px) ---- */
+	.mlist {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	/* One rule where two sections meet: right under the questions, the
+	   first row leaves its top rule to the questions' last one. */
+	:global(#questions) + .list:not(:has(.ptools)) .mrow:first-child {
+		border-top: 0;
+	}
+	/* The plan row's top rule closes the list. */
+	.list :global(.hk-empty-row) {
+		border-bottom: 0;
+	}
+	.mrow {
+		position: relative;
+		min-height: 3.5rem;
+		padding: 0.625rem 0;
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.mrow .pname {
+		font-size: 0.9375rem;
+	}
+	.mrow-line {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+	.mrow-line :global(.row-action) {
+		margin-block: -0.5rem;
+	}
+	.mrow-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.125rem 0.375rem;
+		margin-top: 0.125rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.mrow-meta :global(.state) {
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
+	.mrow-sub {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 0.75rem;
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+	}
+	.mrow-confirm {
+		position: relative;
+		z-index: 1;
+		margin-top: 0.625rem;
+	}
+
+	.pmore {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.pmore .hk-btn-ghost {
+		margin-left: -0.625rem;
+	}
+	.plan-row {
+		margin-top: 2.75rem;
+	}
+	.refusal-stops {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	/* ---- No projects ---- */
+	.empty :global(.hk-empty-row + .hk-empty-row) {
+		border-top: 0;
+	}
+	.empty-more {
+		margin-top: 0;
+	}
+	.empty :global(.empty-commands) {
+		margin-top: 1rem;
+	}
+	/* The # note wraps on a phone; the command scrolls (request to
+	   FOUNDATION for CommandList itself). */
+	.empty :global(.empty-commands .note) {
+		white-space: normal;
 	}
 </style>

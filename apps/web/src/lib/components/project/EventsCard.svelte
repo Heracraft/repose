@@ -241,29 +241,27 @@
 	{@const newerOff = onNewest}
 	{@const olderOff = !hasOlder}
 	{@const offerNewer = newerCount > 0 && !onNewest}
-	<!-- A phone lays the pager across the card: Newer, the position (or
-	     the newer events' link in its place) centred, and Older, on one
-	     row. Newest waits for a wider screen. -->
-	<div
-		class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 sm:flex sm:flex-wrap sm:gap-2"
-	>
+	<!-- At the foot of the list, where a reader finishes a page: Newest and
+	     Newer, the position (or the newer events' link in its place on a
+	     phone), Older. Newest waits for a wider screen. -->
+	<div class="pager">
 		{#if offerNewer}
 			<button
 				type="button"
-				class="btn-ghost text-xs max-sm:hidden"
+				class="hk-btn-ghost hk-btn-sm max-sm:hidden"
 				onclick={() => to(newestState(view))}>{newerCount} newer</button
 			>
 		{/if}
 		<button
 			type="button"
-			class="btn-quiet btn--sm max-sm:hidden"
+			class="hk-btn-ghost hk-btn-sm max-sm:hidden"
 			aria-disabled={newerOff}
 			title={newerOff ? 'This is the newest page' : undefined}
 			onclick={() => !newerOff && to(newestState(view))}>Newest</button
 		>
 		<button
 			type="button"
-			class="btn-quiet btn--sm max-sm:px-2.5"
+			class="hk-btn-ghost hk-btn-sm"
 			aria-disabled={newerOff}
 			title={newerOff ? 'No newer events' : undefined}
 			onclick={() => !newerOff && events.length > 0 && to(newerState(view, events[0].id))}
@@ -272,19 +270,16 @@
 		{#if offerNewer}
 			<button
 				type="button"
-				class="btn-ghost justify-self-center text-xs sm:hidden"
+				class="hk-btn-ghost hk-btn-sm sm:hidden"
 				onclick={() => to(newestState(view))}>{newerCount} newer</button
 			>
 		{/if}
-		<span
-			class="px-1 text-center text-sm whitespace-nowrap tabular-nums sm:min-w-[5.5rem] {offerNewer
-				? 'max-sm:hidden'
-				: ''}"
-			data-testid="events-position">{position}</span
+		<span class="position {offerNewer ? 'max-sm:hidden' : ''}" data-testid="events-position"
+			>{position}</span
 		>
 		<button
 			type="button"
-			class="btn-quiet btn--sm max-sm:px-2.5"
+			class="hk-btn-ghost hk-btn-sm"
 			aria-disabled={olderOff}
 			title={olderOff ? 'No older events' : undefined}
 			onclick={() =>
@@ -295,104 +290,155 @@
 {/snippet}
 
 <section
-	class="card min-w-0"
+	class="hk-section"
 	id="events"
 	aria-labelledby="events-title"
 	data-testid="events-card"
 	bind:this={card}
 >
-	<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-		<div class="flex items-baseline gap-3">
-			<h2 id="events-title" class="text-xl font-semibold">Events</h2>
+	<div class="hk-section-head head">
+		<div class="title">
+			<h2 id="events-title" class="hk-h2-app">Events</h2>
 			{#if total !== undefined}
-				<span class="text-sm text-ink-muted tabular-nums" data-testid="events-total"
+				<span class="total" data-testid="events-total"
 					>{total === 1 ? '1 event' : `${total} events`}</span
 				>
 			{/if}
 		</div>
-		<!-- One page has no pager: the count says it all. -->
-		{#if holdHeight || newerCount > 0}
-			<nav aria-label="Event pages" class="max-sm:w-full">{@render pager()}</nav>
+		<!-- The filter changes the URL, so its choices are links with
+		     aria-current. An api with no count ignores kind, so it gets none. -->
+		{#if !loaded || total !== undefined}
+			<nav aria-label="Filter events" class="hk-seg--links hk-seg--sm filter">
+				{#each FILTERS as [kind, name] (name)}
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- href() starts with resolve() -->
+					<a
+						href={href(kindState(kind))}
+						aria-current={view.kind === kind ? 'page' : undefined}
+						data-sveltekit-noscroll
+						data-sveltekit-keepfocus
+						onclick={() => (focusOnLoad = true)}>{name}</a
+					>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/each}
+			</nav>
 		{/if}
 	</div>
 
-	<!-- The filter changes the URL, so its choices are links with
-	     aria-current (DESIGN-LANGUAGE.md, "Tabs"), drawn like the
-	     project's tabs. An api with no count ignores kind, so it gets none. -->
-	{#if !loaded || total !== undefined}
-		<nav aria-label="Filter events" class="mt-4 flex gap-5 border-b text-sm border-rule">
-			{#each FILTERS as [kind, name] (name)}
-				{@const on = view.kind === kind}
-				<!-- eslint-disable svelte/no-navigation-without-resolve -- href() starts with resolve() -->
-				<a
-					href={href(kindState(kind))}
-					aria-current={on ? 'page' : undefined}
-					data-sveltekit-noscroll
-					data-sveltekit-keepfocus
-					onclick={() => (focusOnLoad = true)}
-					class="-mb-px border-b py-2 transition-[color,border-color] duration-150 focus-visible:-outline-offset-2 {on
-						? 'border-ink text-ink'
-						: 'border-transparent text-ink-muted hover:text-ink'}">{name}</a
-				>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
-			{/each}
-		</nav>
-	{/if}
-
 	<!-- New rows on the newest page are said here, once each poll. -->
-	<p class="sr-only" role="status">{announce}</p>
+	<p class="hk-sr" role="status">{announce}</p>
 
 	{#if loaded && events.length === 0}
-		<p class="py-4 text-sm text-ink-muted">
-			{view.kind ? 'No events of this kind.' : 'No events yet.'}
-		</p>
+		<div class="hk-empty-row">
+			<span>{view.kind ? 'No events of this kind.' : 'No events yet.'}</span>
+		</div>
 	{:else}
 		<ul
 			bind:this={list}
 			aria-label="Events, page {current ?? position}"
 			aria-busy={loading}
 			tabindex="-1"
-			class="events-list focus-visible:outline-offset-4"
+			class="events-list"
 			class:hold={holdHeight}
-			class:opacity-60={loading}
+			class:loading
 		>
 			{#each rows as r (r.id)}
 				{#if 'day' in r}
-					<li class="day-row text-xs text-ink-muted" data-testid="event-day">{r.day}</li>
+					<li class="day-row" data-testid="event-day">{r.day}</li>
 				{:else}
 					<EventRow event={r.event} />
 				{/if}
 			{/each}
 		</ul>
+		<!-- One page has no pager: the count says it all (I-680). -->
+		{#if holdHeight || newerCount > 0}
+			<nav aria-label="Event pages" class="pager-nav">{@render pager()}</nav>
+		{/if}
 	{/if}
 </section>
 
 <style>
-	.events-list {
-		transition: opacity 120ms;
+	.head {
+		align-items: center;
 	}
-	/* 10 rows of 37px and one day heading; a page across midnight grows
-	   by a heading. */
-	.events-list.hold {
-		min-height: calc(10 * 2.3125rem + 2.25rem);
+	.title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
 	}
-	@media (width < 40rem) {
-		.events-list.hold {
-			min-height: calc(10 * 3.75rem + 2.25rem);
+	.total {
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	@media (max-width: 767.98px) {
+		.filter {
+			width: 100%;
 		}
 	}
-	.events-list :global(li:first-child) {
-		border-top: 0;
+	.events-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-bottom: 1px solid var(--hk-hairline);
+		transition: opacity 120ms;
+	}
+	.events-list:focus-visible {
+		outline-offset: 4px;
+	}
+	.events-list.loading {
+		opacity: 0.6;
+	}
+	/* 10 rows of 41px and one day heading; a page across midnight grows
+	   by a heading. A short last page keeps the list's height, so the
+	   section under it does not jump. */
+	.events-list.hold {
+		min-height: calc(10 * 2.5625rem + 2.25rem);
+	}
+	@media (max-width: 639.98px) {
+		.events-list.hold {
+			min-height: calc(10 * 4rem + 2.25rem);
+		}
 	}
 	.day-row {
-		padding-top: 1rem;
-		padding-bottom: 0.375rem;
+		padding: 1rem 0 0.375rem;
+		font-size: 0.6875rem;
 		font-weight: 500;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--hk-text-3);
 	}
 	.day-row:first-child {
-		padding-top: 0.75rem;
+		padding-top: 0.25rem;
 	}
-	:global(.day-row + .event-row) {
-		border-top: 0;
+	.pager-nav {
+		margin-top: 0.5rem;
+	}
+	.pager {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem;
+		margin-left: -0.625rem;
+	}
+	.position {
+		padding: 0 0.5rem;
+		min-width: 5.5rem;
+		text-align: center;
+		white-space: nowrap;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+		font-variant-numeric: tabular-nums;
+	}
+	@media (max-width: 639.98px) {
+		.pager {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto;
+		}
+	}
+	/* Forced colours draw a ghost's border: keep it inside the frame. */
+	@media (forced-colors: active) {
+		.pager {
+			margin-inline: 0;
+		}
 	}
 </style>

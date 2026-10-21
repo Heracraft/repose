@@ -301,11 +301,51 @@ test('the Agents card shows running for a heuristic-only agent and tolerates an 
 	const agents = page.getByTestId('agents-card');
 	const running = agents.getByRole('listitem').filter({ hasText: 'aider' });
 	await expect(running.getByText('running', { exact: true })).toBeVisible();
-	await expect(running.locator('.badge--new')).toHaveCount(0);
+	// A turn under way is marked as working (its pulsing dot); an agent
+	// that is only running is not.
+	await expect(running.locator('[data-agent-state="working"]')).toHaveCount(0);
 	await expect(
-		agents.getByRole('listitem').filter({ hasText: 'claude' }).locator('.badge--new')
+		agents
+			.getByRole('listitem')
+			.filter({ hasText: 'claude' })
+			.locator('[data-agent-state="working"]')
 	).toHaveText('working');
+	await expect(
+		agents.getByRole('listitem').filter({ hasText: 'claude' }).locator('.hk-dot--busy')
+	).toHaveCount(1);
 	await expect(agents.getByRole('listitem').filter({ hasText: 'newagent' })).toContainText(
 		'thinking hard'
 	);
+});
+
+// Two lines a question (I-837): the question, then the agent and its age
+// with the answer on the same line from 768px; options that fit sit at the
+// end of the question's own line.
+test('a short question with options answers on its own line at 1440', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'q-line-app',
+		remote_url: 'github.com/heracraft/q-line-app'
+	});
+	await addQuestion(p.id, { agent: 'claude', text: 'Ship it?', options: ['yes', 'no'] });
+	await addQuestion(p.id, { agent: 'codex', text: 'Which branch?' });
+	await page.goto(`/projects/${p.id}`);
+	const card = page.getByTestId('questions');
+	const short = card.getByTestId('question').filter({ hasText: 'Ship it?' });
+	const text = await short.getByText('Ship it?').boundingBox();
+	const yes = await short.getByRole('button', { name: 'yes', exact: true }).boundingBox();
+	if (!text || !yes) throw new Error('no question parts');
+	expect(Math.abs(yes.y + yes.height / 2 - (text.y + text.height / 2))).toBeLessThan(8);
+	expect(yes.x).toBeGreaterThan(text.x + text.width);
+
+	const free = card.getByTestId('question').filter({ hasText: 'Which branch?' });
+	const meta = await free.getByText('codex', { exact: true }).boundingBox();
+	const field = await free.getByLabel('Your answer').boundingBox();
+	if (!meta || !field) throw new Error('no free-text parts');
+	expect(Math.abs(field.y + field.height / 2 - (meta.y + meta.height / 2))).toBeLessThan(8);
+	// Two rows take at most 180px at 1440 (spec 2.4).
+	const rows = await card
+		.getByTestId('question')
+		.evaluateAll((els) => els.reduce((n, el) => n + el.getBoundingClientRect().height, 0));
+	expect(rows).toBeLessThanOrEqual(180);
 });

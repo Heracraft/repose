@@ -1,9 +1,9 @@
 <!--
   One measure of a machine over a window, as a thin line over a faint area
-  (DECISIONS I-492). One series, so no legend: the label names it and the
-  reading beside it ("now 12%, peak 100%") carries the numbers, as a
-  Meter's does. The line is --chart-line (the accent or ink, one switch in
-  layout.css, I-679) over a flat 12% area of it; nothing rides on colour. The dashed lines are
+  (DECISIONS I-492, I-837). One series, so no legend: the label names it
+  and the reading beside it ("now 12%, peak 100%") carries the numbers, as
+  a Meter's does. The line is the accent over its wash; nothing rides on
+  colour. The dashed lines are
   the top and the middle of the scale, each labelled above itself. A gap
   is a time the machine was stopped or did not report.
   Hover, or focus and the arrow keys, show one bucket's time and value.
@@ -34,10 +34,10 @@
 		maxLabel: string;
 	} = $props();
 
-	// The box is 88px whatever the data, so a poll swaps path data and
+	// The box is 80px whatever the data, so a poll swaps path data and
 	// nothing around the chart moves. TOP leaves room for the top line's
 	// label above it.
-	const H = 88;
+	const H = 80;
 	const TOP = 15;
 	const mid = (H + TOP) / 2;
 	let width = $state(0);
@@ -90,21 +90,18 @@
 	}
 </script>
 
-<figure
-	class="usage-chart min-w-0"
-	data-testid="chart-{label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"
->
-	<figcaption class="flex items-baseline justify-between gap-4 text-sm">
-		<span class="font-medium">{label}</span>
-		<span class="text-xs text-ink-muted tabular-nums">{reading}</span>
+<figure class="usage-chart" data-testid="chart-{label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
+	<figcaption class="cap">
+		<span class="cap-label">{label}</span>
+		<span class="cap-reading">{reading}</span>
 	</figcaption>
-	<div class="relative mt-1.5 h-[88px]" bind:clientWidth={width}>
+	<div class="plot" bind:clientWidth={width}>
 		<!-- The pointer and the arrow keys move a readout of one point. -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 		<svg
 			width={width || '100%'}
 			height={H}
-			class="block overflow-visible text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+			class="svg"
 			role="img"
 			aria-label="{label}: {reading}. Arrow keys read one point at a time."
 			tabindex={reported.length > 0 ? 0 : -1}
@@ -129,69 +126,128 @@
 				{/each}
 				{#if hp && hp.v !== null}
 					<line class="cursor" x1={x(hp.t)} x2={x(hp.t)} y1={TOP} y2={H} />
-					<circle class="mark" cx={x(hp.t)} cy={y(hp.v)} r="4" />
+					<circle class="mark" cx={x(hp.t)} cy={y(hp.v)} r="3.5" />
 				{/if}
 			{/if}
 		</svg>
 		{#if hp && hp.v !== null}
 			<div
-				class="tip pointer-events-none absolute top-0 rounded-xs border px-2 py-1 text-xs tabular-nums"
+				class="tip"
 				style="left: {Math.min(Math.max(x(hp.t), 60), Math.max(width - 60, 60))}px"
 				aria-live="polite"
 			>
-				<span class="text-ink-muted">{when(hp.t)}</span>
-				<span class="font-medium">{format(hp.v)}</span>
+				<span class="tip-when">{when(hp.t)}</span>
+				<span class="tip-v">{format(hp.v)}</span>
 			</div>
 		{/if}
 	</div>
-	<div class="mt-1 flex justify-between text-2xs text-ink-faint tabular-nums" aria-hidden="true">
+	<div class="ends" aria-hidden="true">
 		<span>{ago}</span>
 		<span>now</span>
 	</div>
 </figure>
 
 <style>
+	.usage-chart {
+		min-width: 0;
+		margin: 0;
+	}
+	.cap {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0 0.75rem;
+		font-size: 0.8125rem;
+	}
+	.cap-label {
+		font-weight: 500;
+		color: var(--hk-text);
+	}
+	.cap-reading {
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.plot {
+		position: relative;
+		height: 80px;
+		margin-top: 0.5rem;
+	}
+	.svg {
+		display: block;
+		overflow: visible;
+	}
+	.svg:focus-visible {
+		outline: 2px solid var(--hk-accent);
+		outline-offset: 2px;
+		border-radius: var(--hk-radius-xs);
+	}
 	.grid {
-		stroke: var(--rule);
+		stroke: var(--hk-hairline);
 		stroke-width: 1;
 		stroke-dasharray: 2 3;
 	}
 	.base {
-		stroke: var(--rule-strong);
+		stroke: var(--hk-border-strong);
 		stroke-width: 1;
 	}
 	.axis {
-		fill: var(--ink-faint);
+		fill: var(--hk-text-3);
 		font-size: 11px;
+		font-variant-numeric: tabular-nums;
 	}
 	.area {
-		fill: var(--chart-line);
-		opacity: 0.12;
+		fill: var(--hk-accent-wash);
 	}
 	.line {
 		fill: none;
-		stroke: var(--chart-line);
-		stroke-width: 2;
+		stroke: var(--hk-accent);
+		stroke-width: 1.5;
 		stroke-linejoin: round;
 		stroke-linecap: round;
 	}
 	.dot {
-		fill: var(--chart-line);
+		fill: var(--hk-accent);
 	}
 	.cursor {
-		stroke: var(--ink-muted);
+		stroke: var(--hk-border-strong);
 		stroke-width: 1;
 	}
 	.mark {
-		fill: var(--chart-line);
-		stroke: var(--surface);
+		fill: var(--hk-accent);
+		stroke: var(--hk-bg);
 		stroke-width: 2;
 	}
 	.tip {
+		position: absolute;
+		top: 0;
+		display: flex;
+		gap: 0.375rem;
+		padding: 0.25rem 0.5rem;
 		transform: translate(-50%, 2px);
+		pointer-events: none;
 		white-space: nowrap;
-		background: var(--surface);
-		border-color: var(--rule-strong);
+		border-radius: var(--hk-radius);
+		background: var(--hk-surface);
+		box-shadow: var(--hk-shadow-pop);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.tip-when {
+		color: var(--hk-text-3);
+	}
+	.tip-v {
+		font-weight: 500;
+	}
+	.ends {
+		display: flex;
+		justify-content: space-between;
+		margin-top: 0.25rem;
+		font-size: 0.6875rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
 	}
 	@media (forced-colors: active) {
 		.line,

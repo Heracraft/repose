@@ -1,84 +1,81 @@
 <!--
-  The plan's three limits over /projects (I-659, I-674): memory running
-  now as the plan's squares filled by each running machine, then disk the
-  projects hold and egress this period as a figure with a small ring. The
-  band opens /billing. Memory is summed from the list itself (a size class's memory
-  for each running machine), so it reads even with billing off or failing.
-  With no usage or no limits from the api, the other cells are facts the list already
-  holds: machines running, agents needing input, and the disk the guests
-  use, as one row of equal cells. A cell whose figures are missing is
-  left out.
+  The plan's three limits under the projects table (I-659, I-674, I-837):
+  one row between two hairlines, each cell the Meter anatomy (label left,
+  value right, figure under). Memory running fills the plan's squares with
+  each machine that holds memory and opens /billing; disk held and egress
+  this period are 6px meters; the row ends with a link to Billing. Memory
+  is summed from the list itself, so it reads even with billing off or
+  failing. With no plan limits from the api, the cells are facts the list
+  already holds, as text: memory running, machines running, agents
+  needing input and the disk the guests use.
 -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { classMemoryGB, gb, money, sizeGB } from '$lib/format';
+	import { classMemoryGB, gb, sizeGB } from '$lib/format';
 	import { holdsMemory } from '$lib/plans';
 	import MemoryBlocks from '$lib/components/MemoryBlocks.svelte';
+	import Meter from '$lib/components/Meter.svelte';
 	import { frozenSince } from '$lib/frozen';
-	import UsageRing from '$lib/components/UsageRing.svelte';
 	import type { Billing, Project, Question } from '$lib/api/types';
 
 	let {
 		projects,
 		billing,
-		questions = [],
-		flat = false
+		questions = []
 	}: {
 		projects: Project[];
 		/** GET /billing, or undefined when billing is off or did not load. */
 		billing?: Billing;
 		/** Pending questions: an agent asking one needs input too. */
 		questions?: Question[];
-		/** No box of its own: it sits in a card that draws one. */
-		flat?: boolean;
 	} = $props();
 
 	/** One decimal at most: the api's held disk is a fraction of a GB. */
 	const fmt = (n: number) => sizeGB(Math.round(n * 10) / 10);
-
-	interface Cell {
-		label: string;
-		used: number;
-		limit?: number;
-		sub?: string;
-		/** Formats used and limit; the plan's GB figures by default. */
-		format?: (n: number) => string;
-		/** Where the cell opens; a cell without one is not a link. */
-		href?: string;
-		/** Amber: an agent is waiting on you. */
-		warn?: boolean;
-		/** The meter is drawn only for a plan limit. */
-		meter?: boolean;
-	}
-
-	const count = (n: number) => String(n);
 	const billingHref = resolve('/billing');
+	/** "5 GB of 500 GB", "0 GB of 1 TB", "28 GB of 32 GB · over": the plan's units, as /billing prints them. */
+	const reading = (used: number, limit: number) =>
+		`${fmt(used)} of ${fmt(limit)}${used > limit ? ' · over' : ''}`;
 
 	/** An agent waiting on you, as AgentChips marks it. */
 	const waiting = (state: string) => state === 'needs_input' || state === 'question';
 
-	// The five states that hold the plan's memory, not `running` alone:
-	// a machine that is building, starting, creating or restoring is
-	// charged against the limit that refuses the next start
-	// (internal/billing/usage.go, pinned by plans.test.ts). Counting one
-	// state told the user they had room the api then refused, and printed
-	// a different figure from /billing for the same instant.
+	// The five states that hold the plan's memory, not `running` alone
+	// (internal/billing/usage.go, pinned by plans.test.ts): counting one
+	// state told the user they had room the api then refused.
 	let segments = $derived(
 		projects
 			.filter(holdsMemory)
 			.map((p) => ({ name: p.name, gb: classMemoryGB(p.class), frozen: !!frozenSince(p) }))
 	);
-	let memoryRunning = $derived(
-		projects.filter(holdsMemory).reduce((n, p) => n + classMemoryGB(p.class), 0)
-	);
+	let memoryRunning = $derived(segments.reduce((n, s) => n + s.gb, 0));
 
-	/** Cells from the list alone, for when billing gives no usage. */
-	function listCells(): Cell[] {
-		const out: Cell[] = [];
-		const running = projects.filter(holdsMemory).length;
-		// No denominator: a plan sells no project count (I-569), so "3 of
-		// 40" read as a limit on what may run, which is false on every plan.
-		out.push({ label: 'Machines running', used: running, format: count });
+	let usage = $derived(billing?.usage);
+	let memoryLimit = $derived(usage && usage.memory_gb > 0 ? usage.memory_gb : undefined);
+	let diskHeld = $derived(usage ? (usage.disk_held_gb ?? usage.disk_allocated_gb) : 0);
+	let memoryOver = $derived(memoryLimit !== undefined && memoryRunning > memoryLimit);
+
+	interface Fact {
+		label: string;
+		value: string;
+		sub?: string;
+		href?: string;
+		/** The cell's link name, when it is a link. */
+		name?: string;
+	}
+
+	/** The list's own facts, for a plan with no limits to draw against. */
+	let facts = $derived.by((): Fact[] => {
+		const out: Fact[] = [
+			{
+				label: 'Memory running',
+				value: fmt(memoryRunning),
+				href: billingHref,
+				name: `Memory running, ${fmt(memoryRunning)}`
+			}
+		];
+		// No denominator: a plan sells no project count (I-569).
+		out.push({ label: 'Machines running', value: String(segments.length) });
 
 		// One agent once, whether its signal, its question or both say so.
 		const signalled = projects.flatMap((p) =>
@@ -87,23 +84,19 @@
 				.map((a) => ({ id: p.id, agent: a.agent }))
 		);
 		const waiters = [...signalled, ...questions.map((q) => ({ id: q.project_id, agent: q.agent }))];
-		const agentKeys = new Set(waiters.map((w) => `${w.id}\u0000${w.agent}`));
-		const askingIds = new Set(waiters.map((w) => w.id));
-		const agents = agentKeys.size;
-		const asking = [...askingIds].map(
+		const agents = new Set(waiters.map((w) => `${w.id}\u0000${w.agent}`)).size;
+		const askingIds = [...new Set(waiters.map((w) => w.id))];
+		const names = askingIds.map(
 			(id) =>
-				projects.find((p) => p.id === id) ?? {
-					id,
-					name: questions.find((q) => q.project_id === id)?.project ?? id
-				}
+				projects.find((p) => p.id === id)?.name ??
+				questions.find((q) => q.project_id === id)?.project ??
+				id
 		);
 		out.push({
 			label: 'Agents needing input',
-			used: agents,
-			format: count,
-			warn: agents > 0,
-			sub: asking.length > 0 ? asking.map((p) => p.name).join(', ') : undefined,
-			href: asking.length === 1 ? resolve('/projects/[id]', { id: asking[0].id }) : undefined
+			value: String(agents),
+			sub: names.length > 0 ? names.join(', ') : undefined,
+			href: askingIds.length === 1 ? resolve('/projects/[id]', { id: askingIds[0] }) : undefined
 		});
 
 		// Only guests that reported their root filesystem count, on both sides.
@@ -111,286 +104,173 @@
 		if (sampled.length > 0) {
 			const used = sampled.reduce((n, p) => n + (p.root_used_bytes ?? 0), 0);
 			const size = sampled.reduce((n, p) => n + (p.root_size_bytes ?? p.volume_bytes), 0);
-			out.push({ label: 'Disk in use', used, limit: size > 0 ? size : undefined, format: gb });
+			out.push({
+				label: 'Disk in use',
+				value: size > 0 ? `${gb(used)} of ${gb(size)}` : gb(used)
+			});
 		}
 		return out;
-	}
-
-	let cells = $derived.by((): Cell[] => {
-		const u = billing?.usage;
-		const memoryLimit = u && u.memory_gb > 0 ? u.memory_gb : undefined;
-		const memory: Cell = {
-			label: 'Memory running',
-			used: memoryRunning,
-			limit: memoryLimit,
-			href: billingHref,
-			meter: memoryLimit !== undefined
-		};
-		if (!u) return [memory, ...listCells()];
-		const out: Cell[] = [memory];
-		if (u.disk_gb > 0) {
-			out.push({
-				label: 'Disk held',
-				used: u.disk_held_gb ?? u.disk_allocated_gb,
-				limit: u.disk_gb,
-				href: billingHref,
-				meter: true
-			});
-		}
-		if (u.egress_included_gb > 0) {
-			out.push({
-				label: 'Egress this period',
-				used: u.egress_gb,
-				limit: u.egress_included_gb,
-				sub: u.overage_cents > 0 ? `${money(u.overage_cents)} overage so far` : undefined,
-				href: billingHref,
-				meter: true
-			});
-		}
-		// A plan with no limits yet (waitlist, no subscription) answers with
-		// zeros: the list's own facts fill the strip instead.
-		return out.length === 1 && !memory.meter ? [memory, ...listCells()] : out;
 	});
-	let m = $derived(cells[0]);
-	let mOver = $derived(m.limit !== undefined && m.used > m.limit);
-	let rest = $derived(cells.slice(1));
-
-	/** Over a plan limit: drawn amber, and the row's sub line says by how much. */
-	const isOver = (c: Cell) => c.meter === true && c.limit !== undefined && c.used > c.limit;
-	function subOf(c: Cell): string | undefined {
-		const f = c.format ?? fmt;
-		const by = isOver(c) && c.limit !== undefined ? `over by ${f(c.used - c.limit)}` : undefined;
-		return [by, c.sub].filter(Boolean).join(' · ') || undefined;
-	}
 </script>
 
-<!-- "700 GB of 500 GB": it wraps before "of", never inside a figure. -->
-{#snippet figure(c: Cell)}
-	{@const f = c.format ?? fmt}
-	<span class="nowrap">{f(c.used)}</span>
-	{#if c.limit !== undefined}<span class="plan-of nowrap">of {f(c.limit)}</span>{/if}
-{/snippet}
-
-<!-- Laid out by its own width, not the viewport's: it also sits in a
-     22rem column beside an empty list. -->
-<div class="strip" class:strip--flat={flat}>
-	{#if m.meter}
-		<div class="band" data-testid="plan-strip">
-			<svelte:element
-				this={m.href ? 'a' : 'div'}
-				href={m.href}
-				class="mem"
-				aria-label="{m.label}, {fmt(m.used)}{m.limit !== undefined
-					? ` of ${fmt(m.limit)}`
-					: ''}{mOver ? ', over' : ''}"
+<section
+	class="plan"
+	class:plan--facts={memoryLimit === undefined}
+	aria-label="Plan"
+	data-testid="plan-strip"
+>
+	{#if memoryLimit !== undefined && usage}
+		<a
+			href={billingHref}
+			class="cell cell--link"
+			aria-label="Memory running, {fmt(memoryRunning)} of {fmt(memoryLimit)}{memoryOver
+				? ', over'
+				: ''}"
+		>
+			<Meter
+				label="Memory running"
+				used={memoryRunning}
+				limit={memoryLimit}
+				valueText={reading(memoryRunning, memoryLimit)}
 			>
-				<span class="stat-label">{m.label}</span>
-				<span class="stat-value" class:plan-over={mOver}>{@render figure(m)}</span>
-				{#if mOver && m.limit !== undefined}
-					<span class="stat-sub plan-over-sub">over by {fmt(m.used - m.limit)}</span>
-				{/if}
-				{#if m.limit !== undefined}
-					<span class="mem-blocks"><MemoryBlocks label={m.label} {segments} limit={m.limit} /></span
-					>
-				{/if}
-			</svelte:element>
-			{#if rest.length}
-				<div class="side">
-					{#each rest as c (c.label)}
-						{@const f = c.format ?? fmt}
-						{@const over = isOver(c)}
-						{@const sub = subOf(c)}
-						<svelte:element
-							this={c.href ? 'a' : 'div'}
-							href={c.href}
-							class="row"
-							class:row--link={!!c.href}
-							class:row--warn={c.warn}
-						>
-							{#if c.meter && c.limit !== undefined}
-								<UsageRing label={c.label} used={c.used} limit={c.limit} format={f} />
-							{/if}
-							<span class="row-label">{c.label}</span>
-							<span class="row-value" class:plan-over={over}>{@render figure(c)}</span>
-							{#if sub}<span class="row-sub" class:plan-over-sub={over}>{sub}</span>{/if}
-						</svelte:element>
-					{/each}
-				</div>
-			{/if}
-		</div>
+				{#snippet track()}
+					<MemoryBlocks
+						label="Memory running"
+						{segments}
+						limit={memoryLimit!}
+						size={8}
+						meter={false}
+						legend
+					/>
+				{/snippet}
+			</Meter>
+		</a>
+		{#if usage.disk_gb > 0}
+			<div class="cell">
+				<Meter
+					label="Disk held"
+					used={diskHeld}
+					limit={usage.disk_gb}
+					valueText={reading(diskHeld, usage.disk_gb)}
+				/>
+			</div>
+		{/if}
+		{#if usage.egress_included_gb > 0}
+			<div class="cell">
+				<Meter
+					label="Egress this period"
+					used={usage.egress_gb}
+					limit={usage.egress_included_gb}
+					valueText={reading(usage.egress_gb, usage.egress_included_gb)}
+				/>
+			</div>
+		{/if}
+		<a href={billingHref} class="hk-more billing">Billing</a>
 	{:else}
-		<!-- No plan limit to draw against: the list's own facts, one row of
-	     equal cells across the band. -->
-		<div class="band band--stats" data-testid="plan-strip">
-			{#each cells as c (c.label)}
-				<svelte:element
-					this={c.href ? 'a' : 'div'}
-					href={c.href}
-					class="cell"
-					class:row--link={!!c.href}
-					class:row--warn={c.warn}
-					aria-label={c.href
-						? `${c.label}, ${(c.format ?? fmt)(c.used)}${c.limit !== undefined ? ` of ${(c.format ?? fmt)(c.limit)}` : ''}`
-						: undefined}
-				>
-					<span class="stat-label">{c.label}</span>
-					<span class="stat-value cell-value">{@render figure(c)}</span>
-					{#if c.sub}<span class="row-sub">{c.sub}</span>{/if}
-				</svelte:element>
-			{/each}
-		</div>
+		{#each facts as f (f.label)}
+			<!-- Spans only inside a cell: the label and its figure read as
+			     one line, and the cell is the innermost box holding both. -->
+			<svelte:element
+				this={f.href ? 'a' : 'div'}
+				href={f.href}
+				class="cell fact"
+				class:cell--link={!!f.href}
+				aria-label={f.name}
+			>
+				<span class="fact-label">{f.label}</span>
+				<span class="fact-value">{f.value}</span>
+				{#if f.sub}<span class="fact-sub">{f.sub}</span>{/if}
+			</svelte:element>
+		{/each}
 	{/if}
-</div>
+</section>
 
 <style>
-	.strip {
-		container-type: inline-size;
-	}
-	.strip--flat .band {
-		border: 0;
-		border-radius: 0;
-	}
-	.strip--flat .band:not(.band--stats) {
-		background: transparent;
-	}
-	/* One card: memory, the limit that decides what may start, on the
-	   left with its squares; the other figures in quiet rows beside it. */
-	.band {
+	/* One row between two hairlines; one column below 900px. */
+	.plan {
 		display: grid;
-		border: 1px solid var(--rule);
-		border-radius: var(--radius-md);
-		background: var(--surface);
+		gap: 0.75rem;
+		padding: 1rem 0;
+		border-top: 1px solid var(--hk-hairline);
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	.mem {
-		display: block;
-		padding: 1.25rem 1.5rem;
-		color: inherit;
-	}
-	.mem-blocks {
-		display: block;
-		margin-top: 0.875rem;
-	}
-	.side {
-		display: grid;
-		align-content: center;
-		border-top: 1px solid var(--rule);
-	}
-	.row {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		align-items: center;
-		column-gap: 0.75rem;
-		padding: 0.875rem 1.5rem;
-		color: inherit;
-	}
-	.row:not(:has(svg)) {
-		grid-template-columns: minmax(0, 1fr) auto;
-	}
-	.row + .row {
-		border-top: 1px solid var(--rule);
-	}
-	.mem,
-	.cell,
-	.row--link {
-		transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	.mem:is(a):hover,
-	.row--link:hover {
-		background-color: color-mix(in srgb, var(--sunken) 70%, transparent);
-	}
-	.row-label {
-		min-width: 0;
-		font-size: var(--text-sm);
-		color: var(--ink-muted);
-	}
-	.row-value {
-		font-size: 0.9375rem;
-		font-variant-numeric: tabular-nums;
-		text-align: right;
-	}
-	.nowrap {
-		white-space: nowrap;
-	}
-	.row-sub {
-		grid-column: 1 / -1;
-		margin-top: 0.125rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		font-size: var(--text-xs);
-		color: var(--ink-muted);
-	}
-	.plan-of {
-		margin-left: 0;
-		font-family: var(--font-sans);
-		font-size: var(--text-sm);
-		font-weight: 400;
-		letter-spacing: 0;
-		color: var(--ink-muted);
-	}
-	.row-value .plan-of {
-		margin-left: 0;
-	}
-	.plan-over,
-	.plan-over .plan-of,
-	.plan-over-sub,
-	.row--warn .row-value,
-	.row--warn .cell-value {
-		color: var(--color-amber-800);
-	}
-	@media (prefers-color-scheme: dark) {
-		.plan-over,
-		.plan-over .plan-of,
-		.plan-over-sub,
-		.row--warn .row-value,
-		.row--warn .cell-value {
-			color: var(--color-amber-300);
+	@media (min-width: 900px) {
+		.plan {
+			grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+			align-items: start;
+			gap: 2.5rem;
 		}
-	}
-	/* The list's facts with no plan limit: equal cells split by hairlines,
-	   two to a row on a phone, one row from md. The band's rule colour
-	   shows through the 1px gaps as the hairlines. */
-	.band--stats {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 1px;
-		overflow: hidden;
-		background: var(--rule);
+		.plan--facts {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
 	}
 	.cell {
 		display: block;
 		min-width: 0;
-		padding: 1rem 1.25rem;
-		background: var(--surface);
 		color: inherit;
+		text-decoration: none;
 	}
-	.cell:last-child:nth-child(odd) {
+	.cell--link {
+		border-radius: var(--hk-radius-sm);
+		outline-offset: 4px;
+	}
+	.cell--link:hover :global(.hk-meter-label),
+	.cell--link:hover .fact-label {
+		color: var(--hk-text);
+	}
+	/* On the labels' line, at the row's right end: same size and line box
+	   as a meter label, so the baselines meet. */
+	.billing {
+		align-self: start;
+		margin-top: 0;
+		font-size: 0.8125rem;
+		white-space: nowrap;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.billing {
+			display: inline-flex;
+			align-items: center;
+			justify-self: start;
+			min-height: 2.75rem;
+			margin-block: -0.6875rem;
+		}
+	}
+	/* The list's facts: label left, figure right, a sub line under. */
+	.fact {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: baseline;
+		column-gap: 0.75rem;
+	}
+	.fact-label {
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		white-space: nowrap;
+		transition: color var(--hk-dur-fast) var(--hk-ease);
+	}
+	.fact-value {
+		font-size: 0.8125rem;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--hk-text);
+		white-space: nowrap;
+	}
+	.fact-sub {
 		grid-column: 1 / -1;
-	}
-	.cell.row--link:hover {
-		background-color: color-mix(in srgb, var(--sunken) 70%, var(--surface));
-	}
-	.cell .row-sub {
-		display: block;
 		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
 	}
-	@container (width >= 44rem) {
-		.band {
-			grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+	/* Forced colours drop the track's colour-mix fill: draw its edge, so
+	   the limit shows (request to FOUNDATION for Meter itself). */
+	@media (forced-colors: active) {
+		.plan :global(.hk-meter-track) {
+			border: 1px solid GrayText;
+			background: Canvas;
 		}
-		.side {
-			border-top: 0;
-			border-left: 1px solid var(--rule);
-		}
-		.band--stats {
-			grid-template-columns: none;
-			grid-auto-flow: column;
-			grid-auto-columns: minmax(0, 1fr);
-		}
-		.cell {
-			padding: 1.25rem 1.5rem;
-		}
-		.cell:last-child:nth-child(odd) {
-			grid-column: auto;
+		.plan :global(.hk-meter-fill) {
+			forced-color-adjust: none;
+			background: CanvasText;
 		}
 	}
 </style>

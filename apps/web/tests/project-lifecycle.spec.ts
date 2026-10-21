@@ -163,11 +163,14 @@ test('restoring a snapshot over the disk asks for the slug, like Destroy', async
 	await row.getByRole('button', { name: 'Restore…' }).click();
 	const panel = row.getByTestId('restore-confirm');
 	await expect(panel).toContainText('Anything written since');
-	const restore = panel.getByRole('button', { name: 'Restore', exact: true });
-	await expect(restore).toBeDisabled();
-	await panel.getByLabel(/to confirm/).fill(p.slug);
+	// Running: no typed confirm to fill in vain. The line says why, and
+	// focus goes to the outcome that works now, with a name to start from.
 	await expect(panel).toContainText(`Stop ${p.slug} first`);
-	await expect(restore).toBeDisabled();
+	await expect(panel.getByLabel(/to confirm/)).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0);
+	const name = panel.getByLabel('Name for the restored project');
+	await expect(name).toBeFocused();
+	await expect(name).toHaveValue(`${p.slug}-restored`);
 
 	await panel.getByRole('button', { name: 'Cancel' }).click();
 	await expect(panel).toHaveCount(0);
@@ -187,12 +190,17 @@ test('restore as new has a labelled name field and fits a phone screen', async (
 	await page.goto(`/projects/${p.id}`);
 
 	const row = page.getByTestId('snapshot-row');
-	await row.getByRole('button', { name: 'Restore as new…' }).click();
+	await row.getByRole('button', { name: 'Restore…' }).click();
 	const name = row.getByLabel('Name for the restored project');
 	await expect(name).toBeVisible();
-	await expect(row.getByRole('button', { name: 'Restore as new' })).toBeDisabled();
+	// An empty name is refused under the field, never by a grey button.
+	await name.fill('');
+	await row.getByRole('button', { name: 'Restore as new' }).click();
+	await expect(row.getByText('Name is required.')).toBeVisible();
+	await expect(name).toBeFocused();
+	await expect(name).toHaveAttribute('aria-invalid', 'true');
 	await name.fill('snap-new-copy');
-	await expect(row.getByRole('button', { name: 'Restore as new' })).toBeEnabled();
+	await expect(row.getByText('Name is required.')).toHaveCount(0);
 	const overflow = await page.evaluate(
 		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
 	);
@@ -206,6 +214,7 @@ test('destroy requires the exact slug and redirects to the projects list', async
 	});
 	await page.goto(`/projects/${p.id}`);
 
+	await page.getByRole('button', { name: `Destroy ${p.slug}…` }).click();
 	const destroyBtn = page.getByRole('button', { name: 'Destroy', exact: true });
 	await expect(destroyBtn).toBeDisabled();
 
@@ -228,6 +237,7 @@ test('a destroyed project can be restored from the projects list', async ({ page
 		remote_url: 'github.com/heracraft/restore-app'
 	});
 	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: `Destroy ${p.slug}…` }).click();
 	await page.getByLabel(/to confirm/).fill(p.slug);
 	await page.getByRole('button', { name: 'Destroy', exact: true }).click();
 	await expect(page).toHaveURL('/projects', { timeout: 10_000 });
@@ -431,10 +441,7 @@ test('Restore as new opens the project it made', async ({ page }) => {
 		body: '{}'
 	});
 	await page.goto(`/projects/${p.id}`);
-	await page
-		.getByRole('button', { name: /Restore as new/ })
-		.first()
-		.click();
+	await page.getByRole('button', { name: 'Restore…' }).first().click();
 	const name = `restored-${Math.random().toString(36).slice(2, 8)}`;
 	await page.getByLabel('Name for the restored project').fill(name);
 	await page.getByRole('button', { name: 'Restore as new', exact: true }).click();

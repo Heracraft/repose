@@ -1,11 +1,11 @@
 <!--
-  The machine behind a project: the memory in use now (the newest
-  sample, I-492) and the disk (the guest's root filesystem, I-567), each
-  a figure with a small ring (I-674). The size's cores and memory are on
-  the page's status line, so the card does not repeat them. The disk grows in
-  place: Resize… under the disk opens the page's resize panel, which
-  runs the frame's width under this row, since a form needs room and this
-  card is a third of it (I-680).
+  The machine behind a project (I-837): memory in use now (the newest
+  sample, I-492) and the disk (the guest's root filesystem, I-567) as
+  meters, then this project's egress this billing period. The size's
+  cores and memory are on the page's status line, so the section does not
+  repeat them. Under the disk, Resize…, which opens the
+  page's resize panel across the frame under this row, since a form needs
+  room (I-680).
 -->
 <script module lang="ts">
 	/** The disk sizes Resize offers, as /docs/machine names them (20 to 320 GB). */
@@ -13,18 +13,17 @@
 </script>
 
 <script lang="ts">
-	import UsageRing from '$lib/components/UsageRing.svelte';
-	import Snowflake from '$lib/components/Snowflake.svelte';
+	import Meter from '$lib/components/Meter.svelte';
 	import { diskFullPercent } from '$lib/disk';
-	import { bytes, classMemoryGB, gb } from '$lib/format';
+	import { bytes, classMemoryGB, gb, gbs } from '$lib/format';
 	import type { Project } from '$lib/api/types';
 
 	let {
 		project,
 		memUsed,
 		memTotal,
+		egressGb,
 		busy = false,
-		frozen = false,
 		resizeOpen = false,
 		onresizetoggle
 	}: {
@@ -33,20 +32,19 @@
 		memUsed?: number;
 		/** The machine's memory in bytes, from the samples. */
 		memTotal?: number;
+		/** This project's egress this billing period, in GB; undefined with billing off. */
+		egressGb?: number;
 		/** Another operation runs: Resize… waits. */
 		busy?: boolean;
 		/** The page's resize panel is open. */
 		resizeOpen?: boolean;
-		/** Frozen while idle (I-683, behind a flag): an ice edge and mark. */
-		frozen?: boolean;
 		/** Opens the page's resize panel, or closes it when open. */
 		onresizetoggle: () => void;
 	} = $props();
 
 	const GIB = 1024 * 1024 * 1024;
 
-	let ownGB = $derived(classMemoryGB(project.class));
-	let memBytes = $derived(memTotal ?? ownGB * GIB);
+	let memBytes = $derived(memTotal ?? classMemoryGB(project.class) * GIB);
 
 	// Used is the guest's root filesystem, what its writes run out of; the
 	// volume's allocated figure keeps deleted files until the daily fstrim
@@ -58,128 +56,150 @@
 	let canGrow = $derived(DISK_SIZES_GB.some((s) => s * GIB > project.volume_bytes));
 </script>
 
-<section
-	class="card flex flex-col"
-	class:machine--frozen={frozen}
-	data-testid="machine-card"
-	aria-labelledby="machine-title"
->
-	<div class="flex items-baseline justify-between gap-3">
-		<h2 id="machine-title" class="text-xl font-semibold">Machine</h2>
-		{#if frozen}
-			<span class="machine-frost inline-flex items-center gap-1.5 text-xs"
-				><Snowflake size={13} />frozen</span
-			>
-		{/if}
+<section class="hk-section machine" data-testid="machine-card" aria-labelledby="machine-title">
+	<div class="hk-section-head">
+		<h2 id="machine-title" class="hk-h2-app">Machine</h2>
 	</div>
 
-	<div class="m-row mt-4">
+	<div class="meters">
 		{#if memUsed !== undefined}
-			<UsageRing label="Memory in use" used={memUsed} limit={memBytes} format={bytes} />
+			<Meter
+				label="Memory in use"
+				used={memUsed / GIB}
+				limit={memBytes / GIB}
+				valueText="{bytes(memUsed)} of {bytes(memBytes)}"
+			/>
 		{:else}
-			<span class="m-ring-gap" aria-hidden="true"></span>
+			<div class="line">
+				<span class="line-label">Memory in use</span>
+				<span class="line-value line-value--off">not running</span>
+			</div>
 		{/if}
-		<span class="m-label">Memory in use</span>
-		<span class="m-fig">
-			{#if memUsed !== undefined}<span class="m-n">{bytes(memUsed)}</span>
-				<span class="m-of"> of {bytes(memBytes)}</span>{:else}
-				<span class="m-of">not running</span>{/if}
-		</span>
-	</div>
 
-	<div class="m-row">
-		{#if diskUsed !== undefined && diskSize}
-			<UsageRing label="Disk" used={diskUsed} limit={diskSize} format={gb} />
-		{:else}
-			<span class="m-ring-gap" aria-hidden="true"></span>
-		{/if}
-		<span class="m-label">Disk</span>
-		<span class="m-fig"
-			><span class="m-n">{diskUsed !== undefined ? gb(diskUsed) : '—'}</span>
-			<span class="m-of"> of {gb(diskSize)}</span></span
-		>
-	</div>
-	<div class="m-sub">
-		{#if full !== null}
-			<p
-				class="mt-2 text-xs text-amber-800 tabular-nums dark:text-amber-300"
-				data-testid="disk-full"
-			>
-				{full}% full
-			</p>
-		{/if}
-		<div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-4">
-			<span class="text-xs text-ink-muted tabular-nums" data-testid="disk-volume"
-				>{gb(project.volume_bytes)} disk</span
-			>
-			{#if canGrow}
-				<button
-					type="button"
-					id="resize-open"
-					class="btn-ghost -mr-2 text-xs"
-					aria-expanded={resizeOpen}
-					aria-controls="resize-panel"
-					disabled={busy && !resizeOpen}
-					onclick={onresizetoggle}>Resize…</button
-				>
+		<div>
+			{#if diskUsed !== undefined && diskSize}
+				<Meter
+					label="Disk"
+					used={diskUsed / GIB}
+					limit={diskSize / GIB}
+					valueText="{gb(diskUsed)} of {gb(diskSize)}"
+				/>
 			{:else}
-				<!-- tabindex=-1: after a grow to the largest size, focus comes
-				     here in place of the button that went away. -->
-				<p id="resize-largest" tabindex="-1" class="py-1 text-xs text-ink-muted tabular-nums">
-					{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
-				</p>
+				<div class="line">
+					<span class="line-label">Disk</span>
+					<span class="line-value">{gb(diskSize)}</span>
+				</div>
 			{/if}
+			<div class="disk-foot">
+				<span class="disk-facts">
+					<!-- One size on screen, the meter's (what `repose status`
+					     prints); the volume behind it is for Resize and a reader. -->
+					<span class="hk-sr" data-testid="disk-volume">{gb(project.volume_bytes)} disk</span>
+					{#if full !== null}
+						<span class="disk-full" data-testid="disk-full"
+							><span class="hk-dot hk-dot--warn" aria-hidden="true"></span>{full}% full</span
+						>
+					{/if}
+				</span>
+				{#if canGrow}
+					<button
+						type="button"
+						id="resize-open"
+						class="hk-btn-ghost hk-btn-sm resize"
+						aria-expanded={resizeOpen}
+						aria-controls="resize-panel"
+						disabled={busy && !resizeOpen}
+						onclick={onresizetoggle}>Resize…</button
+					>
+				{:else}
+					<!-- tabindex=-1: after a grow to the largest size, focus comes
+					     here in place of the button that went away. -->
+					<span id="resize-largest" tabindex="-1" class="largest">
+						{DISK_SIZES_GB[DISK_SIZES_GB.length - 1]} GB is the largest size.
+					</span>
+				{/if}
+			</div>
 		</div>
+
+		{#if egressGb !== undefined}
+			<div class="line" data-testid="egress-period">
+				<span class="line-label">Egress this period</span>
+				<span class="line-value">{gbs(egressGb)}</span>
+			</div>
+		{/if}
 	</div>
 </section>
 
 <style>
-	.m-row {
+	.meters {
 		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		align-items: center;
-		column-gap: 0.75rem;
-		padding-block: 0.75rem;
+		gap: 1.25rem;
 	}
-	.m-row + .m-row {
-		border-top: 1px solid var(--rule);
+	/* A figure with no bar, in the meter's top row. */
+	.line {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		font-size: 0.8125rem;
 	}
-	.m-ring-gap {
-		width: 18px;
+	.line-label {
+		color: var(--hk-text-3);
 	}
-	.m-label {
-		min-width: 0;
-		font-size: var(--text-sm);
-		color: var(--ink-muted);
-	}
-	/* A figure may wrap between its number and its "of", never inside
-	   either (I-680). */
-	.m-fig {
-		font-size: 0.9375rem;
+	.line-value {
+		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+		color: var(--hk-text);
+	}
+	.line-value--off {
+		font-weight: 400;
+		color: var(--hk-text-3);
+	}
+	.disk-foot {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+		min-height: 1.875rem;
+		margin-top: 0.375rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
+		font-variant-numeric: tabular-nums;
+	}
+	.disk-facts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 0.75rem;
+	}
+	.disk-full {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		color: var(--hk-text-2);
+	}
+	.resize {
+		margin-left: auto;
+		margin-right: -0.625rem;
+	}
+	@media (forced-colors: active) {
+		.resize {
+			margin-right: 0;
+		}
+	}
+	.largest {
+		margin-left: auto;
 		text-align: right;
 	}
-	.m-n {
-		white-space: nowrap;
-	}
-	.m-of {
-		margin-left: 0;
-		white-space: nowrap;
-		font-size: var(--text-sm);
-		color: var(--ink-muted);
-	}
-	/* Under the disk row, aligned with its label. */
-	/* At the card's foot: when the card is as tall as its row, the space
-	   sits above the volume line, not under it. */
-	.m-sub {
-		margin-top: auto;
-		padding-left: calc(18px + 0.75rem);
-	}
-	.machine--frozen {
-		border-color: color-mix(in srgb, var(--frost) 45%, var(--rule));
-		box-shadow: inset 2px 0 0 var(--frost);
-	}
-	.machine-frost {
-		color: var(--frost);
+	/* Forced colours drop the track's colour-mix fill: draw its edge, so
+	   the limit shows (request to FOUNDATION for Meter itself). */
+	@media (forced-colors: active) {
+		.meters :global(.hk-meter-track) {
+			border: 1px solid GrayText;
+			background: Canvas;
+		}
+		.meters :global(.hk-meter-fill) {
+			forced-color-adjust: none;
+			background: CanvasText;
+		}
 	}
 </style>
