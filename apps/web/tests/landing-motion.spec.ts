@@ -77,3 +77,17 @@ test('nothing else on the page animates on scroll', async ({ page }) => {
 	await scrollThrough(page);
 	expect(await page.evaluate(() => (window as unknown as { seen: string[] }).seen)).toEqual([]);
 });
+
+// review-landing M1: a pane mounted by a client-side navigation back to `/`
+// (the header logo, Pricing, Back) replays like a first load, rather than
+// staying blank until the 5s CSS fallback.
+test('after a client-side navigation back to the landing, the terminal plays', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/docs');
+	await page.waitForTimeout(6000);
+	await page.locator('header a[href="/"]').first().click();
+	await expect(page).toHaveURL(/\/$/);
+	await expect(page.locator('.term')).toHaveClass(/playing/, { timeout: 1000 });
+	await expect(page.locator('.term .ln').first()).toHaveCSS('opacity', '1', { timeout: 1000 });
+	await expect(page.locator('.term .ln').last()).toHaveCSS('opacity', '1', { timeout: 8000 });
+});

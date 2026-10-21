@@ -4,7 +4,11 @@
   (session.ts), so the pane shows what the CLI shows and nothing invented.
 
   Motion: once, when 40% of the pane is in view, each line rises 4px and
-  fades in, one every 450ms; then a still caret sits on a fresh prompt.
+  fades in, one every 450ms; a still caret ends the last line. No prompt
+  follows it: `repose run -p` attaches you to the agent's tmux window, so
+  the real session never returns to a shell. No copy button either: the
+  `cd` into the example folder fails on a visitor's laptop, and the hero's
+  own copy button is the one the reader acts on.
   No loop and no blink, so nothing needs a pause control (WCAG 2.2.2).
   Lines wait hidden by opacity and transform only, so the pane's height
   never changes. They are hidden from the first paint only where app.html's
@@ -14,13 +18,11 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import { SESSION } from './session';
 
 	/** The checkout the session runs in: index.md's `cd` target. */
 	const TITLE = '~/code/your-project';
 	const STEP = 450;
-	const PROMPT = '$ ';
 
 	// Each line is its mark ("$ " before a command, "✓ " before a step
 	// done) and its text, so the mark takes its own colour.
@@ -32,10 +34,7 @@
 			return { cmd: false, mark: done ? '✓ ' : '', text: done ? text.slice(2) : text };
 		})
 	];
-	/** The lines and the closing prompt. */
-	const total = lines.length + 1;
-	/** What Copy puts on the clipboard: the `$` lines as the pane shows them. */
-	const commands = SESSION.commands.join('\n');
+	const total = lines.length;
 
 	let pane: HTMLElement;
 	let playing = $state(false);
@@ -43,9 +42,13 @@
 
 	onMount(() => {
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-		// The CSS fallback has shown every line by now; replaying would
-		// blank a pane the reader is already reading.
-		if (performance.now() > 4500) return;
+		// Read the pane, not the clock: on a first load the lines wait
+		// hidden (html.js) until the CSS fallback shows them 5s in, and a
+		// pane mounted by a client-side navigation starts hidden again.
+		// Once the fallback has run, replaying would blank a pane the
+		// reader is already reading.
+		const first = pane.querySelector('.ln');
+		if (!first || getComputedStyle(first).opacity === '1') return;
 		count = 0;
 		playing = true;
 		let timer: ReturnType<typeof setInterval> | undefined;
@@ -69,22 +72,18 @@
 	});
 </script>
 
-<div class="term" class:playing bind:this={pane} role="region" aria-label={TITLE}>
+<div class="term" class:playing bind:this={pane} role="region" aria-label="A repose run session">
 	<div class="bar">
 		<span class="title">{TITLE}</span>
-		<CopyButton text={commands} label="Copy" ariaLabel="Copy the commands" tone="dark" size="sm" />
 	</div>
 	<div class="body" aria-live="off">
 		{#each lines as line, i (i)}
 			<p class="ln" class:on={i < count} class:cmd={line.cmd}>
 				<span class={line.cmd ? 'dim' : 'ok'} aria-hidden={line.cmd}>{line.mark}</span><span
 					class:dim={!line.cmd}>{line.text}</span
-				>
+				>{#if i === total - 1}<span class="caret" aria-hidden="true"></span>{/if}
 			</p>
 		{/each}
-		<p class="ln prompt" class:on={count >= total} aria-hidden="true">
-			<span class="dim">{PROMPT}</span><span class="caret"></span>
-		</p>
 	</div>
 </div>
 
@@ -93,7 +92,6 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		min-height: 14rem;
 		overflow: hidden;
 		border-radius: var(--hk-radius-lg);
 		background: var(--hk-code-bg);
@@ -103,19 +101,13 @@
 			var(--hk-shadow-terminal);
 		color: var(--hk-code-text);
 	}
-	@media (min-width: 1024px) {
-		.term {
-			min-height: 27rem;
-		}
-	}
 	.bar {
 		display: flex;
 		flex: none;
 		align-items: center;
 		justify-content: space-between;
-		gap: 1rem;
 		height: 2.375rem;
-		padding: 0 0.5rem 0 1rem;
+		padding: 0 1rem;
 		border-bottom: 1px solid var(--hk-code-border);
 		background: var(--hk-code-bar);
 	}
@@ -151,12 +143,12 @@
 	.ok {
 		color: var(--hk-code-ok);
 	}
-	.dim[aria-hidden='true'],
-	.prompt {
+	.dim[aria-hidden='true'] {
 		user-select: none;
 	}
 	.caret {
 		display: inline-block;
+		margin-left: 1ch;
 		width: 7px;
 		height: 14px;
 		vertical-align: -2px;
@@ -189,6 +181,10 @@
 	@media (forced-colors: active) {
 		.term {
 			border: 1px solid CanvasText;
+		}
+		.caret {
+			forced-color-adjust: none;
+			background: CanvasText;
 		}
 	}
 </style>

@@ -42,9 +42,8 @@ headline starting under the logo. In order:
    copies. On the right, the terminal (below).
 2. **"Your laptop's setup, in one command"** (the owner's I-772 heading
    and paragraph), with two steps on hairline rows: Sign in
-   (`repose login`) and Run in any checkout
-   (`cd ~/code/your-project && repose run`, whose Copy copies
-   `repose run`).
+   (`repose login`) and Run in any checkout (`repose run`). Each row
+   shows exactly what its Copy copies, and it runs on a visitor's laptop.
 3. **"On every machine"** (`#features`). Four cells: a serif claim, one
    paragraph, and the command that does it in mono with no copy button,
    since a visitor without the CLI cannot run it.
@@ -53,8 +52,10 @@ headline starting under the logo. In order:
    with "All agents" and "Everything installed" links.
 5. **Pricing** (`#pricing`). "Launch prices. Seven days free.",
    `PlanCells` in its public variant (the one drawing of the plans,
-   I-663), then "Start a free week" and the seats line from
-   `GET /public/seats`.
+   I-663), then "Start a free week" ("Join the waitlist" when no seat is
+   free, since signing up then starts no week) and the seats line from
+   `GET /public/seats`, which names its unit ("18 seats of 8 GB left") so
+   it does not read as Solo's founding places.
 6. **Questions.** Three, each answered from `content/docs/index.md`; the
    restart time is read from it at build time.
 
@@ -68,18 +69,24 @@ time and a reader can reproduce. No isometric or "anatomy" figure, flat or
 ## The terminal
 
 `landing/Terminal.svelte` replays the Quickstart's "4. Let it loose": its
-two commands, the six lines `repose run` prints, then a fresh prompt.
+two commands and the six lines `repose run` prints, ending on "Ready in
+16s." with a still caret. No shell prompt follows: `repose run -p`
+attaches you to the agent's tmux window.
 `landing/session.ts` reads them from `content/docs/index.md` at build
 time, and `Terminal.test.ts` fails when that section changes shape, so
-the pane cannot drift from the docs. Its Copy copies the two commands as
-the pane shows them.
+the pane cannot drift from the docs. It has no copy button: its `cd` into
+the example folder fails on a visitor's laptop, and the `repose run -p`
+after it would then start an agent wherever they are. The pane is as tall
+as its lines, with no empty black under the last one.
 
 It plays once, when 40% of it is in view: each line rises 4px and fades in
-over 240ms, one every 450ms, then a still caret sits on the prompt. It
+over 240ms, one every 450ms, and the caret arrives with the last. It
 does not loop or blink, so it needs no pause control. Hidden lines keep
 their space, so the pane's height never changes. Without scripts, under
 reduced motion, and if the bundle never runs (a CSS fallback 5s in),
-every line shows.
+every line shows. The component decides from the pane, not the clock:
+it replays whenever its lines are still hidden at mount, so a client-side
+navigation back to `/` replays too.
 
 ## Each fact once
 

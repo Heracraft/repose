@@ -2,7 +2,9 @@
 // started" with a labelled copy of the install command, and a near-black
 // terminal replaying the Quickstart's `repose run` session as index.md
 // prints it. The terminal plays once, keeps its height while it does, and
-// shows every line at once without scripts or under reduced motion.
+// shows every line at once without scripts or under reduced motion. It
+// ends on "Ready in 16s." and a still caret: `repose run -p` attaches you
+// to the agent, so no shell prompt comes back. It has no copy button.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +20,7 @@ const section = index.split('\n## 4. Let it loose\n')[1].split('\n## ')[0];
 const [commands, output] = [...section.matchAll(/^```[a-z]*\n([\s\S]*?)^```$/gm)].map((m) =>
 	m[1].trimEnd().split('\n')
 );
-const expected = [...commands.map((c) => `$ ${c}`), ...output, '$'];
+const expected = [...commands.map((c) => `$ ${c}`), ...output];
 
 const lines = (page: Page) => page.locator('.term .ln');
 
@@ -26,7 +28,7 @@ async function texts(page: Page): Promise<string[]> {
 	return (await lines(page).allTextContents()).map((t) => t.replace(/\s+$/, ''));
 }
 
-test('the session is index.md\'s, in order, ending "Ready in 16s." and a prompt', async () => {
+test('the session is index.md\'s, in order, ending "Ready in 16s."', async () => {
 	expect(commands).toEqual(['cd ~/code/your-project', expect.stringMatching(/^repose run -p "/)]);
 	expect(output.at(-1)).toMatch(/^Ready in \d+s\.$/);
 });
@@ -37,24 +39,27 @@ test.describe('without scripts', () => {
 	test('the prerendered terminal shows every line', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/');
-		const term = page.getByRole('region', { name: '~/code/your-project' });
+		const term = page.getByRole('region', { name: 'A repose run session' });
 		await expect(term).toBeVisible();
+		await expect(term.locator('.title')).toHaveText('~/code/your-project');
 		expect(await texts(page)).toEqual(expected);
 		for (const line of await lines(page).all()) await expect(line).toHaveCSS('opacity', '1');
-		await expect(term.locator('.caret')).toBeVisible();
+		// The caret ends the "Ready" line; no prompt line follows it.
+		await expect(lines(page).last().locator('.caret')).toBeVisible();
+		await expect(term.locator('.caret')).toHaveCount(1);
 	});
 });
 
-test('the terminal plays once, ends at a still prompt, and keeps its height', async ({ page }) => {
+test('the terminal plays once, ends at a still caret, and keeps its height', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	const term = page.locator('.term');
 	await expect(term).toHaveClass(/playing/);
 	const before = await term.boundingBox();
-	// Mid-play: the first command is in, the prompt is not yet.
+	// Mid-play: the first command is in, the "Ready" line is not yet.
 	await expect(lines(page).first()).toHaveCSS('opacity', '1');
 	await expect(lines(page).last()).toHaveCSS('opacity', '0');
-	// 9 lines one every 450ms, plus the 240ms entry.
+	// 8 lines one every 450ms, plus the 240ms entry.
 	await expect(lines(page).last()).toHaveCSS('opacity', '1', { timeout: 8000 });
 	expect(await texts(page)).toEqual(expected);
 	const after = await term.boundingBox();
@@ -76,14 +81,14 @@ test('under reduced motion every line shows at once', async ({ page }) => {
 	expect(await texts(page)).toEqual(expected);
 });
 
-test("the terminal's Copy copies the two commands as shown", async ({ page, context }) => {
-	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+// Its `cd ~/code/your-project` fails on a visitor's laptop, and the
+// `repose run -p` after it would then start an agent in whatever folder
+// they are in; the hero's install copy is the one the reader acts on.
+test('the terminal has no copy button', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	const copy = page.getByRole('button', { name: 'Copy the commands' });
-	await expect(copy).toHaveText(/Copy/);
-	await copy.click();
-	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(commands.join('\n'));
+	await expect(page.locator('.term')).toBeVisible();
+	await expect(page.locator('.term button')).toHaveCount(0);
 });
 
 test('the hero: eyebrow, headline, two-tone lead, one primary and the install copy', async ({
@@ -108,14 +113,19 @@ test('the hero: eyebrow, headline, two-tone lead, one primary and the install co
 	await expect(hero.locator('.hk-btn')).toHaveCount(1);
 });
 
-test("at 1440 the hero's two columns differ in height by less than 20%", async ({ page }) => {
+// The pane replays a fixed set of lines, so it is as tall as they are:
+// no empty black under the last one (review-landing S3).
+test('at 1440 the terminal sits beside the copy, sized to its lines', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
 	const left = (await page.locator('.hero-copy').boundingBox())!;
 	const right = (await page.locator('.term').boundingBox())!;
 	expect(right.x).toBeGreaterThan(left.x + left.width);
-	const diff = Math.abs(left.height - right.height) / Math.max(left.height, right.height);
-	expect(diff).toBeLessThan(0.2);
+	const last = (await lines(page).last().boundingBox())!;
+	expect(right.y + right.height - (last.y + last.height)).toBeLessThanOrEqual(64);
+	// Centred on the copy column.
+	const mid = (b: { y: number; height: number }) => b.y + b.height / 2;
+	expect(Math.abs(mid(left) - mid(right))).toBeLessThanOrEqual(2);
 	// The whole hero, terminal included, is in the first screen.
 	expect(right.y + right.height).toBeLessThanOrEqual(900);
 });

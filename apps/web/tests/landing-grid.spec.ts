@@ -86,7 +86,8 @@ test("the agents list is agents.md's table", async ({ page }) => {
 	await page.goto('/');
 	const list = page.getByRole('list', { name: 'Agents' });
 	await expect(list.locator('.name')).toHaveText(rows.map(([n]) => n));
-	await expect(list.locator('.flag')).toHaveText(rows.map(([, f]) => f));
+	// Each value carries its flag, so the column says what it is.
+	await expect(list.locator('.flag')).toHaveText(rows.map(([, f]) => `--agent ${f}`));
 	const section = page.locator('section', {
 		has: page.getByRole('heading', { name: 'Agents on first boot' })
 	});

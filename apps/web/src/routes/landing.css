@@ -141,12 +141,31 @@
 .landing .more .hk-more {
 	margin-top: 0;
 }
+/* On touch each link is a 44px target; the padding stands in for the gap. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.landing .more {
+		gap: 0;
+		margin-top: 0.5625rem;
+	}
+	.landing .more .hk-more {
+		padding-block: 0.6875rem;
+	}
+}
 
 /* Section 2: two steps on hairline rows, each with its command. */
 .landing .steps {
 	margin: 0;
 	padding: 0;
 	list-style: none;
+}
+/* On touch CodeCopy's Copy is 44px tall inside a 42px box and draws over
+   the box's edges; until CodeCopy grows its box (requests/foundation.md,
+   review-landing S7), the box here is the button's height plus its border. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.landing .steps .code-copy {
+		min-height: 2.875rem;
+		padding-block: 0;
+	}
 }
 .landing .steps > li {
 	padding: 0.875rem 0;

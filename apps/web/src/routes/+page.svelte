@@ -47,17 +47,11 @@
 	// On a phone the install line breaks at its spaces, never inside the URL.
 	const install = INSTALL_COMMAND.split(/(https:\/\/\S+)/);
 
-	// The checkout in the run step is the terminal's example folder, so its
-	// Copy copies `repose run` alone: a pasted `cd ~/code/your-project`
-	// fails on a visitor's laptop.
-	const steps: { title: string; command: string; copy?: string; what: string }[] = [
+	// Each row shows exactly what its Copy puts on the clipboard, and that
+	// runs on a visitor's laptop: the row's title names the folder.
+	const steps: { title: string; command: string; what: string }[] = [
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
-		{
-			title: 'Run in any checkout',
-			command: 'cd ~/code/your-project && repose run',
-			copy: 'repose run',
-			what: 'repose run, to run in your checkout'
-		}
+		{ title: 'Run in any checkout', command: 'repose run', what: 'repose run' }
 	];
 
 	// The founding price shows while GET /public/seats has places left, and
@@ -139,7 +133,7 @@
 			{#each steps as step (step.title)}
 				<li>
 					<p class="step-title">{step.title}</p>
-					<CodeCopy command={step.command} copy={step.copy} what={step.what} prompt />
+					<CodeCopy command={step.command} what={step.what} prompt />
 				</li>
 			{/each}
 		</ol>
@@ -161,16 +155,14 @@
 			<li>
 				<h3 class="hk-h3">The machine's ports on your localhost</h3>
 				<p>
-					Ports from 1024 up, while <code>repose run</code> is open. Cookies and OAuth redirects behave
-					as they do locally.
+					Ports from 1024 up appear on your localhost while you're attached. When you're not,
+					forward one by hand. Cookies and OAuth redirects behave as they do locally.
 				</p>
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose open 3000</p>
 			</li>
 			<li>
 				<h3 class="hk-h3">Watch the agent's browser, and take over</h3>
-				<p>
-					<code>repose browser</code> shows the agent's Chromium on your laptop; click in it to take over.
-				</p>
+				<p>The agent's Chromium, on your laptop. Click in it to take over.</p>
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose browser</p>
 			</li>
 			<li>
@@ -194,7 +186,9 @@
 		</div>
 		<ul class="agents" aria-label="Agents">
 			{#each AGENTS_LIST as agent (agent.flag)}
-				<li><span class="name">{agent.name}</span><code class="flag">{agent.flag}</code></li>
+				<li>
+					<span class="name">{agent.name}</span><code class="flag">--agent {agent.flag}</code>
+				</li>
 			{/each}
 		</ul>
 	</section>
@@ -206,11 +200,19 @@
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 		<div class="cta-row">
-			{@render authAction('Start a free week', 'Open the dashboard')}
+			<!-- With no seat free, signing up joins the waitlist and starts no
+			     week (/billing, waitlisted), so the button says that. -->
+			{@render authAction(
+				seats?.free === 0 ? 'Join the waitlist' : 'Start a free week',
+				'Open the dashboard'
+			)}
 			{#if !authState.authenticated && seats}
 				<p class="seats" data-testid="seats-line">
 					{#if seats.free > 0}
-						{seats.free} {seats.free === 1 ? 'seat' : 'seats'} left
+						<!-- A seat is 8 GB of running memory (limits.md), counted apart
+						     from Solo's founding places on the card above. -->
+						{seats.free}
+						{seats.free === 1 ? 'seat' : 'seats'} of 8 GB left
 					{:else}
 						Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
 					{/if}
