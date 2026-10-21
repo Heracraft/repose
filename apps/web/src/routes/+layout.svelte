@@ -134,7 +134,7 @@
 		{/if}
 	</div>
 	<SiteHeader {dashboard} />
-	<div class="flex-1">
+	<div class="flex-1" class:dash-fill={dashboard}>
 		{#if dashboard}
 			<!-- The dashboard (I-841): the rail and the page in one frame, a
 			     grid from 1024px. The page column is the size container
@@ -164,9 +164,19 @@
 		padding-block: 0.5rem;
 		text-align: center;
 	}
+	/* The grid fills the space between header and footer, so the rail can
+	   take the row's height without setting the page's own. */
+	.dash-fill {
+		display: flex;
+		flex-direction: column;
+	}
 	.dash {
 		display: grid;
+		flex: 1;
 		grid-template-columns: minmax(0, 1fr);
+		/* Below 1024 the strip's row and the plan line's keep their height
+		   and the page's row takes the room a short page leaves. */
+		grid-template-rows: auto auto 1fr;
 	}
 	.dash-main {
 		min-width: 0;
@@ -175,6 +185,7 @@
 	@media (min-width: 1024px) {
 		.dash {
 			grid-template-columns: 12.5rem minmax(0, 1fr);
+			grid-template-rows: 1fr;
 			column-gap: 3rem;
 		}
 		.dash-main {

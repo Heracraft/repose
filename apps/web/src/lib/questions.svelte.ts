@@ -8,26 +8,15 @@ import { listQuestions } from './api/client';
 import type { Question } from './api/types';
 
 class PendingQuestions {
-	/** The pending list, newest first, as GET /questions?state=pending answers it. */
-	items = $state<Question[]>([]);
 	count = $state(0);
 	/** Pending questions per project id. */
 	byProject = new SvelteMap<string, number>();
 	#at = 0;
 
-	/**
-	 * Sets the store from a pending list a page has just read. A bare
-	 * number sets the count alone (older callers); pass the list so the
-	 * rail's dots follow too.
-	 */
-	set(list: Question[] | number): void {
+	/** Sets the store from a pending list a page has just read. */
+	set(list: Question[]): void {
 		this.#at = Date.now();
-		if (typeof list === 'number') {
-			this.count = list;
-			return;
-		}
 		const pending = list.filter((q) => q.state === 'pending');
-		this.items = pending;
 		this.count = pending.length;
 		const per: Record<string, number> = {};
 		for (const q of pending) per[q.project_id] = (per[q.project_id] ?? 0) + 1;

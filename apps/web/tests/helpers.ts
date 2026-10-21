@@ -233,3 +233,19 @@ export async function destroyProject(apiURL: string, id: string): Promise<void> 
 	});
 	if (!res.ok && res.status !== 404) throw new Error(`destroyProject: ${res.status}`);
 }
+
+/**
+ * Destroys every project the fake holds. The suite shares one account, and
+ * the files before a project-hungry one leave theirs behind: by
+ * projects-list.spec the full run reached the fake's limit of 100 and
+ * createProject answered `project_limit` (ui-revamp-ia integration).
+ */
+export async function pruneProjects(apiURL: string): Promise<void> {
+	const res = await fetch(`${apiURL}/projects`, {
+		headers: { Authorization: 'Bearer playwright' }
+	});
+	if (!res.ok) throw new Error(`pruneProjects: ${res.status}`);
+	const list = (await res.json()) as { id: string }[];
+	// One mid-step may refuse; the rest still free the room.
+	for (const p of list) await destroyProject(apiURL, p.id).catch(() => {});
+}

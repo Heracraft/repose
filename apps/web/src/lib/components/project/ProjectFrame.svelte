@@ -30,6 +30,7 @@
 	import LoadState from '$lib/components/LoadState.svelte';
 	import RestoreNameForm from '$lib/components/RestoreNameForm.svelte';
 	import ProjectMeta from './ProjectMeta.svelte';
+	import { notFound } from '$lib/notFound.svelte';
 	import { ProjectState, provideProject } from './context.svelte';
 	import type { PaymentRequiredReason, Project } from '$lib/api/types';
 
@@ -162,6 +163,15 @@
 			goneBusy = false;
 		}
 	}
+
+	// The rail marks no place current while this frame draws a 404.
+	$effect(() => {
+		if (!ctx.notFound) return;
+		notFound.on = true;
+		return () => {
+			notFound.on = false;
+		};
+	});
 
 	// The tab's name leads the title, then the project's: "Events ·
 	// job-board · repose"; Overview is the project's name alone.

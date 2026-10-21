@@ -32,6 +32,7 @@
 	import { frozenSince } from '$lib/frozen';
 	import type { GuestState, Project } from '$lib/api/types';
 	import Snowflake from './Snowflake.svelte';
+	import { notFound } from '$lib/notFound.svelte';
 
 	/** Rows the group shows before "All N". */
 	const ROWS = 8;
@@ -72,7 +73,7 @@
 
 	/** One current item per dashboard page; none on an error page (a signed-in 404). */
 	function current(id: Place): boolean {
-		if (page.error) return false;
+		if (page.error || notFound.on) return false;
 		if (id === 'projects') return path === places[0].href || (!!projectId && !rowCurrent);
 		return under(path, places.find((p) => p.id === id)!.href);
 	}
@@ -229,7 +230,9 @@
 							<a
 								href={resolve('/projects/[id]', { id: p.id })}
 								class="prow"
-								aria-current={!page.error && projectId === p.id ? 'page' : undefined}
+								aria-current={!page.error && !notFound.on && projectId === p.id
+									? 'page'
+									: undefined}
 								aria-label={rowName(p)}
 							>
 								<span class="mark" aria-hidden="true">
@@ -435,7 +438,11 @@
 			flex-direction: column;
 			align-self: start;
 			top: var(--header-h);
-			height: calc(100dvh - var(--header-h));
+			/* The grid row's height, at most the window under the header: a
+			   short page (an outage bar above the header included) still ends
+			   at the window's foot, footer and all (review r4). */
+			height: 100%;
+			max-height: calc(100dvh - var(--header-h));
 			margin: 0;
 			padding: 2.25rem 0 1.5rem;
 			box-shadow: none;

@@ -13,8 +13,15 @@ import {
 	resetBilling,
 	setAgents,
 	stopProject,
-	destroyProject
+	destroyProject,
+	pruneProjects
 } from './helpers';
+
+// The cap test makes 28 projects; start from none so the suite's earlier
+// files cannot push it past the fake's 100.
+test.beforeAll(async () => {
+	await pruneProjects(apiURLFromEnv());
+});
 
 test.beforeEach(async ({ page }) => {
 	await resetBilling();

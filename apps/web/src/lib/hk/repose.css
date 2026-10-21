@@ -729,7 +729,7 @@
 
 /* ---------- Site header links ---------- */
 
-/* The header's links (Site nav, DashNav): full row height, so the current
+/* The header's site links: full row height, so the current
    one's 1px accent edge lies on the header's rule; accent when current,
    with that edge as the non-colour cue, and no weight change. In the
    components layer, so a utility (hidden, max-sm:hidden) still wins. */

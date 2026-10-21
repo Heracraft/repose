@@ -470,6 +470,23 @@ test('an unknown path signed in keeps the dashboard header and offers Projects',
 	await expect(page).toHaveURL('/projects');
 });
 
+test('a project that does not exist marks no place current', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await signIn(page);
+	await page.goto('/projects/01900000-0000-7000-8000-0000000000ff');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	// The project layout draws this 404 itself, so page.error is unset; the
+	// rail still marks nothing current (ia-final 1.2, I-841).
+	const places = page.getByRole('navigation', { name: 'Dashboard' });
+	await expect(places.locator('[aria-current="page"]')).toHaveCount(0);
+	// Leaving for a real page brings the current place back.
+	await places.getByRole('link', { name: 'Projects', exact: true }).click();
+	await expect(places.getByRole('link', { name: 'Projects', exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
 test('an unknown path signed out renders Not found and stays put', async ({ page }) => {
 	await page.goto('/no-such-place');
 	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();

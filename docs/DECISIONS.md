@@ -24362,6 +24362,15 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   CLI, refusals and Polar.
 - *Kept.* Recent activity on /projects (I-762), the `events_*` keys (I-662),
   sign-in landing on /projects, the header item counts design.spec reads.
+- *Found while joining the areas.* The project layout draws its tabs inside
+  `{#key id}<ProjectFrame>`: SvelteKit reuses a layout across a params
+  change, so a rail click from one project to another kept the first one's
+  poll and context. A project that does not exist is a 404 the frame draws,
+  not a routed error, so it raises a flag (`lib/notFound.svelte.ts`) and the
+  rail marks no place current, as on any signed-in 404. The rail's height is
+  its grid row's, at most the window under the header, so a short page with
+  the outage bar above the header still ends at the window's foot (review
+  r4); at a fixed `100dvh - 57px` it ran 108px past it.
 - *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
   `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
   the rail's geometry at 1440 and 1024, the strip's end at 101px, one current

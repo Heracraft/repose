@@ -262,7 +262,8 @@ From 1024px the root layout draws `<div class="frame dash">` as a grid,
 `12.5rem minmax(0, 1fr)` with a 3rem gap: the rail at the frame's left edge
 (x=160 at 1440, under the logo), the page 248px past it. The page column is
 714px at 1024, 875px at 1280 and 872px at 1440 with a classic scrollbar. The
-rail is sticky under the header and as tall as the window under it.
+rail is sticky under the header, as tall as its grid row and at most the
+window under the header, so a short page still ends at the window's foot.
 
 - Places: Projects, Questions, Billing, Settings. Each is 32px, padding 0
   10px, 7px corners, 13px `--hk-text-2` with a 16px line icon (stroke 1.4) in
@@ -279,7 +280,8 @@ rail is sticky under the header and as tall as the window under it.
   for a step under way, red error); a frozen machine shows the snowflake. One
   signal per row, no count. The name says it: "job-board, running, waiting on
   you".
-- One item is current on every dashboard page and none on an error page.
+- One item is current on every dashboard page and none on an error page,
+  a project's 404 included.
   Projects is current on `/projects` only; a project's row is current on
   every tab of that project, or Projects when the row is past the eight
   shown; Questions, Billing and Settings on their own pages.
