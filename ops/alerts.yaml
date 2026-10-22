@@ -729,6 +729,72 @@ groups:
           description: "Postgres, the api images and Coolify's build cache share this disk. `docker system prune` and the sample tables' partitions (repose_partitions_maintain) are the two things that free space; the partitions are dropped hourly by the api, so a disk filling with them means PartitionDropFail is also firing."
           runbook: "docs/ops/RUNBOOK.md#controldiskfull"
 
+      - alert: GuestWakeFailed
+        # A frozen guest (DECISIONS I-818) that would not resume. Its
+        # memory and processes are intact, but nothing the user does
+        # reaches the machine until a wake succeeds, so this is a tenant
+        # blocked on a machine the dashboard still calls running. `reason`
+        # is the step that failed: resume (vm.resume never left the VM
+        # Running), guestd (no answer after the resume) or state (the
+        # guest is no longer one that can be woken).
+        # Not a page: the api and the gateway each retry a wake on the
+        # next thing the user does, so a single failure that clears
+        # itself is normal; a reason that keeps rising for 5 minutes is
+        # the host.
+        expr: |
+          sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} wake(s) of a frozen guest on {{ $labels.host_id }} failed ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_resting\"` names each guest and the phase it failed at. The guests are still running with their memory; `hostd guests --json` on the host lists which are resting."
+          runbook: "docs/ops/RUNBOOK.md#guestwakefailed"
+
+      - alert: GuestWakeSlow
+        # The feature's promise is a machine that comes back at once
+        # (I-818). The gateway waits for a wake inside its 10 s dial
+        # budget, so a p90 over 5 s means the next slow wake is a failed
+        # ssh, and the user sees `did not answer ssh` on a machine that
+        # is running. Measured over 15 minutes so one cold wake does not
+        # fire it.
+        expr: |
+          histogram_quantile(0.9,
+            sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "waking a frozen guest on {{ $labels.host_id }} takes over 5s at p90"
+          description: "{{ $value | humanizeDuration }} at p90. The host's load is the usual cause; compare with repose_host_load1 and the guests resting on it (repose_host_guests_resting)."
+          runbook: "docs/ops/RUNBOOK.md#guestwakeslow"
+
+      - alert: ApiWakeFailed
+        # The api asked for a wake and could not get one (DECISIONS
+        # I-822). This is the half of a failed wake the host's own
+        # counter cannot see: a host that is not connected, or a wake
+        # that ran out of time before hostd answered. Those are the
+        # failures a user feels, because every one of them is somebody's
+        # ssh, answer or command waiting on a machine the dashboard
+        # still calls running.
+        # Not a page, for GuestWakeFailed's reason: the next thing the
+        # user does asks for the wake again.
+        # `reason` here is what ASKED for the wake (connect, op, answer,
+        # keep_awake) -- not the step that failed, which is what `reason`
+        # means on GuestWakeFailed above. hostd knows the step; the api
+        # only knows it got no answer, so this label says who was
+        # waiting. Read the two together and they say "a connect was
+        # waiting" and "the resume is what broke".
+        expr: |
+          sum by (reason) (increase(repose_api_resting_wake_total{result="failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "the api failed {{ $value }} wake(s) of a frozen machine (asked for by: {{ $labels.reason }})"
+          description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
+          runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
+
   # Anti-abuse (DECISIONS I-238..I-240). Nothing here pages: the guest is
   # already blocked or stopped when these fire, and what remains is a
   # human decision about the account (`repose-admin users suspend`).

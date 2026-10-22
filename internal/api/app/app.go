@@ -31,6 +31,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/resume"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/snapshots"
@@ -65,6 +66,7 @@ type App struct {
 	meterIn   *meter.Ingest
 	abuse     *abuse.Guard
 	questions *questions.Service
+	resting   *resting.Service
 	resume    *resume.Resumer
 	outbox    *notify.Outbox
 	polar     *billing.Polar
@@ -160,6 +162,18 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.abuse = abuse.New(a.pool, a.engine, a.events, a.m, log)
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
 	a.events.SetQuestions(a.questions)
+	// The rest rule and the wake (DECISIONS I-818). It sends straight to
+	// the host, outside the op engine: the op that needs a machine awake
+	// is itself that project's one open op.
+	a.resting = resting.New(a.pool, a.hostMgr, log)
+	// Counted here, where every caller of Wake passes (I-822).
+	if a.m != nil {
+		a.resting.CountWake = func(reason, result string) {
+			a.m.RestingWakeTotal.WithLabelValues(reason, result).Inc()
+		}
+	}
+	a.events.SetResting(a.resting)
+	a.questions.Waker = a.resting
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -168,9 +182,16 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 				return err
 			}
 			a.engine.OnHello(ctx, hostID, h)
+			// After the engine's reconcile: the marker is additive, and a
+			// project whose state the Hello just settled reads the same
+			// row (I-818).
+			a.resting.OnHello(ctx, hostID, h)
 			return nil
 		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
+			if a.resting.OnResult(ctx, hostID, r) { // a pause or a wake (I-818)
+				return
+			}
 			if a.questions.OnResult(ctx, hostID, r) { // an AnswerQuestion delivery (I-245)
 				return
 			}
@@ -253,6 +274,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
 		Gateway:   httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
 		Seats:     a.seats,
+		Resting:   a.resting,
 		CLILatest: a.cliLatest.Version,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
@@ -475,6 +497,9 @@ func (a *App) loops(ctx context.Context) {
 		a.log.Warn("REPOSE_RESUME=off: machines a host restart stops are not started again", "event", "guest_resume")
 	}
 	go a.resume.Run(ctx)
+	// The rest rule, every minute, on the replica that holds its own lock
+	// (I-818).
+	go a.resting.Run(ctx)
 	// The abuse gauges (BusyUnattended, EgressHigh, held projects) are
 	// read-only aggregates; every replica exports them and the alerts take
 	// the max (DECISIONS I-239).

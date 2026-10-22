@@ -320,6 +320,13 @@ func (m *Manager) FreezeAll(ctx context.Context, reason string) []FreezeResult {
 		wg.Add(1)
 		go func(g *state.Guest, drop bool) {
 			defer wg.Done()
+			// A resting guest (I-818) synced, and dropped its cache when
+			// it has the balloon, at its pause: it cannot answer now, and
+			// waiting out its 10 s would come off this freeze's deadline
+			// and cost a later guest its image.
+			if m.restingMark(g.GuestID) != nil {
+				return
+			}
 			sess, serr := m.session(g.GuestID)
 			if serr != nil {
 				return
@@ -741,6 +748,18 @@ func (m *Manager) memoryBytes(ctx context.Context, g *state.Guest) uint64 {
 
 // argsHaveBalloon reports whether the guest's hypervisor was started with
 // the free page reporting balloon, from the argv hostd wrote at its boot.
+// pausedAlready reports whether the guest's vCPUs are already stopped, so
+// a freeze must not pause it again (I-818, S7). vm.info is the authority,
+// since it is the hypervisor that refuses the second pause; the resting
+// mark answers for a hypervisor that cannot be asked.
+func (m *Manager) pausedAlready(ctx context.Context, g *state.Guest, sock string) bool {
+	info, err := m.d.CH.Info(ctx, sock)
+	if err == nil {
+		return ch.VMState(info) == ch.StatePaused
+	}
+	return m.restingMark(g.GuestID) != nil || g.Resting != nil
+}
+
 func (m *Manager) argsHaveBalloon(id string) bool {
 	b, err := os.ReadFile(filepath.Join(m.guestDir(id), "ch.args"))
 	if err != nil {
@@ -857,8 +876,17 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string, wall time.
 
 	// From here the guest is paused. A snapshot that fails resumes it: the
 	// freeze is abandoned and the guest carries on as if nothing happened.
-	if err := m.d.CH.Pause(ctx, sock); err != nil {
-		return fail("pause failed", err)
+	//
+	// A guest the idle pause left resting (I-818) is paused already.
+	// Cloud Hypervisor refuses a second vm.pause, which here would
+	// discard the image, count the guest unfrozen and leave it to
+	// cold-boot and lose every process at the next host restart --
+	// I-796's own incident, re-created by the pause. Such a guest is
+	// snapshotted as it is.
+	if !m.pausedAlready(ctx, g, sock) {
+		if err := m.d.CH.Pause(ctx, sock); err != nil {
+			return fail("pause failed", err)
+		}
 	}
 	pausedAt := m.d.Now()
 	// The hypervisor cannot be interrupted mid-snapshot, so the call is not
@@ -951,6 +979,16 @@ func (m *Manager) freezeGuest(ctx context.Context, id, reason string, wall time.
 	if err := recs.Put(rec); err != nil {
 		return fail("record not written", err)
 	}
+	// A guest the idle pause had left resting is not resting any more
+	// (I-818): its memory is in the image, not resident, and a wake
+	// cannot bring it back in milliseconds. The thaw's restore puts it
+	// back to plain running, and the api's rule rests it again if it is
+	// still idle.
+	if g.Resting != nil {
+		if err := m.setResting(g, nil, "frozen"); err != nil {
+			m.log(g).Warn("resting mark not cleared by the freeze", "event", "guest_resting", "err", err.Error())
+		}
+	}
 	res.OK, res.Outcome, res.Reason = true, "frozen", ""
 	res.ImageBytes = rec.ImageBytes
 	res.Ms = m.d.Now().Sub(start).Milliseconds()
@@ -1019,6 +1057,15 @@ func (m *Manager) resumeAfterFailedSnapshot(ctx context.Context, g *state.Guest,
 		cancel()
 		if ierr == nil && strings.Contains(string(info), `"Running"`) {
 			m.log(g).Info("guest resumed after a freeze that did not finish", "event", "guest_freeze")
+			// A guest the idle pause had left resting runs again now
+			// (I-818): the mark would otherwise silence its samples for
+			// a guest whose vCPUs are going. The api's rule pauses it
+			// again at its next tick if it is still idle.
+			if g.Resting != nil {
+				if err := m.setResting(g, nil, "resumed"); err != nil {
+					m.log(g).Warn("resting mark not cleared after the resume", "event", "guest_resting", "err", err.Error())
+				}
+			}
 			return true
 		}
 		if ierr != nil {
@@ -1640,6 +1687,12 @@ func (m *Manager) SyncClocks(ctx context.Context) {
 	}
 	for _, g := range gs {
 		if g.State != StateRunning {
+			continue
+		}
+		// A resting guest cannot answer, and does not need to: its clock
+		// is set by its wake (I-818), which is the only thing that lets
+		// anything in it read a clock again.
+		if m.restingMark(g.GuestID) != nil {
 			continue
 		}
 		sess, serr := m.session(g.GuestID)

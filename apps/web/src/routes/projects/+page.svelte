@@ -402,16 +402,12 @@
 	{@const frozen = frozenSince(p)}
 	<StateDot state={p.state} frozen={!!frozen} />
 	{#if frozen}
-		<!-- Frozen while idle (I-683, behind a flag): how long, in the
-		     frost colour; it wakes when someone connects. -->
+		<!-- Frozen while idle (I-683, I-826): how long, in the frost
+		     colour, where `up` would be. The word itself is StateDot's, so
+		     the cell says it once; the stacked row below says the same
+		     two things in the same order. -->
 		<div class="frost-sub mt-0.5 text-xs tabular-nums">for {uptime(frozen)}</div>
-	{:else if p.state === 'running' && p.idle}
-		<!-- Nobody on it for a day, holding its memory against the plan
-		     (I-262, I-289, I-617). -->
-		<div class="mt-0.5 text-xs text-amber-700 tabular-nums dark:text-amber-400">
-			unused {uptime(p.idle.since)}
-		</div>
-	{:else if p.state === 'running'}
+	{:else if p.state === 'running' && !p.idle}
 		<div class="mt-0.5 text-xs text-ink-muted tabular-nums">up {uptime(p.started_at)}</div>
 	{:else if p.state === 'stopped'}
 		<!-- A stopped row carried no time at all, so thirty of them read
@@ -420,6 +416,15 @@
 			{p.started_at
 				? `last run ${relativeTime(p.started_at)}`
 				: `made ${relativeTime(p.created_at)}`}
+		</div>
+	{/if}
+	{#if p.state === 'running' && p.idle}
+		<!-- Nobody on it for a day, holding its memory against the plan
+		     (I-262, I-289, I-617). A frozen machine is normally unused as
+		     well, and this line says the other thing: the plan's memory is
+		     still held (I-826). The stacked row prints it too. -->
+		<div class="mt-0.5 text-xs text-amber-700 tabular-nums dark:text-amber-400">
+			unused {uptime(p.idle.since)}
 		</div>
 	{/if}
 	{#if p.host_unreachable}
@@ -751,7 +756,7 @@
 								class="mt-1 flex min-w-0 items-baseline gap-2 font-mono text-compact text-ink-muted"
 							>
 								<span class="shrink-0 whitespace-nowrap">
-									{p.class}{#if frozenSince(p)}&nbsp;· frozen {uptime(
+									{p.class}{#if frozenSince(p)}&nbsp;· for {uptime(
 											frozenSince(p)!
 										)}{:else if p.state === 'running'}&nbsp;· up {uptime(
 											p.started_at

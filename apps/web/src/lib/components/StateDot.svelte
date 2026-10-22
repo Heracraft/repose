@@ -43,7 +43,19 @@
 </script>
 
 {#if frozen}
-	<span class="frozen inline-flex items-center gap-1.5" data-state={state} data-frozen="">
+	<!-- The owner's look (I-683): the snowflake and "frozen" in place of
+	     the dot and the state. The state itself is still `running` and
+	     every page says so (I-826), so it is the title and the accessible
+	     name here rather than a second word in a narrow cell -- without
+	     it "running" appears nowhere on a frozen machine's row and the
+	     states table has no entry to look "frozen" up in. -->
+	<span
+		class="frozen inline-flex items-center gap-1.5"
+		data-state={state}
+		data-frozen=""
+		title={`${state}, frozen`}
+		aria-label={`${state}, frozen`}
+	>
 		<Snowflake size={13} />
 		<span>frozen</span>
 	</span>

@@ -80,6 +80,10 @@ type Options struct {
 	LogLevel         string
 	// Freeze is the guest freeze across host restarts (freeze.go, I-652).
 	Freeze FreezeOptions
+	// PauseIdle lets this host rest an idle guest (DECISIONS I-818). It
+	// is what puts `pause` in Hello.features, so an api asks this host
+	// for no pause and no wake without it.
+	PauseIdle bool
 }
 
 // Logger builds hostd's logger from internal/obs, which puts ts, level,
@@ -253,6 +257,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		GuestUser:          o.GuestUser,
 		NoAuthShare:        !o.ClaudeLoginShare,
 		FreePageReporting:  o.Freeze.FreePageReporting,
+		PauseIdle:          o.PauseIdle,
 	}
 	fcfg, fdeps := freezeSetup(o, r, l, log)
 	cfg.Freeze = fcfg

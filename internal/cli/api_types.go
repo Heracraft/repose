@@ -84,6 +84,17 @@ type Project struct {
 	// session and no agent working (DECISIONS I-262). Absent from older
 	// apis, which the CLI treats as "not idle".
 	Idle *ProjectIdle `json:"idle,omitempty"`
+	// Resting is set while the api has frozen the machine: its vCPUs
+	// are stopped after it went quiet, and every process, open file
+	// and all of its memory stay as they were (DECISIONS I-818). The
+	// state stays `running`; the word a user reads is "frozen"
+	// (I-826). Absent from older apis, which the CLI reads as "not
+	// frozen".
+	Resting *ProjectResting `json:"resting,omitempty"`
+	// KeepAwake is set while the project is held awake from its Config
+	// page: the api never freezes it (DECISIONS I-820). Set there, as
+	// hold_base_updates is, with no CLI flag.
+	KeepAwake bool `json:"keep_awake"`
 	// PersonalOptOut is set when the project keeps the account's
 	// machine.nix off (DECISIONS I-490). Absent from older apis.
 	PersonalOptOut bool `json:"personal_opt_out,omitempty"`
@@ -107,6 +118,11 @@ type Project struct {
 type ProjectIdle struct {
 	Since       time.Time `json:"since"`
 	HourlyCents int64     `json:"hourly_cents"`
+}
+
+// ProjectResting is Project.resting: when the machine was frozen.
+type ProjectResting struct {
+	Since time.Time `json:"since"`
 }
 
 type Signals struct {

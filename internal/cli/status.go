@@ -290,6 +290,9 @@ func writeProjectsTable(w io.Writer, projects []Project) {
 // `docker context ls` marks the current context (I-616).
 func writeProjectsTableHere(w io.Writer, projects []Project, here string) {
 	now := time.Now()
+	// The STATE cell carries `frozen` for a machine the api has paused
+	// (I-826); it is not a column of its own, and the UP cell keeps the
+	// uptime, which a pause does not change.
 	// LEFT, a temporary machine's time left (I-347), is a column only
 	// while one of them is listed (I-484).
 	// DISK, a nearly full disk (I-567), likewise.
@@ -314,7 +317,7 @@ func writeProjectsTableHere(w io.Writer, projects []Project, here string) {
 			name += " *"
 		}
 		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s",
-			name, p.Class, p.State, orDash(uptime(p)), orDash(agentState(p)))
+			name, p.Class, stateWithFrozen(p), orDash(uptime(p)), orDash(agentState(p)))
 		if left {
 			row += "\t" + orDash(tempLeft(p, now))
 		}
@@ -591,13 +594,19 @@ func diskFullCell(p *Project) string {
 }
 
 // statusFirstLineMux is the header: the name, the state with its uptime,
-// the size, and herdr when it runs the terminals (tmux is not named). The
+// `frozen` while the machine rests (I-826), the size, and herdr when it
+// runs the terminals (tmux is not named). The
 // running hours it ended with since I-289 cost nothing on a plan, so they
 // are gone (I-616); the agents have their own row.
 func statusFirstLineMux(p *Project, mux string) string {
 	state := p.State
 	if up := uptime(p); up != "" {
 		state += " " + up
+	}
+	// Frozen is its own word after the uptime, which a pause does not
+	// change, so neither reads as the other's figure (I-826).
+	if frozen(p) {
+		state += "  " + frozenWord
 	}
 	line := fmt.Sprintf("%s  %s  %s", p.Slug, state, p.Class)
 	if mux == multiplexer.Herdr {
@@ -717,7 +726,12 @@ func waitAge(p *Project, a AgentSignal, now time.Time) string {
 
 // staleMark is "?" after agent states read from a sample older than
 // signalFresh, as ps marks them (I-634): the agent may have moved on.
+// A frozen machine's processes cannot move on, so its states are never
+// marked, however old the sample (I-826).
 func staleMark(p *Project, now time.Time) string {
+	if frozen(p) {
+		return ""
+	}
 	if p.Signals != nil && p.Signals.SampledAt != nil && now.Sub(*p.Signals.SampledAt) >= signalFresh {
 		return "?"
 	}

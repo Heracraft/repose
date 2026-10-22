@@ -32,6 +32,11 @@ const (
 	MsgUserBusy       = "too many open connections for your account; close some and try again"
 	MsgRateLimited    = "too many authentication attempts from your address; try again later"
 	MsgNotReady       = "environment is not accepting connections yet"
+	// MsgWakeFailed: the machine is frozen (its vCPUs stopped, its
+	// memory and every process still there) and did not resume
+	// (DECISIONS I-818). Not MsgNotReady: that tells a user whose
+	// machine is full of running processes that it is not ready yet.
+	MsgWakeFailed = "environment is frozen and did not wake; try again shortly"
 	// MsgStoppedFmt takes the slug twice.
 	MsgStoppedFmt = "%s is stopped; run `repose start %s`"
 	// MsgNotFoundFmt takes the login name.
@@ -88,8 +93,16 @@ type Config struct {
 	AuthTimeout     time.Duration
 	MaxAuthTries    int
 	DialTimeout     time.Duration
-	Keepalive       time.Duration
-	SessionCap      time.Duration
+	// WakeTimeout is how long the dial waits for a machine that rests to
+	// be resumed, before and on top of DialTimeout (DECISIONS I-818).
+	// Separate on purpose: a wake held inside DialTimeout would eat the
+	// handshake's share of it, so a 4 s wake would halve the budget the
+	// SSH handshake is measured against. It is under the api client's own
+	// timeout (10 s in cmd/gateway), so a slow wake fails with this
+	// deadline rather than with an HTTP one.
+	WakeTimeout time.Duration
+	Keepalive   time.Duration
+	SessionCap  time.Duration
 	// RevocationRefresh and CARefresh override the §5.2 windows (tests).
 	RevocationRefresh time.Duration
 	CARefresh         time.Duration
@@ -110,6 +123,8 @@ type Gateway struct {
 	cas     *caCache
 	routes  *routeCache
 	certs   *certCache
+	// wakes shares one in-flight wake per project (I-818).
+	wakes   *wakeGroup
 	limiter *limiter
 	// authLog and banLog bound the auth_fail and auth_ban lines (I-599).
 	authLog *logBucket
@@ -157,6 +172,9 @@ func New(cfg Config) (*Gateway, error) {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 10 * time.Second
 	}
+	if cfg.WakeTimeout == 0 {
+		cfg.WakeTimeout = 8 * time.Second
+	}
 	if cfg.Keepalive == 0 {
 		cfg.Keepalive = 30 * time.Second
 	}
@@ -187,6 +205,7 @@ func New(cfg Config) (*Gateway, error) {
 		cas:      newCACache(cfg.Clock),
 		routes:   newRouteCache(cfg.Clock),
 		certs:    newCertCache(cfg.Clock),
+		wakes:    newWakeGroup(),
 		limiter:  newLimiter(cfg.MaxAuthPerIP, cfg.Clock),
 		authLog:  newLogBucket(authLogRate, authLogBurst, cfg.Clock),
 		banLog:   newLogBucket(banLogRate, banLogBurst, cfg.Clock),

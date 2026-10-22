@@ -84,6 +84,8 @@ create table if not exists projects (
   volume_bytes bigint,
   tz text,
   multiplexer text not null default 'tmux',
+  resting_since timestamptz,
+  keep_awake boolean not null default false,
   disk_held_bytes bigint,
   disk_held_at timestamptz,
   started_at timestamptz,
@@ -130,6 +132,7 @@ create table if not exists meter_samples (
   mem_used bigint,
   root_used bigint,
   root_size bigint,
+  resting boolean not null default false,
   primary key (project_id, ts)
 ) partition by range (ts);
 

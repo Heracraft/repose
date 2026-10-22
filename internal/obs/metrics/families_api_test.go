@@ -29,6 +29,7 @@ func TestAPIFamily(t *testing.T) {
 	a.Hosts.WithLabelValues("ready").Set(1)
 	a.Projects.WithLabelValues("running", "large").Set(1)
 	a.ScheduleTotal.WithLabelValues("ok").Inc()
+	a.RestingWakeTotal.WithLabelValues("connect", "woken").Inc()
 	a.NotifyTotal.WithLabelValues("email", "ok").Inc()
 	a.BillingWebhookTotal.WithLabelValues("subscription.created", "ok").Inc()
 	a.BillingGateRefusedTotal.WithLabelValues("plan_limit", "solo").Inc()
@@ -43,6 +44,7 @@ func TestAPIFamily(t *testing.T) {
 		"repose_api_hosts":                         {"state"},
 		"repose_api_projects":                      {"class", "state"},
 		"repose_api_schedule_total":                {"result"},
+		"repose_api_resting_wake_total":            {"reason", "result"},
 		"repose_api_certs_issued_total":            nil,
 		"repose_api_certs_revoked_total":           nil,
 		"repose_api_rollup_lag_seconds":            nil,

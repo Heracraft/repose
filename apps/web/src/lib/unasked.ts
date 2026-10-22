@@ -22,10 +22,21 @@ export const UNASKED: RegExp[] = [
 	/\bhappy (coding|hacking)\b/i
 ];
 
-// unaskedIn lists each phrasing found in text, as "label: match".
-export function unaskedIn(label: string, text: string): string[] {
+// Screens only. A line that tells the reader the mechanism behind what
+// they are looking at will take care of itself ("It wakes when you
+// connect.") narrates the screen and names a step nobody asked for
+// (I-484, I-485). A docs page is asked that question and keeps its
+// answer, so this one stays out of UNASKED, which docs.test.ts also
+// reads.
+export const UNASKED_SCREENS: RegExp[] = [
+	/\bit (wakes|starts|resumes|reconnects|comes back) when you\b/i
+];
+
+// unaskedIn lists each phrasing found in text, as "label: match". extra
+// adds a caller's own set, for a phrasing only its surface forbids.
+export function unaskedIn(label: string, text: string, extra: RegExp[] = []): string[] {
 	const hits: string[] = [];
-	for (const re of UNASKED) {
+	for (const re of [...UNASKED, ...extra]) {
 		const m = text.match(re);
 		if (m) hits.push(`${label}: "${m[0]}"`);
 	}

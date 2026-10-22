@@ -52,6 +52,12 @@ type Guest struct {
 	// it: running again, a stop, a destroy or a restore.
 	InterruptedBoot string
 	InterruptedAt   time.Time
+	// Resting and RestingAt are hostd's pause marker (DECISIONS I-818):
+	// the guest's vCPUs are stopped and its memory is resident, so its
+	// state stays "running" and every process survives. Hello reports
+	// RestingAt, the sample carries the flag, and WakeGuest clears both.
+	Resting   bool
+	RestingAt time.Time
 }
 
 // Options tune the fake.
@@ -72,6 +78,10 @@ type Options struct {
 	// NoClone leaves local_clone out of Hello's features, as a hostd
 	// before I-701 does.
 	NoClone bool
+	// NoPause leaves pause out of Hello's features, as a hostd before
+	// I-818 does: the api then sends it no PauseGuest and no WakeGuest,
+	// and this fake answers either invalid_argument, as that hostd would.
+	NoPause bool
 }
 
 // Fake is one fake host.
@@ -271,6 +281,29 @@ func (f *Fake) SetGuestdDead(guestID string, dead bool) {
 	}
 }
 
+// SetResting pauses or resumes a guest the way hostd's own pause and wake
+// do, without a command (DECISIONS I-818): a test can start from a
+// machine that already rests. It raises the event hostd raises.
+func (f *Fake) SetResting(guestID string, resting bool) {
+	f.mu.Lock()
+	g, ok := f.guests[guestID]
+	if !ok {
+		f.mu.Unlock()
+		return
+	}
+	g.Resting = resting
+	g.RestingAt = time.Time{}
+	if resting {
+		g.RestingAt = time.Now()
+	}
+	at := g.RestingAt.Unix()
+	f.mu.Unlock()
+	if !resting {
+		at = 0
+	}
+	f.event(&hostdv1.Event{Ev: &hostdv1.Event_GuestResting{GuestResting: &hostdv1.GuestResting{GuestId: guestID, Resting: resting, At: at, Reason: "idle"}}})
+}
+
 // guestdGone reports whether a command needing guestd on g must fail the
 // way hostd's session() does.
 func (f *Fake) guestdGone(g *Guest) bool {
@@ -308,7 +341,10 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	defer f.mu.Unlock()
 	h := &hostdv1.Hello{HostId: f.opts.HostID, FreeMemBytes: 200 << 30, PoolFreeBytes: 1 << 40, PoolBytes: 1 << 40, HostBootId: f.bootID}
 	if !f.opts.NoClone {
-		h.Features = []string{"local_clone"}
+		h.Features = append(h.Features, "local_clone")
+	}
+	if !f.opts.NoPause {
+		h.Features = append(h.Features, "pause")
 	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
@@ -318,6 +354,11 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	}
 	for _, g := range f.guests {
 		gs := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.Closure}
+		if g.Resting {
+			// Reconciled from bbolt and the hypervisor's vm.info, so the
+			// marker survives a hostd or api restart (I-818).
+			gs.RestingAt = g.RestingAt.Unix()
+		}
 		if g.InterruptedBoot != "" {
 			gs.InterruptedBootId, gs.InterruptedAt = g.InterruptedBoot, g.InterruptedAt.Unix()
 		}
@@ -399,6 +440,18 @@ func (f *Fake) Samples() *hostdv1.Samples {
 	s := &hostdv1.Samples{Ts: time.Now().Unix(), Host: &hostdv1.HostSample{MemFree: 200 << 30, PoolFree: 1 << 40, Load1: 0.1}}
 	for _, g := range f.guests {
 		gs := &hostdv1.GuestSample{GuestId: g.GuestID, State: g.State, Class: g.Class, DiskAllocBytes: 40 << 30, DiskUsedBytes: 5 << 30, Signals: &hostdv1.GuestSignals{}}
+		if g.Resting {
+			// A resting guest's sample: the state stays running, which is
+			// what bills the minute; `resting` is the marker; guestd_ok
+			// stays true, because guestd is paused with its guest and not
+			// lost; and the host's own counters read about zero
+			// (DECISIONS I-818).
+			gs.Resting = true
+			gs.RootUsedBytes, gs.RootSizeBytes = 4<<30, 39<<30
+			gs.Signals = &hostdv1.GuestSignals{GuestdOk: true, Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "idle"}}}
+			s.Guests = append(s.Guests, gs)
+			continue
+		}
 		if g.State == "running" {
 			gs.CpuNsDelta, gs.MemRssBytes, gs.NetTxBytesDelta, gs.NetRxBytesDelta = 30e9, 2<<30, 1<<20, 4<<20
 			gs.RootUsedBytes, gs.RootSizeBytes = 4<<30, 39<<30
@@ -470,6 +523,10 @@ func kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_PauseGuest:
+		return "PauseGuest"
+	case *hostdv1.Command_WakeGuest:
+		return "WakeGuest"
 	}
 	return ""
 }
@@ -805,6 +862,62 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		}
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Exec{Exec: &hostdv1.ExecResult{Stdout: []byte("fake\n")}}
+		})
+	case *hostdv1.Command_PauseGuest:
+		// hostd's pause: a refusal is `ok` with paused=false and a
+		// lower_snake why_not, because a guest with work in flight is a
+		// refusal, not a failure (DECISIONS I-818).
+		if f.opts.NoPause {
+			return errResult(id, "invalid_argument", "unknown command")
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		g, e := get(c.PauseGuest.GuestId)
+		if e != nil {
+			return e
+		}
+		why := ""
+		switch {
+		case g.State != "running":
+			why = "not_running"
+		case g.Resting:
+			why = "already_resting"
+		}
+		if why != "" {
+			return ok(func(r *hostdv1.Result) {
+				r.Payload = &hostdv1.Result_Pause{Pause: &hostdv1.PauseResult{Paused: false, WhyNot: why}}
+			})
+		}
+		g.Resting, g.RestingAt = true, time.Now()
+		at := g.RestingAt.Unix()
+		gid := g.GuestID
+		go f.event(&hostdv1.Event{Ev: &hostdv1.Event_GuestResting{GuestResting: &hostdv1.GuestResting{GuestId: gid, Resting: true, At: at, Reason: c.PauseGuest.Reason}}})
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_Pause{Pause: &hostdv1.PauseResult{Paused: true, At: at}}
+		})
+	case *hostdv1.Command_WakeGuest:
+		// Idempotent: a guest already running is answered ok with
+		// was_resting false, so the api may ask for a wake it does not
+		// know it needs (I-818).
+		if f.opts.NoPause {
+			return errResult(id, "invalid_argument", "unknown command")
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		g, e := get(c.WakeGuest.GuestId)
+		if e != nil {
+			return e
+		}
+		if !g.Resting {
+			return ok(func(r *hostdv1.Result) {
+				r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: false}}
+			})
+		}
+		g.Resting, g.RestingAt = false, time.Time{}
+		gid := g.GuestID
+		go f.event(&hostdv1.Event{Ev: &hostdv1.Event_GuestResting{GuestResting: &hostdv1.GuestResting{GuestId: gid, Resting: false, Reason: c.WakeGuest.Reason}}})
+		return ok(func(r *hostdv1.Result) {
+			r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WakeMs: 40}}
 		})
 	case *hostdv1.Command_Drain:
 		f.mu.Lock()

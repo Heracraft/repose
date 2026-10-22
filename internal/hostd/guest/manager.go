@@ -245,6 +245,14 @@ type Config struct {
 	// unit holds what the guest uses. Guests started before keep their
 	// devices until their next start.
 	FreePageReporting bool
+	// PauseIdle lets this host rest an idle guest: it is what puts
+	// `pause` in Hello.features, so an api places no pause and no wake
+	// here without it (DECISIONS I-818). Off by default, because a plain
+	// vm.pause and vm.resume of a guest with two vhost-user devices is
+	// measured on no repose host yet -- I-652 records that a
+	// *snapshotted* VM must not be resumed at all, its virtio-fs stops
+	// answering -- so a host opts in the way it opts into the freeze.
+	PauseIdle bool
 }
 
 // Defaults fills documented values into zero fields.
@@ -405,11 +413,12 @@ type Deps struct {
 type job struct {
 	cmd      *hostdv1.Command
 	internal func(ctx context.Context)
-	// noSlot runs an internal job without taking one of the MaxOps
-	// slots: one a running command waits for (a fork's restore waiting
-	// on its source's fork point, I-701), which would otherwise deadlock
-	// once every slot is held by a command doing that wait. Only for a
-	// job of milliseconds.
+	// noSlot runs a job without taking one of the MaxOps slots: one a
+	// running command waits for (a fork's restore waiting on its
+	// source's fork point, I-701), which would otherwise deadlock once
+	// every slot is held by a command doing that wait, and a WakeGuest,
+	// which a user is waiting for (I-818). Only for a job of
+	// milliseconds.
 	noSlot bool
 }
 
@@ -432,15 +441,21 @@ type Manager struct {
 
 	// curMu guards the sample cursors and the last sample timestamp; a
 	// tap's counters are read under it (advanceNet).
-	curMu  sync.Mutex
-	last   map[string]sampleCursor
-	lastTs int64
+	curMu sync.Mutex
+	last  map[string]sampleCursor
+	// lastGuest is each guest's last guest-written figures, repeated on a
+	// resting guest's sample (I-818).
+	lastGuest map[string]guestFigures
+	lastTs    int64
 
 	mu       sync.Mutex
 	workers  map[string]*worker
 	inflight map[string]bool
-	secrets  map[string][]*guestdv1.Secret
-	monitors map[string]*monitor
+	// inflightTarget is each in-flight command's guest, so a pause can
+	// refuse a guest the api has work for (I-818).
+	inflightTarget map[string]string
+	secrets        map[string][]*guestdv1.Secret
+	monitors       map[string]*monitor
 	// boots is each guest's last boot that reached running, step by step
 	// (DECISIONS I-707), for the create or start result that made it.
 	boots    map[string]*hostdv1.BootTimings
@@ -465,6 +480,25 @@ type Manager struct {
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
+
+	// wakeLocks serialises one guest's wakes (I-818): the command, the
+	// wake hostd does itself before a session caller, and the armed timer
+	// wake may arrive at once, and only one may drive vm.resume.
+	wakeLocks sync.Map // guest id -> *sync.Mutex
+
+	// restMu guards the two maps below. It is deliberately not mu: the
+	// monitor goroutine reads the resting mark on every dial retry, and
+	// Close holds mu while it waits for that goroutine to end, so a
+	// monitor blocked on mu would deadlock the shutdown.
+	restMu sync.Mutex
+	// restingNow mirrors each guest's bbolt resting mark (I-818) for the
+	// readers that cannot afford a bbolt read: the sampler, the monitor
+	// and every session caller. setResting and setState write it;
+	// Reconcile loads it.
+	restingNow map[string]*state.Resting
+	// timerWakes is each resting guest's armed wake for the next user
+	// timer inside it (I-818).
+	timerWakes map[string]*time.Timer
 
 	// forkLocks serialises the work on one fork point: taking it, each
 	// sibling's clone of it, and its removal (clone.go, I-701).
@@ -507,13 +541,15 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, d: d,
-		workers: map[string]*worker{}, inflight: map[string]bool{}, freezeMu: make(chan struct{}, 1),
+		workers: map[string]*worker{}, inflight: map[string]bool{}, inflightTarget: map[string]string{}, freezeMu: make(chan struct{}, 1),
+		restingNow: map[string]*state.Resting{}, timerWakes: map[string]*time.Timer{},
 		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
-		last:     map[string]sampleCursor{},
-		buildSeq: map[string]uint64{},
-		ops:      make(chan struct{}, cfg.MaxOps),
-		buildCh:  make(chan job, cfg.MaxBuildQueue),
-		cidr:     ipn, base: ipn.IP.To4(), maxIndex: size - 4,
+		last:      map[string]sampleCursor{},
+		lastGuest: map[string]guestFigures{},
+		buildSeq:  map[string]uint64{},
+		ops:       make(chan struct{}, cfg.MaxOps),
+		buildCh:   make(chan job, cfg.MaxBuildQueue),
+		cidr:      ipn, base: ipn.IP.To4(), maxIndex: size - 4,
 	}
 	m.ctx, m.stop = context.WithCancel(context.Background())
 	return m, nil
@@ -639,12 +675,26 @@ func (m *Manager) setState(g *state.Guest, st, reason string) error {
 	case StateRunning, StateStopping, StateDestroying, StateRestoring:
 		g.Interrupted = nil
 	}
+	// A guest whose state changes is not resting (I-818): whatever moved
+	// it -- a stop, a restore, a reconcile, a thaw's resume -- left its
+	// vCPUs running or gone. The mark goes, and the api is told it went,
+	// because a mark nothing cleared would silence that guest's samples.
+	wasResting := g.Resting != nil
+	g.Resting = nil
 	if err := m.d.State.PutGuest(g); err != nil {
 		return fmt.Errorf("state write: %w", err)
 	}
 	m.writeGuestJSON(g)
+	if wasResting {
+		m.noteResting(g.GuestID, nil)
+	}
 	m.log(g).Info("guest state changed", "event", "guest_state", "state", st, "prev", prev, "reason", reason)
 	m.emitEvent(&hostdv1.Event_GuestStateChanged{GuestStateChanged: &hostdv1.GuestStateChanged{GuestId: g.GuestID, State: st, Reason: reason}})
+	if wasResting {
+		m.emitEvent(&hostdv1.Event_GuestResting{GuestResting: &hostdv1.GuestResting{
+			GuestId: g.GuestID, Resting: false, At: m.d.Now().Unix(), Reason: "state_changed",
+		}})
+	}
 	m.refreshGuestGauge()
 	return nil
 }
@@ -680,14 +730,20 @@ func (m *Manager) refreshGuestGauge() {
 			m.d.Metrics.Guests.WithLabelValues(st, class).Set(0)
 		}
 	}
-	interrupted := 0
+	interrupted, resting := 0, 0
 	for _, g := range gs {
 		m.d.Metrics.Guests.WithLabelValues(g.State, g.Class).Inc()
 		if g.Interrupted != nil && g.State != StateRunning && m.d.Now().Sub(g.Interrupted.At) < InterruptedRecent {
 			interrupted++
 		}
+		// A resting guest is counted under state `running`, which is
+		// what it is; this gauge is the marker (I-818).
+		if g.Resting != nil {
+			resting++
+		}
 	}
 	m.d.Metrics.GuestsInterrupted.Set(float64(interrupted))
+	m.d.Metrics.GuestsResting.Set(float64(resting))
 }
 
 // GuestStates is the guest state enum of docs/interfaces/README.md, the
@@ -720,6 +776,8 @@ func (m *Manager) newEvent(ev any) *hostdv1.Event {
 	case *hostdv1.Event_HostWarning:
 		e.Ev = v
 	case *hostdv1.Event_AgentQuestion:
+		e.Ev = v
+	case *hostdv1.Event_GuestResting:
 		e.Ev = v
 	}
 	return e
@@ -825,13 +883,18 @@ func (m *Manager) Hello() *hostdv1.Hello {
 	// PoolFreeBytes and PoolBytes read 0 while the pool is unavailable
 	// (an lvs error), so an api older than pool_unavailable keeps new
 	// machines off the host too (DECISIONS I-644).
-	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features()}
+	h := &hostdv1.Hello{HostId: m.cfg.HostID, FreeMemBytes: m.FreeMemBytes(), PoolFreeBytes: m.PoolFreeBytes(), PoolBytes: m.PoolBytes(), PoolUnavailable: m.PoolUnavailable(), Features: Features(m.cfg.PauseIdle)}
 	h.HostBootId, h.HostBootAt = m.hostBootInfo()
 	gs, _ := m.d.State.ListGuests() // an unreadable table yields an empty Hello; the api reconciles from later samples
 	for _, g := range gs {
 		gst := &hostdv1.GuestStatus{GuestId: g.GuestID, State: g.State, Ip: g.IP, VsockCid: g.CID, SystemClosure: g.SystemClosure}
 		if g.Interrupted != nil {
 			gst.InterruptedBootId, gst.InterruptedAt = g.Interrupted.BootID, g.Interrupted.At.Unix()
+		}
+		// A guest paused by the idle pause is reported `running` with
+		// this marker, never as a state of its own (I-818).
+		if g.Resting != nil {
+			gst.RestingAt = g.Resting.Since.Unix()
 		}
 		h.Guests = append(h.Guests, gst)
 	}
@@ -1001,6 +1064,10 @@ func Kind(cmd *hostdv1.Command) string {
 		return "Drain"
 	case *hostdv1.Command_AnswerQuestion:
 		return "AnswerQuestion"
+	case *hostdv1.Command_PauseGuest:
+		return "PauseGuest"
+	case *hostdv1.Command_WakeGuest:
+		return "WakeGuest"
 	}
 	return ""
 }
@@ -1032,6 +1099,10 @@ func Target(cmd *hostdv1.Command) string {
 		return c.Exec.GuestId
 	case *hostdv1.Command_AnswerQuestion:
 		return c.AnswerQuestion.GuestId
+	case *hostdv1.Command_PauseGuest:
+		return c.PauseGuest.GuestId
+	case *hostdv1.Command_WakeGuest:
+		return c.WakeGuest.GuestId
 	}
 	return ""
 }
@@ -1072,7 +1143,10 @@ func (m *Manager) Dispatch(cmd *hostdv1.Command) {
 	if key == "" {
 		key = "host"
 	}
-	m.enqueue(key, job{cmd: cmd})
+	// A wake is milliseconds and is what a user is waiting for, so it
+	// takes no op slot: with every slot held by builds it would otherwise
+	// wait for one (I-818).
+	m.enqueue(key, job{cmd: cmd, noSlot: kind == "WakeGuest"})
 }
 
 // admit records the command. It returns a stored result for a repeat, or
@@ -1113,12 +1187,14 @@ func (m *Manager) admit(cmd *hostdv1.Command) (*hostdv1.Result, bool) {
 		_ = m.d.State.RestartCommand(cmd.CommandId) // the record exists (StartCommand found it); a failed touch changes nothing
 	}
 	m.inflight[cmd.CommandId] = true
+	m.inflightTarget[cmd.CommandId] = Target(cmd)
 	return nil, true
 }
 
 func (m *Manager) clearInflight(id string) {
 	m.mu.Lock()
 	delete(m.inflight, id)
+	delete(m.inflightTarget, id)
 	m.mu.Unlock()
 }
 
@@ -1210,8 +1286,14 @@ func (m *Manager) withoutSlot(ctx context.Context, wait func()) {
 }
 
 func (m *Manager) runJob(j job) {
-	if j.noSlot && j.internal != nil {
-		j.internal(m.ctx)
+	if j.noSlot {
+		if j.internal != nil {
+			j.internal(m.ctx)
+			return
+		}
+		if res := m.run(m.ctx, j.cmd); res != nil {
+			m.d.Emit.Result(res)
+		}
 		return
 	}
 	select {
@@ -1327,6 +1409,12 @@ func (m *Manager) execute(ctx context.Context, cmd *hostdv1.Command) *hostdv1.Re
 	case *hostdv1.Command_AnswerQuestion:
 		err := m.answerQuestion(ctx, c.AnswerQuestion)
 		return payloadOrErr(id, err, nil)
+	case *hostdv1.Command_PauseGuest:
+		r, err := m.pause(ctx, id, c.PauseGuest)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Pause{Pause: r} })
+	case *hostdv1.Command_WakeGuest:
+		r, err := m.wake(ctx, c.WakeGuest)
+		return payloadOrErr(id, err, func(res *hostdv1.Result) { res.Payload = &hostdv1.Result_Wake{Wake: r} })
 	}
 	return errResult(id, errf(CodeInvalidArgument, "unknown command"))
 }

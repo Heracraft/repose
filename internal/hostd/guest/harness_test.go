@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/ch"
 	fakeguestd "github.com/heracraft/repose/internal/hostd/fakeguestd"
@@ -189,7 +190,13 @@ func newHarness(t *testing.T, mut func(*Config)) *harness {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 	h.sockDir = sockDir
-	h.gopts = fakeguestd.Options{FreezeWatchdog: time.Second}
+	// A guest the idle pause may take is one nobody is using: hostd reads
+	// a fresh sample before it pauses and refuses `in_use` on a session
+	// that appeared since the api's own read (DECISIONS I-818), and the
+	// fake's canned sample is a machine in use (one ssh session, one tmux
+	// client, an agent working). Tests that want the busy sample set
+	// h.gopts.Sample themselves before create.
+	h.gopts = fakeguestd.Options{FreezeWatchdog: time.Second, Sample: idleSample()}
 	// A guest@ unit starting means the guest boots: a fake guestd appears.
 	h.sd.OnRun = func(unit string, argv []string) error {
 		if !strings.HasPrefix(unit, "guest@") {
@@ -333,6 +340,10 @@ func cmd(c any) *hostdv1.Command {
 		out.Cmd = &hostdv1.Command_Drain{Drain: v}
 	case *hostdv1.AnswerQuestion:
 		out.Cmd = &hostdv1.Command_AnswerQuestion{AnswerQuestion: v}
+	case *hostdv1.PauseGuest:
+		out.Cmd = &hostdv1.Command_PauseGuest{PauseGuest: v}
+	case *hostdv1.WakeGuest:
+		out.Cmd = &hostdv1.Command_WakeGuest{WakeGuest: v}
 	}
 	return out
 }
@@ -383,6 +394,24 @@ func (h *harness) create(id string) *hostdv1.Result {
 	return h.mustOK(cmd(req))
 }
 
+// restart models hostd coming back: a new Manager with a new registry
+// over the same state, host and fakes. Reconcile is the caller's, since
+// what it settles is often what the test is about.
+func (h *harness) restart() {
+	h.t.Helper()
+	h.m.Close()
+	d := h.m.d
+	d.Metrics = metrics.New()
+	h.metrics = d.Metrics
+	m2, err := New(h.cfg, d)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	m2.Run()
+	h.t.Cleanup(m2.Close)
+	h.m = m2
+}
+
 func (h *harness) guest(id string) *state.Guest {
 	h.t.Helper()
 	g, err := h.st.GetGuest(id)
@@ -406,3 +435,13 @@ func (h *harness) waitState(id, want string) {
 }
 
 func clone(c *hostdv1.Command) *hostdv1.Command { return proto.Clone(c).(*hostdv1.Command) }
+
+// idleSample is a guest nobody is using: no session, no tmux client, an
+// agent sitting at its prompt. It is what the pause rule's own terms
+// describe, so it is the harness default (DECISIONS I-818).
+func idleSample() *guestdv1.SampleResult {
+	return &guestdv1.SampleResult{
+		Signals: &hostdv1.GuestSignals{GuestdOk: true,
+			Agents: []*hostdv1.AgentProc{{Agent: "claude", TmuxWindow: "claude", State: "idle"}}},
+	}
+}

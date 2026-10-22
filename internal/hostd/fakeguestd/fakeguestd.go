@@ -50,6 +50,10 @@ type Options struct {
 	// OnFreeze and OnThaw run when Freeze and Thaw arrive (a host check
 	// freezes a real filesystem with them); an error fails the request.
 	OnFreeze, OnThaw func() error
+	// OnExec answers an Exec the test cares about (the pause's write-back
+	// and its read of the next timer elapse, I-818); nil, or a nil
+	// answer, leaves the canned reply.
+	OnExec func(argv []string) *guestdv1.ExecResult
 }
 
 // Server is one fake guest listening on a unix socket.
@@ -346,7 +350,13 @@ func (s *Server) Handle(_ context.Context, req *guestdv1.Request) *guestdv1.Resp
 		if len(r.Exec.Argv) == 0 {
 			return fail("invalid_argument", "argv required")
 		}
-		ok.Result = &guestdv1.Response_Exec{Exec: &guestdv1.ExecResult{ExitCode: 0, Stdout: []byte("fake exec: " + r.Exec.Argv[0] + "\n")}}
+		ex := &guestdv1.ExecResult{ExitCode: 0, Stdout: []byte("fake exec: " + r.Exec.Argv[0] + "\n")}
+		if s.opts.OnExec != nil {
+			if out := s.opts.OnExec(r.Exec.Argv); out != nil {
+				ex = out
+			}
+		}
+		ok.Result = &guestdv1.Response_Exec{Exec: ex}
 	case *guestdv1.Request_Shutdown:
 		s.mu.Lock()
 		f := s.shutdown

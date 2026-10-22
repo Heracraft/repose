@@ -883,6 +883,101 @@ where to look.
    look at `incomplete` (the last shutdown) and `window` (this start)
    first.
 
+## GuestWakeFailed
+
+A machine nobody was using had its vCPUs paused (DECISIONS I-818) and
+would not resume. Nothing is lost yet: the guest's memory, its processes
+and its open files are where they were, and the project still reads
+`running`. What the owner sees is the gateway's own refusal --
+``environment is frozen and did not wake; try again shortly`` -- usually
+under the CLI's ``todo-app is running but did not answer ssh in 15 s``,
+which is what wraps it. Treat it as a tenant blocked, not as an idle
+machine.
+
+1. Which guests are resting on the host, and which are not coming back:
+   `hostd guests --json` on the host, and
+   `journalctl -u hostd | grep '"event":"guest_resting"'` for the
+   failures, whose `phase` is the step. `repose_host_guests_resting` is
+   the count per host.
+2. A wake happens again by itself on the next thing the user does, and
+   `hostd wake GUEST_ID` on the host asks for one now; it is idempotent,
+   so a guest already awake answers and nothing changes. A wake that
+   works from the host and not from the api is the api's send path, not
+   the guest: check `command_send`/`command_result` for that guest and
+   HostReportsRefused.
+3. `reason` is the step that failed:
+   - `resume`: `vm.resume` did not leave the VM `Running` within
+     `WakeResumeWait`. Check the guest's hypervisor process is alive
+     (`systemctl status guest@GUEST_ID`) and the `vm.info` state beside
+     it; a guest whose hypervisor is gone is not a wake problem, see
+     "hostd: hypervisor exited unexpectedly". A host with no CPU left is
+     the other cause: see GuestWakeSlow.
+   - `guestd`: the guest resumed and guestd did not answer within
+     `WakeGuestdWait`. See "Guest unresponsive"; the guest's own services
+     are what to look at, and its memory is intact until something stops
+     the machine.
+   - `state`: the guest is no longer one that can be woken (it stopped,
+     or a freeze holds it). Read the state in `hostd guests --json`
+     before anything else; `Guest freeze` covers the frozen-image case,
+     which shares the word and is a different mechanism.
+   - A clock that was not stepped is logged (`guest clock not set after
+     the wake`) and is not a failed wake: the machine works, with its
+     clock behind by the length of its rest, and the next wake steps it.
+4. To stop the host pausing anything while you work on it, the lever is
+   the `pause` feature in its Hello: the api pauses only on a host that
+   names it, so a host rolled back to a hostd without it stops resting
+   its guests, and its already-frozen guests wake on their next use.
+5. A guest that cannot be woken at all is a stop and a start, which ends
+   every process on it. That loss is the owner's to accept: tell them
+   what happened before stopping anything, and `repose start` is theirs
+   to run.
+
+## GuestWakeSlow
+
+Waking a frozen guest takes over 5 seconds at p90 on this host
+(DECISIONS I-818). The gateway waits for a wake inside its 10 s dial
+budget, so the next slow one is an ssh that fails on a machine that is
+running, and every first keystroke on that host is late.
+
+1. The host, not the guests, is almost always the cause: compare
+   `repose_host_load1` against `repose_host_cpu_cores`, and see
+   HostCPUSaturated. A resume is cheap; what is slow is a host with no
+   CPU left to run the resumed guest's first scheduling.
+2. `repose_host_guests_resting` and `repose_host_guests` together say how
+   much of the host is frozen. A host that rests most of its guests and
+   then wakes several at once (a morning, a batch of pushes) pays for all
+   of them in the same minutes.
+3. `repose_host_guest_wake_seconds` is hostd's own measurement, the
+   `wake_ms` of the result. The user's figure is larger by the gateway's
+   dial and the ssh handshake; measure that end to end from a laptop
+   before changing anything on the host.
+4. The remedy is fewer or smaller guests on the host (the same arithmetic
+   as HostCPUSaturated), not a change to the pause rule.
+
+## ApiWakeFailed
+
+The api asked a host to wake a frozen machine and could not get one
+(DECISIONS I-822). Nothing is lost -- the machine still holds its
+processes and all of its memory -- but somebody's `ssh`, answer or
+command is waiting on a machine the dashboard calls running, and the
+host's own GuestWakeFailed stays quiet for exactly this case, because
+hostd never answered.
+
+1. Is the host connected? `repose_api_grpc_streams` and `repose-admin
+   hosts list`. A host whose stream is down takes no commands at all, so
+   HostUnreachable and the host's own alerts are the ones to work.
+2. If the host is connected, the wake ran out of time
+   (`resting.WakeTimeout`, 8 s). Loki `{component="api"} | json |
+   event="guest_wake_fail"` names the project and the error; the host's
+   `{component="hostd"} | json | event="guest_resting"` says whether the
+   resume was even started.
+3. Do not restart the machine to clear the alert. A stop or a restart
+   ends every process the pause kept, which is the loss the feature
+   exists to prevent; `hostd wake <guest_id>` on the host is the move,
+   and GuestWakeFailed above is its procedure.
+4. The user's own next attach asks for the wake again, so an alert that
+   clears itself needs nothing.
+
 ## MinerStopped
 
 The api stopped a guest because its process sample named a cryptocurrency
@@ -1016,6 +1111,15 @@ Host root filesystem over 85 percent, almost always `/nix/store`.
 ## GuestdLost
 
 hostd cannot talk to a guest's guestd for 5 minutes.
+
+**First: is the machine merely frozen?** `hostd guests --json` on the
+host says which guests are resting (DECISIONS I-818). This alert cannot
+fire for one -- a resting guest's sample keeps `guestd_ok` true, which is
+what `repose_host_guestd_lost` counts (I-824) -- but step 2 below is a
+stop without a snapshot, and run against a frozen machine it destroys
+every process and all the memory the pause exists to keep. If the guest
+is resting, `hostd wake <guest_id>` is the move, and "GuestWakeFailed"
+below is the procedure.
 
 1. `repose-admin projects show <id>`: is the guest `running`? If the
    guest crashed, the transient unit is gone: `repose-admin projects
@@ -1756,6 +1860,12 @@ With `repose.host.freeze.enable` a host freezes its running guests to an
 encrypted memory image when it shuts down and restores them at hostd's
 next start (DECISIONS I-652, I-653). Off by default; turned on for
 host-stg-01, and for host-01 since 2026-10-12 (I-686).
+
+This is not the idle pause, which shares the user's word for it. A guest
+the idle pause left resting (I-824) is already paused, so the freeze
+snapshots it as it is and the thaw resumes it and clears its marker: a
+host restart brings every guest back awake, and
+`repose_host_guests_resting` reads 0 until the rule rests them again.
 
 Turning it on for a host:
 1. tofu: set `freeze_keyvault_name` for the environment and apply (a Key

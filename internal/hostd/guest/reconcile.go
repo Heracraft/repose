@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heracraft/repose/internal/hostd/ch"
 	"github.com/heracraft/repose/internal/hostd/state"
 	"github.com/heracraft/repose/internal/hostd/storeview"
 	"github.com/heracraft/repose/internal/hostd/virtiofs"
@@ -270,6 +271,7 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 			if g.State != StateRunning {
 				_ = m.setState(g, StateRunning, "reconciled: hypervisor running") // logged inside; nothing else to do on failure
 			}
+			m.reconcileResting(ctx, g)
 			m.reshape(ctx, g)
 			m.startMonitor(g)
 			return
@@ -308,6 +310,58 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 			_ = virtiofs.StopAuth(ctx, m.d.Systemd, g.GuestID) // the same for the login share
 		}
 	}
+}
+
+// reconcileResting settles the idle pause's marker against the
+// hypervisor at hostd's start (I-818), so a guest that was resting is
+// still reported resting in Hello and its timer wake is armed again.
+// vm.info is read for a guest the record says rests: one whose vCPUs run
+// lost its pause (a freeze resumed it, or a `hostd thaw` did), and the
+// mark goes, because a mark nothing cleared would silence that guest's
+// samples for good.
+//
+// A guest whose vm.info says Paused with NO mark is adopted as resting
+// rather than left. Two ways it happens, and both are a tenant's
+// processes: hostd killed between vm.pause returning and the record being
+// written (a host switch's `systemctl restart hostd`, an OOM kill, a
+// panic), and the leftover of a freeze that did not finish. ThawAll runs
+// at the top of Reconcile and owns the second, so by here it has had its
+// turn; what is left is a paused guest nothing would ever resume, which
+// reported as plain `running` ends as a `repose start` that cold-boots
+// it. Adopting it costs nothing if it was the freeze's: the next thaw or
+// wake clears the mark either way.
+func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
+	if g.State != StateRunning {
+		return
+	}
+	sock := ch.APISocket(m.guestDir(g.GuestID))
+	if g.Resting == nil {
+		info, err := m.d.CH.Info(ctx, sock)
+		if err != nil || ch.VMState(info) != ch.StatePaused {
+			return
+		}
+		mark := &state.Resting{Since: m.d.Now(), Reason: "adopted"}
+		if err := m.setResting(g, mark, "adopted"); err != nil {
+			m.log(g).Warn("paused guest not marked at reconcile", "event", "guest_resting", "err", err.Error())
+			return
+		}
+		m.armTimerWake(g)
+		m.log(g).Warn("adopted a paused guest with no record; it rests until something wakes it",
+			"event", "guest_resting", "resting", true, "reason", "adopted")
+		return
+	}
+	info, err := m.d.CH.Info(ctx, sock)
+	if err == nil && ch.VMState(info) != ch.StatePaused {
+		if err := m.setResting(g, nil, "reconciled"); err != nil {
+			m.log(g).Warn("resting mark not cleared at reconcile", "event", "guest_resting", "err", err.Error())
+		}
+		return
+	}
+	// Still paused, or a hypervisor that cannot be asked: the mark
+	// stands, and the next sample and the next pause read it again.
+	m.noteResting(g.GuestID, g.Resting)
+	m.armTimerWake(g)
+	m.log(g).Info("guest is still resting", "event", "guest_resting", "resting", true, "reason", "reconciled")
 }
 
 // reconcileGood keeps a guest's last good closure rooted (I-590), and

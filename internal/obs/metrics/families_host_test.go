@@ -49,6 +49,13 @@ func TestHostFamily(t *testing.T) {
 		`repose_host_guest_notify_dropped_total{reason="rate_limited"}`,
 		`repose_host_guest_freeze_unfrozen_total{reason="estimate"}`,
 		`repose_host_guest_thaw_discarded_total{reason="window"}`,
+		// The idle pause (DECISIONS I-818). §5 of
+		// docs/workstreams/10-observability.md names these four; this
+		// list is what holds hostd to it.
+		"repose_host_guests_resting",
+		`repose_host_guest_pause_total{reason="idle",result="paused"}`,
+		"repose_host_guest_wake_seconds_bucket",
+		`repose_host_guest_wake_failed_total{reason="resume"}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("host metrics do not contain %s", want)

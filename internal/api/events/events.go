@@ -83,6 +83,10 @@ var warningKinds = map[string]bool{
 	"guestd_lost": true, "freeze_timeout": true,
 	"disk_high": true, "inotify_exhausted": true, "docker_down": true, "store_path_missing": true,
 	"oom": true, "tmux_down": true, "herdr_down": true, "guest_other": true,
+	// A resting guest that would not resume (DECISIONS I-818). Its own
+	// kind, not guestd_lost: the operator's move is a wake, not a reboot,
+	// and a reboot there costs the tenant every process the pause kept.
+	"guest_wake_failed": true,
 }
 
 // MaxWarningDetail caps a host warning's detail in the api log.
@@ -122,6 +126,17 @@ type QuestionHandler interface {
 	GuestStopped(ctx context.Context, projectID uuid.UUID) error
 }
 
+// RestingHandler is the resting service (internal/api/resting), which
+// sits on top of this package. A pause and a wake are the one host event
+// that raises nothing a user reads: no event row, no notification (the
+// idle-pause brief's S6, DECISIONS I-484, I-485, I-818). They are
+// deliberately not GuestStateChanged -- the guest's state does not
+// change, and that path would cancel the project's pending questions,
+// which is exactly what an answer is supposed to wake the machine for.
+type RestingHandler interface {
+	OnEvent(ctx context.Context, hostID uuid.UUID, e *hostdv1.GuestResting)
+}
+
 // MaxSummary is the summary cap.
 const MaxSummary = 1024
 
@@ -138,10 +153,14 @@ type Ingest struct {
 	log       *slog.Logger
 	now       func() time.Time
 	questions QuestionHandler
+	resting   RestingHandler
 }
 
 // SetQuestions installs the question store (before serving).
 func (i *Ingest) SetQuestions(q QuestionHandler) { i.questions = q }
+
+// SetResting installs the resting service (before serving).
+func (i *Ingest) SetResting(r RestingHandler) { i.resting = r }
 
 // New builds an ingest.
 func New(pool *db.Pool, m *metrics.M, log *slog.Logger) *Ingest {
@@ -384,6 +403,14 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 				i.log.Error("cancel questions of a stopped guest", "event", "agent_question", "project_id", p.ID.String(), "err", err.Error())
 				return false
 			}
+		}
+		return true
+	case *hostdv1.Event_GuestResting:
+		// The marker on the row, within seconds of the pause, and nothing
+		// else: no row a user reads, no notification, no state change
+		// (I-818).
+		if i.resting != nil {
+			i.resting.OnEvent(ctx, hostID, e.GuestResting)
 		}
 		return true
 	case *hostdv1.Event_AgentQuestion:

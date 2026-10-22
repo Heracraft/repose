@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/heracraft/repose/internal/api/events"
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -90,6 +91,16 @@ type Sender interface {
 	Send(ctx context.Context, hostID uuid.UUID, cmd *hostdv1.Command) error
 }
 
+// Waker is internal/api/resting's Wake (DECISIONS I-818). A machine that
+// rests is woken before a close is carried to it: the answer is the one
+// thing a paused agent waiting at `needs_input` is there for, and a
+// paused guest answers no vsock call. nil (the admin CLI, the tests that
+// do not care) delivers as before; hostd wakes the guest itself for an
+// AnswerQuestion, so this is the api's half of the same promise.
+type Waker interface {
+	Wake(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error)
+}
+
 // Question is a questions row as the routes show it.
 type Question struct {
 	ID          uuid.UUID  `json:"id"`
@@ -117,6 +128,8 @@ type Service struct {
 	Now func() time.Time
 	// Interval is the worker's pass interval.
 	Interval time.Duration
+	// Waker wakes a resting machine before a delivery; set in app.go.
+	Waker Waker
 }
 
 // New builds the service.
@@ -451,12 +464,16 @@ func (s *Service) Run(ctx context.Context) {
 }
 
 type pendingDelivery struct {
-	id      uuid.UUID
-	guestID uuid.UUID
-	state   string
-	answer  *string
-	hostID  *uuid.UUID
-	created time.Time
+	id        uuid.UUID
+	projectID uuid.UUID
+	guestID   uuid.UUID
+	state     string
+	answer    *string
+	hostID    *uuid.UUID
+	created   time.Time
+	// resting: the api believes the machine is paused, so the delivery
+	// wakes it first (I-818).
+	resting bool
 }
 
 // Once expires overdue questions and sends every due delivery.
@@ -472,7 +489,7 @@ func (s *Service) Once(ctx context.Context) error {
 	}
 	var due []pendingDelivery
 	err = db.InTx(ctx, s.pool, func(tx db.Tx) error {
-		rows, err := tx.Query(ctx, `select q.id, q.guest_id, q.state, q.answer, p.host_id, q.created_at
+		rows, err := tx.Query(ctx, `select q.id, q.project_id, q.guest_id, q.state, q.answer, p.host_id, q.created_at, p.resting_since is not null
 			from questions q join projects p on p.id = q.project_id and p.guest_id = q.guest_id
 			where q.state <> 'pending' and q.delivered_at is null and q.deliver_next_at <= $1
 			order by q.deliver_next_at limit 50 for update of q skip locked`, now)
@@ -481,7 +498,7 @@ func (s *Service) Once(ctx context.Context) error {
 		}
 		for rows.Next() {
 			var d pendingDelivery
-			if err := rows.Scan(&d.id, &d.guestID, &d.state, &d.answer, &d.hostID, &d.created); err != nil {
+			if err := rows.Scan(&d.id, &d.projectID, &d.guestID, &d.state, &d.answer, &d.hostID, &d.created, &d.resting); err != nil {
 				rows.Close()
 				return err
 			}
@@ -516,6 +533,15 @@ func (s *Service) deliver(ctx context.Context, now time.Time, d pendingDelivery)
 	}
 	if d.hostID == nil {
 		return // no host now; retried when one is
+	}
+	// Wake first (I-818): a paused agent is only safe to leave at
+	// `needs_input` because the answer wakes it. A wake that fails leaves
+	// the delivery to the next pass, which is what RetryAfter is for.
+	if d.resting && s.Waker != nil {
+		if _, err := s.Waker.Wake(ctx, d.projectID, resting.ReasonAnswer); err != nil {
+			s.log.Info("question delivery deferred", "event", "agent_question", "question_id", d.id.String(), "reason", "wake_failed")
+			return
+		}
 	}
 	answer := ""
 	if d.answer != nil && d.state == StateAnswered {

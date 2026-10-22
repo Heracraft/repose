@@ -73,6 +73,13 @@ func guestdDead(p *Project) bool {
 	if p.Signals == nil || p.Signals.GuestdOK == nil || *p.Signals.GuestdOK {
 		return false
 	}
+	// A frozen machine is never one to restart: the api keeps guestd_ok
+	// true while it rests, and reading a false one as dead would have
+	// `repose start` reboot a machine whose memory is intact and lose
+	// every process (I-824).
+	if frozen(p) {
+		return false
+	}
 	// A sample from before the guest's current run (taken while it was
 	// being stopped) says nothing about the guestd running now; an api
 	// before I-225 still sends it for up to a minute after every start.

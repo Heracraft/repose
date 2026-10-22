@@ -39,6 +39,7 @@ import (
 	"github.com/heracraft/repose/internal/api/waitlist"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/obs"
 )
 
@@ -96,6 +97,18 @@ type Deps struct {
 	// answer's X-Repose-CLI-Latest header (DECISIONS I-626); nil or ""
 	// sends no header.
 	CLILatest func() string
+	// Resting wakes a machine that rests (DECISIONS I-818): the gateway's
+	// POST /internal/wake and a keep_awake the user has just turned on.
+	// nil makes the wake route answer 503 and keep_awake take effect at
+	// the next rest rule rather than at once.
+	Resting Waker
+}
+
+// Waker is internal/api/resting's Wake, the api's only way to resume a
+// machine that rests. It is an interface here so the HTTP layer does not
+// depend on the service that owns the host stream.
+type Waker interface {
+	Wake(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error)
 }
 
 // RateLimits are the per-user limits from docs/interfaces/api.md.

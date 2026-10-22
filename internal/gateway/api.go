@@ -62,6 +62,21 @@ type Route struct {
 	State           string   `json:"state"`
 	Principals      []string `json:"principals"`
 	HostUnreachable bool     `json:"host_unreachable"`
+	// Resting: the machine's vCPUs are stopped and its memory is
+	// resident, so the dial wakes it first (DECISIONS I-818). Its state
+	// is still `running` and nothing refuses on this flag: the route
+	// cache holds an answer for RouteTTL, which makes it stale in both
+	// directions, so the wake is idempotent and the dial asks for one
+	// whenever the flag is set. False from an api older than I-818.
+	Resting bool `json:"resting"`
+}
+
+// WakeResult is POST /internal/wake. WasResting says whether that call
+// is what resumed the machine; WakeMs is what hostd measured from the
+// resume to guestd's answer.
+type WakeResult struct {
+	WasResting bool   `json:"was_resting"`
+	WakeMs     uint32 `json:"wake_ms"`
 }
 
 // Host is one row of GET /internal/hosts.
@@ -148,6 +163,19 @@ func (c *Client) Route(ctx context.Context, login string) (*Route, error) {
 		return nil, errors.New("api: route without project_id")
 	}
 	return &r, nil
+}
+
+// Wake resumes a machine that rests and answers once it is awake
+// (DECISIONS I-818). Idempotent: a machine already awake is answered
+// was_resting false, which is what makes the route cache's stale flag
+// harmless. reason is a lower_snake word for the host's log line.
+func (c *Client) Wake(ctx context.Context, projectID, reason string) (*WakeResult, error) {
+	var out WakeResult
+	body := map[string]string{"project_id": projectID, "reason": reason}
+	if err := c.do(ctx, http.MethodPost, "/wake", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // Revoked lists serials revoked since a time (zero means all).

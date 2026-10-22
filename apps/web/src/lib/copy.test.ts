@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { unaskedIn } from './unasked';
+import { UNASKED_SCREENS, unaskedIn } from './unasked';
 
 const web = join(__dirname, '..', '..');
 const repo = join(web, '..', '..');
@@ -29,7 +29,9 @@ describe('site copy and emails', () => {
 			...files(join(repo, 'internal', 'api', 'notify', 'templates'), /\.(html|txt|tmpl)$/)
 		];
 		expect(all.length).toBeGreaterThan(20);
-		const hits = all.flatMap((p) => unaskedIn(relative(repo, p), readFileSync(p, 'utf8')));
+		const hits = all.flatMap((p) =>
+			unaskedIn(relative(repo, p), readFileSync(p, 'utf8'), UNASKED_SCREENS)
+		);
 		expect(hits).toEqual([]);
 	});
 });

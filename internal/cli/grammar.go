@@ -82,7 +82,8 @@ func displayConfigTOML() string {
 
 // setupLine is `repose status`'s line for the settings a flag or the
 // dashboard made that differ from a new project's (DECISIONS I-622): the
-// agent `run -p` starts, machine.nix kept off, base updates held. ""
+// agent `run -p` starts, machine.nix kept off, base updates held, the
+// machine kept awake. ""
 // when every one is the default.
 func setupLine(p *Project, defaultAgent string) string {
 	var parts []string
@@ -100,6 +101,11 @@ func setupLine(p *Project, defaultAgent string) string {
 	}
 	if p.HoldBaseUpdates {
 		parts = append(parts, "base updates held")
+	}
+	// Held awake: the api never freezes it while idle (I-820). Set on
+	// the Config page, as base updates are.
+	if p.KeepAwake {
+		parts = append(parts, "kept awake")
 	}
 	if len(parts) == 0 {
 		return ""

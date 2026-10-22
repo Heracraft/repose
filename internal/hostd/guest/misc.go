@@ -22,7 +22,9 @@ func (m *Manager) updateSecrets(ctx context.Context, c *hostdv1.UpdateSecrets) *
 	if g.State != StateRunning {
 		return nil
 	}
-	sess, serr := m.session(g.GuestID)
+	// A new value must reach the next command in the guest within
+	// seconds, which means waking a resting one first (I-818).
+	sess, serr := m.sessionAwake(ctx, g)
 	if serr != nil {
 		return serr
 	}
@@ -46,7 +48,7 @@ func (m *Manager) setPrincipals(ctx context.Context, c *hostdv1.SetPrincipals) *
 	if g.State != StateRunning {
 		return nil
 	}
-	sess, serr := m.session(g.GuestID)
+	sess, serr := m.sessionAwake(ctx, g)
 	if serr != nil {
 		return serr
 	}
@@ -71,7 +73,9 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 	if g.State != StateRunning {
 		return errf(CodeNotFound, "guest is %s; its questions ended with it", g.State)
 	}
-	sess, serr := m.session(g.GuestID)
+	// The answer is what wakes a machine whose agent asked and then
+	// rested with the question open (I-818).
+	sess, serr := m.sessionAwake(ctx, g)
 	if serr != nil {
 		return serr
 	}
@@ -111,7 +115,7 @@ func (m *Manager) exec(ctx context.Context, c *hostdv1.Exec) (*hostdv1.ExecResul
 	// the audit trail that must hold the command is the api's audit_log row
 	// keyed by this audit_id (docs/interfaces/db-schema.md).
 	m.log(g).Log(ctx, levelNotice, "audited exec", "event", "exec_audit", "audit_id", c.AuditId, "argv_len", len(c.Argv))
-	sess, serr := m.session(g.GuestID)
+	sess, serr := m.sessionAwake(ctx, g)
 	if serr != nil {
 		return nil, serr
 	}

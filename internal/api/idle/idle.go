@@ -67,8 +67,17 @@ func Since(now time.Time, state string, startedAt *time.Time, hostUnreachable bo
 	return since, true
 }
 
-// usedSQL is a sample that shows somebody, or some agent, at work.
-const usedSQL = `(ssh_sessions > 0 or tmux_clients > 0 or not guestd_ok
+// UsedSQL is a sample that shows somebody, or some agent, at work. The
+// rest rule reads the same text, negated, as its first four terms
+// (internal/api/resting, DECISIONS I-818): one definition of "in use",
+// so the warning and the pause cannot disagree about it.
+//
+// `not guestd_ok` counts as use because silence says nothing about who is
+// attached. A paused guest is the one case where that would invert the
+// signal, and it does not: hostd keeps `guestd_ok` true and repeats the
+// last guest-written signals for a resting sample (I-818), so a machine
+// that rests still reads unused and the notice below still fires for it.
+const UsedSQL = `(ssh_sessions > 0 or tmux_clients > 0 or not guestd_ok
 	or exists (select 1 from jsonb_array_elements(coalesce(agents, '[]'::jsonb)) a
 	           where coalesce(a->>'state', '') not in ('idle', 'needs_input')))`
 
@@ -78,7 +87,7 @@ func ReadSignals(ctx context.Context, q store.Querier, projectID uuid.UUID, from
 	var s Signals
 	err := q.QueryRow(ctx, `select
 		(select max(ts) from meter_samples where project_id = $1 and ts >= $2),
-		(select max(ts) from meter_samples where project_id = $1 and ts >= $2 and `+usedSQL+`)`,
+		(select max(ts) from meter_samples where project_id = $1 and ts >= $2 and `+UsedSQL+`)`,
 		projectID, from).Scan(&s.Newest, &s.LastUsed)
 	return s, err
 }

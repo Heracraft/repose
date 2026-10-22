@@ -153,7 +153,10 @@ func (m *Manager) apply(ctx context.Context, commandID string, c *hostdv1.ApplyC
 		}
 		return &hostdv1.ApplyResult{}, nil
 	}
-	sess, serr := m.session(g.GuestID)
+	// A resting guest is woken before the Switch: a paused one would
+	// hold the apply for the Switch's whole ten minutes and then report
+	// internal (I-818).
+	sess, serr := m.sessionAwake(ctx, g)
 	if serr != nil {
 		return nil, serr
 	}

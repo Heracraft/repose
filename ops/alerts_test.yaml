@@ -944,6 +944,121 @@ tests:
               description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
               runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
 
+  # --- GuestWakeFailed ----------------------------------------------------
+  - interval: 1m
+    name: GuestWakeFailed warns when a frozen guest will not resume
+    input_series:
+      - series: 'repose_host_guest_wake_failed_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="resume"}'
+        values: "0+0x10 1+1x30"
+      - series: 'repose_host_guest_wake_failed_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="guestd"}'
+        values: "0+0x41"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: GuestWakeFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GuestWakeFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+              reason: resume
+            exp_annotations:
+              summary: "10 wake(s) of a frozen guest on host-01 failed (resume)"
+              description: "Loki `{component=\"hostd\"} | json | event=\"guest_resting\"` names each guest and the phase it failed at. The guests are still running with their memory; `hostd guests --json` on the host lists which are resting."
+              runbook: "docs/ops/RUNBOOK.md#guestwakefailed"
+
+  # --- GuestWakeSlow ------------------------------------------------------
+  # The series are the histogram's buckets: every wake lands between 5 and
+  # 10 seconds, so p90 interpolates to 9.5 and the alert fires.
+  - interval: 1m
+    name: GuestWakeSlow warns when p90 of a wake is over 5 seconds
+    input_series:
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="1"}'
+        values: "0+0x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="5"}'
+        values: "0+0x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="10"}'
+        values: "0+1x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="+Inf"}'
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: GuestWakeSlow
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: GuestWakeSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-01
+            exp_annotations:
+              summary: "waking a frozen guest on host-01 takes over 5s at p90"
+              description: "9.5s at p90. The host's load is the usual cause; compare with repose_host_load1 and the guests resting on it (repose_host_guests_resting)."
+              runbook: "docs/ops/RUNBOOK.md#guestwakeslow"
+
+  - interval: 1m
+    name: GuestWakeSlow stays quiet while every wake is under a second
+    input_series:
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="1"}'
+        values: "0+1x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="5"}'
+        values: "0+1x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="10"}'
+        values: "0+1x40"
+      - series: 'repose_host_guest_wake_seconds_bucket{job="hostd",instance="10.255.0.7:9101",host_id="host-01",le="+Inf"}'
+        values: "0+1x40"
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: GuestWakeSlow
+        exp_alerts: []
+
+  # GuestdLost reads repose_host_guestd_lost, and a resting guest's sample
+  # keeps guestd_ok true (workstream 18 S4), so a host whose guests are all
+  # frozen pages nobody. The failure this case pins: a sampler that reported
+  # a paused guest as guestd-down would page for every machine that rests,
+  # and would also reset the unused clock (I-262) for exactly those
+  # machines.
+  - interval: 1m
+    name: GuestdLost stays quiet for a host whose guests are frozen
+    input_series:
+      - series: 'repose_host_guestd_lost{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "0+0x30"
+      - series: 'repose_host_guests_resting{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "3+0x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: GuestdLost
+        exp_alerts: []
+
+  # --- ApiWakeFailed ------------------------------------------------------
+  # The half of a failed wake hostd cannot count: the api never got an
+  # answer. Two replicas, so the sum is over both (I-822).
+  - interval: 1m
+    name: ApiWakeFailed warns on the wakes the api itself could not get
+    input_series:
+      - series: 'repose_api_resting_wake_total{job="api",instance="10.255.0.9:9103",reason="connect",result="failed"}'
+        values: "0+0x10 1+1x30"
+      - series: 'repose_api_resting_wake_total{job="api",instance="10.255.0.10:9103",reason="connect",result="failed"}'
+        values: "0+0x41"
+      # A wake that worked must not fire it.
+      - series: 'repose_api_resting_wake_total{job="api",instance="10.255.0.9:9103",reason="connect",result="woken"}'
+        values: "0+5x41"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ApiWakeFailed
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ApiWakeFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              reason: connect
+            exp_annotations:
+              summary: "the api failed 10 wake(s) of a frozen machine (asked for by: connect)"
+              description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
+              runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
+
   # --- MinerStopped -------------------------------------------------------
   - interval: 1m
     name: MinerStopped fires on the first automatic stop, summed over replicas

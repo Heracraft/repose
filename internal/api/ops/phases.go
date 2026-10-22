@@ -35,6 +35,14 @@ const (
 	PhaseUpdateSecrets = "update_secrets"
 	PhaseExec          = "exec"
 	PhaseDrain         = "drain"
+	// PhaseWake resumes a machine that rests, before the first phase of
+	// the plan that reaches its guest (DECISIONS I-818). It is a phase,
+	// not an op: the engine allows one open op per project and the wake
+	// is needed precisely when that op is open. It is skipped when there
+	// is nothing to wake -- the machine is not running, has no guest, or
+	// sits on a host that does not pause -- so a plan carrying it costs
+	// nothing on a host without the feature.
+	PhaseWake = "wake"
 )
 
 // Op kinds.
@@ -64,8 +72,10 @@ func PlanStart(pendingRevision bool) []string {
 	return []string{PhaseStartGuest}
 }
 
-// PlanStop is one stop.
-func PlanStop() []string { return []string{PhaseStopGuest} }
+// PlanStop is one stop. A machine that rests is woken first: hostd's
+// stop asks guestd to shut the system down, and a paused guest answers
+// nothing (DECISIONS I-818).
+func PlanStop() []string { return []string{PhaseWake, PhaseStopGuest} }
 
 // PlanDestroy stops the guest (without a snapshot), takes the final
 // snapshot of the stopped volume and destroys (I-165); a project that
@@ -82,6 +92,11 @@ func PlanStop() []string { return []string{PhaseStopGuest} }
 // reads the guest when it is sent and skips when there is none (I-350).
 func PlanDestroy(p *store.Project) []string {
 	if p.ExpiresAt != nil {
+		// No wake: a temporary project keeps nothing, and DestroyGuest
+		// takes the machine down whether its vCPUs run or not (I-818).
+		// Every other phase below reaches the guest, and the stop asks
+		// guestd to shut the system down, so a running machine -- which
+		// may be resting -- is woken first.
 		return []string{PhaseDestroyGuest}
 	}
 	if p.GuestID == nil || p.HostID == nil {
@@ -90,14 +105,18 @@ func PlanDestroy(p *store.Project) []string {
 	if p.State == "stopped" {
 		return []string{PhaseSnapshot, PhaseDestroyGuest}
 	}
-	return []string{PhaseStopGuest, PhaseSnapshot, PhaseDestroyGuest}
+	return []string{PhaseWake, PhaseStopGuest, PhaseSnapshot, PhaseDestroyGuest}
 }
 
-// PlanResize is one resize.
-func PlanResize() []string { return []string{PhaseResize} }
+// PlanResize is one resize. The volume grows on the host, then guestd
+// grows the filesystem inside, so the machine is woken first (I-818).
+func PlanResize() []string { return []string{PhaseWake, PhaseResize} }
 
-// PlanSnapshot is one snapshot.
-func PlanSnapshot() []string { return []string{PhaseSnapshot} }
+// PlanSnapshot is one snapshot. hostd freezes the guest's filesystem
+// over vsock before it reads the volume, so the machine is woken first
+// (I-818). The nightly snapshot is hostd's own timer and needs nothing
+// here.
+func PlanSnapshot() []string { return []string{PhaseWake, PhaseSnapshot} }
 
 // PlanRestore destroys the stopped project's guest (keeping nothing),
 // builds when the project has no closure yet, restores, and starts.
@@ -181,10 +200,13 @@ func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID
 	return rf, nil
 }
 
-// PlanBuild builds and, when the guest runs, applies.
+// PlanBuild builds and, when the guest runs, applies. The wake sits
+// between them, not at the head: the build runs on the host and may take
+// forty minutes, and the machine has to be awake for the apply, which is
+// the first phase that reaches the guest (I-818).
 func PlanBuild(running bool) []string {
 	if running {
-		return []string{PhaseBuild, PhaseApplyConfig}
+		return []string{PhaseBuild, PhaseWake, PhaseApplyConfig}
 	}
 	return []string{PhaseBuild}
 }
@@ -195,14 +217,20 @@ func PlanBuild(running bool) []string {
 // (docs/interfaces/api.md "Build log lines").
 const ApplyLogLine = "switching the machine"
 
-// PlanApply re-applies a built revision.
-func PlanApply() []string { return []string{PhaseApplyConfig} }
+// PlanApply re-applies a built revision. Woken first (I-818): the switch
+// runs inside the guest, and a paused guest's vsock call times out as
+// guest_unresponsive, which the recovery turns into a reboot.
+func PlanApply() []string { return []string{PhaseWake, PhaseApplyConfig} }
 
-// PlanUpdateSecrets pushes the whole set to a running guest.
-func PlanUpdateSecrets() []string { return []string{PhaseUpdateSecrets} }
+// PlanUpdateSecrets pushes the whole set to a running guest, woken first:
+// the agent guide promises a new value reaches the next command within
+// seconds (I-818).
+func PlanUpdateSecrets() []string { return []string{PhaseWake, PhaseUpdateSecrets} }
 
-// PlanExec runs one audited command.
-func PlanExec() []string { return []string{PhaseExec} }
+// PlanExec runs one audited command, woken first (I-818): an operator's
+// exec that answers guest_unresponsive on a resting machine is a false
+// incident.
+func PlanExec() []string { return []string{PhaseWake, PhaseExec} }
 
 // PlanDrain drains a host.
 func PlanDrain() []string { return []string{PhaseDrain} }
@@ -373,6 +401,35 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		return nil, uuid.Nil, false, err
 	}
 	switch phase {
+	case PhaseWake:
+		// Skipped when there is nothing to wake, so a plan carrying the
+		// phase costs nothing on a host without the feature and nothing
+		// for a machine that is not running (I-818). Sent whether or not
+		// the row says the machine rests: the command is idempotent and
+		// answers in milliseconds, which is cheaper than the race
+		// between a pause and this read.
+		if p.GuestID == nil || p.HostID == nil || p.State != "running" {
+			return nil, uuid.Nil, true, nil
+		}
+		pauses, err := e.hostPauses(ctx, *p.HostID)
+		if err != nil {
+			return nil, uuid.Nil, false, err
+		}
+		if !pauses {
+			return nil, uuid.Nil, true, nil
+		}
+		// A host that is not connected right now: the wake is skipped
+		// rather than queued for its next Hello. The wake's timeout is
+		// 30 seconds, and queueing one would fail an op in half a minute
+		// that used to wait out a host's reconnect on its real phase
+		// (which allows 10 to 30 minutes). hostd wakes the guest itself
+		// before anything that needs guestd, and a guest_unresponsive
+		// from a project the api believes resting is retried as a wake
+		// (recover.go), so skipping here loses no safety.
+		if !e.send.Connected(*p.HostID) {
+			return nil, uuid.Nil, true, nil
+		}
+		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_WakeGuest{WakeGuest: &hostdv1.WakeGuest{GuestId: p.GuestID.String(), Reason: "op"}}}, *p.HostID, false, nil
 	case PhaseBuild:
 		return e.buildBuild(ctx, op, p)
 	case PhaseCreateGuest:
@@ -1196,6 +1253,16 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		e.log.Info("configuration applied", "event", "switch_done", "project_id", p.ID.String(), "rebooted", a != nil && a.Rebooted)
 		return nil
 	case PhaseUpdateSecrets:
+		return nil
+	case PhaseWake:
+		// The machine is awake, whether this phase woke it or found it
+		// so: the marker goes now rather than when hostd's event lands,
+		// so the phases after it never read a stale row (I-818).
+		if w := res.GetWake(); w == nil || w.WasResting {
+			if _, err := e.pool.Exec(ctx, "update projects set resting_since = null where id = $1 and resting_since is not null", p.ID); err != nil {
+				return err
+			}
+		}
 		return nil
 	case PhaseExec:
 		x := res.GetExec()

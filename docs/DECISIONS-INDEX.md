@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-801 entries.
+808 entries.
 
 ## Scope
 
@@ -18,7 +18,7 @@ pointer, not a summary.
 - **R1-2** Unit of environment is one microVM per project on shared hosts — L23
 - **R1-3** Git is the exchange channel, plus a one-shot sync of the uncommitted diff at launch — partly amended by I-367; L29
 - **R1-4** `run` attaches, `run "prompt"` starts an agent, with a prelisted agent picker defaulting to Claude — partly superseded by I-603; L34
-- **R1-5** Guests are always-on until `stop` — L37
+- **R1-5** Guests are always-on until `stop` — amended by I-818; L37
 - **R1-6** No Tailscale for user access — superseded by R2-5 and R4-3; L42
 - **R1-8** (amended R2) — amended; L46
 
@@ -317,7 +317,7 @@ pointer, not a summary.
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5507
 - **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; amended by I-652; L5521
 - **I-234** Two regressions of the faster boot, found live — 2026-09-24; amended by I-718; L5544
-- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; L5559
+- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; amended by I-818; L5559
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5601
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5648
 - **I-241** Gaps the user docs found, closed in code rather than documented as broken — 2026-09-23; amended by I-475; L5693
@@ -342,7 +342,7 @@ pointer, not a summary.
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6535
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6566
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6587
-- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; L6604
+- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; amended by I-818; L6604
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; amended by I-712; L6648
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6709
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6754
@@ -720,7 +720,7 @@ pointer, not a summary.
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — partly amended by I-848; L19687
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19745
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19777
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — L19795
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-826; L19795
 - **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; L19825
 - **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; L19875
 - **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; L19954
@@ -833,3 +833,10 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24407
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24426
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L24463
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; L24468
+- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L24598
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L24626
+- **I-824** The pause must never cost a machine its memory — L24669
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; L24703
+- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L24735
+- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L24754

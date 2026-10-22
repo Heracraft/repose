@@ -13,11 +13,19 @@ import (
 
 // M holds every api metric.
 type M struct {
-	RequestsTotal                *prometheus.CounterVec
-	RequestDuration              *prometheus.HistogramVec
-	Hosts                        *prometheus.GaugeVec
-	Projects                     *prometheus.GaugeVec
-	ScheduleTotal                *prometheus.CounterVec
+	RequestsTotal   *prometheus.CounterVec
+	RequestDuration *prometheus.HistogramVec
+	Hosts           *prometheus.GaugeVec
+	Projects        *prometheus.GaugeVec
+	ScheduleTotal   *prometheus.CounterVec
+	// RestingWakeTotal counts the wakes the api asked for, by reason and
+	// result (DECISIONS I-818, I-822). `result` is `woken` (the machine
+	// was frozen and came back), `awake` (nothing to do) or `failed`.
+	// hostd's own repose_host_guest_wake_failed_total cannot see the
+	// failures where hostd never answered at all -- a host that is not
+	// connected, or a wake that ran out of time -- and those are exactly
+	// the ones a user feels as a dial that did not come back.
+	RestingWakeTotal             *prometheus.CounterVec
 	CertsIssuedTotal             prometheus.Counter
 	CertsRevokedTotal            prometheus.Counter
 	RollupLagSeconds             prometheus.Gauge
@@ -143,6 +151,7 @@ func New(reg prometheus.Registerer) *M {
 		Hosts:                        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_hosts", Help: "Hosts by state."}, []string{"state"}),
 		Projects:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_projects", Help: "Projects by state and class."}, []string{"state", "class"}),
 		ScheduleTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_schedule_total", Help: "Placement attempts by result."}, []string{"result"}),
+		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
 		CertsIssuedTotal:             prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_issued_total", Help: "User certificates issued."}),
 		CertsRevokedTotal:            prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_revoked_total", Help: "Certificates revoked."}),
 		RollupLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_rollup_lag_seconds", Help: "Age of the newest rolled-up hour."}),
@@ -211,7 +220,7 @@ func New(reg prometheus.Registerer) *M {
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
 		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
-		m.GuestResumesPending, m.GuestResumesTotal)
+		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal)
 	return m
 }
 
