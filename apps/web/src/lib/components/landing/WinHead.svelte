@@ -63,7 +63,7 @@
 	{/if}
 	<span class="who">{NAME[who]}</span>
 	{@render children?.()}
-	{#if dot}<i class="dot"></i>{/if}
+	{#if dot}<i class="win-dot"></i>{/if}
 </div>
 
 <style>
@@ -90,7 +90,7 @@
 		font-weight: 600;
 		white-space: nowrap;
 	}
-	.dot {
+	.win-dot {
 		flex: none;
 		width: 7px;
 		height: 7px;
