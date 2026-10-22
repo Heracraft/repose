@@ -308,60 +308,220 @@ export function docsBySection(): { section: string; docs: Doc[] }[] {
 	})).filter((g) => g.docs.length);
 }
 
-export interface SearchHit {
-	doc: Doc;
-	heading?: DocHeading;
-	snippet: string;
-	/** The snippet cut into runs; a run that is one of the query's words has `hit`. */
-	parts: { text: string; hit: boolean }[];
+/**
+ * One row of the docs search palette (Guide B 12.14): a page, one of its
+ * h2 or h3 headings, or an item named in code in the first cell of a table
+ * row under a heading (a CLI flag, a config.toml key, an environment
+ * variable, a state, a notification's title).
+ */
+export interface SearchEntry {
+	kind: 'page' | 'heading' | 'item';
+	label: string;
+	/** Where it sits, shown on the right: a page's section, a heading's page, an item's command or page. */
+	context: string;
+	slug: string;
+	/** The heading the entry lands on; a page has none. */
+	id?: string;
+	/** Set in the code face: a command heading or an item. */
+	mono: boolean;
+	/** The section's own text, plain, for a match in the body and its snippet. */
+	body: string;
+}
+
+const lexer = new Marked();
+
+/** The page, its sections and its table items, in reading order. */
+function entriesFor(doc: Doc): SearchEntry[] {
+	const page: SearchEntry = {
+		kind: 'page',
+		label: doc.title,
+		context: doc.section,
+		slug: doc.slug,
+		mono: false,
+		body: ''
+	};
+	const out: SearchEntry[] = [page];
+	const seen = new Map<string, number>();
+	let owner = page;
+	let words: string[] = [doc.description];
+	let under: { id: string; context: string } | undefined;
+	const flush = () => {
+		owner.body = plain(words.join('\n\n'));
+	};
+	for (const token of lexer.lexer(doc.body)) {
+		if (token.type === 'heading') {
+			// The same ids render() gives, counted the same way.
+			let id = slugify(token.text);
+			const n = seen.get(id) ?? 0;
+			seen.set(id, n + 1);
+			if (n) id = `${id}-${n}`;
+			const heading = doc.headings.find((h) => h.id === id);
+			if (heading) {
+				flush();
+				const command = heading.label !== heading.text;
+				owner = {
+					kind: 'heading',
+					label: heading.text,
+					context: doc.title,
+					slug: doc.slug,
+					id,
+					mono: command,
+					body: ''
+				};
+				out.push(owner);
+				words = [];
+				under = { id, context: command ? heading.label : doc.title };
+				continue;
+			}
+		}
+		if (token.type === 'table') {
+			for (const row of (token as Tokens.Table).rows) {
+				const cell = row[0]?.text.trim() ?? '';
+				if (!/^`[^`]+`(\s*,\s*`[^`]+`)*$/.test(cell)) continue;
+				const label = cell.replace(/`/g, '');
+				if (label.length < 2) continue;
+				out.push({
+					kind: 'item',
+					label,
+					context: under?.context ?? doc.title,
+					slug: doc.slug,
+					id: under?.id,
+					mono: true,
+					body: ''
+				});
+			}
+		}
+		words.push(token.raw);
+	}
+	flush();
+	return out;
+}
+
+/** Every entry of every page, in sidebar order. Built once, at build time for the prerendered docs. */
+export const SEARCH: SearchEntry[] = DOCS.flatMap(entriesFor);
+
+/** A run of text; `hit` when it is one of the query's words. */
+export interface Part {
+	text: string;
+	hit: boolean;
+}
+
+export interface SearchResult {
+	entry: SearchEntry;
+	/** The label cut into runs, the query's words marked. */
+	label: Part[];
+	/** The context, marked the same way, so a match there shows why the row is listed. */
+	context: Part[];
+	/** A line of the section's text around the match, only when the match is in the text. */
+	snippet?: Part[];
+}
+
+/**
+ * A common English ending dropped, so "pagination" finds "paginated" and
+ * "secrets" finds "secret". For the body only.
+ */
+function stem(term: string): string {
+	const s = term.replace(/(ation|ing|ed|es|s)$/, '');
+	return s.length >= 4 ? s : term;
+}
+
+const KIND_BONUS = { page: 3, heading: 1, item: 0 } as const;
+
+const WORD = /[a-z0-9]/;
+
+/**
+ * Title over heading over item, and a match in the label over one in the
+ * text: the whole label 100; the label's first word or words 90, or the
+ * start of its first word 75; whole words inside it 80, the start of a word
+ * 60, inside a word 50; every word somewhere in it 40; the label and its
+ * context together 20; the section's text 10. -1 is no match.
+ */
+function score(e: SearchEntry, terms: string[]): number {
+	const label = e.label.toLowerCase();
+	const hay = `${label} ${e.context.toLowerCase()}`;
+	const bonus = KIND_BONUS[e.kind];
+	if (terms.every((t) => hay.includes(t))) {
+		const q = terms.join(' ');
+		if (label === q) return 100 + bonus;
+		const at = label.indexOf(q);
+		if (at >= 0) {
+			const starts = at === 0 || !WORD.test(label[at - 1]);
+			const ends = !WORD.test(label[at + q.length] ?? ' ');
+			if (at === 0) return (ends ? 90 : 75) + bonus;
+			return (starts ? (ends ? 80 : 60) : 50) + bonus;
+		}
+		return (terms.every((t) => label.includes(t)) ? 40 : 20) + bonus;
+	}
+	const body = `${hay} ${e.body.toLowerCase()}`;
+	return e.body && terms.every((t) => body.includes(t) || body.includes(stem(t))) ? 10 + bonus : -1;
+}
+
+function labelHasAll(label: string, terms: string[]): boolean {
+	const l = label.toLowerCase();
+	return terms.every((t) => l.includes(t));
 }
 
 function escapeRegExp(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Every word of the query must appear on the page. Hits in a title rank
- * first, then in a heading, then in the text; the snippet is the text
- * around the first word's first match, cut at word edges.
- */
-export function search(query: string, limit = 8): SearchHit[] {
-	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-	if (!words.length) return [];
-	const marks = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
-	const hits: { hit: SearchHit; score: number }[] = [];
-	for (const doc of DOCS) {
-		if (!words.every((w) => doc.text.includes(w))) continue;
-		let score = 0;
-		const title = doc.title.toLowerCase();
-		for (const w of words) if (title.includes(w)) score += 10;
-		const heading = doc.headings.find((h) => words.some((w) => h.text.toLowerCase().includes(w)));
-		if (heading) score += 5;
-		const at = doc.text.indexOf(words[0]);
-		let start = Math.max(0, at - 50);
-		if (start > 0) {
-			const space = doc.plain.indexOf(' ', start);
-			start = space >= 0 && space < at ? space + 1 : at;
-		}
-		let end = Math.min(doc.plain.length, at + 90);
-		if (end < doc.plain.length) {
-			const space = doc.plain.lastIndexOf(' ', end);
-			if (space > at) end = space;
-		}
-		const snippet =
-			(start > 0 ? '…' : '') +
-			doc.plain.slice(start, end).trim() +
-			(end < doc.plain.length ? '…' : '');
-		const parts = snippet
-			.split(marks)
-			.filter(Boolean)
-			.map((text) => ({ text, hit: words.includes(text.toLowerCase()) }));
-		hits.push({ hit: { doc, heading, snippet, parts }, score });
+/** Text cut into runs, each of `marks` (longest first) marked wherever it occurs. */
+export function markParts(text: string, marks: string[]): Part[] {
+	const words = [...new Set(marks.filter(Boolean).map((m) => m.toLowerCase()))].sort(
+		(a, b) => b.length - a.length
+	);
+	if (!words.length) return [{ text, hit: false }];
+	const re = new RegExp(`(${words.map(escapeRegExp).join('|')})`, 'gi');
+	return text
+		.split(re)
+		.filter(Boolean)
+		.map((t) => ({ text: t, hit: words.includes(t.toLowerCase()) }));
+}
+
+/** The section's text from a little before the first match, cut at a word edge; the row's CSS ends it. */
+function snippetOf(body: string, marks: string[]): Part[] | undefined {
+	const lower = body.toLowerCase();
+	const at = Math.min(...marks.map((m) => lower.indexOf(m)).filter((i) => i >= 0));
+	if (!Number.isFinite(at)) return undefined;
+	let start = Math.max(0, at - 28);
+	if (start > 0) {
+		const space = body.indexOf(' ', start);
+		start = space >= 0 && space < at ? space + 1 : at;
 	}
-	return hits
-		.sort((a, b) => b.score - a.score)
+	const text = (start > 0 ? '…' : '') + body.slice(start, start + 160);
+	return markParts(text, marks);
+}
+
+/**
+ * The palette's rows for a query, best first, ties in reading order. Every
+ * word of the query must be in the entry's label and context, or in its
+ * section's text. An empty query lists every page.
+ */
+export function searchDocs(query: string, limit = 20): SearchResult[] {
+	const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	if (!terms.length) {
+		return SEARCH.filter((e) => e.kind === 'page').map((entry) => ({
+			entry,
+			label: [{ text: entry.label, hit: false }],
+			context: [{ text: entry.context, hit: false }]
+		}));
+	}
+	const marks = [...terms, ...terms.map(stem)];
+	return SEARCH.map((entry, i) => ({ entry, s: score(entry, terms), i }))
+		.filter((r) => r.s >= 0)
+		.sort((a, b) => b.s - a.s || a.i - b.i)
 		.slice(0, limit)
-		.map((h) => h.hit);
+		.map(({ entry, s }) => ({
+			entry,
+			label: markParts(entry.label, s >= 20 ? terms : marks),
+			// The context is marked only when the label alone does not
+			// explain the row, so a page's twelve headings do not each
+			// mark its title.
+			context: labelHasAll(entry.label, terms)
+				? [{ text: entry.context, hit: false }]
+				: markParts(entry.context, s >= 20 ? terms : marks),
+			snippet: s < 20 ? snippetOf(entry.body, marks) : undefined
+		}));
 }
 
 /** The length of the prefix two strings share. */

@@ -908,10 +908,26 @@ starts at x=160, the text at 428 and the rail at 1100. Below 1280 the rail
 folds into an "On this page" disclosure above the body, phones included.
 Below 768px a 44px sub-bar sticks under the header, ending at 101px, with
 "Open the docs menu" (the current page's title) on the left and Pricing on
-the right; the menu opens as an opaque panel with search first.
+the right, with a search icon before Pricing; the menu opens as an opaque
+panel with the page list.
 
-- **Sidebar**: a "Search the docs" field that filters in place, group titles
-  12px 600 ink, items 13px `--hk-text-2` with 6px corners, each reserving a
+- **Search** (`DocsSearch.svelte`, Guide B 12.14, I-841): from 768px a
+  "Search docs" trigger tops the sidebar, a 2rem field-shaped button with
+  a magnifier and a ⌘K or Ctrl K hint that appears after mount; below
+  768px a 44px magnifier sits in the sub-bar. Cmd-K, Ctrl-K, or "/"
+  outside a field opens the palette: a native `<dialog>`, 36rem, 14px
+  corners, `--hk-shadow-modal`, at 12dvh over `--hk-scrim` blurred 2px,
+  or full width less 12px a side from the top on a phone. A 3rem query
+  row at 16px ("Pages, commands, settings", an Esc chip) over a hairline,
+  then one-line rows: 14px label left (code face for commands, flags and
+  keys), 12px `--hk-text-3` page or section right, the query in `<mark>`
+  on a 16% accent wash. A row found only in its text adds one 12px muted
+  line. The active row is `--hk-accent-wash` with an accent label; 7px
+  corners; 44px rows under a coarse pointer. Empty, every page with its
+  section; nothing found, `No match for “x”.` and nothing else. No scale
+  on open under reduced motion; under forced colours the dialog takes an
+  edge and the active row a Highlight outline.
+- **Sidebar**: the search trigger, then group titles 12px 600 ink, items 13px `--hk-text-2` with 6px corners, each reserving a
   2px left rule. The current item is the accent on `--hk-accent-wash` with
   that rule in the accent, `aria-current="page"`. Tutorials folds. From 768px
   it draws no scrollbar and fits 1440x900.

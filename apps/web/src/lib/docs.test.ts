@@ -10,7 +10,8 @@ import {
 	highlightNix,
 	movedDoc,
 	renderShell,
-	search,
+	SEARCH,
+	searchDocs,
 	slugify
 } from './docs';
 import { unaskedIn } from './unasked';
@@ -85,28 +86,71 @@ describe('user docs', () => {
 		expect(slugify('Things that don’t work yet')).toBe('things-that-dont-work-yet');
 	});
 
-	it('finds pages by words in them', () => {
-		expect(search('ntfy topic')[0]?.doc.slug).toBe('notifications');
-		expect(search('')).toEqual([]);
-		expect(search('zzzz-not-a-word')).toEqual([]);
+	it('finds pages, headings, flags and keys by words in them', () => {
+		const top = (q: string) => searchDocs(q)[0]?.entry;
+		expect(top('ntfy topic')?.slug).toBe('notifications');
+		expect(searchDocs('zzzz-not-a-word')).toEqual([]);
 		// A line commented out in a page is not searchable.
-		expect(search('live product for other people')).toEqual([]);
+		expect(searchDocs('live product for other people')).toEqual([]);
+		// CLI commands and flags are entries of their own (the palette's ask).
+		expect(top('repose run')).toMatchObject({
+			kind: 'heading',
+			slug: 'cli',
+			id: 'repose-run-project'
+		});
+		expect(top('--temp')).toMatchObject({ kind: 'item', slug: 'cli', context: 'repose run' });
+		expect(top('default_size')).toMatchObject({ kind: 'item', slug: 'cli', id: 'config-toml' });
+		expect(top('REPOSE_NO_FORWARD')?.label).toBe('REPOSE_NO_FORWARD=1');
+		// A title beats a heading, which beats the text.
+		const secret = searchDocs('secret');
+		expect(secret[0].entry).toMatchObject({ kind: 'page', slug: 'secrets' });
+		const tiers = secret.map((r) => (r.snippet ? 1 : 0));
+		expect(tiers).toEqual([...tiers].sort());
 	});
 
-	it('cuts a snippet at word edges, without table rules, and marks the words', () => {
-		for (const q of ['snap', 'cores memory', 'snapshot']) {
-			for (const hit of search(q)) {
-				expect(hit.snippet).not.toMatch(/-{3,}/);
-				expect(hit.parts.map((p) => p.text).join('')).toBe(hit.snippet);
-				const body = hit.snippet.replace(/^…/, '').replace(/…$/, '');
-				const at = hit.doc.plain.indexOf(body);
-				expect(at, `${q} in ${hit.doc.slug}`).toBeGreaterThanOrEqual(0);
-				if (at > 0) expect(hit.doc.plain[at - 1]).toMatch(/\s/);
-				const end = at + body.length;
-				if (end < hit.doc.plain.length) expect(hit.doc.plain[end]).toMatch(/\s/);
-				expect(hit.parts.some((p) => p.hit)).toBe(true);
-				for (const p of hit.parts.filter((p) => p.hit)) {
-					expect(q.split(' ')).toContain(p.text.toLowerCase());
+	it('lists every page, with its section, for an empty query', () => {
+		const all = searchDocs('  ');
+		expect(all.map((r) => r.entry.slug)).toEqual(DOCS.map((d) => d.slug));
+		expect(all.map((r) => r.entry.context)).toEqual(DOCS.map((d) => d.section));
+		expect(all.every((r) => !r.snippet && !r.label.some((p) => p.hit))).toBe(true);
+	});
+
+	it('lands every entry on a heading the page has', () => {
+		for (const e of SEARCH) {
+			if (e.kind === 'page') continue;
+			// A table above a page's first heading lands on the page.
+			if (e.id === undefined && e.kind === 'item') continue;
+			const doc = docBySlug(e.slug)!;
+			expect(
+				doc.headings.map((h) => h.id),
+				`${e.label} in ${e.slug}`
+			).toContain(e.id);
+		}
+	});
+
+	it('marks the query in a label, and snippets only a match in the text', () => {
+		for (const q of ['snap', 'cores memory', 'secret', '--temp']) {
+			for (const r of searchDocs(q)) {
+				expect(r.label.map((p) => p.text).join('')).toBe(r.entry.label);
+				if (r.snippet) {
+					expect(
+						r.snippet.some((p) => p.hit),
+						`${q}: ${r.entry.label}`
+					).toBe(true);
+					const text = r.snippet
+						.map((p) => p.text)
+						.join('')
+						.replace(/^…/, '');
+					expect(r.entry.body).toContain(text);
+					expect(text).not.toMatch(/-{3,}/);
+				} else {
+					const marked = [...r.label, ...r.context]
+						.filter((p) => p.hit)
+						.map((p) => p.text.toLowerCase());
+					expect(
+						q.split(' ').every((t) => marked.includes(t)),
+						`${q}: ${r.entry.label}`
+					).toBe(true);
 				}
 			}
 		}

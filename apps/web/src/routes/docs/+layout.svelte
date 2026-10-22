@@ -2,19 +2,59 @@
 	import { onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { docsBySection, search } from '$lib/docs';
+	import { docsBySection } from '$lib/docs';
 	import { pricingHref } from '$lib/links';
+	import DocsSearch from '$lib/components/DocsSearch.svelte';
 
 	let { children } = $props();
 
 	const groups = docsBySection();
-	let query = $state('');
-	let hits = $derived(search(query));
 	let menuOpen = $state(false);
 	let nav: HTMLElement | undefined = $state();
 	let searchBox: HTMLElement | undefined = $state();
 	let menuButton: HTMLButtonElement | undefined = $state();
 	let content: HTMLElement | undefined = $state();
+
+	// Search is a palette (DocsSearch, Guide B 12.14): the sidebar's trigger
+	// from 768px, an icon in the sub-bar below it. Cmd-K or Ctrl-K, or "/"
+	// outside a field, opens it from anywhere on a docs page.
+	let palette: ReturnType<typeof DocsSearch> | undefined = $state();
+	let sideTrigger: HTMLButtonElement | undefined = $state();
+	let barTrigger: HTMLButtonElement | undefined = $state();
+	// The hint is known only in the browser; the prerendered page has none,
+	// so it never swaps from one platform's to the other's (Guide B 15).
+	let keyHint = $state('');
+
+	/** The trigger on screen at this width. */
+	function trigger(): HTMLButtonElement | null {
+		return (sideTrigger?.checkVisibility() ? sideTrigger : barTrigger) ?? null;
+	}
+
+	function openSearch() {
+		closeMenu(false);
+		void palette?.show(trigger());
+	}
+
+	function onKey(e: KeyboardEvent) {
+		if (e.key === 'Escape' && menuOpen) {
+			closeMenu();
+			return;
+		}
+		if (e.defaultPrevented || e.isComposing) return;
+		const target = e.target as HTMLElement | null;
+		if (target?.closest('dialog[open]')) return;
+		const typing = target?.closest(
+			'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+		);
+		const mod = e.metaKey || e.ctrlKey;
+		if ((e.key === 'k' || e.key === 'K') && mod && !e.altKey && !e.shiftKey) {
+			e.preventDefault();
+			openSearch();
+		} else if (e.key === '/' && !typing && !mod && !e.altKey) {
+			e.preventDefault();
+			openSearch();
+		}
+	}
 
 	// The sidebar lists pages and nothing else, so its height is the same on
 	// every page; the open page's sections are in DocPage's rail (I-396).
@@ -50,13 +90,18 @@
 	// visibility: opening shows the drawer at once, so it can take focus.
 	const SCROLL_KEY = 'repose.docs.nav.scroll';
 
+	/** Where the list shows from: under the sticky search, which a phone's drawer does not have. */
+	function listTop(box: DOMRect): number {
+		return Math.max(box.top, searchBox?.getBoundingClientRect().bottom ?? 0);
+	}
+
 	/** Whether the current page's link shows whole below the sticky search. */
 	function currentShows(): boolean {
 		const link = nav?.querySelector<HTMLElement>('[aria-current="page"]');
 		if (!nav || !link) return true;
 		const box = nav.getBoundingClientRect();
 		const at = link.getBoundingClientRect();
-		const top = searchBox ? searchBox.getBoundingClientRect().bottom : box.top;
+		const top = listTop(box);
 		return at.height > 0 && at.top >= top && at.bottom <= box.bottom;
 	}
 
@@ -71,7 +116,7 @@
 		if (currentShows()) return;
 		const box = nav.getBoundingClientRect();
 		const at = link.getBoundingClientRect();
-		const top = searchBox ? searchBox.getBoundingClientRect().bottom : box.top;
+		const top = listTop(box);
 		// Otherwise the link's group label goes 12px under the search, so
 		// no label is left half under it, unless the group is taller than
 		// the list's window: then the least scroll that shows the link, 16px
@@ -121,6 +166,7 @@
 	}
 
 	onMount(() => {
+		keyHint = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
 		sizeNav();
 		// The saved scroll comes back only when the current link would not
 		// show without it: a list that shows the link at the top stays at
@@ -156,7 +202,7 @@
 		});
 	}
 
-	// A navigation, a search hit's #heading on this page included, closes the
+	// A navigation, a search result's #heading on this page included, closes the
 	// drawer, and the sidebar follows to the page it lands on.
 	$effect(() => {
 		void page.url.href;
@@ -167,24 +213,10 @@
 			measure();
 		});
 	});
-	// Opening or closing the fold, or a search, changes the list's height.
-	// The hits start at the top of the list, best first, whatever the page
-	// list was scrolled to; clearing the search goes back to the open page.
-	let searching = $derived(query.trim() !== '');
+	// Opening or closing the fold changes the list's height.
 	$effect(() => {
 		void foldOpen;
-		const q = query.trim();
-		void tick().then(() => {
-			if (q && nav) nav.scrollTop = 0;
-			measure();
-		});
-	});
-	$effect(() => {
-		if (searching) return;
-		void tick().then(() => {
-			revealCurrent();
-			measure();
-		});
+		void tick().then(measure);
 	});
 
 	async function openMenu() {
@@ -230,13 +262,18 @@
 	});
 </script>
 
-<svelte:window
-	onscroll={sizeNav}
-	onresize={sizeNav}
-	onkeydown={(e) => {
-		if (e.key === 'Escape' && menuOpen) closeMenu();
-	}}
-/>
+<svelte:window onscroll={sizeNav} onresize={sizeNav} onkeydown={onKey} />
+
+{#snippet magnifier()}
+	<svg
+		viewBox="0 0 16 16"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.5"
+		stroke-linecap="round"
+		aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="M10.25 10.25L13.5 13.5" /></svg
+	>
+{/snippet}
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- every internal href here comes from href() or pricingHref(), which build it with resolve() -->
 
@@ -268,10 +305,22 @@
 				stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg
 			>
 		</button>
-		{#if current !== 'billing'}
-			<!-- The docs' own Pricing page already says it in the bar's title. -->
-			<a href={pricingHref()} class="subbar-link">Pricing</a>
-		{/if}
+		<div class="flex flex-none items-center">
+			<button
+				bind:this={barTrigger}
+				type="button"
+				class="subbar-search"
+				aria-haspopup="dialog"
+				aria-keyshortcuts="Control+K Meta+K /"
+				onclick={openSearch}
+			>
+				{@render magnifier()}<span class="sr-only">Search docs</span>
+			</button>
+			{#if current !== 'billing'}
+				<!-- The docs' own Pricing page already says it in the bar's title. -->
+				<a href={pricingHref()} class="subbar-link">Pricing</a>
+			{/if}
+		</div>
 	</nav>
 </div>
 
@@ -304,96 +353,80 @@
 		aria-label="Docs menu"
 		data-fade={fade ? '' : undefined}
 		style:--docs-nav-h={navHeight === undefined ? undefined : `${navHeight}px`}
-		class="sidebar fixed top-[101px] bottom-0 left-0 z-20 w-[min(20rem,85vw)] overflow-y-auto overscroll-contain px-5 pb-10 outline-none {menuOpen
+		class="sidebar fixed top-[101px] bottom-0 left-0 z-20 w-[min(20rem,85vw)] overflow-y-auto overscroll-contain px-5 pt-2 pb-10 outline-none {menuOpen
 			? 'is-open visible translate-x-0'
 			: 'invisible -translate-x-full'} md:visible md:sticky md:top-[57px] md:bottom-auto md:z-auto md:h-[var(--docs-nav-h,calc(100dvh-57px))] md:w-[220px] md:translate-x-0 md:pt-8 md:pr-2 md:pb-8 md:pl-0 md:[scrollbar-width:none] md:[&::-webkit-scrollbar]:hidden"
 	>
-		<!-- The search sticks to the top of the sidebar, so a list taller
-		     than a phone's drawer scrolls under it and the search stays in
-		     reach. A rule under it shows once the list has gone under it. -->
+		<!-- The search trigger sticks to the top of the sidebar, so a list
+		     taller than the window scrolls under it and search stays in
+		     reach. A rule under it shows once the list has gone under it.
+		     Below 768px search is in the sub-bar and the drawer is the list. -->
 		<div
 			bind:this={searchBox}
-			class="search-box sticky top-0 z-10 -mx-5 px-5 pt-5 pb-3 md:mx-0 md:px-0 md:pt-0"
+			class="search-box sticky top-0 z-10 hidden pb-3 md:block"
 			class:scrolled
 		>
-			<label for="docs-search" class="sr-only">Search the docs</label>
-			<input
+			<button
+				bind:this={sideTrigger}
 				id="docs-search"
-				type="search"
-				class="hk-input hk-input--search docs-search"
-				placeholder="Search the docs"
-				autocomplete="off"
-				bind:value={query}
-			/>
+				type="button"
+				class="search-trigger"
+				aria-haspopup="dialog"
+				aria-keyshortcuts="Control+K Meta+K /"
+				onclick={openSearch}
+			>
+				{@render magnifier()}
+				<span class="search-trigger-text">Search docs</span>
+				{#if keyHint}<kbd>{keyHint}</kbd>{/if}
+			</button>
 		</div>
 
-		{#if searching}
-			<ul class="hits mt-2" aria-label="Search results">
-				{#each hits as hit (hit.doc.slug)}
-					<li>
-						<a href={href(hit.doc.slug) + (hit.heading ? `#${hit.heading.id}` : '')}>
-							<span class="hit-title">
-								{hit.doc.title}{#if hit.heading}<span class="hit-heading"
-										>{` › ${hit.heading.text}`}</span
-									>{/if}
-							</span>
-							<span class="hit-snippet"
-								>{#each hit.parts as part, i (i)}{#if part.hit}<mark class="hit-mark"
-											>{part.text}</mark
-										>{:else}{part.text}{/if}{/each}</span
+		<nav aria-label="Docs">
+			{#snippet list(docs: (typeof groups)[number]['docs'])}
+				<ul class="items">
+					{#each docs as doc (doc.slug)}
+						<li>
+							<a href={href(doc.slug)} aria-current={current === doc.slug ? 'page' : undefined}
+								>{doc.title}</a
 							>
-						</a>
-					</li>
+						</li>
+					{/each}
+				</ul>
+			{/snippet}
+			{#each groups as group (group.section)}
+				{#if group.section === FOLDED}
+					<details data-group class="group/fold group-block" bind:open={foldOpen}>
+						<summary data-group-label class="group-title fold-title">
+							{group.section}
+							<svg
+								viewBox="0 0 16 16"
+								class="fold-chevron h-4 w-4 text-ink-3 group-open/fold:rotate-180"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg
+							>
+						</summary>
+						{@render list(group.docs)}
+					</details>
 				{:else}
-					<li class="hit-none">Nothing matches.</li>
-				{/each}
-			</ul>
-		{:else}
-			<nav aria-label="Docs">
-				{#snippet list(docs: (typeof groups)[number]['docs'])}
-					<ul class="items">
-						{#each docs as doc (doc.slug)}
-							<li>
-								<a href={href(doc.slug)} aria-current={current === doc.slug ? 'page' : undefined}
-									>{doc.title}</a
-								>
-							</li>
-						{/each}
-					</ul>
-				{/snippet}
-				{#each groups as group (group.section)}
-					{#if group.section === FOLDED}
-						<details data-group class="group/fold group-block" bind:open={foldOpen}>
-							<summary data-group-label class="group-title fold-title">
-								{group.section}
-								<svg
-									viewBox="0 0 16 16"
-									class="fold-chevron h-4 w-4 text-ink-3 group-open/fold:rotate-180"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg
-								>
-							</summary>
-							{@render list(group.docs)}
-						</details>
-					{:else}
-						<div data-group class="group-block">
-							<p data-group-label class="group-title">{group.section}</p>
-							{@render list(group.docs)}
-						</div>
-					{/if}
-				{/each}
-			</nav>
-		{/if}
+					<div data-group class="group-block">
+						<p data-group-label class="group-title">{group.section}</p>
+						{@render list(group.docs)}
+					</div>
+				{/if}
+			{/each}
+		</nav>
 	</aside>
 
 	<div class="min-w-0" bind:this={content}>
 		{@render children()}
 	</div>
 </div>
+
+<DocsSearch bind:this={palette} />
 
 <style>
 	.subbar {
@@ -479,16 +512,61 @@
 	.search-box.scrolled {
 		border-bottom-color: var(--hk-hairline);
 	}
-	@media (pointer: fine) and (min-width: 640px) {
-		.docs-search {
-			height: 2rem;
-			min-height: 2rem;
-			font-size: 0.8125rem;
-		}
+	/* A field-shaped button (Guide B 12.14): the magnifier, its name and
+	   the shortcut. */
+	.search-trigger {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		height: 2rem;
+		padding: 0 0.5rem 0 0.625rem;
+		border: 1px solid var(--hk-border);
+		border-radius: var(--hk-radius);
+		background: var(--hk-surface);
+		color: var(--hk-text-3);
+		font: inherit;
+		font-size: 0.8125rem;
+		cursor: pointer;
+		transition:
+			border-color var(--hk-dur-fast) var(--hk-ease),
+			color var(--hk-dur-fast) var(--hk-ease);
 	}
-	/* Chromium's own clear button is not the kit's; Escape clears the field. */
-	.docs-search::-webkit-search-cancel-button {
-		appearance: none;
+	.search-trigger:hover {
+		border-color: var(--hk-border-strong);
+		color: var(--hk-text-2);
+	}
+	.search-trigger :global(svg) {
+		width: 0.875rem;
+		height: 0.875rem;
+		flex: none;
+	}
+	.search-trigger-text {
+		flex: 1;
+		text-align: left;
+	}
+	.search-trigger kbd {
+		font-family: inherit;
+		font-size: 0.6875rem;
+		color: var(--hk-text-3);
+	}
+	.subbar-search {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border-radius: var(--hk-radius-sm);
+		color: var(--hk-text-2);
+		cursor: pointer;
+	}
+	.subbar-search:hover {
+		color: var(--hk-text);
+		background: var(--hk-hover);
+	}
+	.subbar-search :global(svg) {
+		width: 1.125rem;
+		height: 1.125rem;
 	}
 
 	.group-block {
@@ -559,50 +637,6 @@
 		.fold-title {
 			min-height: 2.75rem;
 		}
-	}
-
-	.hits {
-		margin: 0.5rem 0 0;
-		padding: 0;
-		list-style: none;
-	}
-	.hits a {
-		display: block;
-		padding: 0.5rem 0.625rem;
-		border-radius: var(--hk-radius-6);
-		text-decoration: none;
-	}
-	.hits a:hover {
-		background: var(--hk-hover);
-	}
-	.hit-title {
-		display: block;
-		font-size: 0.8125rem;
-		line-height: 1.25rem;
-		font-weight: 500;
-		color: var(--hk-text);
-	}
-	.hit-heading {
-		font-weight: 400;
-		color: var(--hk-text-3);
-	}
-	.hit-snippet {
-		display: block;
-		margin-top: 0.125rem;
-		font-size: 0.75rem;
-		line-height: 1.125rem;
-		color: var(--hk-text-3);
-	}
-	.hit-mark {
-		padding: 0;
-		border-radius: var(--hk-radius-xs);
-		background: var(--hk-accent-wash);
-		color: var(--hk-text);
-	}
-	.hit-none {
-		padding: 0.5rem 0.625rem;
-		font-size: 0.8125rem;
-		color: var(--hk-text-3);
 	}
 
 	/* Forced colours paint a transparent edge in the text colour, so the

@@ -24600,3 +24600,33 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   5th-percentile pixel hovered: 5.28:1 light and 5.54:1 dark at 1440,
   5.02:1 and 5.54:1 at 390. Checks: `tests/frozen.spec.ts` (one frost
   element per frozen row), `frost-masks.test.ts`.
+- *Amended 2026-10-21, docs search is a palette.* The owner, comparing
+  the docs with recruiting's (the source of Guide B): "the original copy
+  from (recruiting) has better docs search, click around and see". The
+  sidebar's "Search the docs" field, which swapped the page list for
+  results of several lines each, is gone; the list stays put. Search is
+  the Guide B 12.14 palette (`lib/components/DocsSearch.svelte`): a "Search
+  docs" trigger at the top of the sidebar from 768px, with a ⌘K or Ctrl K
+  hint set after mount (the prerendered page has none, Guide B 15), and a
+  44px magnifier in the docs sub-bar below 768px, where the drawer no
+  longer holds a search. Cmd-K, Ctrl-K, or "/" outside a field opens it on
+  any docs page. It is a native `<dialog>` from `showModal()`, 36rem wide
+  at 12dvh over the blurred scrim, or the full width less 12px a side from
+  the top on a phone. The input, "Pages, commands, settings", is a combobox
+  over a listbox with `aria-activedescendant`. Empty, it lists every page
+  with its section on the right. Typed, each row is one line: a page, an
+  h2 or h3, or an item named in code in the first cell of a table row (CLI
+  flags, config.toml keys, environment variables, states, notification
+  titles), with its page or command on the right and the query in
+  `<mark>`, which Guide B 15 found missing in the reference. A row found
+  only in its section's text adds one muted line of that text. Ranking:
+  the label whole, its first words, whole words in it, then the label and
+  its context, then the text; a page over a heading over an item at each
+  step. Arrows wrap, Enter goes to the heading and focuses it, Escape gives
+  focus back to the trigger. The index is built from the markdown at build
+  time (`SEARCH` in `lib/docs.ts`), so there is no request and nothing for
+  the CSP to allow. Amends I-344 (the drawer keeps its state but no
+  longer has the search). Checks: `docs.test.ts` (flags and keys are
+  entries, every entry lands on a heading the page has, marks and
+  snippets), `tests/docs.spec.ts` (Ctrl-K, "/", arrows and Enter to the
+  anchor, Escape's focus, no match, the phone's sub-bar).

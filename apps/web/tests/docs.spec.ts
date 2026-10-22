@@ -13,9 +13,9 @@ test('docs are readable while signed out, with search and prev/next', async ({ p
 	await page.getByRole('link', { name: /Next\s*Installing software/ }).click();
 	await expect(page).toHaveURL('/docs/config');
 
-	await page.getByLabel('Search the docs').fill('ntfy topic');
-	const results = page.getByRole('list', { name: 'Search results' });
-	await results.getByRole('link').first().click();
+	await page.getByRole('button', { name: 'Search docs' }).click();
+	await page.getByRole('combobox', { name: 'Search docs' }).fill('ntfy topic');
+	await page.getByRole('listbox').getByRole('option').first().click();
 	await expect(page).toHaveURL(/\/docs\/notifications/);
 });
 
@@ -149,10 +149,12 @@ test('the docs columns hold still between pages, and the rail marks the section'
 });
 
 // On a phone the drawer opens scrolled the least that shows the current
-// page's link, with the search held at its top: a link near the end of the
-// list once put itself a third of the way down and scrolled the search away
-// (/docs/cli at 390, I-400).
-test("the phone drawer shows the search and the current page's link", async ({ page }) => {
+// page's link: a link near the end of the list once put itself a third of
+// the way down (/docs/cli at 390, I-400). Search is in the sub-bar, not
+// the drawer.
+test("the phone drawer shows the current page's link, and search is in the bar", async ({
+	page
+}) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/docs/cli');
 	// The menu button is in the docs' sub-bar under the header (I-655),
@@ -161,11 +163,12 @@ test("the phone drawer shows the search and the current page's link", async ({ p
 	await expect(subbar).toContainText('CLI reference');
 	await subbar.getByRole('button', { name: 'Open the docs menu' }).click();
 	const drawer = page.getByRole('complementary', { name: 'Docs menu' });
-	await expect(drawer.getByRole('link', { name: 'CLI reference' })).toBeInViewport({ ratio: 1 });
-	const search = drawer.getByLabel('Search the docs');
-	await expect(search).toBeInViewport({ ratio: 1 });
-	// The search is not under the header and the sub-bar, which end at 101px.
-	expect((await search.boundingBox())!.y).toBeGreaterThanOrEqual(101);
+	const link = drawer.getByRole('link', { name: 'CLI reference' });
+	await expect(link).toBeInViewport({ ratio: 1 });
+	// The link is not under the header and the sub-bar, which end at 101px.
+	expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(101);
+	await expect(drawer.getByRole('button', { name: 'Search docs' })).toBeHidden();
+	await expect(subbar.getByRole('button', { name: 'Search docs' })).toBeVisible();
 });
 
 // Closing the phone drawer keeps the reader's place: focus goes back to
@@ -238,26 +241,101 @@ test('at the end of a page the docs search stays under the header', async ({ pag
 		.toEqual({ top: 57, search: true, clear: true });
 });
 
-// A search shows its best hits first, at the top of the list, whatever the
-// page list was scrolled to; clearing it goes back to the open page's link.
-test('search hits start at the top of the drawer', async ({ page }) => {
+// Search is a palette (Guide B 12.14, I-841): Ctrl-K, Cmd-K or "/" opens
+// it; one line per result, the query marked; arrows and Enter go to the
+// heading, which takes focus; Escape gives focus back to the trigger.
+test('the docs search palette opens on Ctrl-K, finds secrets and goes to the heading', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/docs/machine');
+	const trigger = page.locator('#docs-search');
+	await expect(trigger).toContainText(/Ctrl K|⌘K/);
+	await page.keyboard.press('ControlOrMeta+k');
+	const dialog = page.getByRole('dialog', { name: 'Search docs' });
+	await expect(dialog).toBeVisible();
+	const box = dialog.getByRole('combobox', { name: 'Search docs' });
+	await expect(box).toBeFocused();
+	await expect(box).toHaveAttribute('placeholder', 'Pages, commands, settings');
+	// Empty, it lists every page with its section.
+	const options = dialog.getByRole('option');
+	await expect(options.first()).toContainText('Quickstart');
+	await expect(options.first()).toContainText('Start here');
+	await expect(options.first()).toHaveAttribute('aria-selected', 'true');
+
+	await box.fill('secret');
+	await expect(options.first()).toContainText('Secrets and security');
+	await expect(options.first().locator('mark').first()).toHaveText(/secret/i);
+	await expect(box).toHaveAttribute(
+		'aria-activedescendant',
+		(await options.first().getAttribute('id'))!
+	);
+	// Arrows move, wrapping at the ends.
+	await page.keyboard.press('ArrowUp');
+	await expect(options.last()).toHaveAttribute('aria-selected', 'true');
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('ArrowDown');
+	const second = options.nth(1);
+	await expect(second).toHaveAttribute('aria-selected', 'true');
+	await expect(second).toContainText('Secrets for every project');
+	await page.keyboard.press('Enter');
+	await expect(dialog).toBeHidden();
+	await expect(page).toHaveURL('/docs/secrets#secrets-for-every-project');
+	await expect(page.locator('#secrets-for-every-project')).toBeFocused();
+	await expect(page.locator('#secrets-for-every-project')).toBeInViewport();
+
+	// "/" opens it outside a field; Escape closes it and focus goes back to the trigger.
+	await page.keyboard.press('/');
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+	await expect(trigger).toBeFocused();
+});
+
+test('the docs search finds CLI flags and says when nothing matches', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/docs');
+	await page.locator('#docs-search').click();
+	const dialog = page.getByRole('dialog', { name: 'Search docs' });
+	const box = dialog.getByRole('combobox');
+	await box.fill('--temp');
+	const first = dialog.getByRole('option').first();
+	await expect(first).toContainText('--temp [DURATION]');
+	await expect(first).toContainText('repose run');
+	await first.click();
+	await expect(page).toHaveURL('/docs/cli#repose-run-project');
+
+	await page.locator('#docs-search').click();
+	await box.fill('zzqx');
+	await expect(dialog.getByRole('option')).toHaveCount(0);
+	await expect(dialog).toContainText('No match for “zzqx”.');
+	// Hovering a row makes it the active one.
+	await box.fill('sync');
+	await dialog.getByRole('option').nth(2).hover();
+	await expect(dialog.getByRole('option').nth(2)).toHaveAttribute('aria-selected', 'true');
+});
+
+// On a phone the search is an icon in the docs' sub-bar, and the palette
+// takes nearly the full width from the top, with 44px rows.
+test('the docs search on a phone opens from the sub-bar, near full width', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/docs/cli');
-	await page.getByRole('button', { name: /Open the docs menu/ }).click();
-	await page.getByLabel('Search the docs').fill('snap');
-	const results = page.getByRole('list', { name: 'Search results' });
-	const first = results.getByRole('link').first();
-	await expect(first).toBeInViewport();
-	const m = await page.evaluate(() => ({
-		search: document.getElementById('docs-search')!.getBoundingClientRect().bottom,
-		hit: document.querySelector('.hits a')!.getBoundingClientRect().top
-	}));
-	expect(m.hit).toBeGreaterThanOrEqual(m.search);
-	await expect(results.locator('mark').first()).toHaveText(/snap/i);
-	await page.getByLabel('Search the docs').fill('');
-	await expect(
-		page
-			.getByRole('navigation', { name: 'Docs', exact: true })
-			.getByRole('link', { name: 'CLI reference' })
-	).toBeInViewport();
+	const button = page.locator('[data-docs-subbar]').getByRole('button', { name: 'Search docs' });
+	const size = (await button.boundingBox())!;
+	expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(44);
+	await button.click();
+	const dialog = page.getByRole('dialog', { name: 'Search docs' });
+	await expect(dialog).toBeVisible();
+	// Measured once the opening scale has settled; a desktop Chromium's
+	// scrollbar takes 15px of the 390, a phone's none.
+	await expect
+		.poll(async () => {
+			const box = (await dialog.boundingBox())!;
+			return box.x <= 12 && box.y <= 12 && box.width >= 390 - 15 - 24;
+		})
+		.toBe(true);
+	await dialog.getByRole('combobox').fill('snapshot');
+	await expect(dialog.getByRole('option').first().locator('mark').first()).toHaveText(/snapshot/i);
+	await page.keyboard.press('Escape');
+	await expect(button).toBeFocused();
 });
