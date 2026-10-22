@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-792 entries.
+793 entries.
 
 ## Scope
 
@@ -428,7 +428,7 @@ pointer, not a summary.
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9189
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9210
 - **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; partly superseded by I-672; L9233
-- **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; L9275
+- **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; superseded by I-779; L9275
 - **I-364** tmux's mouse mode is off in the guest — 2026-09-29; L9301
 - **I-365** `repose secrets set` echoes one `*` per character — 2026-09-29; L9316
 - **I-366** `run --no-sync` still copies the tool logins and the carry — 2026-09-29; L9333
@@ -458,7 +458,7 @@ pointer, not a summary.
 - **I-390** A 503 the api gives as an answer is not an outage, a 500 is not "cannot reach", and one failure is said once — 2026-09-30; amended by I-393; L9784
 - **I-391** Design critique repair: focus follows in-place panels, one disabled look, and the gaps the first pass left — 2026-09-30; amended by I-393; amended by I-655; L9807
 - **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; L9857
-- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; L9925
+- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; amended by I-779; L9925
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9991
 - **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10018
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10049
@@ -817,10 +817,11 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23372
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23416
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23453
-- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23536
-- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23562
-- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23593
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23606
-- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
-- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
-- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
+- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; L23536
+- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23603
+- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23629
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23660
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23673
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23912
+- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23978
+- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24209

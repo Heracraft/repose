@@ -23533,6 +23533,73 @@ The public docs under `content/docs/` are untouched: the owner asked for
 the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
 user-visible outside the landing changed, so no page there needs one.
 
+**I-779. The logo is a cell dividing, and the division plays.** (owner,
+2026-10-18 and -19, over six reviews: "our logo is shit, go crazy and
+design something new and simple", "kinda looks like opencode", "the first
+one was the only real one in terms of quality", "quality is a bad metric,
+lets create something beautiful and distinct", "youre supposed to capture
+something like cell division", then "make the connection btn the two much
+thinner, more mitosis like, animate it"; supersedes I-363, amends I-393)
+The mark is two flat shapes on a 100 grid: two lobes on a 45-degree axis,
+the mother 23 in the text's ink and the daughter 21 in `--sh-accent`,
+with a cleavage furrow of radius 18 tangent to both that pinches the
+outline to a bridge of 7. The daughter is the smaller of the two because
+the division has not finished.
+What makes it read as division and not as two overlapping discs is the
+furrow: the outline curves *inward* at the waist instead of crossing. Two
+circles unioned give a figure of eight, which is why the first drawings
+of this idea read as a Venn diagram. The geometry is generated, not
+eyeballed: `ops/dev/logo-mitosis.py` solves the furrow's tangency and
+prints the two paths the component ships, so the bridge is a number
+(`neck = 2(sqrt((R + r)^2 - d^2) - r)`) rather than a guess.
+*The division plays.* 900ms with an ease in and out, inside the landing's
+120ms to 1.1s range: the two lobes pull apart and the bridge thins, from
+a body with a 34 waist to the resting 7. `Logo.svelte` takes a `divide`
+prop and `SiteHeader` passes it on `/` only, so a visitor meets the mark
+dividing and no other page moves on load; hover or keyboard focus on the
+link replays it anywhere. It is a morph of both paths' `d`, which the two
+stages allow because the generator emits the same command order for
+every stage. A browser without the CSS `d` property (Firefox today) draws
+the `d` attribute, which is the resting state, so the mark stays
+still there; `prefers-reduced-motion: reduce` turns it off for everyone.
+No library: the landing's anime.js is not loaded for a header.
+At 16px the bridge is about one pixel and reads as a tint between the
+lobes rather than a line. That is the price of a bridge thin enough to
+read as mitosis from 28px up, and it is the trade this entry takes: the
+two lobes carry the mark in a tab. Everything else holds at 16px, so the
+favicon is still the header's geometry (`static/favicon.svg`, and
+`favicon.png` rendered from it at 128px on transparent in the light
+colours) rather than a heavier cut, which I-363's traced cross needed
+because its 4-unit stems fell under a pixel by 24px. `Logo.svelte` keeps
+its `size`, `mark` and `word` props. The mark's two greys go with the
+sketch, and with them I-393's grey floor: the mother is `currentColor`
+and the daughter `--sh-accent`, and both hold 3:1 in both schemes. The
+curve is the one the system allows the logo, the way the landing keeps a
+sphere; the radius scale still stops at 4px everywhere else. The icon
+links carry `?v=3` so browsers drop the cached sketch; the Logto sign-in
+page and the sign-in emails take the new drawing with the next deploy
+(`ops/logto/logo-mark.svg`, `favicon.png`).
+*The five answers before it, and what each one settled.* A square ring
+with the accent block astride its corner: read as opencode, whose mark is
+a thick square-cornered O with a filled lower counter, so **the mark
+encloses nothing**. A block at rest in the crook of an L: cleared that
+and lost the first one's presence, and a grid of 56 peer marks at 56 and
+16px says why — what holds at a tab's size is one silhouette with mass,
+what falls apart is a mark in separate pieces. A square block with a
+square slot: obeyed both rules and read as a diagram of them. A
+round-ended slot with its key: beautiful, and about nothing the product
+does. A disc with a second disc clearing it: the right subject drawn as a
+drop shadow — the furrow is what that answer was missing.
+*Also drawn from the brief and rejected:* a bud growing off a larger disc
+(a planet and its moon); a mirror pair across a seam (the landing's
+halves sign, already spoken for); the copy with a quarter still missing
+(damage, not progress); the same device in squares (a drop shadow on a
+card); the division on a horizontal axis (a dumbbell in a header row);
+equal lobes (a finished division, when the point is that it is still
+going); a bridge closed to nothing (two separate dots at 16px).
+The studies are in `docs/reviews/2026-10-18-logo.md`, judged at 120, 28,
+24 and 16px and on the 16px pixel grid in both schemes.
+
 **I-781. The quickstart does not promise that other projects are out of
 an agent's reach (launch-truth, 2026-10-18).** Amends I-747 and the
 quickstart's opening paragraph. *Made during implementation* (the owner,

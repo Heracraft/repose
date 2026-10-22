@@ -59,7 +59,7 @@ colour has one meaning:
   under its limit (I-659). The usage chart's line is `--chart-line`,
   which `layout.css` sets to `--ink`; the accent is one switch away
   there and is not what ships (I-679). Nothing else is blue in the dashboard, the docs or the legal
-  pages except the logo's big square (see Logo); a busy state, a current
+  pages except the logo's accent block (see Logo); a busy state, a current
   tab and code syntax are not (I-373, I-374, I-388). The landing's shapes
   and bar use it as `LANDING.md` says, and so do the plan cells on
   `/billing` (I-663).
@@ -177,6 +177,7 @@ Motion is for state, and only on colour, opacity and transform.
 | Docs "On this page" fold | Chevron turns half a turn | 150ms | None (`motion-reduce:transition-none`) |
 | Docs "On this page" rail | A link scrolls the page to its section | The browser's smooth scroll | Jumps (`prefers-reduced-motion: reduce` checked on click) |
 | Landing | Rails, ticks, the hero's bar, shapes landing, the snapshot mark, the pictures | `LANDING.md`, "Motion" | Every shape still and whole |
+| Logo | The mark divides: the two lobes pull apart and the bridge between them thins | 900ms, `cubic-bezier(0.65, 0, 0.35, 1)`, once on the landing and again on hover or focus of the link | Still, in the divided state (see Logo) |
 
 Anything that travels, turns or loops runs only under
 `prefers-reduced-motion: no-preference`. A colour or opacity change of
@@ -194,9 +195,10 @@ it or swaps in the native control.
 
 ## Logo
 
-`Logo.svelte` is the I-363 mark (a thin cross in ink, three blocks in
-grey, light grey and the accent) followed by "repose" in Noto Serif 600.
-The mark is in every header (I-381):
+`Logo.svelte` is the I-779 mark (a cell dividing: a mother lobe in the
+text's ink and a smaller daughter in the accent, joined by a thin bridge)
+followed by "repose" in Noto Serif 600. The mark is in every header
+(I-381):
 
 - It links to `/` from every page, the dashboard included, named
   "repose, home", with a 40px hit area (I-655).
@@ -205,13 +207,40 @@ The mark is in every header (I-381):
 - Below `sm`: the 24px `sm` cut alone, so the header row fits 320px. The
   link carries the name. The footer shows the `sm` mark with the word at
   every width.
-- Never under 24px. At 16px (the tab) use the favicon, a heavier cut of
-  the same drawing (`static/favicon.svg`, `favicon.png`).
-- The mark's grey blocks have their own greys so they hold 3:1 at header
-  size: zinc-500 and `--control-edge` in the light, zinc-400 and
-  `--control-edge` in the dark. The landing's large shapes keep
-  `--sh-grey` and `--sh-light`. The big square is `--sh-accent`, the one
-  `--sh-*` token that appears off `/` (I-363, I-393).
+- One drawing at every size. On a 100 grid the lobes sit on a 45-degree
+  axis, the mother 23 and the daughter 21, and a furrow circle of radius
+  18 tangent to both pinches the outline to a bridge of 7. The geometry
+  is generated: `ops/dev/logo-mitosis.py` prints the two paths the
+  component ships, so the mark can be redrawn at other proportions
+  without guessing (I-779).
+- **The furrow is the mark.** Two overlapping circles make a figure of
+  eight; what reads as division is an outline that curves *inward* at the
+  waist. Redrawing it as two discs, or evening the lobes up, is the
+  change that breaks it: the daughter is smaller because the division has
+  not finished.
+- At 16px the bridge is about one pixel and reads as a tint between the
+  lobes rather than a line; the two lobes carry the mark at that size.
+  That is the price of a bridge thin enough to read as mitosis at 28px
+  and up, and it is deliberate (I-779).
+- The mother is `currentColor`, the text's ink in both schemes; the
+  daughter is `--sh-accent`, the one `--sh-*` token that appears off `/`
+  (I-393). There are no greys in it to hold a floor for, and both shapes
+  hold 3:1 on `--page`, `--surface` and `--sunken` in both schemes.
+- **The division plays as motion**, 900ms, from one body to two (see
+  Motion). `Logo.svelte`'s `divide` prop runs it once; `SiteHeader`
+  passes it on `/` only, so a visitor meets the mark dividing and no
+  other page moves on load. Hover or keyboard focus on the link plays it
+  again, anywhere. It morphs the `d` of both paths between two stages the
+  generator prints; a browser without the CSS `d` property draws the
+  attribute, which is the resting state, and
+  `prefers-reduced-motion: reduce` turns all of it off.
+- **The curve is the exception to "Corners".** The radius scale stops at
+  4px and the pages draw rectangles; the mark is drawn in circles, as the
+  landing's sphere is, and nothing else in the system takes a curve from
+  it (I-779).
+- One more rule, paid for (I-779): the mark encloses nothing. opencode's
+  mark is a thick square-cornered O with a filled lower counter, so a
+  ring, a frame or a block inside a box reads as that product.
 
 ## Page frame and header
 
