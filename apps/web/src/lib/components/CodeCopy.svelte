@@ -103,6 +103,20 @@
 			overflow-wrap: anywhere;
 		}
 	}
+	/* On touch the icon stays 24px, so it and its focus ring sit inside
+	   the box; a transparent ::before carries the 44px target. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.code-copy :global(.hk-copy) {
+			min-height: 1.5rem;
+			min-width: 1.5rem;
+			margin-block: 0;
+		}
+		.code-copy :global(.hk-copy)::before {
+			content: '';
+			position: absolute;
+			inset: -0.625rem;
+		}
+	}
 	.prompt {
 		color: var(--hk-text-3);
 		user-select: none;

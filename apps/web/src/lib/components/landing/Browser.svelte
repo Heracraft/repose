@@ -378,7 +378,7 @@
 <div class="shot shot-box" use:picture.frame>
 	<PauseButton {picture} />
 	<p id={descId} class="sr-only">{story}</p>
-	<div class="stage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
+	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="shot-win open bw" aria-hidden="true">
 			<WinHead who="machine" />
 			<div class="br">
@@ -500,7 +500,9 @@
 	.shot-box {
 		container-type: inline-size;
 	}
-	.stage {
+	/* Not named `stage`: landing.css gives .landing .stage a hairline and
+	   a 12px radius, which would ring this picture inside its cell. */
+	.bstage {
 		/* The chip sits on the captured page, which is white in either
 		   scheme, so it keeps the light scheme's --pic-accent value: the
 		   dark scheme's is 2.5:1 on #fff. */
@@ -642,7 +644,7 @@
 
 	/* You: the command, and your pointer in the same window. The grid's
 	   chip (landing.css), in --chip on the white page. */
-	.stage .pic-chip {
+	.bstage .pic-chip {
 		position: absolute;
 		right: 10px;
 		top: calc(var(--k) * 48 + 10px);
@@ -650,7 +652,7 @@
 		background: #fff;
 		color: var(--chip);
 	}
-	.stage .pic-chip:global(.fire) {
+	.bstage .pic-chip:global(.fire) {
 		background: var(--chip);
 		color: #fff;
 	}

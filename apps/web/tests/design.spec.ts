@@ -603,7 +603,15 @@ async function shortTargets(page: Page, scope: string): Promise<string[]> {
 				if (el instanceof HTMLInputElement && /^(hidden|radio|checkbox)$/.test(el.type)) continue;
 				// A hidden file picker a labelled button opens (secrets' "Choose a file").
 				if (el instanceof HTMLInputElement && el.type === 'file' && el.tabIndex < 0) continue;
-				if (r.height < 43.5) {
+				// A small button whose transparent ::before carries the target
+				// (CodeCopy on a phone): the target is the button plus its
+				// negative insets.
+				const before = getComputedStyle(el, '::before');
+				const reach =
+					before.content !== 'none' && before.position === 'absolute'
+						? -(parseFloat(before.top) || 0) - (parseFloat(before.bottom) || 0)
+						: 0;
+				if (r.height + Math.max(0, reach) < 43.5) {
 					const name = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
 					out.push(`${el.tagName.toLowerCase()} "${name.slice(0, 30)}" ${Math.round(r.height)}px`);
 				}
