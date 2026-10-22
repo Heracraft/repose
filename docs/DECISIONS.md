@@ -24213,7 +24213,11 @@ got the laptop's path, not a copy.
 - *What the docs say.* /docs/limits gains a "Files you drop or paste"
   section, since the figure was on the run-and-attach page only;
   /docs/run-and-attach, /docs/cli's `repose paste` and the guest agent
-  guide all say 50 MB.
+  guide all say 50 MB. The limits line is one sentence of limit and one
+  of consequence, as its neighbours are: the owner cut "the status line
+  says why" as narrating the screen (the run-and-attach section says it
+  where the behaviour is) and the list of `Cmd+V`, `Ctrl+V` and `repose
+  paste` as mechanisms a limits page does not name (I-484, I-485).
 - *Not fixed, deliberately.* The two exits in `dropHandler.files` that
   fall back to the raw paste with no message at all: a path that fails
   its second `dropFile` check, and a file that cannot be stat'ed. Nor
