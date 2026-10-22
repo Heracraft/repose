@@ -54,6 +54,7 @@
 	let reapplying = $state<string | undefined>(undefined);
 	let holdSaving = $state(false);
 	let personalSaving = $state(false);
+	let keepAwakeSaving = $state(false);
 
 	// Menu tab state.
 	let selectedPackages = $state<Set<string>>(new Set());
@@ -305,6 +306,23 @@
 		}
 	}
 
+	// Effective at once: a machine already frozen is woken by the api, and
+	// one that is awake is not frozen again while this is ticked (I-818).
+	// The checkbox follows the project, as the two above it do.
+	async function toggleKeepAwake(box: HTMLInputElement) {
+		if (!project) return;
+		const next = box.checked;
+		keepAwakeSaving = true;
+		try {
+			project = await patchProject(id, { keep_awake: next });
+		} catch (err) {
+			box.checked = !!project.keep_awake;
+			toastApiError(err, 'Could not change whether this machine is kept awake.');
+		} finally {
+			keepAwakeSaving = false;
+		}
+	}
+
 	// The checkbox follows the project, not the click: on a refusal it is
 	// put back to what the server holds, so it never shows a hold that
 	// was not saved.
@@ -325,7 +343,9 @@
 
 {#if project}
 	<!-- What changes how the machine is built: the base and its hold, and
-	     whether your machine.nix is layered on. -->
+	     whether your machine.nix is layered on; then whether it is left
+	     awake (I-818), which changes how it runs rather than how it is
+	     built, and is the only other switch the page carries. -->
 	<div class="cfacts" data-testid="config-facts">
 		<div class="cfact-row">
 			<p class="cfact">Base <span class="hk-mono">{project.base_version}</span></p>
@@ -350,6 +370,17 @@
 				Use your machine.nix on this machine
 			</label>
 			<a class="hk-link mnix-link" href={resolve('/settings/machine-nix')}>Edit machine.nix</a>
+		</div>
+		<div class="cfact-row">
+			<label class="hk-check">
+				<input
+					type="checkbox"
+					checked={!!project.keep_awake}
+					disabled={keepAwakeSaving}
+					onchange={(e) => void toggleKeepAwake(e.currentTarget)}
+				/>
+				Keep this machine awake
+			</label>
 		</div>
 	</div>
 

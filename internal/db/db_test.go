@@ -30,11 +30,33 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0028 (the class vCPU figures in host_reservations, I-784) is the
-	// newest, and it only replaces the view: hosts.cores and the view's
-	// own vcpus column, which 0027 added, survive its down. Then 0027's
-	// down takes both.
+	// 0030 (the idle pause, I-818) is the newest: three defaulted
+	// columns, which the down above takes and which nothing below it has.
 	var n int
+	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name in ('projects', 'meter_samples') and column_name in ('resting_since', 'keep_awake', 'resting')").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("0030's down left %d of its columns", n)
+	}
+	// This test is about 0028's and 0027's downs, so every migration between
+	// them and the newest is reverted to reach them. Counted rather than
+	// written out, because the version this read as a constant (0028 was the
+	// newest when it was written) made the test fail on the next migration
+	// added, which says nothing about either down (I-806).
+	const classVCPU = 28 // 0028_class_vcpu_ratio, I-784
+	steps := 0
+	for i := len(st.Applied) - 1; i >= 0 && st.Applied[i] > classVCPU; i-- {
+		steps++
+	}
+	// The down above reverted the newest; these revert the rest of the
+	// migrations after 0028, and 0028 itself, leaving 0027 the newest.
+	if down, err = db.MigrateDown(ctx, pool, steps); err != nil || len(down) != steps {
+		t.Fatalf("down %d to %04d: %v %v", steps, classVCPU, down, err)
+	}
+	// 0028 (the class vCPU figures in host_reservations, I-784) only
+	// replaces the view: hosts.cores and the view's own vcpus column,
+	// which 0027 added, survive its down. Then 0027's down takes both.
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name = 'hosts' and column_name = 'cores'").Scan(&n); err != nil {
 		t.Fatal(err)
 	}

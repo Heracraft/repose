@@ -86,6 +86,18 @@ type M struct {
 	// nothing.
 	GuestFreezeUnfrozen *prometheus.CounterVec
 	GuestThawDiscarded  *prometheus.CounterVec
+	// The idle pause (DECISIONS I-818). GuestsResting is how many guests
+	// on this host have their vCPUs stopped with their memory resident;
+	// GuestPause counts each PauseGuest by the reason it was asked for
+	// and what came of it (`paused`, `refused`, `failed` -- a guest with
+	// work in flight is a refusal, not a failure); GuestWakeSeconds is
+	// the wake the user waits for, from vm.resume to guestd's answer; and
+	// GuestWakeFailed counts a wake that did not get the guest back,
+	// which is the only part of this feature a user sees fail.
+	GuestsResting    prometheus.Gauge
+	GuestPause       *prometheus.CounterVec
+	GuestWakeSeconds prometheus.Histogram
+	GuestWakeFailed  *prometheus.CounterVec
 }
 
 // BlockedReasons is the `reason` enum of repose_host_egress_blocked_total
@@ -113,6 +125,33 @@ var FreezeUnfrozenReasons = []string{"no_room", "estimate", "deadline", "failed"
 // out of time before this image was read). A guest that stopped, moved
 // host or came back running on its own is not counted: it lost nothing.
 var ThawDiscardedReasons = []string{"incomplete", "too_old", "changed", "no_key", "failed", "window"}
+
+// PauseReasons is the `reason` enum of repose_host_guest_pause_total:
+// `idle` (the api's rule) and `keep_awake` (the user turned the switch
+// on), `connect` (a session through the gateway), `op` (an op's wake
+// phase), `answer` (an answer being carried to a waiting agent),
+// `operator` (`hostd pause|wake`), `timer` (the armed wake for a user
+// timer due inside the guest), `command` (hostd woke the guest itself
+// before work that needs guestd) and `other` (anything else a caller
+// asked for, so one reason string cannot grow the series without bound).
+// The first five are internal/api/resting's words, and `connect`, `op`
+// and `answer` are most of the wakes there are: without them the label
+// would read `other` for nearly every wake.
+// docs/workstreams/10-observability.md §5 carries the same list.
+var PauseReasons = []string{"idle", "keep_awake", "connect", "op", "answer", "operator", "timer", "command", "other"}
+
+// PauseResults is the `result` enum of repose_host_guest_pause_total:
+// `paused`, `refused` (a why_not the api reads, not a failure) and
+// `failed`. DECISIONS I-818 names the label `outcome`; `outcome` is not in
+// internal/obs/metrics's allowed label list and `result` is, so the
+// counter carries the allowed name.
+var PauseResults = []string{"paused", "refused", "failed"}
+
+// WakeFailReasons is the `reason` enum of
+// repose_host_guest_wake_failed_total: `resume` (vm.resume never left the
+// VM Running), `guestd` (the guest did not answer after the resume),
+// `state` (the guest is no longer one that can be woken).
+var WakeFailReasons = []string{"resume", "guestd", "state"}
 
 // New registers every instrument on a fresh registry.
 func New() *M { return NewVersion("dev") }
@@ -157,6 +196,10 @@ func NewVersion(version string) *M {
 		GuestNotifyDropped:    f.counterVec("guest_notify_dropped_total", "Guest notifications hostd did not forward, by reason: rate_limited (over the per-guest rate), invalid (a kind, id or state a guest may not send), queue_full (the guest events awaiting an ack are at their cap).", "reason"),
 		EgressBlockedTotal:    f.counterVec("egress_blocked_total", "Outbound packets guests sent into a block, by reason: smtp (tcp 25), stratum (mining-pool ports), flows (new flows over the per-guest rate).", "reason"),
 		EgressBlockedGuests:   f.gaugeVec("egress_blocked_guests", "Guests whose blocked packets in the last 10 minutes passed the reason's threshold.", "reason"),
+		GuestsResting:         f.gauge("guests_resting", "Guests paused by the idle pause: their vCPUs stopped, their memory resident, their state still running (I-818)."),
+		GuestPause:            f.counterVec("guest_pause_total", "PauseGuest commands by the reason asked for and the result: paused, refused (a why_not, not a failure), failed (I-818).", "reason", "result"),
+		GuestWakeSeconds:      f.hist("guest_wake_seconds", "Wake of a resting guest, from vm.resume to guestd's answer (I-818).", []float64{.05, .1, .25, .5, 1, 2, 5, 10, 30}),
+		GuestWakeFailed:       f.counterVec("guest_wake_failed_total", "Wakes that did not bring a resting guest back, by reason: resume, guestd, state (I-818).", "reason"),
 	}
 	// Every reason exists from startup, so the alert reads 0 rather than
 	// nothing on a host where no guest was ever blocked.
@@ -175,6 +218,17 @@ func NewVersion(version string) *M {
 	for _, r := range BlockedReasons {
 		m.EgressBlockedTotal.WithLabelValues(r)
 		m.EgressBlockedGuests.WithLabelValues(r).Set(0)
+	}
+	// The same from startup for the pause: a host where nothing has
+	// rested yet reads 0 rather than nothing, so an alert on a rise in
+	// failed wakes has a point before the rise (I-818).
+	for _, r := range PauseReasons {
+		for _, res := range PauseResults {
+			m.GuestPause.WithLabelValues(r, res)
+		}
+	}
+	for _, r := range WakeFailReasons {
+		m.GuestWakeFailed.WithLabelValues(r)
 	}
 	return m
 }

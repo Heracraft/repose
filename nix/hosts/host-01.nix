@@ -42,6 +42,21 @@
 
     # Guests are frozen to an encrypted image of their memory when this host
     # restarts and restored where they were (DECISIONS I-652, I-653); the
+    # The idle pause is on here (DECISIONS I-846): a machine nobody is
+    # using has its vCPUs stopped and its memory left resident, and
+    # anything that reaches it wakes it. This is what puts `pause` in this
+    # host's Hello, so the api pauses nothing here without it. The owner
+    # asked for it on 2026-10-21, with the mechanism measured on
+    # host-stg-01 the same day and the rule's own judgement on this fleet
+    # readable first through I-844's counters.
+    #
+    # keep_awake is the per-project way out and takes effect at once
+    # (I-820): set it on any project that must not be frozen before this
+    # host is SWITCHED, from its Config page or `PATCH /projects/:id`. A
+    # merge is not a switch -- this line does nothing until host-01 takes
+    # a new configuration.
+    pauseIdle = true;
+
     # owner signed off I-653's exception to the secrets rule on 2026-10-12
     # and host-01 is the first host with it on (I-686). The vault is prod's
     # `freeze_keyvault_name` (`make output ENV=prod`, freeze_keyvault); the

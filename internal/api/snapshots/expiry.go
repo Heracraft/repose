@@ -138,6 +138,16 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 			continue
 		case err != nil:
 			failed++
+			// The reason is bounded on purpose: the error text carries a
+			// path and a provider message, which is not a metric label
+			// (I-800).
+			reason := "db"
+			if strings.Contains(err.Error(), "delete blob") {
+				reason = "blob"
+			}
+			if e.m != nil {
+				e.m.SnapshotExpiryFailTotal.WithLabelValues(reason).Inc()
+			}
 			e.log.Error("snapshot not expired", "event", "snapshot_expiry_fail", "snapshot_id", id.String(), "err", err.Error())
 			continue
 		}

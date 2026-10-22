@@ -23,8 +23,16 @@ import (
 // `clone`.
 const FeatureLocalClone = "local_clone"
 
-// Features is what this hostd reports in Hello.
-func Features() []string { return []string{FeatureLocalClone} }
+// Features is what this hostd reports in Hello. pauseIdle adds
+// FeaturePause: a host that has not been switched on never reports it,
+// so the api sends it no PauseGuest and no WakeGuest (DECISIONS I-818).
+func Features(pauseIdle bool) []string {
+	f := []string{FeatureLocalClone}
+	if pauseIdle {
+		f = append(f, FeaturePause)
+	}
+	return f
+}
 
 // ForkPointTTL is how long a fork point outlives a fork whose siblings do
 // not all arrive (the api failed one before its restore): it pins the

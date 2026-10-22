@@ -117,10 +117,24 @@ Resume after a host restart (DECISIONS I-645), all additive:
   nothing on its own, which is the behaviour before. An api older than
   I-645 ignores them.
 
+The idle pause (DECISIONS I-818), additive:
+
+- `GuestStatus.resting_at` (field 8, unix seconds) is when hostd paused
+  the guest: its vCPUs are stopped and its memory stays resident on the
+  host, so every process, socket and open file survives. The guest's
+  `state` stays `running` -- resting is a **marker on a running guest,
+  never an eleventh state**. hostd settles the marker against the
+  hypervisor's `vm.info` at its start, so every Hello after a hostd or an
+  api restart carries it again, and the api wakes such a guest before
+  anything that needs the machine. 0 means not resting, which is also
+  what a hostd older than I-818 sends.
+
 `Hello.features` (field 9, DECISIONS I-701) lists what this hostd takes
 beyond the commands every hostd takes: `local_clone`, a `Restore` with
-`clone`. The api keeps it in `hosts.features` and sends a shape only to a
-host that names it. A hostd older than I-701 sends none.
+`clone`; `pause` (I-818), `PauseGuest` and `WakeGuest`. The api keeps it
+in `hosts.features` and sends a shape only to a host that names it, so a
+host without `pause` is never asked to rest a machine. A hostd older than
+I-701 sends none.
 
 **Heartbeat** every 15 seconds: `free_mem_bytes`, `pool_free_bytes`,
 `load1`, `running_guests`, `draining` (bool; set after `Drain`, the scheduler
@@ -156,6 +170,8 @@ command_id returns the stored result) and one of:
 | `Exec` | guest_id, argv, timeout_s, audit_id (required, I-26; operator use only, audited: hostd logs `{audit_id, guest_id, argv}` at notice) | exit_code, stdout, stderr (each capped 64 KB) |
 | `Drain` | (host) | |
 | `AnswerQuestion` | guest_id, question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | none. Relayed to guestd's request of the same name (DECISIONS I-244). `not_found` when the guest is not running or guestd does not know the question, which the api takes as final; any other error is retried by the api with a new command_id. The answer is tenant text and is never logged |
+| `PauseGuest` | guest_id, reason (lower_snake, `idle\|operator`) | `PauseResult {paused, why_not, at}` (DECISIONS I-818; only to a host whose Hello names `pause`). Stops the guest's vCPUs and leaves its memory resident: the hypervisor, virtiofsd, the tap and vsock stay up and nothing is written anywhere. Before it pauses, hostd asks the guest to `sync` (and to drop its page cache when the guest has the balloon) and reads the next elapse of a systemd timer inside it, in the system manager and in `dev`'s. `paused=false` with a `why_not` is a **refusal, not a failure**, and is answered `ok`: `not_running`, `already_resting`, `command_in_flight` (the api has a command for this guest in flight or queued), `host_stopping`, `frozen` (the guest has a freeze record), `timer_due` (a user timer elapses within 15 minutes), `in_use` (a session or tmux client appeared between the api's newest sample and this pause) or `guest_unreachable`. Every refusal is decided before hostd does anything to the guest, so a guest refused at every tick is never asked to sync or drop its cache. `at` is when it paused, unix seconds. Error codes: `not_found`, `invalid_argument`, `internal` (the hypervisor refused `vm.pause`; the guest keeps running) |
+| `WakeGuest` | guest_id, reason (lower_snake) | `WakeResult {was_resting, wake_ms}` (DECISIONS I-818). Resumes a resting guest, sets its clock to the host's and waits for guestd to answer. **Idempotent**: a guest with no resting marker is answered `ok` with `was_resting=false`, whatever its state, so the api may ask for a wake it does not know it needs. `wake_ms` is from `vm.resume` to guestd's answer. A wake takes no op slot and runs on the guest's own queue, so it never waits behind the host's builds. Error codes: `not_found`, `invalid_argument` (the guest is not running), `guest_unresponsive` (the hypervisor did not resume, or the guest did not answer after it: the one part of this feature a user sees fail, and hostd raises `guest_wake_failed` with it) |
 
 **Result**: `command_id`, `ok`, `error {code, message}`, payload. Snapshot
 blob paths are `<user_id>/<project_id>/<ts>.img.zst` (`<project_id>/<ts>`
@@ -241,13 +257,19 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               GuestSignals signals; repeated ProcSample procs;
               uint64 cpu_pressure_us_delta; uint64 host_cpu_wait_us_delta;
               uint64 guest_mem_used_bytes;     // the three before: I-493
-              uint64 root_used_bytes; uint64 root_size_bytes; }   // I-567
+              uint64 root_used_bytes; uint64 root_size_bytes;      // I-567
+              bool resting; }                                      // I-818
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)
 // tmux_window: a tmux window name or a herdr agent key, at most 64 bytes (I-504)
 // tmux_clients: tmux attach clients only; 0 on a herdr machine, whose clients count in ssh_sessions (I-511)
 ProcSample { string comm; uint64 cpu_ns_delta; uint64 rss_bytes; }  // comm only; never argv
+// resting (I-818): this guest is paused. `state` stays `running`, which is what bills
+// the minute; `signals` repeats the last figures the guest wrote and `guestd_ok` stays
+// TRUE, because guestd is paused with its guest and not lost; `procs` and the pressure
+// delta are empty, and cpu_ns_delta and the net deltas are the host's own counters and
+// read about zero. False from a hostd older than I-818.
 HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_running; }
 ```
 
@@ -268,10 +290,17 @@ agent took it back, stored as `cancelled` with `answered_via` `agent`),
 `interrupted` or `asker_gone` (stored as a plain cancel); empty for an
 expiry and on an open question; an older hostd drops it and the close is a
 plain cancel),
+`guest_resting {guest_id, resting, at, reason}` (DECISIONS I-818: the guest
+was paused or woken, so the api shows the marker within seconds rather than
+at the next minute's sample. It is **not** a `guest_state_changed`: the
+guest's state does not change, and the api must not route it through its
+state-change path, which cancels the project's open questions),
 `snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (80
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
-`guestd_lost` (no vsock for 60 s), `freeze_timeout`, and the guest kinds
+`guestd_lost` (no vsock for 60 s), `freeze_timeout`, `guest_wake_failed`
+(I-818: a resting guest did not come back; its processes are still there
+and still paused, and the runbook's wake is the operator's step), and the guest kinds
 hostd relays from guestd's `Warning` (`disk_high`, `inotify_exhausted`,
 `docker_down`, `store_path_missing`, `oom`, `tmux_down`, `herdr_down`
 (I-507; hostd and the api take it in the release before any base sends
@@ -360,10 +389,25 @@ the project's `root_used_bytes` and `root_size_bytes`. A hostd or guest
 older than I-567 sends 0 for both, which is the old shape and stays
 accepted.
 
+Resting (DECISIONS I-818). A resting guest's sample keeps `guestd_ok`
+**true** and repeats the last guest-written figures (`signals`,
+`guest_mem_used_bytes`, `root_used_bytes`, `root_size_bytes`), with
+`resting` set and `state` still `running`. hostd asks a paused guest for
+nothing: a `Sample` into it would wait out its own 10 s, in series,
+against a 60 s tick. This one rule is what keeps four other things
+honest: the api's unused notice (which reads `not guestd_ok` as use),
+`repose start` and the dashboard's Start (which would otherwise reboot a
+frozen machine and lose every process), the `repose_host_guestd_lost`
+gauge, and the CLI's "the environment's agent is not answering".
+
 ## Idempotency and ordering
 
 hostd executes commands for one guest in order; commands for different guests
-run concurrently (bounded, 8 at a time, builds 2 at a time). A hostd restart
+run concurrently (bounded, 8 at a time, builds 2 at a time). A `WakeGuest`
+is the exception to the bound, not to the order: it runs on its guest's
+queue, like every other command for that guest, but takes no concurrency
+slot, since a user is waiting for it and the host's builds hold the slots
+(I-818). A hostd restart
 replays nothing; the api re-sends unfinished commands after `Hello` with the
 same command_id and hostd returns the stored result, re-executes a command
 that had started but not finished (every command except `Exec` is written

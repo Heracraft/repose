@@ -23533,6 +23533,73 @@ The public docs under `content/docs/` are untouched: the owner asked for
 the landing only ("Again not here, docs. Do not touch docs tho"). Nothing
 user-visible outside the landing changed, so no page there needs one.
 
+**I-779. The logo is a cell dividing, and the division plays.** (owner,
+2026-10-18 and -19, over six reviews: "our logo is shit, go crazy and
+design something new and simple", "kinda looks like opencode", "the first
+one was the only real one in terms of quality", "quality is a bad metric,
+lets create something beautiful and distinct", "youre supposed to capture
+something like cell division", then "make the connection btn the two much
+thinner, more mitosis like, animate it"; supersedes I-363, amends I-393)
+The mark is two flat shapes on a 100 grid: two lobes on a 45-degree axis,
+the mother 23 in the text's ink and the daughter 21 in `--sh-accent`,
+with a cleavage furrow of radius 18 tangent to both that pinches the
+outline to a bridge of 7. The daughter is the smaller of the two because
+the division has not finished.
+What makes it read as division and not as two overlapping discs is the
+furrow: the outline curves *inward* at the waist instead of crossing. Two
+circles unioned give a figure of eight, which is why the first drawings
+of this idea read as a Venn diagram. The geometry is generated, not
+eyeballed: `ops/dev/logo-mitosis.py` solves the furrow's tangency and
+prints the two paths the component ships, so the bridge is a number
+(`neck = 2(sqrt((R + r)^2 - d^2) - r)`) rather than a guess.
+*The division plays.* 900ms with an ease in and out, inside the landing's
+120ms to 1.1s range: the two lobes pull apart and the bridge thins, from
+a body with a 34 waist to the resting 7. `Logo.svelte` takes a `divide`
+prop and `SiteHeader` passes it on `/` only, so a visitor meets the mark
+dividing and no other page moves on load; hover or keyboard focus on the
+link replays it anywhere. It is a morph of both paths' `d`, which the two
+stages allow because the generator emits the same command order for
+every stage. A browser without the CSS `d` property (Firefox today) draws
+the `d` attribute, which is the resting state, so the mark stays
+still there; `prefers-reduced-motion: reduce` turns it off for everyone.
+No library: the landing's anime.js is not loaded for a header.
+At 16px the bridge is about one pixel and reads as a tint between the
+lobes rather than a line. That is the price of a bridge thin enough to
+read as mitosis from 28px up, and it is the trade this entry takes: the
+two lobes carry the mark in a tab. Everything else holds at 16px, so the
+favicon is still the header's geometry (`static/favicon.svg`, and
+`favicon.png` rendered from it at 128px on transparent in the light
+colours) rather than a heavier cut, which I-363's traced cross needed
+because its 4-unit stems fell under a pixel by 24px. `Logo.svelte` keeps
+its `size`, `mark` and `word` props. The mark's two greys go with the
+sketch, and with them I-393's grey floor: the mother is `currentColor`
+and the daughter `--sh-accent`, and both hold 3:1 in both schemes. The
+curve is the one the system allows the logo, the way the landing keeps a
+sphere; the radius scale still stops at 4px everywhere else. The icon
+links carry `?v=3` so browsers drop the cached sketch; the Logto sign-in
+page and the sign-in emails take the new drawing with the next deploy
+(`ops/logto/logo-mark.svg`, `favicon.png`).
+*The five answers before it, and what each one settled.* A square ring
+with the accent block astride its corner: read as opencode, whose mark is
+a thick square-cornered O with a filled lower counter, so **the mark
+encloses nothing**. A block at rest in the crook of an L: cleared that
+and lost the first one's presence, and a grid of 56 peer marks at 56 and
+16px says why — what holds at a tab's size is one silhouette with mass,
+what falls apart is a mark in separate pieces. A square block with a
+square slot: obeyed both rules and read as a diagram of them. A
+round-ended slot with its key: beautiful, and about nothing the product
+does. A disc with a second disc clearing it: the right subject drawn as a
+drop shadow — the furrow is what that answer was missing.
+*Also drawn from the brief and rejected:* a bud growing off a larger disc
+(a planet and its moon); a mirror pair across a seam (the landing's
+halves sign, already spoken for); the copy with a quarter still missing
+(damage, not progress); the same device in squares (a drop shadow on a
+card); the division on a horizontal axis (a dumbbell in a header row);
+equal lobes (a finished division, when the point is that it is still
+going); a bridge closed to nothing (two separate dots at 16px).
+The studies are in `docs/reviews/2026-10-18-logo.md`, judged at 120, 28,
+24 and 16px and on the 16px pixel grid in both schemes.
+
 **I-781. The quickstart does not promise that other projects are out of
 an agent's reach (launch-truth, 2026-10-18).** Amends I-747 and the
 quickstart's opening paragraph. *Made during implementation* (the owner,
@@ -24710,3 +24777,766 @@ old content in the new style, keeping the new copy-command controls.
   copy an app's shapes (the editor's tree connectors, skeleton bars,
   dots) keep theirs. This replaces "windows 6px" under *How the pictures
   take the kit*.
+**I-800. Seven alert rules on counters that already incremented, the
+rollup's lag gauge rises on its own, and `ops/check.sh` checks that a
+rule's runbook anchor resolves.** (launch-metrics, 2026-10-19) An audit of
+the launch's metrics found the fleet instrumented for liveness and blind to
+the things that end a launch quietly.
+- *The shape of the gap.* Five counter families incremented and no alert
+  read them: `repose_api_requests_total` by status, `repose_api_ops_total`
+  at `state="error"`, `repose_api_schedule_total` at `no_capacity` and
+  `no_cpu`, `repose_gateway_dial_fail_total`, and
+  `repose_host_snapshot_duration_seconds` at a result other than `ok`.
+  Instrumentation nobody reads costs what no instrumentation costs. The
+  rules are `ApiErrors`, `OpsFailing`, `ScheduleRefused`,
+  `GatewayDialFailing`, `SnapshotFailing`, plus `BillingWebhookErrors` and
+  `BillingGap` on the two money paths that fail silently.
+- *Why `BillingWebhookErrors` is absolute, not an `increase()`.* The first
+  error of a kind arrives as a brand-new series at 1, and `increase()` over
+  a window that the series appears in can read that as no rise. The rule
+  counts the total, so it fires once and stays firing until an operator
+  reconciles the account and silences it with a comment. A dropped
+  subscription event does not heal by itself, so an alert that clears by
+  itself would be wrong.
+- *`RollupLag` could not fire.* `repose_api_rollup_lag_seconds` was `Set`
+  only at the end of `Rollup.Hour`, which is reached by the replica that
+  wins the advisory lock and only after the hour was written. A rollup that
+  errored every hour, or never won the lock, left the gauge at its zero
+  value, which reads as perfectly fresh. `Rollup.Lag` now reads `max(hour)`
+  from `usage_hours` and publishes the age on every replica's minute tick,
+  outside the lock. The alert and its promtool case were correct all along
+  and had nothing to read.
+- *Thresholds for tens of projects, not thousands.* `OpsFailing` and
+  `ScheduleRefused` fire on one event. Each runbook heading says to raise
+  the threshold rather than widen the window when the fleet grows, because
+  a share hides a failure that hits one user from a failure that hits
+  every user.
+- *The anchor check.* `ops/check.sh` asserted that every alert name is a
+  heading in `RUNBOOK.md`, which `FluentBitStuck` satisfied while its own
+  `runbook:` annotation pointed at `#observability`, a heading that has
+  never existed. The one link an operator follows mid-incident went
+  nowhere and every check passed. The new step resolves each annotation
+  against the headings. `repose-overview`, the largest dashboard, was also
+  missing from the `--grafana` uid list.
+- *A release gate for the HTTP scrape.* `api`'s `/metrics` is served by a
+  Traefik router configured with ten labels pasted into Coolify by hand
+  (I-133), and nothing asserted that anyone had pasted them, so
+  `ApiErrors`, the gate-refusal panel and `BillingWebhookErrors` could be
+  silently unreadable. `CHECKLIST.md` now has the gate. It covers the
+  HTTP process alone: `a.loops` runs inside the grpc arm of `App.Run`, so
+  the ticks and every gauge they set are in `api-grpc`, which publishes a
+  host port and is scraped without Traefik. The first draft of this gate
+  claimed the money row depended on the labels too; it does not, and the
+  mistake was reading an audit's summary instead of `app.go`.
+- *Not built.* A digest as an always-firing alert: a rule's annotation
+  template sees only its own `$value`, so one alert carries exactly one
+  number. The digest is I-810.
+
+**I-802. The api publishes what the fleet earns:
+`repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`,
+and a gate refusal carries the plan it was refused on.**
+(launch-metrics, 2026-10-19)
+- *Why.* Seats were counted and what they earn was not. No dashboard read
+  `repose_api_seats_total` or `_held`, and no revenue figure existed in any
+  form, so the one number that says whether a sold seat covers its host --
+  fill against the cost floor -- could not be read anywhere. The fleet pays
+  for every seat a host delivers around the clock and earns only on the
+  sold ones (PRICING.md "Seats and the waitlist").
+- *Where they are set.* `billing.Fleet.Refresh`, from the minute tick, on
+  every replica, under no advisory lock. The seat gauges are set by the
+  waitlist tick, which does hold a lock, so only the leader publishes them
+  and a scrape landing on the other replica reads nothing; these cost one
+  grouped count over a table of tens of rows, so every replica can afford
+  the truth. Read them with `max()`, never `sum()`.
+- *Every pair, including the zeroes.* `Reset()` on a GaugeVec drops a
+  series Prometheus has seen, and a panel dividing by a dropped series
+  renders blank where it should render zero. The nine plan-status pairs are
+  enumerated and set.
+- *What MRR is, and is not.* The api's reading of the `subscriptions` table
+  at the plan table's prices, with the founding discount subtracted while
+  `intro_until` has not passed. Polar is the ledger of what was charged.
+  The figure is right only while one list price per plan is live, because
+  no price is stored per subscription; the same gap stops the api holding a
+  subscription's price for 12 months (`proposals/2026-10-11-price-level.md`
+  §6), and the metric's help string says so.
+- *The `plan` label on refusals.* `repose_api_billing_gate_refused_total`
+  gained `plan` ("none" for an account without one). A `plan_limit`
+  refusal on Solo is an upgrade worth $40 a month; the same refusal across
+  every plan says the 8 GB entry seat is too small for the work. Without
+  the label the two are one number. The plan was already extracted for the
+  log line beside it.
+- *Not built.* `repose_api_seats_running` as its own gauge: the numerator
+  is already scraped as `repose_host_guests{state,class}`, so running
+  memory is a PromQL expression over class memory, and a second source for
+  one number is a second source to disagree with the first.
+
+**I-804. `ops/sql/launch.sql`: the launch's per-account questions as
+twelve queries, not as metrics.** (launch-metrics, 2026-10-19)
+- *Why not Prometheus.* `internal/obs/metrics` refuses `project_id` and
+  `user_id` as labels at registration and stops the binary at startup, and
+  every question here is per-account or per-cohort: who converted, who went
+  quiet, which cohort is still paying, whose disk is near the cap. Postgres
+  already holds the answers, and `usage_hours`, `events` and `audit_log`
+  are kept for ever.
+- *What it costs.* No Go, no migration, no deploy. The `repose-postgres`
+  Grafana datasource already exists; what the server still needs is the
+  `grafana_ro` role and two environment variables.
+- *Two of the audit's questions had no source and were replaced.* A plan
+  change writes no `audit_log` row and `subscriptions` keeps no history of
+  the plan a row was on, so the direction of past changes is only in
+  Polar's dashboard; Q7 reports the mix as it stands with the downgrades
+  already scheduled in `scheduled_plan`, which is churn with a date on it.
+  "Ever ran a machine" reads `projects.started_at`, not an event kind,
+  because `started_at` survives the machine being stopped again.
+- *Evidence.* Every query was run against a Postgres with all 29
+  migrations applied, empty and then seeded; the activation,
+  founding-burn and disk-against-plan arithmetic was checked against the
+  seeded figures by hand.
+
+**I-806. `usage_hours` records `attended_seconds` and
+`unattended_agent_seconds`.** (launch-metrics, 2026-10-19)
+- *The claim, measured.* The product is sold on the agent working after the
+  laptop closes, and nothing counted whether it did. A sample is attended
+  when `ssh_sessions > 0` or `tmux_clients > 0`, and unattended-agent when
+  nobody is attached and an agent's state is neither `idle` nor
+  `needs_input` -- the same test `idle.usedSQL` makes. The two are disjoint
+  by construction.
+- *Why before launch and not after.* It cannot be backfilled.
+  `meter_samples` is kept 90 days and `usage_hours` for ever, so a launch
+  cohort's activation would be unanswerable by month four. The columns are
+  two `count(*) filter (...)` terms in the group-by the rollup already
+  runs.
+- *What they do not carry.* Seconds only. Never what the agent did, its
+  prompt, its output, or a window title (OBSERVABILITY.md "Log field
+  rules").
+- *One test was coupled to being last.* `TestMigrateUpDownUp` stepped down
+  once and then asserted the state after 0028's down, which held only
+  while 0028 was the newest migration: adding 0029 failed it, and the
+  failure said nothing about either migration. It now counts the
+  migrations after 0028 and reverts them first, so the next migration adds
+  a step and changes nothing else.
+
+**I-808. `repose-admin projects show` no longer prints "cost today", and a
+destroy keeps the last snapshot, not all of them.** (launch-metrics,
+2026-10-19; the snapshot half decided by the owner 2026-10-20)
+- *The row that was always $0.00.* `cost today` summed `usage_hours.cost_cents`,
+  which the rollup writes as zero by design since plan-v1 (`billing/plans.go`),
+  so the figure was `$0.00` for every project, always, and
+  `OBSERVABILITY.md` told the operator to start there. It is the first
+  thing anyone reaches for to ask whether a tenant is profitable, and it
+  answered with a constant. The row and the words are gone; what an
+  account owes is its plan, its egress against the allowance and its disk,
+  which `repose-admin billing show` prints. This is the doc being wrong
+  rather than the code: `08-dashboard.md`'s table still lists a cost
+  column, and the dashboard has never rendered one.
+- *A destroy keeps the last snapshot, not all of them.* `markDestroyed`
+  set `expires_at = now() + 30 days` on every live snapshot of the
+  destroyed project, so a destroy kept up to seven dailies: seven times
+  the bytes R4-11, `features/snapshots.md` and every public line
+  ("A final snapshot is kept for 30 days") promise. The newest by
+  `taken_at` now keeps the 30 days and the older ones expire at once.
+  Two user-visible promises disagreed, because `lifecycle.md` and
+  `cli.md`'s `restore` row also said `--snapshot ID` picks an *older*
+  snapshot of a destroyed project, which worked only while they were all
+  kept. The owner chose the last snapshot (2026-10-20), so those two lines
+  go; the flag stays, and names the snapshot. A test asserted the old
+  behaviour precisely, so it was deliberate once; it now asserts the
+  promise.
+
+**I-810. A daily digest to Google Chat, from a timer on the personal
+server.** (launch-metrics, 2026-10-19)
+- *Why not alerts.* Seat fill, MRR, trial conversion and activation are
+  read once a day and acted on over a week. An alert on them either
+  repeats every 12 hours or never clears, and a Prometheus annotation can
+  carry one number, because the template sees only its own `$value`.
+- *Where it runs.* `ops/digest/digest.py` with a systemd timer at 08:00,
+  on the personal server: the one host that reaches both Prometheus and
+  Postgres, where calert's Chat webhook already is. It adds no secret and
+  reads the webhook from calert's own file.
+- *Through `psql`, not a driver.* A digest that needs a Python package
+  installed on that box is a digest that stops working after the next
+  rebuild. Every runbook step reads this database with `psql` already.
+- *It degrades.* A source that cannot be reached prints `?` for its own
+  numbers and the message still goes. A digest that fails whenever one
+  exporter is down is a digest nobody trusts, and the eight numbers are
+  independent.
+
+
+**I-848. Alertmanager emails the owner itself; calert and the Google Chat
+path go.** (launch-metrics, 2026-10-21) Amends I-648's "Chat" bullet. The
+rules, the routing timings, the inhibitions, the Watchdog heartbeat and
+Azure's own emails are unchanged.
+- *The part that nothing watched.* I-648 put calert (a third-party
+  adapter, `ghcr.io/mr-karan/calert`) beside Alertmanager, because
+  Alertmanager has no Google Chat receiver and Chat wants
+  `{"text": ...}`. `Watchdog` is routed straight to the Kuma push and
+  never passes through calert, so a dead calert would have taken all 48
+  other alerts with it while the heartbeat stayed green and Kuma stayed
+  happy. That is the 2026-10-10 outage again -- nine hours, nobody paged,
+  because `ntfy.herakraft.co` answered 503 -- with a different process in
+  the hole. The owner asked whether the channel could be had without a new
+  piece of software to maintain; it can.
+- *Email, which Alertmanager has built in.* `email_configs` in the two
+  receivers, `smtp_*` in the global block. No process, no port, no
+  container, nothing to watch. I-648 already reasoned this way for the
+  other half of the same routing: Azure's alerts email `alert_email`
+  because "the email arrives when everything of the owner's is down".
+  Both now reach one inbox.
+- *Through Resend, which is already there.* The api sends its mail through
+  Resend with `repose.herakraft.co` verified (LAUNCH.md step 2), so
+  alerting reuses it rather than adding a provider: smarthost
+  `smtp.resend.com:587`, username the literal `resend`, password a Resend
+  API key in `/etc/alertmanager/secrets/repose-smtp-password` at 0600 --
+  the same shape as the Kuma push URL beside it. The repository holds no
+  address: `to:` and `smtp_from` are set on the server.
+- *What is lost.* A Chat message is louder than an email and arrives
+  faster on a phone. Alertmanager has built-in Discord and Telegram
+  receivers if the owner later wants a push; neither needs software on the
+  server either. Severity leads the subject so a page reads as one.
+- *The digest follows the channel.* `ops/digest/digest.py` sent through
+  calert's webhook, so it now emails through the same SMTP password, with
+  `smtplib` from the standard library. Still no package to install on that
+  box.
+- Evidence: `amtool check-config` on the merged route, and `ops/check.sh`
+  asserting all six routes land on the renamed receivers.
+**I-840. The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429.** (action-bumps, 2026-10-20) I-429 has dependabot propose each new commit as a PR for a person to review. Six of those sat open from 2026-10-04 to 2026-10-20 and nothing else could be proposed behind them, because dependabot opens at most five PRs per ecosystem and one PR per action.
+- *The pins.* `actions/checkout` v4.4.0 to v7.0.1, `actions/setup-go` v5.6.0 to v7.0.0, `actions/setup-node` v4.4.0 to v7.0.0, `actions/download-artifact` v4.3.0 to v8.0.1, `opentofu/setup-opentofu` v1.0.8 to v2.0.2, `bufbuild/buf-action` v1.5.0 to v1.6.0. Each sha was checked against its tag upstream. The v5-and-later majors of the `actions/*` ones are the Node 24 runtime and an ESM rewrite; our inputs (`go-version-file`, `node-version`, `cache`, `name`, `path`, `tofu_version`) are unchanged in all of them. CI had already run five of the six: every job green except the buf one below. The warning they remove is real — every run said "Node.js 20 is deprecated... being forced to run on Node.js 24".
+- *`actions/upload-artifact` v4.6.2 to v7.0.2, which dependabot never proposed.* It is the other half of `download-artifact`, and the round trip of an upload followed by a download exists in exactly one place, `bump-agents.yml`, which no CI job runs. (The upload side is also in ci.yml, twice, for the Playwright and Lighthouse reports; the `lighthouse-reports` one runs `if: always()` on every PR, so that half is covered.) v8 of the download side errors on a digest mismatch by default and decides whether to unzip from the `Content-Type`; both were added for the upload side's direct uploads. Leaving the pair two majors apart puts the question where nothing would answer it until the daily bump stopped. v5, v6 and v7 of the upload side are the Node 24 runtime, ESM, and the optional `archive` input, which defaults to the zipped upload we already do.
+- *One grouped PR.* `.github/dependabot.yml` groups `github-actions` under one `patterns: ["*"]`, so the week's updates are one PR. The limit had hidden `goreleaser/goreleaser-action` v7, `pnpm/action-setup` v6, `actions/attest-build-provenance` v4 and `install-nix-action` v31.11.2; the first grouped run proposes them together, and they are deliberately not in this branch.
+- *The buf job does not check format.* `bufbuild/buf-action` runs its formatter when the event is a `pull_request` unless the caller says otherwise, and ci.yml only ever set `lint` and `breaking`. So the job passed on every push to `main` and failed on every pull request, with `Format diff -21/+81` and `-34/+130` on the two .proto files; that failure, not any of these bumps, is why all six PRs were red. The .proto files are written compact on purpose, with one-line messages and trailing comments aligned, and `docs/interfaces` quotes them in that shape, so the fix is `format: false` rather than a reformat. The job is named "buf lint and breaking" and now does that.
+**I-818. A machine nobody is using rests, and comes back at once.**
+(idle-pause, 2026-10-20; amends R1-5, I-262 and I-235; the mechanism of
+`../proposals/2026-10-11-pause-idle-machines.md` M2 without its swap, and
+a departure from that proposal's §6) A `running` machine whose project
+passes the rule below has its vCPUs paused with `vm.pause`. Its memory
+stays resident on the host; the hypervisor, virtiofsd, the tap and the
+vsock session stay up. Every process, every socket, every open file and
+every byte of guest memory survive, and the first thing that reaches for
+the machine resumes it. Nothing is stopped, nothing boots, no snapshot is
+taken and no process dies, so R1-5 and I-262 stand in what they defend: a
+machine is still always-on until `stop`, and repose still never stops one
+for being idle. R1-5's "*Revisit when:* the recorded signals show what an
+unattended agent looks like from outside" is the condition this meets --
+the signals have been recorded since day one, and §5 of the proposal is
+what they say. What it buys is CPU, which is what binds a host: one
+tenant's agent at full tilt made every other guest on host-01 type at
+17 ms p50 instead of 2.7 ms (`../proposals/2026-10-14-host-cpu-capacity.md`),
+and an idle machine is not free -- `.claude-wrapped` at its prompt took
+12.2 CPU hours of the prod sample's idle minutes.
+- *The rule.* A running project may rest when its host's `Hello` named
+  the `pause` feature, `keep_awake` is false (I-820), no op is open for
+  it, no gateway session is open, no user timer inside it is due within
+  15 minutes, and each of its last 15 one-minute samples has `guestd_ok`,
+  `ssh_sessions = 0`, `tmux_clients = 0`, every agent `idle` or
+  `needs_input` (anything else, `unknown` included, counts as working),
+  `cpu_ns` under 6 s (0.10 of a core) and `net_rx + net_tx` under 64 KiB.
+  The 6 s line is the proposal's: 3 s fails as soon as Claude sits at its
+  prompt, and the figures for each line are its §5. A container does not
+  block a rest on its own -- CPU and network cover a container doing
+  work, and a port it serves is reached over a forward, which wakes the
+  machine.
+- *The api decides, hostd executes, either may wake.* The proposal wanted
+  hostd to evaluate the rule from its own live samples "so a pause does
+  not wait on the api". It cannot: two of the seven terms exist only in
+  Postgres (an open gateway session, an op in flight) and a third is a
+  column, so hostd would be deciding on a third of the rule. A 15 minute
+  quiet window also makes the api's one-minute sample lag immaterial, and
+  one rule in one place cannot drift from itself. hostd keeps the
+  safeties only it can see: it refuses a pause while it has a command in
+  flight for that guest, while the host is going down, or when the guest
+  is not running, and it wakes a guest itself before anything that needs
+  guestd.
+- *A refusal is not a failure.* `PauseResult.paused` is false with a
+  lower_snake `why_not` for each of those, so the api learns why without
+  an error and the operator metric separates a refusal from a fault.
+- *The contract,* all additive, behind `Hello.features = "pause"` because
+  an older hostd answers a command it does not know `invalid_argument`:
+  `Command.pause_guest = 24` and `wake_guest = 25`, `Result.pause = 17`
+  and `wake = 18`, `GuestStatus.resting_at = 8` (reconciled from bbolt
+  and the hypervisor's `vm.info`, so a hostd restart does not lose the
+  marker), `GuestSample.resting = 17`, and `Event.guest_resting = 16`,
+  which is deliberately not a `GuestStateChanged`: a state change
+  cancels the project's open questions, and an answer is one of the
+  things a wake is for. Migration `0030_resting` adds
+  `projects.resting_since`, `projects.keep_awake` and
+  `meter_samples.resting`.
+- *The state stays `running`,* and `resting` is a marker on it, never an
+  eleventh guest state. `internal/billing/rollup.go` counts a sample with
+  `state = 'running'` as the hours of record, so a new state string would
+  stop billing the minute; the enum is also mirrored in
+  `interfaces/README.md`, hostd's Prometheus labels and the CLI's
+  `--wait`.
+- *Nothing new touches disk.* No host swap, no snapshot image, no fourth
+  home for a secret, and no seat sold twice: the scheduler's arithmetic,
+  I-290's seat and the public text in `billing.md` and `limits.md` are
+  unchanged, because a resting machine holds its plan memory exactly as a
+  running one does. I-828 records what the memory half would need.
+- *It is I-235's own option 1,* which the owner chose first and nobody
+  built: "`stop` pauses the VM and leaves its memory resident on the host
+  ... No image, so no new home for secrets". What I-235 attached to a
+  `stop` this attaches to idleness, and I-652 already set the precedent
+  for the rest of the shape: a guest whose hypervisor is paused keeps its
+  bbolt state `running`, because the state enum is fixed.
+- *Off until a host is told otherwise.* hostd names `pause` in
+  `Hello.features` only where `repose.host.pauseIdle` is set
+  (`--pause-idle`), so the api pauses nothing on a host that has not been
+  switched on. This is I-652's and I-686's pattern.
+- *The mechanism is measured now* (host-stg-01, 2026-10-21, hostd
+  6ff9739, Cloud Hypervisor 53, a `small` guest with both vhost-user
+  devices). I-652 records that a VM **must not be resumed after a
+  snapshot**, because its virtio-fs stops answering; a plain pause is a
+  different path and this is what it does. Held 60 s, 120 s, 300 s and
+  2,101 s: `/nix/store` still read after every one and a binary from it
+  still ran, the boot id never changed, both tmux sessions kept their
+  creation times, and a loop writing a timestamp every two seconds came
+  back with a gap of exactly the pause (61, 300, 2,101 s). `vm.resume`
+  took **9 to 10 ms**, whatever the hold. The figures and what is still
+  owed are `../workstreams/18-idle-pause.md` §7.
+- *The one promise it breaks.* An outbound connection the guest left idle
+  across a rest does not survive one: an echo connection held open across
+  the 2,101 s pause above was gone when the guest came back, and the
+  program holding it read the close rather than hanging (one trial, one
+  far end, so which of the Azure NAT gateway's 30 minutes
+  (`nat_idle_timeout_minutes`) and the far end's own timeout ended it is
+  not separated). Processes, memory and files survive; a socket does not,
+  and the job on the other end of it must reconnect. Whether Claude Code,
+  Codex and an MCP server do reconnect is still unverified, which is why
+  the rule's network term is 64 KiB a minute rather than zero, why
+  `keep_awake` exists (I-820), and why `lifecycle.md` says it in the
+  user's own words.
+- *The guest's clock does not stop,* which the first draft of this entry
+  and of I-822 had wrong. `vm.pause` stops the vCPUs, not the TSC the
+  guest reads time from: across a 120 s pause and a 2,101 s pause the
+  guest's `CLOCK_REALTIME` stayed inside a host-clock bracket taken
+  around the reading, and its uptime advanced by the full wall time.
+  I-233's 10 s of lag is a *snapshot and restore*, where the saved clock
+  is restored with the image, and the freeze's own step is for that path.
+  The step the wake does on this path is therefore a safety net that
+  corrects nothing, and the consequences I-822 names are **not** caused by
+  a clock jump: they are caused by real time passing with nothing in the
+  guest running.
+- *Metrics.* `repose_host_guests_resting`,
+  `repose_host_guest_pause_total{reason,outcome}`,
+  `repose_host_guest_wake_seconds` and
+  `repose_host_guest_wake_failed_total{reason}`, with the alert on a wake
+  that failed or was slow. `GuestdLost` cannot fire for a resting machine
+  (I-824).
+*Rejected:* a snapshot to a file, which I-233 and I-235 already refused
+and which would reset the vsock and restart virtiofsd; host swap, which
+needs a ruling this entry does not have (I-828); an eleventh state (it
+stops billing); the pause or the wake as an op (the engine allows one
+open op per project, and a wake is needed precisely when that op is the
+one waiting, so an op-modelled wake deadlocks against itself); a new
+guestd request for the prepare and the clock step (the version
+negotiation `vsock-guestd.md` promises does not exist, and it would need
+every machine's base rebuilt -- the freeze's `Exec` of `sync` and
+`date -u -s` already does both, so this feature reaches machines that are
+already running); and waking on inbound traffic to the tap, which a
+paused hypervisor never sees.
+
+**I-820. A machine rests unless its project keeps it awake.**
+(idle-pause, 2026-10-20; the proposal's decision 5) The pause is on by
+default, with a per-project `keep_awake` that turns it off. I-235's
+option 5 and I-262 both leaned the other way, and what they rejected was
+an opt-in *stop*: a switch that ends processes is a different thing from
+one that pauses them. Opt-in also earns nothing, because almost nobody
+turns a setting on, while the risk it is meant to cover -- a job that
+looks quiet -- is already carried by the rule's CPU and network terms.
+`keep_awake` is the remedy for the cases those terms miss, and they are
+specific: a job waiting on an outbound connection it must not drop (a bot
+long-polling an API, `gh run watch`, a websocket MCP server). No packet
+arrives to wake such a job, and its traffic can sit under 64 KiB a
+minute.
+- *Where it lives.* A column on `projects`, a field on
+  `PATCH /projects/:id`, a switch in the dashboard's Config rail beside
+  base updates and `machine.nix`, and a word in `repose status`'s setup
+  line. `hold_base_updates` is the precedent end to end, including having
+  no CLI setter of its own. It takes effect at once, with no restart and
+  no command to any host, because the api is what decides a rest; hostd
+  never learns the key, which is why `CreateGuest` and `StartGuest` did
+  not gain a field for it.
+*Rejected:* a `config.toml` key (it is per-project server-side state, not
+a laptop preference, and the laptop is not where the machine's owner
+decides it); a `repose.nix` option (the api would have to parse an
+evaluated guest configuration to answer a question it already has a
+column for); a new CLI verb (nothing else sets a project switch that way,
+and `--multiplexer`'s flag belongs to a start, which this is not).
+
+**I-822. Everything that reaches a machine wakes it first.**
+(idle-pause, 2026-10-20; the proposal's §7, checked against the code) A
+wake is idempotent and cheap: a machine that is already running is
+answered `ok` with `was_resting` false, so a caller may ask for a wake it
+does not know it needs. That is what makes the following safe.
+- *One point covers SSH.* `session.dialGuest` in the gateway is where
+  plain `ssh`, `scp`, VS Code Remote-SSH, every `repose` command that
+  opens a session and the I-223 fast attach all converge -- and the fast
+  attach makes no api call of its own, so no earlier hook could serve it.
+  The wake is asked for there and awaited inside the dial's budget. The
+  route carries `resting` for the log line and nothing refuses on it: the
+  5 s route cache makes the flag stale in both directions.
+- *The op engine wakes before the first guest-bound phase* of every plan
+  that reaches a guest, with a timeout of its own, because an unnamed
+  phase gets ten minutes by default and a failed wake would then be a
+  ten-minute silent hang on the user's `repose ssh`.
+- *The api wakes first* on the questions deliver (a paused
+  `needs_input` agent is only acceptable because the answer wakes it),
+  `secrets set` (the agent guide promises a new value within seconds), a
+  config apply, `GrowFs`, a resize, a stop, a fork and a snapshot the
+  user asked for.
+- *hostd wakes the guest itself* before every caller of
+  `Manager.session` except the sampler, and at a user timer it was told
+  about: before each pause it reads the next elapse from the guest's
+  system manager and dev's user manager, refuses to pause when one is due
+  within 15 minutes, and arms a wake for the rest. `machine.md` promises
+  timers run with nobody attached, and that promise is older than this
+  feature.
+- *The nightly snapshot wakes it too.* `DESIGN.md` promises every
+  snapshot a `fsfreeze -f /` in the guest, and a paused guest runs
+  nothing. hostd's own 03:00 snapshot therefore wakes a resting machine,
+  takes it, and leaves it to rest again after its next 15 quiet minutes:
+  one wake a night, against a crash-consistent snapshot of a machine
+  whose filesystem nobody quiesced. I-594's crash-consistent path stays
+  what it is -- the fallback when a guest cannot answer, not the normal
+  case for a machine that is only asleep.
+- *A thaw clears the marker.* A guest that was resting when the host
+  restarted comes back from its image through I-652's thaw, which
+  restores and resumes it; it comes back awake, and rests again when the
+  rule says so.
+- *The sampler is the one caller that must not wake.* It would wake every
+  resting machine once a minute, which is the feature undone.
+
+**I-824. The pause must never cost a machine its memory.** *Made during
+implementation* (idle-pause, 2026-10-20) Three paths in the tree turn a
+paused guest into a cold boot, which is the exact opposite of what this
+feature promises, and all three were reachable before anything was
+written.
+- *The freeze would have lost it.* `FreezeAll` admits any guest whose
+  bbolt state is `running` with an active unit and then calls `vm.pause`.
+  Cloud Hypervisor refuses a second pause, so the freeze fails, discards
+  the image, counts `unfrozen{reason="failed"}` and lets that guest
+  cold-boot at the next host restart -- I-796's incident, re-created by
+  this feature. The freeze now treats an already-paused guest as paused
+  and snapshots it where it is, and `ch.Fake` refuses a second pause so a
+  test can see the failure instead of passing through it.
+- *`repose start` would have rebooted it.* A paused guest answers no
+  guestd `Sample`, which left `guestd_ok` false, which `guestdDead` reads
+  as a dead environment, which sets `restart: true`, which is a
+  `stop_guest` plus `start_guest`. The user who pressed Start on a frozen
+  machine to make sure it was alive would have ended every process in it.
+- *Any op would have rebooted it.* `ops/recover.go` turns an
+  `apply_config` that fails with `guest_unresponsive` into a full reboot,
+  and `guest_unresponsive` is exactly what a vsock call to a paused guest
+  returns.
+- *The rule that fixes all three at the source:* a resting guest's sample
+  keeps `guestd_ok` **true** and repeats the last guest-written signals it
+  read, with `resting` set and `state` still `running`. guestd is paused,
+  not lost. The same one line keeps I-262's unused notice firing (its
+  `usedSQL` reads `not guestd_ok` as *use*, so without this the notice
+  would go silent for exactly the machines that rest), keeps the
+  `repose_host_guestd_lost` gauge at zero so `GuestdLost` does not page
+  the on-call for every frozen machine, and keeps `repose status` from
+  warning that the environment's agent is not answering. Waking before
+  every op phase is the second guard, so `recover.go`'s path stays
+  unreachable rather than merely unlikely.
+
+**I-826. The word is "frozen", and the marker is the whole surface.**
+(idle-pause, 2026-10-20; amends I-683) I-683 mocked this look behind a
+flag and recorded the owner's word for it: frozen, a six-armed snowflake
+at 13px and the word in `--frost`. The field it reads, `resting`, is now
+real, so the flag, the `frozenSince` term that gated it and the
+Playwright test asserting that a production build shows no frozen machine
+all go. The word is free: "frozen" appears in CLI code only in comments
+about the host-restart freeze and in no string a user reads.
+- *Where it shows.* The `repose ls` STATE cell and the `repose status`
+  header, the dashboard's project row, project page and the plan's memory
+  squares. State that belongs to a row is a column (I-484), so there is
+  no new line under the table, and `up 31h` stays correct beside it,
+  because a pause does not move `started_at`.
+- *The unused line is unchanged and still prints.* It says something
+  else: that a machine nobody has touched for a day is holding plan
+  memory. The two overlap often and are not the same fact. The
+  dashboard's two breakpoints now agree about them, which the mock's did
+  not.
+- *`--frost` is the one cyan in the web app,* and this entry is the
+  allowance `CHECKLIST.md`'s colour grep needs: frozen is painted in
+  cyan-700 (light) and cyan-300 (dark) because blue is spent on links,
+  focus and selection, so a frozen machine painted in the accent would
+  read as a link or as a measure. I-683 shipped the token with no entry
+  to point the grep at; the grep has been red on main since.
+- *Nothing announces a pause.* No notification, no event a user reads, no
+  line on `run` or `attach`. A pause is invisible by design, and a notice
+  about it is help nobody asked for (I-485). A wake that failed is the
+  exception, because that is a failure: it alerts the operator and the
+  user is told why. The mock's "It wakes when you connect." is cut for
+  the same reason -- it narrates what the screen implies and adds a next
+  step nobody asked for.
+
+**I-828. The memory half is not built, and this is what it would need.**
+(idle-pause, 2026-10-20) This entry exists so the next session does not
+read I-818 as half-finished work and finish it. Pausing the vCPUs frees
+CPU, which is what binds a host today. Pushing the guest's memory to
+encrypted host swap would free memory and let a host carry more
+subscriptions than it has seats, and that is a different decision with
+three preconditions, none of which is met: the owner must rule that
+encrypted host swap with a key per boot may hold guest RAM, which amends
+`CLAUDE.md`'s "Secrets have three homes" and `features/secrets.md`; the
+public seat promise in `billing.md` and `limits.md` must say that a host
+carries more subscriptions than seats before one does; and a wake that
+does not fit on a pinned host needs a remedy, since R2-3 pins a project
+to its host and moving one is a restore from Blob. The arithmetic, the
+measured pausable shares and the seat counts are §9 of
+`../proposals/2026-10-11-pause-idle-machines.md`, with the capacity model
+corrected by `../proposals/2026-10-14-host-cpu-capacity.md`. Until those
+three are settled, a frozen machine holds its plan memory exactly as a
+running one does.
+
+**I-852. Two branches numbered one migration 0029; the resting one became
+0030, and the loader is what let it happen.** (conductor, r20261022-1,
+2026-10-22) `launch-metrics` added `0029_usage_attendance` (I-806) and
+`idle-pause` added `0029_resting` (I-818). Both branches were queued
+against the same main, so neither saw the other's number. The batch
+renumbers the resting pair to `0030_resting`, because `launch-metrics`
+was queued first and merges first in queue order. No database had applied
+either number: both branches were unreleased, so prod and every guest were
+at `0028_class_vcpu_ratio`. The comments that name the migration were moved
+with it, in `docs/interfaces/db-schema.md`, `internal/api/meter/ingest.go`,
+`internal/api/store/store.go` and `internal/db/db_test.go`.
+
+The collision is worse than a tie, which is why this entry exists rather
+than a line in a merge commit. `db.Migrations()` keys its map by the
+version integer and fills `Up` or `Down` on whichever file the embedded
+`ReadDir` gives it first. Two names at one version therefore do not fail:
+the second file overwrites the first's script. `ReadDir` is sorted, so
+`0029_resting` created the entry and `0029_usage_attendance` overwrote
+both halves of it. The build, `go vet` and the schema tests all pass. The
+result is a `schema_migrations` row that reads `0029_resting` and holds the
+other migration's SQL, with three columns the api writes to and no
+migration that creates them. Nothing in the repository catches this.
+
+`TestMigrateUpDownUp` is merged from both sides rather than taken from
+one. The resting assertion runs after the first `down 1`, which now
+reverts `0030`. I-806's counted step-down to `0028` replaces the
+hardcoded single `down`. Either side alone leaves the `0028` assertions
+reading a schema two migrations away from the one they describe.
+
+A guard belongs in `Migrations()`: a second name at a version is an
+error, not an overwrite. It is not in this batch, because a loader change
+under a batch this size is its own branch with its own tests. The
+`idle-pause` session is queueing it off main.
+**I-844. The rest rule is evaluated everywhere and obeyed only where the
+host says so, so a fleet can be read before it is touched.**
+(idle-pause-dryrun, 2026-10-21; amends I-818's rule) The `pause` feature
+gated the rule itself: `candidatesSQL` had `$3 = any(h.features)` in its
+WHERE clause, so a host with `repose.host.pauseIdle` off produced no rows,
+and the api knew nothing about what the rule would have done. That is the
+wrong place for the gate. The rule now runs for every running project and
+each candidate carries `HostPauses`; the pause is sent only where it is
+true, and the rest are counted.
+- *Why it matters more than it looks.* The only figures anyone has for how
+  much of a fleet would rest are the proposal's, from three accounts over
+  fourteen days: 29.0 percent of running minutes for the active account
+  under the strict rule, 90.1 percent for a forgotten machine, 47.7
+  percent fleet-wide as an upper bound that leans on that forgotten
+  machine (`../proposals/2026-10-11-pause-idle-machines.md` §5). Nothing
+  has measured it since, and the seat arithmetic in §9 rests on it. With
+  the gate in the WHERE clause the first real measurement would have
+  arrived only after a host was switched on -- which is to say, after the
+  first tenant's machine was frozen.
+- *What it publishes.* `repose_api_resting_candidates{result}` is this
+  minute's picture (`paused`, `would_rest`), and
+  `repose_api_resting_candidate_minutes_total{result}` adds a
+  candidate-minute per tick, so the counter integrates into the
+  machine-hours a fleet would have rested. One log line when the picture
+  changes, not one a minute: at a tick a minute an unchanging fleet writes
+  1,440 identical lines a day. The line carries counts and ids, never
+  anything a tenant typed.
+- *It costs a machine nothing.* A candidate on a host that does not pause
+  is counted and dropped: no command, no marker on the row, nothing any
+  client reads. `TestRestRuleCountsAHostThatDoesNotPause` pins that, and
+  fails with the old gate restored ("the rule stopped seeing the
+  machine").
+- *The label is `result`, not `acts`.* `internal/obs/metrics`' own lint
+  refuses a label outside its low-cardinality list and panics at
+  registration, which is how the first name was caught; `paused` and
+  `would_rest` read better anyway.
+*Rejected:* a `--resting-dry-run` flag (a flag is a thing to forget to
+turn on, and the measurement is worth having for ever, not for one
+window); logging every candidate every tick (1,440 lines a day saying the
+same thing); and counting on the host instead, which cannot see the
+projects whose host never pauses -- the ones the measurement is about.
+
+**I-846. The idle pause is turned on for host-01.** (pause-on-host-01,
+2026-10-21) `repose.host.pauseIdle = true` on the one host that carries
+paying users, which is what puts `pause` in its Hello and lets the api
+pause a machine there. Its own entry and its own commit, the way I-686
+turned the freeze on after staging had proved it, because this is the
+first decision in the set that can cost a tenant something.
+- *What it rests on.* The mechanism is measured, on host-stg-01 on
+  2026-10-21 and not on a dev box: a plain `vm.pause` and `vm.resume` of a
+  guest with both vhost-user devices, held up to 35 minutes, left
+  `/nix/store` readable and a binary from it runnable, never changed the
+  boot id, kept both tmux sessions and a counting loop, and resumed in 9
+  to 10 ms. A freeze of an already-resting guest wrote its image and
+  thawed it back. `hostd wake` answered in 114 ms over a real control
+  socket. The figures are `../workstreams/18-idle-pause.md` §7.
+- *What it does not rest on, and the order that fixes it.* Staging proves
+  nothing of the api (`../../infra/README.md`), so the rule's own
+  judgement on real machines, the marker, the gateway's wake, the CLI and
+  the dashboard arrive here first. I-844 is why that is readable before it
+  is lived: the rule runs for every project whatever its host says, so
+  `repose_api_resting_candidates{result="would_rest"}` and its
+  candidate-minutes say what this fleet would do.
+- *The week was not waited for.* The first draft of this entry said to
+  read a week of those counters before it shipped, and the owner's call on
+  2026-10-22 was to merge it with the batch that carries the dry run
+  instead, so the counters begin and this lands together. What that
+  spends: the rule's judgement on real machines is read after it is
+  already acting rather than before, so the first machine the rule gets
+  wrong is a machine a user finds frozen rather than a line in a metric.
+  What keeps that cheap is `keep_awake` (I-820), which takes effect at
+  once and needs no release, and the fact that a merge is not a switch --
+  host-01 takes the flag only when the conductor switches it, so the
+  counters are readable and `keep_awake` is settable in the window
+  between.
+- *The blast radius is chosen, not accepted.* `keep_awake` takes effect at
+  once (I-820), so every project that must not be frozen is set before
+  this lands and the ones left are the subjects. host-01 carries three
+  guests, one of them the conductor's own.
+- *Rollback is safe, and only because of I-824.* `pauseIdle = false` and a
+  switch stops new pauses, and a host that no longer names the feature
+  still wakes the guests it already froze -- the api gates the pause on
+  the feature and never the wake. Before that fix the runbook's own remedy
+  would have stranded every frozen machine.
+- *The switch is the conductor's,* with the rest of the queue's host
+  changes, not a window of its own (the owner's instruction, 2026-10-21).
+  A switch restarts hostd and leaves guests running; main's kernel pin
+  (I-778) is staged by the same switch and needs a reboot of its own,
+  which is not this.
+**I-842. One limit on what the terminal carries into a guest: 50 MB, for
+a dropped file and a pasted image alike.** (drop-plain, 2026-10-21) The
+owner dropped a 21 MB `pg_dump` on an attached terminal with v0.1.39 and
+got the laptop's path, not a copy.
+- *What the limit was.* `pasteMaxBytes`, 20 MB, written for a clipboard
+  image ("a full-screen 5K screenshot is about 15 MB; more than this is
+  not a screenshot") and then reused for dropped files when I-280 added
+  them. A dump or an archive is an ordinary thing to drag onto a
+  terminal, so the figure refused a normal use. It is now 50 MB.
+- *Why not two limits.* The first draft of this change gave drops their
+  own `dropMaxBytes` of 50 MB and left images at 20 MB. The owner asked
+  why two, and there is no good answer: a user who drops a file and a
+  user who pastes a screenshot are asking for the same thing, the cost
+  is the same (the copy runs on the input proxy's loop, so the keys
+  typed after it wait for the transfer; `/tmp` is not for large files),
+  and two figures mean two things to learn and two places to change.
+  `pasteMaxBytes` is the one number: the drop gate, `repose paste`,
+  Ctrl+V, and the macOS clipboard watcher's own check all read it. The
+  watcher's JXA script had a third copy of the figure as a literal;
+  it now takes the constant through an `@MAX@` placeholder, with a test
+  that the placeholder is gone and the number is there, because a
+  placeholder left in the script is a syntax error that would kill the
+  watcher and with it Cmd+V.
+- *What 50 MB costs.* A few seconds of buffered keys on a home
+  connection, and up to 1 GB in `~/Library/Caches/repose/clipboard` in
+  the worst case rather than 400 MB: the macOS watcher writes a PNG copy
+  of every image-only clipboard, not only the ones that get pasted, and
+  prunes to the newest 20 and a day. Accepted as a cache bound, not a
+  reason for a second limit. `repose cp` still has no cap and holds up
+  nothing.
+- *Why the refusal was invisible.* A refused drop says why with `tmux
+  display-message`. On tmux 3.7c, the guest's own version, a plain
+  status message is cleared by the next key press, and that key still
+  reaches the pane: a drop followed by Enter erases the explanation
+  before it is read. `-N` holds the message for its full delay but
+  swallows every key while it shows (measured both ways on 3.7c with a
+  client on a pty), so it is not an option. The owner chose the higher
+  limit and a line in the docs over any change to the message, so the
+  channel is unchanged.
+- *What the docs say.* /docs/limits gains a "Files you drop or paste"
+  section, since the figure was on the run-and-attach page only;
+  /docs/run-and-attach, /docs/cli's `repose paste` and the guest agent
+  guide all say 50 MB. The limits line is one sentence of limit and one
+  of consequence, as its neighbours are: the owner cut "the status line
+  says why" as narrating the screen (the run-and-attach section says it
+  where the behaviour is) and the list of `Cmd+V`, `Ctrl+V` and `repose
+  paste` as mechanisms a limits page does not name (I-484, I-485).
+- *Not fixed, deliberately.* The two exits in `dropHandler.files` that
+  fall back to the raw paste with no message at all: a path that fails
+  its second `dropFile` check, and a file that cannot be stat'ed. Nor
+  `plainDrop`'s first-byte test, which runs before its trim, so a drop
+  that arrives with a leading space is read as text while the bracketed
+  form accepts it. Both are real and neither is what the owner hit.
+**I-854. Two migrations may not claim one version, and the loader says so
+instead of dropping one.** (migration-version-guard, 2026-10-22) `Migrations()`
+keyed its entries by version alone: the first file read created the entry
+with its name, and a second file at the same version reused that entry and
+overwrote its `Up` or `Down`. One migration's SQL was silently dropped,
+`schema_migrations` recorded the row under the other one's name, and
+nothing failed to build, vet or test. It now returns an error naming both,
+because the fix is to renumber one and the reader needs to know which two
+collided.
+- *It happened.* The batch of 2026-10-22 carried `0029_resting` (I-818)
+  and `0029_usage_attendance` from another branch; the conductor found the
+  pair by hand while resolving and renumbered the first to `0030`
+  (I-852). `fs.ReadDir` is sorted, so the alphabetically later name wins
+  and which migration is lost depends on nothing a reader would think to
+  check. Two branches written in parallel produce this whenever both add a
+  migration, which is the normal shape of work in this repository
+  (`CLAUDE.md`, "Claim before you build").
+- *Why the number is not enough on its own.* The dev tools already catch
+  two lanes taking one decision id (I-745). A migration number is the same
+  kind of shared counter with none of the same protection, and its failure
+  is quieter: a decision-id collision is visible in the file, a dropped
+  migration is visible only as a column that is not there.
+- *`migrationsFrom(fs.FS)`* is the body, and `Migrations()` calls it with
+  the embedded directory, so a test can hand it a pair the real directory
+  cannot hold. `TestTwoMigrationsMayNotClaimOneVersion` fails without the
+  guard ("two migrations at version 2 were accepted; one of them would be
+  silently dropped") and `TestTheEmbeddedMigrationsAreAccepted` keeps the
+  guard off what the repository actually ships.
+*Rejected:* a check in `ops/dev/release-queue add` instead (it would catch
+a collision between a branch and main, not between two queued branches,
+which is the pair that collided); and reserving migration numbers the way
+decision ids are reserved (a number nobody has written yet is a number
+nobody can see is taken, and the loader is where the truth is).
+
+**I-856. A frozen machine is ice, not cyan, and the colour grep needs no
+allowance.** (ui-revamp, 2026-10-22; amends I-826, I-683) I-826 painted a
+frozen machine in the two `--frost` tokens in `routes/layout.css`,
+cyan-700 in the light and cyan-300 in the dark, and existed partly to give
+`CHECKLIST.md`'s colour grep the allowance I-683 had shipped without. The
+Herakraft kit answers the same question differently: `lib/hk/repose.css`
+carries an ice set measured from photographs of window frost, rime and
+glacier ice, hue 200 to 220 and never a saturated cyan, of which only
+`--hk-ice-ink` carries text (#456b86, 5.4:1 on the page; #a1c1de, 10.6:1
+at night). The merge takes the ice set. The `--frost` pair, its four
+usages and the CHECKLIST allowance all go, and the web app now has no
+permitted cyan at all.
+- *I-826's argument is why, not a casualty of this.* Blue is spent on
+  links, focus, the current item and selection, so a frozen machine
+  painted in the accent would read as a link or as a measure. `--hk-accent`
+  is still blue-700 and the ice set is not blue, so the argument holds
+  with a different answer to "then what colour". What does not survive is
+  the sentence that cyan is the one exception: an exception the grep must
+  be told about is worse than no exception, and the owner judged the frost
+  it belongs to on 2026-10-21 after five prototypes.
+- *The word, the places and the silence are unchanged.* `resting` on the
+  wire, "frozen" to a reader, the marker on the whole surface in the five
+  places I-826 lists, the snowflake at 13px, and `up` still correct beside
+  it. Nothing announces a pause: `ProjectMeta` carried
+  "It wakes when you connect." in a `title`, which is still a line the
+  user reads, so it is cut as I-826 cut it from the mock.
+- *The unused line prints beside the frozen one, not inside its chain.*
+  Both branches had built the state cell, and the merge of the two said
+  "unused" twice for a machine that was idle and not frozen. The frozen
+  duration and the unused line now sit in separate tests, each fact once,
+  which is what `frozen.spec.ts` asserts at 1440 and at 390.
+- *The flag and the test that guarded it are gone,* as I-826 said they
+  would be. `ui-revamp` still started a second server with
+  `PUBLIC_FLAG_FROZEN` to see its frost; `resting` is real, so those two
+  frost tests run on the same build as the rest of the suite.
+*Also settled by this merge, without changing either entry:* the logo is
+I-779's dividing cell, not I-363's traced cross, which I-779 superseded
+and `ui-revamp` had restyled in the kit; and its division is the one
+animation outside the kit's single curve and named durations, which I-779
+fixed at 900ms before I-837 named them. `DESIGN-LANGUAGE.md` records both
+under "Logo" and "Motion".

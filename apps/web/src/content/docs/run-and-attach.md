@@ -85,7 +85,7 @@ repose attach
 repose attach todo-app
 ```
 
-It syncs nothing, so attaching from a second computer whose copy is older is safe. A stopped machine starts first, as with `run`.
+It syncs nothing, so attaching from a second computer whose copy is older is safe. A stopped machine starts first, as with `run`. A machine [frozen](/docs/lifecycle#frozen-machines) while you were away takes a second or two to answer the first connection.
 
 Several terminals can be attached at once, from one computer or several. They see the same windows.
 
@@ -139,7 +139,7 @@ repose's messages inside the session (the time zone, new port forwards, copied f
 delivery = "herdr"
 ```
 
-To take a machine out of the sidebar for a while, so herdr's connection doesn't hold it [in use](/docs/lifecycle#unused-machines), disable its entry. Its agents keep running.
+herdr holds an SSH session to every machine in its sidebar, so a machine listed there never reads [unused](/docs/lifecycle#unused-machines) and never [freezes](/docs/lifecycle#frozen-machines). To take one out of the sidebar for a while, disable its entry. Its agents keep running.
 
 ```
 id=$(herdr machine list --json |
@@ -180,7 +180,7 @@ Unlike `attach`, `ps` and `exec` start no machine: a stopped one gets you exit c
 While you're attached, drag a file onto the terminal, or press `Cmd+V` or `Ctrl+V` with an image on your laptop's clipboard. The file is copied to `/tmp/repose-paste/` on the machine and its path there is pasted where your cursor is. Claude Code attaches an image; any other file reaches it as a path it can open, and the shell gets the path as text.
 
 - A file from your checkout isn't copied. You get its path in the machine's checkout, such as `/home/dev/todo-app/docs/mockup.png`; if the machine's copy isn't there yet or differs in size, the file is copied like any other.
-- Drop several files at once to paste several paths. Up to 20 files, 20 MB each. Over either, nothing is copied: you get your laptop's path and the status line says why. [`repose cp`](/docs/sync#single-files) takes the large ones.
+- Drop several files at once to paste several paths. Up to 20 files, 50 MB each. Over either, nothing is copied: you get your laptop's path and the status line says why. [`repose cp`](/docs/sync#single-files) takes the large ones.
 - The copies are `dev`'s own, in a 0700 directory with 0600 files. Each new copy deletes the ones over a day old and all but the newest 50.
 - The copies are named on the tmux status line, `repose: copied report.pdf to the machine`. When an agent asks you to paste a path, that line is how you see what left your laptop. On herdr it's a [herdr notification](#herdr-instead-of-tmux).
 

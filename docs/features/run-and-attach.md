@@ -282,7 +282,7 @@ runs on, so `Ctrl-V` in the guest never sees the laptop's screenshot.
   `xclip -selection clipboard -t image/png -o` when `DISPLAY` is, on
   Linux (the offered types are listed first, so "no image" and "tool
   failed" differ). Windows is refused; WSL is Linux. No image, bytes that
-  are not a PNG, over 20 MB, or no tool: exit 1 before any api call,
+  are not a PNG, over 50 MB (`pasteMaxBytes`, I-842), or no tool: exit 1 before any api call,
   naming the tool to install.
 - One ssh command over the project's multiplexed connection (as `cp`)
   writes stdin to `/tmp/repose-paste/<UTC yyyymmdd-hhmmss-ms>.png` (umask
@@ -361,7 +361,8 @@ with two exceptions:
   2.1.280). A file inside the checkout the CLI was run from (its git
   toplevel, when that checkout is the project's) whose guest copy under
   `$HOME/<slug>` has the same size is not copied: its guest path is
-  typed. Over 20 files or a file over 20 MB: nothing copied, the original
+  typed. Over 20 files or a file over `pasteMaxBytes` (50 MB, the same
+  limit a pasted image has, I-842): nothing copied, the original
   paste goes through, and `tmux display-message` says why. A copy is
   named there too ("copied report.pdf to the machine"), so no file
   leaves the laptop unseen (I-468).

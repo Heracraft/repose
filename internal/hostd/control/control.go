@@ -1,6 +1,7 @@
 // Package control is hostd's local operator API on a unix socket: what
-// `hostd status`, `hostd guests`, `hostd snapshot-all`, `hostd drain` and
-// `hostd reconcile` talk to while the daemon runs.
+// `hostd status`, `hostd guests`, `hostd snapshot-all`, `hostd drain`,
+// `hostd reconcile`, `hostd freeze|thaw` and `hostd pause|wake` talk to
+// while the daemon runs.
 package control
 
 import (
@@ -110,6 +111,7 @@ func Serve(ctx context.Context, path string, b Backend) error {
 		writeJSON(w, "ok", b.OperatorLogin(rep))
 	})
 	registerFreeze(mux, b, writeJSON)
+	registerPause(mux, b, writeJSON)
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := b.ExportState(w); err != nil {

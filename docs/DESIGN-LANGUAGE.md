@@ -63,7 +63,7 @@ variables on `:root` for code outside `.hk`: `--frame-w`, `--frame-x`,
 
 Blue has five jobs: a link, the current item (header, docs sidebar, rail),
 an eyebrow, the focus ring, and the emphasis in a chart or a meter. The
-logo's square is the sixth, and the one brand use. A primary button is
+logo's daughter lobe is the sixth, and the one brand use. A primary button is
 inverted ink, so blue on a page always means "this navigates" or "you are
 here". Text selection is the kit's blue wash.
 
@@ -211,6 +211,14 @@ still, the terminal shows every line, the thumb jumps, and
 `document.getAnimations()` is empty on `/`, `/projects` and a project page
 (design.spec, landing-motion.spec).
 
+Two things move outside that: the landing's drawn pictures, which keep
+their own timings (`LANDING.md`, "Motion"), and the logo's division,
+900ms on `cubic-bezier(0.65, 0, 0.35, 1)`, which I-779 fixed before the
+kit named its curve and which plays once on `/` and again on hover or
+focus of the link (see Logo). Both are brand motion, not a control
+changing state, which is what the one curve and the named durations are
+for.
+
 ## Focus
 
 `:focus-visible` is a 2px `--hk-accent` outline 2px out, 4px corners.
@@ -230,10 +238,56 @@ copy and check glyphs follow the same rule.
 
 ## Logo
 
-The cross-and-blocks mark, its strokes in `--hk-text` and its large square in
-`--hk-accent`, then "repose" in Noto Serif 600 18px at -0.01em (16px in the
-footer). The link's name is "repose, home". Below 640px the header shows the
-mark alone.
+`Logo.svelte` is the I-779 mark (a cell dividing: a mother lobe in the
+text's ink and a smaller daughter in the accent, joined by a thin bridge),
+then "repose" in Noto Serif 600 18px at -0.01em (16px in the footer). The
+mark is in every header (I-381):
+
+- It links to `/` from every page, the dashboard included, named
+  "repose, home", with a 40px hit area (I-655).
+- 28px tall with the word from `sm` up. The word sits 1px under centre,
+  so its baseline is the header links' baseline.
+- Below `sm`: the 24px `sm` cut alone, so the header row fits 320px. The
+  link carries the name. The footer shows the `sm` mark with the word at
+  every width.
+- One drawing at every size. On a 100 grid the lobes sit on a 45-degree
+  axis, the mother 23 and the daughter 21, and a furrow circle of radius
+  18 tangent to both pinches the outline to a bridge of 7. The geometry
+  is generated: `ops/dev/logo-mitosis.py` prints the two paths the
+  component ships, so the mark can be redrawn at other proportions
+  without guessing (I-779).
+- **The furrow is the mark.** Two overlapping circles make a figure of
+  eight; what reads as division is an outline that curves *inward* at the
+  waist. Redrawing it as two discs, or evening the lobes up, is the
+  change that breaks it: the daughter is smaller because the division has
+  not finished.
+- At 16px the bridge is about one pixel and reads as a tint between the
+  lobes rather than a line; the two lobes carry the mark at that size.
+  That is the price of a bridge thin enough to read as mitosis at 28px
+  and up, and it is deliberate (I-779). The favicon
+  (`static/favicon.svg`, `favicon.png`) is this same drawing, not a
+  heavier cut.
+- The mother is `currentColor`, the text's ink in both schemes; the
+  daughter is `--hk-accent`, the sixth job of the accent and the one
+  brand use of blue ("The accent"). I-779 drew it in the landing's
+  `--sh-accent`, which is the same blue before the kit named it. There
+  are no greys in it to hold a floor for, and both shapes hold 3:1 on
+  `--hk-page`, `--hk-surface` and `--hk-sunken` in both schemes.
+- **The division plays as motion**, 900ms, from one body to two (see
+  Motion). `Logo.svelte`'s `divide` prop runs it once; `SiteHeader`
+  passes it on `/` only, so a visitor meets the mark dividing and no
+  other page moves on load. Hover or keyboard focus on the link plays it
+  again, anywhere. It morphs the `d` of both paths between two stages the
+  generator prints; a browser without the CSS `d` property draws the
+  attribute, which is the resting state, and
+  `prefers-reduced-motion: reduce` turns all of it off.
+- **The curve is the exception to "Radii".** The radius scale stops at
+  the kit's tokens and the pages draw rectangles; the mark is drawn in
+  circles, as the landing's sphere is, and nothing else in the system
+  takes a curve from it (I-779).
+- One more rule, paid for (I-779): the mark encloses nothing. opencode's
+  mark is a thick square-cornered O with a filled lower counter, so a
+  ring, a frame or a block inside a box reads as that product.
 
 ## Frame and header
 

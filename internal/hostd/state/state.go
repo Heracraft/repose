@@ -72,7 +72,14 @@ type Guest struct {
 	// starting with no hypervisor (DECISIONS I-645). It is cleared when
 	// the guest next reaches running, and by a stop, a destroy or a
 	// restore. Hello carries it, so the api restarts the guest once.
-	Interrupted *Interrupted      `json:"interrupted,omitempty"`
+	Interrupted *Interrupted `json:"interrupted,omitempty"`
+	// Resting is set while the guest's vCPUs are stopped and its memory
+	// stays resident on the host (DECISIONS I-818): an idle pause. It is
+	// a marker on a guest whose State stays `running`, never a state of
+	// its own, and only a pause and a wake write it. Hello carries it as
+	// GuestStatus.resting_at, so the api knows a guest came back resting
+	// after a hostd restart.
+	Resting     *Resting          `json:"resting,omitempty"`
 	State       string            `json:"state"`
 	Reason      string            `json:"reason,omitempty"`
 	IP          string            `json:"ip"`
@@ -110,6 +117,17 @@ type Interrupted struct {
 	BootID    string    `json:"boot_id"`
 	At        time.Time `json:"at"`
 	PrevState string    `json:"prev_state"`
+}
+
+// Resting records an idle pause (DECISIONS I-818). Since is when the
+// hypervisor was paused; Reason is the lower_snake word the pause was
+// asked for with (`idle`, `operator`); NextTimer is the next user timer
+// elapse hostd read inside the guest before it paused, zero when the
+// guest has none, and is what the armed timer wake fires on.
+type Resting struct {
+	Since     time.Time `json:"since"`
+	Reason    string    `json:"reason,omitempty"`
+	NextTimer time.Time `json:"next_timer,omitempty"`
 }
 
 // MaxPastClosures bounds Guest.PastClosures.

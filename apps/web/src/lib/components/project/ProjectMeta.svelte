@@ -40,11 +40,13 @@
 			><StateDot state={project.state} frozen={!!frozen} /></span
 		>
 		<!-- Frozen reads as the list does, "frozen for 1h35m", with the size
-	     facts every other state shows (review r1 dash-r1-4). -->
+	     facts every other state shows (review r1 dash-r1-4). Nothing says
+	     what wakes it: I-826 cut the mock's sentence about connecting as
+	     narrating what the screen implies, and a title attribute is still
+	     a line the user reads. /docs/lifecycle answers it (I-484,
+	     I-485). -->
 		{#if frozen}
-			<span class="status-frozen" data-testid="frozen" title="It wakes when you connect."
-				>{sinceLabel(frozen, 'for', clock.now)}</span
-			>
+			<span class="status-frozen" data-testid="frozen">{sinceLabel(frozen, 'for', clock.now)}</span>
 		{/if}
 		<span class="status-facts">
 			<span aria-hidden="true">·</span>

@@ -16,6 +16,10 @@
 	/** A signed-in dashboard page: no Pricing, and below sm Docs and Feedback move into the Account menu (I-679, I-841). */
 	let dash = $derived(dashboard && authState.authenticated);
 	let onDocs = $derived(page.url.pathname === '/docs' || page.url.pathname.startsWith('/docs/'));
+	/** The landing plays the mark's division once, where a visitor meets the
+	    brand; every other page shows it still, and a pointer or keyboard
+	    focus replays it anywhere (DECISIONS I-779). */
+	let onLanding = $derived(page.url.pathname === '/');
 
 	// The links' one look: full row height, so the
 	// current one's 1px accent edge lies on the header's rule; accent when
@@ -46,8 +50,8 @@
 			href={resolve('/')}
 			aria-label="repose, home"
 			class="-m-2 flex shrink-0 items-center self-center p-2 focus-visible:-outline-offset-2"
-			><span class="sm:hidden"><Logo size="sm" mark word={false} /></span><span
-				class="hidden sm:inline"><Logo mark /></span
+			><span class="sm:hidden"><Logo size="sm" mark word={false} divide={onLanding} /></span><span
+				class="hidden sm:inline"><Logo mark divide={onLanding} /></span
 			></a
 		>
 		<nav aria-label="Site" class="flex h-full items-stretch gap-4 sm:gap-6">

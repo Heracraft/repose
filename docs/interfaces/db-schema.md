@@ -49,6 +49,14 @@ projects     (id pk, user_id fk, name text, slug text, remote_url text,
               personal_opt_out bool,  -- machine.nix kept off this project (0015, I-490)
               multiplexer text not null default 'tmux'
                 check (multiplexer in ('tmux','herdr')),  -- what the next start runs (0017, I-502)
+              resting_since timestamptz null,  -- when this machine's current rest began (0030, I-818):
+                -- its vCPUs are stopped and its memory is resident, so every
+                -- process survives. null while awake. The state stays 'running',
+                -- which is what bills the minute and what the plan's memory counts.
+                -- Written from hostd's GuestResting event, reconciled from Hello,
+                -- and cleared by any state but running (store.SetProjectState)
+              keep_awake bool not null default false,  -- kept out of the rest rule (0030, I-820);
+                -- effective at once, since the api decides what rests
               disk_held_bytes bigint null, disk_held_at timestamptz null,
                 -- what the volume holds, which the plan's disk counts (0019, I-585):
                 -- the newest sample's thin volume allocated blocks, or, with
@@ -120,6 +128,10 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
               tmux_clients int, agents jsonb, docker_containers int, guestd_ok bool,
               cpu_pressure_us bigint, host_cpu_wait_us bigint, mem_used bigint,  -- 0014, I-493; 0 before it
               root_used bigint, root_size bigint,  -- 0018, I-567: the guest's root filesystem; 0 before it
+              resting bool not null default false,  -- 0030, I-818: the guest was paused for this minute.
+                -- state stays 'running' and guestd_ok stays true (guestd is paused with
+                -- its guest, not lost); false for every row written before 0030 and for
+                -- a guest on a hostd older than I-818
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
@@ -132,6 +144,8 @@ usage_hours  (project_id fk, hour timestamptz, class text, running_seconds int,
               credit_cents bigint,          -- taken from credit_ledger; cost_cents - credit_cents is pushed
               price_version text,           -- PRICING.md "Changing prices"; rows are never repriced
               stripe_usage_record_id text null,  -- 'usage:<project_id>:<hour>', or 'exempt' (I-16)
+              attended_seconds int,         -- seconds of the hour with an SSH session or a tmux client (0029, I-806)
+              unattended_agent_seconds int, -- seconds with an agent working and nobody attached: the product's claim
               gap bool, primary key (project_id, hour))
 
 credit_ledger (id pk, user_id fk, cents bigint, reason text, ref text, created_at)
@@ -246,7 +260,7 @@ user_id) where invited_at is null`, `waitlist(hold_until) where invited_at
 is not null and converted_at is null`.
 
 Migrations `0001_init`, `0002_outbox_sessions_settings`, `0003_billing`,
-`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0026_project_guest_ip_unique`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
+`0004_gateway_session_id`, `0005_abuse_events`, `0006_questions`, `0007_waitlist`, `0008_plans`, `0009_build_log_ts`, `0010_project_expires_at`, `0011_plan_plus`, `0012_host_prev_cert_serial`, `0013_snapshot_sha256` and the later numbered files in `internal/db/migrations` (through `0030_resting`) create all of this; `repose-admin db migrate --down 1` reverts one. Partitions of the
 sample tables are created for the current and next month at start and by
 the daily job, which also drops partitions past retention.
 
@@ -254,6 +268,13 @@ Rules:
 
 - No `delete` of `projects` rows; `destroyed_at` is set and the row stays for
   usage history. `users.deleted_at` likewise.
+- The rest rule (DECISIONS I-818) is the one query that reads
+  `meter_samples` on a schedule rather than once: every minute, the last
+  15 samples of each project that passes the row's own terms, which the
+  `projects(host_id) where state in ('running','starting')` index above
+  already narrows. A frozen machine changes nothing about placement:
+  `host_reservations` counts its class memory and cores while its state is
+  `running`, which is what "the memory stays resident" means.
 - `meter_samples` and `proc_samples` are append-only and never joined to
   from request paths; the hourly rollup reads them once. The one request
   path that reads them is `GET /projects/:id/samples` (I-492): one

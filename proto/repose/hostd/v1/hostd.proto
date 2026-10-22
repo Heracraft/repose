@@ -99,6 +99,13 @@ message GuestStatus {
   string interrupted_boot_id = 6;
   // When hostd recorded the interruption, unix seconds; 0 with no mark.
   int64 interrupted_at = 7;
+  // When this guest was paused, unix seconds; 0 when it is not paused
+  // (DECISIONS I-818). A paused guest's state stays `running`: resting is
+  // a marker on a running guest, never a state of its own. hostd
+  // reconciles it from bbolt and the hypervisor's vm.info at start, so
+  // every Hello after a hostd or api restart carries it again. 0 from a
+  // hostd older than I-818, which the api reads as "not resting".
+  int64 resting_at = 8;
 }
 
 message Hello {
@@ -121,7 +128,9 @@ message Hello {
   int64 host_boot_at = 8;
   // What this hostd can do that an older one cannot, so the api sends a
   // command shape only to a host that takes it. "local_clone": a Restore
-  // may carry `clone` (DECISIONS I-701). Absent from an older hostd.
+  // may carry `clone` (DECISIONS I-701). "pause": PauseGuest and
+  // WakeGuest (DECISIONS I-818). Absent from an older hostd, which
+  // answers a command it does not know `invalid_argument`.
   repeated string features = 9;
 }
 
@@ -187,6 +196,18 @@ message StartGuest {
 message StopGuest { string guest_id = 1; bool snapshot_first = 2; uint32 timeout_s = 3; }
 message DestroyGuest { string guest_id = 1; bool keep_volume = 2; }
 message ResizeVolume { string guest_id = 1; uint64 new_bytes = 2; }
+// PauseGuest stops a guest's vCPUs and leaves its memory resident on the
+// host: every process, socket and open file survives, and the hypervisor,
+// virtiofsd, tap and vsock stay up (DECISIONS I-818). reason is a
+// lower_snake word for the logs (`idle`, `operator`). hostd answers
+// `ok` with a PauseResult that says whether it paused and, when it did
+// not, why: a guest with work in flight is a refusal, not a failure.
+message PauseGuest { string guest_id = 1; string reason = 2; }
+// WakeGuest resumes a paused guest and sets its clock. It is idempotent:
+// a guest that is already running is answered `ok` with was_resting
+// false, so the api may ask for a wake it does not know it needs
+// (DECISIONS I-818).
+message WakeGuest { string guest_id = 1; string reason = 2; }
 message Build {
   string project_id = 1;
   string revision_id = 2;
@@ -269,6 +290,8 @@ message Command {
     Exec exec = 21;
     Drain drain = 22;
     AnswerQuestion answer_question = 23;
+    PauseGuest pause_guest = 24;
+    WakeGuest wake_guest = 25;
   }
 }
 
@@ -298,6 +321,8 @@ message Result {
     SnapshotResult snapshot = 14;
     ExecResult exec = 15;
     StartResult start = 16;  // DECISIONS I-590; absent from a hostd before it
+    PauseResult pause = 17;  // DECISIONS I-818
+    WakeResult wake = 18;    // DECISIONS I-818
   }
 }
 // BootTimings is where one boot's time went, in milliseconds (DECISIONS
@@ -327,6 +352,16 @@ message StartResult {
   uint32 vsock_cid = 6;
 }
 message SnapshotResult { string snapshot_id = 1; string blob_path = 2; uint64 bytes = 3; string sha256 = 4; }  // sha256: hex SHA-256 of the uploaded blob (I-462)
+// PauseResult answers a PauseGuest. paused is false with why_not set
+// when the guest was not paused for a reason that is not a failure: it
+// has a command in flight, it is already paused, the host is going down,
+// or a user timer is due within the hold (DECISIONS I-818). why_not is a
+// lower_snake word, never a sentence.
+message PauseResult { bool paused = 1; string why_not = 2; int64 at = 3; }
+// WakeResult answers a WakeGuest: was_resting says whether this call is
+// what resumed the guest, and wake_ms how long from the resume to
+// guestd's answer (DECISIONS I-818).
+message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
 
 message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
@@ -376,6 +411,13 @@ message GuestSample {
   // fstrim (daily, and at every stop: I-585). DECISIONS I-567.
   uint64 root_used_bytes = 15;
   uint64 root_size_bytes = 16;
+  // The guest is paused (DECISIONS I-818). `state` stays `running`, since
+  // that is what bills the minute; the guest-written signals are the last
+  // ones read before the pause and `guestd_ok` stays true, because guestd
+  // is paused with its guest and not lost. cpu_ns_delta and the net
+  // deltas are the host's own counters and read about zero. False from a
+  // hostd older than I-818.
+  bool resting = 17;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }
@@ -408,6 +450,11 @@ message AgentQuestion {
   // (I-690). Empty on an open and from older hosts.
   string reason = 9;
 }
+// GuestResting is a guest paused or woken (DECISIONS I-818), so the api
+// shows the marker within seconds rather than at the next minute's
+// sample. It is NOT a GuestStateChanged: the guest's state does not
+// change, and a state change cancels the project's open questions.
+message GuestResting { string guest_id = 1; bool resting = 2; int64 at = 3; string reason = 4; }
 message SnapshotDone { string guest_id = 1; string snapshot_id = 2; string blob_path = 3; uint64 bytes = 4; string sha256 = 5; }
 message HostWarning { string kind = 1; string detail = 2; }
 // An operator's SSH login to the host, from the PAM hook that runs
@@ -432,5 +479,6 @@ message Event {
     HostWarning host_warning = 13;
     OperatorLogin operator_login = 14;
     AgentQuestion agent_question = 15;
+    GuestResting guest_resting = 16;
   }
 }

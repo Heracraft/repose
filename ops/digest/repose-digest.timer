@@ -1,0 +1,15 @@
+# 08:00 in the owner's timezone, every day (DECISIONS I-810). Early enough
+# to act on, late enough that the night's rollup has run (the rollup is at
+# :05 past each hour).
+[Unit]
+Description=repose launch digest, daily
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+# A digest that lands at exactly the same second as every other timer on
+# the box is a digest that competes with the backup.
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

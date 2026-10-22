@@ -28,6 +28,7 @@ import (
 	"github.com/heracraft/repose/internal/api/metrics"
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
@@ -56,6 +57,9 @@ type Harness struct {
 	// Questions is repose-ask's store; its worker is not running unless a
 	// test starts it (Questions.Once drives it by hand).
 	Questions *questions.Service
+	// Resting decides what rests and serves the wakes (DECISIONS I-818).
+	// Its tick is not running unless a test drives it (Resting.Once).
+	Resting *resting.Service
 
 	engine       atomic.Pointer[ops.Engine]
 	helloHook    atomic.Pointer[func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error]
@@ -104,6 +108,9 @@ func New(t *testing.T, o Options) *Harness {
 	h.Meter = meter.New(pool, h.Metrics, log)
 	h.Questions = questions.New(pool, h.Events, h.HostMgr, log)
 	h.Events.SetQuestions(h.Questions)
+	h.Resting = resting.New(pool, h.HostMgr, log)
+	h.Events.SetResting(h.Resting)
+	h.Questions.Waker = h.Resting
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
 			if f := h.helloHook.Load(); f != nil {
@@ -114,9 +121,13 @@ func New(t *testing.T, o Options) *Harness {
 			if e := h.engine.Load(); e != nil {
 				e.OnHello(ctx, hostID, hl)
 			}
+			h.Resting.OnHello(ctx, hostID, hl)
 			return nil
 		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
+			if h.Resting.OnResult(ctx, hostID, r) {
+				return
+			}
 			if h.Questions.OnResult(ctx, hostID, r) {
 				return
 			}

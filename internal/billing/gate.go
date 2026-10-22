@@ -106,10 +106,16 @@ func (g *Gate) CheckIn(ctx context.Context, q store.Querier, u *store.User, req 
 		return err
 	}
 	if r != nil {
-		if g.m != nil {
-			g.m.BillingGateRefusedTotal.WithLabelValues(r.Reason).Inc()
-		}
 		plan, _ := r.Detail["plan"].(string)
+		if plan == "" {
+			// subscription_required and suspended carry no plan: the
+			// account has none. The label is never empty, so a panel
+			// grouping by it reads the same word every time (I-802).
+			plan = "none"
+		}
+		if g.m != nil {
+			g.m.BillingGateRefusedTotal.WithLabelValues(r.Reason, plan).Inc()
+		}
 		g.log.Info("compute refused by the billing gate", "event", obs.EventBillingGateRefused, "user_id", u.ID.String(), "reason", r.Reason, "plan", plan)
 		return r
 	}

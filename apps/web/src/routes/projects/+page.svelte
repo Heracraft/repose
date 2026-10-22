@@ -438,11 +438,7 @@
 	<StateDot state={p.state} frozen={!!frozen} />
 	{#if frozen}
 		<span class="sub">{sinceLabel(frozen, 'for', clock.now)}</span>
-	{:else if p.state === 'running' && p.idle}
-		<!-- Nobody on it for a day, holding its memory against the plan
-		     (I-262, I-289, I-617). -->
-		<span class="sub">unused {uptime(p.idle.since)}</span>
-	{:else if p.state === 'running'}
+	{:else if p.state === 'running' && !p.idle}
 		<span class="sub">{upLabel(p.started_at, clock.now)}</span>
 	{:else if p.state === 'stopped'}
 		<span class="sub"
@@ -450,6 +446,16 @@
 				? `last run ${relativeTime(lastActive(p))}`
 				: `made ${relativeTime(p.created_at)}`}</span
 		>
+	{/if}
+	{#if p.state === 'running' && p.idle}
+		<!-- Nobody on it for a day, holding its memory against the plan
+		     (I-262, I-289, I-617). A frozen machine is normally unused as
+		     well, and this line says the other thing: the plan's memory is
+		     still held (I-826). It sits outside the chain above so each
+		     fact is said once and neither hides the other; the stacked row
+		     prints it too. Muted, not amber: status colour stays in
+		     badges, dots and banners (I-837). -->
+		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{/if}
 	{#if p.host_unreachable}
 		<!-- A host going unreachable takes every machine on it at once. -->

@@ -11,10 +11,9 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 35 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The 48 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
-| `alertmanager/repose-route.yaml` | Route and inhibitions: everything to Google Chat through calert, `page` on a faster timer, `Watchdog` only to the Uptime Kuma push monitor (DECISIONS I-648). |
-| `alertmanager/calert/` | calert, the Alertmanager-to-Google-Chat adapter: its config, the message template and a compose file. |
+| `alertmanager/repose-route.yaml` | Route, SMTP and inhibitions: everything emailed by Alertmanager itself, `page` on a faster timer, `Watchdog` only to the Uptime Kuma push monitor (DECISIONS I-648, I-848). |
 | `prometheus/prometheus.yml` | Scrape config: hosts (`:9100`, `:9101`, Fluent Bit `:2021`), edge (`:9102`), api (`:9103`), all over WireGuard. |
 | `prometheus/targets/hosts.yml` | The host list, re-read every minute. Adding a host is one edit here. |
 | `prometheus/wireguard-peer.conf` | How the monitoring server joins the edge's WireGuard hub, and how to check it. |
@@ -42,22 +41,19 @@ other end of those.
    repeat hourly. `api` passes through Traefik's allow-list
    (`coolify/README.md` "The api's metrics"). After loading it,
    `curl -s localhost:9090/api/v1/alerts` lists only `Watchdog` firing.
-3. **Alertmanager, calert and the heartbeat** (DECISIONS I-648).
-   - calert: copy `alertmanager/calert/config.toml` and `message.tmpl` to
-     `/etc/calert/`, then write the Google Chat space's webhook URL into
-     calert's environment without it reaching the shell history, the
-     screen or a log:
+3. **Alertmanager email and the heartbeat** (DECISIONS I-648, I-848).
+   - Email: Alertmanager sends it itself, so there is nothing to install.
+     Put a Resend API key where it can read it, and set the two `to:`
+     addresses and `smtp_from` in `alertmanager/repose-route.yaml` to the
+     address Azure's alerts already use (`alert_email` in
+     `prod.local.tfvars`):
 
      ```
-     read -rsp 'Chat webhook URL: ' u; (umask 077; printf 'CALERT_PROVIDERS__REPOSE__ENDPOINT=%s\n' "$u" > /etc/calert/calert.env); unset u
-     docker compose -f alertmanager/calert/docker-compose.yml up -d
+     read -rsp 'Resend API key: ' k; install -d -m 0750 /etc/alertmanager/secrets; (umask 077; printf '%s' "$k" > /etc/alertmanager/secrets/repose-smtp-password); unset k
      ```
 
-     In Coolify instead, paste the compose file as a service and put
-     `CALERT_PROVIDERS__REPOSE__ENDPOINT` in its Environment tab. calert
-     listens on `127.0.0.1:6000`; if Alertmanager runs in a container
-     without the host network, point the two webhook URLs at calert's
-     service name instead.
+     Readable by the user Alertmanager runs as. The domain is verified
+     already (LAUNCH.md step 2), the username is the literal `resend`.
    - Uptime Kuma: add a monitor of type Push, heartbeat interval 180 s,
      retries 1, with the Chat space as its notification. Kuma must be 2.0
      or later (1.x accepts only GET on push URLs; Alertmanager POSTs), and
@@ -81,6 +77,28 @@ other end of those.
    tables' partitions itself. `sql/partitions.sql` is the same maintenance as
    SQL functions, for an operator whose api is down (`psql -f
    sql/partitions.sql`, then `select * from repose_partitions_maintain();`).
+   `sql/launch.sql` is the launch window's twelve per-account questions
+   (DECISIONS I-804); run it as `grafana_ro`, the same role step 5 creates:
+   `psql "$DATABASE_URL" -f sql/launch.sql`.
+7. **The daily digest** (DECISIONS I-810). One Chat message at 08:00 with
+   the launch numbers, from the box that can reach Prometheus and Postgres
+   at once.
+
+   ```
+   install -m 0755 -D digest/digest.py /opt/repose/ops/digest/digest.py
+   install -m 0644 digest/repose-digest.service digest/repose-digest.timer        /etc/systemd/system/
+   printf 'DATABASE_URL=postgres://grafana_ro:...@.../repose
+'        >/etc/repose-digest.env && chmod 0600 /etc/repose-digest.env
+   systemctl daemon-reload && systemctl enable --now repose-digest.timer
+   ```
+
+   It needs `psql` on PATH and reads the SMTP password from the file
+   Alertmanager already holds (`SMTP_PASSWORD_FILE` in the unit), so it
+   adds no secret. Put `DIGEST_TO` in `/etc/repose-digest.env`.
+   Check it before enabling the timer: `DATABASE_URL=... /opt/repose/ops/digest/digest.py --dry-run`
+   prints the message and sends nothing. A source it cannot reach prints
+   `?` for its own numbers and the rest still goes, so question marks in
+   the first message are an exporter to fix, not a broken digest.
 
 ## Locally
 
@@ -93,8 +111,8 @@ ops/dev/pgcheck.sh                    # schema, synthetic samples, every panel's
 
 Grafana is then on `http://<this box's Tailscale address>:3000` (anonymous
 admin, folder `repose`); Prometheus on `:9090`. `ops/check.sh --grafana` does
-the same thing non-interactively and asserts that seven of the eight
-dashboards loaded (it does not check the overview).
+the same thing non-interactively and asserts that all eight dashboards
+loaded (the overview was missing from the list until I-800).
 
 `docker compose -f ops/dev/docker-compose.yml down -v` removes it, volumes
 included.

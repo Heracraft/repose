@@ -164,6 +164,8 @@ export const patchProject = (
 		hold_base_updates?: boolean;
 		agent_default?: string;
 		personal_opt_out?: boolean;
+		/** Never freeze this machine while it is idle (I-818, I-826). */
+		keep_awake?: boolean;
 		/** null keeps a temporary machine, as `repose keep` does (I-347, api.md). */
 		expires_at?: null;
 		/** Seconds from now, to make one temporary or move its end. */

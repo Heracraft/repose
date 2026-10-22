@@ -72,7 +72,11 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	agent_message: { label: 'message', tone: 'neutral' },
 	guest_state_changed: { label: 'machine', tone: 'neutral' },
 	base_updated: { label: 'base', tone: 'neutral' },
-	idle_running: { label: 'idle', tone: 'attention' },
+	// "unused" is the fixed word for a machine nobody has touched for a
+	// day (I-617): eventverbs.go, `repose ls` and the projects list all
+	// say it, and this card said "idle", which is an agent's state
+	// (I-826).
+	idle_running: { label: 'unused', tone: 'attention' },
 	temp_expiring: { label: 'expiring', tone: 'attention' },
 	temp_destroyed: { label: 'destroyed', tone: 'neutral' },
 	host_moved: { label: 'moved', tone: 'neutral' },

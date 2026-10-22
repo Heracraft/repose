@@ -103,6 +103,24 @@ func (f *Fake) SetResting(projectID string, since *time.Time) error {
 	return nil
 }
 
+// Wakes is how many POST /internal/wake the fake has answered
+// (DECISIONS I-818): one window of an editor opening several connections
+// must be one wake.
+func (f *Fake) Wakes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.wakes
+}
+
+// SetWakeFails makes every POST /internal/wake answer an error, so a
+// gateway test can see what a wake that fails does to a dial and what the
+// user is told (DECISIONS I-818).
+func (f *Fake) SetWakeFails(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.wakeFails = v
+}
+
 // SetGuestIP sets a running project's guest address (tests point it at an
 // in-process sshd).
 func (f *Fake) SetGuestIP(projectID, ip string) {

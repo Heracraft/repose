@@ -46,6 +46,8 @@ commands:
   reconcile      re-read units and volumes; --rebuild rebuilds a lost state.db
   freeze         freeze every running guest to its encrypted image (--shutdown: from the shutdown unit)
   thaw           restore every frozen guest now
+  pause          stop one guest's vCPUs, its memory left resident (hostd pause <guest_id>)
+  wake           resume one paused guest (hostd wake <guest_id>)
   state export   print the state as JSON (daemon running or not)
   state import   load a JSON export into an empty state.db (daemon stopped)
   audit-login    PAM hook: record an operator login
@@ -85,6 +87,7 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.BoolVar(&o.NoWG, "no-wg", false, "accepted for one release and ignored: hostd writes host.json only and the host renders wg0.conf from it (DECISIONS I-137)")
 	fs.StringVar(&o.Substituters, "substituters", "", "nix substituters for builds, space separated (default cache.nixos.org; the host module adds the overlay cache)")
 	fs.StringVar(&o.LogLevel, "log-level", "info", "log level: debug, info, notice, warn, error")
+	fs.BoolVar(&o.PauseIdle, "pause-idle", false, "rest a guest nobody is using: its vCPUs stop and its memory stays resident, and anything that reaches the machine wakes it (DECISIONS I-818). Off until a host is measured: a plain vm.pause and vm.resume of a guest with two vhost-user devices has not been")
 	fs.BoolVar(&o.Freeze.Enabled, "freeze", false, "freeze running guests to an encrypted image when the host shuts down, and restore them at the next start (DECISIONS I-652)")
 	fs.StringVar(&o.Freeze.KeyVaultURL, "freeze-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
 	fs.StringVar(&o.Freeze.KeyName, "freeze-key-name", "", "name of that key")
@@ -201,7 +204,7 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 		return printJSON(s)
 	case "guests":
 		gfs := flag.NewFlagSet(cmd, flag.ExitOnError)
-		asJSON := gfs.Bool("json", false, "print the guests as JSON, with each one's interrupted mark (DECISIONS I-645)")
+		asJSON := gfs.Bool("json", false, "print the guests as JSON, with each one's interrupted mark (DECISIONS I-645) and resting mark (I-818)")
 		if err := gfs.Parse(args); err != nil {
 			return 2
 		}
@@ -226,7 +229,13 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 			if store == "" {
 				store = "-"
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.GuestID, g.ProjectID, g.Class, g.State, g.IP, g.Unit, g.Virtiofsd, store, gd, g.Reason)
+			// Resting is a marker on a running guest, not a state of its
+			// own (DECISIONS I-818), so it reads in the state cell.
+			st := g.State
+			if g.Resting {
+				st += " (resting)"
+			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", g.GuestID, g.ProjectID, g.Class, st, g.IP, g.Unit, g.Virtiofsd, store, gd, g.Reason)
 		}
 		return failIf(tw.Flush())
 	case "snapshot-all", "snapshot":
@@ -335,6 +344,32 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%d\t%s\n", r.GuestID, r.Outcome, r.Ms, r.ImageBytes, r.Reason)
 		}
 		return failIf(tw.Flush())
+	case "pause", "wake":
+		if len(args) == 0 {
+			return fail(errors.New("hostd " + cmd + " <guest_id>"))
+		}
+		if cmd == "pause" {
+			res, err := cc.Pause(ctx, args[0], "operator")
+			if err != nil {
+				return fail(err)
+			}
+			if !res.GetPaused() {
+				fmt.Printf("not paused: %s\n", res.GetWhyNot())
+				return 0
+			}
+			fmt.Println("paused")
+			return 0
+		}
+		res, err := cc.Wake(ctx, args[0], "operator")
+		if err != nil {
+			return fail(err)
+		}
+		if !res.GetWasResting() {
+			fmt.Println("already running")
+			return 0
+		}
+		fmt.Printf("woken in %d ms\n", res.GetWakeMs())
+		return 0
 	case "audit-login":
 		hostID := ""
 		if id, err := register.Load(o.StateDir); err == nil {

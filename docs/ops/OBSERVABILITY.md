@@ -13,7 +13,7 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
 Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (Grafana Postgres datasource, read-only role)
-personal server        Loki, Prometheus, Grafana, Alertmanager, calert (Google Chat to the owner)
+personal server        Loki, Prometheus, Grafana, Alertmanager (emails the owner)
 ```
 
 Every exporter binds the host's WireGuard address and nothing else; a repose
@@ -29,7 +29,11 @@ ship goes over the edge's WireGuard.
 ## Looking at one project
 
 1. `repose-admin projects show <id-or-slug>`: state, host, class, last
-   snapshot, current signals, cost today. Start here.
+   snapshot, current signals. Start here. It prints no cost: plan-v1
+   prices nothing, so every cents column in `usage_hours` is zero, and
+   the row that read them printed `$0.00` for every project (I-808). What
+   an account owes is its plan, its egress against the allowance, and the
+   disk its projects hold: `repose-admin billing show <handle>`.
 2. Grafana "Per-guest resources", variable `project_id`: CPU, memory, net,
    disk, and the signals timeline (sessions, tmux clients, agent state)
    from `meter_samples`.
@@ -89,18 +93,107 @@ at every restart alerts once and then never again. hostd keeps the totals
 beside its freeze records (`/var/lib/repose/hostd/freeze/.tally.json`)
 and publishes them at each start, so the series only ever rises.
 
+The idle pause (DECISIONS I-818): a running guest nobody is using has its
+vCPUs paused, and `repose_host_guests_resting` is how many on the host are
+in that state. `repose_host_guest_pause_total{reason,result}` counts
+`PauseGuest` commands alone: its `reason` is what asked for the *pause*
+(`idle` for the api's rule, `operator` for `hostd pause`) and its
+`result` what came of it (`paused`, `refused` for a `why_not` the api
+retries, `failed`). The reason enum is shared with the wake side, so the
+wake words (`connect`, `op`, `answer`, `keep_awake`, `timer`, `command`,
+`other`) exist on this counter at zero and must not be read as wakes.
+A wake's reason and result are the api's
+`repose_api_resting_wake_total{reason,result}`: `reason` is what reached
+the machine (`connect` a session through the gateway, `op` an op's wake
+phase, `answer` an answer carried to a waiting agent, `keep_awake` the
+switch being turned on) and `result` is `woken`, `awake` (nothing to
+wake) or `failed`, so
+`sum by (reason) (increase(repose_api_resting_wake_total[1h]))` is the
+breakdown of wakes by what asked for them.
+`repose_host_guest_wake_seconds` is
+the wake hostd measured and `repose_host_guest_wake_failed_total{reason}`
+the step a wake failed at (`resume`, `guestd`, `state`), which hostd sees
+only for a wake that reached it; the event is
+`guest_resting`, and a failed wake logs at Error with the step as
+`phase`. Two things to know before
+reading anything else about a frozen guest: its sample keeps `guestd_ok`
+true and repeats the last signals hostd read, so it is never in
+`repose_host_guestd_lost` and `GuestdLost` cannot fire for one; and its
+state stays `running`, so `repose_host_guests{state}` and the billing
+rollup count it exactly as a busy guest. A frozen guest's CPU series goes
+to about zero while its memory series does not move, which is the pair to
+look for in "Per-guest resources" before concluding a machine is wedged.
+
+Before a host is switched on, the rule still runs for its machines and
+says what it would have done (I-844):
+`repose_api_resting_candidates{result="would_rest"}` is how many machines
+it picked this minute and left alone, and
+`increase(repose_api_resting_candidate_minutes_total{result="would_rest"}[7d]) / 60`
+is the machine-hours a week of them adds up to. That is the number the
+feature is argued from -- the proposal estimated 29 to 48 percent of
+running time from three accounts -- so read it for a week before asking
+for `repose.host.pauseIdle` on a host that carries anyone. Loki
+`{component="api"} | json | event="resting_rule"` writes one line each
+time the picture changes.
+
+## The launch numbers
+
+Liveness was instrumented and margin was not: before I-800 no dashboard
+and no alert read `repose_api_seats_total`, and no revenue figure existed
+anywhere. Three places answer the money questions now.
+
+1. Grafana "Billing", row **The money**. MRR and what is in trial; seat
+   **fill** (`seats_held / seats_total`, the margin number: ladder C
+   clears an AX162-2 at 22 of its 30 Solo seats, so 75 percent is break
+   even) and seat **use** (the memory actually running over the memory the
+   sold seats may run, which is capacity bought and idle); and the three
+   seat lines, delivered, sold and running.
+2. `ops/sql/launch.sql` (I-804). Twelve queries for what cannot be a
+   Prometheus series because it is per-account: signups and how many ever
+   ran a machine, the trial funnel by plan, activation in the product's own
+   terms, the subscribers who have gone quiet, cohort retention, the
+   founding offer's burn, the plan mix with its waiting downgrades, MRR
+   that left, the dunning list, the waitlist's throughput and what it
+   wasted, disk against the plan, and the ops still open. Run them with
+   `psql "$DATABASE_URL" -f ops/sql/launch.sql`, as `grafana_ro`.
+3. The daily digest (I-810): `ops/digest/digest.py`, a timer on the
+   personal server, one email at 08:00 with the eight numbers worth
+   reading every day in the launch window. It sends through the same SMTP
+   password Alertmanager uses, so it adds no secret. A source that is down
+   prints `?` and the rest of the message still goes.
+
+Activation is the one of these the product is sold on: `usage_hours` keeps
+`attended_seconds` and `unattended_agent_seconds` per project-hour (I-806),
+so "the agent kept working after the laptop closed" is a number. It cannot
+be backfilled -- `meter_samples` is kept 90 days and `usage_hours` for
+ever -- which is why it shipped before launch rather than after.
+
 Billing (DECISIONS I-289, I-604): `repose_api_billing_webhook_total{kind,result}`
 counts Polar webhook deliveries (`ok`, `duplicate`, `ignored` for an
 event about a customer or product repose does not know (I-678),
 `bad_signature`, `error`), `repose_api_billing_overage_charges_total{result}` the egress
-overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason}` the
-`payment_required` refusals, `repose_api_billing_subscriptions_total{plan,status}`
+overage events sent to Polar's meter, `repose_api_billing_gate_refused_total{reason,plan}` the
+`payment_required` refusals (the plan since I-802, which separates an
+upgrade from a plan shape that is wrong), `repose_api_billing_subscriptions_total{plan,status}`
 the subscription events applied and `repose_api_billing_stops_total{reason}`
 the machines the api stopped for billing. The log lines are
 `webhook_received` (kind, result), `overage_charged` (user_id, result,
 cents, gb), `gate_refused` (user_id, reason, plan) and `disk_over_plan`
 (user_id, plan; once a period, with its email, I-585): never the body of a
 webhook, an email, a card or an amount a tenant typed.
+
+`repose_api_subscriptions{plan,status}` is the live subscriptions and
+`repose_api_mrr_cents{status}` the plan revenue a month they stand for
+(I-802). Both are set from the minute tick, which runs in `api-grpc` alone (the
+ticks live in the grpc arm of `App.Run`), so they are scraped on its
+published port and not through the HTTP process's Traefik route. Read
+them with `max()`, never `sum()`, so a second instance cannot double
+them. MRR is the api's reading of the `subscriptions` table at
+the plan table's prices, with the founding discount taken off while it
+runs; Polar is the ledger of what was actually charged, and the two are
+reconciled by hand. It is right only while one list price per plan is
+live, because no price is stored per subscription
+(`proposals/2026-10-11-price-level.md` §6).
 
 The fleet as a whole: `repose_api_seats_total` and `repose_api_seats_held`
 are the seats (8 GB running at once each, DECISIONS I-290; per ready host
@@ -224,8 +317,9 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 ## Alerts
 
 The rules in `ops/alerts.yaml`, routed by Alertmanager
-(`ops/alertmanager/repose-route.yaml`) through calert to the owner's Google
-Chat space. A `page` goes out after 20 s and repeats hourly; the rest wait for
+(`ops/alertmanager/repose-route.yaml`), emailed by Alertmanager itself to
+the address Azure's alerts use (I-848; I-648 sent them to Google Chat
+through calert, which put an unwatched process in the alert path). A `page` goes out after 20 s and repeats hourly; the rest wait for
 their group and repeat every 12 hours. The always-firing `Watchdog` goes
 only to an Uptime Kuma push monitor, which posts to the same space when the
 pushes stop, so a dead Prometheus or Alertmanager is heard too, and a

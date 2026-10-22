@@ -49,6 +49,10 @@ Data your machines send to the internet counts against the plan's allowance for 
 - `repose logout` revokes your certificates, and the connections they opened close within 30 seconds, on any device.
 - An update to the SSH gateway leaves open connections running. A restart ends them all at once, and `run`, `attach` and `open` [come back on their own](/docs/run-and-attach#detach-and-come-back).
 
+## Files you drop or paste
+
+- A file [dropped on an attached terminal](/docs/run-and-attach#drop-a-file-or-paste-an-image), or an image pasted there, is copied up to 50 MB, and 20 files in one drop. Over either, nothing is copied. [`repose cp`](/docs/sync#single-files) has no limit.
+
 ## Disk and console
 
 - Disk reads and writes together are limited by size: `small` 2,000 operations a second and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.

@@ -162,6 +162,10 @@ func connectFast(ctx context.Context, e *Env, project *Project) (target sshTarge
 		return target, true, nil
 	}
 	timingf("connect: files cover the project, no ssh master")
+	// As the full path: a frozen machine is woken inside the dial, and
+	// this path has no api call of its own to learn it from, so it takes
+	// what the caller already read (I-822).
+	e.waitFrozen(project)
 	slow, done := e.connectingPhase(project.Slug)
 	defer done()
 	err = waitForSSH(ctx, target, e.sshWait(), slow, certRefusalHandler(func() error {

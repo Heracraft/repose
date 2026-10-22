@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-vi.mock('$lib/flags', () => ({ FROZEN_LOOK: true }));
 
 import MemoryMeter from './MemoryMeter.svelte';
 
@@ -54,9 +53,9 @@ describe('MemoryMeter', () => {
 		expect(r.tick).toBe(false);
 	});
 
-	it('is a grey track with nothing running', () => {
+	it('is a grey track with nothing running, and does not name frozen', () => {
 		const r = draw({ running: 0, limit: 16 });
-		expect(r.split).toEqual(['0 GB running', '0 GB frozen', '16 GB left']);
+		expect(r.split).toEqual(['0 GB running', '16 GB left']);
 		expect(r.spans).toEqual([]);
 		expect(r.neutral).toBe(true);
 	});

@@ -27,9 +27,16 @@ import (
 // tests, whose fake guest shares this machine's /tmp, use their own.
 var pasteGuestDir = "/tmp/repose-paste"
 
-// pasteMaxBytes caps one image. A full-screen 5K screenshot as PNG is
-// about 15 MB; more than this is not a screenshot.
-const pasteMaxBytes = 20 << 20
+// pasteMaxBytes caps one thing carried into the guest through the
+// terminal: an image off the clipboard (`repose paste`, Ctrl+V) or a
+// file dropped on an attached terminal (I-280, I-842). One number,
+// because a user who drops a file and a user who pastes an image are
+// asking for the same thing and the cost is the same: the copy runs on
+// the input proxy's loop, so the keys typed after it wait for the
+// transfer, and /tmp is not for large files. `repose cp` has no cap and
+// holds up nothing. 50 MB is a few seconds on a home connection; a
+// full-screen 5K screenshot as PNG is about 15 MB.
+const pasteMaxBytes = 50 << 20
 
 // pasteKeep bounds the directory: files older than a day go, and at most
 // this many of the newest stay.

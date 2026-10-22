@@ -152,8 +152,13 @@ type Fake struct {
 	hits                 map[string][]time.Time
 	hosts                []Host // nil means the one canned host
 	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
-	sessions             []SessionReport
-	questions            []*Question // newest last (DECISIONS I-245)
+	// wakeFails makes POST /internal/wake answer an error, so a gateway
+	// test can see what a failed wake does to a dial (DECISIONS I-818).
+	wakeFails bool
+	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
+	wakes     int
+	sessions  []SessionReport
+	questions []*Question // newest last (DECISIONS I-245)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
 	bill billingState
@@ -654,6 +659,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/public/seats", f.publicSeats)
 	// Internal (gateway).
 	f.handle("GET /v1/internal/route", f.internalRoute)
+	f.handle("POST /v1/internal/wake", f.internalWake)
 	f.handle("GET /v1/internal/revoked", f.internalRevoked)
 	f.handle("GET /v1/internal/ca", f.internalCA)
 	f.handle("POST /v1/internal/sessions", f.internalSessions)

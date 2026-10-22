@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 	"github.com/heracraft/repose/internal/hostd/freeze"
 	"github.com/heracraft/repose/internal/hostd/guest"
 	"github.com/heracraft/repose/internal/hostd/lvm"
@@ -173,4 +174,15 @@ func refreshKeyAtStart(ctx context.Context, s freeze.Sealer, log *slog.Logger) {
 			log.Warn("image key not fetched at start", "event", "guest_freeze", "err", err.Error())
 		}
 	}()
+}
+
+// PauseOne implements control.PauseBackend: `hostd pause <guest>`
+// (DECISIONS I-818).
+func (d *Daemon) PauseOne(ctx context.Context, guestID, reason string) (*hostdv1.PauseResult, error) {
+	return d.mgr.PauseGuest(ctx, guestID, reason)
+}
+
+// WakeOne implements control.PauseBackend: `hostd wake <guest>`.
+func (d *Daemon) WakeOne(ctx context.Context, guestID, reason string) (*hostdv1.WakeResult, error) {
+	return d.mgr.WakeGuest(ctx, guestID, reason)
 }

@@ -32,6 +32,17 @@ written so none of them goes unnoticed again.
       new log calls.
 - [ ] A metric or log event exists for the new failure modes (see
       `ops/OBSERVABILITY.md`). Evidence: named in the PR description.
+- [ ] A new migration takes the next free version, and the loader proves
+      it: two files claiming one version is an error, not an overwrite
+      (DECISIONS I-854). Evidence: `go test ./internal/db -run
+      TestTwoMigrationsMayNotClaimOneVersion` passes, and `ls
+      internal/db/migrations | sed 's/\.\(up\|down\)\.sql$//' | sort -u |
+      cut -c1-4 | uniq -d` prints nothing (the dedupe matters: every
+      version has an up and a down, so counting filenames reports them
+      all). The
+      failure this prevents: two branches written in parallel both add
+      `00NN_`, the second read overwrites the first's script, and the
+      columns of one of them are never created on any database.
 - [ ] Tests: unit tests for logic; an integration test against a real
       Postgres for anything touching the schema; a host-level test for
       anything in hostd that touches LVM, nftables, CH, or nix, run on a real
@@ -165,6 +176,12 @@ entry and this list with it. Counts as of 2026-10-21.
       `apps/web/package.json` and the landing's pictures (I-843);
       under reduced motion `document.getAnimations()` is empty on `/`,
       `/projects` and a project page (design.spec, landing-motion.spec).
+- [ ] Every picture stops on its final frame when reduced motion turns on
+      mid-session. Evidence: `rg --files-without-match watchReducedMotion
+      apps/web/src/lib/components/landing/{Hero,OneCommand,ComesBack,Browser,Localhost}.svelte`
+      prints 0 lines. The suites above read the setting at load; this is
+      the five drawn pictures answering a change made while the page is
+      open (I-397, and the pictures restored by I-843).
 - [ ] Sizes come from the scale. Evidence: `rg -n
       'text-\[[0-9.]+(px|rem|em)\]' $W --glob '*.svelte'` and `rg -n
       '![pm][xytrbl]?-' $W --glob '*.svelte'` print 0 lines.
@@ -254,15 +271,32 @@ entry and this list with it. Counts as of 2026-10-21.
       (R3-20) stays a fallback; I-39 records the v7 sizes used.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
-- [ ] **Paging reaches a human.** The Google Chat adapter (calert) and its
-      webhook secret are on the personal server, and Alertmanager's route
-      and rules are loaded (`ops/README.md` step 3). Evidence: a test alert
-      (`amtool alert add alertname=ReposeTest ...`) arrives in the Chat
-      space, and an Uptime Kuma Push monitor (180 s) alerts there when
+- [ ] **Paging reaches a human.** Alertmanager's SMTP password is on the
+      personal server, and its route and rules are loaded (`ops/README.md`
+      step 3). Evidence: a test alert
+      (`amtool alert add alertname=ReposeTest ...`) arrives by email,
+      and an Uptime Kuma Push monitor (180 s) alerts when
       Alertmanager stops pushing. Until this is closed every Prometheus
       page, including the host-down ones, reaches nobody: the 2026-10-10
       outage paged no one because `ntfy.herakraft.co` answered 503 on every
       path (DECISIONS I-648).
+- [ ] **Prometheus scrapes the HTTP api process.** `api-grpc` publishes a
+      host port and is scraped directly; `api` publishes none, because a
+      published port would stop its rolling deploys (I-2), so its
+      `/metrics` is reached only through the Traefik router — and that
+      router needs ten custom labels pasted into Coolify by hand
+      (`ops/coolify/README.md` "The api's metrics", I-133). Nothing else
+      asserts that anyone pasted them. What is lost while `job="api"` is
+      down is everything counted on an HTTP request: `ApiErrors` has no
+      series to read, the gate-refusal panel is empty, and
+      `BillingWebhookErrors` cannot fire — so a Polar delivery that is
+      trusted and not applied, which leaves a subscription Polar believes
+      in and the api does not, is silent. The money row is not affected:
+      its gauges are set by the background ticks, which run only in
+      `api-grpc` (DECISIONS I-800, I-802). Evidence: `up{job="api"}` is 1
+      in Prometheus, and `curl` of
+      `https://api.repose.herakraft.co/metrics` from outside the tunnel
+      answers 403.
 - [ ] **The Azure alert path is proven**, not just created. Evidence: the
       portal's **Test** on action group `repose-prod` delivers to
       `alert_email`. `az monitor action-group test-notifications create`
@@ -348,13 +382,13 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       routing them to the owner's Alertmanager is part of the WireGuard
-      peer that `10-observability.md` §9 still has open. Since I-738 there
-      are 36 rules, and the route (`ops/alertmanager/repose-route.yaml`)
-      pages to Google Chat through calert with a Watchdog heartbeat to
-      Uptime Kuma; `ops/check.sh` proves each receiver with `amtool config
-      routes test`. Delivery is live only once the owner installs calert,
-      the Kuma monitor and the route on the personal server
-      (`ops/README.md` step 3) and one test alert reaches the space.
+      peer that `10-observability.md` §9 still has open. There are 48
+      rules, and the route (`ops/alertmanager/repose-route.yaml`) emails
+      pages from Alertmanager itself with a Watchdog heartbeat to Uptime
+      Kuma; `ops/check.sh` proves each receiver with `amtool config routes
+      test`. Delivery is live only once the owner puts the SMTP password
+      and the Kuma push URL on the personal server and merges the route
+      (`ops/README.md` step 3) and one test alert arrives.
 - [x] Privacy policy and terms published, containing the process-sample
       boundary verbatim and the Anthropic hosted-use statement (users
       authenticate with their own credentials; the platform stores none).

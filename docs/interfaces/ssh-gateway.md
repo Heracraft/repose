@@ -64,7 +64,12 @@ Two CAs, both ed25519, private keys in the api's secret store:
    then \`repose start todo-app\``, reason `no_address` (DECISIONS I-721).
    Before I-721 both were the unreachable-host banner, which told the
    user something false and unactionable. Neither is a certificate
-   refusal: the CLI keeps waiting and spends no re-issue on either. If the
+   refusal: the CLI keeps waiting and spends no re-issue on either. A
+   `running` project whose answer carries `resting` (DECISIONS I-818) is
+   frozen: its vCPUs are stopped and its memory and every process are
+   still there. Nothing is refused for it here -- the route answer is
+   cached for five seconds, so the flag is stale in both directions --
+   and the wake happens at the dial, item 4. If the
    certificate's principals do not contain the project id, reject with
    `certificate not valid for this project`. Every banner ends in a newline,
    and a connection shows one: the plain key ssh offers after a refused
@@ -78,6 +83,21 @@ Two CAs, both ed25519, private keys in the api's secret store:
    SSH session to `guest_ip:22` over WireGuard and relay channels between
    the two (session, `direct-tcpip` for `-L`, `forwarded-tcpip` for `-R`,
    pty requests, window changes, signals, exit status).
+   A route that said `resting` is woken first: `POST /internal/wake`,
+   awaited under its own `WakeTimeout` (8 s), and only then the dial with
+   its own full budget (DECISIONS I-818). This is the one point every
+   user-facing SSH action converges on -- plain `ssh`, `scp`, VS Code
+   Remote-SSH, every `repose` command and the fast attach, which makes no
+   api call of its own -- which is why the wake is here and not in the
+   authentication above, where the 10-second handshake limit of item 1
+   and the per-source cap of 4 handshakes both bind. One wake per project
+   is in flight however many connections ask at once, and a successful
+   wake drops that login's cached route. A wake that fails is a dial
+   failure with reason `wake_failed`, and the client is told
+   `environment is frozen and did not wake; try again shortly` on stderr
+   with exit status 255 -- not "not accepting connections yet", which
+   would be false of a machine full of running processes. It is not a
+   certificate refusal, so the CLI keeps retrying within its own budget.
    The gateway authenticates to the guest with a **gateway-issued
    certificate**: 5-minute validity, principal = project id, `key_id`
    suffixed `:via-gateway`, signed by the User CA with the gateway's own key

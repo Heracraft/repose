@@ -30,8 +30,9 @@ policy designed without a month of data is a guess.
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
 - Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, routed by the existing Alertmanager to the owner's
-  Google Chat space through calert (DECISIONS I-648).
+  `../CHECKLIST.md`, emailed to the owner by the existing Alertmanager
+  (DECISIONS I-648, amended by I-848: Chat needed calert beside
+  Alertmanager to translate the webhook, and nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
   Postgres (partition drops, see `interfaces/db-schema.md`).
@@ -84,7 +85,12 @@ component must emit:
   `store_warning`, `egress_blocked` (a guest over a block's threshold,
   DECISIONS I-238..I-240), `boot_fallback` (a boot that never reached
   Ready booted the guest's last good closure; carries the code, never
-  console text, I-590).
+  console text, I-590), `guest_resting` (the idle pause, I-818: a pause
+  carries the `reason` it was asked for and, when hostd refuses, the
+  `why_not`; a wake carries `wake_ms`, and a wake that failed logs at
+  Error with the step as `phase`). `guest_resting` is a literal beside
+  the constants in `internal/obs/events.go`, as `guest_freeze` and
+  `guest_thaw` are.
 - guestd: `ready`, `freeze`, `thaw`, `freeze_timeout`, `switch`,
   `agent_event`, `agent_state`, `oom_priority` (I-200, counts only),
   `hook_bad_payload`, `agent_question` (I-244: ids, states, counts and
@@ -104,7 +110,10 @@ component must emit:
   `notify_send`, `notify_fail`, `admin_action`, `abuse_stop` (I-239),
   `waitlist_join`, `waitlist_admit`, `waitlist_admit_fail` (I-269),
   `boot_fallback` (a start whose boot fell back, I-590), `op_console`
-  (a failed boot's console not stored; never its text, I-592).
+  (a failed boot's console not stored; never its text, I-592),
+  `guest_wake_fail` (a frozen machine the api could not wake, I-818:
+  `project_id` and the `reason` the wake was asked for, never the
+  caller's own words beyond a lower_snake enum).
 - gateway: `session_open`, `session_close`, `auth_fail` (reason enum:
   `bad_cert|expired|revoked|wrong_principal|stopped|not_found`; since
   I-599 also `counted` and, when it counts towards the source's ban,
@@ -117,13 +126,19 @@ component must emit:
 
 ### Metrics
 
-Prefix `repose_`. Labels are low-cardinality only: `component`, `host_id`,
-`class`, `state`, `kind`, `reason`, `route`, `status`. `project_id` and
-`guest_id` are never labels in Prometheus; per-project figures come from
-`meter_samples` in Postgres and the billing dashboard queries there. The
-reason: 30 guests per host across a fleet is fine, but a label that grows
-with every project ever created makes Prometheus the first thing to fall
-over.
+Prefix `repose_`. Labels are low-cardinality only, and the list the code
+enforces is in `internal/obs/metrics/metrics.go`: `component`, `host_id`,
+`class`, `state`, `kind`, `reason`, `route`, `status`, `result`,
+`direction`, `method`, `channel`, `version`, `phase`, `op`, `plan`. This
+paragraph named eight of them until I-800; the registry was always the
+authority, and it refuses anything outside the list at registration, so a
+new label stops the binary at startup rather than filling Prometheus.
+`project_id`, `user_id` and `guest_id` are never labels in Prometheus;
+per-project and per-account figures come from `meter_samples`,
+`usage_hours` and `subscriptions` in Postgres, which the billing dashboard
+and `ops/sql/launch.sql` query there (I-804). The reason: 30 guests per
+host across a fleet is fine, but a label that grows with every project
+ever created makes Prometheus the first thing to fall over.
 
 Families:
 
@@ -157,19 +172,65 @@ Families:
   shutdown freeze's counter is never scraped and a thaw's is raised
   before the listener is up, so a per-process count reads the same after
   every reboot and `increase()` sees no rise.
+  The idle pause (I-818) adds `repose_host_guests_resting` (gauge, guests
+  whose vCPUs are paused), `repose_host_guest_pause_total{reason,result}`
+  (`PauseGuest` commands alone: `reason` is what asked for the *pause* --
+  `idle` (the api's rule) or `operator` (`hostd pause`) -- and `result`
+  is `paused`, `refused` (a `why_not` the api reads and retries, not a
+  failure) or `failed`. The reason enum is one bounded list shared with
+  the wake side, so the wake words `connect`, `op`, `answer`,
+  `keep_awake`, `timer`, `command` and `other` exist on this counter at
+  zero and are not wakes; wakes are broken down by reason from the api's
+  `repose_api_resting_wake_total` below),
+  `repose_host_guest_wake_seconds` (histogram, the wake hostd measured and
+  reports as `wake_ms`) and `repose_host_guest_wake_failed_total{reason}`
+  (`resume`, `guestd` or `state`, the step that failed). I-818 named the
+  second label `outcome`; `result` is the name the counter carries,
+  because `outcome` is not in the allowed label list above and `result`
+  is. A resting guest keeps `guestd_ok` true, so it is never in
+  `repose_host_guestd_lost` and `GuestdLost` cannot page for one.
 - API: `repose_api_requests_total{route,method,status}`,
   `repose_api_request_duration_seconds{route}`,
   `repose_api_hosts{state}`, `repose_api_projects{state,class}`,
-  `repose_api_schedule_total{result}`, `repose_api_certs_issued_total`,
+  `repose_api_schedule_total{result}`,
+  `repose_api_resting_wake_total{reason,result}` (every wake the api
+  asked for, and the one counter that breaks wakes down by reason, I-818:
+  `reason` is what reached the machine (`connect`, `op`, `answer`,
+  `keep_awake`) and `result` is `woken`, `awake` (nothing to wake) or
+  `failed`. The host's own
+  `repose_host_guest_wake_failed_total` cannot see a wake that never
+  reached a host -- one that is not connected, or that ran out of time --
+  and those are the ones a user feels as a dial that did not come back),
+  `repose_api_resting_candidates{result}` and
+  `repose_api_resting_candidate_minutes_total{result}` (what the rest rule
+  picked, I-844: `paused` was sent a pause, `would_rest` is a machine on a
+  host with `repose.host.pauseIdle` off -- picked, counted, and touched by
+  nothing. The gauge is this minute; the counter adds a candidate-minute a
+  tick, so
+  `increase(repose_api_resting_candidate_minutes_total{result="would_rest"}[7d]) / 60`
+  is the machine-hours a fleet would have rested in a week. That is the
+  figure the feature is argued from, which the proposal could only
+  estimate from three accounts),
+  `repose_api_certs_issued_total`,
   `repose_api_certs_revoked_total`, `repose_api_rollup_lag_seconds`,
   `repose_api_notify_total{channel,result}`,
   `repose_api_billing_webhook_total{kind,result}`,
   `repose_api_billing_overage_charges_total{result}`,
-  `repose_api_billing_gate_refused_total{reason}`,
+  `repose_api_billing_gate_refused_total{reason,plan}` (`plan` from I-802:
+  a `plan_limit` refusal on Solo is an upgrade, the same refusal on every
+  plan is an entry seat that is too small),
   `repose_api_billing_subscriptions_total{plan,status}`,
   `repose_api_billing_stops_total{reason}` (I-289),
+  `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`
+  (I-802: the live subscriptions and the plan revenue a month they stand
+  for, set from the minute tick on every replica, every pair published at
+  zero so a ratio over them does not go blank; MRR is right only while one
+  list price per plan is live, because no price is stored per
+  subscription),
   `repose_api_snapshot_age_seconds` (max over running projects; the alert
-  input), `repose_api_abuse_stops_total{kind}`,
+  input), `repose_api_snapshot_expiry_fail_total{reason}` and
+  `repose_api_blob_configured` (I-800: 0 is the mark-only stand-in, which
+  marks rows deleted and deletes no bytes), `repose_api_abuse_stops_total{kind}`,
   `repose_api_abuse_held_projects`,
   `repose_api_abuse_busy_unattended_projects` (I-239),
   `repose_api_seats_total`, `repose_api_seats_held`,
@@ -242,6 +303,8 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `EgressBlocked` | `repose_host_egress_blocked_guests > 0` for 2m (I-238..I-240) | warn |
 | `GuestLeftUnfrozen` | `sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h])) > 0` for 5m (I-796) | warn |
 | `GuestImageDiscarded` | `sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h])) > 0` for 5m (I-796) | warn |
+| `GuestWakeFailed` | `sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0` for 5m: a frozen guest that would not resume, its memory and processes still intact (I-818) | warn |
+| `GuestWakeSlow` | `histogram_quantile(0.9, sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5` for 15m: past the gateway's 10 s dial budget, so the next wake is a failed ssh (I-818) | warn |
 | `SamplesFailing` | `sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0` (I-446) | warn |
 | `HostReportsRefused` | `sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~"foreign_guest\|bad_snapshot"}[15m])) > 0` (I-447) | warn |
 | `MinerStopped` | `sum by (kind) (increase(repose_api_abuse_stops_total[15m])) > 0` (I-239) | warn |
@@ -252,6 +315,14 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
 | `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
+| `ApiErrors` | 5xx share per route `> 0.05` for 10m (I-800) | page |
+| `OpsFailing` | `sum by (kind) (increase(repose_api_ops_total{state="error"}[30m])) > 0` for 5m (I-800) | warn |
+| `ScheduleRefused` | `sum by (result) (increase(repose_api_schedule_total{result=~"no_capacity\|no_cpu\|error"}[15m])) > 0` for 5m (I-800) | warn |
+| `GatewayDialFailing` | `sum(increase(repose_gateway_dial_fail_total[10m])) > 3` for 5m (I-800) | page |
+| `SnapshotFailing` | `sum by (host_id, result) (increase(repose_host_snapshot_duration_seconds_count{result!="ok"}[1h])) > 0` for 5m (I-800) | warn |
+| `BillingWebhookErrors` | `sum(repose_api_billing_webhook_total{result="error"}) > 0` for 5m, absolute and sticky by design (I-800) | page |
+| `BillingGap` | `sum(increase(repose_api_billing_gap_minutes_total[1h])) > 60` for 10m (I-800) | warn |
+| `ControlDiskFull` | control VM filesystem `> 0.85` for 15m, its own `control-node` job (I-800) | warn |
 | `Watchdog` | `vector(1)`, always firing, routed only to an Uptime Kuma push monitor (I-648) | heartbeat |
 
 ### Traces

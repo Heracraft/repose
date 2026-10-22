@@ -52,8 +52,8 @@ func TestEveryCommandKindIsHandled(t *testing.T) {
 		}
 		seen++
 	}
-	if seen != 14 {
-		t.Fatalf("expected 14 commands in the contract, saw %d", seen)
+	if seen != 16 {
+		t.Fatalf("expected 16 commands in the contract, saw %d", seen)
 	}
 }
 
@@ -806,6 +806,11 @@ func TestSecretsPrincipalsExec(t *testing.T) {
 
 func TestSamplesMergeHostAndGuestd(t *testing.T) {
 	h := newHarness(t, nil)
+	// This one wants a guest in USE: a session, a tmux client and an
+	// agent working, with a process sample. nil takes fakeguestd's own
+	// canned busy reply; the harness default is an idle guest, because
+	// that is what a pausable one looks like (DECISIONS I-818).
+	h.gopts.Sample = nil
 	h.create(gid1)
 	h.sd.Set("guest@"+gid1, 1_000_000_000, 500<<20)
 	h.net.Stats[h.guest(gid1).Tap] = [2]uint64{1000, 2000}

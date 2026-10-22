@@ -900,6 +900,9 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 		}
 	}
 	defer timeSpan("connect first ssh")()
+	// A frozen machine is woken inside the gateway's dial (I-822), which
+	// can take most of the short wait on its own.
+	e.waitFrozen(project)
 	slow, done := e.connectingPhase(project.Slug)
 	defer done()
 	err = waitForSSH(ctx, target, e.sshWait(), slow, certRefusalHandler(func() error {
@@ -916,11 +919,26 @@ func connect(ctx context.Context, e *Env, project *Project) (sshTarget, error) {
 // sshWait is how long this command waits for the machine's first ssh
 // answer: a minute after it started or created the machine, else
 // sshWaitShort (I-634).
+//
+// A frozen machine counts as the first case. It is `running`, so a
+// command that found it running would take the 15 s of sshWaitShort --
+// and the gateway spends up to its own wake budget before the dial it
+// then has to make, which can be most of that 15 s on one attempt. The
+// machine is fine; the user would read "did not answer ssh" about a
+// machine whose processes are all still there (DECISIONS I-822).
 func (e *Env) sshWait() time.Duration {
 	if e.longSSHWait {
 		return sshWaitTimeout
 	}
 	return sshWaitShort
+}
+
+// waitFrozen gives a machine the api reports frozen the long first-ssh
+// wait, because the gateway wakes it inside the dial.
+func (e *Env) waitFrozen(p *Project) {
+	if frozen(p) {
+		e.longSSHWait = true
+	}
 }
 
 // connectingPhase is the "Connecting to SLUG" phase a slow first ssh

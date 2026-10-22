@@ -76,7 +76,7 @@ func Left(d time.Duration) string {
 
 // Busy reports whether a sample shows somebody or some agent on the
 // machine: an ssh session, a tmux client, or an agent that is not at its
-// prompt (idle or needs_input), as idle.usedSQL counts use. A sample with
+// prompt (idle or needs_input), as idle.UsedSQL counts use. A sample with
 // guestd not answering is not busy here: it says nothing either way, and
 // the Grace bound makes waiting on it pointless.
 func Busy(l *meter.Latest) bool {

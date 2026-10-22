@@ -244,6 +244,19 @@ initrd, or the virtio-fs share layout changed, in which case the CLI says so
 and asks. Base bumps from the platform are applied the same way, weekly, with
 a per-project `hold` flag and a changelog line in `repose status`.
 
+**Resting.** A running guest nobody is using has its vCPUs paused and its
+memory left resident on the host, so it spends no CPU while it waits
+(DECISIONS I-818). Every process, socket, open file and byte of guest
+memory survives; the guest's state stays `running` and the user reads it
+as frozen. Anything that reaches for the machine wakes it first -- a
+session through the gateway, an answer to an agent, a secret, a
+configuration apply, a snapshot, or a user timer inside the guest that
+comes due -- and the wake is a `vm.resume`, a clock step and a ping, not a
+boot. A resting guest holds its plan memory exactly as a running one
+does, so nothing about placement or seats changes. An outbound connection
+the guest left idle across a rest may have been dropped by the NAT
+gateway or by the remote server, which is the one thing a rest costs.
+
 **Boot.** A stopped guest starts in under 5 seconds because its closure is
 already in the host store. A new project's first start is bounded by building
 its fragment; the CLI streams the build.
@@ -583,7 +596,9 @@ Turborepo keeps running only the TypeScript side. The old
 
 ## 18. Out of scope for the first release
 
-Teams and shared projects. Preview URLs. Idle auto-stop. Per-project LUKS.
+Teams and shared projects. Preview URLs. Idle auto-*stop* -- an idle
+machine rests instead, keeping every process (DECISIONS I-818), and
+nothing stops one for being idle. Per-project LUKS.
 Central build farm. Automatic host provisioning. GPU guests. `repose mcp
 forward` (`repose browser bridge` shipped, I-296). Telegram and Discord delivery. Any
 provider other than Azure hosts. Each has a section in `DECISIONS.md` saying

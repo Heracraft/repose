@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-795 entries.
+816 entries.
 
 ## Scope
 
@@ -18,7 +18,7 @@ pointer, not a summary.
 - **R1-2** Unit of environment is one microVM per project on shared hosts — L23
 - **R1-3** Git is the exchange channel, plus a one-shot sync of the uncommitted diff at launch — partly amended by I-367; L29
 - **R1-4** `run` attaches, `run "prompt"` starts an agent, with a prelisted agent picker defaulting to Claude — partly superseded by I-603; L34
-- **R1-5** Guests are always-on until `stop` — L37
+- **R1-5** Guests are always-on until `stop` — amended by I-818; L37
 - **R1-6** No Tailscale for user access — superseded by R2-5 and R4-3; L42
 - **R1-8** (amended R2) — amended; L46
 
@@ -317,7 +317,7 @@ pointer, not a summary.
 - **I-232** hostd's start path: the boot dial every 50 ms, virtiofsd's socket looked for every 10 ms, and the registration read while the guest boots — 2026-09-24; L5507
 - **I-233** Resuming a stopped guest from a memory snapshot is not adopted yet; the numbers and what it needs are recorded — 2026-09-24; amended by I-652; L5521
 - **I-234** Two regressions of the faster boot, found live — 2026-09-24; amended by I-718; L5544
-- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; L5559
+- **I-235** Keeping a stopped guest's processes: the options for secrets, recorded; nothing built — 2026-09-24; amended by I-653; amended by I-818; L5559
 - **I-236** Waiting on an op is a long-poll: the api answers the moment the op or its project changes — 2026-09-24; L5601
 - **I-237** The first ssh to a guest that was just started goes out the moment its op finishes, and it is the sync's probe — 2026-09-24; L5648
 - **I-241** Gaps the user docs found, closed in code rather than documented as broken — 2026-09-23; amended by I-475; L5693
@@ -342,7 +342,7 @@ pointer, not a summary.
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6535
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6566
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6587
-- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; L6604
+- **I-262** An idle running machine is announced, never stopped — 2026-09-26; partly amended by I-617; amended by I-818; L6604
 - **I-263** Submodules travel with the sync, their commits bundled from the laptop like the superproject's — 2026-09-26; amended by I-712; L6648
 - **I-260** `repose resize --size` changes a project's class, and every start carries the class to the host — 2026-09-26; partly amended by I-595; L6709
 - **I-261** `repose open` reaches a server on `::1`, and `open --desktop` picks a free laptop port — 2026-09-26; L6754
@@ -428,7 +428,7 @@ pointer, not a summary.
 - **I-360** kanali's tunnel carries only packets from 10.255.254.1 — 2026-09-29; L9189
 - **I-361** kanali runs tofu as its own service principal; the Key Vault operator policy is pinned to the owner — 2026-09-29; L9210
 - **I-362** A third plan: Pro becomes Plus, and a new Pro at $99 buys 32 GB running at once — 2026-09-29; amended by I-497; amended by I-569; partly superseded by I-672; L9233
-- **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; L9275
+- **I-363** The logo is the owner's cross-and-blocks sketch, traced; it replaces the r — 2026-09-29; amended by I-381; amended by I-393; superseded by I-779; L9275
 - **I-364** tmux's mouse mode is off in the guest — 2026-09-29; L9301
 - **I-365** `repose secrets set` echoes one `*` per character — 2026-09-29; L9316
 - **I-366** `run --no-sync` still copies the tool logins and the carry — 2026-09-29; L9333
@@ -458,7 +458,7 @@ pointer, not a summary.
 - **I-390** A 503 the api gives as an answer is not an outage, a 500 is not "cannot reach", and one failure is said once — 2026-09-30; amended by I-393; L9784
 - **I-391** Design critique repair: focus follows in-place panels, one disabled look, and the gaps the first pass left — 2026-09-30; amended by I-393; amended by I-655; L9807
 - **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; amended by I-837; L9857
-- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; L9925
+- **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; amended by I-779; L9925
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9991
 - **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10018
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10049
@@ -494,7 +494,7 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11035
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11055
 - **I-428** Agent bumps run downloaded binaries in a job with no write access — L11083
-- **I-429** CI pins every action to a commit and every tool to a version — L11107
+- **I-429** CI pins every action to a commit and every tool to a version — amended by I-840; L11107
 - **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11124
 - **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11161
 - **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11190
@@ -717,10 +717,10 @@ pointer, not a summary.
 - **I-652** Guests are frozen across a host restart and restored where they were (guest-freeze, 2026-10-11) — amended by I-685; amended by I-686; amended by I-796; L19288
 - **I-653** A frozen guest's memory image: encrypted on a volume of its own, the key wrapped by Key Vault, removed once read (guest-freeze, 2026-10-11) — amended by I-686; L19502
 - **I-646** Agent windows are recorded every minute, and a machine that ended without a stop reopens them (agent-windows, 2026-10-11) — amended by I-757; L19561
-- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19687
+- **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — partly amended by I-848; L19687
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19745
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19777
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; L19795
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; amended by I-826; amended by I-856; L19795
 - **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; superseded by I-837; L19825
 - **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; superseded by I-837; L19875
 - **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; superseded by I-837; L19954
@@ -817,13 +817,34 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23372
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23416
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; amended by I-837; L23453
-- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23536
-- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23562
-- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23593
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23606
-- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
-- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
-- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24174
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24301
-- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24650
+- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; L23536
+- **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23603
+- **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23629
+- **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23660
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — L23673
+- **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23912
+- **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23978
+- **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24209
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24241
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24368
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24717
+- **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24780
+- **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24835
+- **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24873
+- **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24896
+- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24919
+- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24946
+- **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24965
+- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25002
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L25007
+- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
+- **I-824** The pause must never cost a machine its memory — L25208
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; L25242
+- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25274
+- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L25293
+- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L25326
+- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L25368
+- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L25415
+- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L25468
+- **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25502

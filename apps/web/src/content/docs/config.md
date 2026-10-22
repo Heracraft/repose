@@ -180,3 +180,7 @@ Every change to a project's configuration is saved as a revision. `repose config
 The platform updates the base (agents, tools, kernel) most weeks, sooner for a security fix. Each project is rebuilt on it. A running machine switches in place; a stopped one gets the new base at its next start. A revision that changes the kernel, from a base update or a change of your own, is built but applies only when the machine restarts: `repose stop todo-app && repose start todo-app` when the agents are idle. If your configuration doesn't build on it, the project stays on the revision it runs and you get a [notification](/docs/notifications) naming the error. To hold a project on its current base, tick **Hold base updates** on its **Config** tab; there's no CLI flag for it.
 
 Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base, held or not yet rebuilt, can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and let it update first.
+
+## Keeping a machine awake
+
+A machine nobody is using is [frozen](/docs/lifecycle#frozen-machines) until something reaches it. To keep one awake instead, tick **Keep this machine awake** on its Config page; there's no CLI flag for it. It takes effect at once: a machine that is frozen when you tick it wakes.

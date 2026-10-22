@@ -498,7 +498,7 @@ gone.
 
 **Observability.** Metrics `repose_api_billing_webhook_total{kind,result}`,
 `repose_api_billing_overage_charges_total{result}`,
-`repose_api_billing_gate_refused_total{reason}`,
+`repose_api_billing_gate_refused_total{reason,plan}` (the plan since I-802),
 `repose_api_billing_subscriptions_total{plan,status}`,
 `repose_api_billing_stops_total{reason}`; log events `webhook_received`,
 `overage_charged`, `gate_refused` (user_id, reason, plan); alerts

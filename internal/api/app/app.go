@@ -31,6 +31,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/resume"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/snapshots"
@@ -65,6 +66,7 @@ type App struct {
 	meterIn   *meter.Ingest
 	abuse     *abuse.Guard
 	questions *questions.Service
+	resting   *resting.Service
 	resume    *resume.Resumer
 	outbox    *notify.Outbox
 	polar     *billing.Polar
@@ -160,6 +162,27 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.abuse = abuse.New(a.pool, a.engine, a.events, a.m, log)
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
 	a.events.SetQuestions(a.questions)
+	// The rest rule and the wake (DECISIONS I-818). It sends straight to
+	// the host, outside the op engine: the op that needs a machine awake
+	// is itself that project's one open op.
+	a.resting = resting.New(a.pool, a.hostMgr, log)
+	// Counted here, where every caller of Wake passes (I-822).
+	if a.m != nil {
+		a.resting.CountWake = func(reason, result string) {
+			a.m.RestingWakeTotal.WithLabelValues(reason, result).Inc()
+		}
+		// The dry run (I-844): what the rule picked, split by whether its
+		// host acts on it. The gauge is this minute's picture; the counter
+		// integrates into machine-hours.
+		a.resting.CountCandidates = func(paused, would int) {
+			a.m.RestingCandidates.WithLabelValues("paused").Set(float64(paused))
+			a.m.RestingCandidates.WithLabelValues("would_rest").Set(float64(would))
+			a.m.RestingCandidateMinutesTotal.WithLabelValues("paused").Add(float64(paused))
+			a.m.RestingCandidateMinutesTotal.WithLabelValues("would_rest").Add(float64(would))
+		}
+	}
+	a.events.SetResting(a.resting)
+	a.questions.Waker = a.resting
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -168,9 +191,16 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 				return err
 			}
 			a.engine.OnHello(ctx, hostID, h)
+			// After the engine's reconcile: the marker is additive, and a
+			// project whose state the Hello just settled reads the same
+			// row (I-818).
+			a.resting.OnHello(ctx, hostID, h)
 			return nil
 		},
 		Result: func(ctx context.Context, hostID uuid.UUID, r *hostdv1.Result) {
+			if a.resting.OnResult(ctx, hostID, r) { // a pause or a wake (I-818)
+				return
+			}
 			if a.questions.OnResult(ctx, hostID, r) { // an AnswerQuestion delivery (I-245)
 				return
 			}
@@ -253,6 +283,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
 		Gateway:   httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
 		Seats:     a.seats,
+		Resting:   a.resting,
 		CLILatest: a.cliLatest.Version,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
@@ -445,9 +476,20 @@ func (a *App) loops(ctx context.Context) {
 		a.log.Warn("BLOB_ACCOUNT_URL unset: snapshot expiry only marks rows", "event", "blob_unset")
 		blob = markOnly{}
 	}
+	// A log line at start is read once and then scrolls away, so the state
+	// is also a gauge: with no blob store the retention deletes no bytes
+	// and Postgres still reports the rows deleted (I-800).
+	if a.m != nil {
+		configured := 0.0
+		if _, markOnlyStore := blob.(markOnly); !markOnlyStore {
+			configured = 1
+		}
+		a.m.BlobConfigured.Set(configured)
+	}
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
 	go expiry.Run(ctx, 24*time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
+	fleet := billing.NewFleet(a.pool, a.m)
 	dunning := billing.NewDunning(a.pool, a.engine, a.events, a.bcfg, a.m, a.log)
 	bump := basebump.New(a.pool, a.engine, a.events, a.log)
 	idleWarn := &idle.Warner{Pool: a.pool, Events: a.events}
@@ -464,6 +506,9 @@ func (a *App) loops(ctx context.Context) {
 		a.log.Warn("REPOSE_RESUME=off: machines a host restart stops are not started again", "event", "guest_resume")
 	}
 	go a.resume.Run(ctx)
+	// The rest rule, every minute, on the replica that holds its own lock
+	// (I-818).
+	go a.resting.Run(ctx)
 	// The abuse gauges (BusyUnattended, EgressHigh, held projects) are
 	// read-only aggregates; every replica exports them and the alerts take
 	// the max (DECISIONS I-239).
@@ -475,6 +520,15 @@ func (a *App) loops(ctx context.Context) {
 		}
 	}
 	refreshAbuse()
+	// Both of these are published again every minute below. They run once
+	// here so a redeploy's first scrape reads a number rather than an
+	// absent series (I-800, I-802).
+	if err := rollup.Lag(ctx); err != nil && ctx.Err() == nil {
+		a.log.Error("rollup lag", "event", "rollup_lag_fail", "err", err.Error())
+	}
+	if err := fleet.Refresh(ctx); err != nil && ctx.Err() == nil {
+		a.log.Error("fleet gauges", "event", "fleet_refresh_fail", "err", err.Error())
+	}
 	sweep := time.NewTicker(15 * time.Second)
 	hourly := time.NewTicker(time.Minute)
 	daily := time.NewTicker(24 * time.Hour)
@@ -493,6 +547,17 @@ func (a *App) loops(ctx context.Context) {
 				a.log.Error("host sweep", "event", "sweep_fail", "err", err.Error())
 			}
 		case now := <-hourly.C:
+			// The rollup's lag, from every replica and outside the
+			// rollup's lock, because the gauge the rollup itself sets
+			// rises only when a rollup succeeds (I-800, Rollup.Lag).
+			if err := rollup.Lag(ctx); err != nil && ctx.Err() == nil {
+				a.log.Error("rollup lag", "event", "rollup_lag_fail", "err", err.Error())
+			}
+			// The subscription and revenue gauges, from every replica and
+			// outside any lock (I-802, billing.Fleet).
+			if err := fleet.Refresh(ctx); err != nil && ctx.Err() == nil {
+				a.log.Error("fleet gauges", "event", "fleet_refresh_fail", "err", err.Error())
+			}
 			// The seats waitlist expires holds that ran out and invites
 			// the oldest waiting users while a seat is free, every minute,
 			// one replica at a time (DECISIONS I-269, I-290).

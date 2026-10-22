@@ -321,9 +321,47 @@ func phaseTimeout(phase string) time.Duration {
 		return 60 * time.Minute
 	case "stop_guest", "snapshot":
 		return 30 * time.Minute
+	case PhaseWake:
+		// A wake is a resume, a clock step and guestd's ping, so a wake
+		// that FAILS answers in seconds with an error and fails this
+		// phase at once. This timeout therefore only fires when the host
+		// never answers at all -- it is being restarted for an upgrade,
+		// or its stream dropped -- which is the one case the engine is
+		// built to ride out: it re-sends an unfinished command after the
+		// next Hello. Thirty seconds was short enough to turn a hostd
+		// restart into a failed `repose stop` on a frozen machine, where
+		// every other guest-bound phase waits out the same restart
+		// (stop_guest and snapshot wait 30 minutes). Five minutes rides
+		// out a restart and still does not hide a host that is gone,
+		// which HostUnreachable reports in 90 seconds anyway.
+		return 5 * time.Minute
 	default:
 		return 10 * time.Minute
 	}
+}
+
+// hostPauses reports whether a host's Hello named the pause feature
+// (DECISIONS I-818). Read as raw SQL, the way the scheduler reads
+// local_clone: store.Host carries no features field.
+func (e *Engine) hostPauses(ctx context.Context, hostID uuid.UUID) (bool, error) {
+	var ok bool
+	err := e.pool.QueryRow(ctx, "select 'pause' = any(features) from hosts where id = $1", hostID).Scan(&ok)
+	if db.IsNoRows(err) {
+		return false, nil
+	}
+	return ok, err
+}
+
+// restingNow reports whether the api believes the op's project rests.
+func (e *Engine) restingNow(ctx context.Context, op *store.Op) bool {
+	if op.ProjectID == nil {
+		return false
+	}
+	var resting bool
+	if err := e.pool.QueryRow(ctx, "select resting_since is not null from projects where id = $1", *op.ProjectID).Scan(&resting); err != nil {
+		return false
+	}
+	return resting
 }
 
 func phases(op *store.Op) []string {

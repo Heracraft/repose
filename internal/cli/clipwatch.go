@@ -52,7 +52,7 @@ function augment(pb, dir, count) {
 		png = rep.representationUsingTypeProperties(4, $.NSDictionary.dictionary);
 		if (png.isNil()) return '';
 	}
-	if (png.length > 20971520) return '';
+	if (png.length > @MAX@) return '';
 	var name = dir + '/clipboard-' + stamp() + '.png';
 	if (!png.writeToFileAtomically(name, true)) return '';
 	var item = $.NSPasteboardItem.alloc.init;
@@ -109,7 +109,11 @@ function run(argv) {
 // tests put a script of their own in their place.
 var (
 	clipWatchCommand = func(dir string) *exec.Cmd {
-		return exec.Command("osascript", "-l", "JavaScript", "-e", clipWatchScript, dir)
+		// @MAX@ is pasteMaxBytes: the watcher writes no copy of an image
+		// too large to paste. Replaced rather than formatted, since the
+		// script holds a % of its own.
+		script := strings.Replace(clipWatchScript, "@MAX@", strconv.Itoa(pasteMaxBytes), 1)
+		return exec.Command("osascript", "-l", "JavaScript", "-e", script, dir)
 	}
 	clipRestoreCommand = func(ctx context.Context, count, path string) *exec.Cmd {
 		return exec.CommandContext(ctx, "osascript", "-l", "JavaScript", "-e", clipRestoreScript, count, path)

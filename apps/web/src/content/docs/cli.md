@@ -232,7 +232,7 @@ Copy files with `scp`. One side names the machine: `PROJECT:PATH`, or `:PATH` fo
 
 ### `repose paste [PROJECT]`
 
-Copy the image on your clipboard, up to 20 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running. It exits 1 with no image on the clipboard, and on Linux with no clipboard tool, where the message names `wl-clipboard` on Wayland or `xclip` on X11.
+Copy the image on your clipboard, up to 50 MB, to `/tmp/repose-paste/` on the machine and paste its path into the active pane on tmux, or herdr's focused pane. The path is pasted; you press Enter. Needs the machine running. It exits 1 with no image on the clipboard, and on Linux with no clipboard tool, where the message names `wl-clipboard` on Wayland or `xclip` on X11.
 
 | Flag            | What it does                                                                          |
 | --------------- | ------------------------------------------------------------------------------------- |
@@ -249,7 +249,9 @@ List what the next `repose run` would install on the machine, and why. Installs 
 
 Every project in a table. `*` after a name marks the project a command run here with no `PROJECT` acts on ([Which project](#which-project)). `repose projects`, the old name, still works.
 
-AGENTS names the agent and its [state](/docs/agents#agent-states), with how long one that needs input has waited: `claude: needs input 4h`. A `?` means the machine's last report is two minutes or older. Several agents are counted by state, needs input first, with the longest wait: `2 agents: 1 needs input (4h), 1 working`.
+STATE reads `running frozen` for a machine repose [froze while idle](/docs/lifecycle#frozen-machines).
+
+AGENTS names the agent and its [state](/docs/agents#agent-states), with how long one that needs input has waited: `claude: needs input 4h`. A `?` means the machine's last report is two minutes or older, and never appears on a frozen machine, whose agents can't have moved on. Several agents are counted by state, needs input first, with the longest wait: `2 agents: 1 needs input (4h), 1 working`.
 
 LEFT is a column only while a temporary machine is listed: its time left, or `up` once that has run out ([Temporary machines](/docs/lifecycle#temporary-machines)). DISK is a column only while a listed project's disk is 90 percent full or more, and reads `93% full`.
 
@@ -277,11 +279,13 @@ todo-app  running 2h14m  large
   last event 14m ago, claude finished "Added auth flow"
 ```
 
+A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen` after the state in the header, before the size. `status` reads the machine itself for the checkout and the listening ports, so it wakes a frozen one; `repose ls` reads none of that and leaves it frozen.
+
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
 `listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
 
-Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
+Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, kept awake`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -301,7 +305,7 @@ Stop the machine and snapshot its disk, several projects at once with one line e
 | Flag                    | What it does                                                                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-snapshot`         | Stop without a snapshot. It can't change a stop already under way, and the line says so.                                                                                                        |
-| `--unused`              | Stop every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines); it takes no PROJECT. `No machine is unused.` when none is.                                                   |
+| `--unused`              | Stop every machine `repose ls` shows as [unused](/docs/lifecycle#unused-machines); it takes no PROJECT. `No machine is unused.` when none is. [Frozen](/docs/lifecycle#frozen-machines) is a different thing, about 15 quiet minutes rather than a day nobody has used the machine; a frozen machine that is also unused is stopped, and that stop ends its processes as any stop does. |
 | `-y`, `--yes`           | Don't ask when an agent is `working` or `needs input` (required without a terminal). The stop line is then followed by the agent it ends: `Ending claude (working).`, or `Ended claude (working).` with `--wait`. |
 | `--wait`                | Wait for the snapshot and the shutdown instead of returning once the machine reads `stopping`: `Stopped todo-app in 11s with a 2.1 GB snapshot.` Exits 1 when the stop failed.                   |
 | `-w`, `--window WINDOW` | Close one agent's window and leave the machine running. One PROJECT, and not with `--no-snapshot`, `--wait` or `--unused`.                                                               |
@@ -325,7 +329,7 @@ Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no 
 
 ### `repose restore [NAME]`
 
-Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` from an older snapshot than the newest. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
+Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` names the snapshot. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
 
 ### `repose fork [PROJECT]`
 

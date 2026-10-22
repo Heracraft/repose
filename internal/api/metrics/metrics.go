@@ -13,11 +13,31 @@ import (
 
 // M holds every api metric.
 type M struct {
-	RequestsTotal                *prometheus.CounterVec
-	RequestDuration              *prometheus.HistogramVec
-	Hosts                        *prometheus.GaugeVec
-	Projects                     *prometheus.GaugeVec
-	ScheduleTotal                *prometheus.CounterVec
+	RequestsTotal   *prometheus.CounterVec
+	RequestDuration *prometheus.HistogramVec
+	Hosts           *prometheus.GaugeVec
+	Projects        *prometheus.GaugeVec
+	ScheduleTotal   *prometheus.CounterVec
+	// RestingWakeTotal counts the wakes the api asked for, by reason and
+	// result (DECISIONS I-818, I-822). `result` is `woken` (the machine
+	// was frozen and came back), `awake` (nothing to do) or `failed`.
+	// hostd's own repose_host_guest_wake_failed_total cannot see the
+	// failures where hostd never answered at all -- a host that is not
+	// connected, or a wake that ran out of time -- and those are exactly
+	// the ones a user feels as a dial that did not come back.
+	RestingWakeTotal *prometheus.CounterVec
+	// RestingCandidates is how many machines the rest rule picked at the
+	// last tick (DECISIONS I-844): `result="paused"` were sent a pause,
+	// `result="would_rest"` is the dry run -- the rule's own judgement on
+	// machines whose host does not take pauses, which nothing will touch.
+	RestingCandidates *prometheus.GaugeVec
+	// RestingCandidateMinutesTotal adds each tick's candidates, so the
+	// counter integrates into the machine-hours a fleet would have
+	// rested. That figure is what the proposal estimated from three
+	// accounts at 29 to 48 percent of running time and what nothing has
+	// measured since; a week of this says it for the real fleet before a
+	// single machine is frozen.
+	RestingCandidateMinutesTotal *prometheus.CounterVec
 	CertsIssuedTotal             prometheus.Counter
 	CertsRevokedTotal            prometheus.Counter
 	RollupLagSeconds             prometheus.Gauge
@@ -32,7 +52,12 @@ type M struct {
 	// BillingOverageChargesTotal counts egress overage lines sent to Polar
 	// by result; OverageChargeFailed reads the error series.
 	BillingOverageChargesTotal *prometheus.CounterVec
-	// BillingGateRefusedTotal counts payment_required refusals by reason.
+	// BillingGateRefusedTotal counts payment_required refusals by reason
+	// and by the plan the account was on, "none" without one (I-802). The
+	// plan separates a refusal that is an upgrade worth $40 a month from
+	// one that says the entry seat is too small for the work: a
+	// plan_limit on Solo is the first, a run of them across every plan is
+	// the second.
 	BillingGateRefusedTotal *prometheus.CounterVec
 	// BillingSubscriptions counts subscription webhooks by plan and status,
 	// which is the dashboard's view of the plan mix.
@@ -83,6 +108,32 @@ type M struct {
 	// subscriptions and unexpired invitations.
 	SeatsTotal prometheus.Gauge
 	SeatsHeld  prometheus.Gauge
+	// SnapshotExpiryFailTotal counts expired snapshots the sweep could not
+	// delete, by reason (DECISIONS I-800). The sweep logs each and goes on
+	// so one bad blob does not stop the rest (I-130), which also means a
+	// blob store that refuses every delete is visible only in the log.
+	SnapshotExpiryFailTotal *prometheus.CounterVec
+	// BlobConfigured is 1 when the api has a real blob store and 0 when it
+	// is the mark-only stand-in (I-800). With 0 the retention marks rows
+	// deleted in Postgres and deletes no bytes, so a mistyped storage
+	// variable on a redeploy turns off every delete silently and the only
+	// bound left is the container's own lifecycle rule.
+	BlobConfigured prometheus.Gauge
+	// Subscriptions is the live subscriptions by plan and status, and
+	// MRRCents the plan revenue a month they stand for, at the list price
+	// each one is on and with the founding discount taken off while it
+	// runs (DECISIONS I-802). Every plan and status pair is published,
+	// zero included, so a ratio over them reads zero instead of going
+	// blank. Both are set from the minute tick on every replica.
+	//
+	// MRRCents is right only while one list price per plan is live: no
+	// price is stored per subscription, so a subscription that keeps an
+	// older price after a price change (PRICING.md "Changing prices")
+	// would be counted at today's. The same gap is why the api cannot yet
+	// hold a price for 12 months; see proposals/2026-10-11-price-level.md
+	// §6.
+	Subscriptions *prometheus.GaugeVec
+	MRRCents      *prometheus.GaugeVec
 	// WaitlistWaiting is the users holding a place on the seats waitlist
 	// (DECISIONS I-269, I-290), set by the invite tick; a queue that
 	// grows is a host to add (RUNBOOK "Waitlist growing").
@@ -112,6 +163,9 @@ func New(reg prometheus.Registerer) *M {
 		Hosts:                        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_hosts", Help: "Hosts by state."}, []string{"state"}),
 		Projects:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_projects", Help: "Projects by state and class."}, []string{"state", "class"}),
 		ScheduleTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_schedule_total", Help: "Placement attempts by result."}, []string{"result"}),
+		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
+		RestingCandidates:            prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_resting_candidates", Help: "Machines the rest rule picked at the last tick, by result: paused, would_rest (I-844)."}, []string{"result"}),
+		RestingCandidateMinutesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_candidate_minutes_total", Help: "Candidate-minutes the rest rule picked, by result: integrates into the machine-hours a fleet would rest (I-844)."}, []string{"result"}),
 		CertsIssuedTotal:             prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_issued_total", Help: "User certificates issued."}),
 		CertsRevokedTotal:            prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_revoked_total", Help: "Certificates revoked."}),
 		RollupLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_rollup_lag_seconds", Help: "Age of the newest rolled-up hour."}),
@@ -122,8 +176,12 @@ func New(reg prometheus.Registerer) *M {
 		OutboxLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_outbox_lag_seconds", Help: "How long the oldest due outbox row has waited past its next_at."}),
 		BillingWebhookTotal:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_webhook_total", Help: "Polar webhook deliveries by event kind and result."}, []string{"kind", "result"}),
 		BillingOverageChargesTotal:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_overage_charges_total", Help: "Egress overage lines sent to Polar by result."}, []string{"result"}),
-		BillingGateRefusedTotal:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_gate_refused_total", Help: "Compute refused with payment_required, by reason."}, []string{"reason"}),
+		BillingGateRefusedTotal:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_gate_refused_total", Help: "Compute refused with payment_required, by reason and plan."}, []string{"reason", "plan"}),
 		BillingSubscriptions:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_subscriptions_total", Help: "Subscription webhooks applied, by plan and status."}, []string{"plan", "status"}),
+		SnapshotExpiryFailTotal:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_snapshot_expiry_fail_total", Help: "Expired snapshots the sweep could not delete, by reason."}, []string{"reason"}),
+		BlobConfigured:               prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_blob_configured", Help: "1 when a real blob store is configured, 0 for the mark-only stand-in."}),
+		Subscriptions:                prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_subscriptions", Help: "Live subscriptions by plan and status."}, []string{"plan", "status"}),
+		MRRCents:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_mrr_cents", Help: "Plan revenue a month in cents by status, at the list price each subscription is on."}, []string{"status"}),
 		BillingStopsTotal:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_billing_stops_total", Help: "Machines the api stopped for billing, by reason."}, []string{"reason"}),
 		SnapshotAgeSeconds:           prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_snapshot_age_seconds", Help: "Oldest newest-snapshot age over running projects."}),
 		GRPCStreams:                  prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_grpc_streams", Help: "Connected host streams."}),
@@ -170,12 +228,14 @@ func New(reg prometheus.Registerer) *M {
 		m.SamplesFailed.WithLabelValues(r)
 	}
 	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
-		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.BillingStopsTotal, m.SnapshotAgeSeconds,
+		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.Subscriptions, m.MRRCents, m.BillingStopsTotal, m.SnapshotAgeSeconds,
+		m.SnapshotExpiryFailTotal, m.BlobConfigured,
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
 		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
-		m.GuestResumesPending, m.GuestResumesTotal)
+		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal,
+		m.RestingCandidates, m.RestingCandidateMinutesTotal)
 	return m
 }
 

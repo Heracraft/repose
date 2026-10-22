@@ -24,7 +24,7 @@ framing; hostd picks by flag.
 | `SetPrincipals` | list | | writes `/etc/ssh/principals/dev`, reloads sshd |
 | `SetupProject` | project_slug, remote_url, tz, lang, project_json | | starts the session unit `project_json`'s `multiplexer` names (`repose-tmux-session.service` for `tmux`, an absent key or any other value; `repose-herdr-server.service` for `herdr`; DECISIONS I-503, `guest-conventions.md` "Session units"), after writing `project.json`. For tmux that unit creates the tmux session named slug in the checkout (`guest-conventions.md` "The checkout"; since I-368 it makes no directory, and a machine with no checkout gets none), `/home/dev/<slug>` as a symlink to the previous slug's checkout on a volume from before I-368 restored under a new name (I-255), git init and `origin` only in a checkout it finds, writes `/home/dev/.repose/project.json` from project_json (the api's record, I-26; built from the other fields when empty, and refused as `invalid` when not JSON). The message is unchanged; `multiplexer` rides inside `project_json`, so an older hostd passes it through and an older api's file, without the key, starts tmux as before |
 | `Sample` | | GuestSignals + repeated ProcSample (shapes in grpc-hostd.md) + partial (bool) + cpu_pressure_us_total + mem_used_bytes (I-493: the `/proc/pressure/cpu` "some" total since boot, and MemTotal less MemAvailable; 0 when unreadable, never a reason for `partial`) + root_used_bytes + root_size_bytes (I-567: statfs of `/`, blocks less those available to `dev` and blocks, in bytes; both 0 when statfs fails, and absent, so 0, from a guestd older than I-567, which hostd accepts; never a reason for `partial`) | hostd calls every 60 s. guestd walks `/proc` on the call and serves the tmux and Docker signals from a 5 s background refresh, so a sample costs under 20 ms and never forks (DECISIONS I-31). `partial` is set when a signal is missing rather than zero. The same 5 s refresh sets `oom_score_adj` (I-200): -800 for the tmux server and each agent window's agent process, -800 for the herdr server and each agent in its tree (I-505; by binary name, `node` left out, so Gemini CLI under herdr gets no -800, I-535), -800 for `dev`'s `sshd-session`, every `tmux: client` and every `herdr` process and -900 for `dev`'s user manager (I-576), 0 for any other `dev` process holding a negative value; and nice -5 on each herdr server thread, 0 for any other process in its tree below 0 (I-505). Agents come from both multiplexers' sources, unioned (I-504); `tmux_clients` stays tmux's count and is 0 on a herdr machine |
-| `Exec` | argv, timeout_s, as_user | exit_code, stdout, stderr | operator only; hostd audits every call |
+| `Exec` | argv, timeout_s, as_user | exit_code, stdout, stderr | operator only; hostd audits every call. hostd's **own** uses are not operator Execs and carry no `audit_id`: the write-back before a freeze or an idle pause (`sync`, and `sync; echo 3 > /proc/sys/vm/drop_caches` for a guest with the balloon), the clock step after a resume or a wake (`date -u -s @<unix>`), and the read of the next systemd timer elapse before a pause (`systemctl show '*.timer' --property=NextElapseUSecRealtime`, and the same through `systemctl --user -M dev@` for `dev`'s manager). The idle pause adds no guestd request for any of it (DECISIONS I-818): a new one would need the version negotiation line 17 promises and the code does not have, and a guest base rebuild on every machine, so the pause reaches machines that are already running |
 | `Shutdown` | timeout_s | | `systemctl poweroff` after flushing |
 | `AnswerQuestion` | question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | | closes a question a `repose-ask` is waiting on (DECISIONS I-244); a repeat for a question already closed is a no-op, an unknown question_id is `not_found` (the guest rebooted, and its questions with it). The answer is tenant text and is never logged |
 
@@ -99,6 +99,13 @@ unchanged.
 - If hostd loses the connection, it retries every 2 s; after 60 s the guest is
   marked `guestd_ok=false` in samples and an alert fires; the guest keeps
   running.
+- A guest the idle pause has paused is **not** a guest that lost guestd
+  (DECISIONS I-818): guestd is paused with it. hostd asks a resting guest
+  for nothing, keeps `guestd_ok` true in its samples and raises no
+  `guestd_lost`; every caller that needs an answer wakes the guest first,
+  and the one caller that must not -- the sampler -- repeats what the
+  guest last said. Nothing inside a paused guest produces a notification,
+  so none is lost; one already in guestd's queue waits out the pause.
 - A `Freeze` without a `Thaw` within 10 s thaws itself and returns a
   `Warning{kind:"freeze_timeout"}`.
 - `Switch` output is always returned, even on failure, and failure leaves
@@ -113,4 +120,6 @@ unchanged.
 tests and for machines without vsock. `guestd call <request> [json]` is the
 client side of this document: it is what the NixOS VM test drives and what an
 operator uses on a guest that has lost hostd (`ops/RUNBOOK.md`, "Guest
-unresponsive"). hostd's own client is `internal/vsockrpc`.
+unresponsive"). hostd's own client is `internal/hostd/vsockrpc`, reached through the typed
+`Session` of `internal/hostd/vsockclient`; `internal/vsockrpc` is the
+guest's server and `guestd call`.

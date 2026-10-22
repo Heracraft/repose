@@ -146,10 +146,11 @@ copy-paste version):
   `ops/prometheus/targets/hosts.yml`, which Prometheus re-reads every minute,
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
-- `ops/alerts.yaml` goes in its rule files, `ops/alertmanager/repose-route.yaml`
-  into Alertmanager, and calert (`ops/alertmanager/calert/`) next to it,
-  which posts to the owner's Google Chat space. Watchdog goes to an Uptime
-  Kuma push monitor (DECISIONS I-648; `ops/README.md` step 3).
+- `ops/alerts.yaml` goes in its rule files and
+  `ops/alertmanager/repose-route.yaml` into Alertmanager, which emails the
+  owner itself; its SMTP password is a Resend API key in
+  `/etc/alertmanager/secrets`. Watchdog goes to an Uptime Kuma push
+  monitor (DECISIONS I-648, I-848; `ops/README.md` step 3).
 - `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
   provisioning; the eight dashboards appear in a `repose` folder.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
@@ -882,6 +883,101 @@ where to look.
    look at `incomplete` (the last shutdown) and `window` (this start)
    first.
 
+## GuestWakeFailed
+
+A machine nobody was using had its vCPUs paused (DECISIONS I-818) and
+would not resume. Nothing is lost yet: the guest's memory, its processes
+and its open files are where they were, and the project still reads
+`running`. What the owner sees is the gateway's own refusal --
+``environment is frozen and did not wake; try again shortly`` -- usually
+under the CLI's ``todo-app is running but did not answer ssh in 15 s``,
+which is what wraps it. Treat it as a tenant blocked, not as an idle
+machine.
+
+1. Which guests are resting on the host, and which are not coming back:
+   `hostd guests --json` on the host, and
+   `journalctl -u hostd | grep '"event":"guest_resting"'` for the
+   failures, whose `phase` is the step. `repose_host_guests_resting` is
+   the count per host.
+2. A wake happens again by itself on the next thing the user does, and
+   `hostd wake GUEST_ID` on the host asks for one now; it is idempotent,
+   so a guest already awake answers and nothing changes. A wake that
+   works from the host and not from the api is the api's send path, not
+   the guest: check `command_send`/`command_result` for that guest and
+   HostReportsRefused.
+3. `reason` is the step that failed:
+   - `resume`: `vm.resume` did not leave the VM `Running` within
+     `WakeResumeWait`. Check the guest's hypervisor process is alive
+     (`systemctl status guest@GUEST_ID`) and the `vm.info` state beside
+     it; a guest whose hypervisor is gone is not a wake problem, see
+     "hostd: hypervisor exited unexpectedly". A host with no CPU left is
+     the other cause: see GuestWakeSlow.
+   - `guestd`: the guest resumed and guestd did not answer within
+     `WakeGuestdWait`. See "Guest unresponsive"; the guest's own services
+     are what to look at, and its memory is intact until something stops
+     the machine.
+   - `state`: the guest is no longer one that can be woken (it stopped,
+     or a freeze holds it). Read the state in `hostd guests --json`
+     before anything else; `Guest freeze` covers the frozen-image case,
+     which shares the word and is a different mechanism.
+   - A clock that was not stepped is logged (`guest clock not set after
+     the wake`) and is not a failed wake: the machine works, with its
+     clock behind by the length of its rest, and the next wake steps it.
+4. To stop the host pausing anything while you work on it, the lever is
+   the `pause` feature in its Hello: the api pauses only on a host that
+   names it, so a host rolled back to a hostd without it stops resting
+   its guests, and its already-frozen guests wake on their next use.
+5. A guest that cannot be woken at all is a stop and a start, which ends
+   every process on it. That loss is the owner's to accept: tell them
+   what happened before stopping anything, and `repose start` is theirs
+   to run.
+
+## GuestWakeSlow
+
+Waking a frozen guest takes over 5 seconds at p90 on this host
+(DECISIONS I-818). The gateway waits for a wake inside its 10 s dial
+budget, so the next slow one is an ssh that fails on a machine that is
+running, and every first keystroke on that host is late.
+
+1. The host, not the guests, is almost always the cause: compare
+   `repose_host_load1` against `repose_host_cpu_cores`, and see
+   HostCPUSaturated. A resume is cheap; what is slow is a host with no
+   CPU left to run the resumed guest's first scheduling.
+2. `repose_host_guests_resting` and `repose_host_guests` together say how
+   much of the host is frozen. A host that rests most of its guests and
+   then wakes several at once (a morning, a batch of pushes) pays for all
+   of them in the same minutes.
+3. `repose_host_guest_wake_seconds` is hostd's own measurement, the
+   `wake_ms` of the result. The user's figure is larger by the gateway's
+   dial and the ssh handshake; measure that end to end from a laptop
+   before changing anything on the host.
+4. The remedy is fewer or smaller guests on the host (the same arithmetic
+   as HostCPUSaturated), not a change to the pause rule.
+
+## ApiWakeFailed
+
+The api asked a host to wake a frozen machine and could not get one
+(DECISIONS I-822). Nothing is lost -- the machine still holds its
+processes and all of its memory -- but somebody's `ssh`, answer or
+command is waiting on a machine the dashboard calls running, and the
+host's own GuestWakeFailed stays quiet for exactly this case, because
+hostd never answered.
+
+1. Is the host connected? `repose_api_grpc_streams` and `repose-admin
+   hosts list`. A host whose stream is down takes no commands at all, so
+   HostUnreachable and the host's own alerts are the ones to work.
+2. If the host is connected, the wake ran out of time
+   (`resting.WakeTimeout`, 8 s). Loki `{component="api"} | json |
+   event="guest_wake_fail"` names the project and the error; the host's
+   `{component="hostd"} | json | event="guest_resting"` says whether the
+   resume was even started.
+3. Do not restart the machine to clear the alert. A stop or a restart
+   ends every process the pause kept, which is the loss the feature
+   exists to prevent; `hostd wake <guest_id>` on the host is the move,
+   and GuestWakeFailed above is its procedure.
+4. The user's own next attach asks for the wake again, so an alert that
+   clears itself needs nothing.
+
 ## MinerStopped
 
 The api stopped a guest because its process sample named a cryptocurrency
@@ -1015,6 +1111,15 @@ Host root filesystem over 85 percent, almost always `/nix/store`.
 ## GuestdLost
 
 hostd cannot talk to a guest's guestd for 5 minutes.
+
+**First: is the machine merely frozen?** `hostd guests --json` on the
+host says which guests are resting (DECISIONS I-818). This alert cannot
+fire for one -- a resting guest's sample keeps `guestd_ok` true, which is
+what `repose_host_guestd_lost` counts (I-824) -- but step 2 below is a
+stop without a snapshot, and run against a frozen machine it destroys
+every process and all the memory the pause exists to keep. If the guest
+is resting, `hostd wake <guest_id>` is the move, and "GuestWakeFailed"
+below is the procedure.
 
 1. `repose-admin projects show <id>`: is the guest `running`? If the
    guest crashed, the transient unit is gone: `repose-admin projects
@@ -1392,6 +1497,144 @@ The hourly usage rollup is more than 2 hours behind.
    hostd restart) is skipped and logged with the project id.
 2. `repose-admin billing rollup --hour <hour>` to re-run one hour.
 
+## ApiErrors
+
+One api route is answering 5xx for over 5 percent of its requests.
+
+1. `{component="api"} | json | status >= 500` in Loki has the route and the
+   `request_id`; the same `request_id` in the op's log line carries the
+   phase.
+2. `/healthz` at 503 is not the route: it is Postgres unreachable or a
+   migration still pending, and every other route fails with it. Check the
+   Coolify VM's Postgres first (`ApiDown` fires beside it when the process
+   is gone).
+3. One route alone, with the rest healthy, is that route's handler. Create,
+   start and restore go through the ops engine, so `repose-admin ops list
+   --state error` names the phase.
+4. The threshold is a share, so at launch volume a single failed request can
+   pass it. Raise it to 0.2 once the fleet does over ten requests a second,
+   not before: a quiet system's errors are the ones worth reading.
+
+## OpsFailing
+
+An op finished in `error`: a machine a user asked for and did not get.
+
+1. `repose-admin ops list --state error`, then `repose-admin ops log <op
+   id>` for the full output (build output is in `build_logs`, not Loki).
+2. The op's error names the phase. A create that failed after `CreateGuest`
+   has a volume and a reservation behind it; the destroy path reclaims
+   both, and `repose-admin ops list --kind destroy` shows it ran.
+3. A build failure is the tenant's configuration, not the fleet: the op's
+   log has the Nix error and the user sees the same sentence.
+4. Every kind failing at once is the host: check `HostdDown` and
+   `repose_host_stream_connected`.
+
+## ScheduleRefused
+
+The fleet refused to place a guest. The subscription holds its memory and
+the user cannot start a machine.
+
+1. `repose-admin seats` says which ceiling the fleet is against: the usable
+   8 GB blocks its hosts' memory divides into, or the seats their physical
+   cores can serve (DECISIONS I-739, I-784).
+2. `no_capacity` is memory and `no_cpu` is cores, and they are bought
+   differently (I-736): memory wants a larger host, cores want another one.
+   The Host capacity dashboard says which host is full.
+3. `error` is neither: placement itself failed. The api logged
+   `schedule_fail` with `reason="error"` and the api's own error.
+4. The apply that adds a host is the owner's (`docs/ops/RELEASE.md`). Until
+   it runs, `repose-admin hosts list` may show a drained host that can be
+   undrained instead.
+
+## GatewayDialFailing
+
+The gateway cannot reach guest sshd. A user's `repose attach` fails with a
+healthy guest behind it.
+
+1. `{component="gateway"} | json | event="dial_fail"` names the project.
+2. Every project at once is the path, not the guests: check
+   `repose_gateway_wgsync_peers` against the running guests and
+   `repose_gateway_wgsync_errors_total`. A host whose tunnel dropped takes
+   all of its guests with it.
+3. One project is its sshd: `repose-admin exec <id> -- systemctl status
+   sshd` (audited), and the guest's console in Loki
+   (`{component="console", guest_id="<id>"}`).
+4. The counter carries no reason by design; the log line is the reason.
+
+## SnapshotFailing
+
+A snapshot failed on a host. A stop with no snapshot leaves the work only
+on the volume, and a destroy after it loses the work.
+
+1. `{component="hostd"} | json | event="snapshot"` has the guest and the
+   code. `repose-admin ops list --kind snapshot` has the op the api asked
+   for.
+2. `SnapshotStale` is the slow half of the same signal and reads the api's
+   backstop gauge, which is refreshed on a 24-hour ticker; this rule reads
+   the histogram the failing path observes, so it fires first. Both firing
+   is one incident.
+3. Blob upload failures leave the thin snapshot on the host: `lvs
+   vg-guests` shows it and the next attempt reuses the name. A full pool is
+   `PoolHigh`.
+4. Repeated failures on one host with the rest healthy: check the host's
+   Key Vault reachability (`repose_api_keyvault_errors_total` is the api's
+   view, not hostd's) and its blob credentials.
+
+## BillingWebhookErrors
+
+A Polar delivery arrived, was trusted, and could not be applied. Polar
+believes in a subscription the api does not.
+
+1. `{component="api"} | json | event="webhook_received" | result="error"`
+   has the event kind. The body is never logged.
+2. Polar's dashboard holds the truth. Compare it with `repose-admin billing
+   show <handle>` and fix the subscriptions row by hand if it is behind;
+   Polar can also redeliver the event from its dashboard, which is the
+   first thing to try because the handler is idempotent.
+3. This rule is absolute and will not clear by itself: the first error of a
+   kind arrives as a new series at 1, which `increase()` can read as no
+   rise, so the expression counts the total. When the account is
+   reconciled, silence it with a reason: `amtool silence add
+   alertname=BillingWebhookErrors --duration 720h --comment "reconciled
+   <handle> 2026-10-19"`. A silence with no comment is deleted nightly.
+4. `BillingWebhookRejected` is the other failure: the signing secret and
+   the endpoint have drifted and nothing is applied at all.
+
+## BillingGap
+
+A running project went unsampled, so `usage_hours` has a hole in the hour
+invoices are built from. The account is under-billed for it and an abuser
+would be invisible in it.
+
+1. `{component="api"} | json | event="billing_gap"` names the project and
+   the hour.
+2. One project: its guestd. `repose_host_guestd_lost` on its host and the
+   guest's console say whether the guest lost the vsock connection.
+3. Every project on one host: the host's sample stream.
+   `repose_host_stream_connected` and `repose_host_samples_dropped_total`,
+   then `journalctl -u hostd`.
+4. The hour cannot be recovered: samples are what the rollup reads and a
+   minute with no sample is gone. `repose-admin billing rollup --hour
+   <hour>` re-runs the arithmetic over whatever samples exist, which is how
+   a late-arriving sample is picked up.
+
+## ControlDiskFull
+
+The control VM's disk is over 85 percent full. Postgres is on it.
+
+1. `ssh` to the control VM and `df -h`. Three things fill it: Docker
+   images and build cache, Postgres, and Coolify's own logs.
+2. `docker system prune -a --filter "until=168h"` is the usual answer and
+   is safe: Coolify pulls what it needs on the next deploy.
+3. Postgres growing is the sample tables. The api calls
+   `repose_partitions_maintain()` hourly and drops partitions past the 90
+   and 30 day retention; if the disk is filling with them,
+   `PartitionDropFail` is firing too and that heading is the one to follow.
+   `select * from repose_partitions_maintain();` runs it by hand.
+4. Do not let this reach 100 percent. Postgres stops accepting writes, so
+   every create, every sample and the hourly rollup fail at once, and the
+   api answers 503 on `/healthz` with no host alert to explain it.
+
 ## PartitionDropFail
 
 The hourly `repose_partitions_maintain()` is failing: `meter_samples` and
@@ -1617,6 +1860,12 @@ With `repose.host.freeze.enable` a host freezes its running guests to an
 encrypted memory image when it shuts down and restores them at hostd's
 next start (DECISIONS I-652, I-653). Off by default; turned on for
 host-stg-01, and for host-01 since 2026-10-12 (I-686).
+
+This is not the idle pause, which shares the user's word for it. A guest
+the idle pause left resting (I-824) is already paused, so the freeze
+snapshots it as it is and the thaw resumes it and clears its marker: a
+host restart brings every guest back awake, and
+`repose_host_guests_resting` reads 0 until the rule rests them again.
 
 Turning it on for a host:
 1. tofu: set `freeze_keyvault_name` for the environment and apply (a Key
@@ -2191,7 +2440,7 @@ drain).
 The people told, the evidence captured and the tenant notice (workstream
 14 §5):
 
-- **Told, in this order:** the owner (Google Chat through calert, then
+- **Told, in this order:** the owner (email from Alertmanager, then
   the incident file); the
   affected tenants; a third party only if their credentials inside the
   guest could have been read (GitHub, OpenAI, Anthropic) so they can

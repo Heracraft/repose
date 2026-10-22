@@ -6,7 +6,7 @@
 #
 # Every alert name is a heading in docs/ops/RUNBOOK.md, and `promtool test
 # rules ops/alerts_test.yaml` has a case per rule. Alertmanager routes them to
-# the owner's Google Chat space through calert, and Watchdog to an Uptime Kuma
+# the owner by email, and Watchdog to an Uptime Kuma
 # push monitor (ops/alertmanager/repose-route.yaml, DECISIONS I-648).
 #
 # Severity: `page` wakes someone (tenants are down or data is at risk),
@@ -235,7 +235,7 @@ groups:
         annotations:
           summary: "Fluent Bit on {{ $labels.host_id }} cannot ship to Loki"
           description: "Retries have been failing for 30 minutes. Chunks buffer to /var/lib/fluent-bit up to 1 GB, then the oldest are dropped."
-          runbook: "docs/ops/RUNBOOK.md#observability"
+          runbook: "docs/ops/RUNBOOK.md#fluentbitstuck"
 
       - alert: FluentBitLogShipperDown
         # FluentBitStuck only fires while Fluent Bit is running and
@@ -589,6 +589,212 @@ groups:
           description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
           runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
 
+      # The launch window's rules (DECISIONS I-800). Each reads a counter
+      # that already incremented and had no alert: the audit before launch
+      # found five such families, which is instrumentation that costs the
+      # same as none. The thresholds are set for a fleet of tens of
+      # projects; each rule's RUNBOOK heading says what to raise it to
+      # when the volume grows.
+      - alert: ApiErrors
+        # A 5xx is the user's create, start or attach failing. Per route,
+        # because one broken route hides inside a healthy total. The
+        # window is long and the share low: at launch volume a handful of
+        # requests a minute makes any rate jumpy, so the `for` does the
+        # smoothing the rate cannot.
+        expr: |
+          sum by (route) (rate(repose_api_requests_total{status=~"5.."}[10m]))
+            / sum by (route) (rate(repose_api_requests_total[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "api route {{ $labels.route }} is answering {{ $value | humanizePercentage }} 5xx"
+          description: "Loki `{component=\"api\"} | json | status >= 500` has the request_id and the route. /healthz answering 503 is Postgres or a migration, not the route."
+          runbook: "docs/ops/RUNBOOK.md#apierrors"
+
+      - alert: OpsFailing
+        # An op that ends in `error` is a machine a user asked for and did
+        # not get. One is worth reading at this size; the heading says to
+        # raise the threshold rather than widen the window, because a
+        # create that fails for every user and a create that fails for one
+        # look the same in a share.
+        expr: sum by (kind) (increase(repose_api_ops_total{state="error"}[30m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} {{ $labels.kind }} op(s) ended in error"
+          description: "`repose-admin ops list --state error` then `ops log <id>`; the op's error field carries the phase that failed. A create failing after CreateGuest leaves a volume the destroy path reclaims."
+          runbook: "docs/ops/RUNBOOK.md#opsfailing"
+
+      - alert: ScheduleRefused
+        # A seat sold and not delivered: the subscription holds its memory
+        # and the fleet would not place the guest. `no_capacity` and
+        # `no_cpu` are different purchases (I-736) -- memory buys a bigger
+        # host, cores buy more of them -- so the reason is in the label and
+        # in the summary. `error` is a bug in placement, not a full fleet.
+        expr: sum by (result) (increase(repose_api_schedule_total{result=~"no_capacity|no_cpu|error"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} placement(s) refused: {{ $labels.result }}"
+          description: "A paying user cannot start a machine. `repose-admin seats` says which ceiling the fleet is against and the Host capacity dashboard says which host; the OpenTofu apply for another host is the owner's. Capacity, not a crash: the api answered 503 with capacity, and the op can be retried once a host is ready."
+          runbook: "docs/ops/RUNBOOK.md#schedulerefused"
+
+      - alert: GatewayDialFailing
+        # The gateway reaching sshd is the product: a user whose `repose
+        # attach` cannot dial has no machine, however healthy the guest.
+        # The counter carries no reason, so the log line is the next step.
+        expr: sum(increase(repose_gateway_dial_fail_total[10m])) > 3
+        for: 5m
+        labels:
+          severity: page
+          service: gateway
+        annotations:
+          summary: "the gateway failed {{ $value }} dials to guest sshd in ten minutes"
+          description: "Loki `{component=\"gateway\"} | json | event=\"dial_fail\"` has the project. All projects at once is the WireGuard path or wgsync (check repose_gateway_wgsync_errors_total); one project is its guest's sshd."
+          runbook: "docs/ops/RUNBOOK.md#gatewaydialfailing"
+
+      - alert: SnapshotFailing
+        # SnapshotStale reads the api's backstop gauge, which the expiry
+        # job refreshes on a 24-hour ticker, so a snapshot that fails now
+        # is invisible for up to that long plus the alert's window. The
+        # histogram's count is observed by the failing path itself
+        # (snapshot.go), so this fires within the hour.
+        expr: sum by (host_id, result) (increase(repose_host_snapshot_duration_seconds_count{result!="ok"}[1h])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} snapshot(s) on {{ $labels.host_id }} failed ({{ $labels.result }})"
+          description: "A stop with no snapshot is a user's work left only on the volume. Loki `{component=\"hostd\"} | json | event=\"snapshot\"` names the guest and the code; `repose-admin ops list --kind snapshot` has the op."
+          runbook: "docs/ops/RUNBOOK.md#snapshotfailing"
+
+      - alert: BillingWebhookErrors
+        # Paid and not applied. BillingWebhookRejected covers the secret
+        # drifting (`bad_signature`); this covers the delivery that
+        # arrived, was trusted and could not be stored, which leaves a
+        # subscription Polar believes in and the api does not.
+        #
+        # Deliberately absolute, not an increase(): the first error of a
+        # kind arrives as a brand-new series at 1, which increase() over
+        # any window can read as no rise. It therefore stays firing until
+        # an operator reconciles the account and silences it with a
+        # comment (`amtool silence add`), which is the point -- a dropped
+        # subscription event does not heal.
+        expr: sum(repose_api_billing_webhook_total{result="error"}) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $value }} Polar webhook deliver(ies) failed to apply"
+          description: "Loki `{component=\"api\"} | json | event=\"webhook_received\" | result=\"error\"` has the kind, never the body. Reconcile the account against Polar's dashboard with `repose-admin billing show <handle>`, then silence this with a comment: it is absolute and will not clear by itself."
+          runbook: "docs/ops/RUNBOOK.md#billingwebhookerrors"
+
+      - alert: BillingGap
+        # usage_hours is the ledger invoices are built from. A running
+        # project with no sample for the hour is a hole in it: the rollup
+        # writes the row with gap = true and the hour's egress and disk
+        # are lost, which under-bills the account and hides an abuser.
+        # An hour of one project's minutes is the tolerance.
+        # sum, not max: the rollup runs on whichever replica wins the
+        # advisory lock, so each replica's counter holds the gaps it
+        # personally rolled up and the two are disjoint.
+        expr: sum(increase(repose_api_billing_gap_minutes_total[1h])) > 60
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} project-minutes of the last hour had no meter sample"
+          description: "Loki `{component=\"api\"} | json | event=\"billing_gap\"` names the project and the hour. One project is its guestd (check repose_host_guestd_lost); every project on a host is the host's stream (repose_host_stream_connected)."
+          runbook: "docs/ops/RUNBOOK.md#billinggap"
+
+      - alert: ControlDiskFull
+        # Postgres is on this disk. A full one stops starts, samples and
+        # invoices at once, and every symptom reads as something else: the
+        # api answers 503, the rollup fails, RollupLag rises. 85 percent on
+        # a VM nobody logs into is weeks of warning, so this is a warn that
+        # should never become a page.
+        expr: |
+          1 - (
+            node_filesystem_avail_bytes{job="control-node",fstype!~"tmpfs|ramfs|overlay"}
+            / node_filesystem_size_bytes{job="control-node",fstype!~"tmpfs|ramfs|overlay"}
+          ) > 0.85
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "the control VM's {{ $labels.mountpoint }} is over 85 percent full"
+          description: "Postgres, the api images and Coolify's build cache share this disk. `docker system prune` and the sample tables' partitions (repose_partitions_maintain) are the two things that free space; the partitions are dropped hourly by the api, so a disk filling with them means PartitionDropFail is also firing."
+          runbook: "docs/ops/RUNBOOK.md#controldiskfull"
+
+      - alert: GuestWakeFailed
+        # A frozen guest (DECISIONS I-818) that would not resume. Its
+        # memory and processes are intact, but nothing the user does
+        # reaches the machine until a wake succeeds, so this is a tenant
+        # blocked on a machine the dashboard still calls running. `reason`
+        # is the step that failed: resume (vm.resume never left the VM
+        # Running), guestd (no answer after the resume) or state (the
+        # guest is no longer one that can be woken).
+        # Not a page: the api and the gateway each retry a wake on the
+        # next thing the user does, so a single failure that clears
+        # itself is normal; a reason that keeps rising for 5 minutes is
+        # the host.
+        expr: |
+          sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $value }} wake(s) of a frozen guest on {{ $labels.host_id }} failed ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_resting\"` names each guest and the phase it failed at. The guests are still running with their memory; `hostd guests --json` on the host lists which are resting."
+          runbook: "docs/ops/RUNBOOK.md#guestwakefailed"
+
+      - alert: GuestWakeSlow
+        # The feature's promise is a machine that comes back at once
+        # (I-818). The gateway waits for a wake inside its 10 s dial
+        # budget, so a p90 over 5 s means the next slow wake is a failed
+        # ssh, and the user sees `did not answer ssh` on a machine that
+        # is running. Measured over 15 minutes so one cold wake does not
+        # fire it.
+        expr: |
+          histogram_quantile(0.9,
+            sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "waking a frozen guest on {{ $labels.host_id }} takes over 5s at p90"
+          description: "{{ $value | humanizeDuration }} at p90. The host's load is the usual cause; compare with repose_host_load1 and the guests resting on it (repose_host_guests_resting)."
+          runbook: "docs/ops/RUNBOOK.md#guestwakeslow"
+
+      - alert: ApiWakeFailed
+        # The api asked for a wake and could not get one (DECISIONS
+        # I-822). This is the half of a failed wake the host's own
+        # counter cannot see: a host that is not connected, or a wake
+        # that ran out of time before hostd answered. Those are the
+        # failures a user feels, because every one of them is somebody's
+        # ssh, answer or command waiting on a machine the dashboard
+        # still calls running.
+        # Not a page, for GuestWakeFailed's reason: the next thing the
+        # user does asks for the wake again.
+        # `reason` here is what ASKED for the wake (connect, op, answer,
+        # keep_awake) -- not the step that failed, which is what `reason`
+        # means on GuestWakeFailed above. hostd knows the step; the api
+        # only knows it got no answer, so this label says who was
+        # waiting. Read the two together and they say "a connect was
+        # waiting" and "the resume is what broke".
+        expr: |
+          sum by (reason) (increase(repose_api_resting_wake_total{result="failed"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "the api failed {{ $value }} wake(s) of a frozen machine (asked for by: {{ $labels.reason }})"
+          description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
+          runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
+
   # Anti-abuse (DECISIONS I-238..I-240). Nothing here pages: the guest is
   # already blocked or stopped when these fire, and what remains is a
   # human decision about the account (`repose-admin users suspend`).
@@ -644,7 +850,7 @@ groups:
   # The alerting path's own heartbeat (DECISIONS I-648). Watchdog always
   # fires; Alertmanager sends it to an Uptime Kuma push monitor every
   # minute, and Kuma posts to Google Chat when the pushes stop. That is the
-  # only way to hear that Prometheus, Alertmanager, calert or the personal
+  # only way to hear that Prometheus, Alertmanager or the personal
   # server itself has died: every other alert dies with them.
   - name: repose-meta
     interval: 1m

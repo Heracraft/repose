@@ -29,29 +29,38 @@ func TestAPIFamily(t *testing.T) {
 	a.Hosts.WithLabelValues("ready").Set(1)
 	a.Projects.WithLabelValues("running", "large").Set(1)
 	a.ScheduleTotal.WithLabelValues("ok").Inc()
+	a.RestingWakeTotal.WithLabelValues("connect", "woken").Inc()
+	a.RestingCandidates.WithLabelValues("would_rest").Set(1)
+	a.RestingCandidateMinutesTotal.WithLabelValues("would_rest").Inc()
 	a.NotifyTotal.WithLabelValues("email", "ok").Inc()
 	a.BillingWebhookTotal.WithLabelValues("subscription.created", "ok").Inc()
-	a.BillingGateRefusedTotal.WithLabelValues("plan_limit").Inc()
+	a.BillingGateRefusedTotal.WithLabelValues("plan_limit", "solo").Inc()
 	a.BillingSubscriptions.WithLabelValues("solo", "active").Inc()
+	a.Subscriptions.WithLabelValues("solo", "active").Set(1)
+	a.MRRCents.WithLabelValues("active").Set(4900)
+	a.SnapshotExpiryFailTotal.WithLabelValues("blob").Inc()
 
 	want := map[string][]string{
-		"repose_api_requests_total":                {"method", "route", "status"},
-		"repose_api_request_duration_seconds":      {"route"},
-		"repose_api_hosts":                         {"state"},
-		"repose_api_projects":                      {"class", "state"},
-		"repose_api_schedule_total":                {"result"},
-		"repose_api_certs_issued_total":            nil,
-		"repose_api_certs_revoked_total":           nil,
-		"repose_api_rollup_lag_seconds":            nil,
-		"repose_api_notify_total":                  {"channel", "result"},
-		"repose_api_billing_webhook_total":         {"kind", "result"},
-		"repose_api_billing_overage_charges_total": {"result"},
-		"repose_api_billing_gate_refused_total":    {"reason"},
-		"repose_api_billing_subscriptions_total":   {"plan", "status"},
-		"repose_api_billing_stops_total":           {"reason"},
-		"repose_api_snapshot_age_seconds":          nil,
-		"repose_api_egress_alert_projects":         nil,
-		"repose_api_partition_drop_fail_total":     nil,
+		"repose_api_requests_total":                  {"method", "route", "status"},
+		"repose_api_request_duration_seconds":        {"route"},
+		"repose_api_hosts":                           {"state"},
+		"repose_api_projects":                        {"class", "state"},
+		"repose_api_schedule_total":                  {"result"},
+		"repose_api_resting_wake_total":              {"reason", "result"},
+		"repose_api_resting_candidates":              {"result"},
+		"repose_api_resting_candidate_minutes_total": {"result"},
+		"repose_api_certs_issued_total":              nil,
+		"repose_api_certs_revoked_total":             nil,
+		"repose_api_rollup_lag_seconds":              nil,
+		"repose_api_notify_total":                    {"channel", "result"},
+		"repose_api_billing_webhook_total":           {"kind", "result"},
+		"repose_api_billing_overage_charges_total":   {"result"},
+		"repose_api_billing_gate_refused_total":      {"plan", "reason"},
+		"repose_api_billing_subscriptions_total":     {"plan", "status"},
+		"repose_api_billing_stops_total":             {"reason"},
+		"repose_api_snapshot_age_seconds":            nil,
+		"repose_api_egress_alert_projects":           nil,
+		"repose_api_partition_drop_fail_total":       nil,
 		// I-239: the abuse alerts' inputs.
 		"repose_api_abuse_stops_total":              {"kind"},
 		"repose_api_abuse_held_projects":            nil,
@@ -59,6 +68,12 @@ func TestAPIFamily(t *testing.T) {
 		// I-445..I-447: what the api dropped or could not store from hosts.
 		"repose_api_host_reports_refused_total": {"reason"},
 		"repose_api_samples_failed_total":       {"reason"},
+		// I-802: what the fleet earns, beside the seats it sells.
+		"repose_api_subscriptions": {"plan", "status"},
+		"repose_api_mrr_cents":     {"status"},
+		// I-800: the retention's two blind spots.
+		"repose_api_snapshot_expiry_fail_total": {"reason"},
+		"repose_api_blob_configured":            nil,
 	}
 
 	fams, err := m.Registry().Gather()

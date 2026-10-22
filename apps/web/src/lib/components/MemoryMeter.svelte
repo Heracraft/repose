@@ -14,7 +14,6 @@
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { FROZEN_LOOK } from '$lib/flags';
 	import { gbs } from '$lib/format';
 
 	let {
@@ -42,8 +41,11 @@
 	let over = $derived(r1(Math.max(0, used - limit)));
 	let left = $derived(r1(Math.max(0, limit - used)));
 	let scale = $derived(Math.max(limit, used, 1));
-	/** Frozen is named only where the dashboard draws frozen machines. */
-	let showFrozen = $derived(FROZEN_LOOK || frozen > 0);
+	/** Frozen is named only when some memory is frozen. It was named
+	    whenever the frozen look was on, which was every dev server, so an
+	    account with nothing frozen read "0 GB frozen"; the flag went with
+	    I-826 and the line goes with it (I-485, I-856). */
+	let showFrozen = $derived(frozen > 0);
 
 	// Running from the left, frozen after it, both cut at the plan's limit;
 	// what lies past the limit is one amber span after the tick. A 2px gap
