@@ -170,9 +170,11 @@ entry and this list with it. Counts as of 2026-10-21.
       prints 0 lines; `rg -n --glob '*.svelte' -e '--[a-z]+-[a-z]+:' $W | rg
       -v -e '--hk-|--i:|--n:|--cols:|--d:'` prints 0 lines (with `-e`: after
       a bare `--`, rg reads `--glob` as a path).
-- [ ] No native or modal dialogs. Evidence: `rg -n
-      'window\.confirm|[^.\w/]confirm\(|<dialog|showModal' $W --glob
-      '*.{svelte,ts}' | rg -v '//|onconfirm'` prints 0 lines.
+- [ ] No native or modal dialogs outside the docs search palette. Evidence:
+      `rg -n 'window\.confirm|[^.\w/]confirm\(|<dialog|showModal' $W --glob
+      '*.{svelte,ts}' | rg -v '//|onconfirm'` prints only
+      `lib/components/DocsSearch.svelte`, 2 lines (I-841, amended
+      2026-10-21).
 - [ ] Copy holds. Evidence: `pnpm -C apps/web exec vitest run
       src/lib/copy.test.ts src/lib/docs.test.ts` passes; `rg -n '—'
       $W/routes $W/lib/components --glob '*.svelte' | rg -v '<!--|//|\*'`

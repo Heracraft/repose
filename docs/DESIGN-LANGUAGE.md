@@ -161,7 +161,7 @@ markup.
 | 8px | `--hk-radius` | buttons, inputs, banners, toasts, menus, the inline confirm, command lines |
 | 9px | `--hk-radius-9` | segmented track |
 | 12px | `--hk-radius-lg` | code panes, the terminal, plan cards, panels |
-| 14px | `--hk-radius-xl` | kit modals (unused) |
+| 14px | `--hk-radius-xl` | the docs search palette |
 | pill | `--hk-radius-pill` | dots, meter track |
 
 Tailwind's `rounded-*` steps map onto these values (`rounded-lg` is 8px), but
@@ -747,7 +747,8 @@ lives there.
 
 A confirmation opens in place, under the control that asked for it, and
 focus moves into it and back when it closes (`lib/focus.ts`, I-386, I-391).
-No modal dialog and no `confirm()`.
+No modal dialog and no `confirm()`; the one modal is the docs search
+palette (I-841).
 
 - `hk-confirm` (repose) with `hk-confirm-actions`: `--hk-surface-2`, 8px
   corners, one sentence naming the target and the consequence, then the

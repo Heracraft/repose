@@ -260,7 +260,7 @@
 		flex: none;
 		padding: 0.125rem 0.375rem;
 		border: 1px solid var(--hk-border);
-		border-radius: 5px;
+		border-radius: var(--hk-radius-sm);
 		background: none;
 		color: var(--hk-text-3);
 		font: inherit;
@@ -350,7 +350,7 @@
 	   accent title still shows them. */
 	.pal mark {
 		padding: 0;
-		border-radius: 3px;
+		border-radius: var(--hk-radius-xs);
 		background: color-mix(in srgb, var(--hk-accent) 16%, transparent);
 		color: inherit;
 		box-decoration-break: clone;
