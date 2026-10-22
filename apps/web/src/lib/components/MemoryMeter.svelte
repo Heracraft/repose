@@ -109,7 +109,7 @@
 			<span><i class="sw sw--ice" aria-hidden="true"></i>{gbs(r1(frozen))} frozen</span>
 		{/if}
 		{#if over}
-			<span class="is-over"><i class="sw sw--over" aria-hidden="true"></i>{gbs(over)} over</span>
+			<span><i class="sw sw--over" aria-hidden="true"></i>{gbs(over)} over</span>
 		{:else}
 			<span><i class="sw sw--left" aria-hidden="true"></i>{gbs(left)} left</span>
 		{/if}
@@ -183,14 +183,11 @@
 		gap: 0.375rem;
 		white-space: nowrap;
 	}
-	.split .is-over {
-		color: var(--hk-warn);
-	}
 	.sw {
 		flex: none;
 		width: 8px;
 		height: 8px;
-		border-radius: 2px;
+		border-radius: var(--hk-radius-pill);
 	}
 	.sw--run {
 		background: var(--hk-accent);
@@ -204,7 +201,7 @@
 	/* Left is the empty track: its key is the track with an edge. */
 	.sw--left {
 		background: var(--free);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--m) 45%, transparent);
+		box-shadow: inset 0 0 0 1px var(--hk-border-strong);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -225,7 +222,8 @@
 		}
 		.clip {
 			background: Canvas;
-			box-shadow: inset 0 0 0 1px GrayText;
+			outline: 1px solid GrayText;
+			outline-offset: -1px;
 		}
 		.seg--run,
 		.sw--run,
@@ -242,7 +240,9 @@
 		}
 		.sw--left {
 			background: Canvas;
-			box-shadow: inset 0 0 0 1px GrayText;
+			box-shadow: none;
+			outline: 1px solid GrayText;
+			outline-offset: -1px;
 		}
 	}
 </style>
