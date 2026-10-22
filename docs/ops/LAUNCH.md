@@ -74,11 +74,10 @@ runs the production organization.
    Run 2026-10-19: the organization `repose` holds the meter, the three
    products, the founding discount and the webhook, a rerun creates
    nothing, and `api` and `api-grpc` carry the block with
-   `POLAR_ENVIRONMENT=production`. One thing is left and it is yours.
-   `capabilities.checkout_payments` on `GET /v1/organizations/` is false
-   until the business, the identity check and the payout account are
-   submitted under Finance > Account, and while it is false no card is
-   charged.
+   `POLAR_ENVIRONMENT=production`. Production takes a card from
+   2026-10-22. What is left is the first real charge. Run `M4-GATE.md`
+   sections 2 to 5 against production with your own card, on a day you
+   choose.
 
 A promotion needs a code change: the checkout turns Polar's discount
 code field off (I-604). With it turned back on, a code made in Polar's
