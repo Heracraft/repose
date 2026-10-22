@@ -24566,9 +24566,9 @@ old content in the new style, keeping the new copy-command controls.
   owner chose.
 - *Questions a visitor would try it for.* The FAQ's three setup questions
   (files after a stop, the Claude Code login, Windows) give way to five
-  about the value: close the laptop while the agent works, recover from a
-  wreck, three agents on three approaches, getting work back, the cost of
-  a stopped machine. The owner: questions about where a login lives "won't
+  about the value: why not skip permissions on the laptop, close the
+  laptop while the agent works, recover from a wreck, three agents on
+  three approaches, why not set up a server yourself. The owner: questions about where a login lives "won't
   pull them into the product".
 - *Docs tables.* A column whose every body cell is a figure right-aligns
   its heading too (`lib/docs.ts`, `alignFigureHeads`); "Cores" sat left

@@ -20,7 +20,6 @@
 	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
 	import Gauge from '$lib/components/landing/Gauge.svelte';
-	import { RESTART } from '$lib/components/landing/session';
 
 	let signingIn = $state(false);
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
@@ -250,6 +249,15 @@
 		</div>
 		<div class="faq">
 			<details>
+				<summary>Why not skip permissions on my laptop?{@render plus()}</summary>
+				<p>
+					There the agent can read whatever you can: your SSH keys, your other repositories, the
+					sessions in your browser. On repose it gets a machine holding one project and the logins
+					you chose to copy. Nothing on that machine can open a connection to your laptop, and your
+					other projects are separate machines it can't reach.
+				</p>
+			</details>
+			<details>
 				<summary>Can I close my laptop while the agent works?{@render plus()}</summary>
 				<p>
 					Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
@@ -258,14 +266,11 @@
 				</p>
 			</details>
 			<details>
-				<summary>What if an agent with full permissions wrecks the machine?{@render plus()}</summary
-				>
+				<summary>What if the agent wrecks the machine?{@render plus()}</summary>
 				<p>
 					You restore a snapshot. repose takes one every night and at every stop, and
 					<code>repose snapshots create</code> takes one before something risky. A restore brings back
-					the disk whole: code, databases, installed tools and logins made on the machine. The agent can't
-					reach your laptop, and each project is its own virtual machine, so the damage stays on that
-					one.
+					the disk whole: code, databases, installed tools and logins made on the machine.
 				</p>
 			</details>
 			<details>
@@ -278,20 +283,12 @@
 				</p>
 			</details>
 			<details>
-				<summary>How does the agent's work get back to my laptop?{@render plus()}</summary>
+				<summary>Why not rent a server and set it up myself?{@render plus()}</summary>
 				<p>
-					Through git. <code>git fetch repose</code> on your laptop brings the agent's commits over,
-					and you merge or rebase them as you would a teammate's. Or share your
-					<code>gh</code> login and let the agent push to GitHub.
-				</p>
-			</details>
-			<details>
-				<summary>What does a stopped machine cost?{@render plus()}</summary>
-				<p>
-					Nothing. A plan buys memory for the machines running at once, and a stopped one takes
-					none; what its disk holds counts toward the plan's disk. The next <code>repose run</code>
-					or <code>repose attach</code> starts it again in {RESTART}, with your files where you left
-					them.
+					You can, and spend the first hour installing CLIs, logging in to GitHub and copying
+					<code>.env</code> files, then again for the next project. <code>repose run</code> copies your
+					tools, logins and uncommitted work from your laptop, and each machine comes with nightly snapshots,
+					forks and its ports on your localhost.
 				</p>
 			</details>
 		</div>

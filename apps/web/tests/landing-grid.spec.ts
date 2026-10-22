@@ -99,22 +99,20 @@ test('the agents section links to the agents and everything installed', async ({
 });
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {
-	const index = readFileSync(join(DOCS, 'index.md'), 'utf8');
-	const restart = index.match(/starts it again in (about \d+ seconds)/)![1];
+	// The first answer is secrets.md's "Not your laptop", in its words.
+	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
+	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
 	await page.goto('/');
 	const q = page.locator('section', { has: page.getByRole('heading', { name: 'Questions' }) });
 	await expect(q.locator('summary')).toHaveText([
+		'Why not skip permissions on my laptop?',
 		'Can I close my laptop while the agent works?',
-		'What if an agent with full permissions wrecks the machine?',
+		'What if the agent wrecks the machine?',
 		'Can three agents try three approaches at once?',
-		"How does the agent's work get back to my laptop?",
-		'What does a stopped machine cost?'
+		'Why not rent a server and set it up myself?'
 	]);
 	const first = q.locator('details').first();
 	await expect(first.locator('p')).toBeHidden();
 	await first.locator('summary').click();
-	await expect(first.locator('p')).toContainText('the agent keeps working');
-	const last = q.locator('details').last();
-	await last.locator('summary').click();
-	await expect(last.locator('p')).toContainText(`starts it again in ${restart}`);
+	await expect(first.locator('p')).toContainText('can open a connection to your laptop');
 });

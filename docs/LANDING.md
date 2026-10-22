@@ -62,15 +62,15 @@ headline starting under the logo. In order:
    `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
    as it is until the owner decides the 2026-10-17 notes).
 7. **Questions.** Five a solo founder asks before trying it, each one a
-   reason to: closing the laptop while the agent works (notifications,
-   answering from the phone), an agent with full permissions wrecking the
-   machine (snapshots, isolation from the laptop and other projects),
-   three agents on three approaches (`repose fork`), getting the work back
-   (`git fetch repose`), and what a stopped machine costs. Every answer is
-   from the docs (index, lifecycle, notifications, agents); the restart
-   time is read from `content/docs/index.md` at build time. No question
-   about setup trivia (where a login lives, Windows): those belong in the
-   docs, and they give a visitor no reason to try it (owner, 2026-10-21).
+   reason to: why not skip permissions on the laptop (what the agent can
+   reach there and here), closing the laptop while the agent works
+   (notifications, answering from the phone), the agent wrecking the
+   machine (snapshots), three agents on three approaches (`repose fork`),
+   and why not set up a server yourself. Every answer is from the docs
+   (secrets, notifications, lifecycle, sync). No setup trivia (where a
+   login lives, Windows, how commits come back, what a stopped machine
+   costs): those belong in the docs and give a visitor no reason to try
+   it (owner, 2026-10-21).
 
 A section with a picture puts its heading over a sunken stage (hairline
 edge, the kit's 12px panel radius) the frame's width. The commands
