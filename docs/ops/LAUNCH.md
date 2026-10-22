@@ -19,9 +19,10 @@ apps at the same time; the api ignores it and logs a warning (I-290).
 
 ## 1. Polar (about an hour)
 
-Steps 2 to 5 are done in the sandbox (2026-10-08, DECISIONS I-604): prod's
-api runs Polar's sandbox organization `repose` (sandbox.polar.sh), so
-checkout takes Stripe's test card until step 6 replaces it.
+Steps 2 to 5 were done in the sandbox (2026-10-08, DECISIONS I-604), where
+prod's api ran Polar's sandbox organization `repose` (sandbox.polar.sh) and
+checkout took Stripe's test card. Step 6 replaced that on 2026-10-19: prod
+runs the production organization.
 
 1. Create a Polar account at https://polar.sh and an organization for
    repose (a sandbox organization is made separately at
@@ -69,6 +70,15 @@ checkout takes Stripe's test card until step 6 replaces it.
    and paste the block with the token and `POLAR_ENVIRONMENT=production`
    into Coolify for `api` and `api-grpc`. Tests refuse a production
    environment.
+
+   Run 2026-10-19: the organization `repose` holds the meter, the three
+   products, the founding discount and the webhook, a rerun creates
+   nothing, and `api` and `api-grpc` carry the block with
+   `POLAR_ENVIRONMENT=production`. One thing is left and it is yours.
+   `capabilities.checkout_payments` on `GET /v1/organizations/` is false
+   until the business, the identity check and the payout account are
+   submitted under Finance > Account, and while it is false no card is
+   charged.
 
 A promotion needs a code change: the checkout turns Polar's discount
 code field off (I-604). With it turned back on, a code made in Polar's
