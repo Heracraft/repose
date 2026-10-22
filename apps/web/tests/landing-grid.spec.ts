@@ -1,7 +1,7 @@
 // DECISIONS I-837: "On every machine" is four cells, each a claim, one
 // paragraph and the command that does it. A visitor without the CLI cannot
 // run a command, so the cells carry no copy button. Two columns from 768px,
-// one below; "Agents on first boot" lists agents.md's table.
+// one below. I-843 puts a picture over each cell's claim.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,8 @@ test('four cells, each a claim and its command, no copy button', async ({ page }
 	await grid(page, 1440);
 	await expect(page.locator(`${cells} h3`)).toHaveText(CELLS.map(([h]) => h));
 	await expect(page.locator(`${cells} .cell-cmd`)).toHaveText(CELLS.map(([, c]) => c));
-	await expect(page.locator(`${cells} button`)).toHaveCount(0);
+	// The pictures' pause buttons are the only buttons in the cells.
+	await expect(page.locator(`${cells} button:not(.pic-pause)`)).toHaveCount(0);
 });
 
 // Every command a cell shows is one cli.md documents.
@@ -75,44 +76,43 @@ for (const [width, cols] of [
 	});
 }
 
-test("the agents list is agents.md's table", async ({ page }) => {
-	const md = readFileSync(join(DOCS, 'agents.md'), 'utf8');
-	// The first table, from its "| Agent | `--agent` |" header to its end.
-	const table = md.slice(md.indexOf('| Agent ')).split('\n\n')[0];
-	const rows = [...table.matchAll(/^\| ([^|`]+?)\s+\| `([^`]+)`/gm)]
-		.map((m) => [m[1], m[2]])
-		.filter(([name]) => name !== 'Agent');
-	expect(rows.length).toBeGreaterThanOrEqual(5);
+// I-843: the agents section is the Ready picture under its heading, with
+// its two links on the headline's row.
+test('the agents section links to the agents and everything installed', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto('/');
-	const list = page.getByRole('list', { name: 'Agents' });
-	await expect(list.locator('.name')).toHaveText(rows.map(([n]) => n));
-	// Each value carries its flag, so the column says what it is.
-	await expect(list.locator('.flag')).toHaveText(rows.map(([, f]) => `--agent ${f}`));
-	const section = page.locator('section', {
-		has: page.getByRole('heading', { name: 'Agents on first boot' })
+	const heading = page.getByRole('heading', {
+		name: 'The agents you use, and the tools they need, on first boot'
 	});
-	await expect(section.getByRole('link', { name: 'All agents' })).toHaveAttribute(
-		'href',
-		'/docs/agents'
-	);
+	const section = page.locator('section', { has: heading });
+	const all = section.getByRole('link', { name: 'All agents' });
+	await expect(all).toHaveAttribute('href', '/docs/agents');
 	await expect(section.getByRole('link', { name: 'Everything installed' })).toHaveAttribute(
 		'href',
 		'/docs/machine#whats-installed'
 	);
+	// Beside the headline, its bottom on the headline's last line.
+	const h = (await heading.boundingBox())!;
+	const l = (await all.boundingBox())!;
+	expect(l.x).toBeGreaterThan(h.x + h.width);
+	expect(Math.abs(l.y + l.height - (h.y + h.height))).toBeLessThan(12);
 });
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {
-	const index = readFileSync(join(DOCS, 'index.md'), 'utf8');
-	const restart = index.match(/starts it again in (about \d+ seconds)/)![1];
+	// The first answer is secrets.md's "Not your laptop", in its words.
+	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
+	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
 	await page.goto('/');
 	const q = page.locator('section', { has: page.getByRole('heading', { name: 'Questions' }) });
 	await expect(q.locator('summary')).toHaveText([
-		'Do my files survive a stop?',
-		'Is my Claude Code login copied from my laptop?',
-		'Does the CLI run on Windows?'
+		'Why not skip permissions on my laptop?',
+		'Can I close my laptop while the agent works?',
+		'What if the agent wrecks the machine?',
+		'Can three agents try three approaches at once?',
+		'Why not rent a server and set it up myself?'
 	]);
 	const first = q.locator('details').first();
 	await expect(first.locator('p')).toBeHidden();
 	await first.locator('summary').click();
-	await expect(first.locator('p')).toContainText(`starts the machine again in ${restart}`);
+	await expect(first.locator('p')).toContainText('can open a connection to your laptop');
 });

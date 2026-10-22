@@ -21,6 +21,7 @@
 	"dependencies": {
 		"@logto/browser": "^3.0.14",
 		"@replit/codemirror-lang-nix": "^6.0.1",
+		"animejs": "^4.5.0",
 		"marked": "^15.0.7",
 		"svelte-sonner": "^1.0.5"
 	},

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import './landing.css';
+	import '$lib/components/landing/pictures.css';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -11,8 +12,14 @@
 	import PlanCells from '$lib/components/PlanCells.svelte';
 	import CodeCopy from '$lib/components/CodeCopy.svelte';
 	import CopyButton from '$lib/hk/CopyButton.svelte';
-	import Terminal from '$lib/components/landing/Terminal.svelte';
-	import { AGENTS_LIST, RESTART } from '$lib/components/landing/session';
+	import Hero from '$lib/components/landing/Hero.svelte';
+	import OneCommand from '$lib/components/landing/OneCommand.svelte';
+	import ComesBack from '$lib/components/landing/ComesBack.svelte';
+	import Localhost from '$lib/components/landing/Localhost.svelte';
+	import Browser from '$lib/components/landing/Browser.svelte';
+	import Editor from '$lib/components/landing/Editor.svelte';
+	import Ready from '$lib/components/landing/Ready.svelte';
+	import Gauge from '$lib/components/landing/Gauge.svelte';
 
 	let signingIn = $state(false);
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
@@ -51,6 +58,7 @@
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
 	const steps: { title: string; command: string; what: string }[] = [
+		{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
 		{ title: 'Run in any checkout', command: 'repose run', what: 'repose run' }
 	];
@@ -105,11 +113,9 @@
 			<p class="hk-eyebrow">For solo founders and their agents</p>
 			<h1 class="hk-h1">Your dev environment, replicated in the cloud</h1>
 			<p class="hk-lead">
-				<strong
-					>Each project gets a machine of its own, with your code, tools and logins on it.</strong
-				>
-				Agents there run with full permissions, and nobody approves commands one by one. Snapshot it as
-				you go, and you can put a wrecked machine back in minutes.
+				Your code, tools and logins sit on a machine of its own, where agents run with full
+				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
+				a wrecked machine back in minutes.
 			</p>
 			<div class="ctas">
 				{@render authAction('Get started', 'Open the dashboard')}
@@ -120,33 +126,31 @@
 				<span class="nowrap">{install[2].trimStart()}</span>
 			</p>
 		</div>
-		<Terminal />
+		<div class="stage hero-stage">
+			<Hero />
+		</div>
 	</section>
 
-	<section class="sec split">
-		<div class="side">
+	<section class="sec">
+		<div class="sec-head">
 			<h2 class="hk-h2">Your laptop's setup, in one command</h2>
 			<p class="side-text">
 				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
 				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</p>
 		</div>
-		<ol class="steps">
-			{#each steps as step (step.title)}
-				<li>
-					<p class="step-title">{step.title}</p>
-					<CodeCopy command={step.command} what={step.what} prompt />
-				</li>
-			{/each}
-		</ol>
+		<div class="stage">
+			<OneCommand animated />
+		</div>
 	</section>
 
-	<section class="sec split" id="features">
-		<div class="side">
+	<section class="sec" id="features">
+		<div class="sec-head">
 			<h2 class="hk-h2">On every machine</h2>
 		</div>
 		<ul class="cells">
 			<li>
+				<ComesBack />
 				<h3 class="hk-h3">Let it break the whole machine</h3>
 				<p>
 					repose snapshots the machine nightly, and you can take one yourself any time. Restoring it
@@ -155,6 +159,7 @@
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
 			</li>
 			<li>
+				<Localhost />
 				<h3 class="hk-h3">The machine's ports on your localhost</h3>
 				<p>
 					Ports from 1024 up appear on your localhost while you're attached. When you're not,
@@ -163,11 +168,13 @@
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose open 3000</p>
 			</li>
 			<li>
+				<Browser />
 				<h3 class="hk-h3">Watch the agent's browser, and take over</h3>
 				<p>The agent's Chromium, on your laptop. Click in it to take over.</p>
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose browser</p>
 			</li>
 			<li>
+				<Editor />
 				<h3 class="hk-h3">Open it in your editor</h3>
 				<p>Every machine is an SSH host. Neovim on it, VS Code, Cursor or Zed over SSH.</p>
 				<p class="cell-cmd"><span aria-hidden="true">$</span> repose code your-project</p>
@@ -175,9 +182,9 @@
 		</ul>
 	</section>
 
-	<section class="sec split">
-		<div class="side">
-			<h2 class="hk-h2">Agents on first boot</h2>
+	<section class="sec">
+		<div class="sec-head sec-head--links">
+			<h2 class="hk-h2">The agents you use, and the tools they need, on first boot</h2>
 			<p class="more">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
@@ -186,13 +193,32 @@
 				>
 			</p>
 		</div>
-		<ul class="agents" aria-label="Agents">
-			{#each AGENTS_LIST as agent (agent.flag)}
+		<div class="stage">
+			<Ready />
+		</div>
+	</section>
+
+	<section class="sec">
+		<div class="sec-head">
+			<h2 class="hk-h2">Start in three commands</h2>
+		</div>
+		<!-- The gauge counts the steps up, a third at a time; the last, done,
+		     takes the pictures' blue. -->
+		<ol class="steps steps--rows">
+			{#each steps as step, i (step.title)}
 				<li>
-					<span class="name">{agent.name}</span><code class="flag">--agent {agent.flag}</code>
+					<h3 class="hk-h4 step-title">
+						<span class="step-mark" aria-hidden="true"
+							><Gauge
+								fraction={(i + 1) / steps.length}
+								tone={i === steps.length - 1 ? 'accent' : 'neutral'}
+							/></span
+						>{step.title}
+					</h3>
+					<CodeCopy command={step.command} what={step.what} prompt />
 				</li>
 			{/each}
-		</ul>
+		</ol>
 	</section>
 
 	<section class="sec" id="pricing">
@@ -223,22 +249,47 @@
 		</div>
 		<div class="faq">
 			<details>
-				<summary>Do my files survive a stop?{@render plus()}</summary>
+				<summary>Why not skip permissions on my laptop?{@render plus()}</summary>
 				<p>
-					Yes. The next <code>repose run</code> or <code>repose attach</code> starts the machine
-					again in {RESTART} with your files where you left them.
+					There the agent can read whatever you can: your SSH keys, your other repositories, the
+					sessions in your browser. On repose it gets a machine holding one project and the logins
+					you chose to copy. Nothing on that machine can open a connection to your laptop, and your
+					other projects are separate machines it can't reach.
 				</p>
 			</details>
 			<details>
-				<summary>Is my Claude Code login copied from my laptop?{@render plus()}</summary>
+				<summary>Can I close my laptop while the agent works?{@render plus()}</summary>
 				<p>
-					No. You log into Claude Code once, on the machine itself. The Codex, opencode and GitHub
-					CLI logins your laptop has are copied.
+					Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
+					wants a decision from you, you get an email, a push on your phone through ntfy, or a
+					Google Chat card, and you can answer its question from there.
 				</p>
 			</details>
 			<details>
-				<summary>Does the CLI run on Windows?{@render plus()}</summary>
-				<p>Yes, through WSL. Linux and macOS run it directly.</p>
+				<summary>What if the agent wrecks the machine?{@render plus()}</summary>
+				<p>
+					You restore a snapshot. repose takes one every night and at every stop, and
+					<code>repose snapshots create</code> takes one before something risky. A restore brings back
+					the disk whole: code, databases, installed tools and logins made on the machine.
+				</p>
+			</details>
+			<details>
+				<summary>Can three agents try three approaches at once?{@render plus()}</summary>
+				<p>
+					<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted changes
+					and installed dependencies included, into three new machines, and
+					<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
+					the rest.
+				</p>
+			</details>
+			<details>
+				<summary>Why not rent a server and set it up myself?{@render plus()}</summary>
+				<p>
+					You can, and spend the first hour installing CLIs, logging in to GitHub and copying
+					<code>.env</code> files, then again for the next project. <code>repose run</code> copies your
+					tools, logins and uncommitted work from your laptop, and each machine comes with nightly snapshots,
+					forks and its ports on your localhost.
+				</p>
 			</details>
 		</div>
 	</section>

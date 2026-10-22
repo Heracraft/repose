@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-794 entries.
+795 entries.
 
 ## Scope
 
@@ -720,7 +720,7 @@ pointer, not a summary.
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — L19687
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19745
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19777
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; L19795
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; L19795
 - **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; superseded by I-837; L19825
 - **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; superseded by I-837; L19875
 - **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; superseded by I-837; L19954
@@ -824,5 +824,6 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; L24174
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24174
 - **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24301
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24535

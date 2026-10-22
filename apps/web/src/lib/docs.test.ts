@@ -207,6 +207,11 @@ describe('user docs', () => {
 		expect(billing).toContain('<td class="num">100 GB</td>');
 		expect(billing).toContain('<td class="num">$89</td>');
 		expect(billing).not.toContain('<td class="num">Solo</td>');
+		// A heading over a column of figures sits right with them.
+		const machine = docBySlug('machine')!.html;
+		expect(machine).toContain('<th class="num">Cores</th>');
+		expect(machine).toContain('<th class="num">Disk</th>');
+		expect(machine).toContain('<th>Size</th>');
 	});
 
 	// The rail lists h2s and h3s; a command heading shows as its command.

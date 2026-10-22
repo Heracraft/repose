@@ -91,17 +91,21 @@ test('the run step shows and copies repose run alone', async ({ page, context })
 	await expect(page.getByText('job-alerts')).toHaveCount(0);
 });
 
-// I-837 "each fact once": the install command shows in the hero alone, as
-// the line under the buttons, and the hero's copy button copies exactly it.
-test('the install command shows once, and its button copies it', async ({ page, context }) => {
+// The install command shows twice: under the hero's buttons, and as the first
+// of the three steps (I-843, the owner's call over I-837's "each fact once").
+// The hero's copy button copies exactly it.
+test('the install command shows in the hero and the first step, and its button copies it', async ({
+	page,
+	context
+}) => {
 	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
 	const install = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
-	await expect(page.getByText(install, { exact: true })).toHaveCount(1);
-	await expect(page.locator('main')).toContainText(install);
+	await expect(page.locator('.hero .install')).toHaveText(install);
+	await expect(page.locator('.steps li').first().locator('.code-copy')).toContainText(install);
 	expect(
 		await page.locator('main').evaluate((m, i) => m.textContent!.split(i).length - 1, install)
-	).toBe(1);
+	).toBe(2);
 	const button = page.getByRole('button', { name: 'Copy install command' });
 	const handle = await button.elementHandle();
 	await button.click();
