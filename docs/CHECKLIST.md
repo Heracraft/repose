@@ -32,6 +32,17 @@ written so none of them goes unnoticed again.
       new log calls.
 - [ ] A metric or log event exists for the new failure modes (see
       `ops/OBSERVABILITY.md`). Evidence: named in the PR description.
+- [ ] A new migration takes the next free version, and the loader proves
+      it: two files claiming one version is an error, not an overwrite
+      (DECISIONS I-854). Evidence: `go test ./internal/db -run
+      TestTwoMigrationsMayNotClaimOneVersion` passes, and `ls
+      internal/db/migrations | sed 's/\.\(up\|down\)\.sql$//' | sort -u |
+      cut -c1-4 | uniq -d` prints nothing (the dedupe matters: every
+      version has an up and a down, so counting filenames reports them
+      all). The
+      failure this prevents: two branches written in parallel both add
+      `00NN_`, the second read overwrites the first's script, and the
+      columns of one of them are never created on any database.
 - [ ] Tests: unit tests for logic; an integration test against a real
       Postgres for anything touching the schema; a host-level test for
       anything in hostd that touches LVM, nftables, CH, or nix, run on a real
