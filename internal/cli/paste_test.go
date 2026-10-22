@@ -224,7 +224,7 @@ func TestPasteClipboardErrors(t *testing.T) {
 	}{
 		"no image":  {fakeClipboard{err: errNoImage}, "Nothing to paste: there is no image on the clipboard. Copy an image"},
 		"not a png": {fakeClipboard{img: []byte("hello")}, "Nothing to paste"},
-		"too big":   {fakeClipboard{img: testPNG(pasteMaxBytes + 1)}, "repose paste takes up to 20.0 MB"},
+		"too big":   {fakeClipboard{img: testPNG(pasteMaxBytes + 1)}, "repose paste takes up to 50.0 MB"},
 		"no tool":   {fakeClipboard{err: &clipboardToolError{"repose paste needs xclip to read the X11 clipboard; install xclip."}}, "install xclip"},
 		"other":     {fakeClipboard{err: errors.New("boom")}, "Could not read the clipboard: boom."},
 	} {

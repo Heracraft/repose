@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-810 entries.
+811 entries.
 
 ## Scope
 
@@ -842,3 +842,4 @@ pointer, not a summary.
 - **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L24754
 - **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L24787
 - **I-846** The idle pause is turned on for host-01 — 2026-10-21; L24829
+- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L24876

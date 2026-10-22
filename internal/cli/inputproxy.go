@@ -513,9 +513,9 @@ func bracketed(paths []string, trail string) []byte {
 	return append(b, pasteEndSeq...)
 }
 
-// Limits of one drop. A dropped file is copied whatever its type, up to
-// the same 20 MB as a pasted image (pasteMaxBytes): the copy holds up the
-// keys typed after it, and /tmp is not for large files; `repose cp` is.
+// dropMaxFiles bounds one drop. A dropped file is copied whatever its
+// type, up to pasteMaxBytes, the same limit a pasted image has and for
+// the same reason (I-842).
 const dropMaxFiles = 20
 
 // dropHandler does what the scanner found: copies files and clipboard
