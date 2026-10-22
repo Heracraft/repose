@@ -24519,9 +24519,19 @@ first decision in the set that can cost a tenant something.
   the dashboard arrive here first. I-844 is why that is readable before it
   is lived: the rule runs for every project whatever its host says, so
   `repose_api_resting_candidates{result="would_rest"}` and its
-  candidate-minutes say what this fleet would do. **Read a week of it
-  before this entry ships.** If it names a machine somebody was using,
-  this entry waits.
+  candidate-minutes say what this fleet would do.
+- *The week was not waited for.* The first draft of this entry said to
+  read a week of those counters before it shipped, and the owner's call on
+  2026-10-22 was to merge it with the batch that carries the dry run
+  instead, so the counters begin and this lands together. What that
+  spends: the rule's judgement on real machines is read after it is
+  already acting rather than before, so the first machine the rule gets
+  wrong is a machine a user finds frozen rather than a line in a metric.
+  What keeps that cheap is `keep_awake` (I-820), which takes effect at
+  once and needs no release, and the fact that a merge is not a switch --
+  host-01 takes the flag only when the conductor switches it, so the
+  counters are readable and `keep_awake` is settable in the window
+  between.
 - *The blast radius is chosen, not accepted.* `keep_awake` takes effect at
   once (I-820), so every project that must not be frozen is set before
   this lands and the ones left are the subjects. host-01 carries three

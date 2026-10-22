@@ -51,8 +51,10 @@
     # readable first through I-844's counters.
     #
     # keep_awake is the per-project way out and takes effect at once
-    # (I-820): set it on any project that must not be frozen BEFORE this
-    # lands, from its Config page or `PATCH /projects/:id`.
+    # (I-820): set it on any project that must not be frozen before this
+    # host is SWITCHED, from its Config page or `PATCH /projects/:id`. A
+    # merge is not a switch -- this line does nothing until host-01 takes
+    # a new configuration.
     pauseIdle = true;
 
     # owner signed off I-653's exception to the secrets rule on 2026-10-12
