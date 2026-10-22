@@ -24577,3 +24577,26 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   that. Checks: `MemoryMeter.test.ts` (over, under, zero, no plan
   memory), `tests/billing.spec.ts` (the split's words, no project name in
   the meter, the exact value text).
+- *Amended 2026-10-21, frost on the foot only; row fills bleed.* The
+  owner, on the live page: "for frost we can just do the bottom border and
+  we should be fine, the current animation is great too", and on the
+  /projects hover fill that ended at "job-board" and "Stop": "left right
+  padding?". The strip up a frozen row's leading edge and its mask
+  `--hk-frost-cloud-side` are gone; the cloud along the foot, the rule
+  under every frozen row and the hover and focus growth stay as the
+  frosted L amendment left them. A row's hover fill now bleeds
+  `--hk-row-bleed` (0.75rem, a new token) past its content on each side
+  with `--hk-radius-sm`, painted by the first cell's `::after` because a
+  collapsed table cell takes no radius; the text stays on the column's
+  edges, under the header and the title. `hk-table-wrap` around an
+  `hk-table--hover` widens its inline inset to the bleed so nothing clips,
+  and /projects drops its own 0.625rem end inset for it. The row link's
+  focus ring, the /projects stacked rows (a fill under a fine pointer
+  only) and a frozen row's frost take the same shape; the last frozen
+  row's drawn rule stays as wide as the column. `hk-row--hover` gets the
+  same bleed. The rail's rows already pad their fill (0.625rem), and
+  /questions, Recent activity, Recently destroyed, events, invoices and
+  secrets draw no row fill, so they are unchanged. Text over the frost,
+  5th-percentile pixel hovered: 5.28:1 light and 5.54:1 dark at 1440,
+  5.02:1 and 5.54:1 at 390. Checks: `tests/frozen.spec.ts` (one frost
+  element per frozen row), `frost-masks.test.ts`.

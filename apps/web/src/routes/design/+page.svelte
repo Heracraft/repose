@@ -411,8 +411,8 @@
 
 	<!-- A frozen machine (I-683; I-841 amendments 2026-10-21): the ice ink
 	     word and flake, frost rising from the head's tab rule, a row's
-	     frosted L (along its foot and up its leading edge; the last row
-	     stands on its own rule), and the memory bar in ice. The
+	     frost along its foot (the last row stands on its own rule), and
+	     the memory bar in ice. The
 	     head and the row are specimens of PageShell's head and a /projects
 	     row; Frost.svelte and lib/hk/frost.css draw the same frost there. -->
 	<section class="hk-section" id="frozen" data-testid="frozen-specimen">

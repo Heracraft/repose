@@ -155,7 +155,7 @@ markup.
 | Radius | Token | Used by |
 |---|---|---|
 | 4px | `--hk-radius-xs` | focus outline, kbd, skeleton bars |
-| 5px | `--hk-radius-sm` | badges, inline code |
+| 5px | `--hk-radius-sm` | badges, inline code, a row's hover fill |
 | 6px | `--hk-radius-6` | segmented thumb and items, docs sidebar items |
 | 7px | `--hk-radius-7` | small buttons, the Account pill |
 | 8px | `--hk-radius` | buttons, inputs, banners, toasts, menus, the inline confirm, command lines |
@@ -463,24 +463,23 @@ not draw.
   cloud along the tab rule instead, 12px tall, inside the column.
 - **Machine section:** the memory meter fills in `--hk-ice-ink` with a lit
   top edge. Nothing is drawn over the bar.
-- **/projects row, table and stacked:** one frosted L, seen through the
-  glass. Along the row's foot, a cloudy, grained white over a cold tint,
-  with a crust on the rule, 18px tall (12px stacked), clear of the text,
-  full from the leading edge, feathered on every side and gone by 68
-  percent of the row's width. Down the leading edge, the same cloud
-  upright, `max(1rem, 2.25%)` wide (`--hk-frost-cloud-side`), densest in
-  the bottom-left corner and thinning as it rises, in pixels (0.6 at 16px
-  up, 0.25 at 34px, 0.12 at the top), so the corner sits under the text
-  on a row of any height. Every frozen row stands on a rule: the row's
-  own, or for the last row of a group (or one above its stop
-  confirmation) a hairline 1px under its box. No fill over the row body
-  and no top hairline. Three offsets into the cloud take turns, so
-  frozen rows in a run read as separate rows. A pointer over the row, or
-  focus inside it, grows the frost in 450ms and recedes it in 250ms: the
-  foot reaches across the row (full to 40 percent, gone by 98) and 2px
-  taller, the side a third wider. Neither climbs into the text. The row's
-  hover fill paints over the frost, so a frozen row is no brighter than
-  another hovered row. A coarse pointer keeps the rest state.
+- **/projects row, table and stacked:** frost along the row's foot, seen
+  through the glass: a cloudy, grained white over a cold tint, with a
+  crust on the rule, 18px tall (12px stacked), clear of the text, full
+  from the leading edge, feathered on every side and gone by 68 percent of
+  the row's width. It keeps to the row's hover fill shape: it bleeds
+  `--hk-row-bleed` past the row on each side and its foot takes the small
+  radius. Nothing climbs the leading edge. Every frozen row stands on a
+  rule: the row's own, or for the last row of a group (or one above its
+  stop confirmation) a hairline 1px under its box, as wide as the column
+  like the rows' own rules. No fill over the row body and no top hairline.
+  Three offsets into the cloud take turns, so frozen rows in a run read as
+  separate rows. A pointer over the row, or focus inside it, grows the
+  frost in 450ms and recedes it in 250ms: the foot reaches across the row
+  (full to 40 percent, gone by 98) and 2px taller. It never climbs into
+  the text. The row's hover fill paints over the frost, so a frozen row is
+  no brighter than another hovered row. A coarse pointer keeps the rest
+  state.
 - **Rail:** the snowflake in `--hk-ice-ink`. **Memory running:** frozen GB
   in `--hk-ice-ink` (Meters and Memory running).
 
@@ -498,9 +497,10 @@ window frost, rime and glacier ice (hue 200 to 220). In light the crystals
 are a grey-blue shade with white as the highlight, since white alone does
 not show on the page. Only `--hk-ice-ink` carries text (5.4:1 light, 10.6:1
 dark); the worst pixel under text on a frozen surface is 5.44:1 light and
-5.89:1 dark at rest. On a row's remote, which starts over the side frost,
-the 5th-percentile background pixel holds 5.22:1 light and 5.27:1 dark at
-rest and 4.68:1 and 4.56:1 hovered at 1440. The frost forms over 600ms when the machine froze in the last
+5.89:1 dark at rest. Under a frozen row's name, remote and state line, the
+5th-percentile background pixel holds 5.28:1 light and 5.54:1 dark hovered
+at 1440, 5.02:1 and 5.54:1 at 390. The frost forms over 600ms when the
+machine froze in the last
 minute and thaws in 300ms when it wakes; under reduced motion it comes and
 goes at once. Reduced transparency drops the haze and the row's tint;
 forced colours drop the frost, and the word and the snowflake carry the
@@ -573,12 +573,18 @@ the header and the tabs once, so switching tabs keeps them mounted.
 rules between rows, outer cells flush with the frame, numbers right-aligned
 and tabular (`hk-num-col`). `hk-table--hover` washes the row under the
 pointer, and a row's main link covers the row with its `::after`; any action
-in the row sits above it (`position: relative; z-index: 1`). A table that
-may scroll sideways sits in `hk-table-wrap` (repose) with `role="region"`, a
-name, and a tab stop while it overflows (`tabStopWhenScrolls` in
-`lib/scroller.ts`); its 4px inline padding, pulled back by a negative margin,
-keeps a focus ring on the first or last column visible while the text edge
-stays put. Below 640px a table with row actions stacks each row into two
+in the row sits above it (`position: relative; z-index: 1`). The wash
+bleeds `--hk-row-bleed` (0.75rem) past the row on each side with
+`--hk-radius-sm`, so it clears the first and last column's text while that
+text stays on the column's edges, under the header and the page title. A
+row's focus ring takes the same shape. `hk-row--hover` does the same for a
+list row, and the /projects stacked rows and a frozen row's frost follow
+it. A table that may scroll sideways sits in `hk-table-wrap` (repose) with
+`role="region"`, a name, and a tab stop while it overflows
+(`tabStopWhenScrolls` in `lib/scroller.ts`); its 4px inline padding (the
+bleed around an `hk-table--hover`), pulled back by a negative margin, keeps
+a focus ring or the wash on the first or last column visible while the text
+edge stays put. Below 640px a table with row actions stacks each row into two
 lines, its action on the right of line 1.
 
 ## Facts

@@ -105,8 +105,8 @@ test.describe('a frozen row, with the flag on', () => {
 		const foot = await footOf(row);
 		expect(foot.below).toBe(1);
 		expect(foot.rule).toContain('linear-gradient');
-		// The leading edge comes down to meet it: one frosted L.
-		await expect(row.locator('.hk-frost--side')).toHaveCount(1);
+		// The foot is the whole of it: no strip up the leading edge.
+		await expect(row.locator('.hk-frost')).toHaveCount(1);
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		const li = page.locator('li[data-frost-on="row"]', { hasText: p.name });

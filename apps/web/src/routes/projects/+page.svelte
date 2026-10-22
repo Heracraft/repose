@@ -981,10 +981,11 @@
 	.pname:focus-visible {
 		outline: none;
 	}
-	/* The row has no side padding, so the ring stands 8px outside it and
-	   clears the name, the remote and the action (review r1 dash-r1-3). */
+	/* The row has no side padding, so the ring takes the hover fill's
+	   shape, --hk-row-bleed outside it, and clears the name, the remote and
+	   the action (review r1 dash-r1-3). */
 	.pname:focus-visible::after {
-		inset: 0 -0.5rem;
+		inset: 0 calc(-1 * var(--hk-row-bleed));
 		outline: 2px solid var(--hk-accent);
 		outline-offset: -2px;
 		border-radius: var(--hk-radius-sm);
@@ -1018,13 +1019,10 @@
 		color: var(--hk-text-3);
 	}
 	/* Always visible, above the row's link, its text flush with the
-	   frame's edge like every ghost on the page. The scroll box grows its
-	   end inset to the ghost's 10px, so the pull stays inside it and the
-	   table does not scroll sideways when the button takes focus. */
-	.list .hk-table-wrap {
-		padding-inline-end: 0.625rem;
-		margin-inline-end: -0.625rem;
-	}
+	   frame's edge like every ghost on the page. The scroll box's inset is
+	   the row's bleed (hk-table--hover), wider than the ghost's 10px, so the
+	   pull stays inside it and the table does not scroll sideways when the
+	   button takes focus. */
 	.row-action {
 		position: relative;
 		z-index: 1;
@@ -1042,7 +1040,7 @@
 		padding-top: 0;
 		border-top: 0;
 	}
-	.prow:has(+ .confirm-row) td {
+	.prow:has(+ .confirm-row) > td:first-child::after {
 		background: transparent;
 	}
 
@@ -1153,9 +1151,26 @@
 	}
 	.mrow {
 		position: relative;
+		isolation: isolate;
 		min-height: 3.5rem;
 		padding: 0.625rem 0;
 		border-top: 1px solid var(--hk-hairline);
+	}
+	/* The table row's hover fill (hk-table--hover), --hk-row-bleed past
+	   the row on each side. It paints over the frost, which comes before
+	   it, and under the text. */
+	.mrow::after {
+		content: '';
+		position: absolute;
+		inset: 0 calc(-1 * var(--hk-row-bleed));
+		z-index: -1;
+		border-radius: var(--hk-radius-sm);
+		pointer-events: none;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.mrow:not(:has(.mrow-confirm)):hover::after {
+			background: var(--hk-hover);
+		}
 	}
 	.mrow .pname {
 		font-size: 0.9375rem;

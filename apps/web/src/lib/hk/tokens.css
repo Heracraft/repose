@@ -188,6 +188,7 @@
 	--hk-radius-lg: 12px; /* code panes, cards, panels */
 	--hk-radius-xl: 14px; /* modals, search palette */
 	--hk-radius-pill: 999px; /* chips, dots, meter track */
+	--hk-row-bleed: 0.75rem; /* new: a row's hover fill past its content, each side */
 
 	/* Motion: one curve, the full set of durations */
 	--hk-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -746,8 +747,21 @@ html.dark:has(.hk) {
 	border-top: 1px solid var(--hk-hairline);
 	padding: 0.875rem 0;
 }
-/* Rows a user taps get a hover wash; plain read-only rows do not. */
-.hk .hk-row--hover:hover {
+/* Rows a user taps get a hover wash; plain read-only rows do not. The wash
+   bleeds --hk-row-bleed past the row on each side (see hk-table--hover). */
+.hk .hk-row--hover {
+	position: relative;
+	isolation: isolate;
+}
+.hk .hk-row--hover::before {
+	content: '';
+	position: absolute;
+	inset: 0 calc(-1 * var(--hk-row-bleed));
+	z-index: -1;
+	border-radius: var(--hk-radius-sm);
+	pointer-events: none;
+}
+.hk .hk-row--hover:hover::before {
 	background: var(--hk-hover);
 }
 .hk .hk-rule {
@@ -1218,8 +1232,30 @@ html.dark:has(.hk) {
 .hk .hk-table tbody tr:first-child td {
 	border-top: 0;
 }
-.hk .hk-table--hover tbody tr:hover td {
+/* A row's hover fill bleeds --hk-row-bleed past its content on each side,
+   with the small radius, so the text keeps the column's edges and the fill
+   still clears it. A collapsed table cell takes no radius, so the fill is
+   the first cell's ::after, sized to the row (the row is its containing
+   block and isolates it behind the text). A scrolling wrapper widens its
+   inset to the bleed, so the fill and focus rings are not clipped. */
+.hk .hk-table--hover tbody tr {
+	position: relative;
+	isolation: isolate;
+}
+.hk .hk-table--hover tbody tr > td:first-child::after {
+	content: '';
+	position: absolute;
+	inset: 0 calc(-1 * var(--hk-row-bleed));
+	z-index: -1;
+	border-radius: var(--hk-radius-sm);
+	pointer-events: none;
+}
+.hk .hk-table--hover tbody tr:hover > td:first-child::after {
 	background: var(--hk-hover);
+}
+.hk .hk-table-wrap:has(> .hk-table--hover) {
+	padding-inline: var(--hk-row-bleed);
+	margin-inline: calc(-1 * var(--hk-row-bleed));
 }
 .hk .hk-table .hk-num-col {
 	text-align: right;
