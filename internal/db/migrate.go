@@ -23,8 +23,12 @@ type Migration struct {
 }
 
 // Migrations returns the embedded migrations in version order.
-func Migrations() ([]Migration, error) {
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+func Migrations() ([]Migration, error) { return migrationsFrom(migrationFS) }
+
+// migrationsFrom is Migrations over any filesystem, so a test can hand it
+// a pair of files the embedded directory cannot hold (DECISIONS I-854).
+func migrationsFrom(fsys fs.FS) ([]Migration, error) {
+	entries, err := fs.ReadDir(fsys, "migrations")
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +56,7 @@ func Migrations() ([]Migration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("migration %s: %w", name, err)
 		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
+		body, err := fs.ReadFile(fsys, "migrations/"+name)
 		if err != nil {
 			return nil, err
 		}
@@ -60,6 +64,19 @@ func Migrations() ([]Migration, error) {
 		if m == nil {
 			m = &Migration{Version: v, Name: rest}
 			byVersion[v] = m
+		} else if m.Name != rest {
+			// Two different migrations claiming one version, which is
+			// what two branches written in parallel produce (DECISIONS
+			// I-854). Without this the second file read simply overwrites
+			// the first's Up or Down on the same entry: one migration's
+			// SQL is silently dropped, `schema_migrations` records the
+			// row under the other one's name, and nothing fails to build,
+			// vet or test. The pair that found it was 0029_resting and
+			// 0029_usage_attendance in the batch of 2026-10-22 (I-852);
+			// ReadDir is sorted, so the alphabetically later name wins
+			// and which migration is lost depends on its own name.
+			return nil, fmt.Errorf("migrations %04d_%s and %04d_%s claim the same version; renumber one",
+				m.Version, m.Name, v, rest)
 		}
 		if dir == "up" {
 			m.Up = string(body)

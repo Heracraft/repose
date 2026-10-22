@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-792 entries.
+793 entries.
 
 ## Scope
 
@@ -824,3 +824,4 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23845
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23911
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
+- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L24174

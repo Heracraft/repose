@@ -24170,3 +24170,37 @@ finding two releases with no notes at all.
   branches and decision ids, which no user reads, and it cannot say what a
   release fails to fix. The guard checks that notes exist; a person writes
   them.
+
+**I-854. Two migrations may not claim one version, and the loader says so
+instead of dropping one.** (migration-version-guard, 2026-10-22) `Migrations()`
+keyed its entries by version alone: the first file read created the entry
+with its name, and a second file at the same version reused that entry and
+overwrote its `Up` or `Down`. One migration's SQL was silently dropped,
+`schema_migrations` recorded the row under the other one's name, and
+nothing failed to build, vet or test. It now returns an error naming both,
+because the fix is to renumber one and the reader needs to know which two
+collided.
+- *It happened.* The batch of 2026-10-22 carried `0029_resting` (I-818)
+  and `0029_usage_attendance` from another branch; the conductor found the
+  pair by hand while resolving and renumbered the first to `0030`
+  (I-852). `fs.ReadDir` is sorted, so the alphabetically later name wins
+  and which migration is lost depends on nothing a reader would think to
+  check. Two branches written in parallel produce this whenever both add a
+  migration, which is the normal shape of work in this repository
+  (`CLAUDE.md`, "Claim before you build").
+- *Why the number is not enough on its own.* The dev tools already catch
+  two lanes taking one decision id (I-745). A migration number is the same
+  kind of shared counter with none of the same protection, and its failure
+  is quieter: a decision-id collision is visible in the file, a dropped
+  migration is visible only as a column that is not there.
+- *`migrationsFrom(fs.FS)`* is the body, and `Migrations()` calls it with
+  the embedded directory, so a test can hand it a pair the real directory
+  cannot hold. `TestTwoMigrationsMayNotClaimOneVersion` fails without the
+  guard ("two migrations at version 2 were accepted; one of them would be
+  silently dropped") and `TestTheEmbeddedMigrationsAreAccepted` keeps the
+  guard off what the repository actually ships.
+*Rejected:* a check in `ops/dev/release-queue add` instead (it would catch
+a collision between a branch and main, not between two queued branches,
+which is the pair that collided); and reserving migration numbers the way
+decision ids are reserved (a number nobody has written yet is a number
+nobody can see is taken, and the loader is where the truth is).
