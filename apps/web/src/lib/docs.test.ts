@@ -12,6 +12,7 @@ import {
 	renderShell,
 	SEARCH,
 	searchDocs,
+	nearDocs,
 	slugify
 } from './docs';
 import { unaskedIn } from './unasked';
@@ -106,6 +107,28 @@ describe('user docs', () => {
 		expect(secret[0].entry).toMatchObject({ kind: 'page', slug: 'secrets' });
 		const tiers = secret.map((r) => (r.snippet ? 1 : 0));
 		expect(tiers).toEqual([...tiers].sort());
+	});
+
+	it('ranks a label that starts with the query over one that has it inside', () => {
+		const top = (q: string) => searchDocs(q)[0]?.entry;
+		expect(top('snapshot')).toMatchObject({ kind: 'heading', label: 'Snapshots' });
+		expect(top('port')).toMatchObject({ kind: 'heading', label: 'Ports' });
+	});
+
+	it('ranks a section about the term over an intro with it inside a word', () => {
+		const rows = searchDocs('port', 100).map((r) => r.entry.label);
+		const ports = rows.indexOf('Several repositories on one machine');
+		const supported = rows.indexOf('Quickstart');
+		expect(ports).toBeGreaterThanOrEqual(0);
+		expect(supported).toBeGreaterThan(ports);
+	});
+
+	it('offers labels a typo away when nothing matches', () => {
+		expect(searchDocs('snapshto')).toEqual([]);
+		expect(nearDocs('snapshto')[0]?.entry.label).toBe('Snapshots');
+		expect(nearDocs('memry').map((r) => r.entry.label)).toContain('Memory and disk');
+		expect(nearDocs('zzzz-not-a-word')).toEqual([]);
+		expect(nearDocs('ab')).toEqual([]);
 	});
 
 	it('lists every page, with its section, for an empty query', () => {

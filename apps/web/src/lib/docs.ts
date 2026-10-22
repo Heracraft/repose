@@ -429,12 +429,21 @@ const KIND_BONUS = { page: 3, heading: 1, item: 0 } as const;
 
 const WORD = /[a-z0-9]/;
 
+/** True when `term` (or its stem) starts a word somewhere in `text`. */
+function wordStart(text: string, term: string): boolean {
+	return [term, stem(term)].some((t) => new RegExp(`(^|[^a-z0-9])${escapeRegExp(t)}`).test(text));
+}
+
 /**
  * Title over heading over item, and a match in the label over one in the
- * text: the whole label 100; the label's first word or words 90, or the
- * start of its first word 75; whole words inside it 80, the start of a word
- * 60, inside a word 50; every word somewhere in it 40; the label and its
- * context together 20; the section's text 10. -1 is no match.
+ * text: the whole label 100; a label that starts with the query 90 when it
+ * ends a word there ("Ports" for "ports"), 85 when it does not ("Ports" for
+ * "port"); whole words inside it 80, the start of a word 60, inside a word
+ * 50; every word somewhere in it 40; the label and its context together 20.
+ * The section's text gives 10 when every word starts a word there and 5
+ * when one sits inside another word ("port" in "supported"); a heading's
+ * text adds 1 and a page's intro nothing, so the section about the term
+ * comes before an intro that mentions it. -1 is no match.
  */
 function score(e: SearchEntry, terms: string[]): number {
 	const label = e.label.toLowerCase();
@@ -447,13 +456,14 @@ function score(e: SearchEntry, terms: string[]): number {
 		if (at >= 0) {
 			const starts = at === 0 || !WORD.test(label[at - 1]);
 			const ends = !WORD.test(label[at + q.length] ?? ' ');
-			if (at === 0) return (ends ? 90 : 75) + bonus;
+			if (at === 0) return (ends ? 90 : 85) + bonus;
 			return (starts ? (ends ? 80 : 60) : 50) + bonus;
 		}
 		return (terms.every((t) => label.includes(t)) ? 40 : 20) + bonus;
 	}
 	const body = `${hay} ${e.body.toLowerCase()}`;
-	return e.body && terms.every((t) => body.includes(t) || body.includes(stem(t))) ? 10 + bonus : -1;
+	if (!e.body || !terms.every((t) => body.includes(t) || body.includes(stem(t)))) return -1;
+	return (terms.every((t) => wordStart(body, t)) ? 10 : 5) + (e.kind === 'page' ? 0 : 1);
 }
 
 function labelHasAll(label: string, terms: string[]): boolean {
@@ -521,6 +531,71 @@ export function searchDocs(query: string, limit = 20): SearchResult[] {
 				? [{ text: entry.context, hit: false }]
 				: markParts(entry.context, s >= 20 ? terms : marks),
 			snippet: s < 20 ? snippetOf(entry.body, marks) : undefined
+		}));
+}
+
+/** Edit distance with a swap of two neighbours as one edit, stopping past `max`. */
+function editDistance(a: string, b: string, max: number): number {
+	if (Math.abs(a.length - b.length) > max) return max + 1;
+	const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+		Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+	);
+	for (let i = 1; i <= a.length; i++) {
+		let low = Infinity;
+		for (let j = 1; j <= b.length; j++) {
+			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+			d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+			if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+				d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+			low = Math.min(low, d[i][j]);
+		}
+		if (low > max) return max + 1;
+	}
+	return d[a.length][b.length];
+}
+
+/**
+ * The palette's rows when searchDocs finds nothing, so a typo ("snapshto")
+ * is not a dead end: labels where each word of the query of four letters or
+ * more is one edit from a word (two from a word of seven or more letters),
+ * and each shorter word is in the label as typed. Fewest edits first, then
+ * title over heading over item, ties in reading order.
+ */
+export function nearDocs(query: string, limit = 8): SearchResult[] {
+	const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+	if (!terms.length || !terms.some((t) => t.length >= 4)) return [];
+	const found: { entry: SearchEntry; cost: number; i: number }[] = [];
+	SEARCH.forEach((entry, i) => {
+		const label = entry.label.toLowerCase();
+		const words = label.split(/[^a-z0-9_]+/).filter(Boolean);
+		let cost = 0;
+		for (const t of terms) {
+			if (t.length < 4) {
+				if (!label.includes(t)) return;
+				continue;
+			}
+			const max = t.length >= 7 ? 2 : 1;
+			// A word is compared whole and cut to the term's length, so
+			// "snapshto" finds "Snapshots" as well as "snapshot".
+			const best = Math.min(
+				...words.map((w) =>
+					Math.min(editDistance(t, w, max), editDistance(t, w.slice(0, t.length), max))
+				)
+			);
+			if (best > max) return;
+			cost += best;
+		}
+		found.push({ entry, cost, i });
+	});
+	return found
+		.sort(
+			(a, b) => a.cost - b.cost || KIND_BONUS[b.entry.kind] - KIND_BONUS[a.entry.kind] || a.i - b.i
+		)
+		.slice(0, limit)
+		.map(({ entry }) => ({
+			entry,
+			label: [{ text: entry.label, hit: false }],
+			context: [{ text: entry.context, hit: false }]
 		}));
 }
 

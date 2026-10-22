@@ -9,7 +9,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
-	import { searchDocs, type SearchResult } from '$lib/docs';
+	import { nearDocs, searchDocs, type SearchResult } from '$lib/docs';
 
 	const uid = $props.id();
 	let dialog: HTMLDialogElement | undefined = $state();
@@ -20,8 +20,12 @@
 	let returnTo: HTMLElement | null = null;
 	let leaving = false;
 
-	let results = $derived(searchDocs(query));
+	let found = $derived(searchDocs(query));
 	let typed = $derived(query.trim());
+	/** No match: the labels a typo away, under the no-match line. */
+	let near = $derived(typed && !found.length ? nearDocs(typed) : []);
+	let results = $derived(found.length ? found : near);
+	let none = $derived(typed && !found.length ? `No match for “${typed}”.` : '');
 
 	$effect(() => {
 		void query;
@@ -132,12 +136,17 @@
 				><span aria-hidden="true">Esc</span><span class="sr-only">Close search</span></button
 			>
 		</div>
+		{#if none}
+			<p class="pal-none" class:above={near.length > 0}>
+				{none}{#if near.length}<span class="pal-near">Close matches</span>{/if}
+			</p>
+		{/if}
 		<ul
 			bind:this={list}
 			id="{uid}-list"
 			class="pal-list"
 			role="listbox"
-			aria-label={typed ? 'Results' : 'Pages'}
+			aria-label={near.length ? 'Close matches' : typed ? 'Results' : 'Pages'}
 			hidden={!results.length}
 		>
 			{#each results as r, i (r.entry.slug + (r.entry.id ?? '') + r.entry.kind + r.entry.label)}
@@ -170,13 +179,10 @@
 				</li>
 			{/each}
 		</ul>
-		{#if !results.length}
-			<p class="pal-none">No match for “{typed}”.</p>
-		{/if}
 		<p class="sr-only" role="status">
-			{#if typed}{results.length
-					? `${results.length} ${results.length === 1 ? 'result' : 'results'}`
-					: ''}{/if}
+			{#if none}{none}{near.length
+					? ` ${near.length} close ${near.length === 1 ? 'match' : 'matches'}.`
+					: ''}{:else if typed}{`${results.length} ${results.length === 1 ? 'result' : 'results'}`}{/if}
 		</p>
 	</div>
 </dialog>
@@ -305,7 +311,10 @@
 		gap: 1rem;
 		min-width: 0;
 	}
+	/* A row too long for its line cuts the label; the context keeps its
+	   width up to 60% of the line, so a page's name stays whole. */
 	.pal-label {
+		flex: 0 1 auto;
 		min-width: 0;
 		line-height: 1.25rem;
 		overflow: hidden;
@@ -322,7 +331,7 @@
 	}
 	.pal-ctx {
 		flex: none;
-		max-width: 45%;
+		max-width: 60%;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -356,16 +365,24 @@
 		font-size: 0.875rem;
 		color: var(--hk-text-3);
 	}
+	/* Over the close matches: the line, then their small heading. */
+	.pal-none.above {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		padding-bottom: 0;
+	}
+	.pal-near {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--hk-text-3);
+	}
 
-	/* A phone: near the full width, from the top, with thumb-sized rows;
-	   the label keeps more of the line than the context. */
+	/* A phone: near the full width, from the top, with thumb-sized rows. */
 	@media (max-width: 767.98px) {
 		.pal {
 			margin: 0.75rem auto auto;
 			width: calc(100% - 1.5rem);
-		}
-		.pal-ctx {
-			max-width: 36%;
 		}
 		.pal-in {
 			max-height: min(36rem, calc(100dvh - 1.5rem));

@@ -309,6 +309,15 @@ test('the docs search finds CLI flags and says when nothing matches', async ({ p
 	await box.fill('zzqx');
 	await expect(dialog.getByRole('option')).toHaveCount(0);
 	await expect(dialog).toContainText('No match for “zzqx”.');
+	await expect(dialog.getByRole('status')).toHaveText('No match for “zzqx”.');
+	// A typo lists the close labels under the no-match line, and Enter opens the first.
+	await box.fill('snapshto');
+	await expect(dialog.getByRole('status')).toContainText('No match for “snapshto”.');
+	await expect(dialog.getByRole('listbox', { name: 'Close matches' })).toBeVisible();
+	await expect(dialog.getByRole('option').first()).toContainText('Snapshots');
+	await box.press('Enter');
+	await expect(page).toHaveURL(/\/docs\/lifecycle#snapshots$/);
+	await page.locator('#docs-search').click();
 	// Hovering a row makes it the active one.
 	await box.fill('sync');
 	await dialog.getByRole('option').nth(2).hover();
