@@ -24784,3 +24784,92 @@ A guard belongs in `Migrations()`: a second name at a version is an
 error, not an overwrite. It is not in this batch, because a loader change
 under a batch this size is its own branch with its own tests. The
 `idle-pause` session is queueing it off main.
+**I-844. The rest rule is evaluated everywhere and obeyed only where the
+host says so, so a fleet can be read before it is touched.**
+(idle-pause-dryrun, 2026-10-21; amends I-818's rule) The `pause` feature
+gated the rule itself: `candidatesSQL` had `$3 = any(h.features)` in its
+WHERE clause, so a host with `repose.host.pauseIdle` off produced no rows,
+and the api knew nothing about what the rule would have done. That is the
+wrong place for the gate. The rule now runs for every running project and
+each candidate carries `HostPauses`; the pause is sent only where it is
+true, and the rest are counted.
+- *Why it matters more than it looks.* The only figures anyone has for how
+  much of a fleet would rest are the proposal's, from three accounts over
+  fourteen days: 29.0 percent of running minutes for the active account
+  under the strict rule, 90.1 percent for a forgotten machine, 47.7
+  percent fleet-wide as an upper bound that leans on that forgotten
+  machine (`../proposals/2026-10-11-pause-idle-machines.md` §5). Nothing
+  has measured it since, and the seat arithmetic in §9 rests on it. With
+  the gate in the WHERE clause the first real measurement would have
+  arrived only after a host was switched on -- which is to say, after the
+  first tenant's machine was frozen.
+- *What it publishes.* `repose_api_resting_candidates{result}` is this
+  minute's picture (`paused`, `would_rest`), and
+  `repose_api_resting_candidate_minutes_total{result}` adds a
+  candidate-minute per tick, so the counter integrates into the
+  machine-hours a fleet would have rested. One log line when the picture
+  changes, not one a minute: at a tick a minute an unchanging fleet writes
+  1,440 identical lines a day. The line carries counts and ids, never
+  anything a tenant typed.
+- *It costs a machine nothing.* A candidate on a host that does not pause
+  is counted and dropped: no command, no marker on the row, nothing any
+  client reads. `TestRestRuleCountsAHostThatDoesNotPause` pins that, and
+  fails with the old gate restored ("the rule stopped seeing the
+  machine").
+- *The label is `result`, not `acts`.* `internal/obs/metrics`' own lint
+  refuses a label outside its low-cardinality list and panics at
+  registration, which is how the first name was caught; `paused` and
+  `would_rest` read better anyway.
+*Rejected:* a `--resting-dry-run` flag (a flag is a thing to forget to
+turn on, and the measurement is worth having for ever, not for one
+window); logging every candidate every tick (1,440 lines a day saying the
+same thing); and counting on the host instead, which cannot see the
+projects whose host never pauses -- the ones the measurement is about.
+
+**I-846. The idle pause is turned on for host-01.** (pause-on-host-01,
+2026-10-21) `repose.host.pauseIdle = true` on the one host that carries
+paying users, which is what puts `pause` in its Hello and lets the api
+pause a machine there. Its own entry and its own commit, the way I-686
+turned the freeze on after staging had proved it, because this is the
+first decision in the set that can cost a tenant something.
+- *What it rests on.* The mechanism is measured, on host-stg-01 on
+  2026-10-21 and not on a dev box: a plain `vm.pause` and `vm.resume` of a
+  guest with both vhost-user devices, held up to 35 minutes, left
+  `/nix/store` readable and a binary from it runnable, never changed the
+  boot id, kept both tmux sessions and a counting loop, and resumed in 9
+  to 10 ms. A freeze of an already-resting guest wrote its image and
+  thawed it back. `hostd wake` answered in 114 ms over a real control
+  socket. The figures are `../workstreams/18-idle-pause.md` §7.
+- *What it does not rest on, and the order that fixes it.* Staging proves
+  nothing of the api (`../../infra/README.md`), so the rule's own
+  judgement on real machines, the marker, the gateway's wake, the CLI and
+  the dashboard arrive here first. I-844 is why that is readable before it
+  is lived: the rule runs for every project whatever its host says, so
+  `repose_api_resting_candidates{result="would_rest"}` and its
+  candidate-minutes say what this fleet would do.
+- *The week was not waited for.* The first draft of this entry said to
+  read a week of those counters before it shipped, and the owner's call on
+  2026-10-22 was to merge it with the batch that carries the dry run
+  instead, so the counters begin and this lands together. What that
+  spends: the rule's judgement on real machines is read after it is
+  already acting rather than before, so the first machine the rule gets
+  wrong is a machine a user finds frozen rather than a line in a metric.
+  What keeps that cheap is `keep_awake` (I-820), which takes effect at
+  once and needs no release, and the fact that a merge is not a switch --
+  host-01 takes the flag only when the conductor switches it, so the
+  counters are readable and `keep_awake` is settable in the window
+  between.
+- *The blast radius is chosen, not accepted.* `keep_awake` takes effect at
+  once (I-820), so every project that must not be frozen is set before
+  this lands and the ones left are the subjects. host-01 carries three
+  guests, one of them the conductor's own.
+- *Rollback is safe, and only because of I-824.* `pauseIdle = false` and a
+  switch stops new pauses, and a host that no longer names the feature
+  still wakes the guests it already froze -- the api gates the pause on
+  the feature and never the wake. Before that fix the runbook's own remedy
+  would have stranded every frozen machine.
+- *The switch is the conductor's,* with the rest of the queue's host
+  changes, not a window of its own (the owner's instruction, 2026-10-21).
+  A switch restarts hostd and leaves guests running; main's kernel pin
+  (I-778) is staged by the same switch and needs a reboot of its own,
+  which is not this.

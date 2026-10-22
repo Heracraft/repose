@@ -25,7 +25,19 @@ type M struct {
 	// failures where hostd never answered at all -- a host that is not
 	// connected, or a wake that ran out of time -- and those are exactly
 	// the ones a user feels as a dial that did not come back.
-	RestingWakeTotal             *prometheus.CounterVec
+	RestingWakeTotal *prometheus.CounterVec
+	// RestingCandidates is how many machines the rest rule picked at the
+	// last tick (DECISIONS I-844): `result="paused"` were sent a pause,
+	// `result="would_rest"` is the dry run -- the rule's own judgement on
+	// machines whose host does not take pauses, which nothing will touch.
+	RestingCandidates *prometheus.GaugeVec
+	// RestingCandidateMinutesTotal adds each tick's candidates, so the
+	// counter integrates into the machine-hours a fleet would have
+	// rested. That figure is what the proposal estimated from three
+	// accounts at 29 to 48 percent of running time and what nothing has
+	// measured since; a week of this says it for the real fleet before a
+	// single machine is frozen.
+	RestingCandidateMinutesTotal *prometheus.CounterVec
 	CertsIssuedTotal             prometheus.Counter
 	CertsRevokedTotal            prometheus.Counter
 	RollupLagSeconds             prometheus.Gauge
@@ -152,6 +164,8 @@ func New(reg prometheus.Registerer) *M {
 		Projects:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_projects", Help: "Projects by state and class."}, []string{"state", "class"}),
 		ScheduleTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_schedule_total", Help: "Placement attempts by result."}, []string{"result"}),
 		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
+		RestingCandidates:            prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_resting_candidates", Help: "Machines the rest rule picked at the last tick, by result: paused, would_rest (I-844)."}, []string{"result"}),
+		RestingCandidateMinutesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_candidate_minutes_total", Help: "Candidate-minutes the rest rule picked, by result: integrates into the machine-hours a fleet would rest (I-844)."}, []string{"result"}),
 		CertsIssuedTotal:             prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_issued_total", Help: "User certificates issued."}),
 		CertsRevokedTotal:            prometheus.NewCounter(prometheus.CounterOpts{Name: "repose_api_certs_revoked_total", Help: "Certificates revoked."}),
 		RollupLagSeconds:             prometheus.NewGauge(prometheus.GaugeOpts{Name: "repose_api_rollup_lag_seconds", Help: "Age of the newest rolled-up hour."}),
@@ -220,7 +234,8 @@ func New(reg prometheus.Registerer) *M {
 		m.HostWarningsTotal, m.HostReportsRefused, m.SamplesFailed, m.EgressAlertProjects, m.BillingGapMinutes, m.KeyVaultErrorsTotal,
 		m.PartitionDropFailTotal, m.AbuseStopsTotal, m.AbuseHeldProjects, m.AbuseBusyUnattendedProjects,
 		m.SeatsTotal, m.SeatsHeld, m.WaitlistWaiting, m.WaitlistJoinedTotal, m.WaitlistInvitedTotal, m.WaitlistConvertedTotal, m.WaitlistExpiredTotal,
-		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal)
+		m.GuestResumesPending, m.GuestResumesTotal, m.RestingWakeTotal,
+		m.RestingCandidates, m.RestingCandidateMinutesTotal)
 	return m
 }
 

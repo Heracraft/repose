@@ -135,6 +135,14 @@ type Service struct {
 	// the keep_awake PATCH -- and the failures hostd never sees are
 	// exactly the ones ApiWakeFailed exists for.
 	CountWake func(reason, result string)
+	// CountCandidates, when set, is given each tick's counts: the
+	// machines paused and the machines the rule picked whose host does
+	// not take pauses (DECISIONS I-844).
+	CountCandidates func(paused, would int)
+
+	// lastSent and lastWould are the previous tick's counts, so the log
+	// line is written when the picture changes rather than every minute.
+	lastSent, lastWould int
 }
 
 type pauseRec struct {
@@ -195,6 +203,11 @@ type Candidate struct {
 	ProjectID uuid.UUID
 	HostID    uuid.UUID
 	GuestID   uuid.UUID
+	// HostPauses is whether this project's host named the `pause`
+	// feature. False means the rule picked it and nothing will be sent:
+	// it is counted, and that count is the only way to know what the rule
+	// would do to a fleet before it does it (DECISIONS I-844).
+	HostPauses bool
 }
 
 // quietSQL is one sample that counts toward a rest: nobody and no agent
@@ -217,11 +230,12 @@ const quietSQL = `(not ` + idle.UsedSQL + ` and cpu_ns < $5 and net_rx + net_tx 
 // agent is in `needs_input`, which the rule otherwise lets rest, so this
 // term is what makes that safe.
 const candidatesSQL = `with cand as (
-	select p.id, p.host_id, p.guest_id from projects p join hosts h on h.id = p.host_id
+	select p.id, p.host_id, p.guest_id, coalesce($3 = any(h.features), false) as pauses
+	  from projects p join hosts h on h.id = p.host_id
 	 where p.state = 'running' and p.destroyed_at is null and not p.host_unreachable
 	   and not p.keep_awake and p.resting_since is null and p.guest_id is not null
 	   and p.started_at is not null and p.started_at <= $2
-	   and h.state = 'ready' and $3 = any(h.features)
+	   and h.state = 'ready'
 	   and not exists (select 1 from ops o where o.project_id = p.id and o.state in ('pending','running'))
 	   and not exists (select 1 from gateway_sessions gs where gs.project_id = p.id and gs.opened_at > $4)
 	   and not exists (select 1 from questions q where q.project_id = p.id and q.state = 'pending'
@@ -231,12 +245,18 @@ const candidatesSQL = `with cand as (
 	       row_number() over (partition by c.id order by m.ts desc) as rn
 	  from cand c join meter_samples m on m.project_id = c.id and m.ts >= $7 and m.ts <= $1
 )
-select c.id, c.host_id, c.guest_id from cand c join last l on l.id = c.id and l.rn <= $8::bigint
- group by c.id, c.host_id, c.guest_id
+select c.id, c.host_id, c.guest_id, c.pauses from cand c join last l on l.id = c.id and l.rn <= $8::bigint
+ group by c.id, c.host_id, c.guest_id, c.pauses
 having count(*) = $8::bigint and min(l.ts) >= $9 and max(l.ts) >= $10
    and count(*) filter (where l.quiet) = $8::bigint`
 
-// Candidates reads the rule.
+// Candidates reads the rule for EVERY running project, and says of each
+// whether its host takes pauses (DECISIONS I-844). The feature gates the
+// pause, not the rule: a host with `pauseIdle` off yields candidates that
+// are counted and sent nowhere, which is the only way to learn what this
+// rule would do to a fleet before it does it. The gate used to sit in the
+// WHERE clause, so a host with the switch off produced no rows and the
+// days before a release said nothing at all.
 //
 // Two terms bound how old the evidence may be, and the tighter one is
 // the oldest-sample term, not the freshness one: with samples a minute
@@ -260,7 +280,7 @@ func (s *Service) Candidates(ctx context.Context, now time.Time) ([]Candidate, e
 	var out []Candidate
 	for rows.Next() {
 		var c Candidate
-		if err := rows.Scan(&c.ProjectID, &c.HostID, &c.GuestID); err != nil {
+		if err := rows.Scan(&c.ProjectID, &c.HostID, &c.GuestID, &c.HostPauses); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -279,14 +299,43 @@ func (s *Service) Once(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	n := 0
+	n, would := 0, 0
 	for _, c := range cs {
+		if !c.HostPauses {
+			// The rule picked it and its host does not take pauses. This
+			// is the dry run (DECISIONS I-844): counted, logged, and
+			// nothing is sent. It is what the days before a release are
+			// for -- the rule's own judgement on a real fleet, with no
+			// machine touched.
+			would++
+			continue
+		}
 		if err := s.sendPause(ctx, c, now); err != nil {
 			continue // not connected: the rule holds next minute and asks again
 		}
 		n++
 	}
+	s.report(n, would, len(cs))
 	return n, nil
+}
+
+// report publishes what this tick found. The counters are per tick, so a
+// counter of candidate-minutes integrates over days into the machine-hours
+// a fleet would have rested, which is the figure the proposal's section 5
+// estimated from three accounts and nothing has measured since
+// (DECISIONS I-844).
+func (s *Service) report(sent, would, total int) {
+	if s.CountCandidates != nil {
+		s.CountCandidates(sent, would)
+	}
+	// One line when the set changes, not one a minute: at a minute a tick
+	// an unchanging fleet would write 1,440 identical lines a day.
+	if sent == s.lastSent && would == s.lastWould {
+		return
+	}
+	s.lastSent, s.lastWould = sent, would
+	s.log.Info("the rest rule picked machines", "event", "resting_rule",
+		"paused", sent, "would_rest", would, "candidates", total)
 }
 
 // sendPause sends one pause and remembers its command_id, so the result

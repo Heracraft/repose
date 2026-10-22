@@ -201,6 +201,16 @@ Families:
   `repose_host_guest_wake_failed_total` cannot see a wake that never
   reached a host -- one that is not connected, or that ran out of time --
   and those are the ones a user feels as a dial that did not come back),
+  `repose_api_resting_candidates{result}` and
+  `repose_api_resting_candidate_minutes_total{result}` (what the rest rule
+  picked, I-844: `paused` was sent a pause, `would_rest` is a machine on a
+  host with `repose.host.pauseIdle` off -- picked, counted, and touched by
+  nothing. The gauge is this minute; the counter adds a candidate-minute a
+  tick, so
+  `increase(repose_api_resting_candidate_minutes_total{result="would_rest"}[7d]) / 60`
+  is the machine-hours a fleet would have rested in a week. That is the
+  figure the feature is argued from, which the proposal could only
+  estimate from three accounts),
   `repose_api_certs_issued_total`,
   `repose_api_certs_revoked_total`, `repose_api_rollup_lag_seconds`,
   `repose_api_notify_total{channel,result}`,

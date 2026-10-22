@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-808 entries.
+810 entries.
 
 ## Scope
 
@@ -833,10 +833,12 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24407
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24426
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L24463
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; L24468
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L24468
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L24598
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L24626
 - **I-824** The pause must never cost a machine its memory — L24669
 - **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; L24703
 - **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L24735
 - **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L24754
+- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L24787
+- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L24829
