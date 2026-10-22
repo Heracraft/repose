@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-800 entries.
+801 entries.
 
 ## Scope
 
@@ -494,7 +494,7 @@ pointer, not a summary.
 - **I-426** The guest's Codex ships with its code-mode host — 2026-10-03; L11035
 - **I-427** The web server bundles its packages; an unknown docs page is a 404; a docs page can be experimental — 2026-10-03; L11055
 - **I-428** Agent bumps run downloaded binaries in a job with no write access — L11083
-- **I-429** CI pins every action to a commit and every tool to a version — L11107
+- **I-429** CI pins every action to a commit and every tool to a version — amended by I-840; L11107
 - **I-430** CLI releases sign checksums.txt; install.sh refuses a release it cannot verify — L11124
 - **I-431** The api's `/internal` listener admits only the gateway's certificate — 2026-10-03; L11161
 - **I-432** A host's mTLS identity ends when the host is lost or retired, and only its latest certificate counts — 2026-10-03; L11190
@@ -832,3 +832,4 @@ pointer, not a summary.
 - **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24380
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24407
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24426
+- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L24463
