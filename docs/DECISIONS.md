@@ -24550,12 +24550,28 @@ old content in the new style, keeping the new copy-command controls.
   (`--pic-*`, `--sh-*`, `--ink`, `--surface`, `--sunken`, `--rule`);
   `routes/landing.css` maps each onto an `--hk-*` token or a zinc step on
   `.landing`, in both schemes and under the switch. Stages and frames take
-  the kit's 12px radius, windows 6px.
+  the kit's 12px radius, windows 6px. Their blue is a muted slate step
+  (`#4b6496` light, `#93a7d0` dark) in place of the kit's link blue,
+  which the owner found too strong in the figures; links and the eyebrow
+  keep the kit's blue.
+- *The agents' links* sit beside the headline from 768px, not stacked
+  under it.
 - *The hero terminal leaves the landing.* `Terminal.svelte` stays for
   `/design`. Main's rule that terminals appear only in the grid and the
   agents picture applies again.
-- *Main's install step goes.* The hero shows the install command, and
-  "Each fact once" (I-837) holds, so the commands section is "Sign in,
-  then run" with two rows.
+- *"Start in three commands" comes back* as main drew it: rows wall to
+  wall, a gauge and the step's serif name on the left, the command (now
+  `CodeCopy`) filling the right. The install command shows in the hero
+  and in the first step, an exception to I-837's "each fact once" the
+  owner chose.
+- *Questions a visitor would try it for.* The FAQ's three setup questions
+  (files after a stop, the Claude Code login, Windows) give way to five
+  about the value: close the laptop while the agent works, recover from a
+  wreck, three agents on three approaches, getting work back, the cost of
+  a stopped machine. The owner: questions about where a login lives "won't
+  pull them into the product".
+- *Docs tables.* A column whose every body cell is a figure right-aligns
+  its heading too (`lib/docs.ts`, `alignFigureHeads`); "Cores" sat left
+  over a right-aligned "1" in the machine sizes table.
 - *Pause button on touch.* It is a 44px button with the 28px chip drawn
   inside, so the touch-target check holds (Guide B, 44px on touch).

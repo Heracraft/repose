@@ -48,23 +48,34 @@ headline starting under the logo. In order:
    paragraph, and the command that does it in mono with no copy button,
    since a visitor without the CLI cannot run it.
 4. **"The agents you use, and the tools they need, on first boot"**, with
-   "All agents" and "Everything installed" links, then the Ready picture.
-5. **"Sign in, then run"**, two hairline rows with a copy each: Sign in
-   (`repose login`) and Run in any checkout (`repose run`). Each row shows
-   exactly what its Copy copies, and it runs on a visitor's laptop. The
-   install step main had is gone: the hero already holds that command.
+   "All agents" and "Everything installed" side by side at the right end
+   of the headline's row (under it on a phone), then the Ready picture.
+5. **"Start in three commands"**, main's rows (owner, 2026-10-21): wall to
+   wall, the step's serif name with a gauge counting a third at a time on
+   the left, its command filling the right from 768px. Install the CLI,
+   Sign in (`repose login`) and Run in any checkout (`repose run`). Each
+   row shows exactly what its Copy copies, and it runs on a visitor's
+   laptop.
 6. **Pricing** (`#pricing`). "Launch prices. Seven days free.",
    `PlanCells` in its public variant (the one drawing of the plans,
    I-663), then "Start a free week" and the seats line from
    `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
    as it is until the owner decides the 2026-10-17 notes).
-7. **Questions.** Three, each answered from `content/docs/index.md`; the
-   restart time is read from it at build time.
+7. **Questions.** Five a solo founder asks before trying it, each one a
+   reason to: closing the laptop while the agent works (notifications,
+   answering from the phone), an agent with full permissions wrecking the
+   machine (snapshots, isolation from the laptop and other projects),
+   three agents on three approaches (`repose fork`), getting the work back
+   (`git fetch repose`), and what a stopped machine costs. Every answer is
+   from the docs (index, lifecycle, notifications, agents); the restart
+   time is read from `content/docs/index.md` at build time. No question
+   about setup trivia (where a login lives, Windows): those belong in the
+   docs, and they give a visitor no reason to try it (owner, 2026-10-21).
 
 A section with a picture puts its heading over a sunken stage (hairline
-edge, the kit's 12px panel radius) the frame's width. The two text
-sections (the commands and the questions) hold their heading in a sticky
-left column from 1024px; below 1024px every section is one column.
+edge, the kit's 12px panel radius) the frame's width. The commands
+put their heading over their rows. The questions hold their heading in a
+sticky left column from 1024px; below 1024px every section is one column.
 
 No stat strip: repose has no public figure the page can read at render
 time and a reader can reproduce. No isometric or "anatomy" figure, flat or
@@ -77,7 +88,9 @@ ComesBack, Localhost, Browser, Editor, Ready), restored under Herakraft UI.
 They keep their own names for colours (`--pic-*`, `--sh-*`, `--ink`,
 `--surface`, `--sunken`, `--rule`); `routes/landing.css` maps each onto a
 kit token or a zinc step on `.landing`, so they follow the theme switch
-and draw in the kit's zinc and its one blue. Windows take a 6px radius,
+and draw in the kit's zinc and a muted slate blue (`#4b6496` light,
+`#93a7d0` dark), quieter than the kit's link blue: at the kit's blue the
+pictures' chips and wires were too strong (owner, 2026-10-21). Windows take a 6px radius,
 frames and stages the kit's 12px. In the dark scheme the stage is lowest,
 a window's head a step up and its body a step above that.
 
@@ -90,7 +103,9 @@ shows it.
 
 ## Each fact once
 
-The install command shows in the hero alone. `repose run` shows in the
+The install command shows twice, under the hero's buttons and as the
+first of the three steps: the owner's call (I-843), so a reader who
+scrolled past the hero starts from one list. `repose run` shows in the
 pictures and in the run step; the cells carry other commands. Plan
 figures come from `lib/plans.ts`, seat counts from the api; none is typed
 into the page.

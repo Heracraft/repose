@@ -19,6 +19,7 @@
 	import Browser from '$lib/components/landing/Browser.svelte';
 	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
+	import Gauge from '$lib/components/landing/Gauge.svelte';
 	import { RESTART } from '$lib/components/landing/session';
 
 	let signingIn = $state(false);
@@ -58,6 +59,7 @@
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
 	const steps: { title: string; command: string; what: string }[] = [
+		{ title: 'Install the CLI', command: INSTALL_COMMAND, what: 'the install command' },
 		{ title: 'Sign in', command: 'repose login', what: 'the sign-in command' },
 		{ title: 'Run in any checkout', command: 'repose run', what: 'repose run' }
 	];
@@ -182,7 +184,7 @@
 	</section>
 
 	<section class="sec">
-		<div class="sec-head">
+		<div class="sec-head sec-head--links">
 			<h2 class="hk-h2">The agents you use, and the tools they need, on first boot</h2>
 			<p class="more">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
@@ -197,14 +199,23 @@
 		</div>
 	</section>
 
-	<section class="sec split">
-		<div class="side">
-			<h2 class="hk-h2">Sign in, then run</h2>
+	<section class="sec">
+		<div class="sec-head">
+			<h2 class="hk-h2">Start in three commands</h2>
 		</div>
-		<ol class="steps">
-			{#each steps as step (step.title)}
+		<!-- The gauge counts the steps up, a third at a time; the last, done,
+		     takes the pictures' blue. -->
+		<ol class="steps steps--rows">
+			{#each steps as step, i (step.title)}
 				<li>
-					<p class="step-title">{step.title}</p>
+					<h3 class="hk-h4 step-title">
+						<span class="step-mark" aria-hidden="true"
+							><Gauge
+								fraction={(i + 1) / steps.length}
+								tone={i === steps.length - 1 ? 'accent' : 'neutral'}
+							/></span
+						>{step.title}
+					</h3>
 					<CodeCopy command={step.command} what={step.what} prompt />
 				</li>
 			{/each}
@@ -239,22 +250,49 @@
 		</div>
 		<div class="faq">
 			<details>
-				<summary>Do my files survive a stop?{@render plus()}</summary>
+				<summary>Can I close my laptop while the agent works?{@render plus()}</summary>
 				<p>
-					Yes. The next <code>repose run</code> or <code>repose attach</code> starts the machine
-					again in {RESTART} with your files where you left them.
+					Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
+					wants a decision from you, you get an email, a push on your phone through ntfy, or a
+					Google Chat card, and you can answer its question from there.
 				</p>
 			</details>
 			<details>
-				<summary>Is my Claude Code login copied from my laptop?{@render plus()}</summary>
+				<summary>What if an agent with full permissions wrecks the machine?{@render plus()}</summary
+				>
 				<p>
-					No. You log into Claude Code once, on the machine itself. The Codex, opencode and GitHub
-					CLI logins your laptop has are copied.
+					You restore a snapshot. repose takes one every night and at every stop, and
+					<code>repose snapshots create</code> takes one before something risky. A restore brings back
+					the disk whole: code, databases, installed tools and logins made on the machine. The agent can't
+					reach your laptop, and each project is its own virtual machine, so the damage stays on that
+					one.
 				</p>
 			</details>
 			<details>
-				<summary>Does the CLI run on Windows?{@render plus()}</summary>
-				<p>Yes, through WSL. Linux and macOS run it directly.</p>
+				<summary>Can three agents try three approaches at once?{@render plus()}</summary>
+				<p>
+					<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted changes
+					and installed dependencies included, into three new machines, and
+					<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
+					the rest.
+				</p>
+			</details>
+			<details>
+				<summary>How does the agent's work get back to my laptop?{@render plus()}</summary>
+				<p>
+					Through git. <code>git fetch repose</code> on your laptop brings the agent's commits over,
+					and you merge or rebase them as you would a teammate's. Or share your
+					<code>gh</code> login and let the agent push to GitHub.
+				</p>
+			</details>
+			<details>
+				<summary>What does a stopped machine cost?{@render plus()}</summary>
+				<p>
+					Nothing. A plan buys memory for the machines running at once, and a stopped one takes
+					none; what its disk holds counts toward the plan's disk. The next <code>repose run</code>
+					or <code>repose attach</code> starts it again in {RESTART}, with your files where you left
+					them.
+				</p>
 			</details>
 		</div>
 	</section>

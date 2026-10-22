@@ -179,11 +179,31 @@ function codeBlock(lang: string, code: string): string {
 export const FIGURE = /^\$?[\d.,]+\s?(GB|TB|MB|KB|vCPUs?|%|ms|s|h)?\*?$/;
 
 function markFigures(html: string): string {
-	return html.replace(
+	const marked = html.replace(
 		/<(td|th)((?: align="[a-z]+")?)>([^<]*)<\/\1>/g,
 		(cell, tag: string, attrs: string, text: string) =>
 			FIGURE.test(text.trim()) ? `<${tag}${attrs} class="num">${text}</${tag}>` : cell
 	);
+	return marked.replace(/<table>[\s\S]*?<\/table>/g, alignFigureHeads);
+}
+
+/**
+ * A column whose every body cell is a figure sits right, so its heading
+ * sits right with it: "Cores" over a right-aligned "1" read as a heading
+ * for the column before it.
+ */
+function alignFigureHeads(table: string): string {
+	const body = table.split('<tbody>')[1];
+	if (!body) return table;
+	const rows = body.split('</tr>').filter((r) => r.includes('<td'));
+	const cells = rows.map((r) => r.match(/<td[^>]*>/g) ?? []);
+	const numeric = (i: number) =>
+		cells.length > 0 && cells.every((r) => r[i]?.includes('class="num"'));
+	let i = 0;
+	return table.replace(/<th((?: align="[a-z]+")?)( class="num")?>/g, (th, attrs: string, num) => {
+		const col = i++;
+		return num || !numeric(col) ? th : `<th${attrs} class="num">`;
+	});
 }
 
 /** A command heading's words before its first argument: "repose mcp forward". */

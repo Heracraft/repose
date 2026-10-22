@@ -30,15 +30,18 @@
 	--radius-xs: var(--hk-radius-xs);
 	--shot-head: 28px;
 	--stage-y: 40px;
-	--color-blue-400: #60a5fa;
-	--color-blue-600: #2563eb;
+	/* The pictures' blue is a muted slate step, quieter than the kit's
+	   link blue (owner, 2026-10-21: "the blue in the figures is too
+	   strong"). 5.9:1 on white light, 7:1 on the dark surface. */
+	--color-blue-400: #93a7d0;
+	--color-blue-600: #4b6496;
 	--color-emerald-500: #10b981;
-	--sh-accent: #3b82f6;
+	--sh-accent: #7088bb;
 	--sh-grey: #a1a1aa;
 	--sh-light: #d4d4d8;
 	--sh-ink: #3f3f46;
 	--sh-paper: var(--hk-surface);
-	--pic-accent: var(--hk-accent);
+	--pic-accent: var(--color-blue-600);
 	--pic-ink: #27272a;
 	--pic-dim: #71717a;
 	--pic-faint: var(--hk-text-3);
@@ -55,7 +58,8 @@
 		--surface: #18181b;
 		--rule: #27272a;
 		--rule-strong: #3f3f46;
-		--sh-accent: #60a5fa;
+		--sh-accent: #7f95c4;
+		--pic-accent: var(--color-blue-400);
 		--sh-grey: #71717a;
 		--sh-light: #52525b;
 		--sh-ink: #a1a1aa;
@@ -71,7 +75,8 @@
 	--surface: #18181b;
 	--rule: #27272a;
 	--rule-strong: #3f3f46;
-	--sh-accent: #60a5fa;
+	--sh-accent: #7f95c4;
+	--pic-accent: var(--color-blue-400);
 	--sh-grey: #71717a;
 	--sh-light: #52525b;
 	--sh-ink: #a1a1aa;
