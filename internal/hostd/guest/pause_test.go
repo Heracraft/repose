@@ -345,7 +345,9 @@ func TestWakeClearsTheMarkEvenWhenGuestdDoesNotAnswer(t *testing.T) {
 	h := newHarness(t, nil)
 	h.create(gid1)
 	h.pauseOK(gid1)
-	h.guestd(gid1).Close() // the resume works; nothing answers after it
+	// The close IS the point: the resume works and nothing answers after
+	// it. Its own error is not interesting -- the guest is going away.
+	_ = h.guestd(gid1).Close()
 	res := h.run(cmd(&hostdv1.WakeGuest{GuestId: gid1, Reason: WakeReasonConnect}))
 	if res.Ok {
 		t.Fatal("a wake with no answer from the guest must report a failure")
