@@ -340,7 +340,6 @@
 		margin-left: 4px;
 		padding: 0 8px;
 		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius);
 		background: var(--surface);
 		font-family: var(--font-mono);
 		font-size: 12px;

@@ -1042,17 +1042,10 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius);
+		border: 1px solid var(--rule);
 		background: var(--surface);
 		color: var(--pic-ink);
 		font-size: 13px;
-	}
-	/* The heads are WinHead's; the machine's wall is landing.css's
-	   --pic-wall, as on every machine window (I-673). The window's own
-	   corners clip its head's ground. */
-	.win > :global(.shot-head) {
-		border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
 	}
 	.hero-pic:global(.stopped) .lw :global(.dot) {
 		background: var(--pic-faint);
@@ -1286,7 +1279,6 @@
 		height: 22px;
 		padding: 0 7px;
 		border: 1px solid var(--pic-stop);
-		border-radius: var(--radius);
 		background: var(--surface);
 		font-family: var(--font-mono);
 		font-size: 12px;

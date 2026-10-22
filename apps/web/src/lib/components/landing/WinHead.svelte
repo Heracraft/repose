@@ -8,10 +8,6 @@
   pinwheel the hero passes as `mark` so its loop can turn it. Whatever
   the caller puts in `children` follows the name (Localhost's address
   bar, OneCommand's ready time, which brings its own dot: `dot={false}`).
-
-  A machine's head carries data-who="machine": landing.css draws the
-  window around it with the machine's wall (--pic-wall), so every "your
-  cloud machine" has the same edge.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -35,7 +31,7 @@
 	} = $props();
 </script>
 
-<div class="shot-head" data-who={who}>
+<div class="shot-head">
 	{#if mark}
 		{@render mark()}
 	{:else}

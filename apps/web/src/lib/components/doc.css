@@ -473,7 +473,6 @@
 	margin: 0 0 1.25rem;
 	padding: 0.75rem 1rem;
 	border-left: 2px solid var(--hk-accent);
-	border-radius: 0 var(--hk-radius) var(--hk-radius) 0;
 	background: var(--hk-accent-wash);
 	color: var(--hk-text-2);
 }

@@ -260,7 +260,7 @@
 		flex: none;
 		padding: 0.125rem 0.375rem;
 		border: 1px solid var(--hk-border);
-		border-radius: var(--hk-radius-sm);
+		border-radius: var(--hk-radius-xs);
 		background: none;
 		color: var(--hk-text-3);
 		font: inherit;

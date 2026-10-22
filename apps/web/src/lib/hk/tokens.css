@@ -179,8 +179,8 @@
 	--hk-font-display: 'Noto Serif', Georgia, 'Times New Roman', serif;
 
 	/* Shape: the full set of radii */
-	--hk-radius-xs: 4px; /* kbd, method badge, focus outline */
-	--hk-radius-sm: 5px; /* badges, inline code, status chip */
+	--hk-radius-xs: 4px; /* kbd, badges, method badge, status chip, focus outline */
+	--hk-radius-sm: 5px; /* inline code, a row's hover fill */
 	--hk-radius-6: 6px; /* segmented thumb, docs nav items, modal close */
 	--hk-radius-7: 7px; /* small buttons, account pill, rail items, search rows */
 	--hk-radius: 8px; /* buttons, inputs, banners, tooltips */
@@ -639,7 +639,7 @@ html.dark:has(.hk) {
 	gap: 0.3rem;
 	height: 1.25rem;
 	padding: 0 0.4rem;
-	border-radius: var(--hk-radius-sm);
+	border-radius: var(--hk-radius-xs);
 	font-size: 0.6875rem;
 	font-weight: 500;
 	line-height: 1;
@@ -1322,7 +1322,7 @@ html.dark:has(.hk) {
 	align-items: center;
 	height: 1.25rem;
 	padding: 0 0.375rem;
-	border-radius: var(--hk-radius-sm);
+	border-radius: var(--hk-radius-xs);
 	font-family: var(--hk-font-mono);
 	font-size: 0.6875rem;
 	color: var(--hk-code-2xx);

@@ -75,14 +75,13 @@
 </div>
 
 <style>
-	/* The pictures' window: a hairline at --rule-strong, --radius corners,
+	/* The pictures' window: a --rule hairline, square corners,
 	   the surface inside and a sunken head, as the machine panels are
 	   drawn. The head is one height in every picture (I-673): with the
 	   mini's top rule under it, it is a window head's --shot-head, so in
 	   ComesBack the tile's head and the machine's sit on one line. */
 	.snap {
-		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius, 3px);
+		border: 1px solid var(--rule);
 		background: var(--surface);
 		overflow: hidden;
 		color: var(--pic-ink);

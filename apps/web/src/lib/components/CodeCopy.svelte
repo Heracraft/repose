@@ -60,7 +60,7 @@
 		max-width: min(100%, 40rem);
 		padding: 0.5rem 0.5rem 0.5rem 0.75rem;
 		border: 1px solid var(--hk-border);
-		border-radius: var(--hk-radius-lg);
+		border-radius: var(--hk-radius);
 		background: var(--hk-surface-2);
 	}
 	/* Copy is a ghost, as on a code pane: the box is the frame. */

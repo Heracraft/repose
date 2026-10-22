@@ -618,8 +618,7 @@
 		flex: 1;
 		display: flex;
 		flex-direction: column;
-		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius);
+		border: 1px solid var(--rule);
 		background: var(--surface);
 		overflow: hidden;
 		font-size: 13px;
@@ -711,7 +710,6 @@
 	.ref {
 		padding: 0 4px;
 		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius);
 		line-height: 16px;
 	}
 	/* The fetched branch: what git fetch repose brought, in the chips'
@@ -744,7 +742,6 @@
 		margin-left: auto;
 		min-width: 18px;
 		padding: 0 5px;
-		border-radius: var(--radius);
 		background: var(--sunken);
 		border: 1px solid var(--rule);
 		text-align: center;

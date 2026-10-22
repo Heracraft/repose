@@ -45,8 +45,9 @@
 	:global(.pic-frame) {
 		position: relative;
 	}
-	/* A picture chip: the hairline, radius and surface of the pictures'
-	   windows and chips, --pic-dim at rest. On the floor under the
+	/* A picture control: the --rule-strong hairline and surface of the
+	   pictures' tags, with the kit's smallest radius as a button,
+	   --pic-dim at rest. On the floor under the
 	   picture, at its right edge, centred in the floor's height. */
 	.pic-pause {
 		--pp: 28px;
@@ -60,7 +61,7 @@
 		height: var(--pp);
 		padding: 0;
 		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius, 3px);
+		border-radius: var(--hk-radius-xs);
 		background: var(--surface);
 		color: var(--pic-dim);
 		cursor: pointer;
@@ -111,7 +112,7 @@
 			inset: 8px;
 			z-index: -1;
 			border: 1px solid var(--rule-strong);
-			border-radius: var(--radius, 3px);
+			border-radius: var(--hk-radius-xs);
 			background: var(--surface);
 		}
 		.pic-pause::after {

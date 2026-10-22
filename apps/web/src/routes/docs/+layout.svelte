@@ -623,7 +623,7 @@
 		color: var(--hk-accent);
 		background: var(--hk-accent-wash);
 		border-left-color: var(--hk-accent);
-		border-radius: 0 var(--hk-radius-6) var(--hk-radius-6) 0;
+		border-radius: 0;
 	}
 	/* Thumb-sized rows in the phone's drawer. */
 	@media (pointer: coarse), (max-width: 767.98px) {

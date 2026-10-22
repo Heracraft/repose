@@ -24630,6 +24630,22 @@ with grafts from the others (`.dev/notes/ia-final.md`).
   entries, every entry lands on a heading the page has, marks and
   snippets), `tests/docs.spec.ts` (Ctrl-K, "/", arrows and Enter to the
   anchor, Escape's focus, no match, the phone's sub-bar).
+- *Amended 2026-10-22, less rounding.* The owner, with a crop of the
+  landing hero in the dark: "check for unnecessary rounding". The rule:
+  the kit's scale stays, but each element takes the smallest step that
+  does its job, and a nested surface's radius is at most its parent's
+  minus the gap between them. Controls (buttons, inputs, menus, the
+  palette) and panes (code panes, plan cards, panels, the landing
+  stages) keep their Guide B steps. Tags drop to `--hk-radius-xs` (4px):
+  `hk-badge` and `hk-code-status` 5px to 4px, the palette's Esc key 5px
+  to 4px, as `kbd` is. A single command line (`CodeCopy`: the landing's
+  three steps, Settings' Install) is a command line at `--hk-radius`
+  (8px), not a 12px pane. An element edged by an accent bar on one side
+  is square: the docs sidebar's and the legal pages' current item
+  (`0 6px 6px 0` to 0) and the docs note (`0 8px 8px 0` to 0); a radius
+  on one side of a bar draws a tab, not a rule. Row hover fills stay at
+  `--hk-radius-sm`. Checks: the look greps' radii item; viewport shots at
+  1440 and 390 in both schemes in `.dev/shots/radii/`.
 
 **I-843. The landing gets main's drawn pictures back, in Herakraft UI.**
 (landing-restore, 2026-10-21) *Made during implementation.* Amends I-837.
@@ -24674,3 +24690,23 @@ old content in the new style, keeping the new copy-command controls.
   over a right-aligned "1" in the machine sizes table.
 - *Pause button on touch.* It is a 44px button with the 28px chip drawn
   inside, so the touch-target check holds (Guide B, 44px on touch).
+- *Amended 2026-10-22, quiet windows, square inside the stage.* The
+  owner, on a dark crop of the hero: "there is this ugly ass white border
+  added to the visualizations, also check for unnecessary rounding". A
+  machine's window was edged in `--pic-wall` (`#a1a1aa` in the dark, ink
+  in the light) and every other window in `--rule-strong`. Now every
+  window, the hero's snapshots panel and its tile, and the snapshot tiles
+  in the feature grid are a pane on the stage: the surface fill and a
+  `--rule` hairline (the kit's `--hk-border`, `#27272a` dark, `#e4e4e7`
+  light), the way the dashboard's panels sit on the page. `--pic-wall`
+  and WinHead's `data-who` hook are gone. Corners: the stage keeps the
+  kit's 12px; everything drawn inside it is square, since a window inset
+  12px from a 12px corner has no radius left to take. That is windows
+  (6px to 0) with their heads' top-only radius gone, the command and port
+  chips (6px to 0), the hero's skill tag, OneCommand's branch tag and
+  file count, Localhost's address bar (6px to 0), the snapshot tiles
+  (6px to 0) and Ready's terminal (2px to 0). The pause button is a
+  control and takes `--hk-radius-xs` (6px to 4px). Drawn details that
+  copy an app's shapes (the editor's tree connectors, skeleton bars,
+  dots) keep theirs. This replaces "windows 6px" under *How the pictures
+  take the kit*.

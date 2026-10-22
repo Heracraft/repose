@@ -273,7 +273,7 @@
 		color: var(--hk-accent);
 		background: var(--hk-accent-wash);
 		border-left-color: var(--hk-accent);
-		border-radius: 0 var(--hk-radius-6) var(--hk-radius-6) 0;
+		border-radius: 0;
 	}
 
 	/* Below 768px: one row of the three policies, the current one ink with

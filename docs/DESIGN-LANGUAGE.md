@@ -154,18 +154,22 @@ markup.
 
 | Radius | Token | Used by |
 |---|---|---|
-| 4px | `--hk-radius-xs` | focus outline, kbd, skeleton bars |
-| 5px | `--hk-radius-sm` | badges, inline code, a row's hover fill |
+| 0 | | anything drawn inside a landing stage (windows, chips, tags), an element edged by an accent bar (the docs' and legal pages' current item, the docs note), the outage bar |
+| 4px | `--hk-radius-xs` | focus outline, kbd, badges, status chips, skeleton bars, the pictures' pause button |
+| 5px | `--hk-radius-sm` | inline code, a row's hover fill |
 | 6px | `--hk-radius-6` | segmented thumb and items, docs sidebar items |
 | 7px | `--hk-radius-7` | small buttons, the Account pill |
-| 8px | `--hk-radius` | buttons, inputs, banners, toasts, menus, the inline confirm, command lines |
+| 8px | `--hk-radius` | buttons, inputs, banners, toasts, menus, the inline confirm, command lines (`CodeCopy`) |
 | 9px | `--hk-radius-9` | segmented track |
-| 12px | `--hk-radius-lg` | code panes, the terminal, plan cards, panels |
+| 12px | `--hk-radius-lg` | code panes, the terminal, plan cards, panels, the landing's stages |
 | 14px | `--hk-radius-xl` | the docs search palette |
 | pill | `--hk-radius-pill` | dots, meter track |
 
-Tailwind's `rounded-*` steps map onto these values (`rounded-lg` is 8px), but
-markup uses the tokens. Square corners belong to the outage bar.
+Each element takes the smallest step that does its job, and a nested
+surface's radius is at most its parent's less the gap between them, so a
+window 12px inside a 12px stage is square (I-841, I-843 amendments of
+2026-10-22). Tailwind's `rounded-*` steps map onto these values
+(`rounded-lg` is 8px), but markup uses the tokens.
 
 ## Elevation
 

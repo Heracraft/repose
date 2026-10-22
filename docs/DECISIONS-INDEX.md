@@ -826,4 +826,4 @@ pointer, not a summary.
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24142
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24174
 - **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24301
-- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24535
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24650

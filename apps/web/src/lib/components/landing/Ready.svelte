@@ -192,7 +192,6 @@
 		flex-direction: column;
 		min-width: 0;
 		border: 1px solid #2a2a28;
-		border-radius: 2px;
 		background: #0d0d0c;
 		color: #d4d4d0;
 		font-family: var(--font-mono);
