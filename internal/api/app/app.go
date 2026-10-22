@@ -445,9 +445,20 @@ func (a *App) loops(ctx context.Context) {
 		a.log.Warn("BLOB_ACCOUNT_URL unset: snapshot expiry only marks rows", "event", "blob_unset")
 		blob = markOnly{}
 	}
+	// A log line at start is read once and then scrolls away, so the state
+	// is also a gauge: with no blob store the retention deletes no bytes
+	// and Postgres still reports the rows deleted (I-800).
+	if a.m != nil {
+		configured := 0.0
+		if _, markOnlyStore := blob.(markOnly); !markOnlyStore {
+			configured = 1
+		}
+		a.m.BlobConfigured.Set(configured)
+	}
 	expiry := snapshots.New(a.pool, blob, a.m, a.log)
 	go expiry.Run(ctx, 24*time.Hour)
 	rollup := billing.NewRollup(a.pool, a.m, a.log)
+	fleet := billing.NewFleet(a.pool, a.m)
 	dunning := billing.NewDunning(a.pool, a.engine, a.events, a.bcfg, a.m, a.log)
 	bump := basebump.New(a.pool, a.engine, a.events, a.log)
 	idleWarn := &idle.Warner{Pool: a.pool, Events: a.events}
@@ -475,6 +486,15 @@ func (a *App) loops(ctx context.Context) {
 		}
 	}
 	refreshAbuse()
+	// Both of these are published again every minute below. They run once
+	// here so a redeploy's first scrape reads a number rather than an
+	// absent series (I-800, I-802).
+	if err := rollup.Lag(ctx); err != nil && ctx.Err() == nil {
+		a.log.Error("rollup lag", "event", "rollup_lag_fail", "err", err.Error())
+	}
+	if err := fleet.Refresh(ctx); err != nil && ctx.Err() == nil {
+		a.log.Error("fleet gauges", "event", "fleet_refresh_fail", "err", err.Error())
+	}
 	sweep := time.NewTicker(15 * time.Second)
 	hourly := time.NewTicker(time.Minute)
 	daily := time.NewTicker(24 * time.Hour)
@@ -493,6 +513,17 @@ func (a *App) loops(ctx context.Context) {
 				a.log.Error("host sweep", "event", "sweep_fail", "err", err.Error())
 			}
 		case now := <-hourly.C:
+			// The rollup's lag, from every replica and outside the
+			// rollup's lock, because the gauge the rollup itself sets
+			// rises only when a rollup succeeds (I-800, Rollup.Lag).
+			if err := rollup.Lag(ctx); err != nil && ctx.Err() == nil {
+				a.log.Error("rollup lag", "event", "rollup_lag_fail", "err", err.Error())
+			}
+			// The subscription and revenue gauges, from every replica and
+			// outside any lock (I-802, billing.Fleet).
+			if err := fleet.Refresh(ctx); err != nil && ctx.Err() == nil {
+				a.log.Error("fleet gauges", "event", "fleet_refresh_fail", "err", err.Error())
+			}
 			// The seats waitlist expires holds that ran out and invites
 			// the oldest waiting users while a seat is free, every minute,
 			// one replica at a time (DECISIONS I-269, I-290).

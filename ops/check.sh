@@ -54,6 +54,30 @@ promtool check rules "$ops/alerts.yaml" || fail=1
 say "alert rule tests"
 (cd "$ops" && promtool test rules alerts_test.yaml) || fail=1
 
+say "every alert's runbook anchor resolves"
+# A heading that exists is not the same as the anchor the rule points at:
+# FluentBitStuck pointed at #observability, a heading this file has never
+# had, so the one link an operator follows mid-incident went nowhere and
+# the heading check below still passed (I-800).
+python3 - <<'ANCHORS' || fail=1
+import re, sys
+rules = open("ops/alerts.yaml").read()
+anchors = {re.sub(r"[^a-z0-9 -]", "", line[3:].strip().lower()).replace(" ", "-")
+           for line in open("docs/ops/RUNBOOK.md").read().splitlines() if line.startswith("## ")}
+bad, cur = [], None
+for line in rules.splitlines():
+    m = re.match(r"\s*- alert: (\w+)", line)
+    if m:
+        cur = m.group(1)
+    m = re.search(r'runbook: "docs/ops/RUNBOOK\.md#([^"]+)"', line)
+    if m and m.group(1) not in anchors:
+        bad.append(f"{cur} -> #{m.group(1)}")
+if bad:
+    print("runbook anchor goes nowhere: " + ", ".join(bad), file=sys.stderr)
+    sys.exit(1)
+print("all anchors resolve")
+ANCHORS
+
 say "every alert has a runbook heading"
 # docs/CHECKLIST.md: an alert with no runbook entry is a notification nobody
 # knows what to do with. The heading is the alert name, lowercased by
@@ -70,8 +94,8 @@ else
 fi
 
 say "alertmanager route"
-# DECISIONS I-648: Watchdog only to the Kuma push, pages to the page
-# receiver, the rest to Chat on the slow timer.
+# DECISIONS I-648, amended by I-848: Watchdog only to the Kuma push, pages
+# to the page receiver, the rest to email on the slow timer.
 route=$ops/alertmanager/repose-route.yaml
 amtool check-config "$route" >/dev/null || fail=1
 while read -r want labels; do
@@ -80,11 +104,11 @@ while read -r want labels; do
     || { echo "$labels should route to $want" >&2; fail=1; }
 done <<'ROUTES'
 repose-watchdog stack=repose alertname=Watchdog severity=heartbeat
-repose-chat-page stack=repose alertname=HostdDown severity=page host_id=host-01
-repose-chat-page stack=repose alertname=ApiDown severity=page job=api-grpc
-repose-chat-page stack=repose alertname=MonitoringPathDown severity=page
-repose-chat stack=repose alertname=HostServiceDown severity=warn host_id=host-01
-repose-chat stack=repose alertname=BillingStopped severity=info
+repose-email-page stack=repose alertname=HostdDown severity=page host_id=host-01
+repose-email-page stack=repose alertname=ApiDown severity=page job=api-grpc
+repose-email-page stack=repose alertname=MonitoringPathDown severity=page
+repose-email stack=repose alertname=HostServiceDown severity=warn host_id=host-01
+repose-email stack=repose alertname=BillingStopped severity=info
 ROUTES
 echo "routes as intended"
 
@@ -114,7 +138,7 @@ if [ "${1:-}" = "--grafana" ]; then
   # Provisioning is asynchronous; the provider polls every 30 s but loads
   # once at start.
   sleep 5
-  for uid in repose-host-capacity repose-per-guest repose-builds repose-gateway \
+  for uid in repose-overview repose-host-capacity repose-per-guest repose-builds repose-gateway \
              repose-snapshots repose-billing repose-abuse; do
     if out=$(curl -sf "http://127.0.0.1:3000/api/dashboards/uid/$uid"); then
       title=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["dashboard"]["title"])')

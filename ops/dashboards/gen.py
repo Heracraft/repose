@@ -621,6 +621,46 @@ def billing() -> dict:
         desc="Plans through Polar (DECISIONS I-289, I-604): the subscription mix, the webhook, the gate's refusals, the egress overage line, and the hours and egress usage_hours records. Polar holds the money; usage_hours holds what was used.",
         time_from="now-2d",
         panels=[
+            row("The money"),
+            panel(
+                "stat", "MRR",
+                [q('sum(max by (status) (repose_api_mrr_cents{status=~"active|past_due"})) / 100', "mrr", instant=True)],
+                unit="currencyUSD", w=5, h=6, decimals=0,
+                desc="The plan revenue a month of the subscriptions that are being charged, at the list price each one is on and with the founding discount taken off while it runs. Polar is the ledger; this is the api's reading of the subscriptions table. max by (status), not sum: two api replicas publish the gauge and a scrape lands on one of them.",
+            ),
+            panel(
+                "stat", "In trial",
+                [q('max(repose_api_mrr_cents{status="trialing"}) / 100', "trialing", instant=True)],
+                unit="currencyUSD", w=5, h=6, decimals=0,
+                desc="What the trials would add a month if every one of them charges on day eight. Each holds its full seats meanwhile and pays nothing (PRICING.md 'The trial').",
+            ),
+            panel(
+                "gauge", "Seat fill",
+                [q("max(repose_api_seats_held) / max(repose_api_seats_total)", "fill", instant=True)],
+                unit="percentunit", w=7, h=6, min_=0, max_=1,
+                thresholds=[("red", None), ("yellow", 0.5), ("green", 0.75)],
+                desc="Seats sold, of the seats the ready hosts deliver. The fleet pays for every seat a host delivers around the clock and earns only on the sold ones, so this is the margin number: ladder C clears an AX162-2's $992.10 at 22 of its 30 Solo seats, which is 75% (PRICING.md 'The cost floor'). On Azure no fill clears the host and the credit pays the difference.",
+            ),
+            panel(
+                "gauge", "Seat use",
+                [q('(((4 * sum(repose_host_guests{state="running",class="small"})) or vector(0))'
+                   ' + ((8 * sum(repose_host_guests{state="running",class="large"})) or vector(0))'
+                   ' + ((16 * sum(repose_host_guests{state="running",class="xl"})) or vector(0)))'
+                   ' / (8 * max(repose_api_seats_held))', "use", instant=True)],
+                unit="percentunit", w=7, h=6, min_=0, max_=1,
+                desc="The memory actually running, over the memory the sold seats may run (a seat is 8 GB, I-290). A subscription holds its seats whether its machines run or not, so the gap between this and Seat fill is capacity that is bought, paid for and idle. It is not a number to drive to 100%: a stopped project is a user within their plan. It is the number that says whether the plan shape sells memory people use.",
+            ),
+            panel(
+                "timeseries", "Seats delivered, sold and running",
+                [q("max(repose_api_seats_total)", "delivered"),
+                 q("max(repose_api_seats_held)", "sold"),
+                 q('(((4 * sum(repose_host_guests{state="running",class="small"})) or vector(0))'
+                   ' + ((8 * sum(repose_host_guests{state="running",class="large"})) or vector(0))'
+                   ' + ((16 * sum(repose_host_guests{state="running",class="xl"})) or vector(0))) / 8', "running")],
+                unit="none", w=24, h=7,
+                desc="Three lines in seats. Delivered is what the ready, undrained hosts can serve, each the smaller of its 8 GB blocks and what its cores allow (I-739, I-784); sold is held by live subscriptions and unexpired invitations; running is the memory of running guests, in 8 GB units. Delivered falling is a host drained or lost. Sold meeting delivered is the waitlist starting.",
+            ),
+            row("The flow"),
             panel(
                 "stat", "Rollup lag",
                 [q("max(repose_api_rollup_lag_seconds)", "lag", instant=True)],
@@ -654,8 +694,8 @@ def billing() -> dict:
             ),
             panel(
                 "timeseries", "Gate refusals by reason",
-                [q("sum by (reason) (increase(repose_api_billing_gate_refused_total[1h]))", "{{reason}}")],
-                desc="payment_required answers: subscription_required (no plan), plan_limit (memory), disk_limit, egress_limit, past_due, suspended. plan_limit is the upgrade signal.",
+                [q("sum by (reason, plan) (increase(repose_api_billing_gate_refused_total[1h]))", "{{reason}} {{plan}}")],
+                desc="payment_required answers: subscription_required (no plan), plan_limit (memory), disk_limit, egress_limit, past_due, suspended. The plan reads the refusal: a plan_limit on solo is an upgrade worth $40 a month, and plan_limit across every plan says the entry seat is too small for the work (I-802).",
                 unit="none", stack=True,
             ),
             panel(

@@ -157,7 +157,7 @@ repose ls --destroyed
 repose restore todo-app
 ```
 
-`--as NEW-NAME` restores under another name, and `--snapshot ID` picks an older snapshot. A restore started while the destroy is still running waits for its final snapshot. If a live project holds the name, the restore asks you for another. A live project holding the git remote keeps it, and the restored one is reached by name.
+`--as NEW-NAME` restores under another name. A restore started while the destroy is still running waits for its final snapshot. If a live project holds the name, the restore asks you for another. A live project holding the git remote keeps it, and the restored one is reached by name.
 
 The dashboard's project list has the same under **Recently destroyed**, with the date each can be restored until, and **Show more** for the rest.
 

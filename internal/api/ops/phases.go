@@ -1357,7 +1357,11 @@ func (e *Engine) notifyPlatform(ctx context.Context, projectID uuid.UUID, kind, 
 }
 
 // markDestroyed is the end of a destroy: the row keeps its history with
-// destroyed_at set and the last snapshot expires in 30 days (R4-11). It
+// destroyed_at set and the last snapshot expires in 30 days (R4-11). The
+// newest live snapshot by taken_at is the one kept; the older ones expire
+// at once, so the next sweep deletes them. It used to give all of them
+// the 30 days, which is up to seven times the bytes R4-11 promises
+// (I-808). It
 // runs from the destroy_guest phase, and from finish for a destroy whose
 // plan was empty because the project never had a guest (a create that
 // failed before CreateGuest), which used to leave the project in `error`
@@ -1376,7 +1380,10 @@ func (e *Engine) markDestroyed(ctx context.Context, op *store.Op, projectID uuid
 	e.log.Info("project destroyed", "event", "guest_destroy", "project_id", projectID.String())
 	_, err = e.pool.Exec(ctx, `update snapshots s set expires_at = case
 			when p.expires_at is not null then least(coalesce(s.expires_at, now()), now())
-			else coalesce(s.expires_at, now() + interval '30 days') end
+			when s.id = (select k.id from snapshots k where k.project_id = s.project_id and k.deleted_at is null
+				order by k.taken_at desc, k.id desc limit 1)
+				then coalesce(s.expires_at, now() + interval '30 days')
+			else least(coalesce(s.expires_at, now()), now()) end
 		from projects p where p.id = s.project_id and s.project_id = $1 and s.deleted_at is null`, projectID)
 	if err != nil {
 		return err

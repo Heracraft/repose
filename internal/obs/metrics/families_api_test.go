@@ -31,8 +31,11 @@ func TestAPIFamily(t *testing.T) {
 	a.ScheduleTotal.WithLabelValues("ok").Inc()
 	a.NotifyTotal.WithLabelValues("email", "ok").Inc()
 	a.BillingWebhookTotal.WithLabelValues("subscription.created", "ok").Inc()
-	a.BillingGateRefusedTotal.WithLabelValues("plan_limit").Inc()
+	a.BillingGateRefusedTotal.WithLabelValues("plan_limit", "solo").Inc()
 	a.BillingSubscriptions.WithLabelValues("solo", "active").Inc()
+	a.Subscriptions.WithLabelValues("solo", "active").Set(1)
+	a.MRRCents.WithLabelValues("active").Set(4900)
+	a.SnapshotExpiryFailTotal.WithLabelValues("blob").Inc()
 
 	want := map[string][]string{
 		"repose_api_requests_total":                {"method", "route", "status"},
@@ -46,7 +49,7 @@ func TestAPIFamily(t *testing.T) {
 		"repose_api_notify_total":                  {"channel", "result"},
 		"repose_api_billing_webhook_total":         {"kind", "result"},
 		"repose_api_billing_overage_charges_total": {"result"},
-		"repose_api_billing_gate_refused_total":    {"reason"},
+		"repose_api_billing_gate_refused_total":    {"plan", "reason"},
 		"repose_api_billing_subscriptions_total":   {"plan", "status"},
 		"repose_api_billing_stops_total":           {"reason"},
 		"repose_api_snapshot_age_seconds":          nil,
@@ -59,6 +62,12 @@ func TestAPIFamily(t *testing.T) {
 		// I-445..I-447: what the api dropped or could not store from hosts.
 		"repose_api_host_reports_refused_total": {"reason"},
 		"repose_api_samples_failed_total":       {"reason"},
+		// I-802: what the fleet earns, beside the seats it sells.
+		"repose_api_subscriptions": {"plan", "status"},
+		"repose_api_mrr_cents":     {"status"},
+		// I-800: the retention's two blind spots.
+		"repose_api_snapshot_expiry_fail_total": {"reason"},
+		"repose_api_blob_configured":            nil,
 	}
 
 	fams, err := m.Registry().Gather()

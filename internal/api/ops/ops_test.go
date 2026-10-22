@@ -158,7 +158,8 @@ func TestLifecycle(t *testing.T) {
 	if string(out) != "fake\n" {
 		t.Fatalf("exec stdout %q", out)
 	}
-	// destroy: stop with snapshot, destroy guest, keep the snapshot 30 days
+	// destroy: stop with snapshot, destroy guest, keep the LAST snapshot 30
+	// days and expire the older ones at once (R4-11, I-808)
 	op = h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(h.Project(pid))}))
 	if op.State != "done" {
 		t.Fatalf("destroy: %+v", op.Error)
@@ -171,9 +172,24 @@ func TestLifecycle(t *testing.T) {
 	if len(snaps) != 3 {
 		t.Fatalf("snapshots after destroy: %d", len(snaps))
 	}
-	for _, s := range snaps {
-		if s.ExpiresAt == nil || time.Until(*s.ExpiresAt) < 29*24*time.Hour {
-			t.Fatalf("snapshot %s expires %v", s.ID, s.ExpiresAt)
+	newest := 0
+	for i, s := range snaps {
+		if s.TakenAt.After(snaps[newest].TakenAt) {
+			newest = i
+		}
+	}
+	for i, s := range snaps {
+		if s.ExpiresAt == nil {
+			t.Fatalf("snapshot %s has no expiry", s.ID)
+		}
+		if i == newest {
+			if time.Until(*s.ExpiresAt) < 29*24*time.Hour {
+				t.Fatalf("last snapshot %s expires %v, want 30 days", s.ID, s.ExpiresAt)
+			}
+			continue
+		}
+		if time.Until(*s.ExpiresAt) > time.Minute {
+			t.Fatalf("older snapshot %s expires %v, want at once", s.ID, s.ExpiresAt)
 		}
 	}
 	if len(h.Fake.Guests()) != 0 {

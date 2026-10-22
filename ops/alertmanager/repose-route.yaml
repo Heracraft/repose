@@ -1,12 +1,21 @@
 # The Alertmanager route for repose, to merge into the personal server's
-# alertmanager.yml (DECISIONS I-648). Alerts go to the owner's Google Chat
-# space through calert (ops/alertmanager/calert/), which turns Alertmanager's
-# webhook JSON into the `{"text": ...}` message Google Chat accepts.
+# alertmanager.yml (DECISIONS I-648, amended by I-848). Alerts are emailed
+# to the owner by Alertmanager itself.
 #
-# Both Chat receivers post to the same calert room, `repose`, so the same
-# space; they differ only in timing. A page is sent after 20 s and repeated
-# hourly, everything else waits 30 s for its group and repeats every 12 h.
-# calert's message names the severity first, so a page reads as one.
+# Email and not Google Chat, which was I-648's choice: Alertmanager has no
+# Google Chat receiver, so Chat needed calert beside it to translate the
+# webhook. That put a process in the alert path that nothing watched --
+# `Watchdog` goes straight to Kuma and never touches it -- so a dead calert
+# would have taken every other alert with it and left the heartbeat green.
+# That is the shape of the 2026-10-10 outage this routing was written for.
+# Alertmanager's email receiver is built in and has no such part. Azure's
+# own alerts already email the same address for the same reason (I-648,
+# "Azure"): the email arrives when everything of the owner's is down.
+#
+# Both email receivers go to the same address and differ only in timing. A
+# page is sent after 20 s and repeated hourly, everything else waits 30 s
+# for its group and repeats every 12 h. The subject names the severity
+# first, so a page reads as one in a notification.
 #
 # Watchdog always fires and goes to an Uptime Kuma push monitor every minute
 # (repeat_interval is under group_interval, so no tick is skipped).
@@ -14,12 +23,27 @@
 # Kuma posts to the same Chat space itself. The push URL is read from a file,
 # because a URL anyone can push to is a way to hide an outage.
 #
-# Nothing secret is in this file. The Chat webhook URL lives only in calert's
-# environment, the Kuma push URL only in the url_file below
-# (ops/README.md, install step 3, has the commands).
+# Nothing secret is in this file. The SMTP password (a Resend API key) is
+# read from auth_password_file and the Kuma push URL from url_file, both
+# 0600 under /etc/alertmanager/secrets (ops/README.md, install step 3, has
+# the commands). Set `smtp_from` and the two `to:` addresses to the same
+# address Azure's alerts use (`alert_email` in prod.local.tfvars); one
+# inbox for both is the point.
+
+# Merge this into alertmanager.yml's own `global:` as well. Resend is
+# already the api's mail sender with repose.herakraft.co verified
+# (LAUNCH.md step 2), so alerting reuses it rather than adding a provider:
+# the username is the literal string `resend` and the password is a Resend
+# API key, in a 0600 file.
+global:
+  smtp_smarthost: smtp.resend.com:587
+  smtp_from: repose alerts <alerts@repose.herakraft.co>
+  smtp_auth_username: resend
+  smtp_auth_password_file: /etc/alertmanager/secrets/repose-smtp-password
+  smtp_require_tls: true
 
 route:
-  receiver: repose-chat
+  receiver: repose-email
   group_by: [alertname, host_id]
   group_wait: 30s
   group_interval: 5m
@@ -37,25 +61,45 @@ route:
     - matchers:
         - stack = "repose"
         - severity = "page"
-      receiver: repose-chat-page
+      receiver: repose-email-page
       # Long enough for an inhibition to settle when two page alerts for one
       # outage start in the same minute (HostdDown and HostUnreachable).
       group_wait: 20s
       repeat_interval: 1h
     - matchers:
         - stack = "repose"
-      receiver: repose-chat
+      receiver: repose-email
 
 receivers:
-  - name: repose-chat
-    webhook_configs:
-      - url: http://127.0.0.1:6000/dispatch?room_name=repose
+  - name: repose-email
+    email_configs:
+      - to: CHANGEME@example.invalid
         send_resolved: true
+        headers:
+          Subject: '[{{ .CommonLabels.severity }}] {{ .GroupLabels.alertname }}{{ if .CommonLabels.host_id }} on {{ .CommonLabels.host_id }}{{ end }} ({{ .Status }})'
+        text: |
+          {{ range .Alerts }}{{ .Annotations.summary }}
 
-  - name: repose-chat-page
-    webhook_configs:
-      - url: http://127.0.0.1:6000/dispatch?room_name=repose
+          {{ .Annotations.description }}
+
+          Runbook: {{ .Annotations.runbook }}
+          Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
+
+  - name: repose-email-page
+    email_configs:
+      - to: CHANGEME@example.invalid
         send_resolved: true
+        headers:
+          Subject: 'PAGE: {{ .GroupLabels.alertname }}{{ if .CommonLabels.host_id }} on {{ .CommonLabels.host_id }}{{ end }} ({{ .Status }})'
+        text: |
+          {{ range .Alerts }}{{ .Annotations.summary }}
+
+          {{ .Annotations.description }}
+
+          Runbook: {{ .Annotations.runbook }}
+          Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}
+          {{ end }}
 
   - name: repose-watchdog
     webhook_configs:

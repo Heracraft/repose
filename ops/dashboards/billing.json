@@ -19,6 +19,373 @@
   },
   "panels": [
     {
+      "type": "row",
+      "title": "The money",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "MRR",
+      "description": "The plan revenue a month of the subscriptions that are being charged, at the list price each one is on and with the founding discount taken off while it runs. Polar is the ledger; this is the api's reading of the subscriptions table. max by (status), not sum: two api replicas publish the gauge and a scrape lands on one of them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(max by (status) (repose_api_mrr_cents{status=~\"active|past_due\"})) / 100",
+          "legendFormat": "mrr",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "In trial",
+      "description": "What the trials would add a month if every one of them charges on day eight. Each holds its full seats meanwhile and pays nothing (PRICING.md 'The trial').",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(repose_api_mrr_cents{status=\"trialing\"}) / 100",
+          "legendFormat": "trialing",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 5,
+        "y": 1
+      },
+      "id": 3
+    },
+    {
+      "type": "gauge",
+      "title": "Seat fill",
+      "description": "Seats sold, of the seats the ready hosts deliver. The fleet pays for every seat a host delivers around the clock and earns only on the sold ones, so this is the margin number: ladder C clears an AX162-2's $992.10 at 22 of its 30 Solo seats, which is 75% (PRICING.md 'The cost floor'). On Azure no fill clears the host and the credit pays the difference.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(repose_api_seats_held) / max(repose_api_seats_total)",
+          "legendFormat": "fill",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.75
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 7,
+        "x": 10,
+        "y": 1
+      },
+      "id": 4
+    },
+    {
+      "type": "gauge",
+      "title": "Seat use",
+      "description": "The memory actually running, over the memory the sold seats may run (a seat is 8 GB, I-290). A subscription holds its seats whether its machines run or not, so the gap between this and Seat fill is capacity that is bought, paid for and idle. It is not a number to drive to 100%: a stopped project is a user within their plan. It is the number that says whether the plan shape sells memory people use.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(((4 * sum(repose_host_guests{state=\"running\",class=\"small\"})) or vector(0)) + ((8 * sum(repose_host_guests{state=\"running\",class=\"large\"})) or vector(0)) + ((16 * sum(repose_host_guests{state=\"running\",class=\"xl\"})) or vector(0))) / (8 * max(repose_api_seats_held))",
+          "legendFormat": "use",
+          "range": false,
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 7,
+        "x": 17,
+        "y": 1
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Seats delivered, sold and running",
+      "description": "Three lines in seats. Delivered is what the ready, undrained hosts can serve, each the smaller of its 8 GB blocks and what its cores allow (I-739, I-784); sold is held by live subscriptions and unexpired invitations; running is the memory of running guests, in 8 GB units. Delivered falling is a host drained or lost. Sold meeting delivered is the waitlist starting.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "repose-prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(repose_api_seats_total)",
+          "legendFormat": "delivered",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(repose_api_seats_held)",
+          "legendFormat": "sold",
+          "range": true,
+          "instant": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "repose-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(((4 * sum(repose_host_guests{state=\"running\",class=\"small\"})) or vector(0)) + ((8 * sum(repose_host_guests{state=\"running\",class=\"large\"})) or vector(0)) + ((16 * sum(repose_host_guests{state=\"running\",class=\"xl\"})) or vector(0))) / 8",
+          "legendFormat": "running",
+          "range": true,
+          "instant": false,
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 6
+    },
+    {
+      "type": "row",
+      "title": "The flow",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 7
+    },
+    {
       "type": "stat",
       "title": "Rollup lag",
       "description": "Now minus the last hour rolled into usage_hours. Past two hours is RollupLag.",
@@ -80,9 +447,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 15
       },
-      "id": 1
+      "id": 8
     },
     {
       "type": "stat",
@@ -141,9 +508,9 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 15
       },
-      "id": 2
+      "id": 9
     },
     {
       "type": "stat",
@@ -202,9 +569,9 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 15
       },
-      "id": 3
+      "id": 10
     },
     {
       "type": "stat",
@@ -258,9 +625,9 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 15
       },
-      "id": 4
+      "id": 11
     },
     {
       "type": "timeseries",
@@ -329,14 +696,14 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 21
       },
-      "id": 5
+      "id": 12
     },
     {
       "type": "timeseries",
       "title": "Gate refusals by reason",
-      "description": "payment_required answers: subscription_required (no plan), plan_limit (memory), disk_limit, egress_limit, past_due, suspended. plan_limit is the upgrade signal.",
+      "description": "payment_required answers: subscription_required (no plan), plan_limit (memory), disk_limit, egress_limit, past_due, suspended. The plan reads the refusal: a plan_limit on solo is an upgrade worth $40 a month, and plan_limit across every plan says the entry seat is too small for the work (I-802).",
       "datasource": {
         "type": "prometheus",
         "uid": "repose-prometheus"
@@ -348,8 +715,8 @@
             "uid": "repose-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (reason) (increase(repose_api_billing_gate_refused_total[1h]))",
-          "legendFormat": "{{reason}}",
+          "expr": "sum by (reason, plan) (increase(repose_api_billing_gate_refused_total[1h]))",
+          "legendFormat": "{{reason}} {{plan}}",
           "range": true,
           "instant": false,
           "refId": "A"
@@ -400,9 +767,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 21
       },
-      "id": 6
+      "id": 13
     },
     {
       "type": "table",
@@ -451,9 +818,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 29
       },
-      "id": 7
+      "id": 14
     },
     {
       "type": "table",
@@ -527,9 +894,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 29
       },
-      "id": 8
+      "id": 15
     },
     {
       "type": "timeseries",
@@ -597,9 +964,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 37
       },
-      "id": 9
+      "id": 16
     },
     {
       "type": "timeseries",
@@ -668,9 +1035,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 37
       },
-      "id": 10
+      "id": 17
     },
     {
       "type": "timeseries",
@@ -738,9 +1105,9 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 45
       },
-      "id": 11
+      "id": 18
     }
   ]
 }

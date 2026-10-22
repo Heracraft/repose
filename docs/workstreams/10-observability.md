@@ -30,8 +30,9 @@ policy designed without a month of data is a guess.
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
 - Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, routed by the existing Alertmanager to the owner's
-  Google Chat space through calert (DECISIONS I-648).
+  `../CHECKLIST.md`, emailed to the owner by the existing Alertmanager
+  (DECISIONS I-648, amended by I-848: Chat needed calert beside
+  Alertmanager to translate the webhook, and nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
   Postgres (partition drops, see `interfaces/db-schema.md`).
@@ -117,13 +118,19 @@ component must emit:
 
 ### Metrics
 
-Prefix `repose_`. Labels are low-cardinality only: `component`, `host_id`,
-`class`, `state`, `kind`, `reason`, `route`, `status`. `project_id` and
-`guest_id` are never labels in Prometheus; per-project figures come from
-`meter_samples` in Postgres and the billing dashboard queries there. The
-reason: 30 guests per host across a fleet is fine, but a label that grows
-with every project ever created makes Prometheus the first thing to fall
-over.
+Prefix `repose_`. Labels are low-cardinality only, and the list the code
+enforces is in `internal/obs/metrics/metrics.go`: `component`, `host_id`,
+`class`, `state`, `kind`, `reason`, `route`, `status`, `result`,
+`direction`, `method`, `channel`, `version`, `phase`, `op`, `plan`. This
+paragraph named eight of them until I-800; the registry was always the
+authority, and it refuses anything outside the list at registration, so a
+new label stops the binary at startup rather than filling Prometheus.
+`project_id`, `user_id` and `guest_id` are never labels in Prometheus;
+per-project and per-account figures come from `meter_samples`,
+`usage_hours` and `subscriptions` in Postgres, which the billing dashboard
+and `ops/sql/launch.sql` query there (I-804). The reason: 30 guests per
+host across a fleet is fine, but a label that grows with every project
+ever created makes Prometheus the first thing to fall over.
 
 Families:
 
@@ -165,11 +172,21 @@ Families:
   `repose_api_notify_total{channel,result}`,
   `repose_api_billing_webhook_total{kind,result}`,
   `repose_api_billing_overage_charges_total{result}`,
-  `repose_api_billing_gate_refused_total{reason}`,
+  `repose_api_billing_gate_refused_total{reason,plan}` (`plan` from I-802:
+  a `plan_limit` refusal on Solo is an upgrade, the same refusal on every
+  plan is an entry seat that is too small),
   `repose_api_billing_subscriptions_total{plan,status}`,
   `repose_api_billing_stops_total{reason}` (I-289),
+  `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`
+  (I-802: the live subscriptions and the plan revenue a month they stand
+  for, set from the minute tick on every replica, every pair published at
+  zero so a ratio over them does not go blank; MRR is right only while one
+  list price per plan is live, because no price is stored per
+  subscription),
   `repose_api_snapshot_age_seconds` (max over running projects; the alert
-  input), `repose_api_abuse_stops_total{kind}`,
+  input), `repose_api_snapshot_expiry_fail_total{reason}` and
+  `repose_api_blob_configured` (I-800: 0 is the mark-only stand-in, which
+  marks rows deleted and deletes no bytes), `repose_api_abuse_stops_total{kind}`,
   `repose_api_abuse_held_projects`,
   `repose_api_abuse_busy_unattended_projects` (I-239),
   `repose_api_seats_total`, `repose_api_seats_held`,
@@ -252,6 +269,14 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
 | `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
+| `ApiErrors` | 5xx share per route `> 0.05` for 10m (I-800) | page |
+| `OpsFailing` | `sum by (kind) (increase(repose_api_ops_total{state="error"}[30m])) > 0` for 5m (I-800) | warn |
+| `ScheduleRefused` | `sum by (result) (increase(repose_api_schedule_total{result=~"no_capacity\|no_cpu\|error"}[15m])) > 0` for 5m (I-800) | warn |
+| `GatewayDialFailing` | `sum(increase(repose_gateway_dial_fail_total[10m])) > 3` for 5m (I-800) | page |
+| `SnapshotFailing` | `sum by (host_id, result) (increase(repose_host_snapshot_duration_seconds_count{result!="ok"}[1h])) > 0` for 5m (I-800) | warn |
+| `BillingWebhookErrors` | `sum(repose_api_billing_webhook_total{result="error"}) > 0` for 5m, absolute and sticky by design (I-800) | page |
+| `BillingGap` | `sum(increase(repose_api_billing_gap_minutes_total[1h])) > 60` for 10m (I-800) | warn |
+| `ControlDiskFull` | control VM filesystem `> 0.85` for 15m, its own `control-node` job (I-800) | warn |
 | `Watchdog` | `vector(1)`, always firing, routed only to an Uptime Kuma push monitor (I-648) | heartbeat |
 
 ### Traces

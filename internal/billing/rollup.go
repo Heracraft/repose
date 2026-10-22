@@ -41,6 +41,12 @@ type Row struct {
 	Class     string
 	Gap       bool
 	Period    Period
+	// AttendedSeconds is the seconds of the hour with somebody on the
+	// machine, and UnattendedAgentSeconds the seconds with an agent at
+	// work and nobody on it (DECISIONS I-806). Both are counted in
+	// whole samples, about a minute apart, as running_seconds is.
+	AttendedSeconds        int
+	UnattendedAgentSeconds int
 	Result
 }
 
@@ -62,15 +68,29 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 	end := start.Add(time.Hour)
 	began := r.Now()
 	type agg struct {
-		running   int
-		class     string
-		diskAlloc int64
-		egress    int64
-		samples   int
+		running    int
+		class      string
+		diskAlloc  int64
+		egress     int64
+		samples    int
+		attended   int
+		unattended int
 	}
 	aggs := map[uuid.UUID]*agg{}
+	// attended and unattended come out of the same scan as the hours
+	// (DECISIONS I-806). A sample counts as attended when somebody is on
+	// the machine, and as unattended-agent when an agent is working and
+	// nobody is: that second one is the product's claim, so it is the
+	// activation figure. The agent test is idle.usedSQL's -- a state that
+	// is neither idle nor needs_input -- and the two counts are disjoint
+	// by construction, so neither can be read as the other.
 	rows, err := r.pool.Query(ctx, `select project_id, count(*) filter (where state = 'running'), count(*), max(disk_alloc), sum(net_tx),
-		(array_agg(class order by ts desc))[1] from meter_samples where ts >= $1 and ts < $2 group by project_id`, start, end)
+		(array_agg(class order by ts desc))[1],
+		count(*) filter (where state = 'running' and (ssh_sessions > 0 or tmux_clients > 0)),
+		count(*) filter (where state = 'running' and ssh_sessions = 0 and tmux_clients = 0
+			and exists (select 1 from jsonb_array_elements(coalesce(agents, '[]'::jsonb)) a
+				where coalesce(a->>'state', '') not in ('idle', 'needs_input')))
+		from meter_samples where ts >= $1 and ts < $2 group by project_id`, start, end)
 	if err != nil {
 		return nil, fmt.Errorf("read meter_samples for %s: %w", start.Format(time.RFC3339), err)
 	}
@@ -78,7 +98,7 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 		var pid uuid.UUID
 		var a agg
 		var egress *int64
-		if err := rows.Scan(&pid, &a.running, &a.samples, &a.diskAlloc, &egress, &a.class); err != nil {
+		if err := rows.Scan(&pid, &a.running, &a.samples, &a.diskAlloc, &egress, &a.class, &a.attended, &a.unattended); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -110,6 +130,8 @@ func (r *Rollup) Hour(ctx context.Context, hour time.Time) ([]Row, error) {
 				in.GBAlloc = GBCeil(a.diskAlloc)
 			}
 			in.EgressBytes = a.egress
+			row.AttendedSeconds = a.attended * 60
+			row.UnattendedAgentSeconds = a.unattended * 60
 		} else if p.state == "running" {
 			row.Gap = true
 			r.m.BillingGapMinutes.Add(60)
@@ -164,17 +186,53 @@ func (r *Rollup) projectsFor(ctx context.Context, start, end time.Time) ([]rollu
 // write upserts the row. A re-run of the same hour writes the same values.
 func (r *Rollup) write(ctx context.Context, row *Row) error {
 	_, err := r.pool.Exec(ctx, `insert into usage_hours (project_id, hour, class, running_seconds, gb_alloc, egress_bytes, cost_cents,
-		guest_cents, storage_cents, egress_cents, storage_remainder, gap, period_start, period_end, credit_cents, price_version)
-		values ($1,$2,$3,$4,$5,$6,0,0,0,0,0,$7,$8,$9,0,$10)
+		guest_cents, storage_cents, egress_cents, storage_remainder, gap, period_start, period_end, credit_cents, price_version,
+		attended_seconds, unattended_agent_seconds)
+		values ($1,$2,$3,$4,$5,$6,0,0,0,0,0,$7,$8,$9,0,$10,$11,$12)
 		on conflict (project_id, hour) do update set class = excluded.class, running_seconds = excluded.running_seconds,
 		gb_alloc = excluded.gb_alloc, egress_bytes = excluded.egress_bytes, cost_cents = 0, guest_cents = 0, storage_cents = 0,
 		egress_cents = 0, storage_remainder = 0, gap = excluded.gap, period_start = excluded.period_start,
-		period_end = excluded.period_end, credit_cents = 0, price_version = excluded.price_version`,
+		period_end = excluded.period_end, credit_cents = 0, price_version = excluded.price_version,
+		attended_seconds = excluded.attended_seconds, unattended_agent_seconds = excluded.unattended_agent_seconds`,
 		row.ProjectID, row.Hour, row.Class, row.RunningSeconds, row.GBAlloc, row.EgressBytes, row.Gap,
-		row.Period.Start, row.Period.End, PriceVersion)
+		row.Period.Start, row.Period.End, PriceVersion, row.AttendedSeconds, row.UnattendedAgentSeconds)
 	if err != nil {
 		return fmt.Errorf("write usage_hours: %w", err)
 	}
+	return nil
+}
+
+// Lag publishes the age of the newest rolled-up hour. Every replica calls
+// it on every minute's tick, outside the rollup's advisory lock and
+// before the rollup itself, because the gauge Hour sets is reached only
+// by the lock winner and only after a rollup that succeeded: a rollup
+// that errored every hour, or never won the lock, left the gauge at its
+// zero value, which reads as perfectly fresh, and is why RollupLag could
+// not fire (DECISIONS I-800). usage_hours is what invoices are built
+// from, so the gauge has to rise on its own.
+//
+// The lag is measured from the hour's end, as Hour measures it. With
+// nothing rolled up yet it is the age of the oldest sample still waiting,
+// and zero on a deployment whose meter_samples is empty.
+func (r *Rollup) Lag(ctx context.Context) error {
+	var newest *time.Time
+	if err := r.pool.QueryRow(ctx, "select max(hour) from usage_hours").Scan(&newest); err != nil {
+		return err
+	}
+	now := r.Now().UTC()
+	if newest != nil {
+		r.m.RollupLagSeconds.Set(now.Sub(newest.UTC().Add(time.Hour)).Seconds())
+		return nil
+	}
+	var first *time.Time
+	if err := r.pool.QueryRow(ctx, "select min(ts) from meter_samples").Scan(&first); err != nil {
+		return err
+	}
+	if first == nil {
+		r.m.RollupLagSeconds.Set(0)
+		return nil
+	}
+	r.m.RollupLagSeconds.Set(now.Sub(first.UTC().Truncate(time.Hour).Add(time.Hour)).Seconds())
 	return nil
 }
 
