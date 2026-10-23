@@ -1,57 +1,57 @@
 {
   "claude-code": {
-    "version": "2.1.283",
+    "version": "2.1.306",
     "x86_64-linux": {
-      "url": "https://downloads.claude.ai/claude-code-releases/2.1.283/linux-x64/claude",
-      "hash": "sha256-GFlYPOMpIFlcYe+Gi+5S4bFZT3SG2yCZNeAfHl6ASuI="
+      "url": "https://downloads.claude.ai/claude-code-releases/2.1.306/linux-x64/claude",
+      "hash": "sha256-UgvGwfQK9Ga9A6J4ta4a8aKTi8feW55csVUm2iDXHP4="
     }
   },
   "opencode": {
-    "version": "1.18.34",
+    "version": "1.19.3",
     "x86_64-linux": {
-      "url": "https://github.com/anomalyco/opencode/releases/download/v1.18.34/opencode-linux-x64.tar.gz",
-      "hash": "sha256-DyJHlkcibR0t2ZWV0gCC7nvaOHC2LcapC0Hvwacdfpo="
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.19.3/opencode-linux-x64.tar.gz",
+      "hash": "sha256-E6j7KXgwIHG4b51+ANqciJX5zYRpeDecO9xqUzNTbJs="
     }
   },
   "codex": {
-    "version": "0.157.1",
+    "version": "0.163.0",
     "x86_64-linux": {
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.157.1/codex-x86_64-unknown-linux-musl.tar.gz",
-      "hash": "sha256-6YwejgKOgTf6LSQVyC7Fjns3AaYn41VKrOWzyjFFSvI="
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-x86_64-unknown-linux-musl.tar.gz",
+      "hash": "sha256-vrM56OzZugV6a7Lcga2MpHSBLt+/D8UFbKgYeXZI3eQ="
     },
     "code-mode-host": {
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.157.1/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-      "hash": "sha256-NRb5uLvmvAbue9uSspOhfqsZSz8QubnqEMW4Oely1/w="
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+      "hash": "sha256-MUJjEoumWS5+gHwmXe6vkoppK3Lcv+teCyDJQjtwNSk="
     },
     "bwrap": {
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.157.1/bwrap-x86_64-unknown-linux-musl.tar.gz",
-      "hash": "sha256-x20yV1JzGeF92KhSHVVMSNSx0+FLJtQmam6KwlfO+68="
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/bwrap-x86_64-unknown-linux-musl.tar.gz",
+      "hash": "sha256-vMGWsdJdwsK5Etzt94C1Yt6wVS88UGSHYc7RRcNGaiM="
     }
   },
   "gemini-cli": {
-    "version": "0.61.0",
+    "version": "0.65.0",
     "npm": {
-      "url": "https://registry.npmjs.org/@google/gemini-cli/-/gemini-cli-0.61.0.tgz",
-      "hash": "sha256-vE76XJJcRDAQW1UoIO0xZLvv+p3CJ5kPySL5VHM7zX0="
+      "url": "https://registry.npmjs.org/@google/gemini-cli/-/gemini-cli-0.65.0.tgz",
+      "hash": "sha256-l/H38efhiQVNJ+37nGLGpFzsFbZ4hA393jwMzYf6s3Y="
     }
   },
   "pi-coding-agent": {
-    "version": "1.0.4",
+    "version": "1.3.0",
     "x86_64-linux": {
-      "url": "https://github.com/earendil-works/pi/releases/download/v1.0.4/pi-linux-x64.tar.gz",
-      "hash": "sha256-KExF3SjPl1oTz/avNHQd0KDNymY06L38AIOufUUuhtY="
+      "url": "https://github.com/earendil-works/pi/releases/download/v1.3.0/pi-linux-x64.tar.gz",
+      "hash": "sha256-JPW+Motm1No2h2KWmJUBl09Dq4Q0+7V8NcUjo+pQXe0="
     }
   },
   "chrome-devtools-mcp": {
-    "version": "1.10.1",
-    "url": "https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-1.10.1.tgz",
-    "hash": "sha256-ASy89ugy1PZwna0MIde+8XCJ6Ure6c8zF50V6gqa3ys="
+    "version": "1.11.0",
+    "url": "https://registry.npmjs.org/chrome-devtools-mcp/-/chrome-devtools-mcp-1.11.0.tgz",
+    "hash": "sha256-6fCrl62VFZJ8fZ8KPfvbnqSF0oENVy5KZOuEsZLIvww="
   },
   "herdr": {
-    "version": "0.9.3",
+    "version": "0.9.5",
     "x86_64-linux": {
-      "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.3/herdr-linux-x86_64",
-      "hash": "sha256-GKjcZfHC+khYhDRDVt6hz9kRxvBs9G+njhk/QIf026c="
+      "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-linux-x86_64",
+      "hash": "sha256-FNnovItKngEY13wyJm921GHwm0A0LrI3UpYL2J9Zkp0="
     }
   }
 }
