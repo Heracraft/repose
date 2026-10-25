@@ -25073,6 +25073,23 @@ sign-in starts, which is the owner's call.
   "Ctrl K" on screen while `show()` is still returning early. That
   mistaken inference cost a wrong diagnosis once in the session that
   found this, which is a reason to say it here.
+- *The owner's choice: the server route, for sign-in only* (2026-10-25).
+  A route that starts the OIDC flow, with the call to action an `<a href>`
+  to it. The two cheaper options narrow the window; this one removes it.
+  Capture-and-replay was rejected on the ground that it only helps when
+  the bundle eventually arrives, so it does nothing for the visitors who
+  are actually lost — the ones whose JS is blocked, failed or timed out on
+  a bad connection, which is the same population the gap hurts most.
+  Refusing clicks until hydration was rejected for trading a swallowed
+  press for a primary call to action that looks dead on first paint. The
+  route also makes the button a real link, so middle-click, open in a new
+  tab and copy link address start working, none of which a `<button>`
+  gives you. It ships after ui-revamp is on main, not in that batch.
+- *The drawer and the palette are not covered by that choice.* A server
+  route fixes a trigger whose job is to navigate. The docs drawer and the
+  search palette open client UI and have no navigation to perform, so
+  there is nothing for a route to do and they keep the gap until a
+  decision of their own settles them.
 - *How it was found, and what must not be done about it.* Five distinct
   playwright tests failed once each across five full runs of the web
   suite on a loaded box; two were diagnosed to this cause (`signIn` in
