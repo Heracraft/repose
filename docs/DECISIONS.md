@@ -25023,3 +25023,54 @@ They claimed the resume takes 114 ms, which was measured on staging;
 host-01 measured `wake_ms=225` on the first real wake. A measured figure
 from the wrong machine is still the wrong number for a user reading it
 about theirs.
+
+**I-864. A click on the landing's primary button is lost if it lands
+before hydration, and nothing tells the visitor.** (hydration-click-gap,
+2026-10-25) The sign-in call to action, the docs drawer and the docs
+search are all `<button>` elements whose `onclick` arrives with
+hydration. The markup is server-rendered and looks ready, so between
+first paint and hydration a click focuses the button and does nothing.
+The visitor gets no error, no spinner and no hint that the press was
+eaten; they press again and it works, and they read the first press as
+their own mistake. This entry records the defect and what a fix costs.
+It does not fix it: the only option that works for everyone changes how
+sign-in starts, which is the owner's call.
+- *Where.* The landing's "Get started" is the `authAction` snippet's
+  `<button type="button" onclick={onSignIn}>` — `routes/+page.svelte:183`
+  on main, `:95` after the revamp. The docs drawer is
+  `routes/docs/+layout.svelte:198` on main and `:292` after it. Both
+  predate this week's work. The docs search differs: main has an inline
+  `<input id="docs-search">`, which needs no handler to be usable, and
+  the revamp replaces it with a `<button id="docs-search"
+  onclick={openSearch}>` that opens a palette. So the revamp adds a third
+  surface to a pattern it did not introduce.
+- *Why the call to action is the worst case.* It is above the fold on a
+  prerendered page, which is the fastest thing on the site to paint and
+  the first thing a visitor reaches for. The window is first paint to
+  hydration, so the faster the page looks ready the more likely the press
+  falls inside it.
+- *Why it cannot simply become an anchor.* `onSignIn` calls `signIn()` in
+  `lib/auth.svelte.ts:73`, which writes the return path to
+  `sessionStorage` and then has the OIDC client build a PKCE
+  authorization URL in the browser. There is no URL to put in an `href`
+  until that client has run.
+- *The three fixes and what each costs.* A server route that starts the
+  flow, with the button an `<a href>` to it: the only one that works with
+  no JS at all, and the only one that fixes it for everyone, at the cost
+  of a new route with a security surface. The trigger refusing clicks it
+  cannot honour until hydration: honest, but it trades a swallowed click
+  for a primary call to action that looks dead on first paint. Capturing
+  early clicks in an inline script and replaying them after hydration:
+  cheapest, keeps the appearance, still fails with JS off.
+- *How it was found, and what must not be done about it.* Five distinct
+  playwright tests failed once each across five full runs of the web
+  suite on a loaded box; two were diagnosed to this cause (`signIn` in
+  `tests/helpers.ts:8`, which waits for `/oidc/auth` after pressing "Get
+  started", and the phone drawer in `tests/docs.spec.ts:178`, which waits
+  for the article to go `inert`). `playwright.config.ts` sets
+  `workers: 1` and no `retries`, and `ci.yml` adds none, so there is no
+  slack in the suite to absorb it. The tempting repairs — waiting for
+  hydration inside the `signIn` helper, or turning retries on — would
+  both make the suite green and leave the defect shipping, and they would
+  remove the only thing that reports it. The suite is right; the
+  mechanism is wrong.
