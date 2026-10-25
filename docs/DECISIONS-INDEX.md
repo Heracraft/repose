@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-812 entries.
+813 entries.
 
 ## Scope
 
@@ -844,3 +844,4 @@ pointer, not a summary.
 - **I-846** The idle pause is turned on for host-01 — 2026-10-21; L24829
 - **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L24876
 - **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L24929
+- **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L24963

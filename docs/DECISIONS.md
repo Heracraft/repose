@@ -24959,3 +24959,40 @@ a collision between a branch and main, not between two queued branches,
 which is the pair that collided); and reserving migration numbers the way
 decision ids are reserved (a number nobody has written yet is a number
 nobody can see is taken, and the loader is where the truth is).
+
+**I-860. The conductor does not create the release draft; GoReleaser does,
+and the notes go on between the tag and the sign job.** (conductor,
+r20261022-1, 2026-10-25) I-798 said to write the notes before the tag and
+offered two ways. The first, `gh release create <tag> --draft
+--notes-file`, does not work, and it fails quietly. GoReleaser creates its
+own release for the same tag, GitHub keeps both, and `v0.1.40` existed as
+two drafts: one with 2,985 bytes of notes and no assets, one with four
+archives plus `checksums.txt` and a one-byte body. `gh release view
+v0.1.40` resolved to the notes-only draft, so the `sign` job's `gh release
+download` printed "no assets to download" and exited 1.
+
+Every surface said the release was fine. The tag was on origin, a release
+page existed with the right notes, GoReleaser was green, and the only
+thing that said otherwise was one red job. `install.sh` resolves the
+latest *published* release, so for ten minutes the tag pointed at nothing
+a user could install.
+
+The recovery, for the next person: move the notes onto the release that
+holds the assets, delete the empty duplicate, reattach the tag, re-run
+`sign`. Deleting one of two drafts that claim a tag untags the other, so
+the reattach is a step, not an accident -- `gh api -X PATCH
+repos/<repo>/releases/<id> -f tag_name=<tag>`.
+
+So the order is: write the notes to a file, push the tag, let GoReleaser
+make the release, `gh release edit <tag> --notes-file <file>`, re-run
+`sign`. The window where the release exists with an empty body is real
+and is why I-798 wanted the notes first, but it is bounded by the `sign`
+job and it is visible, which the collision was not. `release.yml`'s
+400-byte floor is what closes it: a release whose notes never arrive is
+refused rather than published thin.
+
+One figure moved after publication and the notes were edited to match.
+They claimed the resume takes 114 ms, which was measured on staging;
+host-01 measured `wake_ms=225` on the first real wake. A measured figure
+from the wrong machine is still the wrong number for a user reading it
+about theirs.
