@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1362,8 +1363,15 @@ func TestAFreezeAdmitsOnlyWhatTheDeadlineHolds(t *testing.T) {
 // so the operator saw one fewer guest and no loss (I-796).
 func TestAGuestWhoseUnitCannotBeAskedIsNotDropped(t *testing.T) {
 	fh := newFreezeHarness(t, nil)
+	// Installed before the guest exists, and switched on after it: the
+	// monitor `create` starts reads m.d.Systemd in checkUnits, so
+	// assigning the field with that goroutine running is a data race
+	// (DECISIONS I-858). The field is written once, before anything reads
+	// it, and the behaviour is changed through an atomic instead.
+	sd := &switchableIsActive{Systemd: fh.sd}
+	fh.m.d.Systemd = sd
 	fh.create(gid1)
-	fh.m.d.Systemd = failingIsActive{fh.sd}
+	sd.failing.Store(true)
 	res := fh.m.FreezeAll(context.Background(), FreezeOperator)
 	if len(res) != 1 {
 		t.Fatalf("results %+v, want the guest the freeze could not ask about", res)
@@ -1375,10 +1383,21 @@ func TestAGuestWhoseUnitCannotBeAskedIsNotDropped(t *testing.T) {
 
 // failingIsActive is a systemd whose IsActive errors, as dbus does under
 // a shutdown's load.
-type failingIsActive struct{ systemd.Systemd }
+// switchableIsActive fails IsActive once `failing` is set. A test that
+// wants IsActive to start failing switches it rather than assigning
+// m.d.Systemd, which the monitor goroutine reads (DECISIONS I-858);
+// production never reassigns that field once a manager runs, so the race
+// belonged to the test and the fix belongs there too.
+type switchableIsActive struct {
+	systemd.Systemd
+	failing atomic.Bool
+}
 
-func (failingIsActive) IsActive(context.Context, string) (bool, error) {
-	return false, errors.New("dbus: connection reset")
+func (f *switchableIsActive) IsActive(ctx context.Context, unit string) (bool, error) {
+	if f.failing.Load() {
+		return false, errors.New("dbus: connection reset")
+	}
+	return f.Systemd.IsActive(ctx, unit)
 }
 
 // A freeze stops waiting at its own wall rather than letting systemd cut
@@ -1496,8 +1515,12 @@ func (c ctxSystemd) IsActive(ctx context.Context, unit string) (bool, error) {
 // a context of its own.
 func TestAFreezeThatCannotStartCountsTheGuestsItLeaves(t *testing.T) {
 	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Deadline = 50 * time.Millisecond })
-	fh.create(gid1)
+	// Before the guest, so the monitor `create` starts never sees the
+	// field change under it (DECISIONS I-858). This wrapper is inert
+	// until a context is cancelled, so installing it early changes
+	// nothing about the boot.
 	fh.m.d.Systemd = ctxSystemd{fh.sd}
+	fh.create(gid1)
 	fh.m.freezeMu <- struct{}{} // held by something else
 	defer func() { <-fh.m.freezeMu }()
 	if res := fh.m.FreezeAll(context.Background(), FreezeShutdown); len(res) != 0 {
