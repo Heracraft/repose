@@ -24959,3 +24959,31 @@ a collision between a branch and main, not between two queued branches,
 which is the pair that collided); and reserving migration numbers the way
 decision ids are reserved (a number nobody has written yet is a number
 nobody can see is taken, and the loader is where the truth is).
+
+**I-858. A test does not reassign a running Manager's dependency.**
+(freeze-test-race, 2026-10-23; the red CI run on main 573cf82f) Two freeze
+tests called `fh.create(gid1)` and then assigned `fh.m.d.Systemd`. `create`
+starts the guest's monitor goroutine, and `(*monitor).checkUnits` reads
+`m.d.Systemd` (create.go), so the assignment was a data race: it surfaced
+under `-race` as `TestAFreezeThatCannotStartCountsTheGuestsItLeaves` and
+it was the only red line in the only red job of the pushed main's CI.
+- *The fix is in the tests, not in `Deps`.* Production never reassigns
+  `d.Systemd` once a manager is running -- it is set once at
+  construction -- so a mutex or an atomic around the field would be
+  production code carrying a lock for a test's convenience, and would hide
+  the next test that does the same thing. The field is written before the
+  guest exists in both tests now.
+- *Where a wrapper has to change behaviour mid-test,* it is the wrapper
+  that switches, not the field: `switchableIsActive` wraps the fake,
+  is installed before `create`, and starts failing when the test sets an
+  atomic on it. `ctxSystemd` needed nothing but moving, being inert until
+  a context is cancelled.
+- *Evidence.* `CGO_ENABLED=1 go test -race -count=5
+  ./internal/hostd/guest` is clean (273 s, no `WARNING: DATA RACE`);
+  before the fix the same command over the two tests reports one race,
+  with the read at `create.go:1007` in `checkUnits` and the write in
+  `freeze_test.go`. Five runs because the race surfaced on some runs and
+  not others, so one green run proves nothing.
+- *Found by the conductor,* in a `-race` sweep of the batch against main:
+  identical failure sets either side, which is what showed it was
+  pre-existing rather than the idle pause's (I-818).
