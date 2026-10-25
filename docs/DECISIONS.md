@@ -25540,3 +25540,66 @@ and `ui-revamp` had restyled in the kit; and its division is the one
 animation outside the kit's single curve and named durations, which I-779
 fixed at 900ms before I-837 named them. `DESIGN-LANGUAGE.md` records both
 under "Logo" and "Motion".
+**I-858. A test does not reassign a running Manager's dependency.**
+(freeze-test-race, 2026-10-23; the red CI run on main 573cf82f) Two freeze
+tests called `fh.create(gid1)` and then assigned `fh.m.d.Systemd`. `create`
+starts the guest's monitor goroutine, and `(*monitor).checkUnits` reads
+`m.d.Systemd` (create.go), so the assignment was a data race: it surfaced
+under `-race` as `TestAFreezeThatCannotStartCountsTheGuestsItLeaves` and
+it was the only red line in the only red job of the pushed main's CI.
+- *The fix is in the tests, not in `Deps`.* Production never reassigns
+  `d.Systemd` once a manager is running -- it is set once at
+  construction -- so a mutex or an atomic around the field would be
+  production code carrying a lock for a test's convenience, and would hide
+  the next test that does the same thing. The field is written before the
+  guest exists in both tests now.
+- *Where a wrapper has to change behaviour mid-test,* it is the wrapper
+  that switches, not the field: `switchableIsActive` wraps the fake,
+  is installed before `create`, and starts failing when the test sets an
+  atomic on it. `ctxSystemd` needed nothing but moving, being inert until
+  a context is cancelled.
+- *Evidence.* `CGO_ENABLED=1 go test -race -count=5
+  ./internal/hostd/guest` is clean (273 s, no `WARNING: DATA RACE`);
+  before the fix the same command over the two tests reports one race,
+  with the read at `create.go:1007` in `checkUnits` and the write in
+  `freeze_test.go`. Five runs because the race surfaced on some runs and
+  not others, so one green run proves nothing.
+- *Found by the conductor,* in a `-race` sweep of the batch against main:
+  identical failure sets either side, which is what showed it was
+  pre-existing rather than the idle pause's (I-818).
+**I-860. The conductor does not create the release draft; GoReleaser does,
+and the notes go on between the tag and the sign job.** (conductor,
+r20261022-1, 2026-10-25) I-798 said to write the notes before the tag and
+offered two ways. The first, `gh release create <tag> --draft
+--notes-file`, does not work, and it fails quietly. GoReleaser creates its
+own release for the same tag, GitHub keeps both, and `v0.1.40` existed as
+two drafts: one with 2,985 bytes of notes and no assets, one with four
+archives plus `checksums.txt` and a one-byte body. `gh release view
+v0.1.40` resolved to the notes-only draft, so the `sign` job's `gh release
+download` printed "no assets to download" and exited 1.
+
+Every surface said the release was fine. The tag was on origin, a release
+page existed with the right notes, GoReleaser was green, and the only
+thing that said otherwise was one red job. `install.sh` resolves the
+latest *published* release, so for ten minutes the tag pointed at nothing
+a user could install.
+
+The recovery, for the next person: move the notes onto the release that
+holds the assets, delete the empty duplicate, reattach the tag, re-run
+`sign`. Deleting one of two drafts that claim a tag untags the other, so
+the reattach is a step, not an accident -- `gh api -X PATCH
+repos/<repo>/releases/<id> -f tag_name=<tag>`.
+
+So the order is: write the notes to a file, push the tag, let GoReleaser
+make the release, `gh release edit <tag> --notes-file <file>`, re-run
+`sign`. The window where the release exists with an empty body is real
+and is why I-798 wanted the notes first, but it is bounded by the `sign`
+job and it is visible, which the collision was not. `release.yml`'s
+400-byte floor is what closes it: a release whose notes never arrive is
+refused rather than published thin.
+
+One figure moved after publication and the notes were edited to match.
+They claimed the resume takes 114 ms, which was measured on staging;
+host-01 measured `wake_ms=225` on the first real wake. A measured figure
+from the wrong machine is still the wrong number for a user reading it
+about theirs.
