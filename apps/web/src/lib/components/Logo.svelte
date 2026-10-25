@@ -1,18 +1,18 @@
 <script lang="ts">
-	// The wordmark: the name in the heading face, behind the mark. The mark
-	// is a cell dividing (DECISIONS I-779): two lobes on a 45-degree axis,
-	// the mother 23 in the text's ink and the daughter 21 in the landing's
-	// blue, --sh-accent, drawn with a cleavage furrow of radius 18 tangent
-	// to both, which pinches the outline inward to a bridge of 7. The
-	// furrow is what makes it a division: two circles unioned bulge where
-	// they meet, a dividing cell pulls in. The daughter is the smaller one
-	// because the division has not finished. Geometry from
-	// ops/dev/logo-mitosis.py, which prints these two paths.
-	// The viewBox is cropped to the drawing.
+	// The wordmark: the mark, then "repose" in Noto Serif 600 (I-837). The
+	// mark is a cell dividing (DECISIONS I-779, which supersedes I-363's
+	// traced cross): two lobes on a 45-degree axis, the mother 23 in the
+	// text's ink and the daughter 21 in the accent, drawn with a cleavage
+	// furrow of radius 18 tangent to both, which pinches the outline inward
+	// to a bridge of 7. The furrow is what makes it a division: two circles
+	// unioned bulge where they meet, a dividing cell pulls in. The daughter
+	// is the smaller one because the division has not finished. Geometry
+	// from ops/dev/logo-mitosis.py, which prints these two paths. The
+	// viewBox is cropped to the drawing. The daughter is the kit's accent,
+	// the one brand use of the blue (I-837); I-779 drew it in the landing's
+	// --sh-accent, which is the same blue before the kit named it.
 	// word=false draws the mark alone, for a header row on a phone that has
-	// no room for both; the link around it carries the name. The 28px cut's
-	// word sits 1px under centre, so its baseline is the header links'
-	// baseline rather than a hair above it (I-655).
+	// no room for both; the link around it carries the name.
 	// divide plays the division once, for the header of a page a visitor
 	// lands on; a pointer or keyboard focus on the link around the mark
 	// plays it again. Both are off under prefers-reduced-motion, and a
@@ -25,15 +25,8 @@
 	}: { size?: 'sm' | 'base'; mark?: boolean; word?: boolean; divide?: boolean } = $props();
 </script>
 
-<span
-	class="inline-flex items-center gap-2 font-display font-semibold tracking-tight {size === 'sm'
-		? 'text-base'
-		: 'text-lg'}"
-	>{#if mark}<svg
-			viewBox="4 4 92 92"
-			class="mark {size === 'sm' ? 'h-6' : 'h-7'} w-auto shrink-0"
-			class:divide
-			aria-hidden="true"
+<span class="logo logo--{size}"
+	>{#if mark}<svg viewBox="4 4 92 92" class="mark" class:divide aria-hidden="true"
 			><path
 				class="mother"
 				d="M32.5 49.5A23 23 0 1 1 49.5 32.5A18 18 0 0 0 54.3 49.4L49.4 54.3A18 18 0 0 0 32.5 49.5Z"
@@ -41,13 +34,44 @@
 			/><path
 				class="daughter"
 				d="M70.6 54.3A21 21 0 1 1 54.3 70.6A18 18 0 0 0 49.4 54.3L54.3 49.4A18 18 0 0 0 70.6 54.3Z"
-				fill="var(--sh-accent)"
 			/></svg
-		>{/if}{#if word}<span class={size === 'sm' ? undefined : 'translate-y-px'}>repose</span
-		>{/if}</span
+		>{/if}{#if word}<span class="word">repose</span>{/if}</span
 >
 
 <style>
+	.logo {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: var(--hk-font-display);
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--hk-text);
+		line-height: 1;
+	}
+	.logo--base {
+		font-size: 1.125rem;
+	}
+	.logo--sm {
+		font-size: 1rem;
+	}
+	.mark {
+		flex: none;
+		width: auto;
+		height: 1.75rem;
+	}
+	.logo--sm .mark {
+		height: 1.5rem;
+	}
+	.daughter {
+		fill: var(--hk-accent);
+	}
+	/* The serif's cap height sits high in its line box; one pixel down puts
+	   the word's baseline on the header links' baseline (I-655). */
+	.logo--base .word {
+		transform: translateY(1px);
+	}
+
 	/* The division, as a morph of the two paths from one body to two. Both
 	   stages come out of ops/dev/logo-mitosis.py with the same command
 	   order, which is what lets the d property interpolate; the lobes are

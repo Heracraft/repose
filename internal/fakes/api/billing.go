@@ -746,6 +746,11 @@ func (f *Fake) subscriptionOf() *subscriptionView {
 				cents = plan.IntroPriceCents
 			}
 		}
+		// A scheduled change applies at the period end, which is the next
+		// charge, and never carries the introductory price.
+		if sp := planByID(f.bill.scheduledPlan); sp != nil && !v.NextBilledAt.Before(f.bill.periodEnd) {
+			cents = sp.PriceCents
+		}
 		v.NextChargeCents = &cents
 	}
 	return v

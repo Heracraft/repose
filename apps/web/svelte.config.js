@@ -25,9 +25,9 @@ const config = {
 			directives: {
 				'default-src': ['self'],
 				// The hash is app.html's one inline script, which sets html.js
-				// before the first paint (DECISIONS I-398); editing that script
-				// changes it.
-				'script-src': ['self', 'sha256-aL3Pv6ygSyucrLwgv7XagHcNUqYEpcwpRZTImp8W7/g='],
+				// and the stored theme before the first paint (DECISIONS I-398,
+				// I-837); editing that script changes it (app-html.test).
+				'script-src': ['self', 'sha256-UsDo7j5S5AvoyFy9kU7vNq7d7jzVYI7KYhbawKMguC8='],
 				'style-src': ['self', 'unsafe-inline'],
 				'font-src': ['self'],
 				'img-src': ['self', 'data:', 'https:'],

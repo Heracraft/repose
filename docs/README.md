@@ -18,7 +18,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [DECISIONS.md](DECISIONS.md) | You want to know *why* something is the way it is, or want to change it. Every settled decision, with the alternatives that lost. |
 | [MILESTONES.md](MILESTONES.md) | You want to know what to build next and what "done" means for each stage. |
 | [CHECKLIST.md](CHECKLIST.md) | You are about to call something finished. The global definition of done. |
-| [LANDING.md](LANDING.md) | You touch the landing page: what it sells, show-don't-tell, real captures, names a stranger understands, where terminals are allowed. |
+| [LANDING.md](LANDING.md) | You touch the landing page: what it sells, its sections, the hero terminal, each fact once, copy rules. |
 | [GLOSSARY.md](GLOSSARY.md) | A word is used in a specific way (guest, host, edge, fragment, closure, project). |
 | [RESEARCH.md](RESEARCH.md) | You want the facts and citations the decisions rest on (Azure nested virt, pricing, nixpkgs coverage, Coolify limits, Logto flows, what agents lose remotely). |
 | [SECURITY.md](SECURITY.md) | You touch anything that crosses a tenant, host, or network boundary. Threat model and the non-negotiables. |
@@ -35,7 +35,7 @@ wrong only if a `DECISIONS.md` entry says so.
 | [ops/coolify.md](ops/coolify.md) | You are setting up, backing up, restoring or upgrading the control plane. The click path OpenTofu cannot own, because Coolify keeps it in its own database. |
 | [ops/OBSERVABILITY.md](ops/OBSERVABILITY.md) | You are adding a log line, a metric, or a signal that the idle and pricing policies will later depend on. |
 | [PRICING.md](PRICING.md) | Tiers, meters, the cost floor per guest, and the trial. What a user sees is [features/pricing.md](features/pricing.md). |
-| [DESIGN-LANGUAGE.md](DESIGN-LANGUAGE.md) | You are building any screen. The foundation every page shares (tokens, contrast floor, type, motion, logo, header), then the dashboard's patterns (states, confirmation, fields, toasts). The landing adds [LANDING.md](LANDING.md). |
+| [DESIGN-LANGUAGE.md](DESIGN-LANGUAGE.md) | You are building any screen. Herakraft UI as repose ships it (I-837): the foundation every page shares (tokens, status colour, type, motion, header, theme switch), the components, then the dashboard, docs and landing pages. What the landing says is in [LANDING.md](LANDING.md). |
 | [ops/DEV-BOX.md](ops/DEV-BOX.md) | You are on the dev VM and something about disks, Nix or az is odd. |
 | [ops/AZURE-SETUP.md](ops/AZURE-SETUP.md) | The one-time human steps in Azure, Cloudflare, Logto, Polar and Resend before agents start. |
 | [workstreams/PROMPTS.md](workstreams/PROMPTS.md) | The prompt for launching an agent on a workstream with `/ws` (every worker runs on the current Opus model). |

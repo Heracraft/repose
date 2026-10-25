@@ -38,6 +38,7 @@
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { theme } from '$lib/theme.svelte';
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
 	import PauseButton from './PauseButton.svelte';
@@ -219,6 +220,17 @@
 			tl?.pause();
 		};
 	});
+
+	// The captures follow the site's theme switch: the OS setting under
+	// System, otherwise the choice, which a media query cannot see.
+	const dark = (narrow: boolean) => {
+		const width = narrow ? '(max-width: 479px)' : 'all';
+		if (theme.choice === 'light') return 'not all';
+		if (theme.choice === 'dark') return width;
+		return narrow
+			? '(max-width: 479px) and (prefers-color-scheme: dark)'
+			: '(prefers-color-scheme: dark)';
+	};
 </script>
 
 <!-- ⇄ drawn one cell wide: several monospace fonts lack the glyph, and the
@@ -229,24 +241,14 @@
 
 {#snippet shot(name: string, alt: string)}
 	<picture>
-		<source
-			srcset="/landing/{name}-narrow-dark.webp"
-			media="(max-width: 479px) and (prefers-color-scheme: dark)"
-			width="640"
-			height="280"
-		/>
+		<source srcset="/landing/{name}-narrow-dark.webp" media={dark(true)} width="640" height="280" />
 		<source
 			srcset="/landing/{name}-narrow-light.webp"
 			media="(max-width: 479px)"
 			width="640"
 			height="280"
 		/>
-		<source
-			srcset="/landing/{name}-dark.webp"
-			media="(prefers-color-scheme: dark)"
-			width="720"
-			height="300"
-		/>
+		<source srcset="/landing/{name}-dark.webp" media={dark(false)} width="720" height="300" />
 		<img
 			src="/landing/{name}-light.webp"
 			width="720"
@@ -338,7 +340,6 @@
 		margin-left: 4px;
 		padding: 0 8px;
 		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius);
 		background: var(--surface);
 		font-family: var(--font-mono);
 		font-size: 12px;
@@ -374,12 +375,20 @@
 		background: #fafafa;
 	}
 	@media (prefers-color-scheme: dark) {
-		.err {
+		:global(:root:not(.light):not([data-theme='light'])) .err {
 			background: #1f2125;
 		}
-		.home {
+		:global(:root:not(.light):not([data-theme='light'])) .home {
 			background: #09090b;
 		}
+	}
+	:global(:root[data-theme='dark']) .err,
+	:global(:root.dark) .err {
+		background: #1f2125;
+	}
+	:global(:root[data-theme='dark']) .home,
+	:global(:root.dark) .home {
+		background: #09090b;
 	}
 	/* Refused, before the forward: the page is there, dimmed. */
 	.err {

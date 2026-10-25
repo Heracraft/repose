@@ -2,8 +2,66 @@
 // a page, forced colours, reduced motion, and the phone column
 // (DESIGN-LANGUAGE.md; DECISIONS I-377, I-391, I-392). Lighthouse (tests-a11y)
 // scores the pages at rest; these drive them.
-import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, fail, unfail } from './helpers';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+import {
+	signIn,
+	createProject,
+	destroyProject,
+	apiURLFromEnv,
+	fail,
+	unfail,
+	addQuestion,
+	closeQuestion,
+	setBilling,
+	resetBilling,
+	settledBox
+} from './helpers';
+
+/** Presses Tab until the target holds the focus (at most 80 stops). */
+async function tabTo(page: Page, target: Locator): Promise<void> {
+	const path: string[] = [];
+	for (let i = 0; i < 80; i++) {
+		await page.keyboard.press('Tab');
+		if (await target.evaluate((el) => el === document.activeElement)) return;
+		path.push(
+			await page.evaluate(() => {
+				const a = document.activeElement;
+				return `${a?.tagName.toLowerCase()} ${(a?.getAttribute('aria-label') ?? a?.textContent ?? '').trim().slice(0, 20)}`;
+			})
+		);
+	}
+	throw new Error(`80 Tab stops without reaching the target: ${path.slice(0, 30).join(' | ')}`);
+}
+
+/** Tabs to the target and reports whether focus drew a ring on it, or on
+ *  its ::after (a row link whose box covers the row): an outline of 2px
+ *  or more, or a box-shadow it did not have at rest. */
+async function ringOnTab(page: Page, target: Locator): Promise<boolean> {
+	const rest = await target.evaluate((el) => getComputedStyle(el).boxShadow);
+	await tabTo(page, target);
+	return target.evaluate((el, rest) => {
+		const drawn = (s: CSSStyleDeclaration) =>
+			s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
+		const s = getComputedStyle(el);
+		return (
+			drawn(s) ||
+			drawn(getComputedStyle(el, '::after')) ||
+			(s.boxShadow !== 'none' && s.boxShadow !== rest)
+		);
+	}, rest);
+}
+
+/** The projects this file makes, destroyed after each test, so the shared
+ *  account stays under its 100-project cap for the files after it. */
+const made: string[] = [];
+async function project(body: { name: string; remote_url: string; class?: string }) {
+	const p = await createProject(apiURLFromEnv(), body);
+	made.push(p.id);
+	return p;
+}
+test.afterEach(async () => {
+	while (made.length) await destroyProject(apiURLFromEnv(), made.pop()!);
+});
 
 test.describe('signed in', () => {
 	test.beforeEach(async ({ page }) => {
@@ -22,7 +80,7 @@ test.describe('signed in', () => {
 	});
 
 	test('the resize panel takes focus and Cancel gives it back', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'focus-resize-app',
 			remote_url: 'github.com/heracraft/focus-resize-app',
 			class: 'small'
@@ -66,13 +124,13 @@ test.describe('signed in', () => {
 	});
 
 	test('forced colours keep the state dot filled in a system colour', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'forced-colours-app',
 			remote_url: 'github.com/heracraft/forced-colours-app'
 		});
 		await page.emulateMedia({ forcedColors: 'active' });
 		await page.goto(`/projects/${p.id}`);
-		const dot = page.locator('.dot--good').first();
+		const dot = page.locator('.hk-dot--on').first();
 		await expect(dot).toBeVisible();
 		const { fill, edge } = await dot.evaluate((el) => {
 			const s = getComputedStyle(el);
@@ -83,7 +141,7 @@ test.describe('signed in', () => {
 	});
 
 	test('forced colours mark the current config tab and no other', async ({ page }) => {
-		const p = await createProject(apiURLFromEnv(), {
+		const p = await project({
 			name: 'forced-tabs-app',
 			remote_url: 'github.com/heracraft/forced-tabs-app'
 		});
@@ -108,6 +166,131 @@ test.describe('signed in', () => {
 		// The other tab's edge is the page's own colour: no mark.
 		expect(other.edge.endsWith(other.page)).toBe(true);
 	});
+
+	// In dark the selected item of a joined control is a quiet zinc-800 fill
+	// with a zinc-700 inset hairline, not the zinc-400 ring the owner called
+	// ugly (2026-10-21); its label stays 3:1 lighter than the others, so the
+	// selection is a lightness step at one weight, not hue alone.
+	test('in dark a selected joined item is a quiet fill with a 3:1 lighter label', async ({
+		page
+	}) => {
+		const p = await project({
+			name: 'dark-seg-app',
+			remote_url: 'github.com/heracraft/dark-seg-app'
+		});
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await page.goto(`/projects/${p.id}/usage`);
+		const range = page.locator('.hk-seg--buttons').first();
+		await expect(range.locator('button[aria-pressed="true"]')).toBeVisible();
+		const look = await range.evaluate((el) => {
+			const lum = (c: string) => {
+				const [r, g, b] = c
+					.match(/\d+(\.\d+)?/g)!
+					.slice(0, 3)
+					.map(Number);
+				const f = (v: number) => {
+					const s = v / 255;
+					return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+				};
+				return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+			};
+			const on = el.querySelector('button[aria-pressed="true"]')!;
+			const off = el.querySelector('button[aria-pressed="false"]')!;
+			const s = getComputedStyle(on);
+			return {
+				fill: s.backgroundColor,
+				shadow: s.boxShadow,
+				step: (lum(s.color) + 0.05) / (lum(getComputedStyle(off).color) + 0.05),
+				weights: [s.fontWeight, getComputedStyle(off).fontWeight]
+			};
+		});
+		expect(look.fill).toBe('rgb(39, 39, 42)');
+		expect(look.shadow).toContain('rgb(63, 63, 70)');
+		expect(look.shadow).not.toContain('rgb(161, 161, 170)');
+		expect(look.step).toBeGreaterThanOrEqual(3);
+		expect(look.weights[0]).toBe(look.weights[1]);
+	});
+
+	// The Connect pane is as wide as its commands (owner, 2026-10-21): at
+	// 1440 each Copy sits within a few characters of the longest command.
+	test('Connect is as wide as its commands, not the column', async ({ page }) => {
+		const p = await project({
+			name: 'connect-width-app',
+			remote_url: 'github.com/heracraft/connect-width-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto(`/projects/${p.id}`);
+		const pane = page.getByRole('list', { name: 'Connect' }).locator('xpath=..');
+		await expect(pane).toBeVisible();
+		const m = await pane.evaluate((el) => {
+			const col = el.parentElement!.getBoundingClientRect().width;
+			const w = el.getBoundingClientRect().width;
+			const gaps = [...el.querySelectorAll('li')].map((li) => {
+				const code = li.querySelector('code')!.getBoundingClientRect();
+				const copy = li.querySelector('button')!.getBoundingClientRect();
+				return copy.left - code.right;
+			});
+			return { col, w, gaps };
+		});
+		expect(m.w).toBeLessThanOrEqual(640);
+		expect(m.w).toBeLessThan(m.col);
+		for (const g of m.gaps) expect(g).toBeLessThan(200);
+	});
+
+	// The places a container could clip a ring or a custom ring replaces
+	// the outline (critique-guide 3): a table row's link, a filter link, a
+	// config tab and the focused Nix editor each show one on the Tab path.
+	test('the Tab path shows a ring on a table link, a filter link, a tab and the Nix editor', async ({
+		page
+	}) => {
+		const p = await project({
+			name: 'tab-walk-app',
+			remote_url: 'github.com/heracraft/tab-walk-app'
+		});
+		// The filter links show from nine projects: pad the list with copies.
+		await page.route('**/v1/projects', async (route) => {
+			const res = await route.fetch();
+			const list = (await res.json()) as { id: string; name: string; slug: string }[];
+			const padded = [...list];
+			for (let i = 0; padded.length < 10; i++) {
+				padded.push({ ...list[0], id: `${list[0].id}-${i}`, name: `pad-${i}`, slug: `pad-${i}` });
+			}
+			await route.fulfill({ response: res, json: padded });
+		});
+		await page.goto('/projects');
+		await expect(page.getByRole('navigation', { name: 'Filter projects' })).toBeVisible();
+		const filter = page
+			.getByRole('navigation', { name: 'Filter projects' })
+			.getByRole('link')
+			.nth(1);
+		expect(await ringOnTab(page, filter), 'filter link').toBe(true);
+		const rowLink = page.locator('.ptable').getByRole('link', { name: p.name, exact: true });
+		await expect(rowLink).toBeVisible();
+		expect(await ringOnTab(page, rowLink), 'table row link').toBe(true);
+		await page.unroute('**/v1/projects');
+
+		await page.goto(`/projects/${p.id}/config`);
+		// The tablist is one tab stop, on the selected tab (a project the
+		// earlier specs applied Nix to opens on Nix).
+		const current = page.getByRole('tab', { selected: true });
+		await expect(current).toBeVisible();
+		expect(await ringOnTab(page, current), 'config tab').toBe(true);
+		const nixTab = page.getByRole('tab', { name: 'Nix' });
+		if ((await nixTab.getAttribute('aria-selected')) !== 'true') {
+			await page.keyboard.press('ArrowRight');
+			await expect(nixTab).toBeFocused();
+			await page.keyboard.press('Enter');
+		}
+		await expect(nixTab).toHaveAttribute('aria-selected', 'true');
+		const frame = page.locator('.nix-frame');
+		const rest = await frame.evaluate((el) => getComputedStyle(el).boxShadow);
+		await tabTo(page, page.getByRole('textbox', { name: 'Nix fragment' }));
+		// The ring eases in over --hk-dur-fast: a 2px inset once it has.
+		expect(rest).not.toMatch(/0px 0px 0px 2px inset/);
+		await expect
+			.poll(() => frame.evaluate((el) => getComputedStyle(el).boxShadow), { message: 'Nix editor' })
+			.toMatch(/0px 0px 0px 2px inset/);
+	});
 });
 
 // DECISIONS I-655, I-656: one header on every kind of page, the same
@@ -115,7 +298,7 @@ test.describe('signed in', () => {
 // Feedback link in the header and the footer of every page.
 const FRAME_PAGES = ['/', '/docs/cli', '/terms', '/projects'];
 
-for (const width of [320, 360, 390, 1440]) {
+for (const width of [320, 360, 390, 1024, 1440]) {
 	test(`the header row fits at ${width} on every kind of page`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 800 });
 		await signIn(page);
@@ -128,12 +311,14 @@ for (const width of [320, 360, 390, 1440]) {
 			const items = nav.locator(':scope > a:visible, :scope > div > :visible');
 			const count = await items.count();
 			if (path === '/projects') {
-				// Signed in, the places sit beside the logo and Pricing goes
-				// (I-679): Docs, Feedback, GitHub and Account from sm; below
-				// it Account alone, which holds Docs and Feedback.
+				// Signed in, Pricing goes (I-679): Docs, Feedback, GitHub and
+				// Account from sm; below it Account alone, which holds Docs
+				// and Feedback. The places are in the rail or strip (I-841).
 				expect(count, path).toBe(width >= 640 ? 4 : 1);
 				const places = page.getByRole('navigation', { name: 'Dashboard' });
-				await expect(places.getByRole('link', { name: /^Projects/ })).toBeInViewport({ ratio: 1 });
+				await expect(places.getByRole('link', { name: 'Projects', exact: true })).toBeInViewport({
+					ratio: 1
+				});
 			} else {
 				// Docs, Feedback and the account slot at every width; Pricing
 				// from 400px and GitHub from sm.
@@ -275,5 +460,567 @@ test.describe('public pages', () => {
 		expect(await code.evaluate((el) => getComputedStyle(el).fontVariantLigatures)).toBe(
 			'no-contextual'
 		);
+	});
+});
+
+// The theme switch (DECISIONS I-837): System, Light and Dark in the footer
+// of every page. A choice is stored per browser, painted before the first
+// frame, and System hands the page back to the computer's setting.
+test.describe('the theme switch', () => {
+	const theme = (page: Page) =>
+		page.evaluate(() => ({
+			attr: document.documentElement.dataset.theme ?? null,
+			stored: localStorage.getItem('hk-theme'),
+			bg: getComputedStyle(document.body).backgroundColor
+		}));
+
+	test('sets data-theme, survives a reload, and System removes it', async ({ page }) => {
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.goto('/docs/cli');
+		const group = page.getByRole('radiogroup', { name: 'Theme' });
+		await expect(group.getByRole('radio', { name: 'System' })).toBeChecked();
+		await group.getByText('Dark', { exact: true }).click();
+		await expect(group.getByRole('radio', { name: 'Dark' })).toBeChecked();
+		expect(await theme(page)).toEqual({ attr: 'dark', stored: 'dark', bg: 'rgb(9, 9, 11)' });
+		await page.reload();
+		await expect(group.getByRole('radio', { name: 'Dark' })).toBeChecked();
+		expect(await theme(page)).toEqual({ attr: 'dark', stored: 'dark', bg: 'rgb(9, 9, 11)' });
+		await group.getByText('System', { exact: true }).click();
+		expect(await theme(page)).toEqual({ attr: null, stored: null, bg: 'rgb(250, 250, 250)' });
+		// Light holds on a dark computer.
+		await page.emulateMedia({ colorScheme: 'dark' });
+		await expect.poll(async () => (await theme(page)).bg).toBe('rgb(9, 9, 11)');
+		await group.getByText('Light', { exact: true }).click();
+		expect(await theme(page)).toEqual({
+			attr: 'light',
+			stored: 'light',
+			bg: 'rgb(250, 250, 250)'
+		});
+	});
+
+	// With every stylesheet held back, the page shows what app.html paints
+	// on its own: the stored Dark, on a light computer.
+	for (const path of ['/', '/projects']) {
+		test(`a stored Dark paints ${path} dark before any CSS`, async ({ page }) => {
+			await page.emulateMedia({ colorScheme: 'light' });
+			await page.addInitScript(() => localStorage.setItem('hk-theme', 'dark'));
+			await page.route('**/*.css', (route) => route.abort());
+			await page.goto(path, { waitUntil: 'domcontentloaded' });
+			const paint = await page.evaluate(() => ({
+				bg: getComputedStyle(document.documentElement).backgroundColor,
+				scheme: getComputedStyle(document.documentElement).colorScheme,
+				chrome: [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].map(
+					(m) => m.content
+				)
+			}));
+			expect(paint).toEqual({
+				bg: 'rgb(9, 9, 11)',
+				scheme: 'dark',
+				chrome: ['#09090b', '#09090b']
+			});
+		});
+	}
+});
+
+// The root error page (Guide B 12.22): a path nothing serves keeps the
+// header and the footer, says Not found, and offers the way back.
+test('an unknown path signed in keeps the dashboard header and offers Projects', async ({
+	page
+}) => {
+	await signIn(page);
+	await page.goto('/no-such-place');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page).toHaveTitle('Not found · repose');
+	await expect(page.locator('main#main')).toHaveCount(1);
+	// The rail stays beside the error (Guide B 12.22, I-841), with no
+	// place current.
+	const places = page.getByRole('navigation', { name: 'Dashboard' });
+	await expect(places.getByRole('link', { name: 'Projects', exact: true })).toBeVisible();
+	await expect(places.locator('[aria-current="page"]')).toHaveCount(0);
+	await page.getByRole('link', { name: 'Back to Projects' }).click();
+	await expect(page).toHaveURL('/projects');
+});
+
+test('a project that does not exist marks no place current', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await signIn(page);
+	await page.goto('/projects/01900000-0000-7000-8000-0000000000ff');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	// The project layout draws this 404 itself, so page.error is unset; the
+	// rail still marks nothing current (ia-final 1.2, I-841).
+	const places = page.getByRole('navigation', { name: 'Dashboard' });
+	await expect(places.locator('[aria-current="page"]')).toHaveCount(0);
+	// Leaving for a real page brings the current place back.
+	await places.getByRole('link', { name: 'Projects', exact: true }).click();
+	await expect(places.getByRole('link', { name: 'Projects', exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
+test('an unknown path signed out renders Not found and stays put', async ({ page }) => {
+	await page.goto('/no-such-place');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Site' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Footer' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Docs', exact: true }).last()).toBeVisible();
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL('/no-such-place');
+});
+
+// Touch targets (Guide B 1.7): at 390 on a touch screen every control a
+// thumb hits measures 44px or more, in the header and in each page's main
+// (every page is on the kit since Phase 3, I-837).
+const TOUCH_PAGES = [
+	'/',
+	'/docs/cli',
+	'/projects',
+	'/questions',
+	'project',
+	'project/events',
+	'project/usage',
+	'project/snapshots',
+	'project/config',
+	'/billing',
+	'/settings',
+	'/settings/notifications',
+	'/settings/secrets',
+	'/settings/machine-nix',
+	'/no-such-place'
+];
+
+async function shortTargets(page: Page, scope: string): Promise<string[]> {
+	return page.locator(scope).evaluateAll((roots) => {
+		const out: string[] = [];
+		for (const root of roots) {
+			const els = root.querySelectorAll<HTMLElement>(
+				'button, a[role=button], input, select, [role=tab], label:has(input)'
+			);
+			for (const el of els) {
+				const r = el.getBoundingClientRect();
+				if (!r.width || !r.height || !el.checkVisibility()) continue;
+				// A box or a radio inside its label: the label is the target.
+				if (el instanceof HTMLInputElement && el.closest('label')) continue;
+				if (el instanceof HTMLInputElement && /^(hidden|radio|checkbox)$/.test(el.type)) continue;
+				// A hidden file picker a labelled button opens (secrets' "Choose a file").
+				if (el instanceof HTMLInputElement && el.type === 'file' && el.tabIndex < 0) continue;
+				// A small button whose transparent ::before carries the target
+				// (CodeCopy on a phone): the target is the button plus its
+				// negative insets.
+				const before = getComputedStyle(el, '::before');
+				const reach =
+					before.content !== 'none' && before.position === 'absolute'
+						? -(parseFloat(before.top) || 0) - (parseFloat(before.bottom) || 0)
+						: 0;
+				if (r.height + Math.max(0, reach) < 43.5) {
+					const name = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
+					out.push(`${el.tagName.toLowerCase()} "${name.slice(0, 30)}" ${Math.round(r.height)}px`);
+				}
+			}
+			// A link that stands alone on its line (the only text of its
+			// parent, or an hk-tap or hk-more link) is a control too; one
+			// inside running text is exempt, and a row link whose ::after
+			// covers its row is as tall as the row.
+			for (const a of root.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+				const r = a.getBoundingClientRect();
+				if (!r.width || !r.height || !a.checkVisibility()) continue;
+				if (a.closest('nav, [role=tablist], .hk-tabs, .hk-seg--links')) continue;
+				if (getComputedStyle(a, '::after').position === 'absolute') continue;
+				const text = a.textContent?.trim() ?? '';
+				const alone =
+					a.matches('.hk-tap, .hk-more') || a.parentElement?.textContent?.trim() === text;
+				if (alone && r.height < 43.5) {
+					out.push(`a "${text.slice(0, 30)}" ${Math.round(r.height)}px`);
+				}
+			}
+		}
+		return out;
+	});
+}
+
+test.describe('touch targets', () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+	test('every control in the header and in the main is 44px tall', async ({ page }) => {
+		const p = await project({
+			name: 'touch-app',
+			remote_url: 'github.com/heracraft/touch-app'
+		});
+		await signIn(page);
+		for (const path of TOUCH_PAGES) {
+			const url = path.startsWith('project') ? path.replace('project', `/projects/${p.id}`) : path;
+			await page.goto(url);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			expect(await shortTargets(page, 'header'), `${url} header`).toEqual([]);
+			expect(await shortTargets(page, 'main'), `${url} main`).toEqual([]);
+			// The strip's places are links: each is a 44px row (I-841).
+			const strip = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link');
+			for (const h of await strip.evaluateAll((els) =>
+				els.filter((el) => el.checkVisibility()).map((el) => el.getBoundingClientRect().height)
+			)) {
+				expect(h, `${url} strip`).toBeGreaterThanOrEqual(43.5);
+			}
+		}
+	});
+});
+
+// The dashboard's rail (DECISIONS I-841): Projects, Questions, Billing and
+// Settings beside the page from 1024px, a sticky strip under the header
+// below it, the projects by name and the plan at the rail's foot.
+test.describe('the dashboard rail', () => {
+	test.beforeEach(async ({ page }) => {
+		await signIn(page);
+	});
+
+	/** The frame's left edge: the 1200px frame centred, plus its gutter. */
+	const frameLeft = (page: Page) =>
+		page.evaluate(() => {
+			const cw = document.querySelector('header')!.getBoundingClientRect().width;
+			const gutter = Math.min(40, Math.max(20, 0.03 * innerWidth));
+			return (cw - Math.min(cw, 1200)) / 2 + gutter;
+		});
+
+	for (const width of [1440, 1024]) {
+		test(`the rail is 200px at the frame's edge and the page 48px past it at ${width}`, async ({
+			page
+		}) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.goto('/projects');
+			await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+			const left = await frameLeft(page);
+			const rail = (await page.locator('[data-dash-strip]').boundingBox())!;
+			const main = (await page.locator('main#main').boundingBox())!;
+			expect(rail.x).toBeCloseTo(left, 0);
+			expect(rail.width).toBeCloseTo(200, 0);
+			expect(main.x).toBeCloseTo(left + 248, 0);
+			// The rail is the window under the header less the compact
+			// footer's 71px row, its plan at the foot.
+			expect(rail.y).toBeCloseTo(57, 0);
+			expect(rail.y + rail.height).toBeCloseTo(900 - 71, 0);
+		});
+	}
+
+	// The rail never slides under the header at a page's foot, and its
+	// plan sits at one height on a long page and a short one (review IA).
+	test('the rail holds still at the foot of a long page and a short one', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const tops: number[] = [];
+		for (const path of ['/projects', '/questions', '/settings/secrets', '/no-such-place']) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+			// Measured once the scroll has landed: reading a frame after a
+			// fire-and-forget scrollTo caught the rail mid-flight and failed
+			// this once in a full run (settledBox).
+			const first = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link').first();
+			const box = await settledBox(page, first);
+			expect(box.y, `${path} first place`).toBeGreaterThanOrEqual(57);
+			tops.push((await settledBox(page, page.locator('[data-dash-strip]'))).y);
+		}
+		for (const y of tops) expect(y).toBeCloseTo(57, 0);
+	});
+
+	for (const width of [390, 360]) {
+		test(`the strip under the header holds the four places at ${width}`, async ({ page }) => {
+			await page.setViewportSize({ width, height: 844 });
+			await page.goto('/projects');
+			const nav = page.getByRole('navigation', { name: 'Dashboard' });
+			for (const name of ['Projects', 'Questions', 'Billing', 'Settings']) {
+				await expect(
+					nav
+						.getByRole('link', { name, exact: true })
+						.or(nav.getByRole('link', { name: new RegExp(`^${name},`) }))
+				).toBeInViewport({ ratio: 1 });
+			}
+			// They fit: the strip cannot be dragged sideways.
+			const fits = await nav
+				.locator('ul')
+				.first()
+				.evaluate((ul) => ul.scrollWidth <= ul.clientWidth);
+			expect(fits).toBe(true);
+			const strip = (await page.locator('[data-dash-strip]').boundingBox())!;
+			expect(strip.y + strip.height).toBeCloseTo(101, 0);
+			// It sticks under the header.
+			await page.evaluate(() => scrollTo(0, 600));
+			await expect
+				.poll(async () => (await page.locator('[data-dash-strip]').boundingBox())!.y)
+				.toBeCloseTo(57, 0);
+		});
+	}
+
+	test('no dashboard page scrolls sideways', async ({ page }) => {
+		const p = await project({ name: 'wide-app', remote_url: 'github.com/heracraft/wide-app' });
+		for (const width of [320, 390, 768, 1024, 1280]) {
+			await page.setViewportSize({ width, height: 900 });
+			for (const path of [
+				'/projects',
+				'/questions',
+				`/projects/${p.id}`,
+				'/billing',
+				'/settings'
+			]) {
+				await page.goto(path);
+				await expect(page.locator('main#main')).toBeVisible();
+				await page.waitForLoadState('networkidle');
+				const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+				expect(wide, `${path} at ${width}`).toBeLessThanOrEqual(0);
+			}
+		}
+	});
+
+	test('one place is current on every dashboard page', async ({ page }) => {
+		const p = await project({
+			name: 'current-app',
+			remote_url: 'github.com/heracraft/current-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		// A project page's current item is its rail row, or Projects when
+		// the row is past the eight the rail lists.
+		const row = new RegExp(`${p.name}|^Projects$`);
+		const routes: [string, string | RegExp][] = [
+			['/projects', 'Projects'],
+			['/questions', 'Questions'],
+			['/billing', 'Billing'],
+			['/settings', 'Settings'],
+			['/settings/notifications', 'Settings'],
+			['/settings/secrets', 'Settings'],
+			['/settings/machine-nix', 'Settings'],
+			[`/projects/${p.id}`, row],
+			[`/projects/${p.id}/config`, row],
+			[`/projects/${p.id}/events`, row]
+		];
+		const nav = page.getByRole('navigation', { name: 'Dashboard' });
+		for (const [path, name] of routes) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			const current = nav.locator('[aria-current="page"]');
+			await expect(current, path).toHaveCount(1);
+			await expect(current, path).toContainText(name);
+		}
+		// The strip draws no project rows, so on a project's tabs Projects
+		// is the current place, shown and named (ia-final 1.2's fallback).
+		for (const width of [390, 768]) {
+			await page.setViewportSize({ width, height: 844 });
+			for (const path of [`/projects/${p.id}`, `/projects/${p.id}/config`]) {
+				await page.goto(path);
+				await expect(page.locator('main#main')).toBeVisible();
+				const current = nav.locator('[aria-current="page"]');
+				await expect(current, `${path} at ${width}`).toHaveCount(1);
+				await expect(current, `${path} at ${width}`).toHaveText('Projects');
+				await expect(current, `${path} at ${width}`).toBeVisible();
+			}
+		}
+	});
+
+	// One primary at most per page (ia-final 2.3, Guide B 1.4).
+	test('each page has at most its one primary button', async ({ page }) => {
+		const p = await project({
+			name: 'primary-app',
+			remote_url: 'github.com/heracraft/primary-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		const pages: [string, number][] = [
+			['/projects', 0],
+			['/questions', 0],
+			['/settings', 0],
+			['/settings/notifications', 0],
+			['/settings/secrets', 0],
+			['/settings/machine-nix', 1],
+			['/billing', 1],
+			[`/projects/${p.id}`, 1],
+			[`/projects/${p.id}/events`, 1],
+			[`/projects/${p.id}/config`, 1]
+		];
+		for (const [path, most] of pages) {
+			await page.goto(path);
+			await expect(page.locator('main#main')).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			const n = await page.locator('main .hk-btn').filter({ visible: true }).count();
+			expect(n, path).toBeLessThanOrEqual(most);
+		}
+	});
+
+	test('the title counts the questions waiting', async ({ page }) => {
+		const p = await project({ name: 'title-app', remote_url: 'github.com/heracraft/title-app' });
+		const asked = [
+			await addQuestion(p.id, { agent: 'claude', text: 'First?', options: ['yes', 'no'] }),
+			await addQuestion(p.id, { agent: 'codex', text: 'Second?' })
+		];
+		try {
+			await page.goto('/questions');
+			const badge = page.getByTestId('pending-questions');
+			await expect(badge).toBeVisible();
+			const n = Number(await badge.textContent());
+			expect(n).toBeGreaterThanOrEqual(2);
+			await expect(page).toHaveTitle(`(${n}) Questions · repose`);
+			await expect(
+				page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link', {
+					name: `Questions, ${n} waiting`
+				})
+			).toBeVisible();
+			// The project's rail row turns amber and says so.
+			await expect(
+				page.getByRole('link', { name: new RegExp(`^${p.name}, \\w+, waiting on you$`) })
+			).toBeVisible();
+		} finally {
+			for (const q of asked) await closeQuestion(q.id);
+		}
+	});
+
+	test('the rail foot shows the plan, and leaves it off Billing', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			await page.goto('/projects');
+			const foot = page.getByTestId('plan-strip');
+			await expect(foot).toContainText('Plan');
+			await expect(foot).toContainText('Pro');
+			await expect(foot).toContainText(/\d+ GB of 32 GB running/);
+			await page.goto('/billing');
+			await expect(page.getByRole('heading', { level: 1, name: 'Billing' })).toBeVisible();
+			await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+
+			await setBilling({ mode: 'past_due', plan: 'pro' });
+			await page.goto('/settings');
+			const failed = page.getByTestId('plan-strip').getByRole('link', { name: 'Payment failed' });
+			await expect(failed).toHaveAttribute('href', '/billing');
+			// Below 1024px the trouble shows as one line under the strip.
+			await page.setViewportSize({ width: 390, height: 844 });
+			await expect(page.getByRole('link', { name: 'Update card' }).first()).toBeVisible();
+		} finally {
+			await resetBilling();
+		}
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+		// Billing switched off: no plan to show.
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+	});
+
+	test('a project row in the rail opens the project and is current there', async ({ page }) => {
+		const p = await project({
+			name: 'rail-row-app',
+			remote_url: 'github.com/heracraft/rail-row-app'
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		const row = page
+			.getByRole('navigation', { name: 'Dashboard' })
+			.getByRole('link', { name: new RegExp(`^${p.name}, `) });
+		await row.click();
+		await expect(page).toHaveURL(`/projects/${p.id}`);
+		await expect(row).toHaveAttribute('aria-current', 'page');
+	});
+});
+
+// The I-664 check on the dashboard's main pages (ia-final 1.6): a first
+// load moves nothing that is on screen, at 1440 and at 390, and a
+// payment failure seen first on a fresh browser paints its plan line
+// with the page instead of pushing the page down.
+test.describe('first loads hold still', () => {
+	test.beforeEach(async ({ page }) => {
+		await signIn(page);
+		await page.addInitScript(() => {
+			const w = window as unknown as { __cls: number };
+			w.__cls = 0;
+			new PerformanceObserver((list) => {
+				for (const e of list.getEntries() as unknown as {
+					value: number;
+					hadRecentInput: boolean;
+				}[]) {
+					if (!e.hadRecentInput) w.__cls += e.value;
+				}
+			}).observe({ type: 'layout-shift', buffered: true });
+		});
+	});
+
+	async function cls(page: Page, path: string): Promise<number> {
+		await page.goto(path);
+		await expect(page.locator('main#main')).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		await page.waitForTimeout(800);
+		return page.evaluate(() => (window as unknown as { __cls: number }).__cls);
+	}
+
+	test('six pages at 1440 and 390', async ({ page }) => {
+		const p = await project({ name: 'still-app', remote_url: 'github.com/heracraft/still-app' });
+		const paths = [
+			'/projects',
+			'/questions',
+			`/projects/${p.id}`,
+			`/projects/${p.id}/events`,
+			'/billing',
+			'/settings'
+		];
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			for (const [width, height] of [
+				[1440, 900],
+				[390, 844]
+			]) {
+				await page.setViewportSize({ width, height });
+				for (const path of paths) {
+					expect(await cls(page, path), `${path} at ${width}`).toBeLessThanOrEqual(0.05);
+				}
+			}
+		} finally {
+			await resetBilling();
+		}
+	});
+
+	// Recent activity mounts once its own reads answer, above Recently
+	// destroyed. With the events slower than the destroyed list, it landed
+	// on a painted Recently destroyed and pushed it 174px down, and each
+	// late section pushed the footer out of view: 0.0523 at 1440, where a
+	// full run had seen 0.0563 by chance (I-841). The order is pinned here
+	// so the check does not depend on which answer comes first, and the
+	// bar is the page's own: held still, it measures 0, and the old order
+	// cleared 0.05 by as little as 0.0005 with fewer destroyed rows.
+	test('/projects at 1440 with the events answering last', async ({ page }) => {
+		await project({ name: 'slow-events-app', remote_url: 'github.com/heracraft/slow-events-app' });
+		for (let i = 0; i < 10; i++) {
+			const gone = await createProject(apiURLFromEnv(), {
+				name: `gone-app-${i}`,
+				remote_url: `github.com/heracraft/gone-app-${i}`
+			});
+			await destroyProject(apiURLFromEnv(), gone.id);
+		}
+		await page.route(/\/v1\/projects\/[^/]+\/events/, async (route) => {
+			await new Promise((r) => setTimeout(r, 600));
+			await route.fallback();
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		try {
+			await setBilling({ mode: 'active', plan: 'pro' });
+			const shift = await cls(page, '/projects');
+			await expect(page.getByTestId('recent-activity')).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Recently destroyed' })).toBeVisible();
+			expect(shift).toBeLessThanOrEqual(0.01);
+		} finally {
+			await resetBilling();
+		}
+	});
+
+	test('a payment failure on a fresh browser at 390', async ({ page }) => {
+		await page.addInitScript(() => {
+			try {
+				localStorage.removeItem('repose-billing-mode');
+			} catch {
+				// Storage blocked: the same cold start.
+			}
+		});
+		await page.setViewportSize({ width: 390, height: 844 });
+		try {
+			await setBilling({ mode: 'past_due', plan: 'pro' });
+			for (const path of ['/projects', '/questions', '/settings']) {
+				expect(await cls(page, path), path).toBeLessThanOrEqual(0.05);
+				await expect(page.locator('.plan-line')).toContainText('Payment failed');
+			}
+		} finally {
+			await resetBilling();
+		}
 	});
 });

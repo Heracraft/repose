@@ -150,7 +150,7 @@
   label: MySQL (MariaDB)
   group: databases
   kind: service
-  description: A local MariaDB on 3306 with a `dev` database owned by user dev.
+  description: A local MariaDB on 3306 with a dev database owned by user dev.
   hm: |
     home.packages = [ pkgs.mariadb.client ];
   nixos: |

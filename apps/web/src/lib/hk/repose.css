@@ -1,0 +1,838 @@
+/* Repose additions to the Herakraft kit. tokens.css stays the kit's file:
+   a kit update is a file copy, and every repose change lives here, each
+   with its reason (DECISIONS I-837). Imported into the components layer
+   after tokens.css (routes/layout.css), so a rule here beats the kit's at
+   equal specificity, and a Tailwind utility on the same element beats both.
+   Every class is hk- prefixed and named in DESIGN-LANGUAGE.md
+   "Components". */
+
+/* ---------- Tokens ---------- */
+
+.hk {
+	/* Geometry the tests pin (I-656, I-660): 1200px frame including its
+	   gutter, 20 to 40px gutter, 56px row + 1px rule, sticky on phones too
+	   (the docs sub-bar ends at 101px). Later in the layer than the kit's
+	   1024px and 639.98px overrides, so these win at every width. */
+	--hk-container: 75rem;
+	--hk-gutter: clamp(1.25rem, 3vw, 2.5rem);
+	--hk-header-h: 57px;
+	/* Input edges at 3:1 (WCAG 1.4.11, I-370). The kit's border is 1.27:1. */
+	--hk-control-edge: #8b8b94;
+	/* Self-hosted faces with metric-matched fallbacks (I-371). */
+	--hk-font-sans: 'Inter', 'Inter Fallback', ui-sans-serif, system-ui, sans-serif;
+	--hk-font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, Menlo, monospace;
+	--hk-font-display: 'Noto Serif', 'Noto Serif Fallback', Georgia, serif;
+	/* The hero terminal's drop, the one elevated pane (Guide B 10.3). */
+	--hk-shadow-terminal: 0 30px 60px -30px rgb(0 0 0 / 0.35);
+	/* Busy dot halo, the filled "on" dot and the hollow ring (Guide B 5.3, 12.23). */
+	--hk-busy: #27272a;
+	--hk-busy-halo: rgb(161 161 170 / 0.35);
+	/* The armed danger button's text on its red fill: white on red-700 is
+	   6.5:1; in the dark the fill is red-400 and the text the page. */
+	--hk-on-err: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk {
+		--hk-control-edge: #71717a;
+		--hk-busy: #e4e4e7;
+		--hk-busy-halo: rgb(113 113 122 / 0.45);
+		--hk-on-err: #09090b;
+	}
+}
+:root[data-theme='dark'] .hk,
+:root.dark .hk {
+	--hk-control-edge: #71717a;
+	--hk-busy: #e4e4e7;
+	--hk-busy-halo: rgb(113 113 122 / 0.45);
+	--hk-on-err: #09090b;
+}
+
+/* Ice: a frozen machine's colours (lib/hk/frost.css; I-841 amendment
+   2026-10-21), measured from photos of window frost, rime and glacier ice:
+   hue 200 to 220, never a saturated cyan. Only --hk-ice-ink carries text
+   (the word "frozen" and its flake); the frost tokens are decorative. In
+   the light the frost is a grey-blue edge with a white highlight, since
+   white alone does not show on the page; at night it is a pale blue-white
+   over a deep blue halo. --hk-frost-cloud-ink is the cloud a frozen row
+   shows along its foot. */
+.hk {
+	--hk-ice-ink: #456b86; /* 5.4:1 on #fafafa, 5.7:1 on white */
+	--hk-frost-ice: rgb(255 255 255 / 0.55);
+	--hk-frost-shade: #5f86a8;
+	--hk-frost-haze: rgb(143 176 204 / 0.2);
+	--hk-frost-cloud-ink: rgb(111 149 186 / 0.5);
+	--hk-frost-rim: rgb(255 255 255 / 0.5);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .hk {
+		--hk-ice-ink: #a1c1de; /* 10.6:1 on #09090b */
+		--hk-frost-ice: rgb(214 232 246 / 0.82);
+		--hk-frost-shade: rgb(63 111 158 / 0.7);
+		--hk-frost-haze: rgb(91 140 191 / 0.2);
+		--hk-frost-cloud-ink: rgb(214 232 246 / 0.4);
+		--hk-frost-rim: rgb(238 245 251 / 0.6);
+	}
+}
+:root[data-theme='dark'] .hk,
+:root.dark .hk {
+	--hk-ice-ink: #a1c1de;
+	--hk-frost-ice: rgb(214 232 246 / 0.82);
+	--hk-frost-shade: rgb(63 111 158 / 0.7);
+	--hk-frost-haze: rgb(91 140 191 / 0.2);
+	--hk-frost-cloud-ink: rgb(214 232 246 / 0.4);
+	--hk-frost-rim: rgb(238 245 251 / 0.6);
+}
+
+/* Every control a user types into or picks from has a 3:1 edge. */
+.hk :is(.hk-input, .hk-select, .hk-textarea) {
+	border-color: var(--hk-control-edge);
+}
+.hk :is(.hk-input, .hk-select, .hk-textarea):disabled {
+	border-color: var(--hk-border);
+}
+/* Focus: a solid 1px accent ring on the accent edge (about 6:1) carries
+   the cue, and the kit's 3px wash sits outside it. The kit's own focus,
+   a 55% edge and the wash, is 1.6:1 and fainter than the 3:1 edge it
+   replaces (Guide B 1.8, review r1 P3). */
+.hk :is(.hk-input, .hk-select, .hk-textarea):focus {
+	border-color: var(--hk-accent);
+	box-shadow:
+		0 0 0 1px var(--hk-accent),
+		0 0 0 4px var(--hk-ring);
+}
+.hk :is(.hk-input, .hk-select, .hk-textarea)[aria-invalid='true'] {
+	border-color: var(--hk-err);
+}
+
+/* Inline code: no border. CSS cannot tell when a chip sits inside
+   parentheses, where the kit's 1px border left visible gaps (ref-public
+   defect 14). */
+.hk :not(pre) > code {
+	border: 0;
+}
+
+/* ---------- Touch ---------- */
+
+/* 44px for every control a thumb hits, 16px input text so iOS does not
+   zoom on focus (Guide B 1.7; the kit's --touch block covers buttons,
+   chips and rows only). */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk :is(.hk-input, .hk-select, .hk-textarea) {
+		min-height: 2.75rem;
+		font-size: 1rem;
+	}
+	.hk
+		:is(.hk-seg, .hk-seg--links, .hk-seg--buttons, .hk-tablist)
+		:is(label, a, button, [role='tab']) {
+		min-height: 2.75rem;
+	}
+	.hk :is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger, .hk-btn-text-danger) {
+		min-height: 2.75rem;
+	}
+}
+
+/* A link that stands alone on its line (a project's name over its
+   questions, "2 more on Questions", a docs link beside a section head)
+   takes a 44px box on touch; the negative block margin gives back all
+   but one line, so the line it sits on keeps its height (I-841). */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-tap {
+		display: inline-flex;
+		align-items: center;
+		min-height: 2.75rem;
+		margin-block: calc((1lh - 2.75rem) / 2);
+	}
+	/* A flex box trims the arrow's leading space; a no-break one stays. */
+	.hk .hk-tap.hk-more::after {
+		content: '\00a0\2192';
+	}
+}
+
+/* ---------- Buttons ---------- */
+
+/* Waiting (I-766): aria-disabled keeps focus where disabled would drop it
+   to <body>. The label changes ("Starting…"); the face is flat. */
+.hk :is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true'],
+.hk
+	:is(.hk-btn, .hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true']:is(
+		:hover,
+		:active
+	) {
+	cursor: default;
+}
+.hk .hk-btn[aria-disabled='true'],
+.hk .hk-btn[aria-disabled='true']:is(:hover, :active) {
+	background: var(--hk-disabled-bg);
+	color: var(--hk-disabled-text);
+}
+.hk :is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true'],
+.hk
+	:is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger)[aria-disabled='true']:is(:hover, :active) {
+	/* The 3:1 control edge: a clear step from the enabled ink (7:1),
+	   still 3:1 for a control nobody can use yet (review r1 dash-r1-6). */
+	color: var(--hk-control-edge);
+	opacity: 1;
+}
+.hk .hk-btn-secondary[aria-disabled='true'],
+.hk .hk-btn-secondary[aria-disabled='true']:is(:hover, :active) {
+	background: var(--hk-surface);
+	border-color: var(--hk-border);
+}
+.hk :is(.hk-btn-ghost, .hk-btn-danger)[aria-disabled='true'],
+.hk :is(.hk-btn-ghost, .hk-btn-danger)[aria-disabled='true']:is(:hover, :active) {
+	background: transparent;
+}
+
+/* A disabled secondary, ghost or danger button is flat, never faded (kit
+   defect "every disabled button fades"); settings-account.spec reads its
+   colour. Used only where a true disabled is needed: Save with nothing to
+   save, ConfirmType unarmed, pager ends. */
+.hk :is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger):disabled,
+.hk :is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger):disabled:hover {
+	color: var(--hk-text-3);
+	opacity: 1;
+	cursor: not-allowed;
+}
+.hk .hk-btn-secondary:disabled,
+.hk .hk-btn-secondary:disabled:hover {
+	background: var(--hk-surface);
+	border-color: var(--hk-border);
+}
+.hk :is(.hk-btn-ghost, .hk-btn-danger):disabled:hover {
+	background: transparent;
+}
+.hk .hk-btn-danger:disabled {
+	border-color: var(--hk-border);
+}
+
+/* ConfirmType's button once the typed name matches (I-661): the moment
+   the action becomes possible is a fill you can see. */
+.hk .hk-btn-danger.hk-btn-danger--armed {
+	background: var(--hk-err);
+	border-color: var(--hk-err);
+	color: var(--hk-on-err);
+}
+.hk .hk-btn-danger.hk-btn-danger--armed:hover {
+	background: color-mix(in srgb, var(--hk-err) 88%, var(--hk-text));
+}
+.hk .hk-btn-danger.hk-btn-danger--armed:active:not(:disabled) {
+	background: color-mix(in srgb, var(--hk-err) 78%, var(--hk-text));
+}
+
+/* Danger text: one reversible destructive action at a page end ("Cancel
+   plan"). Ghost geometry, red text, never on table rows (Guide B
+   anti-pattern 19). */
+.hk .hk-btn-text-danger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	height: 2.25rem;
+	padding: 0 0.625rem;
+	border: 0;
+	border-radius: var(--hk-radius);
+	background: transparent;
+	font: inherit;
+	font-size: 0.875rem;
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+	color: var(--hk-err);
+	text-decoration: underline;
+	text-decoration-color: transparent;
+	text-underline-offset: 3px;
+	transition:
+		text-decoration-color var(--hk-dur-fast) var(--hk-ease),
+		background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-btn-text-danger:hover {
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+.hk .hk-btn-text-danger:active {
+	background: var(--hk-err-wash);
+}
+
+/* A row's ghost action keeps the row's height at 44px on touch: the kit's
+   --touch modifier pulls it back with a negative block margin. */
+
+/* ---------- Dots ---------- */
+
+/* A machine's state beside its word (Guide B 5.3). Colour only for "needs
+   you" (warn) and "went wrong" (err); running is ink, busy pulses, idle is
+   a hollow 3:1 ring. */
+.hk .hk-dot--on {
+	background: var(--hk-text);
+}
+.hk .hk-dot--busy {
+	background: var(--hk-busy);
+	box-shadow: 0 0 0 3px var(--hk-busy-halo);
+	animation: hk-pulse 1.6s ease-in-out infinite;
+}
+.hk .hk-dot--idle {
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--hk-control-edge);
+}
+/* The busy dot holds still for visitors who asked for less motion, after
+   the kit's reduced-motion rule, which shortens it to one 0.01ms run. */
+@media (prefers-reduced-motion: reduce) {
+	.hk .hk-dot--busy {
+		animation: none !important;
+	}
+}
+
+/* ---------- Banners ---------- */
+
+/* A neutral fact the page states once (billing off, a scheduled change). */
+.hk .hk-banner--info {
+	background: var(--hk-surface-2);
+	color: var(--hk-text);
+	box-shadow: inset 0 0 0 1px var(--hk-hairline);
+}
+/* A banner's one action, where it must be a button (billing.spec drives
+   "Update card" as one): drawn as the banner's inline link. */
+.hk .hk-banner-action {
+	display: inline;
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	font-weight: 500;
+	color: inherit;
+	cursor: pointer;
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+	text-underline-offset: 3px;
+}
+/* On touch the inline action keeps its line height and takes a 44px tall
+   hit box, as the layout's `hit` utility does. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-banner-action {
+		position: relative;
+	}
+	.hk .hk-banner-action::before {
+		content: '';
+		position: absolute;
+		inset: -11px 0;
+	}
+}
+.hk .hk-banner-action:hover,
+.hk .hk-banner a:hover {
+	text-decoration-color: currentColor;
+}
+.hk .hk-banner a {
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+	text-underline-offset: 3px;
+}
+.hk .hk-banner > p {
+	margin: 0;
+}
+
+/* The ghost's 44px target belongs to touch only, as Guide B 12.1 has
+   it; the kit's rule applies it at every width, which made a row with a
+   Delete 49px on a desktop (review r1 sys-2). */
+@media not ((pointer: coarse) or (max-width: 639.98px)) {
+	.hk .hk-btn-ghost--touch {
+		min-height: 0;
+		min-width: 0;
+		margin-block: 0;
+		padding-inline: 0.625rem;
+	}
+}
+
+/* ---------- Inputs ---------- */
+
+/* A search field: the magnifier in the kit chevron's #71717a, which reads
+   on both themes. */
+.hk .hk-input.hk-input--search {
+	padding-left: 2rem;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5L13.5 13.5'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: left 0.625rem center;
+	background-size: 1rem;
+}
+.hk .hk-check {
+	min-height: 1.5rem;
+}
+/* A label that wraps must not squeeze its box (the kit sets no
+   flex-shrink, review r1 dash-r1-2). A label of several lines sets
+   align-items: flex-start and a top margin itself. */
+.hk .hk-check input {
+	flex-shrink: 0;
+}
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-check {
+		min-height: 2.75rem;
+	}
+}
+
+/* ---------- Joined controls ---------- */
+
+/* The selected item of every joined control carries a 3:1 ring in light,
+   so selection is never a 1.3:1 fill alone (Guide B 1.8). Dark has its own
+   look, below. */
+.hk .hk-seg label:has(input:checked),
+.hk .hk-seg .hk-seg-thumb {
+	box-shadow:
+		0 0 0 1px var(--hk-control-edge),
+		0 1px 2px rgb(0 0 0 / 0.06);
+}
+/* Focus on a joined control is a 2px accent ring drawn inside the item,
+   as an outline, so no selected look's shadow hides it and no scrolling
+   track clips it. */
+.hk .hk-seg label:has(input:focus-visible),
+.hk :is(.hk-seg--links, .hk-seg--buttons) > :is(a, button):focus-visible,
+.hk .hk-tablist [role='tab']:focus-visible {
+	outline: 2px solid var(--hk-accent);
+	outline-offset: -2px;
+	border-radius: var(--hk-radius-6);
+}
+.hk .hk-seg label:has(input:focus-visible:not(:checked)) {
+	box-shadow: none;
+}
+
+/* Segmented with a sliding thumb (Segmented.svelte, ThemeSwitch.svelte). */
+.hk .hk-seg.hk-seg--slide {
+	position: relative;
+	grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+	grid-auto-flow: row;
+}
+.hk .hk-seg--slide .hk-seg-thumb {
+	position: absolute;
+	top: 3px;
+	bottom: 3px;
+	left: 3px;
+	width: calc((100% - 6px) / var(--n));
+	transform: translateX(calc(var(--i) * 100%));
+	border-radius: var(--hk-radius-6);
+	background: var(--hk-surface);
+	transition: transform var(--hk-dur-slide) var(--hk-ease);
+	pointer-events: none;
+}
+.hk .hk-seg--slide label:has(input:checked) {
+	background: transparent;
+	box-shadow: none;
+}
+/* Before hydration (prerendered HTML, scripts off) no thumb is placed. */
+.hk .hk-seg--slide:not([data-ready]) .hk-seg-thumb {
+	display: none;
+}
+.hk .hk-seg--slide:not([data-ready]) label:has(input:checked) {
+	background: var(--hk-surface);
+	box-shadow:
+		0 0 0 1px var(--hk-control-edge),
+		0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+/* Segmented-look links and buttons: the same track, the current item
+   drawn as the thumb (no slide). For URL-backed filters tests read as
+   links (aria-current) and the Usage range (aria-pressed). */
+.hk :is(.hk-seg--links, .hk-seg--buttons) {
+	display: inline-flex;
+	max-width: 100%;
+	padding: 3px;
+	gap: 0;
+	border-radius: var(--hk-radius-9);
+	background: var(--hk-surface-2);
+	box-shadow: inset 0 0 0 1px var(--hk-hairline);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.hk :is(.hk-seg--links, .hk-seg--buttons) > :is(a, button) {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	gap: 0.375rem;
+	height: 1.875rem;
+	padding: 0 0.875rem;
+	border: 0;
+	border-radius: var(--hk-radius-6);
+	background: transparent;
+	font: inherit;
+	font-size: 0.8125rem;
+	font-weight: 500;
+	color: var(--hk-text-3);
+	white-space: nowrap;
+	text-decoration: none;
+	cursor: pointer;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk :is(.hk-seg--links, .hk-seg--buttons) > :is(a, button):hover {
+	color: var(--hk-text);
+}
+.hk .hk-seg--links > a[aria-current='page'],
+.hk .hk-seg--buttons > button[aria-pressed='true'] {
+	color: var(--hk-text);
+	background: var(--hk-surface);
+	box-shadow:
+		0 0 0 1px var(--hk-control-edge),
+		0 1px 2px rgb(0 0 0 / 0.06);
+}
+.hk :is(.hk-seg--sm.hk-seg--links, .hk-seg--sm.hk-seg--buttons) > :is(a, button) {
+	height: 1.5rem;
+	padding: 0 0.625rem;
+	font-size: 0.75rem;
+}
+
+/* ARIA tablist (config's Menu and Nix): a small segmented track, so it
+   never reads as the page tabs above it. */
+.hk .hk-tablist {
+	display: inline-flex;
+	max-width: 100%;
+	padding: 3px;
+	border-radius: var(--hk-radius-9);
+	background: var(--hk-surface-2);
+	box-shadow: inset 0 0 0 1px var(--hk-hairline);
+}
+.hk .hk-tablist [role='tab'] {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 1.875rem;
+	padding: 0 0.875rem;
+	border: 0;
+	border-radius: var(--hk-radius-6);
+	background: transparent;
+	font: inherit;
+	font-size: 0.8125rem;
+	font-weight: 500;
+	color: var(--hk-text-3);
+	cursor: pointer;
+	transition: color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-tablist [role='tab']:hover {
+	color: var(--hk-text);
+}
+.hk .hk-tablist [role='tab'][aria-selected='true'] {
+	color: var(--hk-text);
+	background: var(--hk-surface);
+	box-shadow:
+		0 0 0 1px var(--hk-control-edge),
+		0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+/* Dark: the selected item of every joined control is a quiet raised fill,
+   zinc-800 with a zinc-700 inset hairline and a soft shadow, as in the
+   recruiting dashboard; the zinc-400 ring it replaced read as a bright
+   frame (owner, 2026-10-21). Selection is not colour alone: the selected
+   label is #fafafa and the others --hk-text-3 (#8b8b94), a 3.2:1 step in
+   lightness at one weight, and forced colours draw a Highlight edge. */
+:root[data-theme='dark']
+	.hk
+	:is(
+		.hk-seg label:has(input:checked),
+		.hk-seg .hk-seg-thumb,
+		.hk-seg--links > a[aria-current='page'],
+		.hk-seg--buttons > button[aria-pressed='true'],
+		.hk-tablist [role='tab'][aria-selected='true']
+	) {
+	background: #27272a;
+	color: #fafafa;
+	box-shadow:
+		inset 0 0 0 1px #3f3f46,
+		0 1px 2px rgb(0 0 0 / 0.5);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light'])
+		.hk
+		:is(
+			.hk-seg label:has(input:checked),
+			.hk-seg .hk-seg-thumb,
+			.hk-seg--links > a[aria-current='page'],
+			.hk-seg--buttons > button[aria-pressed='true'],
+			.hk-tablist [role='tab'][aria-selected='true']
+		) {
+		background: #27272a;
+		color: #fafafa;
+		box-shadow:
+			inset 0 0 0 1px #3f3f46,
+			0 1px 2px rgb(0 0 0 / 0.5);
+	}
+}
+:root[data-theme='dark'] .hk .hk-seg--slide[data-ready] label:has(input:checked) {
+	background: transparent;
+	box-shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light'])
+		.hk
+		.hk-seg--slide[data-ready]
+		label:has(input:checked) {
+		background: transparent;
+		box-shadow: none;
+	}
+}
+
+/* ---------- Page tabs ---------- */
+
+/* A project's views (ProjectTabs): a row on the title rule, current in ink
+   with a 1px ink edge lying on the rule, weight unchanged. */
+/* The row scrolls sideways on a narrow screen, and a scroll box clips both
+   axes: the 1px padding keeps the current tab's edge, which hangs 1px below
+   the row, inside the box, and the -1px margin puts it back on the rule. */
+.hk .hk-tabs {
+	display: flex;
+	gap: 1.5rem;
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding-bottom: 1px;
+	margin-bottom: -1px;
+	scrollbar-width: none;
+}
+.hk .hk-tabs > a {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	height: 2.5rem;
+	margin-bottom: -1px;
+	border-bottom: 1px solid transparent;
+	font-size: 0.875rem;
+	color: var(--hk-text-2);
+	text-decoration: none;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		border-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-tabs > a:hover {
+	color: var(--hk-text);
+}
+.hk .hk-tabs > a[aria-current='page'] {
+	color: var(--hk-text);
+	border-bottom-color: var(--hk-text);
+}
+.hk .hk-tabs > a:focus-visible {
+	outline-offset: -2px;
+}
+@media (pointer: coarse), (max-width: 639.98px) {
+	.hk .hk-tabs > a {
+		height: 2.75rem;
+	}
+}
+
+/* ---------- Tables ---------- */
+
+/* A table that may scroll sideways: a focusable region, padded 4px so a
+   focus ring on the first or last column is not clipped while the text
+   edge stays put. */
+.hk .hk-table-wrap {
+	position: relative;
+	overflow-x: auto;
+	padding-inline: 4px;
+	margin-inline: -4px;
+}
+.hk .hk-table-wrap:focus-visible {
+	outline-offset: -2px;
+}
+
+/* ---------- Read-back facts ---------- */
+
+.hk .hk-facts {
+	margin: 0;
+}
+.hk .hk-facts > div {
+	display: grid;
+	grid-template-columns: 9rem minmax(0, 1fr);
+	gap: 0.25rem 1rem;
+	align-items: baseline;
+	padding: 0.75rem 0;
+	border-top: 1px solid var(--hk-hairline);
+}
+.hk .hk-facts > div:last-child {
+	border-bottom: 1px solid var(--hk-hairline);
+}
+.hk .hk-section .hk-facts > div:first-child {
+	border-top: 0;
+	padding-top: 0;
+}
+.hk .hk-facts dt {
+	font-size: 0.8125rem;
+	color: var(--hk-text-3);
+}
+.hk .hk-facts dd {
+	margin: 0;
+	min-width: 0;
+	font-size: 0.875rem;
+	color: var(--hk-text);
+	overflow-wrap: anywhere;
+}
+@media (max-width: 639.98px) {
+	.hk .hk-facts > div {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+.hk .hk-facts.hk-facts--row {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+	gap: 1rem 1.5rem;
+	padding: 1rem 0;
+	border-top: 1px solid var(--hk-hairline);
+	border-bottom: 1px solid var(--hk-hairline);
+}
+.hk .hk-facts.hk-facts--row > div {
+	display: block;
+	padding: 0;
+	border: 0;
+}
+.hk .hk-facts--row dt {
+	font-size: 0.75rem;
+}
+.hk .hk-facts--row dd {
+	margin-top: 0.125rem;
+	font-size: 0.9375rem;
+}
+
+/* ---------- Sections, empty rows ---------- */
+
+/* A dashboard section: no border, no fill. PageShell owns the space under
+   the title, so the first section adds none. */
+.hk .hk-section {
+	margin-top: 2.75rem;
+}
+.hk .hk-section:first-child {
+	margin-top: 0;
+}
+.hk .hk-section-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+	margin-bottom: 0.875rem;
+}
+.hk .hk-section-head > :not(h2, h3) {
+	font-size: 0.8125rem;
+	color: var(--hk-text-3);
+}
+.hk .hk-h2-app {
+	margin: 0;
+	font-size: 1.25rem;
+	line-height: 1.75rem;
+	letter-spacing: -0.01em;
+}
+/* A heading a test pins, inside an empty row: sans, row size. */
+.hk .hk-empty-title {
+	margin: 0;
+	font-family: var(--hk-font-sans);
+	font-size: 0.875rem;
+	font-weight: 500;
+	letter-spacing: 0;
+	color: var(--hk-text);
+}
+
+/* ---------- Inline confirm ---------- */
+
+/* The confirm opens in place under what asked for it (I-386): one sentence
+   naming target and consequence, then the danger verb and a ghost "Keep
+   it" on one row. */
+.hk .hk-confirm {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem 1rem;
+	padding: 0.875rem 1rem;
+	border-radius: var(--hk-radius);
+	background: var(--hk-surface-2);
+	font-size: 0.875rem;
+	color: var(--hk-text);
+}
+.hk .hk-confirm > p {
+	margin: 0;
+	min-width: 0;
+}
+.hk .hk-confirm-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+/* ---------- Bottom bar ---------- */
+
+/* A flow's one primary pinned at the foot on phones (Guide B 12.23):
+   config's Apply. Toasts lift above it while one exists. */
+.hk .hk-bottom-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 20;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-top: 2rem;
+	padding: 0.75rem 0 max(0.75rem, env(safe-area-inset-bottom));
+	border-top: 1px solid var(--hk-border);
+	background: color-mix(in srgb, var(--hk-bg) 90%, transparent);
+	backdrop-filter: blur(8px);
+}
+
+/* ---------- Skeleton ---------- */
+
+.hk .hk-skel {
+	display: block;
+	border-radius: var(--hk-radius-xs);
+	background: var(--hk-surface-2);
+}
+.hk .hk-skel-row {
+	display: flex;
+	align-items: center;
+	gap: 1.5rem;
+	height: 3.5rem;
+	border-bottom: 1px solid var(--hk-hairline);
+}
+
+/* ---------- Site header links ---------- */
+
+/* The header's site links: full row height, so the current
+   one's 1px accent edge lies on the header's rule; accent when current,
+   with that edge as the non-colour cue, and no weight change. In the
+   components layer, so a utility (hidden, max-sm:hidden) still wins. */
+.hk .hk-navlink {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: -1px;
+	border-bottom: 1px solid transparent;
+	font-size: 0.875rem;
+	color: var(--hk-text-2);
+	text-decoration: none;
+	white-space: nowrap;
+	transition:
+		color var(--hk-dur-fast) var(--hk-ease),
+		border-color var(--hk-dur-fast) var(--hk-ease);
+}
+.hk .hk-navlink:hover {
+	color: var(--hk-text);
+}
+.hk .hk-navlink[aria-current='page'] {
+	color: var(--hk-accent);
+	border-bottom-color: var(--hk-accent);
+}
+.hk .hk-navlink:focus-visible {
+	outline-offset: -2px;
+}
+
+/* ---------- Forced colours ---------- */
+
+/* The meter track's colour-mix fill and the banner's tinted ground drop in
+   forced colours: draw the track's edge, so a meter at 0 still shows its
+   limit, and the banner's, so it does not float with no edge. */
+@media (forced-colors: active) {
+	.hk .hk-meter-track {
+		border: 1px solid GrayText;
+		background: Canvas;
+	}
+	.hk .hk-meter-fill {
+		forced-color-adjust: none;
+		background: CanvasText;
+	}
+	.hk .hk-banner {
+		border: 1px solid CanvasText;
+	}
+}

@@ -1,12 +1,15 @@
 <!--
-  "Waiting on you" (I-693): the questions agents wait on, across the frame
-  on /projects (every project, grouped by project when more than one
-  waits, 3 rows before "Show all N") and on a project page (that project's,
-  polled here). Each is a QuestionRow, answered in place. Older questions
-  from one agent window fold under its newest. A question that closes,
-  here or anywhere else (the terminal, the CLI, ntfy, email, Google Chat,
-  the agent taking it back), stays 8 seconds as one line saying how, then
-  leaves. Nothing is drawn while none waits.
+  "Waiting on you" (I-693, I-841): the questions agents wait on. On
+  /questions every project's, grouped under each project's name, count and
+  state; on /projects the first one and a link "N more on Questions"; on a
+  project's Overview that project's, polled here. Each is a QuestionRow,
+  answered in place. Older questions from one agent window fold under its
+  newest. A question that closes, here or anywhere else (the terminal, the
+  CLI, ntfy, email, Google Chat, the agent taking it back), stays 8
+  seconds as one line saying how, then leaves. The head carries no count:
+  the Questions place in the rail has the total, and each figure shows
+  once a screen. Nothing is drawn while none waits, unless `empty` names
+  the row to draw instead.
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
@@ -25,13 +28,19 @@
 	import { clock } from '$lib/clock.svelte';
 	import { CLOSED_LINE_MS, closedLine, layoutQuestions } from '$lib/question-view';
 	import QuestionRow from './QuestionRow.svelte';
-	import type { Question } from '$lib/api/types';
+	import StateDot from '$lib/components/StateDot.svelte';
+	import { frozenSince } from '$lib/frozen';
+	import type { Project, Question } from '$lib/api/types';
 
 	let {
 		questions = $bindable([]),
 		projectId,
 		pollFailures,
-		cap = 0,
+		limit = 0,
+		group = false,
+		projectOf,
+		empty,
+		onclosed,
 		testid = 'questions'
 	}: {
 		/** The open questions; the page's first load fills it, so the card is in the first paint. */
@@ -39,8 +48,16 @@
 		/** One project's card, which polls its own questions; without it, every project's, which the page polls. */
 		projectId?: string;
 		pollFailures?: PollGroup;
-		/** Rows shown before "Show all N"; 0 shows every row. */
-		cap?: number;
+		/** Rows shown, folds left out, then "N more on Questions"; 0 shows every row. */
+		limit?: number;
+		/** Every project's questions under a head with its name, count and state, even when one project asks. */
+		group?: boolean;
+		/** The project behind a group head, for its state; the head leaves the state out without it. */
+		projectOf?: (id: string) => Project | undefined;
+		/** The empty row's words; without them nothing is drawn while none waits. */
+		empty?: string;
+		/** A question here closed, by this card or elsewhere. */
+		onclosed?: (q: Question) => void;
 		testid?: string;
 	} = $props();
 
@@ -54,7 +71,6 @@
 	const leaving = new SvelteMap<string, Question>();
 	/** Folded windows the reader opened, by their newest question's id. */
 	const unfolded = new SvelteSet<string>();
-	let showAll = $state(false);
 	let busy = $state<string | undefined>(undefined);
 	let notes = $state<Record<string, string>>({});
 	let said = $state('');
@@ -64,9 +80,7 @@
 	let waiting = $derived(questions.filter((q) => !closed.has(q.id)));
 	let open = $derived([...waiting, ...[...leaving.values()].filter((q) => !closed.has(q.id))]);
 	let groups = $derived(layoutQuestions([...open, ...closed.values()]));
-	let grouped = $derived(!projectId && groups.length > 1);
-	let total = $derived(groups.reduce((n, g) => n + g.rows.length, 0));
-	let capped = $derived(cap > 0 && !showAll && total > cap);
+	let grouped = $derived(!projectId && limit === 0 && (group || groups.length > 1));
 
 	const href = (q: { project_id: string }) => resolve('/projects/[id]', { id: q.project_id });
 
@@ -81,6 +95,9 @@
 			questions = projectId
 				? await listProjectQuestions(projectId, true, { passive: true })
 				: await listQuestions('pending', { passive: true });
+			// Every project's list is the store's own read: the rail's count,
+			// dots and the title's (N) follow it with no second request.
+			if (!projectId) pendingQuestions.set(questions);
 			pollFailure.ok();
 		} catch (err) {
 			pollFailure.fail(err);
@@ -110,6 +127,7 @@
 		if (q.state === 'pending') return;
 		closed.set(q.id, q);
 		said = closedLine(q).text;
+		onclosed?.(q);
 		setTimeout(() => closed.delete(q.id), CLOSED_LINE_MS);
 	}
 
@@ -180,8 +198,8 @@
 			void passFocus(q.id, hadFocus);
 			close(res);
 			await refresh();
-			// The dashboard nav's count drops with it (lib/questions.svelte.ts).
-			void pendingQuestions.refresh();
+			// The rail's count drops with it (lib/questions.svelte.ts).
+			if (projectId) void pendingQuestions.refresh();
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
 				// Closed elsewhere first: the row says how, from the api's copy.
@@ -189,7 +207,7 @@
 				void passFocus(q.id, hadFocus);
 				if (theirs) close(theirs);
 				await refresh();
-				void pendingQuestions.refresh();
+				if (projectId) void pendingQuestions.refresh();
 			} else if (err instanceof ApiError && err.code === 'invalid') {
 				const opts = (err.detail?.options as string[] | undefined) ?? q.options;
 				notes = {
@@ -204,9 +222,9 @@
 		}
 	}
 
-	/** The rows to draw, in order, after the cap. */
+	/** The rows to draw, in order, up to the limit. */
 	let shown = $derived.by(() => {
-		let left = capped ? cap : Infinity;
+		let left = limit > 0 ? limit : Infinity;
 		return groups
 			.map((g) => {
 				const rows = g.rows.slice(0, Math.max(0, left));
@@ -214,6 +232,15 @@
 				return { ...g, rows };
 			})
 			.filter((g) => g.rows.length > 0);
+	});
+	/** Open questions past the limit, folded ones included: the "N more" link's count. */
+	let more = $derived.by(() => {
+		if (limit === 0) return 0;
+		const drawn = shown.reduce(
+			(n, g) => n + g.rows.filter((r) => r.question.state === 'pending').length,
+			0
+		);
+		return Math.max(0, waiting.length - drawn);
 	});
 	const plural = (n: number) => (n === 1 ? 'question' : 'questions');
 </script>
@@ -230,38 +257,43 @@
 	/>
 {/snippet}
 
-{#if open.length > 0 || closed.size > 0}
+{#if open.length > 0 || closed.size > 0 || empty}
+	<!-- A section on the page's paper, no frame (I-837). -->
 	<section
-		class="card waiting"
+		class="hk-section waiting"
 		id="questions"
 		data-testid={testid}
 		aria-labelledby="questions-title"
 		bind:this={section}
 	>
-		<div class="flex items-center gap-2.5">
-			<h2 id="questions-title" class="text-xl font-semibold" tabindex="-1" bind:this={heading}>
+		<div class="hk-section-head waiting-head">
+			<h2 id="questions-title" class="hk-h2-app" tabindex="-1" bind:this={heading}>
 				Waiting on you
 			</h2>
-			{#if waiting.length > 0}
-				<span
-					class="badge badge--warn tabular-nums"
-					aria-label="{waiting.length} {plural(waiting.length)}">{waiting.length}</span
-				>
-			{/if}
 		</div>
 		<!-- Always in the page, so the line put in it is announced. -->
-		<p class="sr-only" role="status">{said}</p>
-		<ul class="mt-2">
+		<p class="hk-sr" role="status">{said}</p>
+		{#if shown.length === 0 && empty}
+			<div class="hk-empty-row" data-testid="questions-empty"><span>{empty}</span></div>
+		{/if}
+		<ul class="waiting-list" class:waiting-list--empty={shown.length === 0}>
 			{#each shown as g (g.project_id)}
+				{@const p = projectOf?.(g.project_id)}
 				<li class="waiting-group" class:waiting-group--head={grouped}>
 					{#if grouped}
-						<p class="waiting-project text-sm">
-							<a href={resolve('/projects/[id]', { id: g.project_id })} class="waiting-project-link"
-								>{g.project}</a
+						<p class="waiting-project">
+							<a
+								href={resolve('/projects/[id]', { id: g.project_id })}
+								class="waiting-project-link hk-tap">{g.project}</a
 							>
 							{#if g.pending > 0}
-								<span class="text-ink-muted tabular-nums"
-									>{g.pending}<span class="sr-only"> {plural(g.pending)}</span></span
+								<span class="waiting-project-n hk-num"
+									>{g.pending}<span class="hk-sr">&nbsp;{plural(g.pending)}</span></span
+								>
+							{/if}
+							{#if p}
+								<span class="waiting-project-state"
+									><StateDot state={p.state} frozen={!!frozenSince(p)} /></span
 								>
 							{/if}
 						</p>
@@ -269,23 +301,23 @@
 					<ul>
 						{#each g.rows as r (r.question.id)}
 							{@render row(r.question, !projectId && !grouped)}
-							{#if r.folded.length > 0}
+							{#if r.folded.length > 0 && limit === 0}
 								{#if unfolded.has(r.question.id)}
 									{#each r.folded as f (f.id)}
 										{@render row(f, !projectId && !grouped)}
 									{/each}
 								{:else}
-									<li class="waiting-fold text-sm text-ink-muted">
+									<li class="waiting-fold">
 										<span
 											>{r.folded.length} earlier {plural(r.folded.length)} from
-											<span class="font-mono text-compact">{r.question.agent}</span
+											<span class="waiting-fold-agent">{r.question.agent}</span
 											>{#if r.question.window && r.question.window !== r.question.agent}<span
 													class="waiting-fold-window">&nbsp;· {r.question.window}</span
 												>{/if}</span
 										>
 										<button
 											type="button"
-											class="btn-ghost hit -mx-2"
+											class="hk-btn-ghost hk-btn-sm waiting-fold-show"
 											onclick={() => unfolded.add(r.question.id)}>Show</button
 										>
 									</li>
@@ -296,60 +328,101 @@
 				</li>
 			{/each}
 		</ul>
-		{#if cap > 0 && total > cap}
-			<button type="button" class="btn-ghost hit -mx-2 mt-1" onclick={() => (showAll = !showAll)}
-				>{showAll ? 'Show fewer' : `Show all ${total}`}</button
+		{#if more > 0}
+			<a href={resolve('/questions')} class="hk-more hk-tap waiting-more"
+				>{more} more on Questions</a
 			>
 		{/if}
 	</section>
 {/if}
 
 <style>
-	/* A phone drops the window from the row's meta line, so the fold does too. */
-	@media (width < 40rem) {
-		.waiting-fold-window {
-			display: none;
-		}
+	.waiting-head {
+		justify-content: flex-start;
+		align-items: center;
+		gap: 0.625rem;
 	}
-	/* Rows split by hairlines; no rule down the side (I-693). */
-	.waiting :global(.qrow + .qrow),
-	.waiting :global(.qrow + .waiting-fold),
-	.waiting :global(.waiting-fold + .qrow) {
-		border-top: 1px solid var(--rule);
+	.waiting-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-bottom: 1px solid var(--hk-hairline);
 	}
-	.waiting-group + .waiting-group {
-		border-top: 1px solid var(--rule);
+	.waiting-list--empty {
+		display: none;
+	}
+	.waiting-list ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	/* Each row hairline-topped, the first included: the head has no rule. */
+	.waiting :global(.qrow),
+	.waiting-fold {
+		border-top: 1px solid var(--hk-hairline);
 	}
 	.waiting-group--head {
-		padding-top: 0.75rem;
+		border-top: 1px solid var(--hk-hairline);
+	}
+	.waiting-group--head :global(.qrow:first-child) {
+		border-top: 0;
+		padding-top: 0.25rem;
 	}
 	.waiting-project {
 		display: flex;
 		align-items: baseline;
 		gap: 0.5rem;
+		margin: 0;
+		padding-top: 0.875rem;
+		font-size: 0.8125rem;
 	}
 	.waiting-project-link {
 		font-weight: 500;
-		color: var(--ink);
+		color: var(--hk-text);
 		text-decoration: underline;
-		text-decoration-color: var(--rule-strong);
-		text-decoration-thickness: 1px;
-		text-underline-offset: 4px;
+		text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+		text-underline-offset: 3px;
 	}
 	.waiting-project-link:hover {
 		text-decoration-color: currentColor;
 	}
+	.waiting-project-n {
+		color: var(--hk-text-3);
+	}
+	/* The machine's state beside its name, so it reads as the project's
+	   and not as a label over the answer buttons at the far end. */
+	.waiting-project-state {
+		margin-left: 0.25rem;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+	}
 	.waiting-fold {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		flex-wrap: wrap;
 		gap: 0.25rem 0.75rem;
-		padding: 0.5rem 0 0.75rem 1.25rem;
+		padding: 0.5rem 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-3);
 	}
-	/* A phone's rows use the marker's column, so the fold does too. */
-	@media (width < 40rem) {
-		.waiting-fold {
-			padding-left: 0;
+	.waiting-fold-agent {
+		font-family: var(--hk-font-mono);
+	}
+	.waiting-fold-show {
+		margin-block: -0.25rem;
+	}
+	.waiting-more {
+		margin-top: 0.75rem;
+	}
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.waiting .waiting-more {
+			margin-top: calc(0.75rem + (1lh - 2.75rem) / 2);
+		}
+	}
+	/* A phone drops the window from the row's meta line, so the fold does too. */
+	@media (max-width: 639.98px) {
+		.waiting-fold-window {
+			display: none;
 		}
 	}
 </style>

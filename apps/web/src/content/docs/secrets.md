@@ -53,7 +53,7 @@ repose secrets rm STRIPE_SECRET_KEY
 
 Nothing shows a value again after you set it. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
-The dashboard's project **Secrets** page does the same: type the value, or take it from a file with **Load from file**.
+The dashboard does the same under **Secrets** on the project's **Config** tab, behind **Add secret**: type the value, or take it from a file with **Load from file**.
 
 ## Secrets for every project
 
@@ -71,7 +71,7 @@ repose secrets rm --global COOLIFY_BASE_URL
 repose secrets import --global ~/.config/shared.env
 ```
 
-The dashboard keeps these on **Settings**, and each project's **Secrets** page lists them, striking out any the project has itself.
+The dashboard keeps these under **Settings** → **Secrets**, and each project's **Config** tab lists them, striking out any the project has itself.
 
 ## Logins copied from your laptop
 

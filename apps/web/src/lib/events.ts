@@ -107,3 +107,10 @@ export function eventKind(kind: string, agent?: string): EventKindInfo {
 	// An unknown kind reads as words, as the CLI's eventverbs.Verb does.
 	return { label: kind.replace(/[._]/g, ' '), tone: 'neutral', group: agent ? 'agent' : 'machine' };
 }
+
+/** The kit dot class for a kind's 6px cue: amber for a question or input
+ * asked, red for an error, grey otherwise. The project's Events list and
+ * /projects' Recent activity draw the same cue from it. */
+export function toneDot(tone: EventTone): string {
+	return tone === 'error' ? 'hk-dot--err' : tone === 'attention' ? 'hk-dot--warn' : '';
+}

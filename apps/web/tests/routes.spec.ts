@@ -1,6 +1,6 @@
 // Checklist: "Every route in 5.2 exists and renders with the fake API."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, apiURLFromEnv, setAgents } from './helpers';
 
 let projectId: string;
 let projectName: string;
@@ -12,6 +12,8 @@ test.beforeAll(async () => {
 	});
 	projectId = p.id;
 	projectName = p.name;
+	// Agents shows only while the machine reports one (spec 2.5).
+	await setAgents(p.id, [{ agent: 'claude', window: 'claude', state: 'working' }]);
 });
 
 test.beforeEach(async ({ page }) => {
@@ -23,33 +25,51 @@ test('/projects renders the projects list', async ({ page }) => {
 	await expect(page.getByRole('link', { name: projectName, exact: true })).toBeVisible();
 });
 
-test('/projects/[id] renders the project detail cards', async ({ page }) => {
-	await page.goto(`/projects/${projectId}`);
-	await expect(page.getByRole('heading', { name: projectName })).toBeVisible();
-	// The cards of I-664: the work in the main column, the machine beside it.
-	for (const name of [
-		'Events',
-		'Usage',
-		'Connect',
-		'Machine',
-		'Agents',
-		'Details',
-		'Snapshots',
-		'Destroy'
-	]) {
-		await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
-	}
+test('/questions renders', async ({ page }) => {
+	await page.goto('/questions');
+	await expect(page.getByRole('heading', { level: 1, name: 'Questions' })).toBeVisible();
+	await expect(page).toHaveTitle(/(^|\) )Questions · repose$/);
 });
 
-test('/projects/[id]/config renders the Menu and Nix tabs', async ({ page }) => {
+// A project is five tabs under one header (I-841): the layout draws the
+// title and the tabs, each tab its own sections.
+test('/projects/[id] renders the Overview sections and the five tabs', async ({ page }) => {
+	await page.goto(`/projects/${projectId}`);
+	await expect(page.getByRole('heading', { level: 1, name: projectName })).toBeVisible();
+	for (const name of ['Connect', 'Agents', 'Machine', 'Details', 'Destroy']) {
+		await expect(page.getByRole('heading', { level: 2, name, exact: true })).toBeVisible();
+	}
+	const tabs = page.getByRole('navigation', { name: 'Project' }).getByRole('link');
+	await expect(tabs).toHaveText(['Overview', 'Events', 'Usage', 'Snapshots', 'Config']);
+});
+
+for (const [tab, path] of [
+	['Events', 'events'],
+	['Usage', 'usage'],
+	['Snapshots', 'snapshots']
+]) {
+	test(`/projects/[id]/${path} renders the ${tab} tab`, async ({ page }) => {
+		await page.goto(`/projects/${projectId}/${path}`);
+		await expect(page.getByRole('heading', { level: 1, name: projectName })).toBeVisible();
+		await expect(page).toHaveTitle(new RegExp(`${tab} · ${projectName} · repose$`));
+		await expect(
+			page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: tab })
+		).toHaveAttribute('aria-current', 'page');
+	});
+}
+
+test('/projects/[id]/config renders the Menu and Nix tabs and the secrets', async ({ page }) => {
 	await page.goto(`/projects/${projectId}/config`);
 	await expect(page.getByRole('tab', { name: 'Menu' })).toBeVisible();
 	await expect(page.getByRole('tab', { name: 'Nix' })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 2, name: /^(Secrets|\d+ secrets?)$/ })
+	).toBeVisible();
 });
 
-test('/projects/[id]/secrets renders the secrets page', async ({ page }) => {
+test('/projects/[id]/secrets moves to the secrets on Config', async ({ page }) => {
 	await page.goto(`/projects/${projectId}/secrets`);
-	await expect(page.getByText('Add a secret')).toBeVisible();
+	await expect(page).toHaveURL(`/projects/${projectId}/config#secrets`);
 });
 
 test('/billing renders', async ({ page }) => {
@@ -59,11 +79,29 @@ test('/billing renders', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'Billing is not switched on yet' })).toBeVisible();
 });
 
-test('/settings renders', async ({ page }) => {
+test('/settings renders General', async ({ page }) => {
 	await page.goto('/settings');
 	await expect(page.getByText('Timezone')).toBeVisible();
-	await expect(page.getByText('Notifications', { exact: true })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Delete account', exact: true })).toBeVisible();
+});
+
+test('/settings/notifications renders', async ({ page }) => {
+	await page.goto('/settings/notifications');
+	await expect(page.getByText('Email notifications')).toBeVisible();
+	await expect(page).toHaveTitle(/Notifications · Settings · repose$/);
+});
+
+test('/settings/secrets renders', async ({ page }) => {
+	await page.goto('/settings/secrets');
+	await expect(page.locator('#secrets')).toBeVisible();
+	await expect(page).toHaveTitle(/Secrets · Settings · repose$/);
+});
+
+test('/settings/machine-nix renders', async ({ page }) => {
+	await page.goto('/settings/machine-nix');
+	await expect(page.locator('#machine-nix .nix-frame')).toBeVisible();
+	await expect(page).toHaveTitle(/machine\.nix · Settings · repose$/);
 });
 
 // DECISIONS I-578: the account moved into Settings; emails, docs and
@@ -81,8 +119,41 @@ test('/account redirects permanently to /settings', async ({ page, request }) =>
 	await expect(page.locator('#account').getByText('heracraft').first()).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Delete account' })).toBeVisible();
 
+	// The 308 keeps the fragment, and machine.nix is a tab of its own (I-841).
 	await page.goto('/account#machine-nix');
-	await expect(page).toHaveURL('/settings#machine-nix');
+	await expect(page).toHaveURL('/settings/machine-nix');
+});
+
+// Every old URL keeps working (DECISIONS I-841, lib/legacyUrls.ts): the
+// sections that became tabs move there, and the history entry is
+// replaced, so Back leaves instead of bouncing.
+test('old dashboard URLs land on their new homes', async ({ page }) => {
+	const cases: [string, string][] = [
+		['/settings#machine-nix', '/settings/machine-nix'],
+		['/settings#secrets', '/settings/secrets'],
+		['/settings#notifications', '/settings/notifications'],
+		['/settings#delete-account', '/settings#delete-account'],
+		[`/projects/${projectId}?events_page=2`, `/projects/${projectId}/events?events_page=2`],
+		[`/projects/${projectId}#events-card`, `/projects/${projectId}/events`],
+		[`/projects/${projectId}#usage-card`, `/projects/${projectId}/usage`],
+		[`/projects/${projectId}#snapshots`, `/projects/${projectId}/snapshots`],
+		[`/projects/${projectId}#secrets`, `/projects/${projectId}/config#secrets`],
+		[`/projects/${projectId}#questions`, `/projects/${projectId}#questions`]
+	];
+	for (const [from, to] of cases) {
+		await page.goto(from);
+		await expect(page, from).toHaveURL(to);
+	}
+});
+
+test('Back after a moved URL leaves the dashboard, with no bounce', async ({ page }) => {
+	await page.goto('/docs');
+	await page.goto('/settings#machine-nix');
+	await expect(page).toHaveURL('/settings/machine-nix');
+	await page.goBack();
+	await expect(page).toHaveURL('/docs');
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL('/docs');
 });
 
 test('/terms, /privacy and /refunds render', async ({ page }) => {
@@ -114,4 +185,12 @@ test('/terms, /privacy and /refunds render', async ({ page }) => {
 test('/healthz answers 200', async ({ request }) => {
 	const res = await request.get('/healthz');
 	expect(res.status()).toBe(200);
+});
+
+// The primitives gallery is for `vite dev` only (Guide B 16): a production
+// build answers it with the root 404, so its sample figures never ship.
+test('/design is Not found in a production build', async ({ page }) => {
+	await page.goto('/design');
+	await expect(page.getByRole('heading', { level: 1, name: 'Not found' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Design' })).toHaveCount(0);
 });

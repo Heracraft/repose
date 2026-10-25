@@ -1,6 +1,7 @@
 <!--
   A six-armed snowflake, drawn in the current colour: the frozen mark
-  (DECISIONS I-683). Round ends, thin strokes, so it stays a flake at 13px.
+  (DECISIONS I-683), in place of the state dot, at 12px beside "frozen".
+  Round ends, 1.4 strokes (Guide B 12.24), so it stays a flake at 12px.
   Decorative: the word beside it says "frozen".
 -->
 <script lang="ts">
@@ -13,11 +14,11 @@
 	height={size}
 	fill="none"
 	stroke="currentColor"
-	stroke-width="1.25"
+	stroke-width="1.4"
 	stroke-linecap="round"
 	stroke-linejoin="round"
 	aria-hidden="true"
-	class="shrink-0"
+	class="flake"
 >
 	<!-- Six arms, each with one fork near its tip: at 12 to 14px a second
 	     fork closer in filled the middle and read as a blot. -->
@@ -28,3 +29,9 @@
 		</g>
 	{/each}
 </svg>
+
+<style>
+	.flake {
+		flex: none;
+	}
+</style>

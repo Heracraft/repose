@@ -42,12 +42,53 @@ export async function initAuth(): Promise<void> {
 	authState.authenticated = await getClient().isAuthenticated();
 }
 
+/**
+ * The signed-in user's email from the ID token Logto already holds, with no
+ * request: the Account menu's first line. Undefined when the token has
+ * none or cannot be read.
+ */
+export async function signedInEmail(): Promise<string | undefined> {
+	if (!browser) return undefined;
+	try {
+		const claims = await getClient().getIdTokenClaims();
+		return typeof claims.email === 'string' && claims.email ? claims.email : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function callbackUrl(): string {
 	return `${location.origin}/callback`;
 }
 
-export async function signIn(): Promise<void> {
+/**
+ * The pages a sign-in may come back to in place of /projects: same-origin
+ * paths named here, never one read from a URL (Guide B 1.11). The landing's
+ * "Start a free week" comes back to /billing, where the plans are.
+ */
+const RETURN_PATHS = ['/billing'] as const;
+export type ReturnPath = (typeof RETURN_PATHS)[number];
+const RETURN_KEY = 'repose-return-to';
+
+export async function signIn(returnTo?: ReturnPath): Promise<void> {
+	try {
+		if (returnTo && RETURN_PATHS.includes(returnTo)) sessionStorage.setItem(RETURN_KEY, returnTo);
+		else sessionStorage.removeItem(RETURN_KEY);
+	} catch {
+		// No storage: the sign-in comes back to /projects.
+	}
 	await getClient().signIn(callbackUrl());
+}
+
+/** The page the sign-in asked to come back to, once; undefined for /projects. */
+export function takeReturnPath(): ReturnPath | undefined {
+	try {
+		const v = sessionStorage.getItem(RETURN_KEY);
+		sessionStorage.removeItem(RETURN_KEY);
+		return RETURN_PATHS.find((p) => p === v);
+	} catch {
+		return undefined;
+	}
 }
 
 export async function handleSignInCallback(url: string): Promise<void> {

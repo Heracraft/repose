@@ -176,8 +176,10 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   option to the same link with `via=gchat`, whose GET shows the confirm
   page), email (one link per option, which opens a
   page whose button answers; replying to the email does nothing), the
-  dashboard's "Waiting on you" card on /projects and on the project page
-  (buttons or a text box, and Dismiss; I-693), or the laptop: `repose
+  dashboard's Questions page, which lists every waiting question and the
+  last week's answers, the first one on /projects and the project's own on
+  its Overview (buttons or a text box, and Dismiss; I-693, I-841), or the
+  laptop: `repose
   questions` lists the waiting ones, `repose reply [PROJECT] [ANSWER]`
   answers and `repose reply --dismiss [PROJECT]` dismisses (I-690), both
   listing instead of guessing when several are waiting. A question the

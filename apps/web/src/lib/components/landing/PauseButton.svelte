@@ -45,21 +45,23 @@
 	:global(.pic-frame) {
 		position: relative;
 	}
-	/* A picture chip: the hairline, radius and surface of the pictures'
-	   windows and chips, --pic-dim at rest. On the floor under the
+	/* A picture control: the --rule-strong hairline and surface of the
+	   pictures' tags, with the kit's smallest radius as a button,
+	   --pic-dim at rest. On the floor under the
 	   picture, at its right edge, centred in the floor's height. */
 	.pic-pause {
+		--pp: 28px;
 		position: absolute;
 		right: 0;
-		bottom: calc((var(--stage-y, 40px) + 28px) / -2);
+		bottom: calc((var(--stage-y, 40px) + var(--pp)) / -2);
 		z-index: 5;
 		display: grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
+		width: var(--pp);
+		height: var(--pp);
 		padding: 0;
 		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius, 3px);
+		border-radius: var(--hk-radius-xs);
 		background: var(--surface);
 		color: var(--pic-dim);
 		cursor: pointer;
@@ -93,6 +95,34 @@
 	@media (hover: none) {
 		.pic-pause {
 			opacity: 1;
+		}
+	}
+	/* To a finger the button itself is 44px, so it counts as a 44px target;
+	   the chip stays 28px, drawn by ::before in the middle of it. */
+	@media (pointer: coarse) {
+		.pic-pause {
+			--pp: 44px;
+			isolation: isolate;
+			border-color: transparent;
+			background: none;
+		}
+		.pic-pause::before {
+			content: '';
+			position: absolute;
+			inset: 8px;
+			z-index: -1;
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--hk-radius-xs);
+			background: var(--surface);
+		}
+		.pic-pause::after {
+			inset: 0;
+		}
+		.pic-pause:hover::before {
+			border-color: var(--pic-dim);
+		}
+		.pic-pause[aria-pressed='true']::before {
+			border-color: var(--pic-accent);
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {

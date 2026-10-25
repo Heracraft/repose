@@ -1198,9 +1198,10 @@ func (f *Fake) listRevisions(w http.ResponseWriter, r *http.Request) *apiError {
 	if e != nil {
 		return e
 	}
+	// Newest first, as store.ListRevisions orders them (created_at desc).
 	out := []Revision{}
-	for _, rev := range p.revisions {
-		out = append(out, *rev)
+	for i := len(p.revisions) - 1; i >= 0; i-- {
+		out = append(out, *p.revisions[i])
 	}
 	writeJSON(w, http.StatusOK, out)
 	return nil
