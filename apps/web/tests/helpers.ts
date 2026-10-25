@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { BASE_URL } from './fixtures';
 
 /** Drives the whole fake-Logto authorization-code round trip. */
@@ -248,4 +248,27 @@ export async function pruneProjects(apiURL: string): Promise<void> {
 	const list = (await res.json()) as { id: string }[];
 	// One mid-step may refuse; the rest still free the room.
 	for (const p of list) await destroyProject(apiURL, p.id).catch(() => {});
+}
+
+/**
+ * A locator's box once it has stopped moving: two reads a frame apart that
+ * agree. `scrollTo` is fire-and-forget — nothing in it waits for the scroll
+ * to land, and sticky layout resolves against the new position a frame
+ * later — so a `boundingBox()` read straight after a scroll can measure an
+ * element mid-flight. No user asserts on a position mid-scroll, so waiting
+ * for the steady state hides nothing; it is the state the tests that use
+ * this are named for (I-841's rail, the hero's agent row).
+ */
+export async function settledBox(
+	page: Page,
+	locator: Locator
+): Promise<{ x: number; y: number; width: number; height: number }> {
+	let prev = (await locator.boundingBox())!;
+	for (let i = 0; i < 20; i++) {
+		await page.waitForTimeout(50);
+		const box = (await locator.boundingBox())!;
+		if (box.y === prev.y && box.height === prev.height) return box;
+		prev = box;
+	}
+	return prev;
 }

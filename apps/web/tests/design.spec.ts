@@ -13,7 +13,8 @@ import {
 	addQuestion,
 	closeQuestion,
 	setBilling,
-	resetBilling
+	resetBilling,
+	settledBox
 } from './helpers';
 
 /** Presses Tab until the target holds the focus (at most 80 stops). */
@@ -710,10 +711,13 @@ test.describe('the dashboard rail', () => {
 			await expect(page.locator('main#main')).toBeVisible();
 			await page.waitForLoadState('networkidle');
 			await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+			// Measured once the scroll has landed: reading a frame after a
+			// fire-and-forget scrollTo caught the rail mid-flight and failed
+			// this once in a full run (settledBox).
 			const first = page.getByRole('navigation', { name: 'Dashboard' }).getByRole('link').first();
-			const box = (await first.boundingBox())!;
+			const box = await settledBox(page, first);
 			expect(box.y, `${path} first place`).toBeGreaterThanOrEqual(57);
-			tops.push((await page.locator('[data-dash-strip]').boundingBox())!.y);
+			tops.push((await settledBox(page, page.locator('[data-dash-strip]'))).y);
 		}
 		for (const y of tops) expect(y).toBeCloseTo(57, 0);
 	});
