@@ -1244,6 +1244,46 @@ tests:
               description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
               runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
+  # --- HostNotInTargets ---------------------------------------------------
+  - interval: 1m
+    name: HostNotInTargets warns when a ready host has no hostd scrape, and not when both are scraped
+    input_series:
+      - series: 'repose_api_hosts{job="api-grpc",instance="10.255.255.1:9104",state="ready"}'
+        values: "2+0x30"
+      - series: 'repose_api_hosts{job="api",instance="10.255.0.9:9103",state="ready"}'
+        values: "2+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1+0x30"
+      # host-02 is registered and ready, and nobody copied its entry to the
+      # targets file, so there is no up series for it at all.
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: HostNotInTargets
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: HostNotInTargets
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+            exp_annotations:
+              summary: "a ready host is not being scraped"
+              description: "The api reports more ready hosts than Prometheus scrapes hostd on, so a host is missing from /etc/prometheus/repose/targets/hosts.yml and every alert scoped to that file is silent on it."
+              runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+
+  - interval: 1m
+    name: HostNotInTargets is quiet once the second host is scraped
+    input_series:
+      - series: 'repose_api_hosts{job="api-grpc",instance="10.255.255.1:9104",state="ready"}'
+        values: "2+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.4:9101",host_id="host-02"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HostNotInTargets
+        exp_alerts: []
+
   # --- Watchdog (I-648) ---------------------------------------------------
   - interval: 1m
     name: Watchdog always fires

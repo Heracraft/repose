@@ -172,7 +172,8 @@ that changes host-01 reboots a host with tenants on it.
       identity, and the freeze vault if the freeze is on — and
       `host_flake_attrs` must name it. Without that entry the install is
       the generic `host` configuration, which knows no api address, so
-      the host comes up and never registers, and nothing says why.
+      the host comes up and never registers; the plan and the apply warn
+      and neither stops.
    3. `host-02 = "<token>"` in `prod.local.tfvars`, and the `host_shapes`
       entry and `"host-02"` in `hosts` in `prod.tfvars`.
    4. `make -C infra plan ENV=prod`, and read it: host-02's VM, data
@@ -181,6 +182,13 @@ that changes host-01 reboots a host with tenants on it.
       kexec and the closure copy. `build_on` defaults to `auto`, so the
       closure builds on the machine running the apply and is copied over
       the edge.
+   6. On the monitoring server, once host-02 is `ready`: correct its
+      address in `ops/prometheus/targets/hosts.yml` and copy that file
+      to `/etc/prometheus/repose/targets/` (`ops/README.md` step 2). No
+      apply does this, and every host alert is scoped to the targets in
+      that file, so until the copy nothing watches host-02 and
+      `HostNotInTargets` warns. Check `up{host_id="host-02"}` is 1 for
+      the `hosts`, `hostd` and `fluent-bit` jobs.
 
 2. `SEATS_TOTAL` stays `0`, which derives the count from the ready hosts:
    per host the smaller of its 8 GB memory blocks after the reserve and
@@ -242,6 +250,9 @@ that changes host-01 reboots a host with tenants on it.
         onto a new host from its latest snapshot" (`host_moved`), which
         on a planned migration reads as data loss. Tell the tenants
         first, or expect the replies.
+      - **A moved project comes up logged out of Claude Code.** The
+        login share is one file per user per host (I-278), so each
+        owner types `claude` and logs in once on host-02.
    3. `repose-admin hosts retire host-01`. It refuses while the host
       holds **any** project, stopped ones included: `host-01 still holds
       N project(s); move them first`. `repose-admin projects list --host

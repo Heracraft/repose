@@ -325,6 +325,28 @@ groups:
           description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
           runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
 
+      - alert: HostNotInTargets
+        # The same silence for a whole host. Every host alert is scoped to
+        # the targets in ops/prometheus/targets/hosts.yml, which is copied
+        # to this server by hand (ops/README.md step 2) and not by the
+        # apply that creates the host, so a new host carries tenants with no
+        # series at all: PoolFull, StoreFull, HostdDown and the rest are
+        # silent on a host the file does not list. repose_api_hosts is
+        # labelled by state only, so the api's count of ready hosts is what
+        # there is to compare the hostd scrapes against; max() takes the one
+        # value both api jobs report. 15m covers the gap between a
+        # registration and the copy. With no hostd up at all the left side
+        # is empty and this does not fire: MonitoringPathDown and HostdDown
+        # are the alerts for that.
+        expr: count(up{job="hostd"} == 1) < max(repose_api_hosts{state="ready"})
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "a ready host is not being scraped"
+          description: "The api reports more ready hosts than Prometheus scrapes hostd on, so a host is missing from /etc/prometheus/repose/targets/hosts.yml and every alert scoped to that file is silent on it."
+          runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+
       - alert: BootSlow
         # Most creates and starts on a host took over 2 minutes (DECISIONS
         # I-707). A busy host boots in 30 to 70 s (2026-10-13 on host-01,

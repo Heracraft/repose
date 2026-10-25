@@ -158,8 +158,9 @@ The nix file and its flake attribute must be in the checkout the apply runs
 from, not only in git: the installer passes `--flake <flake_path>#<attr>`, a
 path on the machine running `tofu`. Without a `host_flake_attrs` entry the
 host installs the generic `host` attribute, which knows no api address, so it
-comes up and never registers and the apply says nothing (`docs/ops/RUNBOOK.md`
-"HostUnregistered").
+comes up and never registers (`docs/ops/RUNBOOK.md` "HostUnregistered"). The
+`every_host_has_a_flake_attr` check prints a warning naming the host on both
+the plan and the apply, and a warning stops neither.
 
 **Sizes are per host.** `host_shapes` is a map keyed by host name whose
 attributes (`size`, `class`, `zone`, `data_disk_gb`, `data_disk_iops`,
@@ -221,7 +222,7 @@ runs on. Blob as the snapshot target is behind `hostd`'s
 `SnapshotStore` interface (Azure Blob and S3-compatible implementations),
 so a Hetzner host uses Hetzner Object Storage or R2.
 
-### Cost table (East US, on-demand, September 2026)
+### Cost table (the 2026-09-19 estimate, East US, on-demand)
 
 | Resource | Monthly |
 |---|---|
@@ -235,18 +236,14 @@ so a Hetzner host uses Hetzner Object Storage or R2.
 | R2, 50 GB | under $1 |
 | Total with one host | ~$2,700 |
 
-`infra/README.md` carries the version of this table re-derived from the Azure
-Retail Prices API on **2026-09-20**, the date of the first apply, for what
-`prod.tfvars` actually creates: about **$857** a month with one pre-launch
-host and the edge, and about **$1,094** with the control-plane VM that
-`coolify_count = 1` now creates, which is over the $1,000 budget alert in
-`ops/AZURE-SETUP.md` step 7. That re-query corrected the 2026-09-19 figure for
-the control plane, which was $53 a month too low. Launch sizes are about
-**$2,850**.
+`infra/README.md` "Cost" carries the figures, re-derived from the Azure
+Retail Prices API for what `prod.tfvars` actually creates: about **$1,332** a
+month for one host and the control plane, about **$4,751** for both hosts and
+the control plane, and about **$3,812** once host-01 is retired. The $10k
+credit funds roughly two months of two hosts, and reservations generally
+cannot be bought with sponsorship credits.
 Most of the difference from the estimate above is Premium SSD v2 provisioned
-IOPS and throughput, which are variables and can be raised in place later. The $10k credit funds roughly three and a
-half months at launch sizes with one host and no reservation. Reservations cannot be bought with credits on most Azure
-sponsorship SKUs; check before assuming the reserved column applies.
+IOPS and throughput, which are variables and can be raised in place later.
 
 ## 6. Failure modes
 

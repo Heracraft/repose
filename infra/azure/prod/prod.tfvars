@@ -58,14 +58,26 @@ host_flake_attrs = {
 # every value it has today resolves from the globals above and its plan is
 # empty.
 #
+# os_disk_gb is 512, not the fleet's 256, because the OS disk holds
+# /nix/store and the store is shared by every guest on the host: hostd keeps
+# a GC root for each live closure and three revisions per project, and a root
+# filesystem past 80 percent makes hostd refuse Build with
+# `insufficient_capacity: host store full` for every tenant on that machine
+# (RUNBOOK, "StoreHigh"). host-01 sells 4 seats and host-02 sells 24. The
+# data disk grows online and the RUNBOOK says how; the OS disk is inline on
+# the VM resource, has no grow procedure, and changing it later is a plan
+# against a live host. $38 a month at the P15 to P20 step.
+#
 # data_disk_iops and data_disk_mbps are left at the fleet's 16000 and 600. A
 # 2048 GB disk under four times the guests may want more; provisioned IOPS and
-# throughput are billed, so raising them is the owner's call.
+# throughput are billed, so raising them is the owner's call. Raising mbps is
+# also the only lever on the guest freeze's budget (DECISIONS I-786).
 host_shapes = {
   host-02 = {
     size         = "Standard_D64s_v7"
     class        = "azure-d64s-v7"
     data_disk_gb = 2048
+    os_disk_gb   = 512
   }
 }
 

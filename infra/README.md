@@ -403,10 +403,12 @@ Then:
    account and snapshot identity, and the freeze vault where the freeze is
    on. `nix/hosts/host-01.nix` is the model.
 2. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
-   **A host with no entry here installs the generic `host` configuration and
-   the apply says nothing.** That configuration knows no api address, so the
-   machine comes up and never registers (`docs/ops/RUNBOOK.md`
-   "HostUnregistered").
+   **A host with no entry here installs the generic `host` configuration**,
+   which knows no api address, so the machine comes up and never registers
+   (`docs/ops/RUNBOOK.md` "HostUnregistered"). The plan and the apply both
+   print the `every_host_has_a_flake_attr` check warning naming the host, and
+   a warning stops neither: the apply succeeds and the host is wrong if
+   nobody reads it.
 3. `"host-02"` in `hosts` and its shape in `host_shapes`, both in
    `prod.tfvars`, in a commit somebody reads:
 
@@ -436,6 +438,17 @@ nixos-anywhere through the edge, checks that `/dev/kvm` exists and that
 restarts `hostd`. `repose-admin hosts list` shows `ready` within about two
 minutes of the reboot; if it does not, the runbook entry is
 "Host never registered".
+
+Then the monitoring server, which no apply touches: read the host's
+WireGuard address from `repose-admin hosts list` or from its
+`/run/repose/host.env` (`WG_ADDR`), correct its entry in
+`ops/prometheus/targets/hosts.yml`, and copy that file to
+`/etc/prometheus/repose/targets/` (`ops/README.md` step 2). Prometheus
+re-reads it within a minute, after which `up{host_id="host-02"}` is 1 for the
+`hosts`, `hostd` and `fluent-bit` jobs. Every host alert is scoped to the
+targets in that file, so until the copy nothing watches the new host; copied
+before the host registers, `HostdDown` pages for a machine that is not up
+yet. `HostNotInTargets` warns after 15 minutes if this is skipped.
 
 Leave the spent token in `prod.local.tfvars`. It is single-use and expires in
 24 hours, so a stale entry is inert, and leaving it keeps later plans from
@@ -711,11 +724,11 @@ same unit prices.
 | Control plane static IPv4 | $0.005/h | $3.65 |
 | **Total, one host and the control plane, before egress** | | **about $1,332** |
 | host-02 `Standard_D64s_v7` | $4.232/h | $3,089.36 |
-| host-02 OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
+| host-02 OS disk, Premium SSD P20 (512 GiB) + mount | $76.03 + $3.67 | $79.70 |
 | host-02 data disk, Premium SSD v2, 2,048 GiB | $0.00011/GiB/h | $164.42 |
 | host-02 data disk IOPS, 16,000 (3,000 free) | $0.000007/IOPS/h | $66.43 |
 | host-02 data disk throughput, 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
-| **Total, both hosts and the control plane, before egress** | | **about $4,711** |
+| **Total, both hosts and the control plane, before egress** | | **about $4,751** |
 
 **The 2026-09-19 table had the control plane $53 a month too cheap.** It
 listed the `D4s_v7` at $140.16 a month; the API returns $0.265 an hour, which
@@ -723,11 +736,11 @@ is $193.45. The re-query above caught it; that is why this item is on the
 checklist with a date.
 
 So the control plane is about **$237** a month, and one host plus the control
-plane is about **$1,332**, over the $1,000 monthly budget alert in
-`docs/ops/AZURE-SETUP.md` step 7. Raise the budget to $1,200, or drop the
-control plane to a `D2s_v7` (2 vCPU, 8 GB) and save $97. Coolify, Logto,
-Postgres, the api and the dashboard fit in 8 GB for a month of testing
-alone, with little room; 16 GB leaves headroom.
+plane is about **$1,332**, already over the $1,000 monthly budget alert in
+`docs/ops/AZURE-SETUP.md` step 7; the figure to raise it against is the
+two-host total below. Dropping the control plane to a `D2s_v7` (2 vCPU,
+8 GB) saves $97. Coolify, Logto, Postgres, the api and the dashboard fit in
+8 GB for a month of testing alone, with little room; 16 GB leaves headroom.
 
 The table also shows something the earlier estimate missed:
 **Premium SSD v2 provisioned performance is most of the disk bill.** Capacity
@@ -740,12 +753,13 @@ until there is a guest whose builds justify more.
 The `D64s_v7` hourly rate is the `D16s_v7`'s $1.058 times four, the family
 being linear in vCPUs; it agrees with the $100 a day in
 `docs/ops/AZURE-SETUP.md` step 7. So the launch, which adds host-02 and keeps
-host-01 running (`docs/ops/LAUNCH.md` §3), costs about **$4,711** a month
-until host-01 is retired, and about **$3,771** after. The $10k credit funds
-roughly two months of two hosts. Reservations generally cannot be bought with
-sponsorship credits; check before assuming a reserved rate applies. The
-budget alert in `docs/ops/AZURE-SETUP.md` step 7 has to be raised with the
-second host or it fires every month.
+host-01 running (`docs/ops/LAUNCH.md` §3), costs about **$4,751** a month
+until host-01 is retired, and about **$3,812** after. So the budget alert in
+`docs/ops/AZURE-SETUP.md` step 7 goes to $5,000 with the second host, and to
+about $4,000 once host-01 is retired, or it fires every month. The $10k
+credit funds roughly two months of two hosts. Reservations generally cannot
+be bought with sponsorship credits; check before assuming a reserved rate
+applies.
 
 One figure is not from the API: Azure does not expose a NAT Gateway meter
 under any `serviceName` in `eastus` that the retail endpoint will return, so

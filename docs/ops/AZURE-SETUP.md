@@ -45,11 +45,13 @@ a day.
    on the vault. Do not create a subscription-wide Owner principal.
 
 7. **Set a budget alert.** Cost Management → Budgets: $1,000 a month for
-   the pre-launch month, with emails at 50, 80 and 100 percent. Raise it
-   with the second host, or it fires every month: host-02 adds about $3,380
-   a month of its own (VM, OS disk, 2,048 GiB of Premium SSD v2 and its
-   provisioned IOPS and throughput), and retiring host-01 later gives back
-   about $940 of that (`infra/README.md` "Cost"). A forgotten `D16s_v7` burns $25 a day; a `D64s_v7`, about $100.
+   the pre-launch month, with emails at 50, 80 and 100 percent. Two hosts
+   and the control plane cost about $4,751 a month, so set it to $5,000 with
+   the second host, and to about $4,000 once host-01 is retired, or it fires
+   every month: host-02 adds about $3,420 a month of its own (VM, OS disk,
+   2,048 GiB of Premium SSD v2 and its provisioned IOPS and throughput), and
+   retiring host-01 later gives back about $940 of that (`infra/README.md`
+   "Cost"). A forgotten `D16s_v7` burns $25 a day; a `D64s_v7`, about $100.
 
 8. **Know the two settings agents must get right, so you can check them.**
    Hosts must be Intel Dsv7 (host-01 is a `Standard_D16s_v7`, host-02 a `D64s_v7`; each host's size is its own `host_shapes` entry, DECISIONS I-14 and I-39) with security type `Standard`. This subscription cannot create v5 or v6 sizes at all (verified 2026-09-20); the v7 families come with a 350 vCPU quota each, so no quota request is needed for them.

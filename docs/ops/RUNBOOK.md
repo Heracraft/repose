@@ -481,6 +481,31 @@ target changed.
 2. Until it is back, watch hosts with HostdDown and `repose-admin hosts
    list`.
 
+## HostNotInTargets
+
+The api reports more `ready` hosts than Prometheus scrapes hostd on, so one
+host has no series and every alert scoped to the targets file is silent on
+it, tenants on it included. The usual cause is a host added by an apply
+whose entry has not been copied to this server: the apply writes nothing
+here (`infra/README.md` "Adding a host", the monitoring step).
+
+1. `repose-admin hosts list` for the ready hosts and their WireGuard
+   addresses, against the `host_id` labels in
+   `/etc/prometheus/repose/targets/hosts.yml`. The host in the first and
+   not the second is the one.
+2. Add or correct its entry in `ops/prometheus/targets/hosts.yml` in the
+   repository, with the address from that listing or from the host's own
+   `/run/repose/host.env` (`WG_ADDR`), and copy the file to
+   `/etc/prometheus/repose/targets/`. Prometheus re-reads it within a
+   minute; no restart and no reload.
+3. `up{host_id="<name>"}` is then 1 for the `hosts`, `hostd` and
+   `fluent-bit` jobs. If it is 0 for one of them, that host's exporter or
+   the WireGuard path to it is the problem: HostScrapeDown, HostdDown and
+   FluentBitLogShipperDown are those entries.
+4. A listed host that is genuinely gone instead: the entry stays until
+   `hosts retire` has run ("Retiring a host once its projects are moved"),
+   then it is removed with the same copy.
+
 ## Watchdog
 
 Always firing, by design. Alertmanager sends it every minute to an Uptime
@@ -2512,6 +2537,9 @@ its steps bite if they are taken in the wrong order.
      a new host from its latest snapshot" (`host_moved`). On a planned
      migration that reads as data loss. Tell the tenants before, or
      answer the replies after.
+   - **A moved project comes up logged out of Claude Code.** The login
+     share is one file per user per host (I-278), so each owner types
+     `claude` and logs in once on the target host.
 3. `repose-admin hosts retire host-NN`. It refuses while the host holds
    **any** project, stopped ones included: `host-NN still holds N
    project(s); move them first`. Retiring also voids the host's

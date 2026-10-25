@@ -315,6 +315,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
 | `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
+| `HostNotInTargets` | `count(up{job="hostd"} == 1) < max(repose_api_hosts{state="ready"})` for 15m: a registered host missing from `targets/hosts.yml`, so every host alert is silent on it (I-786) | warn |
 | `ApiErrors` | 5xx share per route `> 0.05` for 10m (I-800) | page |
 | `OpsFailing` | `sum by (kind) (increase(repose_api_ops_total{state="error"}[30m])) > 0` for 5m (I-800) | warn |
 | `ScheduleRefused` | `sum by (result) (increase(repose_api_schedule_total{result=~"no_capacity\|no_cpu\|error"}[15m])) > 0` for 5m (I-800) | warn |

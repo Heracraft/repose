@@ -25106,6 +25106,27 @@ was not simply a second host).
   invitation holding a seat for 72 hours. Twenty-four invitations can go
   out at once. Draining host-01 later drops the total by its 4 the moment
   the drain lands.
+- *What the adversarial review changed, after the first commit.* Five
+  lenses raised 49 candidates and 43 died under refutation. The one that
+  changed the configuration: host-02 was taking the fleet's 256 GB OS
+  disk, which is `/nix/store`, shared by every guest on the machine.
+  hostd keeps a GC root per live closure and three revisions per project,
+  and past 80 percent hostd refuses `Build` with `insufficient_capacity:
+  host store full` for every tenant on that host. host-01 sells 4 seats
+  and host-02 sells 24. Every other dimension that scales with guest
+  count was scaled; the store was not. `os_disk_gb = 512`, about $38 a
+  month, and it had to be now: the data disk grows online and the RUNBOOK
+  says how, while the OS disk is inline on the VM resource with no grow
+  procedure, so changing it later is a plan against a live host -- the
+  failure this whole entry exists to avoid.
+  The rest were true statements that had stopped being true: the commit
+  added a check that warns and then wrote "the apply says nothing" in
+  three places; the Prometheus target reaches git and nothing deploys it,
+  so host-02 would carry tenants with every host alert silent (now a step
+  in two runbooks and a `HostNotInTargets` rule with its own test case and
+  runbook entry); and `/docs/agents` promises one Claude login covers
+  every machine, which is false across two hosts and false for a machine
+  that has just been moved.
 - *A money error this change inherited and would have amplified.* The cost
   table in `infra/README.md` labelled its first subtotal "one host and the
   edge ... about $857" when those rows sum to $1,094.59, then labelled
