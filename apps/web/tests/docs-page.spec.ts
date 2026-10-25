@@ -114,6 +114,15 @@ test('scrolling panes on a phone have unique names', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	for (const path of ['/docs', '/docs/cli', '/docs/tutorial-herdr']) {
 		await page.goto(path);
+		// A pane becomes a region only once it overflows, and whether it
+		// overflows changes when the web font lands: tabStopWhenScrolls marks
+		// on mount and again on each ResizeObserver callback. Reading the
+		// regions straight after goto counted zero of them under a full-suite
+		// load, where the font arrives after first paint. Wait for the fonts
+		// and for the first region, so this counts the settled page a reader
+		// sees rather than the frame before it.
+		await page.evaluate(() => document.fonts.ready);
+		await expect(page.locator('article [role="region"]').first()).toBeAttached();
 		const names = await page
 			.locator('article [role="region"]')
 			.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
