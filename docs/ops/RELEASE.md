@@ -309,10 +309,19 @@ page.
 
 **The notes are written before the tag is pushed** (DECISIONS I-798).
 `release.yml` refuses to publish a release whose body is under 400 bytes,
-so a tag with no notes stays a draft and `install.sh` never sees it. Write
-them with `gh release create <tag> --draft --notes-file <file>` before the
-push, or `gh release edit <tag> --notes-file <file>` between the tag and
-the `sign` job, and re-run the job.
+so a tag with no notes stays a draft and `install.sh` never sees it.
+
+Write the notes to a file before the push, then push the tag, then
+`gh release edit <tag> --notes-file <file>` between the tag and the
+`sign` job, and re-run the job from the Actions page.
+
+**Do not create the draft yourself before the push** (DECISIONS I-860).
+`gh release create <tag> --draft` and GoReleaser each make their own
+release for the same tag, and GitHub holds both: one with the notes and
+no assets, one with the four archives and an empty body. `gh release
+view <tag>` then resolves to whichever it likes, `sign` fails on "no
+assets to download", and the tag exists with no published release while
+everything looks right. v0.1.40 shipped that way for ten minutes.
 
 What the notes say, and how they read:
 
