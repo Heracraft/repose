@@ -25062,6 +25062,17 @@ sign-in starts, which is the owner's call.
   for a primary call to action that looks dead on first paint. Capturing
   early clicks in an inline script and replaying them after hydration:
   cheapest, keeps the appearance, still fails with JS off.
+- *The palette swallows a click twice over.* `DocsSearch.show()` opens
+  with `if (!dialog || dialog.open) return;`, and `dialog` is a
+  `bind:this` that is set when the component mounts. So a press on
+  `#docs-search` is lost not only before hydration but in any window
+  where the layout has hydrated and the palette has not yet bound its
+  element, and it is lost silently, by an early return with no branch
+  that reports it. The layout's own client code finishing is not evidence
+  the palette is ready: `keyHint` is set in the layout and reads
+  "Ctrl K" on screen while `show()` is still returning early. That
+  mistaken inference cost a wrong diagnosis once in the session that
+  found this, which is a reason to say it here.
 - *How it was found, and what must not be done about it.* Five distinct
   playwright tests failed once each across five full runs of the web
   suite on a loaded box; two were diagnosed to this cause (`signIn` in
