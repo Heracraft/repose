@@ -52,8 +52,9 @@ export CLOUDFLARE_API_TOKEN=...         # only when manage_dns is true
 
 ## Values: what is committed and what is not
 
-`prod.tfvars` holds the values that belong in review: sizes, disk sizes,
-account names, the host list. `prod.local.tfvars` (git-ignored; copy
+`prod.tfvars` holds the values that belong in review: the fleet's sizes and
+disk sizes, the per-host overrides of them (`host_shapes`), account names,
+the host list and each host's flake attribute. `prod.local.tfvars` (git-ignored; copy
 `prod.local.tfvars.example`) holds the values that are per-operator or
 secret: which addresses may reach operator SSH, the operator public keys, the
 path to the private key, the Cloudflare zone id and the join tokens. The
@@ -381,16 +382,53 @@ the apply log, because it travels as file content and never as an argument.
 
 ## Adding a host
 
+A new host does not have to be the size of the ones already running: every
+size and disk value is per host, with the committed fleet value as the
+fallback. host-02, a `D64s_v7` added beside host-01's `D16s_v7`, is what that
+looks like (DECISIONS I-14).
+
 ```bash
 repose-admin hosts add --name host-02 --provider azure  # prints a token
 ```
 
 Then:
 
-1. Add `"host-02"` to `hosts` in `azure/prod/prod.tfvars`, in a commit
-   somebody reads.
-2. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
-3. `make plan ENV=prod`, read it, `make apply ENV=prod`.
+1. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
+   `nix/flake.nix`, **in the checkout the apply runs from**: nixos-anywhere
+   installs `--flake <flake_path>#<attr>`, a path on the machine running
+   `tofu`, not from git, so an attribute that exists only on a branch
+   somebody pushed is not there. The file carries what differs from the
+   generic `host` configuration: the api's VNet address and server name, the
+   platform CA, the bootstrap operator key, the base repository, the Blob
+   account and snapshot identity, and the freeze vault where the freeze is
+   on. `nix/hosts/host-01.nix` is the model.
+2. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
+   **A host with no entry here installs the generic `host` configuration and
+   the apply says nothing.** That configuration knows no api address, so the
+   machine comes up and never registers (`docs/ops/RUNBOOK.md`
+   "HostUnregistered").
+3. `"host-02"` in `hosts` and its shape in `host_shapes`, both in
+   `prod.tfvars`, in a commit somebody reads:
+
+   ```
+   host_shapes = {
+     host-02 = {
+       size         = "Standard_D64s_v7"
+       class        = "azure-d64s-v7"
+       data_disk_gb = 2048
+     }
+   }
+   ```
+
+   An attribute the entry leaves out takes the fleet value (`host_size`,
+   `host_class`, `host_data_disk_gb`, `host_data_disk_iops`,
+   `host_data_disk_mbps`, `host_os_disk_gb`, `zone`), and a host with no
+   entry at all is what it was before the map existed.
+4. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
+5. `make plan ENV=prod` and read it: the new VM, its data disk, NIC and
+   install, and **no change to any host already running**. A plan that
+   touches one of those is proposing to reboot a machine with tenants on it.
+   Then `make apply ENV=prod`.
 
 The apply creates the VM and its data disk, installs NixOS with
 nixos-anywhere through the edge, checks that `/dev/kvm` exists and that
@@ -570,10 +608,20 @@ registers before it has a tunnel (DECISIONS I-92).
 Shrinking the `hosts` list destroys a VM and everything on it. Do this, in
 order:
 
-1. `repose-admin hosts drain host-02`: the scheduler places nothing new.
-2. Move or stop every project on it: `repose-admin projects move` for each,
-   or let tenants stop them. `repose-admin hosts list --json` shows the count.
-3. `repose-admin hosts retire host-02`.
+1. `repose-admin hosts drain host-02`: the scheduler places nothing new. The
+   fleet's seat total drops by that host's seats the moment it lands, because
+   the count sums `ready`, undrained hosts only; held seats do not drop with
+   it, so free can go to 0 and checkout answers `waitlisted` until the rest
+   of the fleet covers what is held (`repose-admin seats`).
+2. Move or stop every project on it: `repose-admin projects move <id> --to
+   <host>` for each, or let tenants stop them. `repose-admin hosts list
+   --json` shows the count, `repose-admin projects list --host host-02` the
+   list. `--to` is not capacity-checked and a project that is not running is
+   restored from whatever snapshot it already has: `docs/ops/LAUNCH.md` §3
+   step 5 is the whole procedure.
+3. `repose-admin hosts retire host-02`. It refuses while the host holds
+   **any** project, stopped ones included (`host-02 still holds N
+   project(s); move them first`).
 4. Remove the name from `hosts` in `prod.tfvars`.
 5. The data disk and its attachment carry `prevent_destroy`, so the plan
    fails, as intended. Delete the `prevent_destroy = true` lines in
@@ -638,11 +686,11 @@ to trivy is a small job.
 
 Re-checked on **2026-09-20**, the date of the first apply, against the Azure
 Retail Prices API (`https://prices.azure.com/api/retail/prices`,
-`armRegionName eq 'eastus'`, `priceType eq 'Consumption'`), for what
-`prod.tfvars` creates: one `D16s_v7` host with a 512 GB Premium SSD
-v2 data disk (DECISIONS I-14, I-39), the edge, and **the control-plane VM**
-(`coolify_count = 1`, DECISIONS I-71). 730 hours to the month, Linux rates, no
-reservation.
+`armRegionName eq 'eastus'`, `priceType eq 'Consumption'`), for host-01: a
+`D16s_v7` with a 512 GB Premium SSD v2 data disk (DECISIONS I-14, I-39), the
+edge, and **the control-plane VM** (`coolify_count = 1`, DECISIONS I-71). 730
+hours to the month, Linux rates, no reservation. host-02's rows below use the
+same unit prices.
 
 | Resource | Unit price | Monthly |
 |---|---|---|
@@ -657,11 +705,17 @@ reservation.
 | Two Standard static IPv4 (NAT, edge) | $0.005/h each | $7.30 |
 | Blob, 500 GB of snapshots, Cool LRS | $0.0152/GB/month | $7.60 |
 | Key Vault standard, operations | $0.03 per 10K | under $1 |
-| **Subtotal, one host and the edge, before egress** | | **about $857** |
+| **Subtotal, one host and the edge, before egress** | | **about $1,095** |
 | Control plane `Standard_D4s_v7` | $0.265/h | $193.45 |
 | Control plane OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
 | Control plane static IPv4 | $0.005/h | $3.65 |
-| **Total, one host and the control plane, before egress** | | **about $1,094** |
+| **Total, one host and the control plane, before egress** | | **about $1,332** |
+| host-02 `Standard_D64s_v7` | $4.232/h | $3,089.36 |
+| host-02 OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
+| host-02 data disk, Premium SSD v2, 2,048 GiB | $0.00011/GiB/h | $164.42 |
+| host-02 data disk IOPS, 16,000 (3,000 free) | $0.000007/IOPS/h | $66.43 |
+| host-02 data disk throughput, 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
+| **Total, both hosts and the control plane, before egress** | | **about $4,711** |
 
 **The 2026-09-19 table had the control plane $53 a month too cheap.** It
 listed the `D4s_v7` at $140.16 a month; the API returns $0.265 an hour, which
@@ -669,7 +723,7 @@ is $193.45. The re-query above caught it; that is why this item is on the
 checklist with a date.
 
 So the control plane is about **$237** a month, and one host plus the control
-plane is about **$1,094**, over the $1,000 monthly budget alert in
+plane is about **$1,332**, over the $1,000 monthly budget alert in
 `docs/ops/AZURE-SETUP.md` step 7. Raise the budget to $1,200, or drop the
 control plane to a `D2s_v7` (2 vCPU, 8 GB) and save $97. Coolify, Logto,
 Postgres, the api and the dashboard fit in 8 GB for a month of testing
@@ -683,10 +737,15 @@ reason, and both can be raised in place later without downtime, so the first
 host can start at the free tier (3,000 IOPS, 125 MB/s) and save $85 a month
 until there is a guest whose builds justify more.
 
-At launch sizes (`Standard_D64s_v7`, 2 TB data disk, control plane on) the
-same table totals about **$2,850**. The $10k credit funds roughly three and a
-half months of that with one host. Reservations generally cannot be bought
-with sponsorship credits; check before assuming a reserved rate applies.
+The `D64s_v7` hourly rate is the `D16s_v7`'s $1.058 times four, the family
+being linear in vCPUs; it agrees with the $100 a day in
+`docs/ops/AZURE-SETUP.md` step 7. So the launch, which adds host-02 and keeps
+host-01 running (`docs/ops/LAUNCH.md` §3), costs about **$4,711** a month
+until host-01 is retired, and about **$3,771** after. The $10k credit funds
+roughly two months of two hosts. Reservations generally cannot be bought with
+sponsorship credits; check before assuming a reserved rate applies. The
+budget alert in `docs/ops/AZURE-SETUP.md` step 7 has to be raised with the
+second host or it fires every month.
 
 One figure is not from the API: Azure does not expose a NAT Gateway meter
 under any `serviceName` in `eastus` that the retail endpoint will return, so

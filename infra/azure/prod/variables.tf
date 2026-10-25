@@ -111,6 +111,20 @@ variable "host_data_disk_mbps" {
   default     = 600
 }
 
+variable "host_shapes" {
+  type = map(object({
+    size           = optional(string)
+    class          = optional(string)
+    zone           = optional(string)
+    data_disk_gb   = optional(number)
+    data_disk_iops = optional(number)
+    data_disk_mbps = optional(number)
+    os_disk_gb     = optional(number)
+  }))
+  description = "Per-host override of the host values above, keyed by host name (for example host-02 = { size = \"Standard_D64s_v7\" }). A host with no entry takes the globals, and its plan does not change."
+  default     = {}
+}
+
 variable "edge_operator_ssh_port" {
   type        = number
   description = <<-EOT

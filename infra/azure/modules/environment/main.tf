@@ -43,6 +43,28 @@ locals {
   dashboard_fqdn = "${var.dns_prefix}.${var.dns_zone}"
   api_fqdn       = "api.${var.dns_prefix}.${var.dns_zone}"
   ssh_fqdn       = "ssh.${var.dns_prefix}.${var.dns_zone}"
+
+  # What each host is made of: its entry in var.host_shapes where it names an
+  # attribute, the environment's global everywhere else. A host with no entry
+  # resolves to the globals alone, so its plan is unchanged.
+  #
+  # Attribute by attribute rather than merge(): an attribute an entry leaves
+  # out is null, and a null on the right of a merge beats the global rather
+  # than falling back to it. An object whose attributes are not all one type
+  # does not convert to a map for merge() anyway. try() because indexing a
+  # key that is not in the map is an error, not null. Every global keeps a
+  # default, because coalesce fails when all of its arguments are null.
+  host_shape = {
+    for name in var.hosts : name => {
+      size           = coalesce(try(var.host_shapes[name].size, null), var.host_size)
+      class          = coalesce(try(var.host_shapes[name].class, null), var.host_class)
+      zone           = coalesce(try(var.host_shapes[name].zone, null), var.zone)
+      data_disk_gb   = coalesce(try(var.host_shapes[name].data_disk_gb, null), var.host_data_disk_gb)
+      data_disk_iops = coalesce(try(var.host_shapes[name].data_disk_iops, null), var.host_data_disk_iops)
+      data_disk_mbps = coalesce(try(var.host_shapes[name].data_disk_mbps, null), var.host_data_disk_mbps)
+      os_disk_gb     = coalesce(try(var.host_shapes[name].os_disk_gb, null), var.host_os_disk_gb)
+    }
+  }
 }
 
 # A host with no token boots, finds nothing at /run/repose/join-token, and
@@ -73,6 +95,40 @@ check "dns_is_managed_or_manual" {
   assert {
     condition     = var.manage_dns
     error_message = "manage_dns is false: the repose names resolve to the herakraft.co wildcard, not to the edge or the control plane. Create them by hand (infra/README.md) or set manage_dns = true once CLOUDFLARE_API_TOKEN and cloudflare_zone_id exist."
+  }
+}
+
+# A host_shapes key that is not a host name applies nothing and reports
+# nothing: the host it was meant for comes up on the globals instead, which
+# for prod is a D16s_v7 with a 512 GB data disk.
+check "host_shapes_name_real_hosts" {
+  assert {
+    condition = length(setsubtract(toset(keys(var.host_shapes)), toset(var.hosts))) == 0
+    error_message = format(
+      "host_shapes has an entry for %s, which is not in hosts. The entry applies to nothing and the host it was meant for takes the global size and disk.",
+      join(", ", setsubtract(toset(keys(var.host_shapes)), toset(var.hosts))),
+    )
+  }
+}
+
+# A host with no host_flake_attrs entry installs the generic `host`
+# configuration, and then never registers. Its apiAddr is the default
+# `api.repose.herakraft.co:443` (nix/hosts/default.nix), where nothing gRPC
+# answers: api-grpc's mTLS listeners are 8443 and 8444, and with
+# manage_dns = false that name is Cloudflare's proxied wildcard. It also
+# ships no freeze key vault and no pauseIdle. The apply succeeds, the VM is
+# healthy, and the host never appears in `repose-admin hosts list` --
+# RUNBOOK's "Host never registered", cause 4. It warns rather than fails
+# because host_flake_attr_default is a supported value: an environment can
+# mean to run the generic configuration.
+check "every_host_has_a_flake_attr" {
+  assert {
+    condition = length(setsubtract(toset(var.hosts), toset(keys(var.host_flake_attrs)))) == 0
+    error_message = format(
+      "No host_flake_attrs entry for %s, so it installs `%s`, the generic configuration, whose api address is port 443 where nothing gRPC answers: the apply succeeds and the host never registers (RUNBOOK, \"Host never registered\", cause 4). It would also run without the freeze key vault and without pauseIdle. Add nix/hosts/<name>.nix and name it in host_flake_attrs.",
+      join(", ", setsubtract(toset(var.hosts), toset(keys(var.host_flake_attrs)))),
+      var.host_flake_attr_default,
+    )
   }
 }
 
@@ -205,21 +261,24 @@ module "host" {
   source   = "../host"
   for_each = toset(var.hosts)
 
-  name          = each.key
-  class         = var.host_class
-  size          = var.host_size
+  name  = each.key
+  class = local.host_shape[each.key].class
+  size  = local.host_shape[each.key].size
+  zone  = local.host_shape[each.key].zone
+  # Global on purpose: both validations pin it to "Standard", because Trusted
+  # Launch and Confidential VMs disable nested virtualization, so a per-host
+  # value has no use.
   security_type = var.host_security_type
-  zone          = var.zone
 
   resource_group_name = data.azurerm_resource_group.main.name
   location            = local.location
   subnet_id           = module.network.hosts_subnet_id
   network_ready       = module.network.hosts_subnet_ready
 
-  data_disk_gb   = var.host_data_disk_gb
-  data_disk_iops = var.host_data_disk_iops
-  data_disk_mbps = var.host_data_disk_mbps
-  os_disk_gb     = var.host_os_disk_gb
+  data_disk_gb   = local.host_shape[each.key].data_disk_gb
+  data_disk_iops = local.host_shape[each.key].data_disk_iops
+  data_disk_mbps = local.host_shape[each.key].data_disk_mbps
+  os_disk_gb     = local.host_shape[each.key].os_disk_gb
 
   snapshot_identity_id = module.storage.host_identity_id
 

@@ -12,15 +12,18 @@ a day.
    below goes into this subscription.
 
 2. **Check vCPU quota in East US.** Portal: Quotas → Compute → filter
-   region East US. Every VM is in the Dsv7 family (`host_size`, `edge_size`
-   and `coolify_size` in `infra/azure/prod/prod.tfvars`):
-   - `Standard Dsv7 Family vCPUs` (`StandardDsv7Family`): 350 by default,
-     enough for the `D16s_v7` host, the `D4s_v7` control VM, the `D2s_v7`
-     edge, and the `D64s_v7` at launch. No request needed.
-   - `Total Regional vCPUs`: 65 when checked on 2026-09-19. Today's 22 fit;
-     the launch set (64 + 4 + 2) does not, so ask for 100 before launch.
-     Approval is often automatic within minutes; if it goes to a ticket it
-     can take a day.
+   region East US. Every VM is in the Dsv7 family (`host_shapes` and
+   `host_size`, `edge_size` and `coolify_size` in
+   `infra/azure/prod/prod.tfvars`):
+   - `Standard Dsv7 Family vCPUs` (`StandardDsv7Family`): 350. Checked
+     2026-10-25: 32 used, 96 with host-02.
+   - `Total Regional vCPUs`: **350** since 2026-10-14 (raised from 65;
+     `docs/ops/LAUNCH.md` §3). Checked 2026-10-25: 40 used, 104 with
+     host-02. Two hosts plus the control VM and the edge are 86
+     (16 + 64 + 4 + 2).
+
+   Neither needs a request. A raise is often automatic within minutes; if
+   it goes to a ticket it can take a day.
 
 3. **Register resource providers** (done 2026-09-19; once per subscription): Microsoft.Compute, Microsoft.Network, Microsoft.Storage,
    Microsoft.KeyVault, Microsoft.ManagedIdentity. Portal: Subscription →
@@ -42,11 +45,14 @@ a day.
    on the vault. Do not create a subscription-wide Owner principal.
 
 7. **Set a budget alert.** Cost Management → Budgets: $1,000 a month for
-   the pre-launch month, raised to $2,500 at launch, with emails at 50, 80
-   and 100 percent. A forgotten `D16s_v7` burns $25 a day; a `D64s_v7`, about $100.
+   the pre-launch month, with emails at 50, 80 and 100 percent. Raise it
+   with the second host, or it fires every month: host-02 adds about $3,380
+   a month of its own (VM, OS disk, 2,048 GiB of Premium SSD v2 and its
+   provisioned IOPS and throughput), and retiring host-01 later gives back
+   about $940 of that (`infra/README.md` "Cost"). A forgotten `D16s_v7` burns $25 a day; a `D64s_v7`, about $100.
 
 8. **Know the two settings agents must get right, so you can check them.**
-   Hosts must be Intel Dsv7 (`Standard_D16s_v7` until launch, `D64s_v7` after, DECISIONS I-14 and I-39) with security type `Standard`. This subscription cannot create v5 or v6 sizes at all (verified 2026-09-20); the v7 families come with a 350 vCPU quota each, so no quota request is needed for them.
+   Hosts must be Intel Dsv7 (host-01 is a `Standard_D16s_v7`, host-02 a `D64s_v7`; each host's size is its own `host_shapes` entry, DECISIONS I-14 and I-39) with security type `Standard`. This subscription cannot create v5 or v6 sizes at all (verified 2026-09-20); the v7 families come with a 350 vCPU quota each, so no quota request is needed for them.
    The portal defaults to Trusted Launch, which silently disables nested
    virtualization. AMD sizes (any `a` in the size name, like this dev box's
    `D8alds_v7`) are excluded. If East US has no capacity for the size when a

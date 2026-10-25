@@ -3,7 +3,7 @@
 Symptom-titled. Each alert in `../CHECKLIST.md` and `../workstreams/10-observability.md`
 has an entry with the same name. Commands assume an operator certificate
 (`repose-admin operator-cert`) and, on the operator machine, either the
-edge WireGuard up or the `host-01` ssh block below.
+edge WireGuard up or the per-host ssh blocks below.
 
 ## First-time setup
 
@@ -31,7 +31,18 @@ Host host-01
   User root
   ProxyJump root@<edge ip>:2222
   HostKeyAlias 10.200.1.4
+
+Host host-02
+  HostName 10.255.0.4
+  User root
+  ProxyJump root@<edge ip>:2222
+  HostKeyAlias <its VNet address>
 ```
+
+host-02 is 10.255.0.4, not .3: `hostmgr.allocate` steps over the address
+the monitoring server holds (I-782). Its VNet address, which is what its
+host key is known under, is in `make -C infra output ENV=prod` (`hosts`)
+and in `repose-admin hosts list`.
 
 Check it before any host window: `ssh host-01 true` and `nix store info
 --store ssh-ng://host-01` (it prints `Trusted: 1`). For a WireGuard
@@ -167,7 +178,7 @@ copy-paste version):
 | List hosts with capacity | `repose-admin hosts list` |
 | Add a host | `repose-admin hosts add --name host-NN` (prints a join token), then `make -C infra apply ENV=prod` (`infra/README.md` "Adding a host") |
 | Drain a host (no new placements) | `repose-admin hosts drain host-NN` |
-| Retire a host (after all projects moved) | `repose-admin hosts retire host-NN` |
+| Retire a host (after all projects moved) | `repose-admin hosts retire host-NN`; refused while it holds any project, stopped ones included ("Retiring a host once its projects are moved") |
 | Move a project to another host | `repose-admin projects move <id> --to host-NN` (stop, snapshot, restore, start) |
 | Suspend a user | `repose-admin users suspend <handle> --reason "..."` (stops guests, freezes billing, audit row) |
 | Unsuspend | `repose-admin users unsuspend <handle>` |
@@ -1023,10 +1034,25 @@ and then fails them, which is every tenant on the host at once: act now.
    uploading (`journalctl -u hostd | grep snapshot`) can go with
    `lvremove -y vg-guests/snap-…` (hostd's reconcile does the same at its
    next start, I-68).
-3. Extend the data disk in Azure (`tofu apply` with a larger
-   `data_disk_gb`, online for Premium SSD v2), then `pvresize` and
-   `lvextend -l +100%FREE vg-guests/thin`. This is the fix; the rest buys
-   time.
+3. Extend the data disk in Azure: raise `data_disk_gb` in that host's
+   `host_shapes` entry in `prod.tfvars` and apply (online for Premium
+   SSD v2). Disk size is per host now; the fleet-wide
+   `host_data_disk_gb` grows every host's disk, and a host with no
+   `host_shapes` entry needs one added. Then on the host, **the
+   partition first**: the PV is GPT partition 1 sized at 100 percent of
+   the disk at install (`nix/hosts/disko-layout.nix`), so `pvresize`
+   alone finds nothing to take.
+
+   ```bash
+   pv=$(pvs --noheadings -o pv_name --select vg_name=vg-guests | tr -d ' ')
+   disk=/dev/$(lsblk -ndo pkname "$pv")
+   echo ',+' | sfdisk -N 1 --force "$disk"   # partition 1 to the end of the disk
+   partx -u "$disk" && udevadm settle
+   pvresize "$pv" && vgs vg-guests
+   lvextend -l +100%FREE vg-guests/thin
+   ```
+
+   This is the fix; the rest buys time.
 4. Find who is writing: `repose-admin projects list --host host-NN --sort
    disk` (the newest sample's allocated bytes). Volume sizes summing past
    the pool is by design (plans count what volumes hold, I-585); used
@@ -1677,7 +1703,20 @@ list`.
 3. `pool_missing`: the data disk is not attached or `disko` did not run.
    `lsblk` and `ls -l /dev/disk/azure/scsi1/lun10`; re-run nixos-anywhere if
    the layout is missing.
-4. Nothing in the journal at all and SSH refused: the install may have
+4. A journal with hostd running, no registration attempt and no api
+   address in its configuration: the host installed the generic `host`
+   configuration because its name is missing from `host_flake_attrs` in
+   `prod.tfvars`. That configuration knows no api address, CA, Blob
+   account or freeze vault, so the host comes up healthy and never
+   registers, and nothing says why. The tell is `hostname`: the generic
+   configuration sets `repose-host`, not the host's own name. Add
+   `<name> = "<name>"` to `host_flake_attrs`, check that
+   `nix/hosts/<name>.nix` and
+   `nixosConfigurations.<name>` exist in the checkout the apply runs
+   from (nixos-anywhere installs from `flake_path` on that machine, not
+   from git), then switch the host (RUNBOOK "Switch a host to main") or
+   re-run the install as in step 5.
+5. Nothing in the journal at all and SSH refused: the install may have
    stopped mid-kexec. `az vm boot-diagnostics get-boot-log --name <host> -g
    repose-prod` shows the serial console; `make -C infra apply ENV=prod`
    after `tofu -chdir=infra/azure/prod taint
@@ -1707,10 +1746,14 @@ is why `PoolFull` pages at 90.
 
 1. `lvs vg-guests` on the host: data and metadata percent, and whether
    `thin` still has room to grow (`vgs vg-guests` free space).
-2. Grow the disk now: `tofu apply` with a larger `data_disk_gb` (online
-   for Premium SSD v2), then on the host `pvresize <pv>` and `lvextend -l
-   +95%FREE vg-guests/thin`. The next heartbeat carries the new size and
-   placement opens again below 70.
+2. Grow the disk now: raise `data_disk_gb` in that host's `host_shapes`
+   entry in `prod.tfvars` and apply (online for Premium SSD v2; the
+   fleet-wide `host_data_disk_gb` would grow every host's disk). Then on
+   the host, the partition before the PV — the PV is GPT partition 1
+   sized at 100 percent of the disk at install, so `pvresize` on its own
+   does nothing: the five commands in `PoolFull` step 3, ending
+   `lvextend -l +95%FREE vg-guests/thin`. The next heartbeat carries the
+   new size and placement opens again below 70.
 3. `repose-admin projects list --host host-NN --sort disk` for who holds
    it. If a second host exists and the grow must wait, nothing else is
    needed: new projects already go elsewhere.
@@ -1823,7 +1866,7 @@ clean stop.
 3. The pool (DECISIONS I-643): `journalctl -u repose-guest-pool -b` ends
    with `event=pool_monitored`; `lvs -o+seg_monitor vg-guests` shows the
    pool and every `g-*` volume active and the pool `monitored`;
-   `curl -s 10.255.0.2:9101/metrics | grep repose_host_pool_available` is
+   `curl -s 10.255.0.<host>:9101/metrics | grep repose_host_pool_available` is
    1. If not, `PoolUnavailable`: nothing is resumed while the pool is
    down.
 4. hostd logged `host_boot` with the previous `prev_boot_id`, and a
@@ -1853,6 +1896,23 @@ stops, so `HostUnreachable` (2m) and `HostdDown` (3m) both page in that
 window. Silence them in Alertmanager for the host before the restart, and
 the freeze itself holds the shutdown for as long as it takes, up to
 `repose.host.freeze.deadline`: `az vm restart` waits that out too.
+
+**On a host bigger than host-01 the freeze does not save all of its
+memory.** What it saves is `writeRateMBs` times `deadline`, and the
+deadline is capped at 300 s (`nix/hosts/freeze.nix`); snapshots are
+admitted while they fit in that, and the guests that do not fit are
+stopped by the shutdown and lose what they were running
+(`GuestLeftUnfrozen` counts them). At host-01's measured 400 MB/s the
+240 s default is 96 GB and the 300 s cap 120 GB; the data disk's
+provisioned 600 MB/s would be 180 GB at the cap. host-01 holds at most
+56 GB of guest memory (64 GB less its 8 GB reserve), so it has never met
+this. **host-02 holds up to
+192 GB** (24 seats of 8 GB), so a restart of a full host-02 saves some
+guests' memory and loses the rest. Measure its own rate ("Guest freeze"
+step 3) rather than trusting the 400 it inherited, and know that the
+only lever that raises the ceiling is the disk's provisioned MB/s, which
+is billed. Before a planned restart of a loaded host, either stop or
+move the guests you are not prepared to lose, or accept the arithmetic.
 
 ## Guest freeze
 
@@ -2421,6 +2481,47 @@ drain).
    the last `stop`) is lost; the email says so. Tenants' git remotes hold
    whatever their agents pushed.
 3. `repose-admin hosts retire host-NN`; `tofu apply` with it removed.
+
+## Retiring a host once its projects are moved
+
+The planned counterpart to "Host loss": the host is healthy and you are
+emptying it on purpose, as host-01 is emptied onto host-02
+(`docs/ops/LAUNCH.md` §3 step 5). Nothing here is urgent, and three of
+its steps bite if they are taken in the wrong order.
+
+1. `repose-admin hosts drain host-NN`: nothing new is placed there.
+   **The fleet's seat total falls by that host's seats the moment it
+   starts draining**, all at once, because the count sums `ready`,
+   undrained hosts only (I-739, I-784). Seats already held keep working;
+   what stops is checkout and the waitlist's invitations. Check
+   `repose-admin seats` before and after, and expect the landing page's
+   "N seats left" to move.
+2. `repose-admin projects list --host host-NN` is the list to empty.
+   Then, per project, `repose-admin projects move <id> --to <target>`:
+   - **A project that is not running is restored from whatever snapshot
+     already exists**, which may be 24 hours old. `move` takes a fresh
+     snapshot only when the project is `running`, by stopping it with
+     `snapshot: true` first. So start it, or `repose-admin projects
+     snapshot <id>`, before moving a stopped one.
+   - **`--to` is not capacity-checked.** A named target short-circuits
+     the scheduler, so a move onto a host without the memory, the cores
+     or the pool for it is accepted and fails later, on the host.
+     `repose-admin hosts list` and the `host_reservations` view are what
+     to read first; move in an order that fits.
+   - **Every moved project emails its owner** that it "was restored onto
+     a new host from its latest snapshot" (`host_moved`). On a planned
+     migration that reads as data loss. Tell the tenants before, or
+     answer the replies after.
+3. `repose-admin hosts retire host-NN`. It refuses while the host holds
+   **any** project, stopped ones included: `host-NN still holds N
+   project(s); move them first`. Retiring also voids the host's
+   certificate (I-432), so a host that must come back joins again with
+   `hosts add --name host-NN --reissue`.
+4. Remove the name from `hosts` and its `host_shapes` entry from
+   `prod.tfvars`, and apply. The data disk and its attachment carry
+   `prevent_destroy`, so that plan fails on purpose; `infra/README.md`
+   "Draining and destroying a host" has the step that gets past it and
+   why it is friction.
 
 ## Suspected cross-tenant access
 

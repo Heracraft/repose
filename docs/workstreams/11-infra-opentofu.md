@@ -146,10 +146,30 @@ between this workstream and a registered host.
 ```
 hostdev init --host host-03            # M1: mints the join token and prints it
 # once the api exists: repose-admin hosts add --name host-03 --provider azure
-# add "host-03" to hosts in azure/prod/prod.tfvars, in a reviewed commit
+# write nix/hosts/host-03.nix and nixosConfigurations.host-03 in nix/flake.nix
+# add "host-03" to hosts and host-03 = "host-03" to host_flake_attrs,
+#   in azure/prod/prod.tfvars, in a reviewed commit
+# add host-03's shape to host_shapes there when it is not the fleet's size
 # add host-03 = "<token>" to join_tokens in prod.local.tfvars (git-ignored)
 make -C infra plan ENV=prod && make -C infra apply ENV=prod
 ```
+
+The nix file and its flake attribute must be in the checkout the apply runs
+from, not only in git: the installer passes `--flake <flake_path>#<attr>`, a
+path on the machine running `tofu`. Without a `host_flake_attrs` entry the
+host installs the generic `host` attribute, which knows no api address, so it
+comes up and never registers and the apply says nothing (`docs/ops/RUNBOOK.md`
+"HostUnregistered").
+
+**Sizes are per host.** `host_shapes` is a map keyed by host name whose
+attributes (`size`, `class`, `zone`, `data_disk_gb`, `data_disk_iops`,
+`data_disk_mbps`, `os_disk_gb`) each override the fleet-wide variable of that
+name for that host; what an entry leaves out, and every host with no entry,
+takes the fleet value. That is what lets one apply add a host of another size
+while the plan shows no change for the hosts already carrying guests, which
+is how host-02 (`Standard_D64s_v7`, 2048 GB) joined host-01 (`D16s_v7`, 512
+GB) with no downtime (DECISIONS I-14; `docs/ops/LAUNCH.md` §3). A fleet-wide
+value changed instead plans a change on every host.
 
 The token can also be passed inline as `-var 'join_tokens={"host-03":"..."}'`,
 but then the next apply proposes to remove the delivery step. Leaving the
@@ -190,8 +210,9 @@ login. The Ubuntu image is a delivery vehicle; nothing from it survives.
 ### Provider portability
 
 The `host` module has a provider-neutral variable surface: `name`,
-`join_token`, `class` (`azure-d64s-v5` today), `data_disk_gb`. Its outputs
-are `private_ip` and `ssh_jump`. A `hetzner_host` module with the same
+`join_token`, `class` (`azure-d16s-v7` on host-01 and `azure-d64s-v7` on
+host-02, each from that host's `host_shapes` entry), `data_disk_gb`. Its
+outputs are `private_ip` and `ssh_jump`. A `hetzner_host` module with the same
 variables and outputs, using the Hetzner Robot provider for an AX162-R and
 the same nixos-anywhere provisioner, slots in with one change to the root
 module's `for_each`. The NixOS host config already takes its guest CIDR

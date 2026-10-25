@@ -25023,3 +25023,104 @@ They claimed the resume takes 114 ms, which was measured on staging;
 host-01 measured `wake_ms=225` on the first real wake. A measured figure
 from the wrong machine is still the wrong number for a user reading it
 about theirs.
+
+**I-786. The launch host is added beside host-01, not grown out of it, and
+a host's shape is per-host (second-host, 2026-10-25).** Amends I-14 and
+I-39: their sizes stand, their *method* does not. *Made during
+implementation* (the owner asked to buy the launch host, then asked why it
+was not simply a second host).
+
+- *The mistake worth recording is not the Terraform.* `LAUNCH.md` step 1
+  said to set `host_size = "Standard_D64s_v7"` and apply, so that is what
+  was prepared. With `hosts = ["host-01"]` that is an in-place resize of
+  the one live host: Azure deallocates it, every guest on it stops,
+  `kanali` included, and the data disk has to be grown by hand afterwards
+  or 1,536 GB is paid for and unusable. The runbook had already said
+  otherwise, in the same session's own words: step 0, rewritten for I-782
+  four days earlier, describes "the launch host" registering and taking
+  10.255.0.4. **A resize registers nothing and keeps .2.** The document
+  contradicted itself and the half that was followed was the wrong half.
+  Following a runbook you wrote yourself, past evidence inside it, is the
+  failure that is hardest to catch, because the document agrees with you.
+- *What made the resize look like the only option.* The root module had
+  one size for the whole fleet: `infra/azure/prod/main.tf` passed
+  `host_size` into the environment module, which handed it to every host
+  in `for_each = toset(var.hosts)`. Two hosts at two sizes were not
+  expressible, so "bigger host" could only mean "grow this one".
+- *The shape.* `host_shapes`, a map of objects keyed by host name, each
+  attribute `optional()`: size, class, zone, data_disk_gb, data_disk_iops,
+  data_disk_mbps, os_disk_gb. A local resolves each attribute as
+  `coalesce(try(var.host_shapes[name].<attr>, null), var.<global>)`, so an
+  attribute left out takes the fleet default and **a host with no entry is
+  byte-for-byte what it was before the variable existed**. `host-01` names
+  no entry. That is the safety property, and it is checked rather than
+  claimed: `tofu console` against the real tfvars resolves host-01 to
+  `azure-d16s-v7 / Standard_D16s_v7 / zone 1 / 512 / 16000 / 600 / 256`,
+  identical to today.
+  One map of objects, not five parallel maps: a reader of `prod.tfvars`
+  sees one block that says what host-02 *is*, and the review failure of
+  five maps is an entry missing from one of them, which applies silently
+  as a 2 TB disk still provisioned for 512 GB.
+  `coalesce` fails when every argument is null, so every global keeps its
+  default; `merge()` was rejected because a null on the right beats the
+  default and a mixed-type object will not convert to a map.
+  `security_type` stays global: both validations pin it to `Standard`, and
+  a per-host value has no legitimate use.
+- *The plan, run 2026-10-25.* **8 to add, 0 to change, 0 to destroy**, and
+  no `host["host-01"]` resource appears in it at all. The resize plan, for
+  contrast, was 0 add, 3 change, 0 destroy, and one of the three changes
+  was the live VM's `size`.
+- *Two new check blocks, both warnings.* `host_shapes_name_real_hosts`: a
+  typo'd key applies nothing and reports nothing, so the host would come
+  up silently at the fleet default. `every_host_has_a_flake_attr`: a host
+  missing from `host_flake_attrs` installs the generic `host`
+  configuration and **never registers** -- its `apiAddr` is the default
+  `api.repose.herakraft.co:443`, where nothing gRPC answers, because
+  api-grpc's mTLS listeners are 8443 and 8444 and `manage_dns = false`
+  makes that name Cloudflare's proxied wildcard. The apply succeeds and
+  the VM is healthy, which is why the check exists. Both warn rather than
+  fail: `host_flake_attr_default` is a supported value, and a precondition
+  that aborts the plan would take the live host down with it over a stray
+  key.
+- *What the bigger host changes that nobody asked about.* The guest
+  freeze's budget is write rate times a deadline hard-capped at 300 s. At
+  the inherited 600 MB/s that is 180 GB, and at host-01's *measured* 400
+  MB/s it is 120 GB, against up to 192 GB of guest memory on a full
+  host-02. host-01 never met this because it holds at most 48 GB. The
+  lever is provisioned throughput, which is billed, so it is the owner's
+  and `host_shapes` is where it would go. `writeRateMBs` in
+  `nix/hosts/host-02.nix` is inherited from host-01 and marked unmeasured;
+  it must be measured on host-02's own pool device.
+- *Retiring host-01 later has three sharp edges, all now in LAUNCH and the
+  RUNBOOK.* `repose-admin hosts retire` refuses while the host holds any
+  project, stopped ones included. `repose-admin projects move --to` sets
+  the target directly and short-circuits `PickHost`, so memory, pool room
+  and the 1.5-vCPU-per-core rule are never checked for a move. A move of a
+  project that is **not running** restores the newest snapshot that
+  already exists, which may be a day old; start or snapshot it first.
+  Every moved project also emails its owner that it "was restored onto a
+  new host from its latest snapshot", which reads as data loss on a
+  planned migration.
+- *Seats go 4 to 28 on host-02's first heartbeat*, and the waitlist
+  Inviter mails every free seat in one tick with no rate limit, each
+  invitation holding a seat for 72 hours. Twenty-four invitations can go
+  out at once. Draining host-01 later drops the total by its 4 the moment
+  the drain lands.
+- *A money error this change inherited and would have amplified.* The cost
+  table in `infra/README.md` labelled its first subtotal "one host and the
+  edge ... about $857" when those rows sum to $1,094.59, then labelled
+  $1,094 as "one host **and the control plane**". The control plane's $237
+  was therefore dropped from every total below, and the two-host figure
+  read $4,473 when it is **$4,711**. The individual rows were right; the
+  two bold labels were not. Corrected here because this change is what
+  puts that number in front of a purchase. The deltas are unaffected:
+  host-02 adds about $3,379 a month and retiring host-01 gives back about
+  $939.
+- *Not done here, and deliberately.* The apply: `infra/Makefile` says
+  `make apply ENV=prod` is "the owner's call, never an agent's". The join
+  token, which is minted by `repose-admin hosts add --name host-02` and
+  lives only in the uncommitted `prod.local.tfvars` -- the plan warns
+  about its absence today, correctly. And `ssh host-01` from woker-1 fails
+  with REMOTE HOST IDENTIFICATION HAS CHANGED against an RSA key at
+  `known_hosts:16`; nothing was edited, because silencing a host-key
+  warning on a production host is not an agent's call.

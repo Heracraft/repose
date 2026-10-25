@@ -119,6 +119,7 @@
       # differs from `host`: today the api address, its CA and the Blob
       # account (DECISIONS I-40).
       nixosConfigurations.host-01 = mkHost { hostName = "host-01"; modules = [ ./hosts/host-01.nix ]; };
+      nixosConfigurations.host-02 = mkHost { hostName = "host-02"; modules = [ ./hosts/host-02.nix ]; };
       # The staging host (infra/README.md, "Staging"): the same configuration
       # pointed at `hostdev` instead of the api, because staging has no
       # control plane (DECISIONS I-642).

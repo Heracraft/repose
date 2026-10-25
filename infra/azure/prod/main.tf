@@ -78,14 +78,16 @@ module "environment" {
 
   host_flake_attrs = var.host_flake_attrs
 
-  # DECISIONS I-14: the pre-launch host is a D16s_v7 with a 512 GB data disk (I-39).
-  # Launch values are Standard_D64s_v7 and 2048, changed here and applied with
-  # guests stopped (deallocate, resize, start).
+  # The globals are host-01's shape, a D16s_v7 with a 512 GB data disk
+  # (DECISIONS I-14, I-39). A bigger host names its own values in host_shapes
+  # instead, so it is added on an apply that leaves every host already
+  # carrying guests out of the plan.
   host_size           = var.host_size
   host_class          = var.host_class
   host_data_disk_gb   = var.host_data_disk_gb
   host_data_disk_iops = var.host_data_disk_iops
   host_data_disk_mbps = var.host_data_disk_mbps
+  host_shapes         = var.host_shapes
 
   # Comes from the environment's tfvars, which is where somebody reads it.
   # The variable has no default, so a plan without that file fails rather than

@@ -195,6 +195,34 @@ variable "host_os_disk_gb" {
   default     = 256
 }
 
+variable "host_shapes" {
+  type = map(object({
+    size           = optional(string)
+    class          = optional(string)
+    zone           = optional(string)
+    data_disk_gb   = optional(number)
+    data_disk_iops = optional(number)
+    data_disk_mbps = optional(number)
+    os_disk_gb     = optional(number)
+  }))
+  description = <<-EOT
+    Per-host override of the host values above, keyed by host name. An
+    attribute a host does not name takes the global; a host with no entry at
+    all is exactly what it was before this variable existed. That is what
+    lets one apply add a host of a different size without touching the hosts
+    already carrying guests.
+  EOT
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for shape in var.host_shapes :
+      shape.size == null || can(regex("^Standard_D[0-9]+(l|d|ld)?s_v[567]$", coalesce(shape.size, "")))
+    ])
+    error_message = "Every size in host_shapes must be an Intel Dsv5/Dsv6/Dsv7 size. AMD sizes carry an `a` (Da*, *as_v*) and have 50 to 90 percent nested-virtualization penalties; ARM sizes have no nested virtualization at all (docs/DESIGN.md §4)."
+  }
+}
+
 # --- edge and control plane ------------------------------------------------
 
 variable "edge_name" {
