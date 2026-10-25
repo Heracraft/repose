@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-815 entries.
+819 entries.
 
 ## Scope
 
@@ -378,7 +378,7 @@ pointer, not a summary.
 - **I-297** The user docs have a Tutorials section: one job per page, in the order a new user meets them — 2026-09-27; partly amended by I-316; L8074
 - **I-298** The Vercel CLI's login stays on the laptop — 2026-09-27; L8094
 - **I-330** A signed-in visitor can read the landing page — 2026-09-28; L8134
-- **I-331** Sign-out leaves the page alone until the browser goes, and no page paints before its stylesheet — 2026-09-28; partly amended by I-370; L8148
+- **I-331** Sign-out leaves the page alone until the browser goes, and no page paints before its stylesheet — 2026-09-28; partly amended by I-370; amended by I-837; L8148
 - **I-332** Settings save as they change; the ntfy URL keeps a Save — 2026-09-28; L8168
 - **I-333** "Recently destroyed" shows ten rows, then more on request — 2026-09-28; L8187
 - **I-300** A project being destroyed does not count toward the project limit; one left in error by a failed destroy does — 2026-09-28; amended by I-569; L8194
@@ -406,7 +406,7 @@ pointer, not a summary.
 - **I-328** The build log stream reads the table on its tick, so lines another process stored arrive while the op runs — 2026-09-28; L8601
 - **I-299** A first sign-in with no GitHub identity takes its handle from the email address, the part before the `@` and before any `+tag`; `user-<sub>` is left for an address with nothing usable there — 2026-09-28; L8619
 - **I-340** repose and the recruiting app (Job Alerts) share the Logto tenant at `accounts.herakraft.co`; everything a person sees there names the app they came from, and the setup lives in `ops/logto/` — 2026-09-28; L8642
-- **I-344** The docs sidebar is a drawer below `lg` that keeps its state, and the docs are prerendered; the docs stay in-house — 2026-09-28; amended by I-383; L8688
+- **I-344** The docs sidebar is a drawer below `lg` that keeps its state, and the docs are prerendered; the docs stay in-house — 2026-09-28; amended by I-383; amended by I-841; L8688
 - **I-345** Docs code blocks scroll; the docs are written to fit the column — 2026-09-28; amended by I-382; amended by I-383; L8725
 - **I-341** On macOS, Cmd+V with an image on the clipboard pastes it, by a watcher that gives an image-only clipboard the path of a copy — 2026-09-28; L8753
 - **I-342** `--worktree` names are `<slug>-worktree-<N>` on branch `worktree-<N>`, numbered apart from the window — 2026-09-28; L8795
@@ -434,17 +434,17 @@ pointer, not a summary.
 - **I-366** `run --no-sync` still copies the tool logins and the carry — 2026-09-29; L9333
 - **I-367** `repose run` syncs the checkout only into a machine that has no commit yet; `repose sync` is the explicit sync — 2026-09-29; amended by I-618; amended by I-633; L9352
 - **I-368** The machine's checkout is named after the laptop folder of its first sync; a machine with no checkout works in the home directory — 2026-09-29; L9399
-- **I-369** One design foundation under every page; the dashboard no longer follows the recruiting app — 2026-09-30; L9471
-- **I-370** Shared text and edge tokens with a contrast floor: 4.5:1 for text, 3:1 for control edges and state marks — 2026-09-30; amended by I-391; L9491
-- **I-371** The fonts are self-hosted, and JetBrains Mono is the one monospace — 2026-09-30; L9520
-- **I-372** A focused field shows the house focus ring — 2026-09-30; L9539
-- **I-373** State dots: busy is ink, stopped is hollow, and running and error differ in lightness — 2026-09-30; amended by I-659; L9550
-- **I-374** Toasts and docs code highlighting take the house colours — 2026-09-30; amended by I-392; L9568
-- **I-375** A type scale with two named small steps and one size per heading level — 2026-09-30; amended by I-664; L9583
-- **I-376** Buttons come in two sizes: `.btn--sm` and the default — 2026-09-30; amended by I-391; amended by I-392; L9603
+- **I-369** One design foundation under every page; the dashboard no longer follows the recruiting app — 2026-09-30; superseded by I-837; L9471
+- **I-370** Shared text and edge tokens with a contrast floor: 4.5:1 for text, 3:1 for control edges and state marks — 2026-09-30; amended by I-391; amended by I-837; L9491
+- **I-371** The fonts are self-hosted, and JetBrains Mono is the one monospace — 2026-09-30; amended by I-837; L9520
+- **I-372** A focused field shows the house focus ring — 2026-09-30; amended by I-837; L9539
+- **I-373** State dots: busy is ink, stopped is hollow, and running and error differ in lightness — 2026-09-30; amended by I-659; partly superseded by I-837; L9550
+- **I-374** Toasts and docs code highlighting take the house colours — 2026-09-30; amended by I-392; amended by I-837; L9568
+- **I-375** A type scale with two named small steps and one size per heading level — 2026-09-30; amended by I-664; amended by I-837; L9583
+- **I-376** Buttons come in two sizes: `.btn--sm` and the default — 2026-09-30; amended by I-391; amended by I-392; amended by I-837; L9603
 - **I-377** Forced colours are part of the system — 2026-09-30; L9613
-- **I-378** Unused patterns are deleted rather than documented — 2026-09-30; L9629
-- **I-379** In the dark, the landing's small ink details are lit marks — 2026-09-30; L9640
+- **I-378** Unused patterns are deleted rather than documented — 2026-09-30; amended by I-837; L9629
+- **I-379** In the dark, the landing's small ink details are lit marks — 2026-09-30; superseded by I-837; L9640
 - **I-380** One header frame for the dashboard, the docs and the legal pages; form pages sit flush left — 2026-09-30; amended by I-396; amended by I-397; amended by I-655; amended by I-656; amended by I-664; L9648
 - **I-381** The I-363 mark is in every header — 2026-09-30; amended by I-391; amended by I-393; amended by I-655; L9665
 - **I-382** Docs and legal prose hold a readable measure — 2026-09-30; amended by I-392; amended by I-660; L9679
@@ -453,20 +453,20 @@ pointer, not a summary.
 - **I-385** Only a page's first load can fail to a banner with Retry — 2026-09-30; amended by I-393; L9716
 - **I-386** One confirmation pattern per consequence, and no native `confirm()` — 2026-09-30; amended by I-661; L9729
 - **I-387** Restore-as-new is one `RestoreNameForm` — 2026-09-30; L9746
-- **I-388** The config editor's Menu and Nix switch is ARIA tabs styled like the header's current page — 2026-09-30; amended by I-659; L9754
+- **I-388** The config editor's Menu and Nix switch is ARIA tabs styled like the header's current page — 2026-09-30; amended by I-659; amended by I-837; L9754
 - **I-389** The accessibility gate fails on any failed binary audit, audits signed in for real, and covers every page in both schemes at two widths — 2026-09-30; amended by I-397; L9765
 - **I-390** A 503 the api gives as an answer is not an outage, a 500 is not "cannot reach", and one failure is said once — 2026-09-30; amended by I-393; L9784
 - **I-391** Design critique repair: focus follows in-place panels, one disabled look, and the gaps the first pass left — 2026-09-30; amended by I-393; amended by I-655; L9807
-- **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; L9857
+- **I-392** Design repair round 2: ghost buttons show they can be pressed, one accent token, pictures keep their tools' colours, and the keyboard path is tested — 2026-09-30; amended by I-393; amended by I-397; amended by I-658; amended by I-837; L9857
 - **I-393** Design repair round 3: one failure is reported once, 503 answers come from one list, and links drawn as buttons answer the pointer — 2026-09-30; amended by I-394; amended by I-395; amended by I-658; amended by I-779; L9925
 - **I-394** Design repair round 4: a quiet poll failure does not latch, billing opens one panel at a time, and code wraps where it should — 2026-09-30; amended by I-395; L9991
 - **I-395** Design repair round 5: a scroll edge is a one-colour bar, and polls on one page share one toast — 2026-09-30; partly superseded by I-681; L10018
 - **I-396** The docs take a wider frame, with the "On this page" rail back at the right and a sidebar that lists pages only — 2026-10-01; amended by I-656; amended by I-660; L10049
-- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; amended by I-772; L10078
-- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; amended by I-667; L10138
-- **I-399** Landing repair round 2: the drawn pictures' rows are 12px mono, every picture motion is in LANDING.md's list, OneCommand takes the picture palette, the repair round's notes leave the owner's sections, and the a11y gate's landing allowance is phone width only — 2026-10-01; amended by I-400; L10203
-- **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; amended by I-660; L10266
-- **I-401** Landing repair round 4: the snapshot marks only turn as listed, the hero's lead wraps inside a sentence before it scrolls, the docs sidebar scrolls only for a cut link, and the dashboard's command block shows where its line runs on — 2026-10-01; L10362
+- **I-397** Landing repair round: the landing-critique branch is abandoned, so the landing joins the house header, one picture palette, one large button and the a11y gate, and its pictures stop when motion is turned off — 2026-10-01; partly superseded by I-398; partly amended by I-398; amended by I-399; amended by I-400; amended by I-402; amended by I-656; amended by I-663; amended by I-772; superseded by I-837; L10078
+- **I-398** Landing repair round, the details: the landing is prerendered, `html.js` marks a scripted page, the hero's first paint is the empty machine, captures move without layout, and every picture says only what the product does — 2026-10-01; amended by I-399; amended by I-400; amended by I-667; amended by I-837; L10138
+- **I-399** Landing repair round 2: the drawn pictures' rows are 12px mono, every picture motion is in LANDING.md's list, OneCommand takes the picture palette, the repair round's notes leave the owner's sections, and the a11y gate's landing allowance is phone width only — 2026-10-01; amended by I-400; superseded by I-837; L10203
+- **I-400** Landing repair round 3: the Editor capture's rows are inert, so the a11y gate has no allowance left; a restored row is blue, every fade out names its ease, and the hero shows its still frame when the app never mounts — 2026-10-01; amended by I-401; amended by I-660; superseded by I-837; L10266
+- **I-401** Landing repair round 4: the snapshot marks only turn as listed, the hero's lead wraps inside a sentence before it scrolls, the docs sidebar scrolls only for a cut link, and the dashboard's command block shows where its line runs on — 2026-10-01; superseded by I-837; L10362
 - **I-402** Pricing says "memory" and counts no agents — 2026-10-01; amended by I-663; L10421
 - **I-403** A restore writes the volume with O_DIRECT, eight writes in flight, and downloads the snapshot as eight ranged GETs at once — 2026-10-01; L10443
 - **I-404** A stop uploads its snapshot while the guest shuts down; the snapshot read itself stays as it was — 2026-10-01; amended by I-571; L10518
@@ -637,7 +637,7 @@ pointer, not a summary.
 - **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15868
 - **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15893
 - **I-586** The thin pool is guarded by what it holds: no new project past 70 percent, no create, restore or grow past 85, no start past 95 — 2026-10-07; L15995
-- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; L16057
+- **I-578** The Account page is a section of Settings, and the dashboard header shows Docs at every width — 2026-10-07; amended by I-655; amended by I-841; L16057
 - **I-587** A start removes the whiteouts in the store overlay's upper dir before stage 2 — 2026-10-07; L16087
 - **I-588** guestd roots every store path the host shares into the guest, so no nix garbage collection inside it deletes one — 2026-10-07; L16118
 - **I-589** A switch to a closure a whiteout hides fails saying so, with its own code — 2026-10-07; L16157
@@ -692,20 +692,20 @@ pointer, not a summary.
 - **I-604** Billing moves from Paddle to Polar — 2026-10-08; amended by I-678; L18237
 - **I-640** The tmux agent windows are recorded under any locale and reopen on the login PATH (tmux-windows-fix, 2026-10-09) — L18384
 - **I-641** `ssh` and `code` start a stopped machine; `rm` fetches first (tmux-windows-fix, 2026-10-09) — amended by I-709; L18408
-- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; L18427
+- **I-655** One site header, one footer, and a dashboard row under the header (web-polish, 2026-10-11) — amended by I-679; amended by I-837; amended by I-841; L18427
 - **I-656** One frame for every page (web-polish, 2026-10-11) — L18471
 - **I-657** Touch targets on a phone (web-polish, 2026-10-11) — L18492
 - **I-658** The legal pages on the docs' grid (web-polish, 2026-10-11) — L18500
-- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; L18520
-- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; L18548
+- **I-659** A finished surface: filled cards, stat strips, amber badges, measuring meters and a still skeleton (web-polish, 2026-10-11) — amended by I-674; amended by I-837; L18520
+- **I-660** The docs frame: 220, 624 and 180, with prose at 17px and no desktop scrollbar on the sidebar (web-polish, 2026-10-11) — amended by I-681; amended by I-837; L18548
 - **I-661** An armed danger button (web-polish, 2026-10-11) — L18595
 - **I-662** Events in pages, with a count, a newer-than cursor and a kind filter (web-polish, 2026-10-11) — L18602
-- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; L18646
-- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; L18675
-- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; L18762
-- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; L18799
-- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; L18826
-- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; L18856
+- **I-663** Plans from one source on the landing, /billing and the docs (web-polish, 2026-10-11) — amended by I-674; amended by I-679; amended by I-837; L18646
+- **I-664** The dashboard's pages fill the frame and lead with what you came for (web-polish, 2026-10-11) — amended by I-674; amended by I-693; amended by I-837; amended by I-841; L18675
+- **I-674** Plan usage as the plan's squares and small rings, not bars (web-polish, 2026-10-12) — amended by I-679; amended by I-681; amended by I-837; L18762
+- **I-679** One header row on the dashboard, Usage full width, a chart tone switch, the landing back to main (web-polish, 2026-10-12) — partly amended by I-680; amended by I-681; amended by I-684; amended by I-837; amended by I-841; L18799
+- **I-680** The project page: cards as tall as their content, forms with room (web-polish, 2026-10-12) — amended by I-682; amended by I-693; amended by I-837; amended by I-841; L18826
+- **I-681** Card layout on every dashboard page, docs tables that stack on a phone (web-polish, 2026-10-12) — amended by I-682; amended by I-837; L18856
 - **I-642** The staging host registers with `hostdev` on the staging edge, not with production's api (staging-host, 2026-10-11) — L18907
 - **I-647** The OS disk is resolved at install time too, by NVMe namespace id (staging-host, 2026-10-11) — L18947
 - **I-643** One unit activates the guest pool after boot; the initrd has no LVM (host-pool, 2026-10-11) — L18995
@@ -720,16 +720,16 @@ pointer, not a summary.
 - **I-648** Paging goes to Google Chat through calert, Azure emails its own alerts, and an Uptime Kuma push monitor watches the alerting path (host-alerts, 2026-10-11) — partly amended by I-848; L19687
 - **I-651** Integrated main is pushed to GitHub's `integrated` branch, and operators work from woker-1 when host-01 is down (host-alerts, 2026-10-11) — L19745
 - **I-682** The project page's first row ends on one line (web-polish, 2026-10-12) — L19777
-- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-826; L19795
-- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; L19825
-- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; L19875
-- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; L19954
-- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; L20011
-- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — L20086
-- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; L20143
-- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; L20208
-- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — L20263
-- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — L20333
+- **I-683** A frozen machine's look, mocked behind a flag (web-polish, 2026-10-12) — amended by I-837; partly superseded by I-841; amended by I-826; amended by I-856; L19795
+- **I-666** One motion controller for the landing's pictures: a pause button, one grid picture at a time, rebuilds on width alone; one snapshot tile (landing-foundation, 2026-10-11) — amended by I-673; amended by I-676; superseded by I-837; L19825
+- **I-669** The feature grid: one frame for four pictures, a new title, Localhost from the refused page, ComesBack on the shared tile (landing-grid, 2026-10-11) — amended by I-675; amended by I-676; superseded by I-837; L19875
+- **I-668** "Your laptop's setup": copies that never cover a chip or their source, the agent's commit coming back, the head as one sentence with the reach link, and Ready in 16s (landing-onecommand, 2026-10-11) — amended by I-675; amended by I-684; superseded by I-837; L19954
+- **I-667** The hero tells the snapshot story with true causes, on a balanced stage that is never empty (landing-hero, 2026-10-11) — amended by I-677; superseded by I-837; L20011
+- **I-677** The hero's copies stay inside the panel they are drawn in, one drawing at a time, and the stage fits 1280x800 (landing-fix-hero, 2026-10-11) — superseded by I-837; L20086
+- **I-673** The landing's pictures share one grammar: one window head, one chip, one machine wall, one radius, a dark scheme that layers as the light one does, the pause button on the floor (landing-fix-grammar, 2026-10-11) — amended by I-684; superseded by I-837; L20143
+- **I-675** The two story panels: copies seen only in the panel they land in, the machine never an empty box, and ComesBack in a closed window with its snapshots under it where it is narrow (landing-fix-panels, 2026-10-11) — amended by I-684; superseded by I-837; L20208
+- **I-676** The grid's Browser, Localhost and Editor without doubled text or cut lines, and grid pictures that take turns (landing-fix-browser, 2026-10-11) — superseded by I-837; L20263
+- **I-684** The landing takes landing-revamp's pictures without its copy; the setup picture keeps its chips in the middle and its blue copies (web-polish, 2026-10-12) — superseded by I-837; L20333
 - **I-642** The pricing research carries Hetzner's 15 June 2026 dedicated prices, and the plans lose money on Hetzner too (hetzner-repricing, 2026-10-09) — L20376
 - **I-672** Launch at ladder C: Solo $49, Plus $89, Pro $169, with a founding $39 for the first 30 Solo subscribers (pricing-directions, 2026-10-11) — L20401
 - **I-678** A Polar event about a customer or product repose does not know is acknowledged, not failed — 2026-10-12; L20448
@@ -749,7 +749,7 @@ pointer, not a summary.
 - **I-690** A question closes when the owner answers in the terminal, and an agent can take one back (notify-revamp, 2026-10-12). Amends I-244, I-245, I-445 — amended by I-729; L21061
 - **I-691** Notification delivery repairs: the hourly cap counts sends, one slow endpoint no longer holds every user, and a failure never stores a URL (notify-revamp, 2026-10-12). Amends I-445 and workstream 13 §5.6 — L21077
 - **I-692** Google Chat is a third channel (notify-revamp, 2026-10-12). Amends I-444 — amended by I-731; L21091
-- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — L21104
+- **I-693** Questions on the dashboard: one row, answered where you see it (notify-revamp, 2026-10-12). Amends I-664, I-680 — amended by I-837; amended by I-841; L21104
 - **I-694** The agent column reports only what a hook proves (notify-revamp, 2026-10-12). Amends I-49, I-504, I-614 — L21115
 - **I-695** What the notify-revamp branch leaves for later (notify-revamp, 2026-10-12) — L21124
 - **I-710** `repose stop` returns once the stop is under way; `--wait` waits; a stop that fails notifies (stop-background, 2026-10-13). Amends I-570, I-614, I-634 — amended by I-730; amended by I-740; L21130
@@ -816,7 +816,7 @@ pointer, not a summary.
 - **I-767** repose has a support address, `support@herakraft.co`, and the stuck-plan banner is its first and only use — 2026-10-17; L23365
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23372
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23416
-- **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; L23453
+- **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; amended by I-837; L23453
 - **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; L23536
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23603
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23629
@@ -825,25 +825,29 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23912
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23978
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24209
-- **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24241
-- **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24296
-- **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24334
-- **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24357
-- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24380
-- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24407
-- **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24426
-- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L24463
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L24468
-- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L24598
-- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L24626
-- **I-824** The pause must never cost a machine its memory — L24669
-- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; L24703
-- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L24735
-- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L24754
-- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L24787
-- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L24829
-- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L24876
-- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L24929
-- **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L24963
-- **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L24990
-- **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25027
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24241
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24368
+- **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24717
+- **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24780
+- **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24835
+- **I-804** `ops/sql/launch.sql`: the launch's per-account questions as twelve queries, not as metrics — 2026-10-19; L24873
+- **I-806** `usage_hours` records `attended_seconds` and `unattended_agent_seconds` — 2026-10-19; L24896
+- **I-808** `repose-admin projects show` no longer prints "cost today", and a destroy keeps the last snapshot, not all of them — 2026-10-19; L24919
+- **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24946
+- **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24965
+- **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25002
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L25007
+- **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
+- **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
+- **I-824** The pause must never cost a machine its memory — L25208
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; L25242
+- **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25274
+- **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L25293
+- **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L25326
+- **I-846** The idle pause is turned on for host-01 — 2026-10-21; L25368
+- **I-842** One limit on what the terminal carries into a guest: 50 MB, for a dropped file and a pasted image alike — 2026-10-21; L25415
+- **I-854** Two migrations may not claim one version, and the loader says so instead of dropping one — 2026-10-22; L25468
+- **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25502
+- **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25543
+- **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25570
+- **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25607

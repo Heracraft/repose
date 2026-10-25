@@ -4,9 +4,10 @@
 import type { Tokens } from 'marked';
 
 /**
- * The longest inline code span kept on one line. 30 characters of 14px
- * JetBrains Mono, with the chip's padding, is 262px: it fits the 320px
- * column at 360 wide even inside a nested list.
+ * The longest inline code span kept on one line. 30 characters of Geist
+ * Mono at 12.75px (the chip's 0.85em of 15px prose), with its padding, is
+ * about 235px: it fits the 320px column at 360 wide even inside a nested
+ * list.
  */
 export const NOBREAK_MAX = 30;
 

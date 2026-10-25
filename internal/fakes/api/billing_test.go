@@ -242,6 +242,10 @@ func TestBillingPlanChange(t *testing.T) {
 	if !strings.Contains(string(r.body), `"scheduled_plan":"solo"`) {
 		t.Fatalf("billing after downgrade: %s", r.body)
 	}
+	// The next charge is the renewal, on the scheduled plan's price.
+	if !strings.Contains(string(r.body), `"next_charge_cents":4900`) {
+		t.Fatalf("next charge after downgrade: %s", r.body)
+	}
 	// Choosing the current plan again undoes the schedule.
 	want(t, call(t, f, "POST", "/v1/billing/plan", tok, map[string]string{"plan": "plus"}), 200)
 	r = call(t, f, "GET", "/v1/billing", tok, nil)

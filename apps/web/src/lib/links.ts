@@ -19,6 +19,12 @@ export const FEEDBACK_URL = 'https://repose.fider.io';
 export const SUPPORT_EMAIL = 'support@herakraft.co';
 export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 
+/**
+ * The one line that installs the CLI, shown on the landing, the empty
+ * projects list and Settings. Named once so the three cannot drift.
+ */
+export const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
+
 /** The landing's pricing section, from any page. */
 export function pricingHref(): string {
 	return `${resolve('/')}#pricing`;

@@ -126,7 +126,9 @@ async function requestWithHeaders<T>(
 }
 
 // Users.
-export const getMe = () => request<Me>('/me');
+/** passive: a side read whose answer must not clear the outage bar (I-393). */
+export const getMe = (opts: { passive?: boolean } = {}) =>
+	request<Me>('/me', { passive: opts.passive });
 export const patchMe = (body: {
 	tz?: string;
 	notify?: { email?: boolean; ntfy_url?: string | null; gchat_url?: string | null };
@@ -151,7 +153,9 @@ export const putPersonal = (fragment: string, base: string | null) =>
 	});
 
 // Projects.
-export const listProjects = () => request<Project[]>('/projects');
+/** passive: the rail's background read (I-841), as getMe's. */
+export const listProjects = (opts: { passive?: boolean } = {}) =>
+	request<Project[]>('/projects', opts);
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 export const patchProject = (
 	id: string,

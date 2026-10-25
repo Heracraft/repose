@@ -1,8 +1,9 @@
 // How the dashboard lays out and words the questions agents wait on
-// (I-693): the "Waiting on you" card on /projects and on a project page
-// draws them with one QuestionRow, from these functions, so the two pages
-// cannot word the same fact two ways again.
-import { ageShort, minutesLeft } from './format';
+// (I-693): the "Waiting on you" card on /projects, /questions and a
+// project's Overview draws them with one QuestionRow, and /questions'
+// Answered list words a closed one, from these functions, so no two pages
+// word the same fact two ways (I-841).
+import { ageShort, clockTime, dayLabel, minutesLeft } from './format';
 import type { Question, QuestionVia } from './api/types';
 
 /** The expiry shows only once this little time is left. */
@@ -11,9 +12,9 @@ export const EXPIRY_SHOWN_MS = 10 * 60_000;
 /** How long an answered row stays, as one line, before it leaves. */
 export const CLOSED_LINE_MS = 8_000;
 
-/** Where an answer came from, as the end of "Answered yes …". */
+/** Where an answer came from, as the end of "Answered yes …". An answer
+ *  from the dashboard says nothing more: the reader is on it. */
 const FROM: Partial<Record<QuestionVia, string>> = {
-	dashboard: 'from the dashboard',
 	cli: 'from the CLI',
 	email: 'by email',
 	ntfy: 'in ntfy',
@@ -128,4 +129,41 @@ export function layoutQuestions(questions: Question[]): ProjectQuestions[] {
 			pending: g.pending,
 			rows: g.rows
 		}));
+}
+
+/** How far back /questions lists closed questions. */
+export const ANSWERED_DAYS = 7;
+
+export interface AnsweredRow {
+	question: Question;
+	/** When it closed: "10:17" today, "Yesterday 10:17", "Mon 19 Oct 10:17" before. */
+	when: string;
+	/** The answer in ink, when there is one to name. */
+	answer?: string;
+	/** What follows the answer, or the whole outcome: "by email", "Dismissed". */
+	rest: string;
+}
+
+/** When a question closed, or was asked if the api has no close time. */
+const closedAt = (q: Question) => q.answered_at ?? q.created_at;
+
+/**
+ * The closed questions of the last ANSWERED_DAYS days, newest first, each
+ * as one outcome: "yes · by email", "yes" (from the dashboard), "Answered
+ * in the terminal", "Dismissed". The words are closedLine's.
+ */
+export function answeredRows(all: Question[], now: number): AnsweredRow[] {
+	const since = now - ANSWERED_DAYS * 86_400_000;
+	return all
+		.filter((q) => q.state !== 'pending' && time(closedAt(q)) >= since)
+		.sort((a, b) => time(closedAt(b)) - time(closedAt(a)) || (a.id < b.id ? 1 : -1))
+		.map((q) => {
+			const at = closedAt(q);
+			const day = dayLabel(at, new Date(now));
+			const when = day === 'Today' ? clockTime(at) : `${day} ${clockTime(at)}`;
+			const line = closedLine(q);
+			if (line.answer === undefined) return { question: q, when, rest: line.text };
+			const from = q.answered_via ? FROM[q.answered_via] : undefined;
+			return { question: q, when, answer: line.answer, rest: from ?? '' };
+		});
 }

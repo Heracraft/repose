@@ -1,16 +1,16 @@
 <!--
-  One event on the project page (I-662): its time, its kind as a small
-  square and a word, the agent and its window, and the summary held to two
-  lines, which a click opens in full. The kind's colour is a cue; the word
-  carries it. guest_state_changed is the machine's state, drawn as the
-  state list draws it. From sm up the four sit in columns, so a page of
-  rows reads down each one; on a phone the time, kind and agent share the
-  first line and the summary takes the second.
+  One event on the project page (I-662, I-837), on Guide B's log grid:
+  its time, its kind as a word with a 6px dot (amber for a question or
+  input asked, red for an error, grey otherwise), the agent, and the
+  summary held to two lines, which a click opens in full. The word
+  carries the kind; the dot is a cue. guest_state_changed is the
+  machine's state, drawn as the state list draws it. On a phone the time,
+  kind and agent share the first line and the summary takes the second.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import StateDot from '$lib/components/StateDot.svelte';
-	import { eventKind } from '$lib/events';
+	import { eventKind, toneDot as dotFor } from '$lib/events';
 	import { clockTime, dateTime } from '$lib/format';
 	import type { GuestState, ProjectEvent } from '$lib/api/types';
 
@@ -35,6 +35,7 @@
 			? (event.summary as GuestState)
 			: undefined
 	);
+	let toneDot = $derived(dotFor(info.tone));
 
 	// The summary turns into a button only when two lines cut it short; a
 	// button on every row would be a tab stop that does nothing.
@@ -55,43 +56,35 @@
 </script>
 
 <li class="event-row" data-testid="event-row" data-kind={event.kind}>
-	<time
-		class="font-mono text-compact text-ink-faint tabular-nums"
-		datetime={event.ts}
-		title={dateTime(event.ts)}>{clockTime(event.ts)}</time
+	<time class="time" datetime={event.ts} title={dateTime(event.ts)}>{clockTime(event.ts)}</time>
+	<span class="kind"
+		><span class="hk-dot {toneDot} kdot" aria-hidden="true"></span>{info.label}</span
 	>
-	<span class="kind tone-{info.tone} flex min-w-0 items-center gap-1.5 text-xs">
-		<span class="sq" aria-hidden="true"></span>
-		<span class="truncate">{info.label}</span>
-	</span>
-	<span class="flex min-w-0 items-baseline gap-1.5 text-xs">
-		{#if event.agent}
-			<span class="badge">{event.agent}</span>
-			{#if event.window && event.window !== event.agent}
-				<span class="truncate font-mono text-ink-muted">{event.window}</span>
-			{/if}
-		{/if}
-	</span>
-	<span class="summary min-w-0 text-sm">
+	<span
+		class="agent"
+		title={event.window && event.window !== event.agent ? `window ${event.window}` : undefined}
+		>{event.agent ?? ''}</span
+	>
+	<span class="summary">
 		{#if machineState}
 			<StateDot state={machineState} />
 		{:else if clamped || open}
 			<button
 				type="button"
-				class="w-full cursor-pointer text-left break-words hover:text-ink"
+				class="more"
 				class:line-clamp-2={!open}
 				aria-expanded={open}
 				onclick={() => (open = !open)}
 				bind:this={text}>{event.summary}</button
 			>
 		{:else}
-			<span class="line-clamp-2 break-words" bind:this={text}>{event.summary}</span>
+			<span class="line-clamp-2" bind:this={text}>{event.summary}</span>
 		{/if}
 	</span>
 </li>
 
 <style>
-	/* A row is about 36px: 8px above and below a 20px line. */
+	/* Guide B 12.17: time, kind, agent, then the summary taking the rest. */
 	.event-row {
 		display: grid;
 		grid-template-columns: auto auto minmax(0, 1fr);
@@ -101,77 +94,68 @@
 		column-gap: 0.75rem;
 		row-gap: 0.25rem;
 		align-items: baseline;
-		padding-block: 0.5rem;
-		border-top: 1px solid var(--rule);
+		padding: 0.625rem 0;
+		border-top: 1px solid var(--hk-hairline);
 	}
-	.event-row > :nth-child(1) {
+	.time {
 		grid-area: time;
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--hk-text-3);
 	}
-	.event-row > :nth-child(2) {
+	.kind {
 		grid-area: kind;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		min-width: 0;
+		font-size: 0.8125rem;
+		color: var(--hk-text-2);
+		white-space: nowrap;
 	}
-	.event-row > :nth-child(3) {
+	.kdot {
+		width: 6px;
+		height: 6px;
+	}
+	.agent {
 		grid-area: agent;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
+		color: var(--hk-text-3);
 	}
-	.event-row > :nth-child(4) {
+	.summary {
 		grid-area: summary;
+		min-width: 0;
+		font-size: 0.875rem;
+		color: var(--hk-text);
+		overflow-wrap: anywhere;
 	}
-	@media (width >= 40rem) {
+	.more {
+		width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	@media (min-width: 640px) {
 		.event-row {
-			grid-template-columns: 3.5rem 6.5rem 6rem minmax(0, 1fr);
+			grid-template-columns: 3.5rem 6.5rem 5.5rem minmax(0, 1fr);
 			grid-template-areas: 'time kind agent summary';
 			row-gap: 0;
 		}
 	}
-	.sq {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		flex-shrink: 0;
-		border-radius: 1px;
-		background-color: var(--ink-faint);
-		align-self: center;
-	}
-	.kind {
-		color: var(--ink-muted);
-	}
-	.tone-error {
-		color: var(--color-red-700);
-	}
-	.tone-error .sq {
-		background-color: var(--color-red-600);
-	}
-	.tone-attention {
-		color: var(--color-amber-800);
-	}
-	.tone-attention .sq {
-		background-color: var(--color-amber-500);
-	}
-	.tone-ok .sq {
-		background-color: var(--color-emerald-500);
-	}
-	@media (prefers-color-scheme: dark) {
-		.tone-error {
-			color: var(--color-red-300);
-		}
-		.tone-error .sq {
-			background-color: var(--color-red-500);
-		}
-		.tone-attention {
-			color: var(--color-amber-300);
-		}
-		.tone-attention .sq {
-			background-color: var(--color-amber-400);
-		}
-		.tone-ok .sq {
-			background-color: var(--color-emerald-300);
-		}
-	}
-	/* Forced colours erase the squares' fills; the word still says it. */
 	@media (forced-colors: active) {
-		.sq {
+		.kdot {
 			forced-color-adjust: none;
-			background-color: CanvasText;
+			background: CanvasText;
 		}
 	}
 </style>

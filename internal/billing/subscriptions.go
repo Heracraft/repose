@@ -129,9 +129,17 @@ func (s *Sub) IntroAt(at time.Time) bool {
 	return s != nil && s.Intro && s.PlanOrSolo().HasIntro() && (s.IntroUntil == nil || at.Before(*s.IntroUntil))
 }
 
-// ChargeCents is what Polar charges for the subscription's plan at at:
-// the introductory price while the offer runs, else the plan's price.
+// ChargeCents is what Polar charges for the subscription at at: the
+// scheduled plan's price from the period end on, when a change is
+// scheduled; else the introductory price while the offer runs, else the
+// plan's price. Leaving Solo clears Intro, so a scheduled plan never
+// carries the introductory price.
 func (s *Sub) ChargeCents(at time.Time) int64 {
+	if s != nil && s.ScheduledPlan != nil && s.PeriodEnd != nil && !at.Before(*s.PeriodEnd) {
+		if p, ok := PlanByID(*s.ScheduledPlan); ok {
+			return p.PriceCents
+		}
+	}
 	plan := s.PlanOrSolo()
 	if s.IntroAt(at) {
 		return plan.IntroCents

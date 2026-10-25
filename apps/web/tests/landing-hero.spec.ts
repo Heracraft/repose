@@ -4,7 +4,7 @@
 // rail a tile; the laptop's rows are never drawn in the wreck's red; and
 // the whole machine, agent row included, is in the first 900px at 1440.
 import { test, expect, type Page } from '@playwright/test';
-import { holdClock } from './helpers';
+import { holdClock, settledBox } from './helpers';
 
 test.describe('without scripts', () => {
 	test.use({ javaScriptEnabled: false });
@@ -93,8 +93,9 @@ test('the whole machine is in the first 900px at 1440, mid-wreck', async ({ page
 test('the agent row is in the first screen at 1280x800', async ({ page }) => {
 	await loop(page, 1280, 800);
 	await page.evaluate(() => window.scrollTo(0, 0));
-	const agent = await page.locator('.hero-pic .mwin > .lw .agentrow').boundingBox();
-	expect(agent!.y + agent!.height).toBeLessThanOrEqual(800);
+	// Measured once the scroll has landed, as the rail's test is (settledBox).
+	const agent = await settledBox(page, page.locator('.hero-pic .mwin > .lw .agentrow'));
+	expect(agent.y + agent.height).toBeLessThanOrEqual(800);
 });
 
 test('the rail ends on the rule over the agent row and the laptop on the floor at 1440', async ({

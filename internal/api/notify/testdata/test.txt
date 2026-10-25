@@ -2,7 +2,7 @@ repose: test
 
 This is a test from repose.
 
-Notification settings: https://repose.herakraft.co/settings
+Notification settings: https://repose.herakraft.co/settings/notifications
 
 --
 repose. Open the dashboard: https://repose.herakraft.co

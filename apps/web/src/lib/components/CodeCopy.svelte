@@ -1,18 +1,21 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
+	import { MediaQuery } from 'svelte/reactivity';
+	import CopyButton from '$lib/hk/CopyButton.svelte';
 	import { tabStopWhenScrolls } from '$lib/scroller';
 
-	// A command on a dashboard page with its own Copy button (I-659): the
-	// install line, `repose code todo-app`, `repose run`. One line of
-	// .codeblock in a row with the button: the line scrolls sideways in
-	// its own box and the button sits beside it, outside the scroll, so
-	// no text runs under it at any width. The button's face says "Copied"
-	// for 1.5s and its own live region says it to a screen reader, which
-	// does not announce a change to the text of the button it is on.
+	// One lone command on a light page with its own Copy (Guide B 12.18):
+	// `repose run`, the install line, `ssh todo-app.repose`. A light box
+	// in CommandList's shape (12px corners, a ghost Copy), mono 13px, the
+	// command scrolling sideways inside it, the button at its end outside
+	// the scroll. On a phone the command wraps, so all of it shows, and
+	// Copy is its icon. Several commands together go in CommandList;
+	// near-black is for code panes, so a page keeps one dark anchor.
+	const phone = new MediaQuery('max-width: 639.98px');
 	let {
 		command,
 		copy,
-		what
+		what,
+		prompt = false
 	}: {
 		/** The line shown, with no "$ " prompt. */
 		command: string;
@@ -20,35 +23,102 @@
 		copy?: string;
 		/** What the line is, for the button's name: "Copy {what}". */
 		what: string;
+		/** Show a muted "$ " before the command. */
+		prompt?: boolean;
 	} = $props();
 
-	let copied = $state(false);
-	let timer: ReturnType<typeof setTimeout> | undefined;
-
-	async function onclick() {
-		try {
-			await navigator.clipboard.writeText(copy ?? command);
-		} catch {
-			toast.error('Could not copy. Select the command instead.');
-			return;
-		}
-		copied = true;
-		clearTimeout(timer);
-		timer = setTimeout(() => (copied = false), 1500);
+	/** A line scrolled to its end shows its last characters unfaded. */
+	function markEnd(e: Event) {
+		const el = e.currentTarget as HTMLElement;
+		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
 	}
-
-	$effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="codeblock flex items-center gap-2 p-0">
-	<pre
-		class="codeblock min-w-0 flex-1 rounded-none border-0 pr-1"
-		use:tabStopWhenScrolls>{command}</pre>
-	<button
-		type="button"
-		class="btn-quiet mr-1.5 h-7 shrink-0 px-2 py-0 text-xs font-normal"
-		aria-label="Copy {what}"
-		{onclick}>{copied ? 'Copied' : 'Copy'}</button
-	>
-	<span class="sr-only" role="status">{copied ? 'Copied to the clipboard.' : ''}</span>
+<div class="code-copy">
+	<pre class="line" use:tabStopWhenScrolls onscroll={markEnd}>{#if prompt}<span
+				class="prompt"
+				aria-hidden="true">$&nbsp;</span
+			>{/if}{#each command.split(/(?<=\/)/) as part, i (i)}{#if i}<wbr />{/if}{part}{/each}</pre>
+	<CopyButton
+		text={copy ?? command}
+		label={phone.current ? undefined : 'Copy'}
+		ariaLabel="Copy {what}"
+		tone="page"
+		size="sm"
+	/>
 </div>
+
+<style>
+	/* As wide as its command, from 20rem to 40rem, so Copy sits beside the
+	   command (as CommandList does); a phone's column caps it first. */
+	.code-copy {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: fit-content;
+		min-width: min(100%, 20rem);
+		max-width: min(100%, 40rem);
+		padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+		border: 1px solid var(--hk-border);
+		border-radius: var(--hk-radius);
+		background: var(--hk-surface-2);
+	}
+	/* Copy is a ghost, as on a code pane: the box is the frame. */
+	.code-copy :global(.hk-copy.hk-copy--labelled:not(.is-copied)) {
+		border-color: transparent;
+		background: transparent;
+		color: var(--hk-text-2);
+	}
+	.code-copy :global(.hk-copy.hk-copy--labelled:not(.is-copied):hover) {
+		border-color: transparent;
+		background: var(--hk-hover);
+		color: var(--hk-text);
+	}
+	.line {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+		overflow-x: auto;
+		scrollbar-width: thin;
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--hk-text);
+		white-space: pre;
+	}
+	/* A line that scrolls fades over its last 1.5rem, as CommandList's
+	   do, so a cut command reads as more text (review r4). */
+	.line:global([data-scrolls='true']:not([data-end='true'])) {
+		mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
+	}
+	.line:focus-visible {
+		outline-offset: 2px;
+	}
+	/* On a phone the command wraps, after a slash where it can (the <wbr>s),
+	   anywhere where it cannot, so its end shows. */
+	@media (max-width: 639.98px) {
+		.line {
+			overflow-x: visible;
+			white-space: pre-wrap;
+			overflow-wrap: anywhere;
+		}
+	}
+	/* On touch the icon stays 24px, so it and its focus ring sit inside
+	   the box; a transparent ::before carries the 44px target. */
+	@media (pointer: coarse), (max-width: 639.98px) {
+		.code-copy :global(.hk-copy) {
+			min-height: 1.5rem;
+			min-width: 1.5rem;
+			margin-block: 0;
+		}
+		.code-copy :global(.hk-copy)::before {
+			content: '';
+			position: absolute;
+			inset: -0.625rem;
+		}
+	}
+	.prompt {
+		color: var(--hk-text-3);
+		user-select: none;
+	}
+</style>
