@@ -99,9 +99,11 @@ const (
 	authFailed
 	// authRefused: the user's own current certificate was offered and the
 	// connection was refused for the project (stopped, not found, in
-	// error, a principal from before a restore, the control plane away).
-	// It neither counts nor clears: a laptop retrying its own stopped
-	// project must not lock itself out of every project.
+	// error, a principal from before a restore, the control plane away),
+	// or the gateway's caches are too old to judge any certificate at all
+	// (I-868). It neither counts nor clears: a laptop retrying its own
+	// stopped project must not lock itself out of every project, and a
+	// control-plane outage must not lock out everyone who retries.
 	authRefused
 )
 

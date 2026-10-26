@@ -75,6 +75,45 @@ func TestOwnCertificateRefusalsNeverBanTheSource(t *testing.T) {
 	}
 }
 
+// I-868, the control-plane outage of 2026-10-26 07:50Z..17:09Z: the
+// control VM's WireGuard tunnel to the edge died, so the gateway could
+// not refresh its CA or revocation list, refused every connection with
+// MsgControlPlane, and counted each refusal towards the source's ban. A
+// laptop retrying `repose attach` banned its own address for 10 minutes
+// on top of the outage. The gateway's own staleness is not the caller's
+// doing, so it does not count.
+func TestControlPlaneOutageNeverBansTheSource(t *testing.T) {
+	h := newHarness(t, harnessOpts{revRefresh: 200 * time.Millisecond})
+	_, key := genKey(t)
+	cert := h.userCert(t, key, []string{h.project.ID}, 24*time.Hour)
+	h.api.Fail("GET /internal/revoked", "internal")
+	h.api.Fail("GET /internal/ca", "internal")
+	h.offset.Add(int64(StaleAfter.Seconds()) + 60)
+	time.Sleep(500 * time.Millisecond) // a refresh attempt fails against the api
+	for i := 0; i < banFailures+5; i++ {
+		if b := h.dialLikeOpenSSH(t, h.login, cert, key); b != MsgControlPlane {
+			t.Fatalf("attempt %d during the outage: banner %q, want %q", i+1, b, MsgControlPlane)
+		}
+	}
+	logs := h.logs.String()
+	if strings.Contains(logs, `"auth_ban"`) {
+		t.Fatal("a ban for the gateway's own stale caches")
+	}
+	if !strings.Contains(logs, `"reason":"route_error"`) || !strings.Contains(logs, `"counted":false`) {
+		t.Fatalf("the refusal is not logged as uncounted:\n%s", logs)
+	}
+	// The api comes back: the user connects on the next try, with no ban
+	// to wait out.
+	h.api.Unfail("GET /internal/revoked")
+	h.api.Unfail("GET /internal/ca")
+	time.Sleep(600 * time.Millisecond) // a refresh succeeds
+	c, banner, err := h.dial(h.login, cert)
+	if err != nil {
+		t.Fatalf("refused after the outage ended: %v %q", err, banner)
+	}
+	_ = c.Close()
+}
+
 // The scanner protection stays: 20 connections with no certificate of the
 // user ban the source, the ban is logged with the source's prefix alone,
 // and the next connection gets the one-line refusal.

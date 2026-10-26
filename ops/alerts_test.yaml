@@ -1219,6 +1219,40 @@ tests:
               description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
               runbook: "docs/ops/RUNBOOK.md#gatewaydown"
 
+  # --- GatewayCachesStale (I-870) -----------------------------------------
+  - interval: 1m
+    name: GatewayCachesStale pages while the gateway still answers its scrape
+    input_series:
+      - series: 'up{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+      - series: 'repose_gateway_revocation_cache_age_seconds{job="gateway",instance="10.255.0.1:9102",role="edge"}'
+        values: "30 60 90+60x22"
+    alert_rule_test:
+      # The cache is young, and a gateway that answers its scrape keeps
+      # GatewayDown quiet: without this rule nothing fires at all.
+      - eval_time: 5m
+        alertname: GatewayCachesStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: GatewayDown
+        exp_alerts: []
+      # Past 900 s, and held for 5 minutes.
+      - eval_time: 15m
+        alertname: GatewayCachesStale
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: GatewayCachesStale
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: gateway
+              instance: 10.255.0.1:9102
+              role: edge
+            exp_annotations:
+              summary: "The gateway has not reached the control plane for 15 minutes"
+              description: "The gateway's revocation list is older than 15 minutes. It still relays existing sessions, and at one hour it refuses every new ssh, run, attach and open with 'gateway cannot reach control plane'."
+              runbook: "docs/ops/RUNBOOK.md#gatewaycachesstale"
+
   # --- ApiHostsAbsent (I-648) ---------------------------------------------
   - interval: 1m
     name: ApiHostsAbsent pages when the host gauge disappears, and not while it exists

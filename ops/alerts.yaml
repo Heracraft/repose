@@ -296,6 +296,23 @@ groups:
           description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
           runbook: "docs/ops/RUNBOOK.md#gatewaydown"
 
+      - alert: GatewayCachesStale
+        # The gateway is up and relaying, so GatewayDown and
+        # MonitoringPathDown stay quiet, and it cannot reach the api: at
+        # StaleAfter (1 h) it refuses every new connection and nobody can
+        # ssh, run, attach or open. On 2026-10-26 the control VM's tunnel
+        # died one way and this gauge climbed for 9 hours with nothing
+        # watching it; ApiDown reads the same tunnel, so it is not the
+        # second opinion it looks like (DECISIONS I-870).
+        expr: repose_gateway_revocation_cache_age_seconds > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The gateway has not reached the control plane for 15 minutes"
+          description: "The gateway's revocation list is older than 15 minutes. It still relays existing sessions, and at one hour it refuses every new ssh, run, attach and open with 'gateway cannot reach control plane'."
+          runbook: "docs/ops/RUNBOOK.md#gatewaycachesstale"
+
       - alert: MonitoringPathDown
         # Prometheus reaches the gateway, every hostd and both api
         # processes through the edge's WireGuard, so a dead edge, a dead

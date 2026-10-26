@@ -544,6 +544,7 @@ side:
    ssh root@<control ip> 'umask 077; cat > /etc/wireguard/wg0.conf <<CONF
    [Interface]
    Address = 10.255.255.1/16
+   ListenPort = 51820
    PostUp = wg set %i private-key /etc/wireguard/privatekey
 
    [Peer]
@@ -557,6 +558,13 @@ side:
 
    Keep `edge_wireguard_public_key` in `prod.local.tfvars` anyway, so a
    replacement control VM comes up peered.
+
+   `ListenPort` is not decoration (DECISIONS I-866). The edge's static peer
+   carries no endpoint, so the edge learns this machine's address and port
+   from the packets it sends. Without a fixed port a restart comes back on
+   a new ephemeral one, the edge keeps answering the old one, and the
+   tunnel can only be repaired from this side. That is the 2026-10-26
+   outage (`docs/incidents/2026-10-26-control-tunnel-one-way.md`).
 
 Over the tunnel, the edge reaches the api's `/internal` and
 gRPC listeners at `10.255.255.1:8444` and `:8443` (the `api-grpc` app's port

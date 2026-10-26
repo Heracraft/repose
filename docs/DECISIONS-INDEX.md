@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-818 entries.
+821 entries.
 
 ## Scope
 
@@ -850,3 +850,6 @@ pointer, not a summary.
 - **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25502
 - **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25543
 - **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25570
+- **I-866** The control plane's WireGuard socket takes a fixed port, because the edge learns its endpoint from the packets it sends — 2026-10-26; L25607
+- **I-868** A refusal the gateway makes because its own caches are stale does not count towards the source's ban — 2026-10-26; L25636
+- **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L25658

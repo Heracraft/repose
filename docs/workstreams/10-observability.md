@@ -313,6 +313,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `HostServiceDown` | `node_systemd_unit_state{state="active"} == 0` for hostd, repose-guest-pool, repose-cache-volume, repose-npm-cache, docker-registry, for 15m (I-648) | warn |
 | `ApiDown` | `up{job=~"api\|api-grpc"} == 0` for 3m (I-648) | page |
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
+| `GatewayCachesStale` | `repose_gateway_revocation_cache_age_seconds > 900` for 5m (I-870) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
 | `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
 | `ApiErrors` | 5xx share per route `> 0.05` for 10m (I-800) | page |

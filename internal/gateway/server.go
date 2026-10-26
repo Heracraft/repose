@@ -374,6 +374,13 @@ type connState struct {
 	// project, not for who is asking, and does not count towards the
 	// source's ban (I-599).
 	ownCert bool
+	// ours is set when the gateway refuses for a reason of its own: its CA
+	// or revocation cache is older than StaleAfter, so it cannot judge any
+	// certificate. The client may be a user with a current certificate and
+	// the gateway cannot tell, which is exactly why the refusal does not
+	// count towards the source's ban. A client that offers no certificate
+	// at all is still refused before this, and still counts (I-868).
+	ours bool
 }
 
 // The auth log budget (I-599): auth_fail lines at 2 a second with 60 at
@@ -433,7 +440,7 @@ func (g *Gateway) HandleConn(ctx context.Context, c net.Conn) {
 	g.preAuth.release()
 	outcome := authOK
 	switch {
-	case err != nil && st.ownCert:
+	case err != nil && (st.ownCert || st.ours):
 		outcome = authRefused
 	case err != nil:
 		outcome = authFailed
@@ -604,9 +611,11 @@ func (g *Gateway) authenticate(ctx context.Context, st *connState, conn ssh.Conn
 	}
 	userCA, _, err := g.cas.Keys()
 	if err != nil {
+		st.ours = true
 		return g.fail(st, ResultRouteError, MsgControlPlane)
 	}
 	if g.revoked.Age() > StaleAfter {
+		st.ours = true
 		return g.fail(st, ResultRouteError, MsgControlPlane)
 	}
 	if !keysEqual(cert.SignatureKey, userCA) {

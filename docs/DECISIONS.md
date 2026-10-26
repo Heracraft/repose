@@ -25603,3 +25603,73 @@ They claimed the resume takes 114 ms, which was measured on staging;
 host-01 measured `wake_ms=225` on the first real wake. A measured figure
 from the wrong machine is still the wrong number for a user reading it
 about theirs.
+
+**I-866. The control plane's WireGuard socket takes a fixed port, because
+the edge learns its endpoint from the packets it sends.** (control-tunnel
+incident, 2026-10-26) The edge's static peer for the control plane carries
+no endpoint: the edge learns the VM's address and port from the first
+packet that authenticates, and WireGuard updates a peer's endpoint only on
+such a packet. `wg0.conf` as cloud-init wrote it had no `ListenPort`, so
+every restart came back on a new ephemeral port, the edge kept answering
+the port from before the restart, and the tunnel could be repaired only
+from the VM's side.
+
+On 2026-10-26 Azure stopped the VM at 07:46:55Z. It came back on port
+51275 and its packets stopped arriving at the edge altogether, so neither
+end could repair anything: the gateway lost `/internal`, its caches went
+stale after an hour, and from 08:50Z to 17:09Z no user could `ssh`, `run`,
+`attach` or `open`. `wg set wg0 listen-port 51820` fixed it in 12 seconds.
+Why that one 5-tuple was blackholed is Azure's side and is not
+established; what is settled is that a restart must not be a coin toss.
+`ListenPort = 51820` is now in the cloud-init template, in
+`infra/README.md` and on the live VM. The port matches the edge's hub port
+for one reason only: a number a reader recognises.
+
+*Rejected:* an endpoint on the edge's static peer, so the edge can dial
+first. It makes the control VM's address a second fact to keep in
+`nix/edge/edge-01.nix` and an edge rebuild part of replacing the VM;
+`persistent-keepalive` from the VM already means the VM dials, and a fixed
+port is what makes that work after a restart. *Revisit when:* the control
+plane is more than one VM, where a port per VM stops being obvious.
+`docs/incidents/2026-10-26-control-tunnel-one-way.md`.
+
+**I-868. A refusal the gateway makes because its own caches are stale does
+not count towards the source's ban.** (control-tunnel incident,
+2026-10-26) I-599 took the user's own refused certificate off the ban
+budget and its text already named "the control plane away", but the code
+read that budget off `st.ownCert`, which is set only after the CA,
+validity, revocation and handle checks. The two refusals for a stale CA or
+a stale revocation list happen *before* those checks, so they counted:
+during the 2026-10-26 outage the owner's laptop retried `repose attach`
+and banned its own address for 10 minutes on top of the 9-hour outage,
+reading `kex_exchange_identification: read: Connection reset by peer`,
+which names neither cause.
+
+A gateway that cannot judge any certificate cannot tell whether the client
+holds a good one, and that uncertainty is the gateway's, not the caller's.
+`connState.ours` marks those two paths and joins `ownCert` in the outcome.
+A client that offers no certificate at all is still refused before this and
+still counts, so the scanner protection is unchanged; a scanner that offers
+a random certificate escapes the ban for the length of an outage, which
+nftables' 64 connections and 20 a second per source still cover.
+`TestControlPlaneOutageNeverBansTheSource` fails on the old code at
+attempt 21.
+
+**I-870. The gateway's cache age is the alert for a control plane the
+gateway cannot reach.** (control-tunnel incident, 2026-10-26) Nothing paged
+in the nine hours of the 2026-10-26 outage, and the alert table explains
+why: `GatewayDown` and `MonitoringPathDown` read `up{job="gateway"}`, and
+the gateway was up and scrapeable the whole time — it was relaying
+existing sessions and refusing new ones. `ApiDown` would have seen it, but
+Prometheus scrapes the api at `10.255.255.1` through the very tunnel that
+was down, so it is not an independent witness of this failure.
+
+`GatewayCachesStale` pages on `repose_gateway_revocation_cache_age_seconds
+> 900` for 5 minutes: the gateway's own view, scraped over a path that was
+working, 45 minutes before `StaleAfter` turns it into a total outage. The
+gauge is already set on every refresh attempt, failures included, so this
+costs no new instrumentation. *Rejected:* alerting on the `route_fail` log
+lines (Loki, a second system, for a signal a gauge already carries), and
+raising `StaleAfter` so an outage is survived longer (a gateway that
+accepts certificates against an hours-old revocation list is a gateway
+that relays a revoked one, I-434).
