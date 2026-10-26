@@ -65,7 +65,103 @@ locals {
       os_disk_gb     = coalesce(try(var.host_shapes[name].os_disk_gb, null), var.host_os_disk_gb)
     }
   }
+
+  # Everything the installer image is built from, so the preflight re-runs
+  # when the image changes and not on every apply. Guarded on flake.nix so a
+  # stale flake_path reaches the precondition's message rather than failing
+  # here on a missing file; fileset() on a directory that is not there is
+  # empty, not an error.
+  kexec_image_sources = fileexists("${var.flake_path}/flake.nix") ? merge(
+    {
+      "flake.nix"  = filesha256("${var.flake_path}/flake.nix")
+      "flake.lock" = filesha256("${var.flake_path}/flake.lock")
+    },
+    {
+      for f in fileset("${var.flake_path}/installer", "**") :
+      "installer/${f}" => filesha256("${var.flake_path}/installer/${f}")
+    },
+  ) : {}
 }
+
+# Every host_flake_attrs entry must name a module that is there. `host-03`
+# pointing at an attribute whose nix/hosts/host-03.nix was never written
+# fails during that host's install, after the VM, the disk and the NIC exist.
+# It is a file check and not an evaluation, so it catches the typo and the
+# forgotten file and nothing subtler.
+check "host_flake_attrs_name_a_module" {
+  assert {
+    condition = length([
+      for name, attr in var.host_flake_attrs :
+      attr if !fileexists("${var.flake_path}/hosts/${attr}.nix")
+    ]) == 0
+    error_message = format(
+      "host_flake_attrs names %s, and %s has no matching nix/hosts/<attr>.nix. The attribute would fail to evaluate during that machine's install, with the VM and its data disk already created.",
+      join(", ", [for name, attr in var.host_flake_attrs : "${name} -> ${attr}" if !fileexists("${var.flake_path}/hosts/${attr}.nix")]),
+      var.flake_path,
+    )
+  }
+}
+
+# Build the installer image before the first VM exists.
+#
+# This is the cheapest check there is, and it stands in for the most
+# expensive recovery. On 2026-10-26 a host was created, kexeced into an
+# image that could not get an address, and waited on for 16h56m holding this
+# environment's only state lock. A flake that does not evaluate, an
+# installer attribute that is not there, and an image that does not build
+# are all things to learn now, with nothing created and the lock held no
+# longer than a cached `nix build`.
+#
+# Every machine is ordered behind this, not merely behind its own install,
+# so a broken image costs no VM at all.
+#
+# --out-link, and the link is kept under .terraform, which is per-root and
+# not committed. The triggers below are the image's sources, so this does
+# not re-run on an apply that changed nothing; with --no-link, a `nix store
+# gc` in between would then collect the image while this resource went on
+# reporting success. The link stops that for as long as .terraform survives,
+# and a wiped .terraform costs only a rebuild, because each install builds
+# the attribute itself rather than trusting this resource's record of it.
+# This resource's job is the early failure, not the delivery.
+resource "terraform_data" "kexec_image" {
+  triggers_replace = merge(local.kexec_image_sources, { attr = var.kexec_flake_attr })
+
+  lifecycle {
+    precondition {
+      condition     = fileexists("${var.flake_path}/flake.nix") && fileexists("${var.flake_path}/installer/default.nix")
+      error_message = "flake_path is ${var.flake_path}, which has no flake.nix or no installer/default.nix. Usually this means the work is not on that checkout's branch yet rather than that the path is wrong: flake_path names the checkout the apply BUILDS from, which is not the worktree you are running make in, and nix reads a bare path inside a git repo as a git flakeref, so only files committed there exist as far as the build is concerned. Adding a host or the installer from a worktree: let the release queue land it on main, then apply."
+    }
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/usr/bin/env", "bash", "-euo", "pipefail", "-c"]
+    # Under `timeout` for the same reason every other step here is: a
+    # substituter that accepts a connection and then stops answering would
+    # otherwise hold the state lock with no deadline, which is the failure
+    # this whole preflight exists to shorten.
+    command = "timeout --kill-after=1m '${var.install_deadline}' nix build --out-link '${path.root}/.terraform/repose-kexec-installer' '${var.flake_path}#${var.kexec_flake_attr}'"
+  }
+}
+
+# Deliberately not checked in a check block, because OpenTofu cannot do it
+# well:
+#
+#   Whether the image builds, and whether the flake attribute evaluates.
+#   check blocks and preconditions evaluate expressions; they cannot run
+#   nix. That is why the resource above exists instead: it runs the real
+#   build, ordered ahead of every VM. The cost, accepted knowingly, is that
+#   it runs at apply time and not at plan time, so `tofu plan` cannot tell
+#   you the image builds -- only `tofu apply` can, and it does so before
+#   creating anything. An `external` data source would move it to plan
+#   time, at the price of shelling out on every plan including read-only
+#   ones, which gives a plan side effects and makes it as slow as a build.
+#
+#   Whether a join token is still valid. A token is opaque and the api
+#   keeps only its hash and its expiry (docs/interfaces/db-schema.md), so
+#   nothing in the string says when it was minted. A token that went stale
+#   in the 24 hours since it was minted is indistinguishable here from a
+#   fresh one; it surfaces as hostd's exit 3 on a rejected token. Presence
+#   is all that can be checked, and that is the check below.
 
 # A host with no token boots, finds nothing at /run/repose/join-token, and
 # logs register_fail every 30 seconds forever (docs/workstreams/11-infra-
@@ -221,8 +317,15 @@ module "edge" {
   ssh_private_key_path = var.ssh_private_key_path
   authorized_keys      = var.operator_authorized_keys
   build_on             = var.build_on
+  kexec_image          = var.kexec_image
+  kexec_flake_attr     = var.kexec_flake_attr
+  install_deadline     = var.install_deadline
 
   tags = local.tags
+
+  # Ordered behind the image build, not merely behind its own install: a
+  # broken installer image must cost no VM.
+  depends_on = [terraform_data.kexec_image]
 }
 
 # Not created until wave 3. The api, the dashboard and Logto are workstreams
@@ -287,6 +390,9 @@ module "host" {
   ssh_private_key_path = var.ssh_private_key_path
   authorized_keys      = var.operator_authorized_keys
   build_on             = var.build_on
+  kexec_image          = var.kexec_image
+  kexec_flake_attr     = var.kexec_flake_attr
+  install_deadline     = var.install_deadline
 
   # Hosts have no public IP; every provisioner goes through the edge, which
   # must therefore already be running NixOS.
@@ -297,7 +403,7 @@ module "host" {
 
   tags = local.tags
 
-  depends_on = [module.edge]
+  depends_on = [module.edge, terraform_data.kexec_image]
 }
 
 module "dns" {

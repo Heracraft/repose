@@ -331,8 +331,10 @@ Prometheus's view: a scrape of `:9101` through the edge over WireGuard
 network died after a live migration can fail both, or only one; on
 2026-10-10 HostUnreachable never fired and no `host_unreachable` was
 logged. The gauge is computed by api-grpc, so a dead api silences it
-(ApiHostsAbsent). While HostdDown fires, this alert is held back:
-HostdDown names the host.
+(ApiHostsAbsent). The alert names the host
+(`repose_api_host_state{state="unreachable"}`, one series per host), and
+while HostdDown fires *for that host* this one is held back; another
+host's scrape failure does not hold it back (I-786).
 
 1. From woker-1: `ssh -p 2222 root@<edge ip> ping -c3 10.255.0.<host>`
    (woker-1 has no WireGuard of its own), and
@@ -385,8 +387,9 @@ which needs the console password (I-654).
 
 Prometheus has not scraped hostd on a host for 3 minutes. This is the
 page for a host: the host, its network, the edge's WireGuard or hostd is
-down. While it fires, HostUnreachable and the host's warnings are held
-back. "HostUnreachable" explains the two paths.
+down. While it fires, HostUnreachable and the warnings for *this* host are
+held back; alerts about another host are not. "HostUnreachable" explains
+the two paths.
 
 1. Is it only this host? If every target is down too, MonitoringPathDown
    fires instead of this page; if GatewayDown fires beside it, it is the
@@ -470,34 +473,45 @@ GatewayDown, HostdDown, ApiDown and ApiHostsAbsent.
 
 ## ApiHostsAbsent
 
-`repose_api_hosts` has had no series for 5 minutes, so HostUnreachable
-cannot fire. ApiDown holds this back when api-grpc is down; on its own it
-means api-grpc answers but no longer exports the gauge, or the scrape
-target changed.
+`repose_api_hosts` or `repose_api_host_state` has had no series for 5
+minutes, so the three alerts that read the api's own view of the hosts
+table -- HostUnreachable, HostUnregistered and HostNotInTargets -- cannot
+fire. ApiDown holds this back when api-grpc is down; on its own it means
+api-grpc answers but no longer exports the gauges, or the scrape target
+changed.
 
-1. `curl -s http://10.255.255.1:9104/metrics | grep -c repose_api_hosts`
-   from the monitoring server. Zero: the api-grpc build lost the metric;
-   look at the last deploy.
-2. Until it is back, watch hosts with HostdDown and `repose-admin hosts
-   list`.
+1. `curl -s http://10.255.255.1:9104/metrics | grep -c
+   'repose_api_host'` from the monitoring server. Zero, or only the
+   `repose_api_hosts` lines with no `repose_api_host_state`: the api-grpc
+   build lost a family; look at the last deploy. Both are set by the host
+   sweep, which runs every 15 seconds in api-grpc only, so an api process
+   in `http` mode exports neither by design.
+2. Until they are back, watch hosts with HostdDown and `repose-admin
+   hosts list`.
 
 ## HostNotInTargets
 
-The api reports more `ready` hosts than Prometheus scrapes hostd on, so one
-host has no series and every alert scoped to the targets file is silent on
-it, tenants on it included. The usual cause is a host added by an apply
-whose entry has not been copied to this server: the apply writes nothing
-here (`infra/README.md` "Adding a host", the monitoring step).
+The api has a host `ready` whose `host_id` no entry in the targets file
+carries, so that host has no series and every alert scoped to the file is
+silent on it, tenants on it included. The alert names the host. The usual
+cause is a host added by an apply whose entry has not been copied to this
+server: the apply writes nothing here (`infra/README.md` "Adding a host",
+the monitoring step).
 
-1. `repose-admin hosts list` for the ready hosts and their WireGuard
-   addresses, against the `host_id` labels in
-   `/etc/prometheus/repose/targets/hosts.yml`. The host in the first and
-   not the second is the one.
+The rule compares ids, not counts (I-786): a file that still lists a
+retired host used to balance the numbers and hide a new host that had no
+entry at all. A host that *is* listed and whose scrape is failing is
+HostdDown, not this.
+
+1. `repose-admin hosts list` for the ready hosts, against the `host_id`
+   labels in `/etc/prometheus/repose/targets/hosts.yml`. The alert's
+   `host_id` is the one to look for.
 2. Add or correct its entry in `ops/prometheus/targets/hosts.yml` in the
-   repository, with the address from that listing or from the host's own
-   `/run/repose/host.env` (`WG_ADDR`), and copy the file to
-   `/etc/prometheus/repose/targets/`. Prometheus re-reads it within a
-   minute; no restart and no reload.
+   repository, and copy the file to `/etc/prometheus/repose/targets/`.
+   `hosts list` does not print WireGuard addresses; read the host's own
+   `/run/repose/host.env` (`WG_ADDR`), or `wg show wg0 allowed-ips` on
+   the edge. Prometheus re-reads the file within a minute; no restart and
+   no reload.
 3. `up{host_id="<name>"}` is then 1 for the `hosts`, `hostd` and
    `fluent-bit` jobs. If it is 0 for one of them, that host's exporter or
    the WireGuard path to it is the problem: HostScrapeDown, HostdDown and
@@ -1709,8 +1723,24 @@ Postgres grows. Nothing else breaks and no data is lost
 
 ## HostUnregistered (host never registered)
 
-A new host has been up for more than five minutes and is not in `hosts
-list`.
+The api has had a host row in `registering` for 30 minutes: the row
+`repose-admin hosts add` created when it minted the join token, and no
+hostd has presented that token. `repose-admin hosts list` shows it as
+`registering` with no heartbeat.
+
+This is the one host failure nothing else can see. Every other per-host
+alert reads the host's own exporters, and a host that never arrived has
+none, so before this rule a created host was indistinguishable from no
+host at all: host-02 sat created and unregistered for 16 h 56 m on
+2026-10-26 and the owner heard of it from an unrelated outage.
+
+Start with the apply, because the most likely answer is that it never
+finished: a `make apply` whose install step is still running, or hung, is
+this alert with nothing wrong on the host at all. A token minted for an
+install nobody has run yet is the same thing: silence it until the apply
+(`amtool silence add alertname=HostUnregistered host_id=<name>
+--duration 24h --comment "host-02 install scheduled for <date>"`).
+Otherwise:
 
 1. `ssh -J root@<edge ip>:2222 root@<private ip>`: `journalctl -u hostd`.
    `token_expired` or `token_used`: mint a new one (`repose-admin hosts
@@ -2491,6 +2521,47 @@ edge, no Hello in the api log, and the boot log stops early or loops.
    after.
 4. If the OS disk cannot be saved: "Host loss". The data disk and the
    snapshots are what the tenants' work is on.
+
+## Install hit the deadline
+
+`make apply ENV=prod` printed that an install was killed at `install_deadline`
+(45 minutes by default) and exited. The install did not fail; it ran out of
+time. The apply released the state lock when it died, so other applies are no
+longer blocked, and the machine's `terraform_data.install` is tainted: a later
+apply retries the install and creates nothing twice.
+
+The deadline exists because nothing else bounds this. OpenTofu takes no
+`timeout` on a `local-exec`, and nixos-anywhere waits for the post-kexec
+machine with an unbounded `until runSsh ...; do sleep 5; done`. On 2026-10-26
+that loop ran for **16 hours 56 minutes** against a machine that was alive and
+unreachable, holding this environment's only state lock the whole time
+(DECISIONS I-872, I-786).
+
+Both checks below are Azure control-plane reads. They need neither the machine
+nor the lock, which is the point: they work when the machine does not.
+
+1. **What the installer did.** `az vm boot-diagnostics get-boot-log -g
+   repose-prod -n <host>`. The image repose installs through runs at
+   `loglevel=7`, so driver and network messages reach this log. A machine that
+   kexec'd successfully prints the installer's banner and its login prompt; a
+   machine that never kexec'd stops in the provider image.
+2. **Whether it had a usable address.** `az monitor metrics list --resource
+   <vm id> --metrics 'Network In Total' 'Network Out Total' --interval PT1M`.
+   A **byte-exact flat count** minute after minute is a discovery loop that
+   never converged: the installer is up and has no address. host-02 sat at
+   3,256 B/min in and about 3,450 B/min out for 17 hours. A **successful**
+   install looks nothing like it: host-stg-01 moved 397 MB, then 204 MB, then
+   506 MB inbound in separate minutes.
+
+   These are VM-level counters, so traffic over an accelerated-networking VF
+   bypasses them. "No bulk inbound" is therefore not proof nothing arrived.
+   The flat byte-exact count is the tell, not the absence of volume.
+
+If the installer is up with no address, the image is the suspect. Confirm
+which image the machine kexec'd into before anything else: ours names itself
+`repose-kexec-installer` and the upstream asset names itself
+`nixos-kexec-installer-noninteractive`. An install that reaches for the
+upstream asset is running the defect I-872 exists to remove.
 
 ## Host loss
 

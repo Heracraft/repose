@@ -94,3 +94,21 @@ dns_zone = "herakraft.co"
 # Azure Monitor alerts on all three VMs, emailed to alert_email
 # (prod.local.tfvars). DECISIONS I-648; RUNBOOK "Azure alert".
 alerts_enabled = true
+
+# The kexec installer image every machine here is installed through
+# (nix/installer) is built by the apply, ahead of any VM, so there is nothing
+# to set here and nothing to remember. `kexec_image` exists to override that
+# with an image built by hand, which is a bisect rather than a configuration:
+#
+#   nix build '.?dir=nix#kexec-installer'
+#   make apply ENV=prod \
+#     TF_VAR_kexec_image="$(readlink -f result)/repose-kexec-installer-x86_64-linux.tar.gz"
+#
+# Pass the .tar.gz, not the directory: nixos-anywhere reads the extension to
+# know how to decompress it. `result` is a gc root, so the path survives a
+# `nix store gc` between the build and the apply.
+#
+# A URL works in the same variable and is the better shape once the image is
+# published somewhere: nixos-anywhere hands a URL to the target to fetch
+# directly, where a local path is uploaded through the edge's ProxyJump at
+# about half a gigabyte per install.

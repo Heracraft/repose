@@ -16,6 +16,19 @@
     # version, so removing it early fails the build rather than quietly
     # shipping the vulnerable kernel.
     nixpkgs-host-kernel.url = "github:NixOS/nixpkgs/f0b687e10c0c5b2f199ca57127071ef922c0f92d";
+    # The kexec installer image's modules. nixos-anywhere with no
+    # `--kexec` makes the *target* download a fixed upstream tarball from
+    # this project's nixos-25.05 release, so the image that installs every
+    # repose machine was neither built nor pinned by us. `nix/installer`
+    # builds it here instead, on the host kernel pin and without the
+    # MAC-matching network restore that hung host-02's install for 17
+    # hours. Only `nixosModules.kexec-installer` is used, so this input's
+    # own nixpkgs pins follow ours and nothing is built from theirs.
+    nixos-images = {
+      url = "github:nix-community/nixos-images";
+      inputs.nixos-unstable.follows = "nixpkgs";
+      inputs.nixos-stable.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -45,7 +58,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-host-kernel, home-manager, microvm, disko, nix-index-database, fragment }:
+  outputs = { self, nixpkgs, nixpkgs-host-kernel, home-manager, microvm, disko, nix-index-database, nixos-images, fragment }:
     let
       system = "x86_64-linux";
       lib = nixpkgs.lib;
@@ -88,13 +101,18 @@
         homeManagerModule = home-manager.nixosModules.home-manager;
       };
 
+      # The host kernel from its own pin (I-778), not from `nixpkgs`. Shared
+      # by the hosts and by the kexec installer they are installed through,
+      # so a driver behaves the same way during the install as it does on
+      # the installed machine.
+      hostKernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages;
+
       hostModules = [
         disko.nixosModules.disko
         ./hosts
         { repose.host.hostdPackage = goPkgs.hostd; }
-        # The host kernel from its own pin (I-778), not from `nixpkgs`. In
-        # hostModules so the host VM tests boot the kernel the hosts run.
-        { repose.host.kernelPackages = (import nixpkgs-host-kernel { inherit system; }).linuxPackages; }
+        # In hostModules so the host VM tests boot the kernel the hosts run.
+        { repose.host.kernelPackages = hostKernelPackages; }
       ];
       mkHost = { hostName, provider ? "azure", modules ? [ ] }:
         lib.nixosSystem {
@@ -124,6 +142,22 @@
       # pointed at `hostdev` instead of the api, because staging has no
       # control plane (DECISIONS I-642).
       nixosConfigurations.host-stg-01 = mkHost { hostName = "host-stg-01"; modules = [ ./hosts/host-stg-01.nix ]; };
+
+      # The kexec installer every machine above is installed through
+      # (`nix/installer`), and the edge with them. Not a target of
+      # nixos-anywhere: it is the system nixos-anywhere kexecs *into*,
+      # handed to it as `--kexec packages.kexec-installer`'s tarball
+      # (infra/azure/modules/nixos_anywhere). One image for every machine,
+      # because the defect it exists to fix is in the provider's NIC shape
+      # and not in anything a particular host does.
+      nixosConfigurations.installer = lib.nixosSystem {
+        inherit system;
+        modules = [
+          nixos-images.nixosModules.kexec-installer
+          ./installer
+          { repose.installer.kernelPackages = hostKernelPackages; }
+        ];
+      };
 
       # Edge: gateway + WireGuard hub. docs/workstreams/06-gateway-edge.md
       # The production values (operator addresses, the control plane's
@@ -189,6 +223,14 @@
         inherit (goPkgs) guestd repose-hook hostd hostdev api repose-admin repose gateway;
         # Workstream 01's stand-in, kept for the host VM tests.
         hostd-stub = pkgs.callPackage ./hosts/hostd-stub.nix { };
+        # The kexec installer's tarball: a directory holding
+        # repose-kexec-installer-x86_64-linux.tar.gz (the name is ours,
+        # set by `system.kexec-installer.name` in nix/installer, so a path
+        # on an operator's disk says whose image it is). nixos-anywhere's
+        # `--kexec` wants the file, not the directory, and picks its
+        # decompression from the name's extension, so the path infra
+        # passes ends in that filename.
+        kexec-installer = self.nixosConfigurations.installer.config.system.build.kexecInstallerTarball;
         # A runner with an empty fragment: what `nix build .#guest-runner`
         # produces and what the local Cloud Hypervisor boot test uses.
         guest-runner = mkGuestRunner {
@@ -681,6 +723,80 @@
           tmux kill-server
           touch $out
         '';
+        # The installer image's networking, asserted rather than observed.
+        # Every property here was a cause or a symptom of host-02's 17-hour
+        # install, and each is one upstream change away from coming back: a
+        # renamed restore-network would unmask itself, a new catch-all unit
+        # could sort below 05, a kernelPackages default could drift off the
+        # host pin. Reads the rendered unit files and the config, so it
+        # builds no kernel and no initrd.
+        installer-leaves-the-vf-alone =
+          let
+            cfg = self.nixosConfigurations.installer.config;
+          in
+          pkgs.runCommand "installer-leaves-the-vf-alone" {
+            etc = cfg.system.build.etc;
+            kernelVersion = cfg.boot.kernelPackages.kernel.version;
+            hostKernelVersion = hostKernelPackages.kernel.version;
+            cmdline = lib.concatStringsSep " " cfg.boot.kernelParams;
+          } ''
+            fail=0
+            say() { echo "$*" >&2; fail=1; }
+            net=$etc/etc/systemd/network
+
+            # The installer must boot the kernel the hosts boot: a NIC that
+            # behaves one way during the install and another afterwards is
+            # the hardest kind of fault to see, because there is no host to
+            # log in to while the installer is running.
+            [ "$kernelVersion" = "$hostKernelVersion" ] \
+              || say "installer kernel $kernelVersion is not the host pin $hostKernelVersion"
+
+            # Load order is the whole mechanism: networkd takes the first
+            # matching unit, so the VF's unit must sort below every unit
+            # that could otherwise claim it.
+            got=$(cd $net && echo *.network)
+            want="05-vf-unmanaged.network 10-uplink.network 99-ethernet-default-dhcp.network 99-wireless-client-dhcp.network"
+            [ "$got" = "$want" ] || say "networkd units are [$got], expected [$want]"
+
+            # No unit shipped in the image may match on MACAddress. On Azure
+            # accelerated networking the synthetic NIC and the VF share one,
+            # so a MAC-matched unit matches both links and DHCPs the VF as a
+            # second NIC. What this catches is someone reaching for the
+            # upstream approach again in a unit written here; it cannot
+            # catch restore-network's own units, which that service writes
+            # into /etc/systemd/network at boot and so never appear in the
+            # built etc. The mask assertion below is what stops those.
+            if grep -rl 'MACAddress' $net; then
+              say "a networkd unit in the installer matches on MACAddress"
+            fi
+
+            grep -qx 'Driver=mana mlx5_core mlx4_core' $net/05-vf-unmanaged.network \
+              || say "05-vf-unmanaged does not match the VF drivers"
+            grep -qx 'Unmanaged=true' $net/05-vf-unmanaged.network \
+              || say "05-vf-unmanaged does not leave the VF unmanaged"
+            grep -qx 'Driver=hv_netvsc' $net/10-uplink.network \
+              || say "10-uplink does not match the synthetic NIC by driver"
+            grep -qx 'DHCP=ipv4' $net/10-uplink.network \
+              || say "10-uplink does not take DHCP"
+
+            # Masked, not merely not-wanted: multi-user.target.wants still
+            # names it, and a symlink to /dev/null is what stops it.
+            unit=$etc/etc/systemd/system/restore-network.service
+            [ "$(readlink -f $unit)" = /dev/null ] \
+              || say "restore-network.service is not masked (resolves to $(readlink -f $unit))"
+
+            # At the stock loglevel 4 neither netvsc, mana nor DHCP reaches
+            # the console, which is why a failed install and a successful
+            # one looked identical.
+            case " $cmdline " in
+              *" loglevel=7 "*) ;;
+              *) say "the installer cmdline is [$cmdline], with no loglevel=7" ;;
+            esac
+
+            [ "$fail" = 0 ] || exit 1
+            echo "installer on $kernelVersion: VF unmanaged by driver at 05, DHCP on hv_netvsc at 10, no MACAddress match, restore-network masked, loglevel=7"
+            touch $out
+          '';
         guest-runner-builds = self.packages.${system}.guest-runner;
         # docs/workstreams/04-guestd.md §7: the real binary exercised inside a
         # real guest.

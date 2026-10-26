@@ -95,8 +95,9 @@ months, limited to 20 redemptions) can go in the tweet.
 
 ## 3. Seats and the hosts (money)
 
-**The launch adds host-02 beside host-01; it resizes nothing.** The earlier
-plan set `host_size` to `Standard_D64s_v7` and applied it to the one host,
+**The launch adds host-02 beside host-01; it resizes nothing** (DECISIONS
+I-786, amending I-14 and I-39). The earlier plan set `host_size` to
+`Standard_D64s_v7` and applied it to the one host,
 which is a deallocate, resize and start with every guest on it stopped,
 including the conductor's own machine. host-02 is a second host:
 `Standard_D64s_v7`, class `azure-d64s-v7`, a 2048 GB data disk, running
@@ -160,29 +161,96 @@ that changes host-01 reboots a host with tenants on it.
 
 1. Add host-02.
 
+   **This step needs the work on `main` first; it cannot be done from a
+   worktree.** `flake_path` in `prod.local.tfvars` is
+   `/home/azureuser/projects/factory/nix`, the main checkout, not whatever
+   worktree you ran `make` from, and nix resolves a bare path inside a git
+   repository as a git flakeref, so only what is committed there is
+   visible. That checkout today has no `nix/installer`, no
+   `nix/hosts/prod.nix` and no `host-02` attribute.
+
+   Today that stops `tofu plan`, on the preflight build's `flake_path`
+   precondition, with a message naming the path and saying the likely cause
+   is work that has not landed yet. It is the one gate here that catches
+   the pre-merge state by name, and you never reach nix.
+
+   Once the installer is on `main` that precondition passes for good, and a
+   missing **host** attribute is caught by nothing stronger than a warning:
+   the plan succeeds and the apply fails inside nix with `does not provide
+   attribute ... Did you mean host-01?`, which reads like a broken flake
+   rather than like being too early. That is the shape whoever adds host-03
+   from a worktree will hit.
+
+   So: let the release queue land this on `main`, and check that the
+   checkout `flake_path` names has pulled it. A merged `main` this checkout
+   has not fetched is indistinguishable from the un-merged case, down to
+   the same `Did you mean host-01?`.
+
    1. `repose-admin hosts add --name host-02 --provider azure` prints a
       single-use token that expires in 24 hours.
-   2. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
-      `nix/flake.nix` must exist **in the checkout the apply runs from**:
-      nixos-anywhere installs from `flake_path` on the machine running
-      `tofu`, not from git, so an attribute that is only on a branch
-      somebody else pushed is not there. The file carries what host-01's
-      does — the api address and server name, the platform CA, the
+   2. Nothing to do about the installer image, but know what it is. A
+      host installs through the kexec image this repository builds, not
+      the upstream asset nixos-anywhere would otherwise have the target
+      download: that asset matches interfaces by MAC, and on an Azure
+      size with accelerated networking the synthetic NIC and the SR-IOV
+      VF share one MAC, so it DHCPs the VF as if it were a second NIC.
+      That is what hung host-02's first install. `kexec_image` is unset
+      in `prod.tfvars`, and unset means ours, so the fix does not depend
+      on anyone remembering a variable on the apply line.
+
+      The apply builds the image before it creates anything and orders
+      both the edge and the hosts behind that build, so a flake that
+      does not build costs no VM. Each install then builds the same
+      attribute again, which is a cache hit, and uploads the tarball:
+      526 MB through the edge per install (`infra/README.md`
+      "Adding a host" step 1). Setting `kexec_image` by hand pins one
+      image, which is for bisecting a bad install rather than for normal
+      use, and a URL in the same variable would be fetched by host-02
+      directly instead of crossing the edge.
+   3. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
+      `nix/flake.nix` must exist **in the checkout `flake_path` names**,
+      which is the main one: nixos-anywhere installs from that path on the
+      machine running `tofu`, and because it is a bare path inside a git
+      repository nix reads only what is committed there, so an attribute
+      that is uncommitted or on somebody else's branch is not there. The
+      file imports
+      `nix/hosts/prod.nix`, which carries everything every production host
+      shares (the api address and server name, the platform CA, the
       bootstrap key, the base repository, the Blob account and snapshot
-      identity, and the freeze vault if the freeze is on — and
-      `host_flake_attrs` must name it. Without that entry the install is
-      the generic `host` configuration, which knows no api address, so
-      the host comes up and never registers; the plan and the apply warn
-      and neither stops.
-   3. `host-02 = "<token>"` in `prod.local.tfvars`, and the `host_shapes`
+      identity, the idle pause and the freeze vault), and names on top of
+      it only host-02's own freeze write rate. `host_flake_attrs` must
+      name the host. Without that entry the install is the generic `host`
+      configuration, which knows no api address, so the host comes up and
+      never registers; the plan and the apply warn and neither stops.
+   4. `host-02 = "<token>"` in `prod.local.tfvars`, and the `host_shapes`
       entry and `"host-02"` in `hosts` in `prod.tfvars`.
-   4. `make -C infra plan ENV=prod`, and read it: host-02's VM, data
+   5. `make -C infra plan ENV=prod`, and read it: host-02's VM, data
       disk, NIC and install, and **no change to host-01**.
-   5. `make -C infra apply ENV=prod`. About ten minutes, most of it the
-      kexec and the closure copy. `build_on` defaults to `auto`, so the
-      closure builds on the machine running the apply and is copied over
-      the edge.
-   6. On the monitoring server, once host-02 is `ready`: correct its
+   6. `make -C infra apply ENV=prod`. About fifteen minutes: the image
+      upload, the kexec and the closure copy. `build_on` defaults to
+      `auto`, so the closure builds on the machine running the apply and
+      is copied over the edge, and so is the 526 MB installer image.
+
+      `install_deadline`, 45 minutes by default, bounds three things
+      separately, and each exits 124 with its own message: the preflight
+      image build, this install's own build of the same attribute, and
+      the nixos-anywhere run. A build that hits it says plainly that
+      nothing was installed and no machine was touched, which is how you
+      tell it from the install hitting it. Nothing else bounds the
+      install: a
+      target that never comes back holds the apply and this
+      environment's only state lock until it is killed by hand, which on
+      host-02's first attempt was 16 hours 56 minutes with no emergency
+      apply possible against the edge, the control plane, DNS or the
+      vaults.
+
+      While it runs, the two commands that tell you whether it is
+      working are `az vm boot-diagnostics get-boot-log` and
+      `az monitor metrics list --interval PT1M`. Both are read-only and
+      neither needs SSH. `infra/README.md` "Watching an install" has
+      them with the numbers from host-02's failure, and reading it before
+      the apply is cheaper than reading it during one.
+   7. On the monitoring server, once host-02 is `ready`: correct its
       address in `ops/prometheus/targets/hosts.yml` and copy that file
       to `/etc/prometheus/repose/targets/` (`ops/README.md` step 2). No
       apply does this, and every host alert is scoped to the targets in
@@ -273,8 +341,10 @@ cap. A full host-02 holds 192 GB of guest memory (24 seats of 8 GB).
 host-01 never met this: 64 GB less its 8 GB reserve is 56 GB of guest
 memory at most, under even the 240 s figure. Measure host-02's
 own rate on its pool (RUNBOOK "Guest freeze" step 3) and set
-`writeRateMBs` from that; the only lever that raises the ceiling is the
-disk's provisioned MB/s, which costs money. `GuestLeftUnfrozen` counts
+`writeRateMBs` in `nix/hosts/host-02.nix` from that -- it is the one value
+that file carries, and it currently holds host-01's number unmeasured. The
+only lever that raises the ceiling is the disk's provisioned MB/s, which
+costs money. `GuestLeftUnfrozen` counts
 what was lost.
 
 ## 4. Deploy order
@@ -308,5 +378,10 @@ the dashboard's Billing page to checkout or the waitlist. Watch:
 - The edge relay for the browser view and a dashboard button for it: the
   view still needs the CLI (`repose browser`), by design (I-292).
 - Teams, annual plans, currencies other than USD (R5-6).
-- Hetzner hosts (`proposals/2026-09-26-subscription-paddle-hetzner.md`);
-  the prices are set for them, the hosts are not there yet.
+- Hetzner hosts (`proposals/2026-09-26-subscription-paddle-hetzner.md`).
+  The prices are set for them; the hosts are further off than that reads. A
+  host outside this VNet cannot register at all today, because the api
+  address hostd registers to is a private VNet address and `Register` comes
+  before the tunnel exists. `docs/workstreams/11-infra-opentofu.md`, "The
+  portability wall", is what has to be decided first, and none of it is
+  decided.

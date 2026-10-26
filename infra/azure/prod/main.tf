@@ -73,6 +73,14 @@ module "environment" {
   flake_path = var.flake_path
   build_on   = var.build_on
 
+  # Both left at their defaults. null means every machine is installed
+  # through the image this flake builds, which the apply builds ahead of any
+  # VM; they are here so an operator bisecting an install can pin an image
+  # or shorten the deadline for one apply with -var, without editing a
+  # module. 45m is a deadline on a 15-to-20-minute install, not a budget.
+  kexec_image      = var.kexec_image
+  install_deadline = var.install_deadline
+
   hosts       = var.hosts
   join_tokens = var.join_tokens
 

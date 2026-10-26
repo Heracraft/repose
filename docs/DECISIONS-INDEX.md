@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-819 entries.
+820 entries.
 
 ## Scope
 
@@ -851,3 +851,4 @@ pointer, not a summary.
 - **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25543
 - **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25570
 - **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25607
+- **I-872** repose builds the kexec installer it installs through, the install has a deadline, and both fail before a VM exists (second-host, 2026-10-26) — L25729

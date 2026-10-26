@@ -103,6 +103,24 @@ variable "build_on" {
   default     = "auto"
 }
 
+variable "kexec_image" {
+  type        = string
+  description = "Kexec installer tarball nixos-anywhere boots the edge into, as a local path or a URL; null passes no --kexec. Not a trigger: see the install module call."
+  default     = null
+}
+
+variable "kexec_flake_attr" {
+  description = "packages attribute of flake_path that builds the kexec installer image when kexec_image is null. Passed down so the environment's preflight and this machine's install build the same attribute."
+  type        = string
+  default     = "kexec-installer"
+}
+
+variable "install_deadline" {
+  type        = string
+  description = "Wall-clock bound on the nixos-anywhere run (coreutils timeout duration). infra/azure/modules/nixos_anywhere/variables.tf has the why."
+  default     = "45m"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags applied to every resource in this module."

@@ -25725,3 +25725,91 @@ was not simply a second host).
   with REMOTE HOST IDENTIFICATION HAS CHANGED against an RSA key at
   `known_hosts:16`; nothing was edited, because silencing a host-key
   warning on a production host is not an agent's call.
+
+**I-872. repose builds the kexec installer it installs through, the install
+has a deadline, and both fail before a VM exists (second-host, 2026-10-26).**
+Sibling to I-786, which added host-02 and stops at the plan. This is what the
+apply then ran into. *Made during implementation* (host-02's install hung for
+16 h 56 m on 2026-10-26; the owner asked for the fix to be stable for a fleet
+that will grow).
+
+- *The installer was never ours.* `nixos-anywhere` passed no `--kexec`, so the
+  **target** downloaded a fixed upstream release asset -- nixos-images
+  `nixos-25.05`, Linux 6.14.10, last rebuilt 2025-12-25 -- and kexec'd into
+  it. `--flake` names only the system installed afterwards. The same bytes
+  installed host-01, host-stg-01 and host-02, so neither our nixpkgs nor
+  I-778's 6.18.57 kernel pin was ever involved, and the first hypothesis of
+  this investigation (that the pin broke it) was disproved rather than
+  argued.
+- *What that image does wrong on Azure.* Its `restore-network` writes one
+  `00-<ifname>.network` per link whose `[Match]` is `MACAddress=` and whose
+  `[Network]` is `DHCP=yes`. On Azure accelerated networking the `hv_netvsc`
+  synthetic link and the `mana` SR-IOV VF **share one MAC**, so every unit
+  matches both links and the installer DHCPs the VF as a second NIC, against
+  Microsoft's rule that addresses belong only to the synthetic interface. It
+  is still in upstream HEAD. Our installed hosts were never exposed to it:
+  `nix/hosts/network.nix` matches `10-uplink` by interface NAME and sets
+  `networking.useDHCP = false`, so the VF matches no unit. Only the borrowed
+  installer was wrong.
+- *So repose builds its own.* `nix/installer` on `nixos-images`'
+  `kexec-installer` module: the host kernel pin, `restore-network` masked,
+  `05-vf-unmanaged` matching `Driver = "mana mlx5_core mlx4_core"` as
+  unmanaged, `10-uplink` matching `Driver = "hv_netvsc"` with DHCP, and
+  `consoleLogLevel = 7`. Matching by **driver** is the fix: a driver tells
+  the two links apart where a MAC cannot. The image is named
+  `repose-kexec-installer` so it can never be mistaken in a log or a
+  container for the asset it replaces.
+- *`kexec_image` unset means ours, and no value asks for the upstream asset.*
+  The alternative -- unset means upstream, with a plan-time warning and a
+  documented procedure to pass a path -- was implemented, argued for well,
+  and rejected. A warning does not stop an apply, and the information that
+  would have prevented host-02's failure was already in the tree; what was
+  missing was a prompt at the moment it mattered. A default that selects a
+  known-broken artifact is not a default. The asymmetry decides it: unset
+  means ours and the flake is broken gives a loud failure naming the flake,
+  while unset means upstream and someone forgets gives a silent install into
+  the defect. Someone who truly wants the upstream image passes its URL,
+  which is explicit and shows up in a diff.
+- *The deadline, and why nothing else could bound it.* OpenTofu rejects a
+  `timeout` argument on `local-exec` (proved, not assumed), and
+  nixos-anywhere waits for the post-kexec machine with an unbounded
+  `until runSsh ...; do sleep 5; done` with no flag to bound it.
+  `connect_timeout` bounds only the SSH handshakes on the steps either side,
+  and its description claimed otherwise; that is corrected. The call now runs
+  under `timeout --kill-after=1m`, default `45m` against a real install's
+  15-20 minutes, and exits 124 or 137 print a block saying the install ran
+  out of time rather than failed, with the two read-only diagnostics.
+  **The cost of the missing bound was not the VM.** It was this environment's
+  only state lock, held for 17 hours, during which any emergency apply
+  against the edge, the control plane, DNS or the vaults would have been
+  refused.
+- *Failure moved before creation.* `terraform_data.kexec_image` builds the
+  image ahead of every machine, with `module.host` and `module.edge` ordered
+  behind it, plus a `flake_path` precondition and validations on
+  `kexec_image`'s extension and existence. It earned this on its first run: a
+  plan refused because `nix/installer` was untracked and because `flake_path`
+  names the **main checkout**, not the worktree the work is in. That second
+  one is a standing trap -- the apply builds from a different checkout than
+  the branch, so anything added here is invisible to it until the release
+  queue lands it on main.
+- *What is knowingly not checked at plan time.* Whether the image builds:
+  check blocks evaluate expressions and cannot run `nix`, and both
+  workarounds are worse -- a `terraform_data` is skipped once its triggers
+  stop changing, including after a `nix store gc` took the path it vouched
+  for, and an `external` data source shells out on every plan, giving a
+  read-only plan side effects. And whether a join token is unexpired: the api
+  keeps only its hash and expiry, so a stale token is indistinguishable from
+  a fresh one here and surfaces as hostd's exit 3.
+- *The diagnostics are the most reusable thing learned.* A flat, byte-exact
+  per-minute network count means the installer is alive with no usable
+  address; bulk inbound means the closure is copying. host-02 sat at 3,256
+  B/min in for 17 hours where host-stg-01's successful install moved 397 MB,
+  204 MB and 506 MB. Both reads need neither the machine nor the lock.
+  RUNBOOK, "Install hit the deadline".
+- *Still owed.* The image is passed as a local path, so it is uploaded
+  through the edge's jump host -- about 503 MiB per install, where the
+  upstream flow had the target fetch directly and never touch the edge.
+  Publishing it to the snapshots account and passing a URL restores the
+  direct fetch; the module already accepts one, and the extension validation
+  exists because a SAS query string would break nixos-anywhere's
+  decompression after the whole transfer.

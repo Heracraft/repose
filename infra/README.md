@@ -60,6 +60,12 @@ secret: which addresses may reach operator SSH, the operator public keys, the
 path to the private key, the Cloudflare zone id and the join tokens. The
 Makefile passes both when the second exists.
 
+`kexec_image` is normally in neither, because unset is the right value: the
+apply builds the installer image from `flake_path` itself ("Adding a host",
+step 1). Set by hand it falls on either side depending on what it holds. A
+store path built on the operator's own machine is per-operator and goes in
+the local file; a published URL is the fleet's and goes in the committed one.
+
 ## Bootstrap
 
 Production's resource group and state storage account were created by hand on
@@ -353,8 +359,8 @@ graph makes every host depend on the edge having been installed first.
 Hosts never get a public IP, not even a temporary one for the install
 (`docs/DECISIONS.md` I-25). A public IP would need an inbound rule on the
 hosts subnet, which is the one thing `policy/tfsec` forbids; the install
-window is about ten minutes; and during it the host is a stock Ubuntu image
-accepting root SSH.
+window is about fifteen minutes, the installer image upload included; and
+during it the host is a stock Ubuntu image accepting root SSH.
 
 ```
 you (operator_cidrs) ──ssh──▶ edge :<edge_operator_ssh_port> ──ssh──▶ host :22
@@ -387,29 +393,84 @@ size and disk value is per host, with the committed fleet value as the
 fallback. host-02, a `D64s_v7` added beside host-01's `D16s_v7`, is what that
 looks like (DECISIONS I-14).
 
+Read "Watching an install" below before you start one. An install that goes
+wrong goes wrong quietly: host-02's first attempt held this environment's
+only state lock for 16 hours 56 minutes with nothing on the console and
+nothing in the apply log, and the two read-only commands in that section
+name the cause in about a minute.
+
 ```bash
 repose-admin hosts add --name host-02 --provider azure  # prints a token
 ```
 
 Then:
 
-1. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
+1. **The installer image: nothing to do, and one cost to know.** A host is
+   installed through the kexec image this repository builds, not the one
+   nixos-anywhere has the target download. The upstream image's
+   `restore-network.service` writes one DHCP unit per interface and matches
+   each by MAC address; on an Azure size with accelerated networking the
+   synthetic NIC and the SR-IOV VF share a MAC, so every unit matches both
+   links and the installer configures and DHCPs the VF as though it were a
+   second NIC, against Microsoft's rule that addresses belong to the
+   synthetic interface alone. Ours leaves the VF unmanaged, DHCPs the
+   synthetic NIC by driver, and boots at `loglevel=7` so the console
+   carries the network messages
+   (`docs/workstreams/11-infra-opentofu.md`, "The installer image").
+
+   You do not build it. The apply builds the image **before it creates
+   anything**, with a precondition that `flake_path` really is a repose
+   `nix/` directory, and each install then hands nixos-anywhere the
+   `repose-kexec-installer-x86_64-linux.tar.gz` inside the result. A flake
+   that does not evaluate, or an installer attribute that is not there,
+   therefore fails with no VM created and no lock held longer than a cached
+   `nix build`. That is the cheap version of host-02's 16 hours 56 minutes.
+
+   The cost: the image is a local path, so nixos-anywhere uploads it,
+   **526 MB through the edge's ProxyJump per install** (526,497,334 bytes).
+   The old flow had the target fetch 366 MB from GitHub itself (365,921,544
+   bytes) and the edge carry none of it, so the regression is 160 MB per
+   install across the most fragile link on this path, and not a detail.
+   `kexec_image` also takes a URL, which restores the direct fetch, so
+   publishing the image to the snapshots account is a tfvars value rather
+   than a code change; the container, its read access and the upload step
+   are the follow-up that removes the 526 MB, and they are not built.
+
+   Setting `kexec_image` by hand pins one image, which is a bisect rather
+   than a configuration. Whatever it holds must end in `.tar.gz`,
+   `.tar.xz`, `.tar.zst` or `.tar`, and a validation refuses anything else
+   at plan time. Worth knowing before writing a blob URL: nixos-anywhere
+   matches the end of the value to choose its decompression, so
+   `...tar.gz?sv=...` matches nothing and extraction fails on the target
+   after the whole image has crossed the wire. A store path pinned by hand
+   needs a gc root as well, which `nix build` leaves and
+   `nix build --no-link` does not.
+
+   **An install log that names
+   `nixos-kexec-installer-noninteractive-x86_64-linux.tar.gz` is installing
+   the upstream image, not ours.** That filename is the release asset our
+   image replaces, and ours is named differently on purpose.
+
+2. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
    `nix/flake.nix`, **in the checkout the apply runs from**: nixos-anywhere
    installs `--flake <flake_path>#<attr>`, a path on the machine running
    `tofu`, not from git, so an attribute that exists only on a branch
-   somebody pushed is not there. The file carries what differs from the
-   generic `host` configuration: the api's VNet address and server name, the
-   platform CA, the bootstrap operator key, the base repository, the Blob
-   account and snapshot identity, and the freeze vault where the freeze is
-   on. `nix/hosts/host-01.nix` is the model.
-2. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
+   somebody pushed is not there. The file imports `nix/hosts/prod.nix`,
+   which carries what every production host shares (the api's VNet address
+   and server name, the platform CA, the bootstrap operator key, the base
+   repository, the Blob account and snapshot identity, the idle pause and
+   the freeze vault), and adds only what this host measured for itself: its
+   freeze write rate. `nix/hosts/host-01.nix` is the model, and the rate is
+   measured after the host exists (`docs/ops/RUNBOOK.md` "Guest freeze"
+   step 3), not guessed from a neighbour.
+3. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
    **A host with no entry here installs the generic `host` configuration**,
    which knows no api address, so the machine comes up and never registers
    (`docs/ops/RUNBOOK.md` "HostUnregistered"). The plan and the apply both
    print the `every_host_has_a_flake_attr` check warning naming the host, and
    a warning stops neither: the apply succeeds and the host is wrong if
    nobody reads it.
-3. `"host-02"` in `hosts` and its shape in `host_shapes`, both in
+4. `"host-02"` in `hosts` and its shape in `host_shapes`, both in
    `prod.tfvars`, in a commit somebody reads:
 
    ```
@@ -426,8 +487,8 @@ Then:
    `host_class`, `host_data_disk_gb`, `host_data_disk_iops`,
    `host_data_disk_mbps`, `host_os_disk_gb`, `zone`), and a host with no
    entry at all is what it was before the map existed.
-4. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
-5. `make plan ENV=prod` and read it: the new VM, its data disk, NIC and
+5. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
+6. `make plan ENV=prod` and read it: the new VM, its data disk, NIC and
    install, and **no change to any host already running**. A plan that
    touches one of those is proposing to reboot a machine with tenants on it.
    Then `make apply ENV=prod`.
@@ -438,6 +499,24 @@ nixos-anywhere through the edge, checks that `/dev/kvm` exists and that
 restarts `hostd`. `repose-admin hosts list` shows `ready` within about two
 minutes of the reboot; if it does not, the runbook entry is
 "Host never registered".
+
+**The install is bounded.** `install_deadline`, default `45m`, wraps the
+nixos-anywhere step in `timeout`. The step itself has no bound of its own:
+inside, nixos-anywhere waits for the target with
+`until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done`, an infinite
+loop with no flag that stops it, and `connect_timeout` does not reach it
+(it bounds the SSH handshakes on the steps either side, and OpenTofu rejects
+a `timeout` argument on `local-exec` outright). So a target that never comes
+back holds the apply, and with it this environment's single state lock,
+until somebody kills it by hand. host-02's first install held both for
+16 hours 56 minutes: 16 hours 56 minutes in which no emergency apply against
+the edge, the control plane, DNS or the vaults could have run. On the
+deadline the step exits 124, or 137 if it needed the follow-up KILL, and
+says so, naming the deadline and the two commands below. Either reads
+differently from the installer failing on its own, which is the point: a
+deadline reached is a stuck install to go and look at, and only an install
+that was genuinely still working wants a longer `install_deadline`. The VM
+and its data disk survive, and re-running the apply retries the install.
 
 Then the monitoring server, which no apply touches: read the host's
 WireGuard address from `repose-admin hosts list` or from its
@@ -455,8 +534,60 @@ Leave the spent token in `prod.local.tfvars`. It is single-use and expires in
 proposing to remove the delivery step. Replacing its value is how a token is
 rotated.
 
-Adding a host takes about ten minutes, most of it the kexec and the closure
-copy.
+Adding a host takes about fifteen minutes, most of it the image upload, the
+kexec and the closure copy.
+
+## Watching an install
+
+Two read-only commands. Both need only `az login` and the subscription,
+both work while the apply is still running, and neither needs SSH, which is
+the whole point: a host with no usable address answers nothing, and that is
+exactly the case you cannot otherwise see.
+
+**The console.**
+
+```bash
+az vm boot-diagnostics get-boot-log -g repose-prod -n host-02 | tail -100
+```
+
+Boot diagnostics are on for every host (`boot_diagnostics {}` in
+`infra/azure/modules/host/main.tf`), so this is the installer's serial
+console whether or not it ever had an address. Our image boots at
+`loglevel=7`, so the kernel's netvsc and mana lines and the DHCP attempts
+are in it. The upstream image boots at `loglevel=4` and prints none of them:
+that is why host-02's failed install and a successful one emitted an
+identical set of 134 systemd messages, and the console had nothing to say
+about which was which.
+
+**The byte counters.**
+
+```bash
+az monitor metrics list \
+  --resource "$(az vm show -g repose-prod -n host-02 --query id -o tsv)" \
+  --metrics 'Network In Total' 'Network Out Total' --interval PT1M -o table
+```
+
+Read the shape, not the totals:
+
+| Per-minute counts | What it means |
+|---|---|
+| A bulk inbound burst, hundreds of MB in a minute | the closure is copying; the install is working |
+| The **same byte count every minute**, minute after minute | the installer is alive and has no usable IP configuration. It is retrying discovery and will never finish |
+| Nothing at all | the VM is not running, or the kexec never came back |
+
+The worked example is this incident. host-02's failed install: one minute
+after the kexec the counters became a byte-exact metronome, **3,256 B/min in
+and about 3,450 B/min out**, and stayed there for 17 hours. Not roughly
+flat, the same number every minute, which is a retry loop rather than
+traffic. host-stg-01's successful install, for contrast: **397 MB inbound in
+one minute, then 204 MB, then 506 MB**. host-02 showed no bulk inbound in
+any minute of the 17 hours.
+
+One caveat, because it is what made these counters confusing at the time:
+they are the VM's counters, and traffic over the SR-IOV VF bypasses them.
+host-02's installer did boot, so its image crossed over the VF without
+appearing here. "No bulk inbound" is therefore not proof that nothing
+arrived. The byte-exact flat count is the tell, and on its own it is enough.
 
 ## Rotating a join token
 

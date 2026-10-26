@@ -1,9 +1,14 @@
 # Workstream 11: infrastructure (OpenTofu)
 
-> **Host size is a variable (DECISIONS I-14).** `host_size` defaults to
-> `Standard_D16s_v7` and `host_data_disk_gb` to 512 for the pre-launch month;
-> launch values are `Standard_D64s_v7` and 2048 (I-39: this subscription can
-> only create v7 sizes). Validation rejects any size whose name is not
+> **Host size is a variable, and a host's shape is per host (DECISIONS I-14
+> and I-39, amended by I-786).** `host_size` defaults to `Standard_D16s_v7`
+> and `host_data_disk_gb` to 512. Those are **fleet** defaults: raising them
+> to reach a launch shape resizes every host that already exists, which
+> deallocates it and stops every guest on it. The launch host's
+> `Standard_D64s_v7` and 2048 GB go in its own `host_shapes` entry instead,
+> and a plan that changes an existing host is the signal that this was done
+> the other way (I-39: this subscription can only create v7 sizes).
+> Validation rejects any size whose name is not
 > `Standard_D[0-9]+(l|d|ld)?s_v[567]` so an AMD or ARM size cannot be applied
 > by mistake. The Coolify VM is `Standard_D4s_v7`, the edge `Standard_D2s_v7`.
 > Every production host is its own `nixosConfigurations.host-<name>`
@@ -43,6 +48,8 @@ provider module for hosts is an addition, not a rewrite.
     cloud-init that opens root SSH for the provisioner and carries nothing
     secret, a provisioner that runs `nixos-anywhere --flake
     .#<host flake attr> root@<private ip>` through the edge as a jump host,
+    under a coreutils `timeout` of `install_deadline` and always with
+    `--kexec`, pointing at the image this flake builds,
     a post-install check that `/dev/kvm` exists and `kvm_intel` nested is
     `Y`, and a final provisioner that writes the join token to
     `/run/repose/join-token` as file content and restarts `hostd`
@@ -125,7 +132,9 @@ provider module for hosts is an addition, not a rewrite.
   08 document theirs; Coolify holds them in its own database, and a
   `docs/ops/coolify.md` note records the click path until Coolify's API is
   used.
-- Hetzner module: designed for in §5, not built.
+- Hetzner module, or a host in a second region: not built, and not only
+  unbuilt. §5 "The portability wall" is what has to be decided first; a
+  host outside this VNet cannot reach the api to register at all.
 - Automatic capacity (api-driven `tofu apply`): later, per R3-5.
 
 ## 4. Interfaces
@@ -146,21 +155,46 @@ between this workstream and a registered host.
 ```
 hostdev init --host host-03            # M1: mints the join token and prints it
 # once the api exists: repose-admin hosts add --name host-03 --provider azure
-# write nix/hosts/host-03.nix and nixosConfigurations.host-03 in nix/flake.nix
+# nothing to do about the installer image: the apply builds it, ahead of any VM
+# write nix/hosts/host-03.nix (it imports nix/hosts/prod.nix and adds only
+#   what host-03 measured for itself) and nixosConfigurations.host-03
 # add "host-03" to hosts and host-03 = "host-03" to host_flake_attrs,
 #   in azure/prod/prod.tfvars, in a reviewed commit
 # add host-03's shape to host_shapes there when it is not the fleet's size
-# add host-03 = "<token>" to join_tokens in prod.local.tfvars (git-ignored)
+# add host-03 = "<token>" to join_tokens in prod.local.tfvars
 make -C infra plan ENV=prod && make -C infra apply ENV=prod
 ```
 
-The nix file and its flake attribute must be in the checkout the apply runs
-from, not only in git: the installer passes `--flake <flake_path>#<attr>`, a
-path on the machine running `tofu`. Without a `host_flake_attrs` entry the
-host installs the generic `host` attribute, which knows no api address, so it
-comes up and never registers (`docs/ops/RUNBOOK.md` "HostUnregistered"). The
-`every_host_has_a_flake_attr` check prints a warning naming the host on both
-the plan and the apply, and a warning stops neither.
+The nix file and its flake attribute must be **committed in the checkout
+`flake_path` names**, which is not the worktree the apply is launched from.
+The installer passes `--flake <flake_path>#<attr>`, and `flake_path` is a
+bare path inside a git repository, which nix resolves as a git flakeref: it
+reads what is committed there and nothing else. So a file written but not
+committed is invisible, and a branch nobody merged is invisible. The two ways
+that surfaces are not alike: a missing installer stops `tofu plan` on the
+preflight's `flake_path` precondition, which names the path and the likely
+cause, while a missing host attribute is caught only by a warning and so
+fails during the apply, inside nix, as `does not provide attribute ... Did
+you mean host-01?`.
+
+Without a `host_flake_attrs` entry the host installs the generic `host`
+attribute, whose `apiAddr` is not absent but wrong and plausible: it defaults
+to `api.repose.herakraft.co:443`, where nothing gRPC answers, because
+api-grpc's mTLS listeners are 8443 and 8444 and `manage_dns = false` makes
+that name Cloudflare's proxied wildcard. The apply succeeds and the VM is
+healthy; it simply never registers (`docs/ops/RUNBOOK.md`
+"HostUnregistered"), which is why `every_host_has_a_flake_attr` exists at
+all.
+
+It warns rather than fails, and that is deliberate rather than an oversight:
+`host_flake_attr_default` is a supported value, and a precondition that
+aborted the plan would take the live host down with it over a stray key
+(DECISIONS I-786). It is the same blast-radius argument as `install_deadline`
+pointed the other way -- a guard that can abort a plan blocks every emergency
+apply there is -- so a stray key must not be able to do what the 16h56m lock
+did. The consequence to know: once the installer is on `main` the preflight's
+precondition passes permanently, and from then on this warning is the only
+guard on a missing host attribute. Nothing stops that apply, by design.
 
 **Sizes are per host.** `host_shapes` is a map keyed by host name whose
 attributes (`size`, `class`, `zone`, `data_disk_gb`, `data_disk_iops`,
@@ -169,8 +203,9 @@ name for that host; what an entry leaves out, and every host with no entry,
 takes the fleet value. That is what lets one apply add a host of another size
 while the plan shows no change for the hosts already carrying guests, which
 is how host-02 (`Standard_D64s_v7`, 2048 GB) joined host-01 (`D16s_v7`, 512
-GB) with no downtime (DECISIONS I-14; `docs/ops/LAUNCH.md` §3). A fleet-wide
-value changed instead plans a change on every host.
+GB) with no downtime (DECISIONS I-786, amending I-14 and I-39;
+`docs/ops/LAUNCH.md` §3). A fleet-wide value changed instead plans a change
+on every host, which is the resize I-786 was written about.
 
 The token can also be passed inline as `-var 'join_tokens={"host-03":"..."}'`,
 but then the next apply proposes to remove the delivery step. Leaving the
@@ -184,6 +219,140 @@ The token is single-use and expires in 24 hours. `repose-admin hosts list`
 shows the host as `ready` within two minutes of the reboot or the runbook
 entry "Host never registered" applies.
 
+### The installer image
+
+Every machine here is installed from a kexec image this repository builds
+(`packages.x86_64-linux.kexec-installer`, from
+`nixosConfigurations.installer`), always passed to nixos-anywhere as
+`--kexec`. Before that, nixos-anywhere passed no `--kexec` and the **target**
+downloaded a fixed upstream asset: nixos-images release `nixos-25.05`,
+`nixos-kexec-installer-noninteractive-x86_64-linux.tar.gz`, Linux 6.14.10.
+The same bytes installed host-01 (2026-09-20), host-stg-01 (2026-10-11) and
+host-02 (2026-10-26); neither this flake nor its pinned 6.18.57 kernel took
+any part in those installs.
+
+The defect that forced our own image, still present in upstream HEAD: the
+image's `restore-network.service` writes one `00-<ifname>.network` per
+non-loopback interface, matching by `MACAddress=` with `DHCP=yes`. On Azure
+accelerated networking the synthetic NIC (`hv_netvsc`) and the SR-IOV VF
+(`mana`) **share a MAC**, so every generated unit matches both links and the
+installer configures and DHCPs the VF as though it were a second NIC.
+Microsoft's rule is that addresses belong to the synthetic interface alone.
+Missing modules were not the cause: `mana`, `hv_netvsc` and `pci-hyperv` are
+all in that image's stage-2 module tree.
+
+Ours is the installed hosts' own answer, moved earlier. `nix/hosts/network.nix`
+matches the uplink by **name** and sets `networking.useDHCP = false` so
+nixpkgs' catch-all `99-ethernet-default-dhcp` is never generated, which is
+why the VF matches no unit on a running host and networkd leaves it alone.
+The image does the same without knowing an interface name: `restore-network`
+off, a `05-vf-unmanaged` unit matching `Driver = "mana mlx5_core mlx4_core"`
+with `Unmanaged = true`, a `10-uplink` matching `Driver = "hv_netvsc"` with
+DHCP, the host's own 6.18.57 kernel, and `boot.consoleLogLevel = 7`. The last
+of those is the one an operator notices: the upstream image boots at
+`loglevel=4`, so no netvsc, mana or DHCP message reaches the serial console,
+and host-02's failed install and a successful one emitted an identical set of
+134 systemd messages. There was no console evidence to read.
+
+**Why unset means ours.** `kexec_image` defaults to null and null selects
+the image this flake builds; the upstream asset has no value that reaches it,
+and somebody who wants it passes its URL, which shows up in a diff. The
+alternative was considered and rejected: null meaning the upstream asset
+would have made prod's default the defect, because `kexec_image` has no value
+in `prod.tfvars`, so the next apply that installed a machine would have
+kexeced into the image that hung host-02 with nothing in the way but a
+plan-time warning, and `TF_VAR_kexec_image=` typed on an apply line is in no
+file, no diff and no review. The asymmetry decides it: null meaning ours with
+a broken flake fails loudly, at build time, naming the flake, with nothing
+created, while null meaning upstream and one forgotten variable is a silent
+install into a known-broken image, up to `install_deadline` of hang, and a VM
+to clean up. Loud and rare beats silent and likely.
+
+The loud failure lands at apply time, not plan time, and that cost was taken
+knowingly: nothing OpenTofu can do at plan time runs `nix`, so `tofu plan`
+cannot tell you the image builds. The apply can, and does so before creating
+anything.
+
+How it reaches a machine, in two steps that build the same thing. The
+environment module builds the attribute as a preflight before any VM exists
+(`terraform_data.kexec_image`, triggered by `flake.nix`, `flake.lock`,
+`nix/installer/**` and `kexec_flake_attr`, with a precondition that
+`flake_path` holds both `flake.nix` and `installer/default.nix` -- a
+filesystem check, which passes for a file that exists but is untracked,
+where the build a moment later reads only what git tracks), and
+**both** `module.host` and
+`module.edge` `depends_on` it, so a flake that does not build costs no VM at
+all. Each install then builds the same attribute itself and passes the
+`.tar.gz` inside the result. The preflight's job is the early failure, not
+the delivery: a wiped `.terraform` costs a rebuild and nothing more, because
+no install trusts the preflight's record of a path. It keeps a link rather
+than using `--no-link` because its triggers mean it does not re-run on an
+apply that changed nothing, and an unrooted path collected in between would
+leave it reporting success for an image that is gone. `kexec_flake_attr`
+(default `kexec-installer`) is plumbed prod -> environment -> host and edge ->
+nixos_anywhere from one variable, so the preflight and the installs cannot
+name different attributes and build different images.
+
+Both builds are bounded, each by `install_deadline` and each with its own
+message. That closed the last unbounded path on this resource: a warm store
+makes the build seconds, but a substituter that accepts a connection and then
+stops answering has no deadline of its own, and it would have held the state
+lock exactly the way the install did. The build's message says that nothing
+was installed and no machine was touched, so it reads differently from the
+install hitting the same deadline. Each install links its build with
+`--out-link` into a temp directory a trap removes, rather than `--no-link`:
+the image is half a gigabyte with no GC root of its own, and a concurrent
+`nix-collect-garbage` between the build and the upload would take it.
+
+The image is a local path, so nixos-anywhere **uploads it through the edge's
+ProxyJump**: 526 MB per install (526,497,334 bytes), where the old flow had
+the target fetch 366 MB from GitHub itself (365,921,544 bytes) and the edge
+carry none of it. Both are measured and both are decimal MB, so they compare
+directly. That is a real regression on the most fragile link in the path.
+`kexec_image` also takes a URL, and a URL is handed to the target to fetch
+directly, so publishing the image to the snapshots account is a tfvars value
+rather than a code change. It is not built: the container, its read access
+and the upload step are the follow-up that removes the upload. Whoever does
+it meets the plan-time validation that the value end in `.tar.gz`,
+`.tar.xz`, `.tar.zst` or `.tar`,
+which exists because nixos-anywhere picks its decompression by matching the
+end of the value: a URL with a SAS token appended matches nothing and fails
+on the target after the whole image has crossed the wire.
+
+`kexec_image` is in no machine's replace triggers, on the hosts or on the
+edge, so changing the image never reinstalls a machine that exists. The edge
+is wired for it on the same terms -- same VM shape, same shared-MAC VF, so
+the same latent defect -- and has simply not been reinstalled since that
+started mattering. It inherits the fix the day it is next reinstalled, not
+before.
+
+### The install deadline
+
+`install_deadline`, default `45m`, wraps three things in coreutils `timeout
+--kill-after=1m`, each with its own message: the preflight image build, the
+install's own build of the same attribute, and the nixos-anywhere run. All
+three exit 124, or 137 when the follow-up KILL was needed. The install's
+message re-emits the deadline and the two diagnostics in `infra/README.md`
+"Watching an install"; a build's says that nothing was installed and no
+machine was touched, because the two send an operator to different places. A
+deadline reached with the installer alive is a stuck install to go and look
+at, and only an install that was genuinely still working wants a longer
+deadline; a build that ran out of time is a substituter that stopped
+answering or a cold store with no cache, and no machine is involved.
+
+It is a wrapper because nothing else can bound that step. OpenTofu rejects a
+`timeout` argument on `local-exec` (`tofu 1.13.1 validate`: `An argument named
+"timeout" is not expected here`), and `connect_timeout` is wired only into
+the two `connection{}` blocks, so it bounds the SSH handshakes on the steps
+either side of the install and not the install. Inside, nixos-anywhere waits
+with `until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done`: an
+infinite loop with no flag that stops it.
+
+What that cost once: host-02's first install waited 16 hours 56 minutes, and
+held prod's single state lock for all of it, so no emergency apply against
+the edge, the control plane, DNS or the vaults could have run in that window.
+The deadline is there for the lock as much as for the install.
+
 ### How the installer reaches a host
 
 Through the edge. `nixos-anywhere`, the post-install `/dev/kvm` and nested
@@ -192,7 +361,7 @@ with the edge as an SSH jump host, and the module graph makes a host depend on
 the edge being installed first. Hosts never get a public IP, not even a
 temporary one during the install: that would need an inbound rule on the hosts
 subnet, which is the one thing the tfsec policy forbids and §4 and §7 of
-`DESIGN.md` promise never exists, and the window is about ten minutes of a
+`DESIGN.md` promise never exists, and the window is about fifteen minutes of a
 stock Ubuntu image accepting root SSH. DECISIONS I-25 has the full reasoning.
 
 The edge's operator sshd must be listening on `edge_operator_ssh_port` for
@@ -205,8 +374,9 @@ the wave-one edge served sshd on 22 and the first apply set
 
 Azure has no NixOS marketplace image and building one adds an image
 pipeline. nixos-anywhere replaces the running Ubuntu with NixOS over SSH
-using kexec, which takes about four minutes and needs nothing but a root
-login. The Ubuntu image is a delivery vehicle; nothing from it survives.
+using kexec, which takes about four minutes once the installer image is on
+the target and needs nothing but a root login. The Ubuntu image is a
+delivery vehicle; nothing from it survives.
 
 ### Provider portability
 
@@ -215,12 +385,77 @@ The `host` module has a provider-neutral variable surface: `name`,
 host-02, each from that host's `host_shapes` entry), `data_disk_gb`. Its
 outputs are `private_ip` and `ssh_jump`. A `hetzner_host` module with the same
 variables and outputs, using the Hetzner Robot provider for an AX162-R and
-the same nixos-anywhere provisioner, slots in with one change to the root
-module's `for_each`. The NixOS host config already takes its guest CIDR
+the same nixos-anywhere provisioner, is one change to the root module's
+`for_each`. The NixOS host config already takes its guest CIDR
 and WireGuard keys from `Register`, so it does not care which provider it
 runs on. Blob as the snapshot target is behind `hostd`'s
 `SnapshotStore` interface (Azure Blob and S3-compatible implementations),
 so a Hetzner host uses Hetzner Object Storage or R2.
+
+That is the easy half, and it is the half that is finished. The hard half is
+below, and until it is answered a host outside this VNet cannot register at
+all, so the module would install a machine that never joins the fleet.
+
+### The portability wall
+
+**A host that is not in the home VNet cannot register.** `repose.host.apiAddr`
+is `10.200.3.4:8443`, the control VM's private address inside
+`10.200.0.0/16`, and `Register` is the first thing hostd does: the WireGuard
+tunnel that would otherwise carry it does not exist until `Register` returns
+the host's keys and the edge's endpoint (DECISIONS I-92,
+`interfaces/grpc-hostd.md`). A host in another region, or at another
+provider, has no route to that address and nothing to build one with. The
+bootstrap is circular, and no amount of OpenTofu fixes it.
+
+This is the line to read R3-20 against. R3-20 says the host module is written
+so that Hetzner is a second module, and that is true of the module; it was
+never a claim that a Hetzner host can join this fleet. DECISIONS I-92 records
+the ordering that makes it false, and I-642 has already walked the shortcut
+and refused it for the staging host: `nsg-control` opens 80, 443 and 22 and
+no 8443, and a rule opening the api to an outside address is not the end of
+it, because `Register`'s reply makes that machine a WireGuard peer on this
+edge with a route for its guest CIDR. Reachability is the first problem, not
+the only one.
+
+So a second provider is not a module away. The module is the small part.
+What has to be answered first, beginning with the wall itself:
+
+1. **The registration path.** The options are an api gRPC listener reachable
+   from the internet (its own name, its own certificate from the platform CA,
+   and a join token that is now an internet-facing credential with the rate
+   limiting and abuse surface that implies), a tunnel established before
+   `Register` from material delivered with the join token, or a registration
+   broker on the edge, which already has a public address and already
+   terminates WireGuard for every host. Nothing here is built and nothing is
+   decided.
+2. **The install path.** nixos-anywhere, the `/dev/kvm` and nested checks and
+   the join-token delivery all reach a host at its private address with the
+   edge as a jump host, and hosts deliberately have no public IP (DECISIONS
+   I-25). A machine in Hetzner's network is not behind the edge, so the
+   provisioner chain needs its own answer for how the operator reaches it and
+   how the token gets there.
+3. **The installer image.** `nix/installer` is Azure-shaped on purpose: it
+   tells the synthetic NIC and the SR-IOV VF apart by the Hyper-V and MANA
+   drivers, and with `restore-network` off a target whose address is static
+   rather than from DHCP comes up unreachable. Bare metal needs its own
+   image, which is the same work again.
+4. **The host's Azure identities.** The guest freeze unwraps each image key
+   with a user-assigned managed identity against Key Vault, and snapshots
+   authenticate to Blob with the same identity (DECISIONS I-653, I-131).
+   Neither exists off Azure. Both become a credential delivered the way the
+   join token is, or another key store and another snapshot target.
+5. **The install diagnostics.** The two things that tell an operator whether
+   an install is alive, the serial console and the per-minute byte counters
+   (`infra/README.md` "Watching an install"), are Azure VM APIs. Both work on
+   a machine with no usable address, which is exactly when they are needed, and
+   a host elsewhere has neither until something equivalent is found. On bare
+   metal that is an IPMI serial console and a switch port counter, which is
+   not nothing, but it is not `az` either.
+
+`proposals/2026-09-26-subscription-paddle-hetzner.md` priced Hetzner hosts
+and the plans are set with them in mind. Prices are not a plan: nobody should
+schedule a Hetzner host, or a second region, on the strength of the paragraph
+above this one.
 
 ### Cost table (the 2026-09-19 estimate, East US, on-demand)
 
@@ -249,6 +484,9 @@ IOPS and throughput, which are variables and can be raised in place later.
 
 | Failure | Outcome |
 |---|---|
+| Install never finishes | the target booted the installer and never got a usable address; `install_deadline` (45m) stops the step at `timeout` exit 124 rather than holding the environment's state lock indefinitely, and the step prints the two read-only checks (`infra/README.md` "Watching an install"). Nothing bounded this before 2026-10-26, when one install held prod's lock for 16h56m. |
+| Installer image will not build | the preflight `terraform_data.kexec_image` fails before any VM is created, naming the flake; both the edge and the hosts are ordered behind it, so a broken image costs no machine. |
+| Installer image build hangs | a substituter that accepts a connection and then stops answering, or a cold store with no cache; the preflight's build and each install's build are separately wrapped in `install_deadline`, and that message says no machine was touched, which is what distinguishes it from the install hitting the same deadline. |
 | nixos-anywhere fails mid-install | the VM is left on Ubuntu or half-kexec'd; `tofu apply` reports the provisioner error; re-running the apply re-taints the host and retries from the image (the data disk is preserved because it is a separate resource and `prevent_destroy = true`). |
 | Join token expired before first boot | hostd logs `register_fail reason=token_expired` every 30 s; runbook "Host never registered": mint a new token, write it to `/run/repose/join-token` over the edge jump, restart hostd. |
 | `security_type` left at the default | the VM boots but `/dev/kvm` is absent; hostd refuses to start with `kvm_missing`. The variable has no default so the plan fails without an explicit value. |

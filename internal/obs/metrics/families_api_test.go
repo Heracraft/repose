@@ -27,6 +27,7 @@ func TestAPIFamily(t *testing.T) {
 	a.RequestsTotal.WithLabelValues("GET /projects", "GET", "200").Inc()
 	a.RequestDuration.WithLabelValues("GET /projects").Observe(0.01)
 	a.Hosts.WithLabelValues("ready").Set(1)
+	a.HostState.WithLabelValues("host-01", "ready").Set(1)
 	a.Projects.WithLabelValues("running", "large").Set(1)
 	a.ScheduleTotal.WithLabelValues("ok").Inc()
 	a.RestingWakeTotal.WithLabelValues("connect", "woken").Inc()
@@ -41,9 +42,12 @@ func TestAPIFamily(t *testing.T) {
 	a.SnapshotExpiryFailTotal.WithLabelValues("blob").Inc()
 
 	want := map[string][]string{
-		"repose_api_requests_total":                  {"method", "route", "status"},
-		"repose_api_request_duration_seconds":        {"route"},
-		"repose_api_hosts":                           {"state"},
+		"repose_api_requests_total":           {"method", "route", "status"},
+		"repose_api_request_duration_seconds": {"route"},
+		"repose_api_hosts":                    {"state"},
+		// I-786: the same table by identity, so an alert can name the
+		// host and be compared with the scrape targets.
+		"repose_api_host_state":                      {"host_id", "state"},
 		"repose_api_projects":                        {"class", "state"},
 		"repose_api_schedule_total":                  {"result"},
 		"repose_api_resting_wake_total":              {"reason", "result"},

@@ -91,7 +91,16 @@ variable "api_identity_object_id" {
 
 variable "flake_path" {
   type        = string
-  description = "Absolute path to the repository's nix/ directory, which holds flake.nix."
+  description = <<-EOT
+    Absolute path to the repository's nix/ directory, which holds flake.nix.
+
+    This is the checkout the apply builds from, and it is normally the main
+    checkout rather than whatever worktree the operator is running `make`
+    in. Nix reads a bare path inside a git repo as a git flakeref, so only
+    what is committed there is visible: a host file or an installer that
+    exists on disk in a worktree, or is committed on a branch, is not
+    buildable here until the release queue lands it on main.
+  EOT
 }
 
 variable "edge_flake_attr" {
@@ -121,6 +130,40 @@ variable "build_on" {
   type        = string
   description = "nixos-anywhere --build-on: auto, local or remote."
   default     = "auto"
+}
+
+variable "kexec_image" {
+  type        = string
+  description = <<-EOT
+    Override for the kexec installer tarball every machine in this
+    environment is installed through, as a local path or a URL. null, which
+    is what every environment uses, means the image this flake builds: the
+    preflight in main.tf builds it before any VM exists and each install
+    hands the tarball to nixos-anywhere.
+
+    No value asks for the upstream release asset, the image every machine so
+    far was installed by, whose MAC-matched DHCP units claim the
+    accelerated-networking VF and hung host-02 for 17 hours. Set this to pin
+    an image while bisecting an install, or to a published URL: a URL is
+    fetched by the target directly, where a local path is uploaded through
+    the edge's ProxyJump at about half a gigabyte per install.
+
+    Not wired into any machine's replace triggers: changing the image must
+    never reinstall a machine that already exists.
+  EOT
+  default     = null
+}
+
+variable "kexec_flake_attr" {
+  type        = string
+  description = "packages attribute of flake_path that builds the kexec installer image. One value for the preflight and for every machine's install, so the two cannot build different images."
+  default     = "kexec-installer"
+}
+
+variable "install_deadline" {
+  type        = string
+  description = "Wall-clock bound on each nixos-anywhere run (coreutils timeout duration). infra/azure/modules/nixos_anywhere/variables.tf has the why; the short version is that nothing inside nixos-anywhere or OpenTofu can bound it, and an unbounded install holds this environment's only state lock."
+  default     = "45m"
 }
 
 # --- hosts -----------------------------------------------------------------
