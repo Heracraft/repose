@@ -378,13 +378,20 @@ tests:
         exp_alerts: []
 
   # --- HostUnreachable ----------------------------------------------------
+  # One alert per host, naming it (I-786). On the fleet count this fired
+  # once for any number of hosts and named none, so neither the operator
+  # nor the inhibition in repose-route.yaml could tell them apart.
   - interval: 1m
-    name: HostUnreachable pages after two minutes
+    name: HostUnreachable pages after two minutes, for the host that is gone and not the one that is ready
     input_series:
-      - series: 'repose_api_hosts{job="api",instance="10.255.0.9:9103",state="unreachable"}'
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="unreachable"}'
         values: "0 1 1 1 1 1"
-      - series: 'repose_api_hosts{job="api",instance="10.255.0.9:9103",state="ready"}'
-        values: "3 2 2 2 2 2"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1 0 0 0 0 0"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="unreachable"}'
+        values: "0+0x6"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "1+0x6"
     alert_rule_test:
       - eval_time: 2m
         alertname: HostUnreachable
@@ -394,11 +401,9 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: page
-              job: api
-              instance: 10.255.0.9:9103
-              state: unreachable
+              host_id: host-01
             exp_annotations:
-              summary: "1 host(s) are unreachable from the api"
+              summary: "host-01 is unreachable from the api"
               description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
               runbook: "docs/ops/RUNBOOK.md#hostunreachable"
 
@@ -1221,9 +1226,11 @@ tests:
 
   # --- ApiHostsAbsent (I-648) ---------------------------------------------
   - interval: 1m
-    name: ApiHostsAbsent pages when the host gauge disappears, and not while it exists
+    name: ApiHostsAbsent pages when the host gauges disappear, and not while they exist
     input_series:
       - series: 'repose_api_hosts{job="api-grpc",instance="10.255.255.1:9104",state="ready"}'
+        values: "1 1 1 _ _ _ _ _ _ _ _ _ _ _ _"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
         values: "1 1 1 _ _ _ _ _ _ _ _ _ _ _ _"
     alert_rule_test:
       - eval_time: 2m
@@ -1240,9 +1247,164 @@ tests:
           - exp_labels:
               severity: page
             exp_annotations:
-              summary: "repose_api_hosts is missing, so HostUnreachable cannot fire"
-              description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
+              summary: "the api's host gauges are missing, so no host alert from the api can fire"
+              description: "Prometheus has had no repose_api_hosts or repose_api_host_state series for 5 minutes. HostUnreachable, HostUnregistered and HostNotInTargets are silent until api-grpc is scraped again."
               runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
+
+  # The per-host family alone disappearing is the same silence: three rules
+  # read it and nothing else does (I-786).
+  - interval: 1m
+    name: ApiHostsAbsent pages when only the per-host family is gone
+    input_series:
+      - series: 'repose_api_hosts{job="api-grpc",instance="10.255.255.1:9104",state="ready"}'
+        values: "1+0x20"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1 1 1 _ _ _ _ _ _ _ _ _ _ _ _"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: ApiHostsAbsent
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: ApiHostsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "the api's host gauges are missing, so no host alert from the api can fire"
+              description: "Prometheus has had no repose_api_hosts or repose_api_host_state series for 5 minutes. HostUnreachable, HostUnregistered and HostNotInTargets are silent until api-grpc is scraped again."
+              runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
+
+  # --- HostNotInTargets ---------------------------------------------------
+  - interval: 1m
+    name: HostNotInTargets names the ready host with no hostd target
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1+0x30"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1+0x30"
+      # host-02 is registered and ready, and nobody copied its entry to the
+      # targets file, so there is no up series for it at all.
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: HostNotInTargets
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: HostNotInTargets
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-02
+            exp_annotations:
+              summary: "host-02 is ready and Prometheus has no hostd target for it"
+              description: "The api has this host ready and no entry in /etc/prometheus/repose/targets/hosts.yml carries its host_id, so PoolFull, StoreFull, HostdDown and every other alert scoped to that file is silent on it, and on the tenants it carries."
+              runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+
+  # The case the count comparison could not see (I-786): the file still
+  # lists a retired host, so the number of hostd targets equals the number
+  # of ready hosts and the old rule read healthy, while host-02 had no
+  # series at all. Comparing ids catches it.
+  - interval: 1m
+    name: HostNotInTargets still names the host when a stale target entry makes the counts match
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1+0x30"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "1+0x30"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-00",state="retired"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.3:9101",host_id="host-00"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: HostNotInTargets
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-02
+            exp_annotations:
+              summary: "host-02 is ready and Prometheus has no hostd target for it"
+              description: "The api has this host ready and no entry in /etc/prometheus/repose/targets/hosts.yml carries its host_id, so PoolFull, StoreFull, HostdDown and every other alert scoped to that file is silent on it, and on the tenants it carries."
+              runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+
+  - interval: 1m
+    name: HostNotInTargets is quiet once the second host is scraped
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1+0x30"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.4:9101",host_id="host-02"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HostNotInTargets
+        exp_alerts: []
+
+  # A listed host whose scrape is failing has a target: that is HostdDown,
+  # and this rule must stay quiet, or one dead tunnel becomes one of these
+  # per host on top of MonitoringPathDown.
+  - interval: 1m
+    name: HostNotInTargets is quiet for a listed host whose scrape is down
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1+0x30"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "1+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "0+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.4:9101",host_id="host-02"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HostNotInTargets
+        exp_alerts: []
+
+  # --- HostUnregistered (I-786) -------------------------------------------
+  # The host-02 case: a row the api created, nothing ever registered, and
+  # no exporter of its own to be missed from anywhere.
+  - interval: 1m
+    name: HostUnregistered warns after half an hour and names the host
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="registering"}'
+        values: "1+0x40"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "0+0x40"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="registering"}'
+        values: "0+0x40"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-01",state="ready"}'
+        values: "1+0x40"
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: HostUnregistered
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: HostUnregistered
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              host_id: host-02
+            exp_annotations:
+              summary: "host-02 has not registered"
+              description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
+              runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
+
+  - interval: 1m
+    name: HostUnregistered is quiet for a host that registers inside the window
+    input_series:
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="registering"}'
+        values: "1+0x9 0+0x40"
+      - series: 'repose_api_host_state{job="api-grpc",instance="10.255.255.1:9104",host_id="host-02",state="ready"}'
+        values: "0+0x9 1+0x40"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: HostUnregistered
+        exp_alerts: []
 
   # --- Watchdog (I-648) ---------------------------------------------------
   - interval: 1m

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -31,6 +32,7 @@ func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
 type harness struct {
 	pool   *db.Pool
+	m      *metrics.M
 	srv    *hostmgr.Server
 	ca     *pki.CA
 	addr   string
@@ -47,8 +49,8 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{pool: pool, ca: ca}
-	h.srv = hostmgr.New(pool, ca, "replica-1", metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	h := &harness{pool: pool, ca: ca, m: metrics.NewNop()}
+	h.srv = hostmgr.New(pool, ca, "replica-1", h.m, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	h.srv.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
 			h.mu.Lock()
@@ -341,5 +343,42 @@ func TestRegisterAndRotateRecordCoresAndTheThreadBridge(t *testing.T) {
 	}
 	if row, err = store.GetHost(ctx, h.pool, hostID); err != nil || row.Cores != 8 || row.VCPUs != 16 {
 		t.Fatalf("after a rotate that reported 8 cores: vcpus %d cores %d %v", row.VCPUs, row.Cores, err)
+	}
+}
+
+// The per-host state gauge is what the three api-sourced host alerts read
+// (HostUnregistered, HostUnreachable, HostNotInTargets; I-786).
+// repose_api_hosts counts states and names no host, so neither a host row
+// that never registered nor the host that went silent could be named -- and
+// a host that never registered has no exporter of its own to scrape, so
+// there was nothing else to read it from.
+func TestSweepPublishesHostStateByName(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	// host-02: created by `hosts add`, never registered.
+	if _, err := hostmgr.MintJoinToken(ctx, h.pool, "host-02", "azure", "Standard_D64s_v7", "eastus", false); err != nil {
+		t.Fatal(err)
+	}
+	// host-01: registered, ready, and silent for two minutes.
+	if _, err := h.pool.Exec(ctx, "insert into hosts (id, name, state, last_heartbeat_at) values ($1, 'host-01', 'ready', now() - interval '2 minutes')", store.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		host, state string
+		want        float64
+	}{
+		{"host-02", "registering", 1},
+		{"host-02", "ready", 0},
+		{"host-02", "unreachable", 0},
+		{"host-01", "unreachable", 1},
+		{"host-01", "ready", 0},
+		{"host-01", "registering", 0},
+	} {
+		if got := testutil.ToFloat64(h.m.HostState.WithLabelValues(c.host, c.state)); got != c.want {
+			t.Errorf("repose_api_host_state{host_id=%q,state=%q} = %v, want %v", c.host, c.state, got, c.want)
+		}
 	}
 }

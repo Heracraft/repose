@@ -114,8 +114,13 @@ inhibit_rules:
   # A host Prometheus cannot reach produces every host alert at once as its
   # series go stale; the scrape failure is the one worth reading. HostdDown
   # is the page for that same failure, so it is never the one held back.
+  # Neither is HostUnreachable: it is not computed from this host's scrape
+  # but from the api's own hosts table, so a scrape that stopped is no
+  # reason to doubt it, and since I-786 it carries host_id and would
+  # otherwise match this rule -- a page about a host the api has lost held
+  # back behind a warn about its exporter.
   - source_matchers: [alertname = "HostScrapeDown"]
-    target_matchers: [severity =~ "warn|page", alertname != "HostdDown"]
+    target_matchers: [severity =~ "warn|page", alertname !~ "HostdDown|HostUnreachable"]
     equal: [host_id]
   - source_matchers: [alertname = "HostdDown"]
     target_matchers: [severity = "warn"]
@@ -125,21 +130,28 @@ inhibit_rules:
   - source_matchers: [alertname = "PoolUnavailable"]
     target_matchers: [alertname =~ "PoolHigh|PoolFull|PoolMetadataHigh|PoolUnmonitored"]
     equal: [host_id]
-  # An unreachable host is the api's view of the same thing.
+  # An unreachable host is the api's view of the same thing, for that host:
+  # its guests' guestd go quiet with it, and another host's do not.
   - source_matchers: [alertname = "HostUnreachable"]
     target_matchers: [alertname = "GuestdLost"]
-  # One page for a host that is gone: HostdDown names the host, and
-  # HostUnreachable (an api-wide count with no host_id) does not. With one
-  # host this is exact; with two, a scrape failure on one hides the other's
-  # HostUnreachable page, which HostdDown for that host still sends.
+    equal: [host_id]
+  # One page for a host that is gone: HostdDown and HostUnreachable are
+  # the two views of it, and HostdDown is the one kept, because it sees
+  # the failures the api's view cannot (RUNBOOK "HostUnreachable", the two
+  # paths; on 2026-10-10 HostUnreachable never fired at all). Both carry
+  # host_id since I-786 gave HostUnreachable a series per host, so this is
+  # scoped to the host: without `equal`, one host's scrape failure held
+  # back the *other* host's page, a tenant-visible outage nobody was told
+  # about.
   - source_matchers: [alertname = "HostdDown"]
     target_matchers: [alertname = "HostUnreachable"]
+    equal: [host_id]
   # Prometheus reaches every target through the edge's WireGuard, so a dead
   # edge or tunnel fails gateway, hostd and both api scrapes at once.
   # MonitoringPathDown is the one page for that; it fires a minute before
   # the others so this holds them back before their group_wait ends.
   - source_matchers: [alertname = "MonitoringPathDown"]
     target_matchers: [alertname =~ "GatewayDown|HostdDown|ApiDown|ApiHostsAbsent"]
-  # api-grpc down takes repose_api_hosts with it; ApiDown is the cause.
+  # api-grpc down takes the api's host gauges with it; ApiDown is the cause.
   - source_matchers: [alertname = "ApiDown"]
     target_matchers: [alertname = "ApiHostsAbsent"]

@@ -32,6 +32,19 @@ ssh_private_key_path = "/home/azureuser/.ssh/id_ed25519"
 # Absolute path to this repository's nix/ directory.
 flake_path = "/home/azureuser/projects/repose/nix"
 
+# Registration tokens, by host name, for the hosts in `hosts`. Mint one with
+# `repose-admin hosts add --name <host> --provider azure`, which prints it:
+# it is single use and expires 24 hours after it is minted. The apply writes
+# it to /run/repose/join-token on the host and restarts hostd
+# (infra/README.md, "Adding a host").
+#
+# Leave a spent entry in place once the host has registered. Dropping it
+# destroys the resource that delivered the token, so the next plan proposes a
+# change against a host that is already running and serving guests.
+# join_tokens = {
+#   host-02 = "<the token hosts add printed>"
+# }
+
 # Cloudflare zone id for herakraft.co. The API token comes from the
 # CLOUDFLARE_API_TOKEN environment variable, never from a file here.
 cloudflare_zone_id = "0123456789abcdef0123456789abcdef"

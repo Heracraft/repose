@@ -110,6 +110,22 @@ module "install" {
   ssh_private_key_path = var.ssh_private_key_path
   authorized_keys      = var.authorized_keys
   build_on             = var.build_on
+  # Only so the deadline message can print a boot-diagnostics command the
+  # operator can paste.
+  resource_group_name = var.resource_group_name
+
+  # The edge has the same latent defect as the hosts: it is the same Azure VM
+  # shape, with accelerated networking, so its synthetic NIC and its SR-IOV VF
+  # share a MAC and the upstream installer's MAC-matched DHCP units claim
+  # both. It has simply not been reinstalled since that started mattering. So
+  # it is wired here and it inherits the fix the day it is next reinstalled,
+  # not before -- and like the hosts, the image is not in `triggers`, because
+  # a new installer image must never be a reason to reinstall the edge, which
+  # is the jump host and the WireGuard hub every other machine reaches the
+  # control plane through.
+  kexec_image      = var.kexec_image
+  kexec_flake_attr = var.kexec_flake_attr
+  install_deadline = var.install_deadline
 
   # The edge is reached directly; it is itself the jump host for everything else.
   jump_host = null

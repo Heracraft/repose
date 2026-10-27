@@ -316,6 +316,21 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 
 ## Alerts
 
+Three of the host alerts ask the api, not the host (DECISIONS I-786). Every
+other per-host signal in this stack comes from the host's own exporters,
+reached through a target file a human copies to this server, so the two
+failures that file cannot show had no alert at all: a host that was
+created and never registered has no exporter to scrape, and a host
+missing from the file has no series under its id. The api knows every
+host row by id and is always scraped, and
+`repose_api_host_state{host_id,state}` is that table: 1 for the state each
+host is in, 0 for its others. `HostUnregistered` reads `registering`,
+`HostUnreachable` reads `unreachable` (one alert per host, so
+Alertmanager holds it back behind *that* host's HostdDown and no other),
+and `HostNotInTargets` compares the ready ids against the `host_id`
+labels of the `hostd` job. The sweep that sets it runs in api-grpc, every
+15 seconds; `ApiHostsAbsent` is what says the series are gone.
+
 The rules in `ops/alerts.yaml`, routed by Alertmanager
 (`ops/alertmanager/repose-route.yaml`), emailed by Alertmanager itself to
 the address Azure's alerts use (I-848; I-648 sent them to Google Chat

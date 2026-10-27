@@ -133,10 +133,12 @@ per vCPU (I-784), so a host delivers the smaller of two ceilings: the usable
 seats its physical cores can serve while typing still feels immediate. The
 fleet has as many seats as its `ready`, undrained hosts deliver, counted per
 host and summed, or `SEATS_TOTAL` when the operator sets it (DECISIONS
-I-739, I-784; the launch host, a `D64s_v7`, is 24 seats, and host-01's
-shape is 4). Seats are held by every subscription that is `trialing`,
-`active` or `past_due`,
-and by every waitlist invitation that has not expired. Checkout for a plan needs that many free seats; without
+I-739, I-784). Hosts are sized one by one, so the hosts in a fleet differ:
+host-01, a `D16s_v7`, is 4 seats, host-02, the `D64s_v7` the launch adds
+beside it, is 24, and the fleet is **28** while both are `ready`. Seats are
+held by every subscription that is `trialing`, `active` or `past_due`, and by
+every waitlist invitation that has not expired. Checkout for a plan needs
+that many free seats; without
 them the user joins the waitlist, and the waitlist invites the oldest
 waiting user whenever a seat is free, holding it 72 hours for them
 (DECISIONS I-290, amending I-269). The landing page and the dashboard show
@@ -187,18 +189,18 @@ rather than $100. I-784 recovered most of the gap and none of the
 arithmetic below: the prices themselves are the owner's call, so nothing
 below has been changed.
 
-The plans have to cover an always-on seat on the chosen host. Memory is the
-binding constraint at 30 seats per host (256 GB minus 16 GB reserve, no
+The plans have to cover an always-on seat on the host it runs on. Memory is
+the binding constraint at 30 seats per host (256 GB minus 16 GB reserve, no
 memory oversubscription; CPU is oversubscribed at most 1.5 committed
-guest vCPUs per physical core, I-734). The launch host is a `D64s_v7`
-(DECISIONS I-39) at about $3,000 a month on demand, so a seat
+guest vCPUs per physical core, I-734). The seats the launch sells are on
+host-02, a `D64s_v7` (DECISIONS I-39) at about $3,000 a month on demand, so a seat
 that runs around the clock costs about $100 in compute before storage, the
 control plane and the edge, and Solo at $49 loses about $54 a month on such
 a user ($63 at the founding $39); a Pro user running four seats all month
 costs about $400 and loses about $240. That is accepted for the launch (owner, 2026-09-27: "use Azure as a
 cash sink for now"): the Azure credit pays for it while the product is
-learned, the seat count caps the loss at the size of one host, and the
-prices are set for the host the business ends up on.
+learned, the seat count caps the loss at what the fleet's hosts deliver, and
+the prices are set for the host the business ends up on.
 
 That host is no longer cheap. Hetzner's 15 June 2026 repricing (DECISIONS
 I-642) took the 256 GB AX162 from about €242 to €842.30 a month ($992.10,

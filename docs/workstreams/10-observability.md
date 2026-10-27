@@ -191,7 +191,17 @@ Families:
   `repose_host_guestd_lost` and `GuestdLost` cannot page for one.
 - API: `repose_api_requests_total{route,method,status}`,
   `repose_api_request_duration_seconds{route}`,
-  `repose_api_hosts{state}`, `repose_api_projects{state,class}`,
+  `repose_api_hosts{state}`,
+  `repose_api_host_state{host_id,state}` (I-786: the same hosts table by
+  identity, 1 for the state each host row is in and 0 for its other
+  states. The count by state names no host, so an alert on it could not
+  say which host was gone, could not be compared with the hostd scrape
+  targets a human copies to the monitoring server, and could not be held
+  back per host by an inhibition. It is also the only per-host signal that
+  exists for a host that was created and never registered: that host has
+  no exporter to scrape. `HostUnreachable`, `HostUnregistered` and
+  `HostNotInTargets` read it),
+  `repose_api_projects{state,class}`,
   `repose_api_schedule_total{result}`,
   `repose_api_resting_wake_total{reason,result}` (every wake the api
   asked for, and the one counter that breaks wakes down by reason, I-818:
@@ -284,7 +294,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 |---|---|---|
 | `HostMemory80` | `reserved / (reserved+free) > 0.8` for 10m | warn |
 | `HostCPUSaturated` | `sum by (host_id) (rate(repose_host_guest_cpu_seconds_total[5m])) / sum by (host_id) (repose_host_cpu_cores) > 1` for 15m: busy guest vCPUs per physical core, the quantity the latency measurement is in (I-738) | warn |
-| `HostUnreachable` | `repose_api_hosts{state="unreachable"} > 0` for 2m | page |
+| `HostUnreachable` | `max by (host_id) (repose_api_host_state{state="unreachable"}) == 1` for 2m: one alert per host, which is what lets its inhibition be scoped with `equal: [host_id]` (I-786) | page |
 | `SnapshotStale` | `repose_api_snapshot_age_seconds > 36*3600` | warn |
 | `BuildQueueStuck` | `repose_host_builds_running >= 2` and no `build_done` for 45m | warn |
 | `GatewayAuthSpike` | `rate(repose_gateway_auth_fail_total[5m]) > 1` | warn |
@@ -314,7 +324,9 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `ApiDown` | `up{job=~"api\|api-grpc"} == 0` for 3m (I-648) | page |
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
-| `ApiHostsAbsent` | `absent(repose_api_hosts)` for 5m (I-648) | page |
+| `ApiHostsAbsent` | `absent(repose_api_hosts) or absent(repose_api_host_state)` for 5m (I-648, I-786) | page |
+| `HostNotInTargets` | `max by (host_id) (repose_api_host_state{state="ready"}) == 1 unless on (host_id) count by (host_id) (up{job="hostd"})` for 15m: a ready host whose id no entry in `targets/hosts.yml` carries, so every host alert is silent on it. By id, not by count: a stale entry for a retired host balanced the two numbers and hid it (I-786) | warn |
+| `HostUnregistered` | `max by (host_id) (repose_api_host_state{state="registering"}) == 1` for 30m: a host row `hosts add` created that no hostd has registered against. The one host failure no exporter can show, because the host has none (I-786) | warn |
 | `ApiErrors` | 5xx share per route `> 0.05` for 10m (I-800) | page |
 | `OpsFailing` | `sum by (kind) (increase(repose_api_ops_total{state="error"}[30m])) > 0` for 5m (I-800) | warn |
 | `ScheduleRefused` | `sum by (result) (increase(repose_api_schedule_total{result=~"no_capacity\|no_cpu\|error"}[15m])) > 0` for 5m (I-800) | warn |
@@ -338,6 +350,8 @@ backend exists, setting one environment variable turns it on.
 |---|---|
 | Loki unreachable from a host | Fluent Bit buffers to disk (`/var/lib/fluent-bit`, 1 GB cap), retries; a host-side `fluent_bit_output_retries_failed_total` alert fires after 30m. Guests are unaffected. |
 | Prometheus cannot scrape a host | `up{job="hosts"} == 0` alert; hostd keeps sampling into Postgres via the gRPC stream, so billing data is not lost. |
+| A host is created and never registers | It has no exporter to scrape and no entry in the targets file, so no host series exist and no host alert can fire. `HostUnregistered` reads the api's own `repose_api_host_state{state="registering"}`, which exists from the moment `hosts add` mints the token (I-786). |
+| A host is ready and its entry was never copied to the targets file | Same silence for a running host, tenants included. `HostNotInTargets` compares the api's ready host ids with the `host_id` labels of the `hostd` job, so a stale entry for another host cannot balance the count and hide it (I-786). |
 | A component emits a metric outside `repose_` | the `obs` package test fails at build time. |
 | A log line carries a forbidden field | a reviewer catches it (checklist item); `obs.Logger` also redacts any field named `token`, `secret`, `password`, `authorization`, `cert` at runtime as a floor. |
 | `proc_samples` partition drop fails | the api logs `partition_drop_fail` and alerts; disk grows but nothing else breaks. |

@@ -382,7 +382,7 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       routing them to the owner's Alertmanager is part of the WireGuard
-      peer that `10-observability.md` §9 still has open. There are 48
+      peer that `10-observability.md` §9 still has open. There are 52
       rules, and the route (`ops/alertmanager/repose-route.yaml`) emails
       pages from Alertmanager itself with a Watchdog heartbeat to Uptime
       Kuma; `ops/check.sh` proves each receiver with `amtool config routes

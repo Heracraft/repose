@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-818 entries.
+820 entries.
 
 ## Scope
 
@@ -99,7 +99,7 @@ pointer, not a summary.
 - **I-11** Warning kinds are enumerated — L339
 - **I-12** The M0 benchmark is deferred; the first M1 host measures itself — 2026-09-17; L344
 - **I-13** Dashboard design language is the recruiting app's, minus its non-text controls — superseded by I-369; L352
-- **I-14** Pre-launch host is `Standard_D16s_v5`; the host size is a variable, not a constant — 2026-09-17; L360
+- **I-14** Pre-launch host is `Standard_D16s_v5`; the host size is a variable, not a constant — 2026-09-17; amended by I-786; L360
 - **I-36** Guests set `NPM_CONFIG_PREFIX=/home/dev/.npm-global` and put its `bin` on `PATH` — L370
 - **I-15** The product is named Repose — 2026-09-19; L377
 - **I-16** Stripe is not needed until milestone M4; accounts can be billing- exempt — 2026-09-19; L393
@@ -124,7 +124,7 @@ pointer, not a summary.
 - **I-35** sshd material: reserved secrets at `/run/repose/`, symlinked into `/etc/ssh/`, a throwaway key until delivery, reload re-reads — L685
 - **I-37** Two vsock RPC implementations exist for one release — 2026-09-19; L700
 - **I-38** Generated protobuf code is tracked and also regenerated in the Nix sandbox — 2026-09-19; L709
-- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; amended by I-647; L716
+- **I-39** Sizes are Intel v7 (Granite Rapids): host `Standard_D16s_v7`, edge `Standard_D2s_v7`, control plane `Standard_D4s_v7`, launch host `Standard_D64s_v7` — 2026-09-20; amended by I-647; amended by I-786; L716
 - **I-40** A production host is a named configuration; the api CA and the snapshot target are host module options; a host registered by `hostdev` comes up without WireGuard or a Host CA — 2026-09-20; L735
 - **I-41** The data disk is found at install time, not named in advance — 2026-09-20; L771
 - **I-42** The api's implementation shape: phased ops driven by one replica, /internal on the gRPC app, CA material in the secrets table, guest host certificates re-signed once the address is known — 2026-09-20; L789
@@ -850,3 +850,5 @@ pointer, not a summary.
 - **I-856** A frozen machine is ice, not cyan, and the colour grep needs no allowance — 2026-10-22; L25502
 - **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L25543
 - **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25570
+- **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25607
+- **I-872** repose builds the kexec installer it installs through, the install has a deadline, and both fail before a VM exists (second-host, 2026-10-26) — L25729

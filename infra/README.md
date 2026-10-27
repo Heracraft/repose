@@ -52,12 +52,19 @@ export CLOUDFLARE_API_TOKEN=...         # only when manage_dns is true
 
 ## Values: what is committed and what is not
 
-`prod.tfvars` holds the values that belong in review: sizes, disk sizes,
-account names, the host list. `prod.local.tfvars` (git-ignored; copy
+`prod.tfvars` holds the values that belong in review: the fleet's sizes and
+disk sizes, the per-host overrides of them (`host_shapes`), account names,
+the host list and each host's flake attribute. `prod.local.tfvars` (git-ignored; copy
 `prod.local.tfvars.example`) holds the values that are per-operator or
 secret: which addresses may reach operator SSH, the operator public keys, the
 path to the private key, the Cloudflare zone id and the join tokens. The
 Makefile passes both when the second exists.
+
+`kexec_image` is normally in neither, because unset is the right value: the
+apply builds the installer image from `flake_path` itself ("Adding a host",
+step 1). Set by hand it falls on either side depending on what it holds. A
+store path built on the operator's own machine is per-operator and goes in
+the local file; a published URL is the fleet's and goes in the committed one.
 
 ## Bootstrap
 
@@ -352,8 +359,8 @@ graph makes every host depend on the edge having been installed first.
 Hosts never get a public IP, not even a temporary one for the install
 (`docs/DECISIONS.md` I-25). A public IP would need an inbound rule on the
 hosts subnet, which is the one thing `policy/tfsec` forbids; the install
-window is about ten minutes; and during it the host is a stock Ubuntu image
-accepting root SSH.
+window is about fifteen minutes, the installer image upload included; and
+during it the host is a stock Ubuntu image accepting root SSH.
 
 ```
 you (operator_cidrs) ──ssh──▶ edge :<edge_operator_ssh_port> ──ssh──▶ host :22
@@ -381,16 +388,110 @@ the apply log, because it travels as file content and never as an argument.
 
 ## Adding a host
 
+A new host does not have to be the size of the ones already running: every
+size and disk value is per host, with the committed fleet value as the
+fallback. host-02, a `D64s_v7` added beside host-01's `D16s_v7`, is what that
+looks like (DECISIONS I-14).
+
+Read "Watching an install" below before you start one. An install that goes
+wrong goes wrong quietly: host-02's first attempt held this environment's
+only state lock for 16 hours 56 minutes with nothing on the console and
+nothing in the apply log, and the two read-only commands in that section
+name the cause in about a minute.
+
 ```bash
 repose-admin hosts add --name host-02 --provider azure  # prints a token
 ```
 
 Then:
 
-1. Add `"host-02"` to `hosts` in `azure/prod/prod.tfvars`, in a commit
-   somebody reads.
-2. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
-3. `make plan ENV=prod`, read it, `make apply ENV=prod`.
+1. **The installer image: nothing to do, and one cost to know.** A host is
+   installed through the kexec image this repository builds, not the one
+   nixos-anywhere has the target download. The upstream image's
+   `restore-network.service` writes one DHCP unit per interface and matches
+   each by MAC address; on an Azure size with accelerated networking the
+   synthetic NIC and the SR-IOV VF share a MAC, so every unit matches both
+   links and the installer configures and DHCPs the VF as though it were a
+   second NIC, against Microsoft's rule that addresses belong to the
+   synthetic interface alone. Ours leaves the VF unmanaged, DHCPs the
+   synthetic NIC by driver, and boots at `loglevel=7` so the console
+   carries the network messages
+   (`docs/workstreams/11-infra-opentofu.md`, "The installer image").
+
+   You do not build it. The apply builds the image **before it creates
+   anything**, with a precondition that `flake_path` really is a repose
+   `nix/` directory, and each install then hands nixos-anywhere the
+   `repose-kexec-installer-x86_64-linux.tar.gz` inside the result. A flake
+   that does not evaluate, or an installer attribute that is not there,
+   therefore fails with no VM created and no lock held longer than a cached
+   `nix build`. That is the cheap version of host-02's 16 hours 56 minutes.
+
+   The cost: the image is a local path, so nixos-anywhere uploads it,
+   **526 MB through the edge's ProxyJump per install** (526,497,334 bytes).
+   The old flow had the target fetch 366 MB from GitHub itself (365,921,544
+   bytes) and the edge carry none of it, so the regression is 160 MB per
+   install across the most fragile link on this path, and not a detail.
+   `kexec_image` also takes a URL, which restores the direct fetch, so
+   publishing the image to the snapshots account is a tfvars value rather
+   than a code change; the container, its read access and the upload step
+   are the follow-up that removes the 526 MB, and they are not built.
+
+   Setting `kexec_image` by hand pins one image, which is a bisect rather
+   than a configuration. Whatever it holds must end in `.tar.gz`,
+   `.tar.xz`, `.tar.zst` or `.tar`, and a validation refuses anything else
+   at plan time. Worth knowing before writing a blob URL: nixos-anywhere
+   matches the end of the value to choose its decompression, so
+   `...tar.gz?sv=...` matches nothing and extraction fails on the target
+   after the whole image has crossed the wire. A store path pinned by hand
+   needs a gc root as well, which `nix build` leaves and
+   `nix build --no-link` does not.
+
+   **An install log that names
+   `nixos-kexec-installer-noninteractive-x86_64-linux.tar.gz` is installing
+   the upstream image, not ours.** That filename is the release asset our
+   image replaces, and ours is named differently on purpose.
+
+2. `nix/hosts/host-02.nix` and `nixosConfigurations.host-02` in
+   `nix/flake.nix`, **in the checkout the apply runs from**: nixos-anywhere
+   installs `--flake <flake_path>#<attr>`, a path on the machine running
+   `tofu`, not from git, so an attribute that exists only on a branch
+   somebody pushed is not there. The file imports `nix/hosts/prod.nix`,
+   which carries what every production host shares (the api's VNet address
+   and server name, the platform CA, the bootstrap operator key, the base
+   repository, the Blob account and snapshot identity, the idle pause and
+   the freeze vault), and adds only what this host measured for itself: its
+   freeze write rate. `nix/hosts/host-01.nix` is the model, and the rate is
+   measured after the host exists (`docs/ops/RUNBOOK.md` "Guest freeze"
+   step 3), not guessed from a neighbour.
+3. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
+   **A host with no entry here installs the generic `host` configuration**,
+   which knows no api address, so the machine comes up and never registers
+   (`docs/ops/RUNBOOK.md` "HostUnregistered"). The plan and the apply both
+   print the `every_host_has_a_flake_attr` check warning naming the host, and
+   a warning stops neither: the apply succeeds and the host is wrong if
+   nobody reads it.
+4. `"host-02"` in `hosts` and its shape in `host_shapes`, both in
+   `prod.tfvars`, in a commit somebody reads:
+
+   ```
+   host_shapes = {
+     host-02 = {
+       size         = "Standard_D64s_v7"
+       class        = "azure-d64s-v7"
+       data_disk_gb = 2048
+     }
+   }
+   ```
+
+   An attribute the entry leaves out takes the fleet value (`host_size`,
+   `host_class`, `host_data_disk_gb`, `host_data_disk_iops`,
+   `host_data_disk_mbps`, `host_os_disk_gb`, `zone`), and a host with no
+   entry at all is what it was before the map existed.
+5. Add `host-02 = "<token>"` to `join_tokens` in `prod.local.tfvars`.
+6. `make plan ENV=prod` and read it: the new VM, its data disk, NIC and
+   install, and **no change to any host already running**. A plan that
+   touches one of those is proposing to reboot a machine with tenants on it.
+   Then `make apply ENV=prod`.
 
 The apply creates the VM and its data disk, installs NixOS with
 nixos-anywhere through the edge, checks that `/dev/kvm` exists and that
@@ -399,13 +500,94 @@ restarts `hostd`. `repose-admin hosts list` shows `ready` within about two
 minutes of the reboot; if it does not, the runbook entry is
 "Host never registered".
 
+**The install is bounded.** `install_deadline`, default `45m`, wraps the
+nixos-anywhere step in `timeout`. The step itself has no bound of its own:
+inside, nixos-anywhere waits for the target with
+`until runSsh -o ConnectTimeout=10 -- exit 0; do sleep 5; done`, an infinite
+loop with no flag that stops it, and `connect_timeout` does not reach it
+(it bounds the SSH handshakes on the steps either side, and OpenTofu rejects
+a `timeout` argument on `local-exec` outright). So a target that never comes
+back holds the apply, and with it this environment's single state lock,
+until somebody kills it by hand. host-02's first install held both for
+16 hours 56 minutes: 16 hours 56 minutes in which no emergency apply against
+the edge, the control plane, DNS or the vaults could have run. On the
+deadline the step exits 124, or 137 if it needed the follow-up KILL, and
+says so, naming the deadline and the two commands below. Either reads
+differently from the installer failing on its own, which is the point: a
+deadline reached is a stuck install to go and look at, and only an install
+that was genuinely still working wants a longer `install_deadline`. The VM
+and its data disk survive, and re-running the apply retries the install.
+
+Then the monitoring server, which no apply touches: read the host's
+WireGuard address from `repose-admin hosts list` or from its
+`/run/repose/host.env` (`WG_ADDR`), correct its entry in
+`ops/prometheus/targets/hosts.yml`, and copy that file to
+`/etc/prometheus/repose/targets/` (`ops/README.md` step 2). Prometheus
+re-reads it within a minute, after which `up{host_id="host-02"}` is 1 for the
+`hosts`, `hostd` and `fluent-bit` jobs. Every host alert is scoped to the
+targets in that file, so until the copy nothing watches the new host; copied
+before the host registers, `HostdDown` pages for a machine that is not up
+yet. `HostNotInTargets` warns after 15 minutes if this is skipped.
+
 Leave the spent token in `prod.local.tfvars`. It is single-use and expires in
 24 hours, so a stale entry is inert, and leaving it keeps later plans from
 proposing to remove the delivery step. Replacing its value is how a token is
 rotated.
 
-Adding a host takes about ten minutes, most of it the kexec and the closure
-copy.
+Adding a host takes about fifteen minutes, most of it the image upload, the
+kexec and the closure copy.
+
+## Watching an install
+
+Two read-only commands. Both need only `az login` and the subscription,
+both work while the apply is still running, and neither needs SSH, which is
+the whole point: a host with no usable address answers nothing, and that is
+exactly the case you cannot otherwise see.
+
+**The console.**
+
+```bash
+az vm boot-diagnostics get-boot-log -g repose-prod -n host-02 | tail -100
+```
+
+Boot diagnostics are on for every host (`boot_diagnostics {}` in
+`infra/azure/modules/host/main.tf`), so this is the installer's serial
+console whether or not it ever had an address. Our image boots at
+`loglevel=7`, so the kernel's netvsc and mana lines and the DHCP attempts
+are in it. The upstream image boots at `loglevel=4` and prints none of them:
+that is why host-02's failed install and a successful one emitted an
+identical set of 134 systemd messages, and the console had nothing to say
+about which was which.
+
+**The byte counters.**
+
+```bash
+az monitor metrics list \
+  --resource "$(az vm show -g repose-prod -n host-02 --query id -o tsv)" \
+  --metrics 'Network In Total' 'Network Out Total' --interval PT1M -o table
+```
+
+Read the shape, not the totals:
+
+| Per-minute counts | What it means |
+|---|---|
+| A bulk inbound burst, hundreds of MB in a minute | the closure is copying; the install is working |
+| The **same byte count every minute**, minute after minute | the installer is alive and has no usable IP configuration. It is retrying discovery and will never finish |
+| Nothing at all | the VM is not running, or the kexec never came back |
+
+The worked example is this incident. host-02's failed install: one minute
+after the kexec the counters became a byte-exact metronome, **3,256 B/min in
+and about 3,450 B/min out**, and stayed there for 17 hours. Not roughly
+flat, the same number every minute, which is a retry loop rather than
+traffic. host-stg-01's successful install, for contrast: **397 MB inbound in
+one minute, then 204 MB, then 506 MB**. host-02 showed no bulk inbound in
+any minute of the 17 hours.
+
+One caveat, because it is what made these counters confusing at the time:
+they are the VM's counters, and traffic over the SR-IOV VF bypasses them.
+host-02's installer did boot, so its image crossed over the VF without
+appearing here. "No bulk inbound" is therefore not proof that nothing
+arrived. The byte-exact flat count is the tell, and on its own it is enough.
 
 ## Rotating a join token
 
@@ -570,10 +752,20 @@ registers before it has a tunnel (DECISIONS I-92).
 Shrinking the `hosts` list destroys a VM and everything on it. Do this, in
 order:
 
-1. `repose-admin hosts drain host-02`: the scheduler places nothing new.
-2. Move or stop every project on it: `repose-admin projects move` for each,
-   or let tenants stop them. `repose-admin hosts list --json` shows the count.
-3. `repose-admin hosts retire host-02`.
+1. `repose-admin hosts drain host-02`: the scheduler places nothing new. The
+   fleet's seat total drops by that host's seats the moment it lands, because
+   the count sums `ready`, undrained hosts only; held seats do not drop with
+   it, so free can go to 0 and checkout answers `waitlisted` until the rest
+   of the fleet covers what is held (`repose-admin seats`).
+2. Move or stop every project on it: `repose-admin projects move <id> --to
+   <host>` for each, or let tenants stop them. `repose-admin hosts list
+   --json` shows the count, `repose-admin projects list --host host-02` the
+   list. `--to` is not capacity-checked and a project that is not running is
+   restored from whatever snapshot it already has: `docs/ops/LAUNCH.md` §3
+   step 5 is the whole procedure.
+3. `repose-admin hosts retire host-02`. It refuses while the host holds
+   **any** project, stopped ones included (`host-02 still holds N
+   project(s); move them first`).
 4. Remove the name from `hosts` in `prod.tfvars`.
 5. The data disk and its attachment carry `prevent_destroy`, so the plan
    fails, as intended. Delete the `prevent_destroy = true` lines in
@@ -638,11 +830,11 @@ to trivy is a small job.
 
 Re-checked on **2026-09-20**, the date of the first apply, against the Azure
 Retail Prices API (`https://prices.azure.com/api/retail/prices`,
-`armRegionName eq 'eastus'`, `priceType eq 'Consumption'`), for what
-`prod.tfvars` creates: one `D16s_v7` host with a 512 GB Premium SSD
-v2 data disk (DECISIONS I-14, I-39), the edge, and **the control-plane VM**
-(`coolify_count = 1`, DECISIONS I-71). 730 hours to the month, Linux rates, no
-reservation.
+`armRegionName eq 'eastus'`, `priceType eq 'Consumption'`), for host-01: a
+`D16s_v7` with a 512 GB Premium SSD v2 data disk (DECISIONS I-14, I-39), the
+edge, and **the control-plane VM** (`coolify_count = 1`, DECISIONS I-71). 730
+hours to the month, Linux rates, no reservation. host-02's rows below use the
+same unit prices.
 
 | Resource | Unit price | Monthly |
 |---|---|---|
@@ -657,11 +849,17 @@ reservation.
 | Two Standard static IPv4 (NAT, edge) | $0.005/h each | $7.30 |
 | Blob, 500 GB of snapshots, Cool LRS | $0.0152/GB/month | $7.60 |
 | Key Vault standard, operations | $0.03 per 10K | under $1 |
-| **Subtotal, one host and the edge, before egress** | | **about $857** |
+| **Subtotal, one host and the edge, before egress** | | **about $1,095** |
 | Control plane `Standard_D4s_v7` | $0.265/h | $193.45 |
 | Control plane OS disk, Premium SSD P15 (256 GiB) + mount | $38.01 + $1.83 | $39.84 |
 | Control plane static IPv4 | $0.005/h | $3.65 |
-| **Total, one host and the control plane, before egress** | | **about $1,094** |
+| **Total, one host and the control plane, before egress** | | **about $1,332** |
+| host-02 `Standard_D64s_v7` | $4.232/h | $3,089.36 |
+| host-02 OS disk, Premium SSD P20 (512 GiB) + mount | $76.03 + $3.67 | $79.70 |
+| host-02 data disk, Premium SSD v2, 2,048 GiB | $0.00011/GiB/h | $164.42 |
+| host-02 data disk IOPS, 16,000 (3,000 free) | $0.000007/IOPS/h | $66.43 |
+| host-02 data disk throughput, 600 MB/s (125 free) | $0.000055/MBps/h | $19.07 |
+| **Total, both hosts and the control plane, before egress** | | **about $4,751** |
 
 **The 2026-09-19 table had the control plane $53 a month too cheap.** It
 listed the `D4s_v7` at $140.16 a month; the API returns $0.265 an hour, which
@@ -669,11 +867,11 @@ is $193.45. The re-query above caught it; that is why this item is on the
 checklist with a date.
 
 So the control plane is about **$237** a month, and one host plus the control
-plane is about **$1,094**, over the $1,000 monthly budget alert in
-`docs/ops/AZURE-SETUP.md` step 7. Raise the budget to $1,200, or drop the
-control plane to a `D2s_v7` (2 vCPU, 8 GB) and save $97. Coolify, Logto,
-Postgres, the api and the dashboard fit in 8 GB for a month of testing
-alone, with little room; 16 GB leaves headroom.
+plane is about **$1,332**, already over the $1,000 monthly budget alert in
+`docs/ops/AZURE-SETUP.md` step 7; the figure to raise it against is the
+two-host total below. Dropping the control plane to a `D2s_v7` (2 vCPU,
+8 GB) saves $97. Coolify, Logto, Postgres, the api and the dashboard fit in
+8 GB for a month of testing alone, with little room; 16 GB leaves headroom.
 
 The table also shows something the earlier estimate missed:
 **Premium SSD v2 provisioned performance is most of the disk bill.** Capacity
@@ -683,10 +881,16 @@ reason, and both can be raised in place later without downtime, so the first
 host can start at the free tier (3,000 IOPS, 125 MB/s) and save $85 a month
 until there is a guest whose builds justify more.
 
-At launch sizes (`Standard_D64s_v7`, 2 TB data disk, control plane on) the
-same table totals about **$2,850**. The $10k credit funds roughly three and a
-half months of that with one host. Reservations generally cannot be bought
-with sponsorship credits; check before assuming a reserved rate applies.
+The `D64s_v7` hourly rate is the `D16s_v7`'s $1.058 times four, the family
+being linear in vCPUs; it agrees with the $100 a day in
+`docs/ops/AZURE-SETUP.md` step 7. So the launch, which adds host-02 and keeps
+host-01 running (`docs/ops/LAUNCH.md` §3), costs about **$4,751** a month
+until host-01 is retired, and about **$3,812** after. So the budget alert in
+`docs/ops/AZURE-SETUP.md` step 7 goes to $5,000 with the second host, and to
+about $4,000 once host-01 is retired, or it fires every month. The $10k
+credit funds roughly two months of two hosts. Reservations generally cannot
+be bought with sponsorship credits; check before assuming a reserved rate
+applies.
 
 One figure is not from the API: Azure does not expose a NAT Gateway meter
 under any `serviceName` in `eastus` that the retail endpoint will return, so

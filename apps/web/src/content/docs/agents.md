@@ -102,7 +102,7 @@ Any agent can message you or ask you a question from the machine with `repose-no
 
 Logins are kept on the machine's disk, except Claude Code's. They survive stops and are in snapshots.
 
-**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, approve in the page that opens in your laptop's browser, and paste the code back. Your other machines are then logged in too, including ones you create later. The file Claude Code writes lives on the host, shared into each of your machines, and repose never opens it. It isn't in snapshots, it outlasts destroying a project, and it's deleted 30 days after your last machine is gone.
+**Claude Code.** Its login is never copied from your laptop, so log in once on any of your machines: type `claude`, approve in the page that opens in your laptop's browser, and paste the code back. Your other machines on the same host are then logged in too, including ones you create later; machines on another host need their own login. The file Claude Code writes lives on the host, shared into each of your machines, and repose never opens it. It isn't in snapshots, it outlasts destroying a project, and it's deleted 30 days after your last machine is gone.
 
 Instead of logging in, you can store a long-lived token from your laptop as a secret. Remote Control, connectors and Claude in Chrome then don't work.
 
@@ -135,7 +135,7 @@ Every agent on the machine has the [browser tools](/docs/machine#browser) `playw
 
 Tokens stay on your laptop. Each becomes `${NAME}`, and `run` names the secrets the machine lacks. `repose secrets import --mcp` sets them from your laptop's values, or `repose secrets set NAME` sets one. A secret set with `--global` reaches [every project](/docs/secrets#secrets-for-every-project), so `repose secrets import --global --mcp` sets the tokens of your user-scope servers once for all of them. [`repose mcp list`](/docs/cli#repose-mcp-list-project) shows `needs NAME` for a server still waiting on one. A server that starts with a command reads its secrets each time an agent starts it; one that reaches a URL is left out of every agent until its secrets are set. An agent that's already running sees a new server, or a secret you just set, after you restart it.
 
-A server that signs in with OAuth needs a sign-in from `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on all your machines can use it.
+A server that signs in with OAuth needs a sign-in from `/mcp` in Claude Code on the machine while you're attached, since the sign-in page returns to a port on the machine that the attach carries to your laptop. The sign-in is kept with your Claude Code login, so agents on your machines on the same host can use it.
 
 Servers that need your laptop stay there, and `run` names them once: Apple apps, a program or files on your laptop, a server on `localhost` or your own network. While your laptop is open, [`repose mcp forward NAME`](/docs/cli#repose-mcp-forward-name) lends the agents on the machine one of them, running on your laptop until `Ctrl-C`. To forward a server whenever you're attached, add it to `[mcp] forward` in [config.toml](/docs/cli#config-toml).
 

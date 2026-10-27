@@ -25603,3 +25603,213 @@ They claimed the resume takes 114 ms, which was measured on staging;
 host-01 measured `wake_ms=225` on the first real wake. A measured figure
 from the wrong machine is still the wrong number for a user reading it
 about theirs.
+
+**I-786. The launch host is added beside host-01, not grown out of it, and
+a host's shape is per-host (second-host, 2026-10-25).** Amends I-14 and
+I-39: their sizes stand, their *method* does not. *Made during
+implementation* (the owner asked to buy the launch host, then asked why it
+was not simply a second host).
+
+- *The mistake worth recording is not the Terraform.* `LAUNCH.md` step 1
+  said to set `host_size = "Standard_D64s_v7"` and apply, so that is what
+  was prepared. With `hosts = ["host-01"]` that is an in-place resize of
+  the one live host: Azure deallocates it, every guest on it stops,
+  `kanali` included, and the data disk has to be grown by hand afterwards
+  or 1,536 GB is paid for and unusable. The runbook had already said
+  otherwise, in the same session's own words: step 0, rewritten for I-782
+  four days earlier, describes "the launch host" registering and taking
+  10.255.0.4. **A resize registers nothing and keeps .2.** The document
+  contradicted itself and the half that was followed was the wrong half.
+  Following a runbook you wrote yourself, past evidence inside it, is the
+  failure that is hardest to catch, because the document agrees with you.
+- *What made the resize look like the only option.* The root module had
+  one size for the whole fleet: `infra/azure/prod/main.tf` passed
+  `host_size` into the environment module, which handed it to every host
+  in `for_each = toset(var.hosts)`. Two hosts at two sizes were not
+  expressible, so "bigger host" could only mean "grow this one".
+- *The shape.* `host_shapes`, a map of objects keyed by host name, each
+  attribute `optional()`: size, class, zone, data_disk_gb, data_disk_iops,
+  data_disk_mbps, os_disk_gb. A local resolves each attribute as
+  `coalesce(try(var.host_shapes[name].<attr>, null), var.<global>)`, so an
+  attribute left out takes the fleet default and **a host with no entry is
+  byte-for-byte what it was before the variable existed**. `host-01` names
+  no entry. That is the safety property, and it is checked rather than
+  claimed: `tofu console` against the real tfvars resolves host-01 to
+  `azure-d16s-v7 / Standard_D16s_v7 / zone 1 / 512 / 16000 / 600 / 256`,
+  identical to today.
+  One map of objects, not five parallel maps: a reader of `prod.tfvars`
+  sees one block that says what host-02 *is*, and the review failure of
+  five maps is an entry missing from one of them, which applies silently
+  as a 2 TB disk still provisioned for 512 GB.
+  `coalesce` fails when every argument is null, so every global keeps its
+  default; `merge()` was rejected because a null on the right beats the
+  default and a mixed-type object will not convert to a map.
+  `security_type` stays global: both validations pin it to `Standard`, and
+  a per-host value has no legitimate use.
+- *The plan, run 2026-10-25.* **8 to add, 0 to change, 0 to destroy**, and
+  no `host["host-01"]` resource appears in it at all. The resize plan, for
+  contrast, was 0 add, 3 change, 0 destroy, and one of the three changes
+  was the live VM's `size`.
+- *Two new check blocks, both warnings.* `host_shapes_name_real_hosts`: a
+  typo'd key applies nothing and reports nothing, so the host would come
+  up silently at the fleet default. `every_host_has_a_flake_attr`: a host
+  missing from `host_flake_attrs` installs the generic `host`
+  configuration and **never registers** -- its `apiAddr` is the default
+  `api.repose.herakraft.co:443`, where nothing gRPC answers, because
+  api-grpc's mTLS listeners are 8443 and 8444 and `manage_dns = false`
+  makes that name Cloudflare's proxied wildcard. The apply succeeds and
+  the VM is healthy, which is why the check exists. Both warn rather than
+  fail: `host_flake_attr_default` is a supported value, and a precondition
+  that aborts the plan would take the live host down with it over a stray
+  key.
+- *What the bigger host changes that nobody asked about.* The guest
+  freeze's budget is write rate times a deadline hard-capped at 300 s. At
+  the inherited 600 MB/s that is 180 GB, and at host-01's *measured* 400
+  MB/s it is 120 GB, against up to 192 GB of guest memory on a full
+  host-02. host-01 never met this because it holds at most 48 GB. The
+  lever is provisioned throughput, which is billed, so it is the owner's
+  and `host_shapes` is where it would go. `writeRateMBs` in
+  `nix/hosts/host-02.nix` is inherited from host-01 and marked unmeasured;
+  it must be measured on host-02's own pool device.
+- *Retiring host-01 later has three sharp edges, all now in LAUNCH and the
+  RUNBOOK.* `repose-admin hosts retire` refuses while the host holds any
+  project, stopped ones included. `repose-admin projects move --to` sets
+  the target directly and short-circuits `PickHost`, so memory, pool room
+  and the 1.5-vCPU-per-core rule are never checked for a move. A move of a
+  project that is **not running** restores the newest snapshot that
+  already exists, which may be a day old; start or snapshot it first.
+  Every moved project also emails its owner that it "was restored onto a
+  new host from its latest snapshot", which reads as data loss on a
+  planned migration.
+- *Seats go 4 to 28 on host-02's first heartbeat*, and the waitlist
+  Inviter mails every free seat in one tick with no rate limit, each
+  invitation holding a seat for 72 hours. Twenty-four invitations can go
+  out at once. Draining host-01 later drops the total by its 4 the moment
+  the drain lands.
+- *What the adversarial review changed, after the first commit.* Five
+  lenses raised 49 candidates and 43 died under refutation. The one that
+  changed the configuration: host-02 was taking the fleet's 256 GB OS
+  disk, which is `/nix/store`, shared by every guest on the machine.
+  hostd keeps a GC root per live closure and three revisions per project,
+  and past 80 percent hostd refuses `Build` with `insufficient_capacity:
+  host store full` for every tenant on that host. host-01 sells 4 seats
+  and host-02 sells 24. Every other dimension that scales with guest
+  count was scaled; the store was not. `os_disk_gb = 512`, about $38 a
+  month, and it had to be now: the data disk grows online and the RUNBOOK
+  says how, while the OS disk is inline on the VM resource with no grow
+  procedure, so changing it later is a plan against a live host -- the
+  failure this whole entry exists to avoid.
+  The rest were true statements that had stopped being true: the commit
+  added a check that warns and then wrote "the apply says nothing" in
+  three places; the Prometheus target reaches git and nothing deploys it,
+  so host-02 would carry tenants with every host alert silent (now a step
+  in two runbooks and a `HostNotInTargets` rule with its own test case and
+  runbook entry); and `/docs/agents` promises one Claude login covers
+  every machine, which is false across two hosts and false for a machine
+  that has just been moved.
+- *A money error this change inherited and would have amplified.* The cost
+  table in `infra/README.md` labelled its first subtotal "one host and the
+  edge ... about $857" when those rows sum to $1,094.59, then labelled
+  $1,094 as "one host **and the control plane**". The control plane's $237
+  was therefore dropped from every total below, and the two-host figure
+  read $4,473 when it is **$4,711**. The individual rows were right; the
+  two bold labels were not. Corrected here because this change is what
+  puts that number in front of a purchase. The deltas are unaffected:
+  host-02 adds about $3,379 a month and retiring host-01 gives back about
+  $939.
+- *Not done here, and deliberately.* The apply: `infra/Makefile` says
+  `make apply ENV=prod` is "the owner's call, never an agent's". The join
+  token, which is minted by `repose-admin hosts add --name host-02` and
+  lives only in the uncommitted `prod.local.tfvars` -- the plan warns
+  about its absence today, correctly. And `ssh host-01` from woker-1 fails
+  with REMOTE HOST IDENTIFICATION HAS CHANGED against an RSA key at
+  `known_hosts:16`; nothing was edited, because silencing a host-key
+  warning on a production host is not an agent's call.
+
+**I-872. repose builds the kexec installer it installs through, the install
+has a deadline, and both fail before a VM exists (second-host, 2026-10-26).**
+Sibling to I-786, which added host-02 and stops at the plan. This is what the
+apply then ran into. *Made during implementation* (host-02's install hung for
+16 h 56 m on 2026-10-26; the owner asked for the fix to be stable for a fleet
+that will grow).
+
+- *The installer was never ours.* `nixos-anywhere` passed no `--kexec`, so the
+  **target** downloaded a fixed upstream release asset -- nixos-images
+  `nixos-25.05`, Linux 6.14.10, last rebuilt 2025-12-25 -- and kexec'd into
+  it. `--flake` names only the system installed afterwards. The same bytes
+  installed host-01, host-stg-01 and host-02, so neither our nixpkgs nor
+  I-778's 6.18.57 kernel pin was ever involved, and the first hypothesis of
+  this investigation (that the pin broke it) was disproved rather than
+  argued.
+- *What that image does wrong on Azure.* Its `restore-network` writes one
+  `00-<ifname>.network` per link whose `[Match]` is `MACAddress=` and whose
+  `[Network]` is `DHCP=yes`. On Azure accelerated networking the `hv_netvsc`
+  synthetic link and the `mana` SR-IOV VF **share one MAC**, so every unit
+  matches both links and the installer DHCPs the VF as a second NIC, against
+  Microsoft's rule that addresses belong only to the synthetic interface. It
+  is still in upstream HEAD. Our installed hosts were never exposed to it:
+  `nix/hosts/network.nix` matches `10-uplink` by interface NAME and sets
+  `networking.useDHCP = false`, so the VF matches no unit. Only the borrowed
+  installer was wrong.
+- *So repose builds its own.* `nix/installer` on `nixos-images`'
+  `kexec-installer` module: the host kernel pin, `restore-network` masked,
+  `05-vf-unmanaged` matching `Driver = "mana mlx5_core mlx4_core"` as
+  unmanaged, `10-uplink` matching `Driver = "hv_netvsc"` with DHCP, and
+  `consoleLogLevel = 7`. Matching by **driver** is the fix: a driver tells
+  the two links apart where a MAC cannot. The image is named
+  `repose-kexec-installer` so it can never be mistaken in a log or a
+  container for the asset it replaces.
+- *`kexec_image` unset means ours, and no value asks for the upstream asset.*
+  The alternative -- unset means upstream, with a plan-time warning and a
+  documented procedure to pass a path -- was implemented, argued for well,
+  and rejected. A warning does not stop an apply, and the information that
+  would have prevented host-02's failure was already in the tree; what was
+  missing was a prompt at the moment it mattered. A default that selects a
+  known-broken artifact is not a default. The asymmetry decides it: unset
+  means ours and the flake is broken gives a loud failure naming the flake,
+  while unset means upstream and someone forgets gives a silent install into
+  the defect. Someone who truly wants the upstream image passes its URL,
+  which is explicit and shows up in a diff.
+- *The deadline, and why nothing else could bound it.* OpenTofu rejects a
+  `timeout` argument on `local-exec` (proved, not assumed), and
+  nixos-anywhere waits for the post-kexec machine with an unbounded
+  `until runSsh ...; do sleep 5; done` with no flag to bound it.
+  `connect_timeout` bounds only the SSH handshakes on the steps either side,
+  and its description claimed otherwise; that is corrected. The call now runs
+  under `timeout --kill-after=1m`, default `45m` against a real install's
+  15-20 minutes, and exits 124 or 137 print a block saying the install ran
+  out of time rather than failed, with the two read-only diagnostics.
+  **The cost of the missing bound was not the VM.** It was this environment's
+  only state lock, held for 17 hours, during which any emergency apply
+  against the edge, the control plane, DNS or the vaults would have been
+  refused.
+- *Failure moved before creation.* `terraform_data.kexec_image` builds the
+  image ahead of every machine, with `module.host` and `module.edge` ordered
+  behind it, plus a `flake_path` precondition and validations on
+  `kexec_image`'s extension and existence. It earned this on its first run: a
+  plan refused because `nix/installer` was untracked and because `flake_path`
+  names the **main checkout**, not the worktree the work is in. That second
+  one is a standing trap -- the apply builds from a different checkout than
+  the branch, so anything added here is invisible to it until the release
+  queue lands it on main.
+- *What is knowingly not checked at plan time.* Whether the image builds:
+  check blocks evaluate expressions and cannot run `nix`, and both
+  workarounds are worse -- a `terraform_data` is skipped once its triggers
+  stop changing, including after a `nix store gc` took the path it vouched
+  for, and an `external` data source shells out on every plan, giving a
+  read-only plan side effects. And whether a join token is unexpired: the api
+  keeps only its hash and expiry, so a stale token is indistinguishable from
+  a fresh one here and surfaces as hostd's exit 3.
+- *The diagnostics are the most reusable thing learned.* A flat, byte-exact
+  per-minute network count means the installer is alive with no usable
+  address; bulk inbound means the closure is copying. host-02 sat at 3,256
+  B/min in for 17 hours where host-stg-01's successful install moved 397 MB,
+  204 MB and 506 MB. Both reads need neither the machine nor the lock.
+  RUNBOOK, "Install hit the deadline".
+- *Still owed.* The image is passed as a local path, so it is uploaded
+  through the edge's jump host -- about 503 MiB per install, where the
+  upstream flow had the target fetch directly and never touch the edge.
+  Publishing it to the snapshots account and passing a URL restores the
+  direct fetch; the module already accepts one, and the extension validation
+  exists because a SAS query string would break nixos-anywhere's
+  decompression after the whole transfer.

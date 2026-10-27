@@ -687,6 +687,11 @@ func (s *Server) Sweep(ctx context.Context) ([]uuid.UUID, error) {
 	return marked, nil
 }
 
+// hostStates is the state check of the hosts table (migration 0001), in the
+// order a host moves through it. Every one is published for every host, so a
+// state a host is not in reads 0 rather than going absent.
+var hostStates = []string{"registering", "ready", "draining", "unreachable", "retired", "lost"}
+
 func (s *Server) refreshGauges(ctx context.Context) {
 	rows, err := s.pool.Query(ctx, "select state, count(*) from hosts group by state")
 	if err != nil {
@@ -701,7 +706,34 @@ func (s *Server) refreshGauges(ctx context.Context) {
 		}
 	}
 	rows.Close()
-	for _, st := range []string{"registering", "ready", "draining", "unreachable", "retired", "lost"} {
+	for _, st := range hostStates {
 		s.m.Hosts.WithLabelValues(st).Set(counts[st])
+	}
+	// The same rows by identity (I-786). A count says two hosts are ready
+	// and names neither, so an alert on it cannot name the host that is
+	// gone, cannot be compared with the Prometheus targets a human copies
+	// to the monitoring server, and cannot be held back per host by an
+	// inhibition. The host's own exporters are no answer: a host that was
+	// created and never registered has no exporter to scrape.
+	byHost, err := s.pool.Query(ctx, "select name, state from hosts")
+	if err != nil {
+		return
+	}
+	states := map[string]string{}
+	for byHost.Next() {
+		var name, st string
+		if err := byHost.Scan(&name, &st); err == nil {
+			states[name] = st
+		}
+	}
+	byHost.Close()
+	for name, cur := range states {
+		for _, st := range hostStates {
+			v := 0.0
+			if st == cur {
+				v = 1
+			}
+			s.m.HostState.WithLabelValues(name, st).Set(v)
+		}
 	}
 }

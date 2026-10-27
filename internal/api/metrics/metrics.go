@@ -16,8 +16,19 @@ type M struct {
 	RequestsTotal   *prometheus.CounterVec
 	RequestDuration *prometheus.HistogramVec
 	Hosts           *prometheus.GaugeVec
-	Projects        *prometheus.GaugeVec
-	ScheduleTotal   *prometheus.CounterVec
+	// HostState is the same hosts table by identity: 1 for the state each
+	// host row is in and 0 for its other states (I-786). Hosts counts
+	// states and names no host, so an alert on it can say how many are
+	// wrong and never which, and nothing the api knows could be compared
+	// with the scrape targets a human copies to the monitoring server.
+	// Both of the host alerts that must not depend on that file read this:
+	// HostUnreachable (now per host, which is what lets its inhibition be
+	// scoped with `equal: [host_id]`) and HostUnregistered (a host row the
+	// api created that nothing ever registered -- host-02 sat in that
+	// state for 17 hours with no series anywhere and no alert).
+	HostState     *prometheus.GaugeVec
+	Projects      *prometheus.GaugeVec
+	ScheduleTotal *prometheus.CounterVec
 	// RestingWakeTotal counts the wakes the api asked for, by reason and
 	// result (DECISIONS I-818, I-822). `result` is `woken` (the machine
 	// was frozen and came back), `awake` (nothing to do) or `failed`.
@@ -161,6 +172,7 @@ func New(reg prometheus.Registerer) *M {
 		RequestsTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_requests_total", Help: "HTTP requests by route, method and status."}, []string{"route", "method", "status"}),
 		RequestDuration:              prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "repose_api_request_duration_seconds", Help: "HTTP request latency by route.", Buckets: prometheus.DefBuckets}, []string{"route"}),
 		Hosts:                        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_hosts", Help: "Hosts by state."}, []string{"state"}),
+		HostState:                    prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_host_state", Help: "1 for the state each host row is in, 0 for its other states (I-786)."}, []string{"host_id", "state"}),
 		Projects:                     prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "repose_api_projects", Help: "Projects by state and class."}, []string{"state", "class"}),
 		ScheduleTotal:                prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_schedule_total", Help: "Placement attempts by result."}, []string{"result"}),
 		RestingWakeTotal:             prometheus.NewCounterVec(prometheus.CounterOpts{Name: "repose_api_resting_wake_total", Help: "Wakes of a frozen machine the api asked for, by reason and result: woken, awake, failed (I-818)."}, []string{"reason", "result"}),
@@ -227,7 +239,7 @@ func New(reg prometheus.Registerer) *M {
 	for _, r := range []string{"guest_fields", "insert"} {
 		m.SamplesFailed.WithLabelValues(r)
 	}
-	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
+	reg.MustRegister(m.RequestsTotal, m.RequestDuration, m.Hosts, m.HostState, m.Projects, m.ScheduleTotal, m.CertsIssuedTotal, m.CertsRevokedTotal,
 		m.RollupLagSeconds, m.RollupDuration, m.NotifyTotal, m.NotifyDeliveryLatencySeconds, m.OutboxDepth, m.OutboxLagSeconds, m.BillingWebhookTotal, m.BillingOverageChargesTotal, m.BillingGateRefusedTotal, m.BillingSubscriptions, m.Subscriptions, m.MRRCents, m.BillingStopsTotal, m.SnapshotAgeSeconds,
 		m.SnapshotExpiryFailTotal, m.BlobConfigured,
 		m.GRPCStreams, m.OpsTotal, m.OpsOpen, m.BuildDuration, m.SecretsOpsTotal, m.CommandsTotal, m.SamplesTotal, m.EventsTotal,
