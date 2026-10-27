@@ -25882,3 +25882,60 @@ lines (Loki, a second system, for a signal a gauge already carries), and
 raising `StaleAfter` so an outage is survived longer (a gateway that
 accepts certificates against an hours-old revocation list is a gateway
 that relays a revoked one, I-434).
+
+**I-874. The OS disk is wiped before disko partitions it (os-disk-zap,
+2026-10-27).** Amends the layout in `nix/hosts/disko-layout.nix`. *Made
+during implementation* (host-02's install failed at `mount /mnt/boot` on the
+first apply after I-872 fixed the installer).
+
+- *What the failure looked like, and why it named nothing useful.* The
+  install died with `mount: /mnt/boot: wrong fs type, bad option, bad
+  superblock on /dev/nvme0n1p1`. Three steps upstream, `sgdisk
+  --new=1:0:+1G` had answered **"Could not create partition 1 from 2097153
+  to 4194304. Error encountered; not saving changes."** The ESP was never
+  created. disko's next command for that partition is a bare
+  `--change-name`, which succeeded, so it **relabelled the disk's existing
+  partition 1 as `disk-os-ESP`**; `--new=2:0:-0` then took a leftover gap
+  and `disk-os-root` became a megabyte, which `mkfs.ext4` reported as
+  "Creating filesystem with 1020 1k blocks and 128 inodes". The ESP was not
+  formatted either, because the format step skips a partition whose `blkid`
+  already reports a TYPE. Every downstream symptom was a consequence of a
+  failure three steps earlier that did not stop the run.
+- *Why the disk still had a table.* disko's gpt handler emits `sgdisk
+  --clear` **only when `blkid` finds no signature** on the device. The data
+  disk had none, so it was cleared and partitioned cleanly in the same run;
+  the OS disk reported `PTTYPE="gpt"` and was not. Its destroy phase does not
+  cover the gap either: `osDevice` is a symlink under `/dev/disk/repose/`
+  (the indirection Azure's NVMe naming forces, I-39, I-41), and destroy
+  matched the symlink case and ran `rm -f` on the **link**, not on the disk
+  behind it. So create re-resolved the symlink and found the old table
+  intact.
+- *The fix is a wipe in the OS disk's `preCreateHook`*: `sgdisk --zap-all`,
+  `wipefs`, `partprobe`, `udevadm settle`, after the resolve so it wipes the
+  disk that was resolved and never a sibling. This is the install target and
+  the installer runs from RAM, so wiping it is the intent rather than a risk.
+- *It is deliberately not inside `azureOsResolve`.* That hook is wrapped in
+  `lib.optionalString (azureUdevRules != null)` and is Azure-only, because
+  what it does -- resolve a symlink -- is an Azure naming problem. Carrying a
+  table in the provider's image is true of every provider, so the wipe is its
+  own always-present hook. Putting it inside the Azure block would also have
+  made it invisible to the VM tests, which pass `azureUdevRules = null`.
+- *Why no test caught this.* `nix/hosts/tests`' storage test builds the
+  layout with `withOs = false` and `osDevice = "/dev/null"`: it covers the
+  data disk and has never exercised the OS disk at all. That gap is why a
+  layout that cannot survive a pre-existing table shipped and installed three
+  hosts without anyone noticing. **Owed:** a test that runs the OS layout
+  against a virtual disk that already carries a GPT, which fails without this
+  wipe.
+- *Evidence.* The built `diskoScript` carries the wipe at line 200 and
+  `--new=1:0:+1G` at 215, so it runs first. The host system derivation is
+  unchanged by it, because the wipe lives in the install-time script and not
+  in the installed system -- which is also why this can ship without
+  switching a live host.
+- *Not proved: whether a first install on a fresh provider image would have
+  hit this too.* host-01 and host-stg-01 installed through the same layout
+  and did not. host-02's disk carried our own partitions from the attempt
+  that failed after partitioning on 2026-10-26, so the retry is the case that
+  is certainly broken. A fresh Azure image also ships a GPT, so the same
+  branch is reachable there; nothing in this entry should be read as saying
+  it is not.
