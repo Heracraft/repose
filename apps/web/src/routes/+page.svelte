@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { authState, signIn } from '$lib/auth.svelte';
+	import { SIGN_IN_FAILED, authState, onSignInLinkClick } from '$lib/auth.svelte';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
 	import Hero from '$lib/components/landing/Hero.svelte';
@@ -21,7 +21,6 @@
 
 	const INSTALL_COMMAND = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
 
-	let signingIn = $state(false);
 	/** The command whose Copy was pressed last, for 1.5s; null otherwise. */
 	let copied = $state<string | null>(null);
 	/** The page's one live region for the copy buttons (I-393): always in
@@ -41,20 +40,10 @@
 		// was cancelled or failed before a code was issued.
 		const params = new URLSearchParams(location.search);
 		if (params.get('error')) {
-			toast.error('Sign-in was cancelled or failed; try again.');
+			toast.error(SIGN_IN_FAILED);
 			history.replaceState(null, '', location.pathname);
 		}
 	});
-
-	async function onSignIn() {
-		signingIn = true;
-		try {
-			await signIn();
-		} catch {
-			signingIn = false;
-			toast.error('Sign-in was cancelled or failed; try again.');
-		}
-	}
 
 	async function copyCommand(command: string, what: string) {
 		try {
@@ -180,8 +169,13 @@
 	{#if authState.authenticated}
 		<a href={resolve('/projects')} class={klass}>{@render authLabel(signedIn, signedOut)}</a>
 	{:else}
-		<button type="button" class={klass} disabled={signingIn} onclick={onSignIn}
-			>{@render authLabel(signedOut, signedIn)}</button
+		<!-- A link, not a button: this page is prerendered, and a press
+		     before the bundle has hydrated used to do nothing at all
+		     (DECISIONS I-864, I-878). The href starts the flow on the
+		     server; once hydrated, a plain left click takes the browser
+		     flow instead. -->
+		<a href={resolve('/signin')} class={klass} onclick={onSignInLinkClick}
+			>{@render authLabel(signedOut, signedIn)}</a
 		>
 	{/if}
 {/snippet}

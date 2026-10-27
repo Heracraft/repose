@@ -847,3 +847,4 @@ pointer, not a summary.
 - **I-858** A test does not reassign a running Manager's dependency — 2026-10-23; L24963
 - **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L24990
 - **I-864** A click on the landing's primary button is lost if it lands before hydration, and nothing tells the visitor — 2026-10-25; L25027
+- **I-878** `GET /signin` starts the OIDC flow on the server, so every sign-in surface is a link — 2026-10-27; L25110

@@ -66,18 +66,34 @@ sends it as a bearer. Tokens live in memory plus Logto's default storage
 (localStorage) for the refresh token; this is the accepted SPA pattern and
 the API's audience check is the control.
 
-The dashboard has no `+server.ts` routes except `/healthz`. Nothing in
-`apps/web` reads an environment secret; the only build-time env values are
-`PUBLIC_API_URL`, `PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID`
-(the dashboard needs no Polar value at all: the checkout is a URL the
-api returns, DECISIONS I-604).
+Since DECISIONS I-878 the three sign-in surfaces are links to
+`GET /signin`, a server route that starts the same flow: it builds the
+authorization URL itself, keeps the PKCE verifier in an httpOnly cookie
+scoped to `/callback`, and redirects. The landing page is prerendered, so
+a press before the bundle hydrated used to do nothing (I-864); a link
+also works when the bundle never arrives. Hydrated, the click handler
+runs the browser flow instead, so that remains the usual path. For a flow
+the route started, `/callback/+page.server.ts` does the token exchange
+(the verifier is on the server side of the cookie) and the page adopts
+the result with `adoptServerSession()`. That one flow is the only one
+where a server route sees a token; `/signin` validates its `?return=`
+path against same-origin, which is the one place an open redirect could
+be introduced.
+
+The dashboard's `+server.ts` routes are `/healthz`, `/account` (I-578),
+`/llms.txt`, `/docs/[slug].md` and `/signin`. Nothing in `apps/web` reads
+an environment secret; the Logto app is a public client, and the only env
+values are `PUBLIC_API_URL`, `PUBLIC_LOGTO_ENDPOINT`,
+`PUBLIC_LOGTO_APP_ID` (the dashboard needs no Polar value at all: the
+checkout is a URL the api returns, DECISIONS I-604).
 
 ### 5.2 Routes
 
 | Route | Content |
 |---|---|
 | `/` | landing, signed in or out; signed in, its header and calls to action offer the dashboard instead of sign-in (DECISIONS I-330). Sign-in itself still lands on `/projects`. |
-| `/callback` | Logto callback |
+| `/signin` | a server route that starts the OIDC flow and redirects to Logto, so every sign-in surface is an `<a href>` (DECISIONS I-864, I-878). `?return=<path>` says where to land; anything not same-origin becomes `/projects` |
+| `/callback` | Logto callback. Rendered on the server (`ssr = true`) so the load that completes a `/signin` flow runs on the request carrying the code |
 | `/projects` | table: name, class, state (dot + word), uptime, agent state, cost today, cost month. Row click → detail. `New project` explains that projects are created from the CLI and shows the install command; there is no create form because a project needs a git remote and a laptop-side sync. A project in `error` shows its `last_error` sentence under the state. Below the table, **Recently destroyed** (`GET /projects/destroyed`, DECISIONS I-168): each destroyed project that still has a snapshot, when it was destroyed, the snapshot's time and size, "restorable until <date> (N days left)", a `name in use` badge when a live project has the slug, and `Restore…`, which opens a name field (the old name, or `<slug>-restored` when taken), posts `POST /projects/restore {project_id, name}` and goes to the new project; a taken name shows under the field. The newest 10 rows show first, and "Show N more" adds 20 at a time (I-333). Hidden when the list is empty or the route answers an error. |
 | `/projects/[id]` | header with state and actions (Start, Stop, Destroy with confirm typing the slug); cards: connect (`repose run` and `ssh <slug>.repose`), signals (ssh sessions, tmux clients, agents and their state, docker containers, updated N s ago), cost (today, month, projected month at current run rate, using `GET /usage`), disk (used / allocated, Resize with a size picker), events (list from `GET /events`, newest first, agent icon, summary), snapshots (list, Create, Restore with confirm, restore-as-new with a name field), last build (status, link to config) |
 | `/projects/[id]/config` | two tabs: **Menu** and **Nix**. Menu: groups from `GET /catalog` rendered as checkbox lists with descriptions and a search box, plus a "Services" group for things like Postgres and Redis if the catalog has them; Apply sends `{menu}`. Nix: CodeMirror 6 editor with Nix syntax, Apply sends `{fragment}`. Both then open the build log panel (SSE from `/ops/:op/log`), auto-scrolled, and on failure show the error block with the fragment line highlighted in the editor. Revisions list with Re-apply. A `Hold base updates` toggle (PATCH `hold_base_updates`) with the current base version and its changelog. |

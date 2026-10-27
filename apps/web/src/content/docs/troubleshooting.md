@@ -11,6 +11,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **``Not logged in. Run `repose login`.``** Your login expired or you logged out.
 
+**The dashboard says `The dashboard needs JavaScript.`** Your browser is blocking scripts for repose.herakraft.co. The dashboard is drawn in the browser, so it needs them. The CLI needs none.
+
 **`Could not reach the login server (...)`** or **`Could not reach api.repose.herakraft.co`.** Your laptop is offline, or the server is down; run the command again once you're connected.
 
 **`The repose api answered 502`** (or 503, or 504). The API is restarting, usually for a release. A read is sent once more by itself; a command that changes something is not, so run it again.

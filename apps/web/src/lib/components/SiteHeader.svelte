@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { authState, signIn } from '$lib/auth.svelte';
+	import { authState, onSignInLinkClick } from '$lib/auth.svelte';
 	import { FEEDBACK_URL, SOURCE_URL, pricingHref } from '$lib/links';
 	import Logo from './Logo.svelte';
 	import AccountMenu from './AccountMenu.svelte';
@@ -83,8 +83,14 @@
 				{:else if authState.authenticated}
 					<a class="btn-quiet btn--sm min-w-26" href={resolve('/projects')}>Dashboard</a>
 				{:else}
-					<button type="button" class="btn-quiet btn--sm min-w-26" onclick={() => signIn()}
-						>Sign in</button
+					<!-- A link, not a button, for the same reason the landing's
+					     call to action is one: this header is in the
+					     prerendered HTML, where a press before hydration did
+					     nothing (DECISIONS I-864, I-878). -->
+					<a
+						class="btn-quiet btn--sm min-w-26"
+						href={resolve('/signin')}
+						onclick={onSignInLinkClick}>Sign in</a
 					>
 				{/if}
 			</div>

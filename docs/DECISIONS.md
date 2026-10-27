@@ -25085,6 +25085,10 @@ sign-in starts, which is the owner's call.
   route also makes the button a real link, so middle-click, open in a new
   tab and copy link address start working, none of which a `<button>`
   gives you. It ships after ui-revamp is on main, not in that batch.
+- *Built as I-878* (2026-10-27), on main rather than after ui-revamp:
+  the branch was cut from this entry's own branch, which is cut from
+  main. Whichever lands second has to carry the other's change to
+  `authAction` in `routes/+page.svelte` and to `SiteHeader.svelte`.
 - *The drawer and the palette are not covered by that choice.* A server
   route fixes a trigger whose job is to navigate. The docs drawer and the
   search palette open client UI and have no navigation to perform, so
@@ -25102,3 +25106,76 @@ sign-in starts, which is the owner's call.
   both make the suite green and leave the defect shipping, and they would
   remove the only thing that reports it. The suite is right; the
   mechanism is wrong.
+
+**I-878. `GET /signin` starts the OIDC flow on the server, so every
+sign-in surface is a link.** (signin-route, 2026-10-27) The fix I-864's
+last entry chose. `routes/signin/+server.ts` generates a PKCE pair and a
+`state`, puts the verifier and the return path in an httpOnly cookie
+scoped to `/callback`, and answers `303` to Logto's authorization
+endpoint. The landing's "Get started" and "Start a free week" and the
+header's "Sign in" become `<a href="/signin">`; hydrated, their click
+handler calls `preventDefault()` on a plain left click and runs the
+browser flow as before, so nothing changes for a visitor whose bundle
+arrived. A modified click and a middle click are left to the browser,
+which is what makes open-in-new-tab and copy-link-address work.
+- *Why the server has to hold the verifier.* `signIn()` in
+  `lib/auth.svelte.ts` has `@logto/browser` build the authorization URL,
+  so there is no URL for an `href` until that code has run (I-864). A
+  route that builds the URL itself owns the PKCE pair, and an httpOnly
+  cookie is the only place to keep the verifier where the page's scripts
+  cannot read it. That in turn means the token exchange for such a flow
+  happens on the server: `routes/callback/+page.server.ts` does it and
+  hands the page the id and refresh token, which
+  `adoptServerSession()` writes into the browser client's own storage
+  through its public `PersistKey`/`BrowserStorage` API. The access token
+  is not written: the client fetches one per resource from the refresh
+  token, as it does on every reload.
+- *What that costs, and why it is acceptable.* "No server route ever
+  sees a token" (08-dashboard.md §5.1) was true and is now true of every
+  flow but this one. The web server already serves the script that holds
+  those tokens in `localStorage`, so a web server an attacker owns can
+  take them either way; the exchange adds no reachable attacker. The
+  Logto app stays a public client, so no secret moves: the route uses
+  the same three `PUBLIC_*` values the bundle has.
+- *The open redirect, which is the real risk here.* `/signin` is a GET
+  anyone can put in a link, so an unchecked `?return=` would make the
+  site hand a visitor to an attacker's page at the moment they
+  authenticate. `safeReturnPath()` (`lib/signin.ts`) is an allow-list of
+  shapes, not a deny-list of hosts: one leading slash, not `//` and not
+  `/\`, no whitespace, backslash or control character, and then a parse
+  against a base that can never resolve has to come back on that same
+  base. Anything else becomes `/projects`. The cookie is re-checked
+  through the same function when it is read, so a tampered cookie cannot
+  carry an off-origin path either, and `/callback` hands the result to
+  `goto()`, which cannot leave the origin. `redirect_uri` is built from
+  the origin SvelteKit resolved; a forged `Host` can only make it a URI
+  Logto has not registered, which Logto refuses.
+- *One flow per cookie.* `/callback` deletes the cookie before it does
+  anything else, so a code cannot be put through the same verifier
+  twice, and the cookie lives 10 minutes. `state` from the query must
+  equal `state` from the cookie, which is what binds the callback to the
+  browser that started the flow.
+- *`/callback` renders on the server now* (`routes/callback/+page.ts`,
+  `ssr = true`), the way the landing does, because the server load has to
+  run on the request Logto redirects to — the one carrying the code and
+  the cookie. With scripts off a visitor gets that far and no further,
+  since the dashboard is a client-rendered SPA, so the page says "The
+  dashboard needs JavaScript." in place of "Signing in…", switched on
+  `html.js` (I-398). A `<noscript>` was tried first and dropped: its
+  children are only parsed when the parser itself had scripting off,
+  which is not the same condition, and Playwright's
+  `javaScriptEnabled: false` does not meet it.
+- *The test fixture sets `ORIGIN`.* adapter-node assumes https for a
+  request nothing tells it about, which is right behind Traefik and
+  wrong for a fixture on plain http loopback: without `ORIGIN` the
+  route's `redirect_uri` came out `https://127.0.0.1:4173/callback` and
+  the browser met `ERR_SSL_PROTOCOL_ERROR` on the way back
+  (`tests/fixtures.ts`).
+- *Still open from I-864.* The docs drawer and the docs search palette
+  keep the gap. They open client UI, so no route can serve them.
+- *Order.* I-864 said this ships after ui-revamp is on main. It is built
+  on main instead, because the branch carrying I-864 is cut from main and
+  the revamp is not merged. Both touch `authAction` and `SiteHeader`, so
+  whichever lands second carries the other's change into it; neither is
+  a semantic conflict — the revamp moves those two snippets, this entry
+  turns their `<button>` into an `<a href>`.
