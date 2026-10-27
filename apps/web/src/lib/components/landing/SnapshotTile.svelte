@@ -2,9 +2,8 @@
   One snapshot, drawn the same way in every picture (F14, DECISIONS I-666):
   a head row with the pinwheel and the time, and under it, for the newest
   snapshot only, the machine in miniature (the `children` snippet: row
-  shapes, never readable text, LANDING.md "Your working state"). An older
-  snapshot is its head alone (`stub`), stacked under the newest; the
-  stacking is `SnapshotStack.svelte`'s.
+  shapes, never readable text). An older snapshot is its head alone
+  (`stub`), stacked under the newest by the picture that draws it.
 
   `cause` adds a mark at the head's right end for why the snapshot was
   taken: `nightly` a moon, `user` a prompt (you asked, `repose snapshots
@@ -76,14 +75,13 @@
 </div>
 
 <style>
-	/* The pictures' window: a hairline at --rule-strong, --radius corners,
+	/* The pictures' window: a --rule hairline, square corners,
 	   the surface inside and a sunken head, as the machine panels are
 	   drawn. The head is one height in every picture (I-673): with the
 	   mini's top rule under it, it is a window head's --shot-head, so in
 	   ComesBack the tile's head and the machine's sit on one line. */
 	.snap {
-		border: 1px solid var(--rule-strong);
-		border-radius: var(--radius, 3px);
+		border: 1px solid var(--rule);
 		background: var(--surface);
 		overflow: hidden;
 		color: var(--pic-ink);

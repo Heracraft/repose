@@ -1,19 +1,18 @@
 # Landing page: rules for visuals and copy
 
-The owner's rules for `apps/web/src/routes/+page.svelte` and
-`apps/web/src/lib/components/landing/`, collected from their reviews in
-September 2026. Read this before touching the landing page; each rule exists
-because a version broke it and was sent back. `DESIGN-LANGUAGE.md`,
-"Foundation", holds what the landing shares with every page (the tokens
-including `--ink*`, the palette, the contrast floor, the faces and the one
-mono, the logo); this file covers what the landing page shows and says, and
-the grammar it adds.
+The owner's rules for `apps/web/src/routes/+page.svelte`,
+`apps/web/src/routes/landing.css` and `apps/web/src/lib/components/landing/`,
+collected from their reviews since September 2026. Read this before touching
+the landing page; each rule exists because a version broke it and was sent
+back. The look (tokens, type, buttons, the code pane, the plan cards) is
+Herakraft UI, recorded in `DESIGN-LANGUAGE.md` "The landing" and DECISIONS
+I-837; this file covers what the landing shows and says.
 
 ## What we sell
 
 Your laptop's dev environment, replicated in the cloud in one command,
 for solo founders and their agents (DECISIONS I-477). Two ideas, the
-first one leading, and every visual serves one of them:
+first one leading, and every section serves one of them:
 
 1. `repose run` in a checkout replicates your laptop's dev environment
    (your code with its unpushed and uncommitted work, your tools, your
@@ -23,576 +22,158 @@ first one leading, and every visual serves one of them:
    machine, and it comes back.
 
 The reader is one person shipping alone, with agents doing the work. The
-page says so once, in the label above the headline.
+page says so once, in the eyebrow above the headline.
 
 Don't show or mention notifications, answering from your phone, "check in
 from anywhere", remote control, always-on, collaboration or a software
 factory.
 
-## The reference: "Your working state, in one command"
+## The page (I-837, I-843)
 
-The owner: "that one is beautiful. It's made with anime.js, and the colour
-palette, the design, it's beautiful... we should maintain that aesthetic.
-It has to be like that." Every other animated visual (the hero, "Break it
-and roll it back") matches it: the same light panels with hairline
-borders, the same row and chip styling, the same blue accent for what
-moves, the same anime.js motion: stagger, travel, settle, rest, loop.
-Calm means no move is shorter than 120ms or longer than 1.1s; travel
-eases in and out (`inOutCubic`), a reveal eases out (`outQuad`,
-`outCubic`) and an exit eases in (`inQuad`); only a chip or a mark
-arriving overshoots (`outBack`); and nothing moves during the rest before
-the loop starts again.
-Frames of it for reference: record them from the live page before starting.
+Guide B 13.1, on the 1200px frame every page shares (I-656), the
+headline starting under the logo. In order:
 
-## Less is more
+1. **Hero.** Eyebrow "For solo founders and their agents"; the serif
+   headline "Your dev environment, replicated in the cloud"; main's lead
+   ("Your code, tools and logins sit on a machine of its own, ...");
+   "Get started" and "Copy install command"; the install command in mono
+   under them, exactly what the button copies. Under the copy, the hero
+   picture (`landing/Hero.svelte`) on a stage the frame's width: the
+   agent wrecks the cloud machine and a snapshot restores it (I-843).
+2. **"Your laptop's setup, in one command"** (the owner's I-772 heading
+   and paragraph), then the OneCommand picture: `repose run` copying the
+   laptop's source control, changes and ignored files to the machine.
+3. **"On every machine"** (`#features`). Four cells, each a picture
+   (ComesBack, Localhost, Browser, Editor) over a serif claim, one
+   paragraph, and the command that does it in mono with no copy button,
+   since a visitor without the CLI cannot run it.
+4. **"The agents you use, and the tools they need, on first boot"**, with
+   "All agents" and "Everything installed" side by side at the right end
+   of the headline's row (under it on a phone), then the Ready picture.
+5. **"Start in three commands"**, main's rows (owner, 2026-10-21): wall to
+   wall, the step's serif name with a gauge counting a third at a time on
+   the left, its command filling the right from 768px. Install the CLI,
+   Sign in (`repose login`) and Run in any checkout (`repose run`). Each
+   row shows exactly what its Copy copies, and it runs on a visitor's
+   laptop.
+6. **Pricing** (`#pricing`). "Launch prices. Seven days free.",
+   `PlanCells` in its public variant (the one drawing of the plans,
+   I-663), then "Start a free week" and the seats line from
+   `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
+   as it is until the owner decides the 2026-10-17 notes).
+7. **Questions.** Five a solo founder asks before trying it, each one a
+   reason to: why not skip permissions on the laptop (what the agent can
+   reach there and here), closing the laptop while the agent works
+   (notifications, answering from the phone), the agent wrecking the
+   machine (snapshots), three agents on three approaches (`repose fork`),
+   and why not set up a server yourself. Every answer is from the docs
+   (secrets, notifications, lifecycle, sync). No setup trivia (where a
+   login lives, Windows, how commits come back, what a stopped machine
+   costs): those belong in the docs and give a visitor no reason to try
+   it (owner, 2026-10-21).
 
-- Show only what carries the point. A list of fifteen files where two
-  matter is noise: the viewer can't find the important ones fast. Show the
-  few things that matter (a small group reads instantly, like `.ssh`
-  and a cat photo), and cut the rest. What must stay for context but does
-  not matter is muted: its text in `--ink-faint`, the faintest grey that
-  still holds 4.5:1, its icon in the same grey, never a colour.
-- Transfers are quick: one folder, or at most three items, moving across;
-  not every file.
+A section with a picture puts its heading over a sunken stage (hairline
+edge, the kit's 12px panel radius) the frame's width. The commands
+put their heading over their rows. The questions hold their heading in a
+sticky left column from 1024px; below 1024px every section is one column.
 
-## Show, don't tell
+No stat strip: repose has no public figure the page can read at render
+time and a reader can reproduce. No isometric or "anatomy" figure, flat or
+3D, anywhere on the page (owner, 2026-10-04 and 2026-10-19).
 
-- The picture carries the explanation. A visitor should get the point in two
-  seconds without reading a word.
-- No captions or labels that explain the picture ("copied by repose run",
-  "not sent", "installed here, for Linux", "never reach the machine",
-  "outbound", "another project"). Say it with the visual itself: mute,
-  strike, cross out, fade, animate, move.
-- No hand-holding text and no walls of text. Headline, one short sentence,
-  the picture. Explanatory paragraphs go (the pricing notes went).
-- A box that holds only small plain text is not a visual. Give it a mark,
-  an icon, real content, or remove it.
+## The pictures (I-843)
 
-## Real, and whole, or not at all
+The drawn pictures are main's (`components/landing`: Hero, OneCommand,
+ComesBack, Localhost, Browser, Editor, Ready), restored under Herakraft UI.
+They keep their own names for colours (`--pic-*`, `--sh-*`, `--ink`,
+`--surface`, `--sunken`, `--rule`); `routes/landing.css` maps each onto a
+kit token or a zinc step on `.landing`, so they follow the theme switch
+and draw in the kit's zinc and a muted slate blue (`#4b6496` light,
+`#93a7d0` dark), quieter than the kit's link blue: at the kit's blue the
+pictures' chips and wires were too strong (owner, 2026-10-21). Windows take a 6px radius,
+frames and stages the kit's 12px. In the dark scheme the stage is lowest,
+a window's head a step up and its body a step above that.
 
-- Real apps and real projects, captured from real runs. No invented sample
-  apps (`todo-app`), no drawn fake UIs standing in for real ones.
-- A partial imitation of a real tool is worse than none. Either show the
-  real thing in full (a real capture of Claude Code, a real LazyVim screen)
-  or use a different representation (a mark, a diagram).
-- Show tools the way people use them: Neovim means a real,
-  popular config (LazyVim), not bare stock Neovim.
-- No fake window chrome (traffic-light dots, close/minimise/maximise) unless
-  it adds meaning. A full-screen app needs no frame.
-- Every string in a visual is true: from a capture, the docs, or the CLI
-  source. Crop, never retype or invent.
+Each looping picture has a pause button (WCAG 2.2.2) on the floor under
+it. On a touch screen the button is a 44px target with the 28px chip
+drawn in its middle.
+
+`landing/Terminal.svelte` is no longer on the landing; `/design` still
+shows it.
+
+## Each fact once
+
+The install command shows twice, under the hero's buttons and as the
+first of the three steps: the owner's call (I-843), so a reader who
+scrolled past the hero starts from one list. `repose run` shows in the
+pictures and in the run step; the cells carry other commands. Plan
+figures come from `lib/plans.ts`, seat counts from the api; none is typed
+into the page.
 
 ## Names a stranger understands
 
 - A visitor doesn't know what `recruiting` or `wira` is, or that it's a
-  repose project. Never show a bare internal name as if it explains itself;
-  let the picture say what it is (your repo, your app, your machine).
-- Don't repeat the same name (`recruiting` … `/home/dev/recruiting`).
+  repose project. Never show a bare internal name as if it explains itself.
+  The pictures' checkout is `your-project`, the docs' own example.
 - No product jargon without meaning (`large`, a list like
   `large · sudo · docker` after a name).
 - "Project" is ambiguous (a production deployment? the repo on your
-  laptop?). Avoid the word in visuals, or make its meaning obvious from the
-  picture.
-- Every cross, arrow or block must show what it prevents or allows; a red
-  cross on "another project" means nothing if the viewer can't tell what
-  that is.
+  laptop?). Avoid the word where its meaning is not obvious.
 
-## The hero (owner's direction, 2026-09-26)
+## Real, or not at all
 
-- Same aesthetic as the working-state section, built with anime.js.
-- Don't force a laptop drawing on the left; the form factor didn't work.
-- The stakes must be obvious (what could be lost), and snapshots must make
-  sense without text: the viewer sees a snapshot being taken and the
-  machine coming back from it.
-- The poisoned thing is "malicious skill", not "npx malicious-skill".
-- No `passwords.csv`: nobody has one, it reads as silly. Private items are
-  things people have (`.ssh`, a cat photo, tax documents).
-- Order of the story: the agent first does real, good work (file rows with
-  green `+` and red `-` line counts, the way a diff stat looks), running in
-  `--dangerously-skip-permissions` mode; snapshots are taken along the way
-  (at least two); only then does it go out to the internet and the
-  malicious skill comes in. The skill is not on screen from the start. The
-  wreck follows, and the machine comes back from the most recent snapshot,
-  good work included.
-- Show the agent's permission mode the way Claude Code itself does: the
-  pink `⏵⏵ bypass permissions on` line at the bottom left of the machine,
-  not a `--dangerously-skip-permissions` flag chip.
-- No connector lines from the agent to the files it edits; the edits show
-  on the file rows themselves (counts appear, rows change).
-- Anything that moves exists once: the malicious skill travels from the
-  internet (globe) into the machine; no second, faded copy left behind.
-- Snapshots are small, contents hidden. The hero and "Let it break the
-  whole machine" draw them alike (`SnapshotTile.svelte`, I-666): the
-  pinwheel and the time in a head row, the newest with the machine's rows
-  in miniature under it, each older one its head alone, stacked under
-  the newest. A mark at the head's right end says why it
-  was taken: a moon for the nightly one, a prompt for one you asked for,
-  the wreck's cross for the one a stop takes.
-- No chapter labels ("repose run", "The agent wrecks it", "A snapshot puts
-  it back"). The three beats must be understood from the motion alone.
-- The laptop is full, not empty: several things live on it (your repo, and
-  the private rest of your life: SSH keys, tax documents, cute cat photos).
-  The repo visibly opens and its contents copy into the cloud machine; the
-  private things stay behind.
-- The agent is Claude Code's mascot, orange, turning red when it goes
-  rogue: it deletes files on the machine, then reaches out along a visible
-  path to the internet, picks up something poisoned (a prompt injection, a
-  malicious `npx` skill or package, in the spirit of the Shai-Hulud npm
-  worm), and that tries to reach your private files on the laptop and is
-  stopped at the machine's wall. Then a snapshot puts the machine back.
-- Truth limit: the machine's own contents (the checkout, its `.env`, the
-  logins copied to it) are reachable by anything running there
-  (`apps/web/src/content/docs/secrets.md`, "What an agent on the machine can
-  reach"). Show the attack failing against the laptop; never imply the
-  machine's own secrets are out of reach. Don't use a real package name for
-  the malicious one.
-
-Amended 2026-10-11 (I-667), after the landing audit the owner approved:
-
-- Each snapshot has its true cause. The older one is the nightly 03:00
-  (a moon), already on the rail at first paint; the newer one is yours,
-  21:25, taken when a `repose snapshots create` chip fires on the
-  laptop's side. The times are illustrative, on one clock. Before the
-  restore the machine stops (its dot greys, the agent fades), and the
-  stop takes a third snapshot of the wreck (the cross) as a real stop
-  does; the restore comes from 21:25, and the agent comes back (I-636).
-  No timing label.
-- The agent's work rows are OneCommand's uncommitted set
-  (`.env.example`, `poller.ts`, the untracked `timeout.test.ts`) with
-  git's letters (M, M, U), as OneCommand draws them. Their line counts
-  were never recorded, so the rows carry no counts until someone takes
-  `git diff --numstat HEAD` on that checkout.
-- Red means destroyed and nothing else: the laptop's rows are never
-  tinted. The skill's run at your laptop is a red dashed trail from the
-  skill to the machine's wall, level with your private rows, where the
-  knock and the cross land.
-- The stage is balanced on one floor: the laptop stands on the
-  machine's bottom line, and the right column is exactly as tall as the
-  machine, the snapshots panel over the globe on its floor. Permanent
-  `--pic-dim` hairlines with a dot at each end wire the machine to the
-  snapshots and to the globe; motion only lights them. Below 1024px,
-  where the machine's agent row cannot hold its mode line and the skill
-  side by side, the picture stacks as on a phone: the laptop, the two
-  commands, the machine, then the snapshots and the globe in one row
-  under it, each wired up to it. At 480px and under the globe hangs on
-  its wire at the machine's right corner and the snapshots panel takes
-  the full width under it (I-677).
-- The machine is never empty. Server-rendered, it has its header,
-  postgres "job listings 3,532 rows", node v24.20.0 and the agent's row;
-  only the project rows wait, dimmed, for `repose run`.
-
-## "Your working state, in one command"
-
-Titled "Your laptop's setup, in one command" since I-477, with one
-sentence for what the picture does not show: the globally installed CLIs,
-the copied logins, and the SSH keys staying home. This file keeps the old
-name for the section (`OneCommand.svelte`).
-
-The owner chose the animated version (anime.js): the laptop's commits and
-changed files copy across into the cloud machine panel when `repose run`
-fires; `node_modules/` stays behind, struck. Keep it animated.
-
-How it moves (I-668):
-
-- The panels wear the feature grid's window head and chip (I-669): a
-  28px sunken head with the 16px mark and the place's name at 12px, and
-  the 12px accent chip that fills as it fires. They stand side by side
-  from 1024px; below that they stack, where a row has the width to show
-  its message.
-- The two commands stand in the middle of the gap between the panels,
-  halfway down them (owner, I-684; landing-revamp put them on the title
-  bars and heads): side by side, `repose run` with its arrow to the
-  machine over `git fetch repose` with its arrow to the laptop, each on
-  a wire from wall to wall; stacked, the two side by side. The chips and
-  wires are above every copy, and no copy is seen in the gap. The machine says "Ready in 16s"
-  (the docs quickstart's time, `content/docs/index.md`, held there by
-  `OneCommand.test.ts`) in its own head, after its green dot.
-- A row that travels: its source greys to `--pic-faint`, and a copy of
-  the row it lands as, on the accent's tint (9% into `--surface`) with a
-  2px accent edge at its left (main's travelling chip, which the owner
-  kept, I-684), sets down on its exact slot; the real row comes up under
-  it as it fades. At most two copies are in flight, each in its own
-  row's band. At every width a copy is seen only inside the panel it
-  lands in, within its walls (I-675): a copy in the gap was cut to
-  fragments by the walls. It crosses the gap unseen and slides in
-  through the panel's wall. Side by side, the panels' rows share bands
-  and a copy comes in through the machine's left wall; coming back,
-  through the laptop's right wall into its top slot. Stacked, a copy
-  slides in under
-  the machine's head and eases down onto its slot, the lower rows first,
-  so it crosses only slots still empty; coming back, it rises into the
-  laptop's top slot. A group's heading on the machine shows once its
-  first row lands and no copy is still to cross it.
-- The machine is never an empty box: its rows from the last loop stay at
-  0.22 opacity, as the hero's do, until the new ones land over them.
-  `repose run` fires 500ms into the loop. Each window is as tall as its
-  rows; the machine's is a row shorter, with no node_modules.
-- `repose run` stands alone in the middle of the gap until `git fetch
-  repose` arrives; it moves aside (stacked) or up (side by side) to make
-  the pair.
-- The coda: the agent commits on the machine. Its rows move down a row
-  and the commit drops into the top slot. The `git fetch repose` chip
-  arrives and fires, the laptop's rows make room as it fires, and the
-  commit travels back the same way, landing as the newest row with a
-  `repose/fetch-timeout` ref in the chips' accent (docs `sync.md`
-  "Getting work back"; `repose stop` makes the same fetch). The commit,
-  e41b9c2, is illustrative and touches none of the three changed files,
-  so both Changes lists stand.
-- The still frame, with reduced motion and with scripts off, is the end
-  state: both panels holding the agent's commit, both chips, and Ready.
-  Until the coda both panels' rows sit a row up, so the slots show no
-  gap.
-
-## Copy
-
-- No hand-holding (owner, 2026-09-27): a section head is its title, with
-  a sentence only where the picture cannot carry a fact (pricing's rule).
-  A feature card gets one line of facts the picture does not show, no
-  explanation of the picture. A step is its title and its command. The
-  hero's lead is three short sentences: the machine, the wreck, the
-  snapshot. Since I-477 the headline is "Your dev environment,
-  replicated in the cloud", the label above it "For solo founders and
-  their agents", and "full permissions" sits in the lead's second
-  sentence.
-
-- Short is not the point; plain is (owner, 2026-10-17, I-772). "Punchy"
-  lines that leave the reader working out what the product does cost
-  more than the words they save: "if one wrecks it, a snapshot puts it
-  back" was read as "pure AI slop, corpo LLM speak". Say the thing a
-  developer already feels, in the words they would use. The chore repose
-  removes is a machine you set up for tens of minutes to hours, the
-  GitHub login, the CLI to install, the `.env` to paste, before an agent
-  can start; the hero and the setup head say that, and are a paragraph
-  where a paragraph says it better than three fragments. "No
-  hand-holding" above still rules out explaining the picture or the
-  screen; it does not license a line nobody can parse.
-- The lead is one paragraph on its measure, never one line per
-  sentence (I-772): three sentences each held whole read as a staircase
-  of fragments under a headline twice as wide. The hero's lead and a
-  section head's sentence take 48rem, about 70 characters; every other
-  lead keeps 36rem.
-- The shapes that read as generated, and are banned on this page
-  (owner, 2026-10-17, I-772, from `hardikpandya/stop-slop`):
-  - **x-not-y.** "costs you minutes, not your setup", "the machine is
-    disposable, not precious". Say the thing you mean and stop. "Your
-    SSH keys stay home" went for this reason.
-  - **Triplets.** Three sentences or three clauses in a row beat like a
-    speech. Prefer two.
-  - **Choppy fragments** standing in for sentences in prose: a lead or
-    a card's line reads as sentences. A deliberate label is not prose
-    and may be two words ("Launch prices. Seven days free."), as the
-    pricing head is.
-  - **Punchy closers.** A last line written to be quoted.
-  - **No actor.** Prefer a person doing something ("You spend an hour
-    setting up a cloud box") over a state of the world.
-  - **Em-dashes**, filler adverbs, and "every/always/never" as
-    emphasis rather than fact.
-  Plain beats clever, and a sentence that explains the product beats a
-  sentence that performs. The first rewrite under I-772 traded a wall of
-  text for a different wall of text; the owner's word for it was "bro you
-  just added verbosity".
-- Never write as if the product were Claude-only: "the agent" drives the
-  browser, reads the console; not "Claude Code does X".
-- No empty phrasing that sounds generated ("tests in a real browser": as
-  opposed to what?). Say what the viewer gains.
-- A card title says what you can do, not what you can see (I-772):
-  "Watch the agent's browser, and take over", since taking over was in
-  the card's line and not its title.
+- Every string on the page is true: from the docs, the CLI or the api,
+  or, in a picture, from a capture or the CLI source. Crop, never retype
+  or invent.
+- Real apps and real projects, captured from real runs. No invented
+  sample apps (`todo-app`), no drawn fake UIs standing in for real ones.
+- A partial imitation of a real tool is worse than none: show the real
+  thing in full (a real LazyVim screen) or a different representation (a
+  mark, a diagram). No fake window chrome (traffic-light dots).
 - Never promise recovery the product cannot give (I-772). A snapshot
   restores a machine only if one was taken, so the page says repose
   snapshots the machine nightly and that you can take one yourself any
-  time; it never implies a wreck undoes itself.
+  time; it never implies a wreck undoes itself, and never "a minute".
 
-## The grid cards (owner's notes, 2026-09-26)
+## Copy
 
-- Browser: show the agent's browser-tool log lines and what the browser is
-  doing at the same time; the point is that the agent drives the browser
-  and reads the console, and you can watch from your laptop and take over
-  to nudge it.
-- Localhost: keep the tmux green status bar with the forwarded ports and
-  the `localhost:5173` address bar; make it obvious that what you see on
-  your laptop is forwarded from the cloud machine. The job listings
-  (Boeing, RTX) don't fit the page's vibe.
-- Editor: the explorer sidebar must be narrow relative to the code.
-- Snapshots are about the machine. Git already brings back deleted source
-  files; a snapshot is the whole disk (the root overlay's
-  writable layer and /home, DESIGN.md §6): databases and Docker volumes,
-  installed tools and PATH, logins made on the machine, uncommitted work.
-  Show damage git can't undo, and the machine back in minutes (a restore
-  took about two minutes in real runs; never claim "a minute"). The hero's
-  wreck and the snapshot card tell this same story.
-- Order of "On every machine": snapshots, localhost, the agent's browser,
-  your editor.
-- "Break it and roll it back": same aesthetic as the working-state section,
-  animated with anime.js. At least two snapshots: one is taken, some edits
-  happen, a second is taken and stacks on top, shown only as an icon and a
-  timestamp with its contents hidden.
-  Since I-675 the machine is a closed window inset alike on all four
-  sides, its six rows sharing the frame's height, beside a snapshot
-  column up to 120px wide; under 410px of picture the snapshots stand in
-  a row under the machine, so no row's label is cut. Taking the grid's
-  turn from its still frame, it starts at its own seam, so it leaves the
-  restored machine through the loop's exit, never by a cut.
-- "Five agents and a full toolchain on first boot" is clean; leave it.
-  2026-09-27: the agents' row shows the marks alone, no name or command
-  under them. The title went with I-772, after the owner asked for "all
-  the agents and all the tools they could need for the task": it reads
-  "The agents you use, and the tools they need, on first boot". The
-  picture is unchanged.
+- No hand-holding (owner, 2026-09-27; CLAUDE.md "Trust the reader"): a
+  section head is its title, with a sentence only where the content
+  cannot carry a fact (pricing's rule). A cell gets one paragraph of
+  facts, a step is its title and its command.
+- Short is not the point; plain is (owner, 2026-10-17, I-772). Say the
+  thing a developer already feels, in the words they would use. The chore
+  repose removes is a machine you set up for tens of minutes to hours, the
+  GitHub login, the CLI to install, the `.env` to paste, before an agent
+  can start.
+- The lead is one paragraph on its 34rem measure, never one line per
+  sentence (I-772, measure amended by I-837).
+- The shapes that read as generated, and are banned on this page
+  (owner, 2026-10-17, I-772, from `hardikpandya/stop-slop`):
+  - **x-not-y.** "costs you minutes, not your setup". Say the thing you
+    mean and stop.
+  - **Triplets.** Three sentences or three clauses in a row beat like a
+    speech. Prefer two.
+  - **Choppy fragments** standing in for sentences in prose. A deliberate
+    label is not prose and may be two words ("Launch prices. Seven days
+    free.").
+  - **Punchy closers.** A last line written to be quoted.
+  - **No actor.** Prefer a person doing something ("You spend an hour
+    setting up a cloud box") over a state of the world.
+  - **Em dashes**, filler adverbs, and "every/always/never" as emphasis
+    rather than fact.
+- Never write as if the product were Claude-only: "the agent" drives the
+  browser; not "Claude Code does X".
+- A cell's title says what you can do, not what you can see (I-772):
+  "Watch the agent's browser, and take over".
+- Plan memory is "running at once", never a cap.
 
-## Shape language (owner's direction, 2026-09-27)
+## Where terminals are allowed
 
-The owner brought in a slide template's look (flat geometric shapes in
-saturated colours, heavy headings over a thick bar) and asked for it on top
-of the house style, not in place of it. Two attempts were sent back: one let
-the shapes take over the page, the next added them at the top and bottom
-and underlined every heading. The page is one system:
-
-- **Every section is built the same way**: a header (the bold serif
-  heading, with a sentence only where the picture cannot carry a fact; see
-  "Copy") and then its picture on a stage, the sunken hairline panel
-  the grid cards already use. The hero picture and "Your working state"
-  sit on a stage too, which keeps the headline apart from the picture.
-- **A shape encodes something, or it isn't there.** Owner, 2026-09-27:
-  shapes placed "just to have shapes" read as gimmicks, however well they
-  are coloured or anchored. The model is Isotype: a shape stands for a
-  thing, and its fill or count carries a quantity. Two shapes are
-  measures:
-  - *Progress* (`Gauge.svelte`): each of the three steps is a circle
-    filled a third, two thirds, then whole; grey, and the blue accent for
-    the last, "done".
-  - *Capacity* (`Units.svelte`): each pricing card counts the plan's
-    memory in small squares, one per GB (8, 16, 32, in rows
-    of eight), Isotype's own form for a quantity, so the plans compare at
-    a glance.
-  The rest each name one feature and appear where that feature is, so
-  the footer's row is the page's own symbols and none "spawns from
-  heaven" (owner, 2026-09-27). The mapping, in page order:
-  - *pinwheel* (two quarters of a circle: the state before and after) is
-    a snapshot. It is the snapshot mark in the hero's snapshots panel and
-    on each miniature, in the "Let it break" card, and before that card's
-    title.
-  - *sphere* is the internet, in the hero, with a globe's meridians drawn
-    over it in paper.
-  - *pill* is the sync, before "Your working state, in one command".
-  - *halves* (the same thing above and below) is the localhost forward,
-    before "The machine's ports on your localhost" (I-772; it was "Your
-    dev server on your localhost").
-  - *ring* (a lens: one disc, a paper ring, an ink pupil; the quartered
-    ring was redrawn 2026-09-27, its four tones did not work small) is
-    watching the agent's browser, before "Watch the agent's browser, and
-    take over" (I-772; it was "Watch the agent use the browser").
-  - *arch* (a door in) is the editor over SSH, before "Open it in your
-    editor".
-  - *asterisk* (a wildcard) is the toolchain and anything installable,
-    before "The agents you use, and the tools they need, on first boot"
-    (I-772).
-  Sun, moon and leaf name nothing on the page and are not shown. A shape
-  on a head or a card title sits inline before the words, one em tall, so
-  it matches the title's letters (`.head-mark`, `.cell-mark`; owner,
-  2026-09-27). The hero's headline carries none.
-  A column of agent logos beside the headline was tried and dropped
-  (owner, 2026-09-27): a list of logos is a gimmick, and repose is a
-  machine for any work, not only AI.
-  The star (Gemini's sparkle) was dropped (owner, 2026-10-05, I-498): it
-  read as Gemini's logo, not as repose's. Gemini CLI keeps its own mark in
-  the toolchain box.
-  The footer's row is these seven, in the order the page used them, one
-  to a cell between the rails, no pie (it would read as a gauge).
-- **Anchored, never floating.** The gauges and counts sit in their line
-  or card, the footer's shapes stand on its rule.
-- **The blue bar marks the prices, nothing else.** It marked "full
-  permissions" until I-477 and "replicated" in the headline until I-498.
-  The headline and section headings are bold serif with no bar.
-- **Shapes move one way**: a group lands in place when it comes into
-  view. The one other shape motion carries meaning (owner, 2026-09-27):
-  the snapshot mark clicks a quarter turn when a snapshot is taken and
-  rewinds a full turn when one is restored, in the hero and in the "Let it
-  break" card. No labels on any of it. Every motion on the page is listed
-  under "Motion" below; under `prefers-reduced-motion` every shape is
-  still and whole.
-- **The palette the landing had before the shapes, and nothing else, and
-  no agent's brand colour.** The shapes, the bar and the price rules use
-  the neutrals and the one blue accent (`--sh-*` in `layout.css`; blue-500
-  for fills, blue-400 in the dark). No Claude Code orange (owner,
-  2026-09-27): the landing's own design is not any AI vendor's. No green,
-  amber, pink or purple either; the slide template's hues were tried and
-  dropped, and a new colour needs a reason recorded here. This rule is for
-  what the landing draws for itself. A picture of a real tool keeps that
-  tool's colours, because it shows what you will see: Claude Code's orange
-  mascot and pink bypass line (above, "The hero"), a terminal's ANSI
-  colours, an editor's theme. Those stay inside the picture's frame
-  (DESIGN-LANGUAGE.md, "Palette"; DECISIONS I-392).
-- **Mostly grey, a spot of colour, even weight.** Each shape has one
-  main tone (`tone`: neutral or accent; Shape.svelte); a group carries a
-  spot of blue and the rest grey, as the pictures are mostly grey with a
-  blue chip. Fills sit
-  at mid values so nothing vanishes or shouts: zinc-400 and zinc-300 on
-  paper, zinc-500 and zinc-600 in the dark; the blue fill is blue-500
-  (a step lighter than the pictures' blue-600 lines) so it doesn't
-  outweigh the greys; `--sh-ink` only for small details (a hole, a
-  diamond's top), never a whole shape. In the light scheme those details
-  are holes in zinc-700; in the dark they are lit marks in zinc-400, since
-  a dark detail on the dark paper ring vanished (DECISIONS I-379). Judge
-  the balance on viewport captures at 1x in both themes, one per section,
-  as "Process" says; a full-page capture only shows the page's rhythm.
-- **The logo** (`Logo.svelte`, and `static/favicon.png` from the same
-  drawing) is a cell dividing (DECISIONS I-779): a mother lobe in the
-  text's ink and a smaller daughter in `--sh-accent`, with a cleavage
-  furrow that pinches the outline inward to a thin bridge. The daughter
-  is smaller because the division has not finished. It is drawn in
-  circles, as this page's sphere is, and that curve is the one the system
-  allows the mark. **This page is the only one where the division
-  plays**: the header's mark divides once on load here, 900ms, and hover
-  or focus replays it anywhere (`DESIGN-LANGUAGE.md`, "Motion" and
-  "Logo"). One drawing serves the header and the 16px tab; the favicon is
-  not a heavier cut. It encloses nothing, on purpose: a ring or a box
-  with a block in it reads as opencode. It replaced the owner's traced
-  cross-and-blocks sketch (I-363), which turned to mush under 24px, and
-  that had replaced the r. The mark is in every page's header, not only
-  this one's (I-381); where it appears and its minimum size are in
-  `DESIGN-LANGUAGE.md`, "Logo".
-- The shapes live in `landing/Shape.svelte` and draw only from the `--sh-*`
-  tokens. The app's own pages never use them, with one exception: the
-  logo's block is `--sh-accent`, and the logo is in every header
-  (I-381, I-393, I-779).
-
-## Since the owner's notes (implementation, awaiting the owner)
-
-Changes made in the 2026-10-01 repair round on top of the owner's
-sections above, recorded here and not in them, since the owner has not
-reviewed them yet (STATUS.md). Each holds until the owner says otherwise.
-
-- **"Your working state", the figures** (I-398). The machine shows no
-  `node_modules/`, since sync leaves dependency directories behind
-  (`content/docs/sync.md`), and the machine reads "Ready in 16s" (14s
-  until I-668), the docs quickstart's figure: since I-367 `repose run`
-  syncs only into a new machine, so the captured "Ready in 0.6s" of a
-  re-sync no longer happens. The picture is that first run: the machine
-  starts with no commit, and every commit travels into it, master's
-  `7ea43a8` with the branch's two (I-400). Where the panels stack, a copy
-  is seen only inside the panel it lands in (I-668).
-- **The snapshot card's logins** (I-398). The Claude Code login lives on
-  the user's login share, which a snapshot does not hold (I-278), so the
-  card's logins row is gh and Codex.
-- **The drawn pictures have one palette**, beside the shapes' `--sh-*` in
-  `layout.css` (I-397). The pictures the page draws for itself (the hero,
-  "Your working state", "Break it and roll it back", and the rows, chips
-  and wires around the captures) take their lines, text and marks from
-  six `--pic-*` tokens, and none picks its own step: `--pic-accent`
-  (blue-600, blue-400 in the dark) for what moves and the chips;
-  `--pic-ink` (zinc-800, zinc-200) for a row's name; `--pic-dim`
-  (zinc-500, zinc-400) for a line, an icon or a letter at rest;
-  `--pic-faint`, which is `--ink-faint` itself, for the muted rows "Less
-  is more" asks for; `--pic-stop` (red-600, red-400) for what is blocked
-  or deleted; `--pic-add` (emerald-600, emerald-400) for a line count
-  added or a new file, and nothing else: a row "Break it and roll it
-  back" restores takes the accent's tint and tick, not green (I-400).
-  The last two are a diff stat's own red and green,
-  the hues a drawn picture uses besides the blue; amber, a source
-  control panel's colour for a changed file, is not one of them
-  (OneCommand's `M` is `--pic-dim`). Text beside a picture, like
-  OneCommand's "Ready in 16s" in the machine's head, is the Foundation's `--ink-muted`. A mark
-  laid over a capture follows the capture's ground, not the page's
-  scheme: the Browser picture's ring, on the white page, is blue-600 in
-  both schemes (`--chip`), and the bar on its dark log is blue-400
-  (`--on-log`). The Browser's captures exist in the light scheme only,
-  so in the dark scheme its toolbar and page are dimmed (brightness
-  0.86) to sit beside the dark windows; the marks over them are not
-  (I-676). The green running dot in the drawn window heads and
-  beside OneCommand's "Ready" (emerald-500) is the one hue still open,
-  waiting on the owner (STATUS.md). The captures keep their tool's
-  colours and do not use these.
-- **The drawn pictures' rows are 12px to 12.5px mono** (I-399): a file
-  name, a diff stat, a time, a git letter, as "Your working state" drew
-  them when the owner chose it, and 11px on a phone. They are a
-  picture's labels, drawn at the picture's scale; the Foundation's 13px
-  mono rule is for the page's own text, and the 11px floor holds.
-- **The sphere is flat** (I-398), like every other shape: the noise and
-  radial-gradient texture it had is gone. The footer's sphere carries the
-  hero globe's meridians in paper (`meridians` on `Shape.svelte`), so the
-  two are one drawing, as "Shape language" describes the hero's.
-- **The grid cards' lines** (I-397) say what the product does, in the
-  docs' terms: Localhost's is "Ports from 1024 up, while `repose run` is
-  open. Cookies and OAuth redirects behave as they do locally." (it was
-  "Every port the machine listens on, on your laptop. Cookies and OAuth
-  redirects included.", and ports below 1024 are not forwarded,
-  `content/docs/machine.md`; I-401), and Browser's is "`repose browser` shows
-  the agent's Chromium on your laptop; click in it to take over" (it was
-  "puts you in the same window. Take over any time."). "Back in minutes"
-  was kept whole on one line in a nowrap span (`.whole`); both went with
-  I-772, which made the snapshot card "repose snapshots the machine
-  nightly, and you can take one yourself any time. Restoring it brings
-  back the databases, logins and uncommitted work in minutes." Held
-  nowrap, that sentence ran 275px past a 320px phone.
-- **The grid's four pictures share one frame** (I-669): 17rem tall, the
-  windows inset 12px top and sides (10px on a phone) and run off the
-  frame's bottom edge, each under the same 28px head naming where it
-  runs ("your cloud machine", "your laptop"), Browser and Editor
-  included, since the head says where the app runs. One chip style for
-  `⇄ 5173` and `repose browser`. ComesBack draws its snapshots with
-  `SnapshotTile`: 03:00 nightly (moon) and 21:25 taken by you (prompt).
-  Localhost starts on Chromium's real "This site can't be reached"
-  page, dimmed, with localhost:5173 in the bar, and the dev server's
-  Local line on the machine throughout; each of its pages is cropped to
-  end in white space between two lines at any width, and its chip
-  starts under the tmux bar, never over it (I-676). The Editor's
-  statusline keeps its right end (position, line and column, clock)
-  on a phone; the crop takes the file path. The Editor fits its 78
-  columns from 640 wide, so no line is cut by the crop.
-- **Every step's command has a Copy button** (I-398), as the install
-  command beside the hero's button does. "Copy" says a step is its title
-  and its command; the button is the command row's, not a third part.
-  The last step shows `cd ~/code/your-project && repose run` and its button
-  copies `repose run` alone, since the path is an example that a pasted
-  command would fail on (I-401).
-- **Pricing's sentence and spec line** (I-397, recorded in I-401). The
-  head sentence is "Seven days free, card at checkout. Prices in USD,
-  before tax. A plan's memory is shared by the machines you have
-  running; a stopped machine uses none. A plan's disk counts the data
-  your projects hold." (it was "Three plans. Seven days free, card at
-  checkout."; the disk sentence came with I-585, so a buyer reads 100 GB
-  as room for many projects, most of them stopped): the three cards show there are three,
-  and the currency, tax and how memory is counted are
-  `docs/PRICING.md`'s, facts the cards do not show. Each card's spec
-  reads "N GB of memory" (it was "N GB running at once", which did not
-  say it was memory), naming what the units count (I-402).
-  Cut back with I-772: the memory, stopped-project and disk sentences
-  were the docs on the page ("Verbosity for the sake of verbosity...
-  this is not the docs"), and the cards already carry those figures. The
-  head is "Launch prices. Seven days free." (owner, 2026-10-17: "shorty
-  as fuck"). The currency, the tax line and "card at checkout" are in
-  `billing.md`, on the billing page and at checkout, and off the
-  landing.; the price-change promise under the cards went to `terms.md`,
-  `billing.md` and PRICING.md alone, and Solo's founding price is `$49`
-  struck before `$39` with "First 12 months, first 30 subscribers" under
-  it, not a sentence that wrapped to two lines.
-- **The meta description** (I-397, recorded in I-401): "A cloud dev
-  machine for your repo in one command, with your code, tools and logins
-  on it, so coding agents can run with full permissions and your laptop
-  stays out of reach." It was "A disposable dev machine per project with
-  your code, tools and secrets on it in 15 seconds, ...": the machine
-  is persistent, not disposable, and 15 seconds was not the docs
-  quickstart's 14s (I-398).
-- **Ready drops the first line of each two-line prompt** (I-398), as
-  whole rows, so the capture does not show the machine's old name
-  (`recruiting`); nothing is retyped. On a phone Ready's rows crop on the
-  right instead of re-flowing, as a terminal would, and the hint's last
-  words ("install it on this machine", "keep it on every rebuild") are
-  cut: open for the owner (STATUS.md).
-- **The pricing cards count no agents** (I-402, reversing I-397's
-  caption): "One agent at a time", "Two agents at once" read as a
-  ceiling on the product, so the cards have no caption. Memory, disk and
-  egress are the plan; the head sentence says the memory is shared by
-  whatever is running.
-- **The hero's laptop panel hugs its rows** (I-398) and stands on the
-  machine's floor (I-667): from 1024 wide it ends under its last row
-  instead of stretching to the machine's height, and its bottom edge is
-  the machine's (y=814 at 1440x900; I-677).
-- **The hero's lead keeps each sentence whole** (I-400): the line
-  breaks between sentences, never after a sentence's first word. A
-  sentence wider than the column wraps inside its own box (I-401), so
-  320px with WCAG 1.4.12 text spacing does not scroll sideways.
+Terminal UIs appear only in the "On every machine" grid and in the agents
+picture (I-843, restoring main's rule). The hero and the setup picture
+draw windows, not terminal output; the commands section uses light
+command rows.
 
 ## Motion
 
@@ -669,13 +250,6 @@ place of an observer of its own:
   rebuilt hero seeks back to where it was. A phone's address bar
   collapsing changes the window's height alone and restarts nothing.
 
-- **The chrome, once on load**: the rails draw from the top down (1.1s,
-  `--land-ease`, `cubic-bezier(0.65, 0, 0.35, 1)`); the ticks fade in
-  after them (0.4s ease-out, from 0.9s). The prices' bar does not move.
-- **Shapes landing**: a group lands in place when it comes into view, one
-  shape after another (`.land` in `layout.css`: opacity 0.3s ease-out,
-  transform 0.7s `cubic-bezier(0.34, 1.56, 0.64, 1)`, a small overshoot,
-  each shape delayed by its `--d`).
 - **The snapshot mark** turns a quarter when a snapshot is taken and a
   full turn back when one is restored. Between loops it keeps the angle
   it was left at, so it never cuts to another angle (I-401).
@@ -824,117 +398,15 @@ place of an observer of its own:
 Nothing else moves. A new motion is added to this list with its duration
 and easing, or it does not ship.
 
-## Where terminals are allowed
-
-Terminal UIs appear only in the "On every machine" grid and in "Five agents
-and a full toolchain on first boot". Everywhere else (hero, "Your working
-state", pricing): realistic GUI or clean illustration, no terminal windows,
-no CLI output blocks.
-
-## Pricing
-
-The size table and the call to action. No dashboard screenshot, no notes
-paragraphs.
+On the rest of the page only colours move on hover, and the questions' plus turns 45 degrees over 150ms.
 
 ## Process
 
 - Judge the assembled page, not a component in isolation: screenshot it at
   1440×900 and 390px, light and dark, and look before calling anything done.
+  Check 1280, 1024, 768 and 360 for the column changes.
 - Look at captures at their real size. A full-page capture read after
   being scaled to a fifth hides what a visitor sees at once (a lopsided
   hero got through that way, 2026-09-27). Capture the viewport, or crop
   the region, at 1x and judge that; use a full-page capture only for the
   page's rhythm, never for a section's layout.
-- Where motion could help, you may offer an animated and a static
-  version for the owner to choose (anime.js is allowed).
-
-## The page's grammar (design system, 2026-09-27)
-
-The pictures draw a machine as a panel with hairline edges, and the hero
-shows those edges as the wall the attack stops at. The page takes that
-drawing as its own grammar, in `apps/web/src/routes/landing.css` (imported
-by `+page.svelte` alone; the house tokens stay in `layout.css`):
-
-- **Rails.** The content stands between two hairlines (`.rails`) that run
-  from the site header's rule to the footer, on the edges of the frame
-  every page shares (`--frame-w`, 1200px: x=120 and 1320 at 1440), with
-  the text inset by the frame's gutter (`--land-x` is `--frame-x`), so
-  the headline starts under the logo (I-656). They and their ticks are
-  hidden below 1240px, where a rail would stand on the window's edge.
-  On load they draw themselves from the top down, once, and
-  the ticks fade in after them ("Motion").
-- **Rules run wall to wall, ticked.** Every section (`.sec`) opens with a
-  rule across the full width, and a small cross (`::before`/`::after`)
-  marks where it meets each rail, as a drawing marks an intersection. The
-  first section draws no rule: the site header's hairline is that rule,
-  and the first section's ticks mark where it meets the rails.
-- **A section is a head, then a stage.** The head (`SectionHead.svelte`)
-  is the bold serif title, and a sentence only where the picture cannot
-  carry a fact ("Copy"), inset from the rails by
-  `--land-x`; no number and no running label (a "01 Run" label was tried
-  and dropped, owner, 2026-09-27: generic). The stage (`.landing-stage`)
-  is sunken and fills the width between the rails, so a picture reads as
-  a bay inside the walls. The hero's picture sits on a stage the same way.
-- **Cells, not cards.** The features (`.cells`/`.cell`), the steps
-  (`.step`) and the sizes (`.tier`) are cut by the same hairlines, and the
-  dividers cross the full width. Each feature picture is cropped to one
-  `.shot` frame; the title and sentence under it belong to the page, not to
-  the picture's component.
-- **The hero.** One stack on the left edge: the headline, the lead under
-  it, then the button and the install command on one row. Nothing is
-  pushed to the right; the picture fills the width. The headline has
-  no bar (I-498). The picture (owner,
-  2026-09-27) is your laptop, your cloud machine, and on the right a
-  stack as tall as the machine: the snapshots panel (titled, the
-  miniatures shrink into it) over the internet as a bare 40px globe on
-  the stack's floor, no window, since the internet is not a machine of
-  anyone's. The snapshots panel's foot is the rule over the machine's
-  agent row, and the globe's row is that row (I-677). At 480px and
-  under, the globe hangs on its wire at the machine's right corner and
-  the snapshots panel takes the full width under it. No snapshot hangs below the machine and the globe does not
-  float at the edge. Two permanent hairlines cross the gap between the
-  machine and that stack, each with a dot at both ends (I-667). The rogue agent is the red mark alone, no
-  halo, background or border around it.
-- **Commands are rows.** The install command and each step's command are
-  one `.cmd`: a mono row on a sunken ground with a hairline, the way a
-  picture shows a row of a terminal.
-- **The pictures' grammar** (I-673). Every picture is drawn from the
-  same parts, in `landing.css` and three components:
-  - *Stage*: `--stage`, 40px (`--stage-y`) above and below the picture
-    at every width; the hero's top on a phone is 20px, so the machine's
-    head is in the first screen (F04), and 28px from 768px wide on a
-    screen 840px tall or less, so the agent's row ends inside 1280x800
-    (I-677). The bottom 40px is the floor the pause button stands on.
-  - *Window*: a hairline at `--rule-strong` on `--surface`, its head
-    `WinHead.svelte`: `--shot-head` (28px), `--sunken`, 10px side
-    padding, a 16px mark, the name at 12px. Every "your cloud machine"
-    window takes `--pic-wall` instead, the hero's ink edge.
-  - *Chip*: `.chip`, 12px mono 600 in the accent, filled while it fires;
-    only the ground fades (180ms), the text turns at once.
-  - *Snapshot tile*: `SnapshotTile.svelte`, its head 27px plus its rule,
-    a window head's height.
-  - *Radius*: `--radius` (3px) for frames, windows, chips, terminals,
-    the command row, Copy and the boxes inside a picture.
-- **The sign-off.** The page's shape set stands one to a cell between
-  the rails (`.frieze`); the site footer (`SiteFooter`, the same on every
-  page) follows under the rails.
-  Eight cells in one row at every width, a phone included.
-- **Type.** Display `clamp(2.75rem, 6.6vw, 5.25rem)`; section titles
-  `clamp(1.9rem, 3.4vw, 2.5rem)`; cell and step titles 1.125rem serif
-  600; a cell's sentence 1rem (a step has none, "Copy"); lead
-  `clamp(1rem, 1.3vw, 1.125rem)`, the hero's 0.9375rem on a phone so the
-  machine's head is in the first screen (I-667); a command row (`.cmd`) `--text-compact`
-  mono; a size's name 2.25rem serif 700 uppercase and its price 2.75rem
-  serif 700; labels 11px JetBrains Mono, 0.12em tracking, uppercase (the
-  price's "a month"); a drawn picture's rows 12px to 12.5px mono, 11px on
-  a phone (I-399). A captured picture draws at the scale that fits the
-  capture in its frame, under the 11px floor where it must (the Editor's
-  screen at 8.4px on a phone), as it keeps its tool's colours
-  (`DESIGN-LANGUAGE.md`, "Type", I-397). Text takes the
-  Foundation's three ink steps (`--ink`, `--ink-muted`, `--ink-faint`,
-  `DESIGN-LANGUAGE.md`, "Tokens"), set in `layout.css` so they apply
-  before `landing.css` arrives (I-331).
-
-Everything in "Shape language" still holds: shapes encode or are absent,
-the palette is the neutrals and the one blue, the pictures are untouched.
-

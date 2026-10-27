@@ -30,8 +30,8 @@ test.afterAll(async () => {
 async function stopIfRunning(page: Page): Promise<void> {
 	const action = page.getByRole('button', { name: /^(Start|Stop)$/ });
 	await expect(action.first()).toBeVisible({ timeout: 10_000 });
-	if (await page.getByRole('button', { name: 'Stop' }).isVisible()) {
-		await page.getByRole('button', { name: 'Stop' }).click();
+	if (await page.getByRole('button', { name: 'Stop', exact: true }).isVisible()) {
+		await page.getByRole('button', { name: 'Stop', exact: true }).click();
 	}
 	await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({
 		timeout: 10_000
@@ -139,7 +139,7 @@ test('disk_limit on a resize is told like a start refusal, with a Change plan li
 	await expect(page.getByRole('button', { name: /^(Start|Stop)$/ }).first()).toBeVisible();
 	await setBilling({ mode: 'active', plan: 'solo' });
 	await page.getByRole('button', { name: 'Resize…' }).click();
-	await page.locator('select.field').selectOption('320');
+	await page.locator('select.hk-select').selectOption('320');
 	await page.getByRole('button', { name: 'Grow' }).click();
 	const refusal = page.getByTestId('refusal');
 	await expect(refusal).toHaveAttribute('data-reason', 'disk_limit');
@@ -212,6 +212,7 @@ test('capacity on Start shows the documented message', async ({ page }) => {
 test('a 5xx from the api shows the persistent bar, which clears once the api recovers', async ({
 	page
 }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
 	await fail('GET', '/projects', 'internal');
 	// The rule is lifted whatever happens here: left on, it fails every
 	// later spec that lists projects (CI on b2524af4).
@@ -225,6 +226,9 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 		// Said inside the live region that was on the page before it (I-393).
 		await expect(page.getByRole('status').filter({ has: bar })).toHaveAttribute('id', 'outage');
 		await expect(page.getByText('Cannot reach the API')).toHaveCount(0);
+		// The strip sits in the page's column: the short page still ends at
+		// the window's foot, footer included (review r4).
+		expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(900);
 		await expect(
 			page.getByText('Could not load projects. The API failed on its side; try again shortly.')
 		).toHaveCount(1);
@@ -260,4 +264,26 @@ test('a questions answer arriving after a failed list leaves the bar up', async 
 	} finally {
 		await unfail('GET', '/projects');
 	}
+});
+
+// The root boundary (AppBoundary): a page that throws while it renders
+// shows the 500 page with Reload as its one primary, in the row of ways
+// back and at their size. On /projects there is no "Back to Projects".
+test('a /projects that throws while it renders offers Reload and Docs, at one size', async ({
+	page
+}) => {
+	await page.route('**/v1/projects/destroyed**', (r) =>
+		r.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+	);
+	await page.goto('/projects');
+	await expect(page.getByRole('heading', { level: 1, name: 'Something went wrong' })).toBeVisible();
+	const reload = page.getByRole('button', { name: 'Reload' });
+	const docs = page.locator('main#main').getByRole('link', { name: 'Docs' });
+	await expect(reload).toBeVisible();
+	await expect(docs).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Back to Projects' })).toHaveCount(0);
+	const r = (await reload.boundingBox())!;
+	const d = (await docs.boundingBox())!;
+	// One row: their centres line up.
+	expect(Math.abs(r.y + r.height / 2 - (d.y + d.height / 2))).toBeLessThan(2);
 });

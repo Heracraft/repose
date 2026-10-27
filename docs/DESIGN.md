@@ -70,15 +70,20 @@ one cap of 100 projects per account, running or stopped, bounds abuse
 
 **Hardware.** Azure Intel Dsv7 family (Granite Rapids; the subscription
 cannot create v5 or v6 sizes, DECISIONS I-39), East US, created with
-`--security-type Standard`. The launch size is `Standard_D64s_v7` (64 vCPU,
-256 GB). Until launch the single host is `Standard_D16s_v7` (16 vCPU, 64 GB,
-about $770 a month on-demand), which holds 7 large or 14 small running guests
-with its roughly 8 GB host reserve; stopped projects cost only disk, so 20 projects
-fit as long as about a dozen small ones run at once. If that is tight,
-`D32s_v7` (128 GB, about $1,540 a month) holds 15 large. The host size is an
-OpenTofu variable; growing it is deallocate, resize, start, with guests
-stopped for the minutes it takes, because the guest volumes live on the
-managed data disk, not the local temp disk. See DECISIONS I-14. Trusted Launch and Confidential
+`--security-type Standard`. **A fleet has one size per host, not one size.**
+host-01 is `Standard_D16s_v7` (16 vCPU, 64 GB, about $770 a month
+on-demand), which holds 7 large or 14 small running guests with its roughly
+8 GB host reserve; stopped projects cost only disk, so 20 projects fit as
+long as about a dozen small ones run at once. The launch adds host-02, a
+`Standard_D64s_v7` (64 vCPU, 256 GB) with a 2048 GB data disk, beside it and
+with no downtime, and host-01 is retired later by moving its projects across.
+Each host's size, class and disks come from its entry in the `host_shapes`
+map, with the fleet-wide value as the fallback for anything the entry leaves
+out, so a host that names no entry is byte-for-byte what it was. Growing a
+host in place is still deallocate, resize, start, with its guests stopped for
+the minutes it takes, because the guest volumes live on the managed data disk
+and not the local temp disk; that is why capacity is added as another host.
+See DECISIONS I-14. Trusted Launch and Confidential
 VMs disable nested virtualization. AMD sizes (`Da*`, `Ea*`, and the `v7` AMD
 line this repo's dev box runs on) are excluded: measured nested-KVM penalties
 on Azure AMD are 50 to 90 percent versus roughly 10 percent on Intel. ARM sizes
@@ -94,7 +99,8 @@ from `nix/hosts/`. The host configuration declares:
   guest-to-host, a drop rule for `169.254.169.254` (Azure IMDS hands out
   managed-identity tokens), per-guest egress shaping at 200 Mbit/s.
 - An LVM thin pool `vg-guests/thin` on one Premium SSD v2 managed data disk,
-  2 TB to start, one thin volume per guest. The volumes' sizes sum past the
+  sized per host (512 GB on host-01, 2 TB on host-02), one thin volume per
+  guest. The volumes' sizes sum past the
   pool by design (plans count what volumes hold, I-585); the pool is
   guarded by what it holds (I-586, below).
 - `virtiofsd` per guest, exporting `/nix/store` read-only.

@@ -74,7 +74,41 @@ let
       ln -sfn "$1" "${osDevice}"
       echo "repose: os disk ${osDevice} -> $1"
     fi
+
   '';
+
+  # Wipe the OS disk before disko partitions it. Not inside azureOsResolve:
+  # that is Azure-only (it resolves a symlink the provider's naming forces on
+  # us), while this is true of any provider whose image ships a partition
+  # table, which is all of them.
+  osWipe = ''
+    # Nothing else does it: disko's gpt handler runs `sgdisk --clear` only
+    # when `blkid` finds no signature, and its destroy phase sees ${osDevice}
+    # is a symlink and does `rm -f` on the link rather than touching the disk
+    # behind it. So on any disk that already carries a table -- the
+    # provider's own image, or our own partitions from an install that failed
+    # after partitioning -- create runs against the old one.
+    #
+    # host-02, 2026-10-27: `sgdisk --new=1:0:+1G` answered "Could not create
+    # partition 1 from 2097153 to 4194304", the follow-up `--change-name`
+    # succeeded and so relabelled the OLD partition 1 as disk-os-ESP,
+    # `--new=2:0:-0` took a leftover gap, and disk-os-root became 1 MiB:
+    # "Creating filesystem with 1020 1k blocks". The ESP was never formatted
+    # either, because the format step skips a partition whose `blkid` already
+    # reports a TYPE. The install died at `mount /mnt/boot: wrong fs type`,
+    # three steps downstream of the real failure and naming none of it.
+    #
+    # This is the install target and the installer runs from RAM, so wiping
+    # it is the intent rather than a risk. It runs after the resolve above so
+    # it wipes the disk we resolved, never a sibling.
+    disk=$(readlink -f "${osDevice}")
+    echo "repose: wiping the os disk $disk before partitioning"
+    sgdisk --zap-all "$disk" >/dev/null
+    wipefs --all --force "$disk" >/dev/null 2>&1 || true
+    partprobe "$disk" || true
+    udevadm settle --timeout 120 || true
+  '';
+
 
   # nixos-anywhere's kexec installer has no Azure udev rules, and the v7
   # sizes expose disks over NVMe with no by-LUN name at all (DECISIONS I-39,
@@ -123,7 +157,7 @@ let
   os = {
     type = "disk";
     device = osDevice;
-    preCreateHook = azureOsResolve;
+    preCreateHook = azureOsResolve + osWipe;
     content = {
       type = "gpt";
       partitions = {

@@ -168,6 +168,20 @@ module "install" {
   ssh_private_key_path = var.ssh_private_key_path
   authorized_keys      = var.authorized_keys
   build_on             = var.build_on
+  # Only so the deadline message can print a boot-diagnostics command the
+  # operator can paste.
+  resource_group_name = var.resource_group_name
+
+  # The image this host is installed through, and the bound on the install.
+  # Deliberately absent from `triggers` below: the image is an input to how a
+  # host is built, not a property of the host that exists. In triggers, the
+  # next change to it -- a nixpkgs bump, a kernel pin, a fix to
+  # nix/installer -- would reinstall every host in the environment, host-01
+  # included, with tenant guests on it. Nothing about a new installer image
+  # asks for a running host to be rebuilt.
+  kexec_image      = var.kexec_image
+  kexec_flake_attr = var.kexec_flake_attr
+  install_deadline = var.install_deadline
 
   jump_host = var.jump_host
   jump_user = var.jump_user

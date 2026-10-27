@@ -3,7 +3,7 @@
 Symptom-titled. Each alert in `../CHECKLIST.md` and `../workstreams/10-observability.md`
 has an entry with the same name. Commands assume an operator certificate
 (`repose-admin operator-cert`) and, on the operator machine, either the
-edge WireGuard up or the `host-01` ssh block below.
+edge WireGuard up or the per-host ssh blocks below.
 
 ## First-time setup
 
@@ -31,7 +31,18 @@ Host host-01
   User root
   ProxyJump root@<edge ip>:2222
   HostKeyAlias 10.200.1.4
+
+Host host-02
+  HostName 10.255.0.4
+  User root
+  ProxyJump root@<edge ip>:2222
+  HostKeyAlias <its VNet address>
 ```
+
+host-02 is 10.255.0.4, not .3: `hostmgr.allocate` steps over the address
+the monitoring server holds (I-782). Its VNet address, which is what its
+host key is known under, is in `make -C infra output ENV=prod` (`hosts`)
+and in `repose-admin hosts list`.
 
 Check it before any host window: `ssh host-01 true` and `nix store info
 --store ssh-ng://host-01` (it prints `Trusted: 1`). For a WireGuard
@@ -167,7 +178,7 @@ copy-paste version):
 | List hosts with capacity | `repose-admin hosts list` |
 | Add a host | `repose-admin hosts add --name host-NN` (prints a join token), then `make -C infra apply ENV=prod` (`infra/README.md` "Adding a host") |
 | Drain a host (no new placements) | `repose-admin hosts drain host-NN` |
-| Retire a host (after all projects moved) | `repose-admin hosts retire host-NN` |
+| Retire a host (after all projects moved) | `repose-admin hosts retire host-NN`; refused while it holds any project, stopped ones included ("Retiring a host once its projects are moved") |
 | Move a project to another host | `repose-admin projects move <id> --to host-NN` (stop, snapshot, restore, start) |
 | Suspend a user | `repose-admin users suspend <handle> --reason "..."` (stops guests, freezes billing, audit row) |
 | Unsuspend | `repose-admin users unsuspend <handle>` |
@@ -320,8 +331,10 @@ Prometheus's view: a scrape of `:9101` through the edge over WireGuard
 network died after a live migration can fail both, or only one; on
 2026-10-10 HostUnreachable never fired and no `host_unreachable` was
 logged. The gauge is computed by api-grpc, so a dead api silences it
-(ApiHostsAbsent). While HostdDown fires, this alert is held back:
-HostdDown names the host.
+(ApiHostsAbsent). The alert names the host
+(`repose_api_host_state{state="unreachable"}`, one series per host), and
+while HostdDown fires *for that host* this one is held back; another
+host's scrape failure does not hold it back (I-786).
 
 1. From woker-1: `ssh -p 2222 root@<edge ip> ping -c3 10.255.0.<host>`
    (woker-1 has no WireGuard of its own), and
@@ -374,8 +387,9 @@ which needs the console password (I-654).
 
 Prometheus has not scraped hostd on a host for 3 minutes. This is the
 page for a host: the host, its network, the edge's WireGuard or hostd is
-down. While it fires, HostUnreachable and the host's warnings are held
-back. "HostUnreachable" explains the two paths.
+down. While it fires, HostUnreachable and the warnings for *this* host are
+held back; alerts about another host are not. "HostUnreachable" explains
+the two paths.
 
 1. Is it only this host? If every target is down too, MonitoringPathDown
    fires instead of this page; if GatewayDown fires beside it, it is the
@@ -459,16 +473,52 @@ GatewayDown, HostdDown, ApiDown and ApiHostsAbsent.
 
 ## ApiHostsAbsent
 
-`repose_api_hosts` has had no series for 5 minutes, so HostUnreachable
-cannot fire. ApiDown holds this back when api-grpc is down; on its own it
-means api-grpc answers but no longer exports the gauge, or the scrape
-target changed.
+`repose_api_hosts` or `repose_api_host_state` has had no series for 5
+minutes, so the three alerts that read the api's own view of the hosts
+table -- HostUnreachable, HostUnregistered and HostNotInTargets -- cannot
+fire. ApiDown holds this back when api-grpc is down; on its own it means
+api-grpc answers but no longer exports the gauges, or the scrape target
+changed.
 
-1. `curl -s http://10.255.255.1:9104/metrics | grep -c repose_api_hosts`
-   from the monitoring server. Zero: the api-grpc build lost the metric;
-   look at the last deploy.
-2. Until it is back, watch hosts with HostdDown and `repose-admin hosts
-   list`.
+1. `curl -s http://10.255.255.1:9104/metrics | grep -c
+   'repose_api_host'` from the monitoring server. Zero, or only the
+   `repose_api_hosts` lines with no `repose_api_host_state`: the api-grpc
+   build lost a family; look at the last deploy. Both are set by the host
+   sweep, which runs every 15 seconds in api-grpc only, so an api process
+   in `http` mode exports neither by design.
+2. Until they are back, watch hosts with HostdDown and `repose-admin
+   hosts list`.
+
+## HostNotInTargets
+
+The api has a host `ready` whose `host_id` no entry in the targets file
+carries, so that host has no series and every alert scoped to the file is
+silent on it, tenants on it included. The alert names the host. The usual
+cause is a host added by an apply whose entry has not been copied to this
+server: the apply writes nothing here (`infra/README.md` "Adding a host",
+the monitoring step).
+
+The rule compares ids, not counts (I-786): a file that still lists a
+retired host used to balance the numbers and hide a new host that had no
+entry at all. A host that *is* listed and whose scrape is failing is
+HostdDown, not this.
+
+1. `repose-admin hosts list` for the ready hosts, against the `host_id`
+   labels in `/etc/prometheus/repose/targets/hosts.yml`. The alert's
+   `host_id` is the one to look for.
+2. Add or correct its entry in `ops/prometheus/targets/hosts.yml` in the
+   repository, and copy the file to `/etc/prometheus/repose/targets/`.
+   `hosts list` does not print WireGuard addresses; read the host's own
+   `/run/repose/host.env` (`WG_ADDR`), or `wg show wg0 allowed-ips` on
+   the edge. Prometheus re-reads the file within a minute; no restart and
+   no reload.
+3. `up{host_id="<name>"}` is then 1 for the `hosts`, `hostd` and
+   `fluent-bit` jobs. If it is 0 for one of them, that host's exporter or
+   the WireGuard path to it is the problem: HostScrapeDown, HostdDown and
+   FluentBitLogShipperDown are those entries.
+4. A listed host that is genuinely gone instead: the entry stays until
+   `hosts retire` has run ("Retiring a host once its projects are moved"),
+   then it is removed with the same copy.
 
 ## Watchdog
 
@@ -664,7 +714,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
-| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
+| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; neither a refusal of the user's own certificate for its project, I-599, nor a refusal because the gateway's own caches are stale, I-868, is a failure); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host`, or `read: Connection reset by peer` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
 | `login name must be <project>.<user>` | a malformed SSH login name | the user's SSH config is wrong; `repose run` rewrites it |
 
 A relay ends when its certificate is revoked or expires (I-436):
@@ -1023,10 +1073,25 @@ and then fails them, which is every tenant on the host at once: act now.
    uploading (`journalctl -u hostd | grep snapshot`) can go with
    `lvremove -y vg-guests/snap-…` (hostd's reconcile does the same at its
    next start, I-68).
-3. Extend the data disk in Azure (`tofu apply` with a larger
-   `data_disk_gb`, online for Premium SSD v2), then `pvresize` and
-   `lvextend -l +100%FREE vg-guests/thin`. This is the fix; the rest buys
-   time.
+3. Extend the data disk in Azure: raise `data_disk_gb` in that host's
+   `host_shapes` entry in `prod.tfvars` and apply (online for Premium
+   SSD v2). Disk size is per host now; the fleet-wide
+   `host_data_disk_gb` grows every host's disk, and a host with no
+   `host_shapes` entry needs one added. Then on the host, **the
+   partition first**: the PV is GPT partition 1 sized at 100 percent of
+   the disk at install (`nix/hosts/disko-layout.nix`), so `pvresize`
+   alone finds nothing to take.
+
+   ```bash
+   pv=$(pvs --noheadings -o pv_name --select vg_name=vg-guests | tr -d ' ')
+   disk=/dev/$(lsblk -ndo pkname "$pv")
+   echo ',+' | sfdisk -N 1 --force "$disk"   # partition 1 to the end of the disk
+   partx -u "$disk" && udevadm settle
+   pvresize "$pv" && vgs vg-guests
+   lvextend -l +100%FREE vg-guests/thin
+   ```
+
+   This is the fix; the rest buys time.
 4. Find who is writing: `repose-admin projects list --host host-NN --sort
    disk` (the newest sample's allocated bytes). Volume sizes summing past
    the pool is by design (plans count what volumes hold, I-585); used
@@ -1658,8 +1723,24 @@ Postgres grows. Nothing else breaks and no data is lost
 
 ## HostUnregistered (host never registered)
 
-A new host has been up for more than five minutes and is not in `hosts
-list`.
+The api has had a host row in `registering` for 30 minutes: the row
+`repose-admin hosts add` created when it minted the join token, and no
+hostd has presented that token. `repose-admin hosts list` shows it as
+`registering` with no heartbeat.
+
+This is the one host failure nothing else can see. Every other per-host
+alert reads the host's own exporters, and a host that never arrived has
+none, so before this rule a created host was indistinguishable from no
+host at all: host-02 sat created and unregistered for 16 h 56 m on
+2026-10-26 and the owner heard of it from an unrelated outage.
+
+Start with the apply, because the most likely answer is that it never
+finished: a `make apply` whose install step is still running, or hung, is
+this alert with nothing wrong on the host at all. A token minted for an
+install nobody has run yet is the same thing: silence it until the apply
+(`amtool silence add alertname=HostUnregistered host_id=<name>
+--duration 24h --comment "host-02 install scheduled for <date>"`).
+Otherwise:
 
 1. `ssh -J root@<edge ip>:2222 root@<private ip>`: `journalctl -u hostd`.
    `token_expired` or `token_used`: mint a new one (`repose-admin hosts
@@ -1677,7 +1758,20 @@ list`.
 3. `pool_missing`: the data disk is not attached or `disko` did not run.
    `lsblk` and `ls -l /dev/disk/azure/scsi1/lun10`; re-run nixos-anywhere if
    the layout is missing.
-4. Nothing in the journal at all and SSH refused: the install may have
+4. A journal with hostd running, no registration attempt and no api
+   address in its configuration: the host installed the generic `host`
+   configuration because its name is missing from `host_flake_attrs` in
+   `prod.tfvars`. That configuration knows no api address, CA, Blob
+   account or freeze vault, so the host comes up healthy and never
+   registers, and nothing says why. The tell is `hostname`: the generic
+   configuration sets `repose-host`, not the host's own name. Add
+   `<name> = "<name>"` to `host_flake_attrs`, check that
+   `nix/hosts/<name>.nix` and
+   `nixosConfigurations.<name>` exist in the checkout the apply runs
+   from (nixos-anywhere installs from `flake_path` on that machine, not
+   from git), then switch the host (RUNBOOK "Switch a host to main") or
+   re-run the install as in step 5.
+5. Nothing in the journal at all and SSH refused: the install may have
    stopped mid-kexec. `az vm boot-diagnostics get-boot-log --name <host> -g
    repose-prod` shows the serial console; `make -C infra apply ENV=prod`
    after `tofu -chdir=infra/azure/prod taint
@@ -1707,10 +1801,14 @@ is why `PoolFull` pages at 90.
 
 1. `lvs vg-guests` on the host: data and metadata percent, and whether
    `thin` still has room to grow (`vgs vg-guests` free space).
-2. Grow the disk now: `tofu apply` with a larger `data_disk_gb` (online
-   for Premium SSD v2), then on the host `pvresize <pv>` and `lvextend -l
-   +95%FREE vg-guests/thin`. The next heartbeat carries the new size and
-   placement opens again below 70.
+2. Grow the disk now: raise `data_disk_gb` in that host's `host_shapes`
+   entry in `prod.tfvars` and apply (online for Premium SSD v2; the
+   fleet-wide `host_data_disk_gb` would grow every host's disk). Then on
+   the host, the partition before the PV — the PV is GPT partition 1
+   sized at 100 percent of the disk at install, so `pvresize` on its own
+   does nothing: the five commands in `PoolFull` step 3, ending
+   `lvextend -l +95%FREE vg-guests/thin`. The next heartbeat carries the
+   new size and placement opens again below 70.
 3. `repose-admin projects list --host host-NN --sort disk` for who holds
    it. If a second host exists and the grow must wait, nothing else is
    needed: new projects already go elsewhere.
@@ -1823,7 +1921,7 @@ clean stop.
 3. The pool (DECISIONS I-643): `journalctl -u repose-guest-pool -b` ends
    with `event=pool_monitored`; `lvs -o+seg_monitor vg-guests` shows the
    pool and every `g-*` volume active and the pool `monitored`;
-   `curl -s 10.255.0.2:9101/metrics | grep repose_host_pool_available` is
+   `curl -s 10.255.0.<host>:9101/metrics | grep repose_host_pool_available` is
    1. If not, `PoolUnavailable`: nothing is resumed while the pool is
    down.
 4. hostd logged `host_boot` with the previous `prev_boot_id`, and a
@@ -1853,6 +1951,23 @@ stops, so `HostUnreachable` (2m) and `HostdDown` (3m) both page in that
 window. Silence them in Alertmanager for the host before the restart, and
 the freeze itself holds the shutdown for as long as it takes, up to
 `repose.host.freeze.deadline`: `az vm restart` waits that out too.
+
+**On a host bigger than host-01 the freeze does not save all of its
+memory.** What it saves is `writeRateMBs` times `deadline`, and the
+deadline is capped at 300 s (`nix/hosts/freeze.nix`); snapshots are
+admitted while they fit in that, and the guests that do not fit are
+stopped by the shutdown and lose what they were running
+(`GuestLeftUnfrozen` counts them). At host-01's measured 400 MB/s the
+240 s default is 96 GB and the 300 s cap 120 GB; the data disk's
+provisioned 600 MB/s would be 180 GB at the cap. host-01 holds at most
+56 GB of guest memory (64 GB less its 8 GB reserve), so it has never met
+this. **host-02 holds up to
+192 GB** (24 seats of 8 GB), so a restart of a full host-02 saves some
+guests' memory and loses the rest. Measure its own rate ("Guest freeze"
+step 3) rather than trusting the 400 it inherited, and know that the
+only lever that raises the ceiling is the disk's provisioned MB/s, which
+is billed. Before a planned restart of a loaded host, either stop or
+move the guests you are not prepared to lose, or accept the arithmetic.
 
 ## Guest freeze
 
@@ -2407,6 +2522,47 @@ edge, no Hello in the api log, and the boot log stops early or loops.
 4. If the OS disk cannot be saved: "Host loss". The data disk and the
    snapshots are what the tenants' work is on.
 
+## Install hit the deadline
+
+`make apply ENV=prod` printed that an install was killed at `install_deadline`
+(45 minutes by default) and exited. The install did not fail; it ran out of
+time. The apply released the state lock when it died, so other applies are no
+longer blocked, and the machine's `terraform_data.install` is tainted: a later
+apply retries the install and creates nothing twice.
+
+The deadline exists because nothing else bounds this. OpenTofu takes no
+`timeout` on a `local-exec`, and nixos-anywhere waits for the post-kexec
+machine with an unbounded `until runSsh ...; do sleep 5; done`. On 2026-10-26
+that loop ran for **16 hours 56 minutes** against a machine that was alive and
+unreachable, holding this environment's only state lock the whole time
+(DECISIONS I-872, I-786).
+
+Both checks below are Azure control-plane reads. They need neither the machine
+nor the lock, which is the point: they work when the machine does not.
+
+1. **What the installer did.** `az vm boot-diagnostics get-boot-log -g
+   repose-prod -n <host>`. The image repose installs through runs at
+   `loglevel=7`, so driver and network messages reach this log. A machine that
+   kexec'd successfully prints the installer's banner and its login prompt; a
+   machine that never kexec'd stops in the provider image.
+2. **Whether it had a usable address.** `az monitor metrics list --resource
+   <vm id> --metrics 'Network In Total' 'Network Out Total' --interval PT1M`.
+   A **byte-exact flat count** minute after minute is a discovery loop that
+   never converged: the installer is up and has no address. host-02 sat at
+   3,256 B/min in and about 3,450 B/min out for 17 hours. A **successful**
+   install looks nothing like it: host-stg-01 moved 397 MB, then 204 MB, then
+   506 MB inbound in separate minutes.
+
+   These are VM-level counters, so traffic over an accelerated-networking VF
+   bypasses them. "No bulk inbound" is therefore not proof nothing arrived.
+   The flat byte-exact count is the tell, not the absence of volume.
+
+If the installer is up with no address, the image is the suspect. Confirm
+which image the machine kexec'd into before anything else: ours names itself
+`repose-kexec-installer` and the upstream asset names itself
+`nixos-kexec-installer-noninteractive`. An install that reaches for the
+upstream asset is running the defect I-872 exists to remove.
+
 ## Host loss
 
 A host is gone (Azure repair, disk lost, or a deliberate retirement without
@@ -2421,6 +2577,50 @@ drain).
    the last `stop`) is lost; the email says so. Tenants' git remotes hold
    whatever their agents pushed.
 3. `repose-admin hosts retire host-NN`; `tofu apply` with it removed.
+
+## Retiring a host once its projects are moved
+
+The planned counterpart to "Host loss": the host is healthy and you are
+emptying it on purpose, as host-01 is emptied onto host-02
+(`docs/ops/LAUNCH.md` §3 step 5). Nothing here is urgent, and three of
+its steps bite if they are taken in the wrong order.
+
+1. `repose-admin hosts drain host-NN`: nothing new is placed there.
+   **The fleet's seat total falls by that host's seats the moment it
+   starts draining**, all at once, because the count sums `ready`,
+   undrained hosts only (I-739, I-784). Seats already held keep working;
+   what stops is checkout and the waitlist's invitations. Check
+   `repose-admin seats` before and after, and expect the landing page's
+   "N seats left" to move.
+2. `repose-admin projects list --host host-NN` is the list to empty.
+   Then, per project, `repose-admin projects move <id> --to <target>`:
+   - **A project that is not running is restored from whatever snapshot
+     already exists**, which may be 24 hours old. `move` takes a fresh
+     snapshot only when the project is `running`, by stopping it with
+     `snapshot: true` first. So start it, or `repose-admin projects
+     snapshot <id>`, before moving a stopped one.
+   - **`--to` is not capacity-checked.** A named target short-circuits
+     the scheduler, so a move onto a host without the memory, the cores
+     or the pool for it is accepted and fails later, on the host.
+     `repose-admin hosts list` and the `host_reservations` view are what
+     to read first; move in an order that fits.
+   - **Every moved project emails its owner** that it "was restored onto
+     a new host from its latest snapshot" (`host_moved`). On a planned
+     migration that reads as data loss. Tell the tenants before, or
+     answer the replies after.
+   - **A moved project comes up logged out of Claude Code.** The login
+     share is one file per user per host (I-278), so each owner types
+     `claude` and logs in once on the target host.
+3. `repose-admin hosts retire host-NN`. It refuses while the host holds
+   **any** project, stopped ones included: `host-NN still holds N
+   project(s); move them first`. Retiring also voids the host's
+   certificate (I-432), so a host that must come back joins again with
+   `hosts add --name host-NN --reissue`.
+4. Remove the name from `hosts` and its `host_shapes` entry from
+   `prod.tfvars`, and apply. The data disk and its attachment carry
+   `prevent_destroy`, so that plan fails on purpose; `infra/README.md`
+   "Draining and destroying a host" has the step that gets past it and
+   why it is friction.
 
 ## Suspected cross-tenant access
 
@@ -2534,9 +2734,57 @@ cannot fetch `/internal/hosts`, or Prometheus cannot scrape.
    running without `WG_STATIC_PEERS` (an edge older than I-92).
 3. Handshake fine, `curl` from the edge to `https://10.255.255.1:8444`
    refused: the `api-grpc` app has no port mappings (`ops/coolify/README.md`).
+4. `wg show` on the VM says bytes sent and **0 B received**, and the edge's
+   peer line for it shows a `latest handshake` hours old with an endpoint
+   port the VM is no longer using: the tunnel is dead one way and the two
+   ends are talking past each other. Read the ports first, `wg show wg0
+   listen-port` on the VM against the port in the edge's `wg show wg0`
+   peer line. They differ after a restart on an ephemeral port
+   (DECISIONS I-866). Rebind the socket, which costs nothing and repairs
+   it in seconds:
+
+   ```bash
+   ssh root@<control ip> 'wg set wg0 listen-port 51820; sleep 12; wg show wg0'
+   ```
+
+   `latest handshake` within seconds and a reply to `ping -c3 10.255.0.1`
+   is the fix. Then make it survive the next restart: `ListenPort = 51820`
+   in `/etc/wireguard/wg0.conf` (`infra/README.md`, "Wiring the control
+   plane to the edge"). The gateway picks the control plane up on its own
+   within 30 s; no restart of it is needed.
+
+   The packets do leave the VM, so nothing on it looks wrong. What proves
+   where they stop is one capture on each side: `tcpdump -ni eth0 "udp
+   port 51820"` on the VM shows them going out every 5 s, and
+   `grep dport=51820 /proc/net/nf_conntrack` on the edge shows no flow
+   from the VM's current port (the edge has no tcpdump). A plain
+   `nc -u -p 40001 <edge ip> 51820` from the VM arriving in that same
+   conntrack table is how you tell a blackholed flow from a blocked path:
+   the path is fine, that one flow is not. This is
+   `docs/incidents/2026-10-26-control-tunnel-one-way.md`.
 
 The control plane's WireGuard private key is generated on the machine and
 never leaves it, so the fix takes two moves instead of one apply.
+
+## GatewayCachesStale
+
+The gateway's revocation list has not refreshed for 15 minutes. It still
+answers and still relays, so `GatewayDown` stays quiet; what it cannot do
+is reach the api. At one hour (`StaleAfter`) it refuses **every** new
+connection with `gateway cannot reach control plane; try again shortly`,
+so this page is the warning before a total outage of `ssh`, `run`,
+`attach` and `open`.
+
+1. `journalctl -u gateway | grep -E 'ca_refresh|revoked_refresh'` on the
+   edge names the cause in `err`. A `context deadline exceeded` against
+   `https://10.255.255.1:8444` is the tunnel, not the api: "Control plane
+   cannot reach the edge network" above.
+2. The api answering `https://api.repose.herakraft.co/healthz` while the
+   edge cannot reach `10.255.255.1:8444` is that same split: the public
+   path is Coolify's proxy, the gateway's path is the tunnel.
+3. `curl -s http://10.255.0.1:9102/metrics | grep revocation_cache_age`
+   on the edge is the age the alert reads. It falls to 0 within 30 s of
+   the tunnel coming back, and the gateway needs nothing else.
 
 ## Retiring a host's bootstrap key
 

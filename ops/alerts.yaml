@@ -261,12 +261,21 @@ groups:
         # The api marks a host unreachable after 90 seconds without a
         # heartbeat (DESIGN §9). Its guests may still be running, but no
         # command reaches them, so this pages.
-        expr: repose_api_hosts{state="unreachable"} > 0
+        #
+        # One alert per host, from repose_api_host_state (I-786).
+        # repose_api_hosts counts states and names no host, so this fired
+        # once for a fleet and said "2 host(s)": the operator could not
+        # tell which, and Alertmanager could not hold it back behind the
+        # right host's HostdDown, so on a two-host fleet one host's scrape
+        # failure suppressed the other host's page. max by (host_id)
+        # keeps it one series per host whatever publishes the gauge (the
+        # host sweep runs in api-grpc, so today that is one target).
+        expr: max by (host_id) (repose_api_host_state{state="unreachable"}) == 1
         for: 2m
         labels:
           severity: page
         annotations:
-          summary: "{{ $value }} host(s) are unreachable from the api"
+          summary: "{{ $labels.host_id }} is unreachable from the api"
           description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
           runbook: "docs/ops/RUNBOOK.md#hostunreachable"
 
@@ -296,6 +305,23 @@ groups:
           description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
           runbook: "docs/ops/RUNBOOK.md#gatewaydown"
 
+      - alert: GatewayCachesStale
+        # The gateway is up and relaying, so GatewayDown and
+        # MonitoringPathDown stay quiet, and it cannot reach the api: at
+        # StaleAfter (1 h) it refuses every new connection and nobody can
+        # ssh, run, attach or open. On 2026-10-26 the control VM's tunnel
+        # died one way and this gauge climbed for 9 hours with nothing
+        # watching it; ApiDown reads the same tunnel, so it is not the
+        # second opinion it looks like (DECISIONS I-870).
+        expr: repose_gateway_revocation_cache_age_seconds > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The gateway has not reached the control plane for 15 minutes"
+          description: "The gateway's revocation list is older than 15 minutes. It still relays existing sessions, and at one hour it refuses every new ssh, run, attach and open with 'gateway cannot reach control plane'."
+          runbook: "docs/ops/RUNBOOK.md#gatewaycachesstale"
+
       - alert: MonitoringPathDown
         # Prometheus reaches the gateway, every hostd and both api
         # processes through the edge's WireGuard, so a dead edge, a dead
@@ -313,17 +339,81 @@ groups:
           runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
 
       - alert: ApiHostsAbsent
-        # HostUnreachable reads repose_api_hosts. When the series is gone
-        # (api-grpc down, or its scrape broken) the host alert is silent,
-        # not quiet; this says so.
-        expr: absent(repose_api_hosts)
+        # The api's host gauges are what HostUnreachable, HostUnregistered
+        # and HostNotInTargets read. When they are gone (api-grpc down, or
+        # its scrape broken) those alerts are silent, not quiet; this says
+        # so. Both families are checked: repose_api_hosts exists even with
+        # an empty hosts table, so it catches a dead scrape, and
+        # repose_api_host_state is the per-host family three rules now
+        # depend on, so a deploy that drops it is caught too (I-786).
+        expr: absent(repose_api_hosts) or absent(repose_api_host_state)
         for: 5m
         labels:
           severity: page
         annotations:
-          summary: "repose_api_hosts is missing, so HostUnreachable cannot fire"
-          description: "Prometheus has had no repose_api_hosts series for 5 minutes. Host health is unknown from the api's side until api-grpc is scraped again."
+          summary: "the api's host gauges are missing, so no host alert from the api can fire"
+          description: "Prometheus has had no repose_api_hosts or repose_api_host_state series for 5 minutes. HostUnreachable, HostUnregistered and HostNotInTargets are silent until api-grpc is scraped again."
           runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
+
+      - alert: HostNotInTargets
+        # The same silence for a whole host. Every host alert is scoped to
+        # the targets in ops/prometheus/targets/hosts.yml, which is copied
+        # to this server by hand (ops/README.md step 2) and not by the
+        # apply that creates the host, so a new host carries tenants with no
+        # series at all: PoolFull, StoreFull, HostdDown and the rest are
+        # silent on a host the file does not list.
+        #
+        # By id, not by count (I-786). The first version of this rule
+        # compared `count(up{job="hostd"} == 1)` with the api's count of
+        # ready hosts, and a count hides exactly the case it was written
+        # for: one stale entry for a retired host answers for the new one,
+        # the two numbers match, and the unmonitored host stays silent. The
+        # api knows every host by id, so compare the ids.
+        #
+        # The right side is `count by (host_id) (up{job="hostd"})`, not
+        # `up == 1`: a listed host whose scrape is failing *has* a target,
+        # and that is HostdDown's alert, not this one. Comparing against
+        # successful scrapes instead would turn one dead tunnel into one
+        # of these per host, on top of MonitoringPathDown.
+        #
+        # 15m covers the gap between a registration and the copy.
+        expr: |
+          max by (host_id) (repose_api_host_state{state="ready"}) == 1
+          unless on (host_id) count by (host_id) (up{job="hostd"})
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.host_id }} is ready and Prometheus has no hostd target for it"
+          description: "The api has this host ready and no entry in /etc/prometheus/repose/targets/hosts.yml carries its host_id, so PoolFull, StoreFull, HostdDown and every other alert scoped to that file is silent on it, and on the tenants it carries."
+          runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+
+      - alert: HostUnregistered
+        # A host the api created and nothing ever registered. The row
+        # exists from the moment `repose-admin hosts add` mints the join
+        # token, which is before the apply that installs the machine, and
+        # it leaves `registering` only when hostd presents that token.
+        #
+        # This is the one host failure no other rule can see. Every other
+        # per-host signal comes from the host's own exporters, and a host
+        # that never arrived has none to scrape: on 2026-10-26 host-02 was
+        # created and sat unregistered for 16 h 56 m with no alert of any
+        # kind, and the owner learnt of it from an unrelated outage. The
+        # api's own hosts table is the only thing that knows the host
+        # exists, so this reads that, by id, and needs nothing copied to
+        # the monitoring server.
+        #
+        # 30m: adding a host takes about ten minutes (infra/README.md
+        # "Adding a host"), so half an hour is past a normal install and
+        # well short of the token's 24-hour life.
+        expr: max by (host_id) (repose_api_host_state{state="registering"}) == 1
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "{{ $labels.host_id }} has not registered"
+          description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
+          runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
 
       - alert: BootSlow
         # Most creates and starts on a host took over 2 minutes (DECISIONS

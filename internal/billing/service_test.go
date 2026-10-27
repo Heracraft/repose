@@ -188,6 +188,7 @@ func TestFoundingLimit(t *testing.T) {
 func TestIntroOffer(t *testing.T) {
 	ends := time.Date(2027, 10, 8, 0, 0, 0, 0, time.UTC)
 	before, after := ends.Add(-time.Hour), ends
+	plus := "plus"
 	for _, c := range []struct {
 		name   string
 		sub    *billing.Sub
@@ -201,6 +202,9 @@ func TestIntroOffer(t *testing.T) {
 		{"offer, before its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, before, 3900, 250},
 		{"offer, at its end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends}, after, 4900, 250},
 		{"plus", &billing.Sub{Plan: "plus", Intro: true}, before, 8900, 500},
+		{"pro scheduled to plus, before the period end", &billing.Sub{Plan: "pro", ScheduledPlan: &plus, PeriodEnd: &ends}, before, 16900, 1000},
+		{"pro scheduled to plus, at the period end", &billing.Sub{Plan: "pro", ScheduledPlan: &plus, PeriodEnd: &ends}, after, 8900, 1000},
+		{"solo offer scheduled to plus, at the period end", &billing.Sub{Plan: "solo", Intro: true, IntroUntil: &ends, ScheduledPlan: &plus, PeriodEnd: &before}, before, 8900, 250},
 	} {
 		if got := c.sub.ChargeCents(c.at); got != c.cents {
 			t.Errorf("%s: %d cents, want %d", c.name, got, c.cents)

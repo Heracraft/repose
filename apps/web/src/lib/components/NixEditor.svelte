@@ -12,7 +12,8 @@
 		type DecorationSet
 	} from '@codemirror/view';
 	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-	import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
+	import { syntaxHighlighting, bracketMatching } from '@codemirror/language';
+	import { classHighlighter } from '@lezer/highlight';
 	import { nix } from '@replit/codemirror-lang-nix';
 
 	let {
@@ -29,7 +30,7 @@
 		readonly?: boolean;
 		/** The editor's accessible name: CodeMirror's content is a role=textbox with none of its own. */
 		label?: string;
-		/** Shown in --ink-faint while the editor is empty; never saved. */
+		/** Shown in the pane's muted colour while the editor is empty; never saved. */
 		placeholder?: string;
 		/**
 		 * A CSS length the code area is at least, over the five-line floor:
@@ -85,7 +86,9 @@
 				highlightActiveLineGutter(),
 				history(),
 				bracketMatching(),
-				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+				// Classes, not inline colours: nix-editor.css paints them in the
+				// code pane's tokens, which hold on its near-black ground.
+				syntaxHighlighting(classHighlighter),
 				nix(),
 				errorLineField,
 				keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -114,8 +117,9 @@
 	});
 </script>
 
-<!-- The frame carries the control's edge and the focus ring, so the
-     footer bar sits inside the same box as the code it acts on. -->
+<!-- The frame is the near-black pane (nix-editor.css): it carries the
+     rings and the focus ring, so the footer bar sits inside the same box as
+     the code it acts on. -->
 <div class="nix-frame">
 	<div
 		class="nix-editor"
@@ -125,47 +129,24 @@
 		bind:this={container}
 	></div>
 	{#if footer}
-		<div
-			class="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-rule bg-surface px-3 py-2 text-xs text-ink-muted"
-		>
+		<div class="nix-footer">
 			{@render footer()}
 		</div>
 	{/if}
 </div>
 
 <style>
-	.nix-frame {
-		border: 1px solid var(--control-edge);
-		border-radius: 2px;
-		transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	.nix-frame:has(:global(.cm-focused)) {
-		border-color: var(--ink);
-		outline: 2px solid var(--focus);
-		outline-offset: 2px;
-	}
-	/* layout.css draws the edge and the ring on .cm-editor itself; here
-	   the frame does, around the footer too. */
-	.nix-frame :global(.cm-editor),
-	.nix-frame :global(.cm-editor.cm-focused) {
-		border: 0;
-		border-radius: 1px;
-		outline: none;
-	}
-	/* 1lh is the editor's own line (14px at 1.4); 8px is the content's
-	   4px padding above and below. The gutter column gets the same floor,
-	   over the height CodeMirror writes on it inline, so its rule runs the
-	   editor's full height. */
+	/* 20px is the editor's own line; 8px is the content's 4px padding
+	   above and below. The gutter column gets the same floor, over the
+	   height CodeMirror writes on it inline, so its rule runs the editor's
+	   full height. */
 	.nix-editor :global(.cm-content) {
-		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px));
+		min-height: max(calc(var(--nix-rows) * 1.25rem + 8px), var(--nix-floor, 0px));
 	}
 	.nix-editor :global(.cm-gutters) {
-		min-height: max(calc(var(--nix-rows) * 1lh + 8px), var(--nix-floor, 0px)) !important;
+		min-height: max(calc(var(--nix-rows) * 1.25rem + 8px), var(--nix-floor, 0px)) !important;
 	}
 	.nix-editor :global(.cm-scroller) {
-		max-height: calc(var(--nix-max) * 1lh + 8px);
-	}
-	.nix-editor :global(.cm-placeholder) {
-		color: var(--ink-faint);
+		max-height: calc(var(--nix-max) * 1.25rem + 8px);
 	}
 </style>

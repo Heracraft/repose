@@ -200,6 +200,24 @@ variable "build_on" {
   default     = "auto"
 }
 
+variable "kexec_image" {
+  description = "Kexec installer tarball nixos-anywhere boots this host into, as a local path or a URL; null passes no --kexec and the target downloads the upstream image instead. Not a trigger: see the install module call."
+  type        = string
+  default     = null
+}
+
+variable "kexec_flake_attr" {
+  description = "packages attribute of flake_path that builds the kexec installer image when kexec_image is null. Passed down so the environment's preflight and this machine's install build the same attribute."
+  type        = string
+  default     = "kexec-installer"
+}
+
+variable "install_deadline" {
+  description = "Wall-clock bound on the nixos-anywhere run (coreutils timeout duration). Nothing inside nixos-anywhere or OpenTofu can bound it; infra/azure/modules/nixos_anywhere/variables.tf has the why."
+  type        = string
+  default     = "45m"
+}
+
 variable "hostd_unit" {
   description = "systemd unit restarted after the join token is written (docs/interfaces/host-conventions.md)."
   type        = string

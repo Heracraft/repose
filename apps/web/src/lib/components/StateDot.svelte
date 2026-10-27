@@ -1,9 +1,12 @@
 <!--
-  A guest's state as a small square and its word. The word carries the
-  state; the square is a glance cue, so it is hidden from assistive tech
-  and nothing depends on its colour. data-state and data-tone let the
-  stylesheet draw the square for forced colours and reduced motion without
-  this component knowing how.
+  A guest's state as a 7px dot and its word (Guide B 5.3, I-837). The word
+  carries the state; the dot is a glance cue, hidden from assistive tech.
+  Colour only where the user is needed: amber for "needs you", red for
+  "went wrong". Running is a filled ink dot, a step under way pulses with a
+  halo (still under reduced motion), stopped is a hollow 3:1 ring. A frozen
+  machine (I-683) shows the snowflake and "frozen" in the ice ink in
+  place of the dot and "running". data-state and data-tone let
+  a stylesheet or a test read the state without this component knowing.
 -->
 <script lang="ts">
 	import type { GuestState } from '$lib/api/types';
@@ -14,15 +17,14 @@
 		frozen = false
 	}: {
 		state: GuestState;
-		/** A running machine frozen while idle (I-683): the snowflake and
-		 * "frozen" in the frost colour, in place of the dot and "running". */
+		/** A running machine frozen while idle (I-683). */
 		frozen?: boolean;
 	} = $props();
 
-	type Tone = 'idle' | 'good' | 'busy' | 'error';
+	type Tone = 'idle' | 'on' | 'busy' | 'err';
 
 	const tone: Record<GuestState, Tone> = {
-		running: 'good',
+		running: 'on',
 		stopped: 'idle',
 		creating: 'busy',
 		building: 'busy',
@@ -31,14 +33,7 @@
 		restoring: 'busy',
 		destroying: 'busy',
 		destroyed: 'idle',
-		error: 'error'
-	};
-
-	const dotClass: Record<Tone, string> = {
-		idle: 'dot',
-		good: 'dot dot--good',
-		busy: 'dot dot--busy',
-		error: 'dot dot--error'
+		error: 'err'
 	};
 </script>
 
@@ -50,7 +45,7 @@
 	     it "running" appears nowhere on a frozen machine's row and the
 	     states table has no entry to look "frozen" up in. -->
 	<span
-		class="frozen inline-flex items-center gap-1.5"
+		class="state frozen"
 		data-state={state}
 		data-frozen=""
 		title={`${state}, frozen`}
@@ -60,14 +55,20 @@
 		<span>frozen</span>
 	</span>
 {:else}
-	<span class="inline-flex items-center gap-1.5" data-state={state}>
-		<span class={dotClass[tone[state]]} data-tone={tone[state]} aria-hidden="true"></span>
+	<span class="state" data-state={state}>
+		<span class="hk-dot hk-dot--{tone[state]}" data-tone={tone[state]} aria-hidden="true"></span>
 		<span>{state}</span>
 	</span>
 {/if}
 
 <style>
+	.state {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
 	.frozen {
-		color: var(--frost);
+		gap: 0.375rem;
+		color: var(--hk-ice-ink);
 	}
 </style>

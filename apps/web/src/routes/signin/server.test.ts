@@ -89,18 +89,19 @@ describe('GET /signin', () => {
 		expect(response.headers.get('location')).not.toContain(flow?.verifier ?? 'unset');
 	});
 
-	it('refuses a return path that points off-origin', () => {
+	it('refuses a return path that is not on the allow-list', () => {
 		for (const off of [
 			'https%3A%2F%2Fevil.example%2F',
 			'%2F%2Fevil.example%2F',
-			'%2F%5Cevil.example'
+			'%2F%5Cevil.example',
+			'%2Fsettings'
 		]) {
 			const { cookies } = get(`https://repose.test/signin?return=${off}`);
 			expect(decodeFlow(cookies[0].value)?.returnTo, off).toBe('/projects');
 		}
 	});
 
-	it('keeps a same-origin return path', () => {
+	it('keeps a return path that is on the allow-list', () => {
 		const { cookies } = get('https://repose.test/signin?return=%2Fbilling');
 		expect(decodeFlow(cookies[0].value)?.returnTo).toBe('/billing');
 	});

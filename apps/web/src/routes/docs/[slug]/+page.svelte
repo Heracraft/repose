@@ -30,9 +30,10 @@
 	<!-- An old slug's page holds the target's link, not nothing: the
 	     prerendered HTML is what a reader with scripts off gets, and the
 	     layout's skip link (#main) needs a target on every page. -->
-	<main id="main" class="max-w-[42rem] pt-10 pb-24">
-		<p class="text-ink-muted">
-			This page moved to <a href={href(moved)} class="link">{docBySlug(moved)?.title ?? moved}</a>.
+	<main id="main" tabindex="-1" class="max-w-[42rem] pt-9 pb-24 outline-none">
+		<p class="text-ink-2">
+			This page moved to <a href={href(moved)} class="hk-link">{docBySlug(moved)?.title ?? moved}</a
+			>.
 		</p>
 	</main>
 {/if}

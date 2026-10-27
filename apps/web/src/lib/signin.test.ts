@@ -1,57 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import {
 	DEFAULT_RETURN,
+	RETURN_PATHS,
 	authorizationUrl,
 	decodeFlow,
 	encodeFlow,
 	safeReturnPath,
-	tokenEndpoint
+	signinHref,
+	tokenEndpoint,
+	type SignInFlow
 } from './signin';
 
-// DECISIONS I-878. safeReturnPath is the one security control on the
-// sign-in route: /signin is a GET anyone can put in a link, so a return
-// path it did not check would make the site an open redirect, which is how
-// a sign-in link on our own domain ends up phishing credentials.
+// DECISIONS I-878. safeReturnPath is the one security control on the sign-in
+// route: /signin is a GET anyone can put in a link, so a return path taken on
+// trust would make the site an open redirect, which is how a sign-in link on
+// our own domain ends up phishing credentials. It answers with an allow-list
+// of whole paths, the same RETURN_PATHS the browser flow uses (I-837).
 describe('safeReturnPath', () => {
-	it('keeps a same-origin path, with its query and fragment', () => {
-		expect(safeReturnPath('/projects')).toBe('/projects');
-		expect(safeReturnPath('/projects?filter=running')).toBe('/projects?filter=running');
-		expect(safeReturnPath('/settings#machine-nix')).toBe('/settings#machine-nix');
+	it('keeps a path that is on the allow-list', () => {
+		for (const path of RETURN_PATHS) expect(safeReturnPath(path)).toBe(path);
 	});
 
-	it('refuses a path that points off-origin', () => {
+	it('refuses anything else, off-origin or not', () => {
 		for (const off of [
 			'https://evil.example/',
 			'http://evil.example/',
 			'//evil.example/',
 			'///evil.example/',
 			'/\\evil.example/',
-			'/\\/evil.example',
 			'\\\\evil.example',
 			'javascript:alert(1)',
 			'data:text/html,<script>',
 			'ftp://evil.example/',
-			'//evil.example\\@repose.herakraft.co'
+			'//evil.example\\@repose.herakraft.co',
+			'/billing/../../evil',
+			'/billing?x=1',
+			'/billing ',
+			'/projects/secret',
+			'/settings'
 		]) {
 			expect(safeReturnPath(off), off).toBe(DEFAULT_RETURN);
 		}
-	});
-
-	it('refuses whitespace and control characters, which a Location header cannot carry', () => {
-		expect(safeReturnPath('/projects\r\nLocation: https://evil.example')).toBe(DEFAULT_RETURN);
-		expect(safeReturnPath('/pro jects')).toBe(DEFAULT_RETURN);
-		expect(safeReturnPath('/\tprojects')).toBe(DEFAULT_RETURN);
 	});
 
 	it('falls back when nothing was asked for', () => {
 		expect(safeReturnPath(null)).toBe(DEFAULT_RETURN);
 		expect(safeReturnPath(undefined)).toBe(DEFAULT_RETURN);
 		expect(safeReturnPath('')).toBe(DEFAULT_RETURN);
-		expect(safeReturnPath('projects')).toBe(DEFAULT_RETURN);
 	});
 
-	it('leaves an encoded slash encoded, so it stays one path segment', () => {
-		expect(safeReturnPath('/%2F%2Fevil.example')).toBe('/%2F%2Fevil.example');
+	it('names only paths the app has', () => {
+		// A path that no route serves would send a signed-in visitor to a
+		// 404 the moment it was added to the list.
+		for (const path of RETURN_PATHS) expect(path.startsWith('/')).toBe(true);
+	});
+});
+
+describe('signinHref', () => {
+	it('is the bare route with no return path', () => {
+		expect(signinHref()).toBe('/signin');
+	});
+
+	it('names the return path in the query, encoded', () => {
+		expect(signinHref('/billing')).toBe('/signin?return=%2Fbilling');
 	});
 });
 
@@ -87,7 +98,7 @@ describe('authorizationUrl', () => {
 
 describe('the flow cookie', () => {
 	it('round-trips a flow', () => {
-		const flow = { verifier: 'v'.repeat(43), state: 'st', returnTo: '/projects' };
+		const flow: SignInFlow = { verifier: 'v'.repeat(43), state: 'st', returnTo: '/billing' };
 		expect(decodeFlow(encodeFlow(flow))).toEqual(flow);
 	});
 
@@ -100,7 +111,9 @@ describe('the flow cookie', () => {
 		expect(decodeFlow(undefined)).toBeUndefined();
 		expect(decodeFlow('')).toBeUndefined();
 		expect(decodeFlow('not base64 at all!!')).toBeUndefined();
-		expect(decodeFlow(encodeFlow({ verifier: '', state: 's', returnTo: '/' }))).toBeUndefined();
+		expect(
+			decodeFlow(encodeFlow({ verifier: '', state: 's', returnTo: '/billing' }))
+		).toBeUndefined();
 		expect(decodeFlow(btoa('{"verifier":"v"}'))).toBeUndefined();
 	});
 

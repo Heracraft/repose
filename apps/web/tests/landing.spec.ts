@@ -1,7 +1,7 @@
 // DECISIONS I-290: the landing page's pricing section shows the three plans
 // and one live line from GET /public/seats, and stands without it. I-656:
 // the page sits on the frame every page shares, under the site header and
-// over the site footer.
+// over the site footer. I-837: the plans are PlanCells' public cards.
 import { test, expect } from '@playwright/test';
 import { setBilling, resetBilling } from './helpers';
 
@@ -14,12 +14,21 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	await expect(pricing.getByText('Launch prices. Seven days free.')).toBeVisible();
-	await expect(pricing.locator('.tier h3')).toHaveText(['Solo', 'Plus', 'Pro']);
+	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveText([
+		'Solo',
+		'Plus',
+		'Pro'
+	]);
 	await expect(pricing.getByText('$39')).toBeVisible();
 	// The founding price is the two numbers, the list price struck (I-772).
-	const solo = pricing.locator('.tier', { has: page.getByRole('heading', { name: 'Solo' }) });
-	await expect(solo.locator('.tier-price .was')).toHaveText('$49');
-	await expect(solo.locator('.tier-then')).toHaveText('First 12 months, first 30 subscribers');
+	const solo = pricing.getByTestId('plan-solo');
+	await expect(solo.locator('.p-price .was')).toHaveText('$49');
+	await expect(solo.locator('.p-price .n')).toHaveText('$39');
+	await expect(solo.locator('.p-then')).toHaveText('First 12 months, first 30 subscribers');
+	await expect(solo.locator('.p-run')).toHaveText('8 GB running at once');
+	await expect(solo.locator('.p-specs')).toHaveText('100 GB disk · 250 GB egress');
+	// The public cards carry no button of their own; the row under them does.
+	await expect(pricing.locator('[data-testid^="plan-"] :is(a, button)')).toHaveCount(0);
 	await expect(pricing.getByText('$89')).toBeVisible();
 	await expect(pricing.getByText('$169')).toBeVisible();
 	await expect(pricing.getByText('8 GB running at once')).toBeVisible();
@@ -41,28 +50,83 @@ test('with no founding places left, Solo shows $49 and no founding line', async 
 	await setBilling({ founding_left: 0 });
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	const solo = pricing.locator('.tier', { has: page.getByRole('heading', { name: 'Solo' }) });
-	await expect(solo.locator('.tier-price .n')).toHaveText('$49');
-	await expect(solo.locator('.tier-then')).toHaveCount(0);
+	const solo = pricing.getByTestId('plan-solo');
+	await expect(solo.locator('.p-price .n')).toHaveText('$49');
+	await expect(solo.locator('.p-then')).toHaveCount(0);
 	// Nothing is struck once the list price is the price (I-772).
-	await expect(solo.locator('.tier-price .was')).toHaveCount(0);
+	await expect(solo.locator('.p-price .was')).toHaveCount(0);
 	await expect(pricing.getByText('$39')).toHaveCount(0);
 	await setBilling({ founding_left: 30 });
+});
+
+test('one seat free: the line is singular', async ({ page }) => {
+	await setBilling({ seats: { total: 30, held: 29, waiting: 0 } });
+	await page.goto('/');
+	await expect(page.getByTestId('seats-line')).toHaveText('1 seat left');
+	await resetBilling();
 });
 
 test('when full, the line says so with the number waiting', async ({ page }) => {
 	await setBilling({ seats: { total: 30, held: 30, waiting: 41 } });
 	await page.goto('/');
+	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	// The waitlist and seat copy stays as it is (spec 2.1, owner's call).
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	await expect(page.getByTestId('seats-line')).toContainText('Full for now. 41 waiting;');
 	await expect(page.getByTestId('seats-line')).toContainText(
 		"join the list and you're emailed when a seat frees."
 	);
 });
 
-test('the last step runs in your-project', async ({ page }) => {
+// Guide B 1.10: the row shows what its Copy puts on the clipboard, and it
+// runs on a visitor's laptop (no `cd` into the terminal's example folder).
+test('the run step shows and copies repose run alone', async ({ page, context }) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 	await page.goto('/');
-	await expect(page.getByText('cd ~/code/your-project && repose run')).toBeVisible();
+	const step = page.locator('.steps li', { hasText: 'Run in any checkout' });
+	await expect(step.locator('.code-copy')).toContainText('repose run');
+	await expect(step).not.toContainText('cd ~/code/your-project');
+	await step.getByRole('button', { name: 'Copy repose run' }).click();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('repose run');
 	await expect(page.getByText('job-alerts')).toHaveCount(0);
+});
+
+// The install command shows twice: under the hero's buttons, and as the first
+// of the three steps (I-843, the owner's call over I-837's "each fact once").
+// The hero's copy button copies exactly it.
+test('the install command shows in the hero and the first step, and its button copies it', async ({
+	page,
+	context
+}) => {
+	await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+	await page.goto('/');
+	const install = 'curl -fsSL https://repose.herakraft.co/install.sh | sh';
+	await expect(page.locator('.hero .install')).toHaveText(install);
+	await expect(page.locator('.steps li').first().locator('.code-copy')).toContainText(install);
+	expect(
+		await page.locator('main').evaluate((m, i) => m.textContent!.split(i).length - 1, install)
+	).toBe(2);
+	const button = page.getByRole('button', { name: 'Copy install command' });
+	const handle = await button.elementHandle();
+	await button.click();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(install);
+	// "Copied" centres with its check as one group in the wider button.
+	const gaps = await handle!.evaluate((el) => {
+		const box = el.getBoundingClientRect();
+		const layer = el.querySelector('.layer:not(.off)')!;
+		const icon = layer.querySelector('.icon')!.getBoundingClientRect();
+		const range = document.createRange();
+		range.selectNodeContents(layer);
+		const all = range.getBoundingClientRect();
+		return {
+			word: layer.textContent!.trim(),
+			iconFirst: Math.abs(icon.left - all.left) < 0.5,
+			off: Math.abs(all.left - box.left - (box.right - all.right))
+		};
+	});
+	expect(gaps.word).toBe('Copied');
+	expect(gaps.iconFirst).toBe(true);
+	expect(gaps.off).toBeLessThan(1);
 });
 
 test('the headline starts under the logo', async ({ page }) => {
@@ -75,7 +139,7 @@ test('the headline starts under the logo', async ({ page }) => {
 			.filter({ visible: true })
 			.first()
 			.boundingBox();
-		const headline = await page.locator('.hero-h').boundingBox();
+		const headline = await page.locator('h1').boundingBox();
 		expect(Math.abs(logo!.x - headline!.x), `at ${width}`).toBeLessThanOrEqual(1);
 	}
 });

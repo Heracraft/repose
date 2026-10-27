@@ -3,16 +3,37 @@ export function money(cents: number): string {
 	return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** "2h14m" from a start timestamp to now. */
-export function uptime(startedAt?: string): string {
+/** "2h14m" from a start timestamp to now. Under a minute this is "0m";
+ * a line a reader sees goes through `upLabel` or `sinceLabel`, which say
+ * "just now" there, as `ageShort` does. */
+export function uptime(startedAt?: string, now = Date.now()): string {
 	if (!startedAt) return '—';
-	const ms = Date.now() - new Date(startedAt).getTime();
+	const ms = now - new Date(startedAt).getTime();
 	if (ms < 0) return '0m';
 	const totalMinutes = Math.floor(ms / 60_000);
 	const hours = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
 	if (hours === 0) return `${minutes}m`;
 	return `${hours}h${minutes}m`;
+}
+
+/** True under a minute since `iso`, or when `iso` is ahead of `now`. */
+function underAMinute(iso: string, now: number): boolean {
+	return now - new Date(iso).getTime() < 60_000;
+}
+
+/** A running machine's age: "up 2h14m", or "started just now" in its first
+ * minute (review r4), so it never reads "up 0m". */
+export function upLabel(startedAt: string | undefined, now = Date.now()): string {
+	if (startedAt && underAMinute(startedAt, now)) return 'started just now';
+	return `up ${uptime(startedAt, now)}`;
+}
+
+/** How long a state has held after its word: "for 1h35m" ("frozen for
+ * 1h35m"), or "just now" in its first minute. `word` is the preposition. */
+export function sinceLabel(since: string, word = 'for', now = Date.now()): string {
+	if (underAMinute(since, now)) return 'just now';
+	return `${word} ${uptime(since, now)}`;
 }
 
 const GB = 1024 * 1024 * 1024;

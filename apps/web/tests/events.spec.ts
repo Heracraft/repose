@@ -1,7 +1,7 @@
-// The project page's Events card shows pages of 10, newest first, with
-// Newest, Newer and Older, the position from the api's count, and a filter
-// by kind; the page lives in the URL, so Back and a reload keep it
-// (DECISIONS I-662, which replaced I-414's Show older).
+// A project's Events tab shows pages of 10, newest first, with Newest,
+// Newer and Older, the position from the api's count, and a filter by
+// kind; the page lives in the URL, so Back and a reload keep it
+// (DECISIONS I-662, which replaced I-414's Show older; the tab is I-841).
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, addEvents, addQuestion } from './helpers';
 
@@ -30,7 +30,7 @@ test('pages of 10 with Older, Newer and Newest, kept in the URL', async ({ page 
 	});
 	// 25 events and the project's own two (created, running), the oldest.
 	await addEvents(p.id, 25);
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/events`);
 	const ev = eventsCard(page);
 	await expect(ev.rows).toHaveCount(10);
 	await expect(ev.pager).toBeVisible();
@@ -69,6 +69,7 @@ test('pages of 10 with Older, Newer and Newest, kept in the URL', async ({ page 
 	await expect(ev.position).toHaveText('Page 1 of 3');
 	await expect(ev.rows.first()).toContainText('e024');
 	await expect(page).not.toHaveURL(/events_/);
+	await expect(page).toHaveURL(`/projects/${p.id}/events`);
 });
 
 test('the last page ends with the project created and has no Older', async ({ page }) => {
@@ -77,7 +78,7 @@ test('the last page ends with the project created and has no Older', async ({ pa
 		remote_url: 'github.com/heracraft/deep-app'
 	});
 	await addEvents(p.id, 25);
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/events`);
 	const ev = eventsCard(page);
 	for (const n of [2, 3]) {
 		await ev.older.click();
@@ -104,7 +105,7 @@ test('the Errors filter shows only errors', async ({ page }) => {
 		agents: ['claude', 'codex'],
 		summaries: ['working', 'tests failed', 'done']
 	});
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/events`);
 	const ev = eventsCard(page);
 	await ev.card.getByRole('link', { name: 'Errors' }).click();
 	await expect(ev.card.getByRole('link', { name: 'Errors' })).toHaveAttribute(
@@ -133,7 +134,7 @@ test('a failed stop is an error', async ({ page }) => {
 		agents: ['', 'claude'],
 		summaries: ['stopping stop-app failed: the host did not answer', 'working']
 	});
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/events`);
 	const ev = eventsCard(page);
 	await ev.card.getByRole('link', { name: 'Errors' }).click();
 	await expect(page).toHaveURL(/events_kind=errors/);
@@ -150,7 +151,7 @@ test('a project with few events has one page', async ({ page }) => {
 		remote_url: 'github.com/heracraft/calm-app'
 	});
 	await addEvents(p.id, 5);
-	await page.goto(`/projects/${p.id}`);
+	await page.goto(`/projects/${p.id}/events`);
 	const ev = eventsCard(page);
 	await expect(ev.rows).toHaveCount(7);
 	// One page has no pager; the count beside the title is enough (I-680).
@@ -159,10 +160,10 @@ test('a project with few events has one page', async ({ page }) => {
 	await expect(ev.card.getByRole('group', { name: /end of list/ })).toHaveCount(0);
 });
 
-// The page paints its cards from one first load, so nothing lands above
-// what is on screen later: the questions card used to mount a few hundred
-// ms in and push the page down.
-test('the project page holds still while it loads, at 390', async ({ page }) => {
+// The Overview paints its sections from one first load, so nothing lands
+// above what is on screen later: the questions card used to mount a few
+// hundred ms in and push the page down.
+test('the project Overview holds still while it loads, at 390', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'still-app',
@@ -183,29 +184,71 @@ test('the project page holds still while it loads, at 390', async ({ page }) => 
 	});
 	await page.goto(`/projects/${p.id}`);
 	await expect(page.getByTestId('questions')).toBeVisible();
+	await expect(page.getByTestId('latest-events').getByTestId('event-row')).toHaveCount(5);
+	await page.waitForTimeout(1500);
+	const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
+	expect(cls).toBeLessThanOrEqual(0.05);
+});
+
+// The same on the Events tab: the header and the tabs hold still while
+// the page of events arrives under them.
+test('the Events tab holds still while it loads, at 390', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'still-events',
+		remote_url: 'github.com/heracraft/still-events'
+	});
+	await addEvents(p.id, 40);
+	await page.addInitScript(() => {
+		(window as unknown as { __cls: number }).__cls = 0;
+		new PerformanceObserver((list) => {
+			for (const e of list.getEntries() as unknown as {
+				value: number;
+				hadRecentInput: boolean;
+			}[]) {
+				if (!e.hadRecentInput) (window as unknown as { __cls: number }).__cls += e.value;
+			}
+		}).observe({ type: 'layout-shift', buffered: true });
+	});
+	await page.goto(`/projects/${p.id}/events`);
 	await expect(eventsCard(page).rows).toHaveCount(10);
 	await page.waitForTimeout(1500);
 	const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 	expect(cls).toBeLessThanOrEqual(0.05);
 });
 
-// The same on /projects: the questions come with the list, so "Waiting on
-// you" is in the first paint above the strip, and the strip does not move
-// once drawn (I-693). (The page's skeleton giving way to the list is a
-// shift of its own, which this does not measure.)
-test('the projects list draws Waiting on you with the strip, at 390', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 844 });
+// An error's banner on the Overview links to the Errors filter.
+test('the last-error banner links to the errors on the Events tab', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
-		name: 'still-list-app',
-		remote_url: 'github.com/heracraft/still-list-app'
+		name: 'errors-link',
+		remote_url: 'github.com/heracraft/errors-link'
 	});
-	await addQuestion(p.id, { agent: 'claude', text: 'Hold still?', options: ['yes', 'no'] });
-	await page.goto('/projects');
-	const strip = page.getByTestId('plan-strip');
-	await strip.waitFor();
-	const card = page.getByTestId('pending-questions');
-	expect(await card.isVisible()).toBe(true);
-	const first = await strip.boundingBox();
-	await page.waitForTimeout(1500);
-	expect(await strip.boundingBox()).toEqual(first);
+	await page.route(`**/v1/projects/${p.id}`, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		const res = await route.fetch();
+		const json = await res.json();
+		await route.fulfill({
+			response: res,
+			json: { ...json, state: 'error', last_error: 'boot_failed: the machine did not boot.' }
+		});
+	});
+	await page.goto(`/projects/${p.id}`);
+	await page.getByTestId('last-error').getByRole('link', { name: 'Errors' }).click();
+	await expect(page).toHaveURL(`/projects/${p.id}/events?events_kind=errors`);
+	await expect(
+		page.getByTestId('events-card').getByRole('link', { name: 'Errors' })
+	).toHaveAttribute('aria-current', 'page');
+});
+
+// The old project URLs with an events_* key land on the tab, keys kept
+// (I-662 links in docs and bookmarks; lib/legacyUrls.ts).
+test('an old events link lands on the Events tab at its page', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'old-link',
+		remote_url: 'github.com/heracraft/old-link'
+	});
+	await addEvents(p.id, 25);
+	await page.goto(`/projects/${p.id}?events_kind=errors`);
+	await expect(page).toHaveURL(`/projects/${p.id}/events?events_kind=errors`);
+	await expect(page.getByTestId('events-total')).toHaveText(/^\d+ events?$|^Events$/);
 });

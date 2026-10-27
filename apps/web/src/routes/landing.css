@@ -1,729 +1,380 @@
 /*
- * The landing's design system, on top of the house style in layout.css.
+ * The landing's layout (Guide B 13.1, DECISIONS I-837): the hero, the
+ * two-column sections with a sticky heading, the feature cells, the agents
+ * list, the pricing block and the questions. Type, colour, buttons and the
+ * plan cards come from the kit (lib/hk) and PlanCells; this file places
+ * them. docs/LANDING.md records the rules.
  *
- * The pictures on the landing draw a machine as a panel with hairline
- * edges, and the hero shows those edges as a wall the attack stops at. The
- * page takes that drawing as its grammar: the content stands between two
- * rails (the walls) that run from the site header's rule to the footer,
- * on the edges of the frame every page shares (I-656); every rule
- * runs wall to wall and is ticked with a small cross where it meets a
- * rail, the way a technical drawing marks an intersection; each section
- * is a head on paper (the bold serif title), then its picture on a sunken
- * stage that fills the width between the rails. Features, steps and sizes are cells
- * cut by the same hairlines, never floating cards. The serif, the one blue
- * and the shape set stay what layout.css and docs/LANDING.md say they are.
- *
- * The rails and their ticks draw themselves once on load, from the top
- * down: the walls go up around the work. Nothing else on the chrome moves.
- * docs/LANDING.md, "The page's grammar", records the rules.
+ * Imported by routes/+page.svelte alone, unlayered, so every rule is
+ * scoped under .landing and sets no colour the kit's tokens do not give.
  */
 
-:root {
-	/* The inset from a rail to the text, and the stage's own padding: the
-	   frame's gutter, so the headline starts under the header's logo
-	   (x=160 at 1440, 20 at 390). */
-	--land-x: var(--frame-x);
-	--land-y: clamp(3rem, 6.5vw, 5.25rem);
-	--land-ease: cubic-bezier(0.65, 0, 0.35, 1);
-	/* --ink, --ink-muted and --ink-faint live in layout.css, which is on
-	   the page before this file is (DECISIONS I-331). */
-	/* The pictures' one grammar (I-673): one corner radius for frames,
-	   windows, chips, terminals and the boxes inside them; one window
-	   head height (WinHead.svelte); a stage's padding above and below its
-	   picture, which is also the floor the pause button stands on. */
-	--radius: 3px;
-	--shot-head: 28px;
-	--stage-y: 40px;
-	/* The stage under a picture. In the light scheme it is --sunken, as a
-	   window's head is, under the white window body. */
-	--stage: var(--sunken);
-	/* The wall of every "your cloud machine" window: the hero's ink edge,
-	   which the attack stops at, drawn the same in every picture. */
-	--pic-wall: var(--pic-ink);
-}
-/* The dark scheme layers as the light one does: the stage lowest, a
-   window's head a step up, its body a step above that, so a window reads
-   raised off its stage. The house's dark --surface (#161615) sat under
-   --sunken (#1b1b1a), which made every window a hole in a lighter stage.
-   Scoped to the landing (.rails): the dashboard keeps its own layering.
-   The rules step up with the body so a row's hairline still shows on it.
-   --ink-faint (#8f8f8a) holds 5.1:1 on the new --surface. */
-@media (prefers-color-scheme: dark) {
-	:root {
-		--pic-wall: var(--pic-dim);
-	}
-	.rails {
-		--stage: #151514;
-		--sunken: #191918;
-		--surface: #1f1f1e;
-		--rule: #2e2e2c;
-		--rule-strong: #43433f;
-	}
+.landing {
+	padding-bottom: 6rem;
 }
 
-/* The walls: the frame's box edges (120 and 1320 at 1440), a
-   pseudo-element each, so they can be drawn in on load. */
-.rails {
-	visibility: visible;
-	position: relative;
-	max-width: var(--frame-w);
-	margin-inline: auto;
-}
-.rails::before,
-.rails::after {
-	content: '';
-	position: absolute;
-	top: 0;
-	bottom: 0;
-	width: 1px;
-	background: var(--rule);
-	transform-origin: top;
-}
-.rails::before {
-	left: 0;
-}
-.rails::after {
-	right: 0;
-}
-/* Only where the frame stands clear of the window's edges (1200px and a
-   tick's width each side): below that a rail would sit on the screen's
-   edge, and a tick past it pushed the page 5px sideways. */
-@media (max-width: 1239px) {
-	.rails::before,
-	.rails::after {
-		display: none;
-	}
-}
-@media (prefers-reduced-motion: no-preference) {
-	.rails::before,
-	.rails::after {
-		animation: raise 1.1s var(--land-ease) both;
-	}
-	.sec::before,
-	.sec::after {
-		animation: tick 0.4s ease-out 0.9s both;
-	}
-}
-@keyframes raise {
-	from {
-		transform: scaleY(0);
-	}
-}
-@keyframes tick {
-	from {
-		opacity: 0;
-	}
-}
+/* ---------- Hero ---------- */
 
-.land-inset {
-	padding-inline: var(--land-x);
-}
-
-/* A section: a rule wall to wall, ticked at each rail. The first one
-   draws no rule: the site header's hairline is that rule, and its ticks
-   mark where the header meets the rails. */
-.sec {
-	position: relative;
-	border-top: 1px solid var(--rule);
-}
-main > .sec:first-child {
-	border-top: 0;
-}
-.sec::before,
-.sec::after {
-	content: '';
-	position: absolute;
-	width: 9px;
-	height: 9px;
-	background:
-		linear-gradient(var(--rule-strong), var(--rule-strong)) center / 9px 1px no-repeat,
-		linear-gradient(var(--rule-strong), var(--rule-strong)) center / 1px 9px no-repeat;
-	pointer-events: none;
-}
-.sec::before,
-.sec::after {
-	top: -5px;
-}
-.sec::before {
-	left: -5px;
-}
-.sec::after {
-	right: -5px;
-}
-@media (max-width: 1239px) {
-	.sec::before,
-	.sec::after {
-		display: none;
-	}
-}
-
-/* A section's head: the serif title and one sentence. From lg the
-   padding is less below than above, so the title sits nearer the stage it
-   names than the rule it follows: at --land-y both ways (84px) it floated
-   halfway between them. */
-.sec-head {
-	padding-block: var(--land-y);
-}
-/* A section head's sentence takes the hero lead's measure (I-772), not
-   the 36rem every other lead has: at 36rem the setup section's sentence
-   stood as six short lines under a heading twice as wide, the staircase
-   the hero was pulled out of. */
-.sec-head .lead {
-	max-width: 48rem;
+/* The copy, then the machine picture on a stage the frame's width. */
+.landing .hero {
+	padding: 3rem 0 0;
 }
 @media (min-width: 1024px) {
-	.sec-head {
-		padding-block: 3.5rem 2.5rem;
+	.landing .hero {
+		padding-top: 4.5rem;
 	}
 }
-/* A feature's shape before its title, as tall as the title's letters. */
-.head-mark,
-.cell-mark {
-	display: inline-block;
-	width: 1em;
-	height: 1em;
-	vertical-align: -0.14em;
-	margin-right: 0.45em;
-	line-height: 0;
+.landing .hero-stage {
+	margin-top: 2.5rem;
 }
-.landing-h {
-	font-family: var(--font-display);
-	font-size: clamp(1.9rem, 3.4vw, 2.5rem);
-	font-weight: 700;
-	line-height: 1.1;
-	letter-spacing: -0.02em;
-	text-wrap: balance;
-	overflow-wrap: break-word;
-	color: var(--ink);
-}
-.lead {
-	max-width: 36rem;
-	text-wrap: pretty;
-	margin-top: 1rem;
-	font-size: clamp(1rem, 1.3vw, 1.125rem);
-	line-height: 1.55;
-	color: var(--ink-muted);
-}
-.lead code,
-.land-cell p code {
-	padding: 1px 4px;
-	border-radius: var(--radius);
-	background: var(--sunken);
-	font-size: 0.88em;
-	white-space: nowrap;
-	color: var(--ink);
-}
-
-/* The stage: a section's picture, sunken, wall to wall, --stage-y above
-   and below it at every width. The bottom one is the floor the pause
-   button stands on (PauseButton.svelte), so it never covers the picture. */
-.landing-stage {
-	position: relative;
-	border-top: 1px solid var(--rule);
-	background: var(--stage);
-	padding: var(--stage-y) var(--land-x);
-}
-
-/* The hero: one stack on the left edge. The headline, the lead under it,
-   then the button and the install command on one row. Nothing is pushed
-   to the right; the picture below is what fills the width. */
-/* The gaps are held tight so the whole machine, its agent row included,
-   is in the first 900px of a 1440 screen (F04, I-667): 40px over the
-   label and 32px under the command row. The stage is every stage's, 40px
-   above and below the picture (I-673), except its top on a phone and on
-   a screen 840px tall or less. */
-.hero-grid {
-	padding-block: clamp(1.75rem, 2.8vw, 2.5rem) clamp(1.5rem, 2.2vw, 2rem);
-}
-/* On a phone the command wraps (WCAG 1.4.10), so the height comes from a
-   smaller lead and tighter gaps: the machine's head shows in the first
-   screen at 390x844 (F04). */
-@media (max-width: 767px) {
-	.hero-grid {
-		padding-block: 1.25rem;
-	}
-	.hero-grid .eyebrow {
-		margin-bottom: 1rem;
-	}
-	.hero-grid .lead {
-		margin-top: 1rem;
-		font-size: 0.9375rem;
-		line-height: 1.5;
-	}
-	.hero-ctas {
-		margin-top: 1.25rem;
-	}
-	.hero-stage {
-		padding-top: 1.25rem;
-	}
-}
-/* A laptop's short screen (1280x800): the hero's stage starts 28px under
-   its rule, so the machine's agent row still ends inside the first screen
-   (I-677) with the 40px every other stage has (I-673). */
+/* A laptop's short screen (1280x800): tighter gaps, so the machine's agent
+   row still ends inside the first screen (I-677). */
 @media (min-width: 768px) and (max-height: 840px) {
-	.hero-stage {
+	.landing .hero {
+		padding-top: 2.5rem;
+	}
+	.landing .hero-stage {
+		margin-top: 2rem;
 		padding-top: 28px;
 	}
 }
-/* Who the page is for, above the headline: the page's label style. */
-.eyebrow {
-	margin-bottom: 1.25rem;
-	font-family: var(--font-mono);
-	font-size: 0.6875rem;
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
-	color: var(--ink-faint);
+.landing .hero-copy {
+	min-width: 0;
 }
-.hero-h {
-	font-family: var(--font-display);
-	font-size: clamp(2.75rem, 6.6vw, 5.25rem);
-	font-weight: 700;
-	line-height: 1;
-	letter-spacing: -0.025em;
-	text-wrap: balance;
-	/* A word wider than the screen breaks rather than pushing the page
-	   sideways: "environment," does at 320 under WCAG 1.4.12's letter
-	   spacing. At the page's own spacing nothing breaks. */
-	overflow-wrap: break-word;
-	color: var(--ink);
+.landing .hero .hk-eyebrow {
+	margin: 0 0 1rem;
 }
-.hero-h .line {
-	display: block;
+/* 11em holds "Your dev environment," on one line: two lines where the
+   column allows, three in the 36rem column beside the terminal. */
+.landing .hero h1 {
+	max-width: 14em;
+	margin: 0;
 }
-/* "environment," is 6.64em wide: 292px at the 44px floor, past the 280px
-   column of a 320 phone, where the comma broke onto a line of its own.
-   At 40px it is 265px. */
-@media (width < 22.5rem) {
-	.hero-h {
-		font-size: 2.5rem;
-	}
+.landing .hero .hk-lead {
+	max-width: 44rem;
+	margin: 1.25rem 0 0;
 }
-/* One paragraph running the measure under the headline (I-772). It was
-   three sentences each kept whole on its own line, which read as a
-   staircase of fragments beside a headline twice as wide ("in steps and
-   not in full width below the headline is super weird", owner,
-   2026-10-17). 48rem is about 70 characters at the lead's size: wide
-   enough that the lines are full ones, inside the 75 the measure takes
-   before a line is hard to track back. `pretty`, not `balance`:
-   balancing a three-sentence paragraph gives it short last lines
-   again. */
-.hero-grid .lead {
-	max-width: 48rem;
-	text-wrap: pretty;
-	margin-top: 1.75rem;
-}
-.hero-ctas {
+.landing .ctas {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: center;
 	gap: 0.75rem;
-	min-width: 0;
-	margin-top: 1.75rem;
+	margin-top: 2rem;
 }
-
-/* A command to copy: the way a picture shows a row of a terminal. */
-.cmd {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	max-width: 100%;
-	min-width: 0;
-	padding: 0.375rem 0.375rem 0.375rem 0.875rem;
-	border: 1px solid var(--rule-strong);
-	border-radius: 3px;
-	background: var(--sunken);
-	font-family: var(--font-mono);
-	font-size: var(--text-compact);
-	color: var(--ink);
-}
-.cmd .text {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	user-select: all;
-}
-/* Below md a command wraps instead of ending in an ellipsis: cut off at
-   390 or 320, the install URL could not be read, and a reader who cannot
-   copy has to read it (WCAG 1.4.10). It breaks at a space or at the <wbr>
-   after a path's slash; with overflow-wrap: anywhere it broke inside
-   install.sh. break-word only splits a part wider than the whole row. */
-@media (max-width: 767px) {
-	.cmd .text {
-		overflow: visible;
-		white-space: pre-wrap;
-		overflow-wrap: break-word;
+/* On a phone both hero buttons take the column's width, one above the other. */
+@media (max-width: 479.98px) {
+	.landing .hero .ctas > * {
+		flex: 1 1 100%;
 	}
 }
-/* Copy is a quiet button: the control edge (3:1, where --rule-strong
-   was 1.6:1 and nobody could find the button's edge), the body sans,
-   and the house buttons' 150ms colour change and a press one step past
-   hover. */
-.cmd .copy {
-	display: inline-flex;
-	flex: none;
-	align-items: center;
-	gap: 0.375rem;
-	/* At the row's right end: a step's row is wider than its command. */
-	margin-left: auto;
-	padding: 0.25rem 0.5rem;
-	border: 1px solid var(--control-edge);
-	border-radius: var(--radius-xs);
-	background: var(--surface);
-	font-family: var(--font-sans);
-	font-size: 0.75rem;
-	color: var(--ink-muted);
-	cursor: pointer;
-	transition-property: color, background-color, border-color;
-	transition-duration: 150ms;
-	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+/* The install command the copy button copies, as it is copied. */
+.landing .install {
+	margin: 1.25rem 0 0;
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text-2);
 }
-.cmd .copy:hover {
-	color: var(--ink);
-	border-color: var(--ink-faint);
+.landing .install .nowrap {
+	white-space: nowrap;
 }
-.cmd .copy:active {
-	color: var(--ink);
-	background: var(--sunken);
+@media (max-width: 479.98px) {
+	.landing .install {
+		font-size: 0.75rem;
+	}
 }
 
-/* A sign-in button's two labels (signed out, signed in) stacked in one
-   cell: the box takes the longer one's width before auth is known, so the
-   swap after mount moves nothing. The label not in use is hidden. */
-.swap {
+/* Both labels of a sign-in button share one grid cell; the one not shown
+   keeps the width (see +page.svelte, authLabel). */
+.landing .swap {
 	display: inline-grid;
 }
-.swap > * {
+.landing .swap > * {
 	grid-area: 1 / 1;
 	text-align: center;
 }
-.swap > :last-child {
+.landing .swap > [aria-hidden='true'] {
 	visibility: hidden;
 }
 
-/* Cells: the features, cut by hairlines, two across from md. */
-.land-cells {
-	display: grid;
-	list-style: none;
+/* ---------- Sections ---------- */
+
+.landing .sec {
+	padding-top: 3.5rem;
+}
+@media (min-width: 1024px) {
+	.landing .sec {
+		padding-top: 4.5rem;
+	}
+}
+.landing .sec h2 {
 	margin: 0;
-	padding: 0;
+	text-wrap: balance;
+}
+/* A section's head over its picture. */
+.landing .sec-head {
+	max-width: 48rem;
+	margin-bottom: 2rem;
+}
+/* A head with links: the links sit at the right end of the headline's row,
+   on its last line, from 768px; under the headline on a phone. */
+.landing .sec-head--links {
+	max-width: none;
 }
 @media (min-width: 768px) {
-	.land-cells {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	.landing .sec-head--links {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 2rem;
+	}
+	.landing .sec-head--links h2 {
+		max-width: 40rem;
+	}
+	.landing .sec-head--links .more {
+		flex-direction: row;
+		flex: none;
+		gap: 1.5rem;
+		margin: 0 0 0.375rem;
 	}
 }
-/* --land-x on every side. The cell is the pause button's containing
-   block: its frame clips what runs off its edge, so the button is placed
-   from the cell, on the floor under the frame. */
-.land-cell {
-	--cell-floor: 40px;
+
+/* A section's picture: a sunken stage with hairline edges, the kit's
+   panel radius, --stage-y above and below. The bottom one is the floor the
+   pause button stands on (PauseButton.svelte). */
+.landing .stage {
 	position: relative;
-	min-width: 0;
-	padding: var(--land-x);
-	border-top: 1px solid var(--rule);
-}
-@media (min-width: 768px) {
-	.land-cell:nth-child(odd) {
-		border-right: 1px solid var(--rule);
-	}
-}
-.land-cell h3 {
-	margin-top: var(--cell-floor);
-	font-family: var(--font-display);
-	font-size: 1.125rem;
-	font-weight: 600;
-	line-height: 1.3;
-	color: var(--ink);
-}
-.land-cell p {
-	margin-top: 0.375rem;
-	font-size: 1rem;
-	text-wrap: pretty;
-	line-height: 1.55;
-	color: var(--ink-muted);
-}
-/* `.whole` kept the snapshot card's short closing sentence ("Back in
-   minutes.") off a line of its own in a nowrap span. It went with I-772,
-   which made that card two full sentences: held nowrap, the longer one
-   ran 275px past a 320px phone. */
-/* A picture in a cell: one frame for all four (I-669). The frame is a
-   fixed height; each picture stands its windows in it at one inset, top
-   and sides, and runs them off its bottom edge, so every cell has the same
-   picture height, inset and bottom line. A window is a hairline at
-   --rule-strong (a machine's at --pic-wall) with --radius top corners,
-   open where the frame cuts it, under the --shot-head head that names
-   where it runs (WinHead.svelte). */
-.shot {
-	--shot-h: 17rem;
-	--shot-in: 12px;
-	position: relative;
-	height: var(--shot-h);
-	overflow: hidden;
-	border: 1px solid var(--rule);
-	border-radius: var(--radius);
+	padding: var(--stage-y) clamp(1rem, 3vw, 2.5rem);
+	border: 1px solid var(--hk-border);
+	border-radius: var(--hk-radius-lg);
 	background: var(--stage);
 }
-@media (max-width: 480px) {
-	.shot {
-		--shot-in: 10px;
+@media (max-width: 639.98px) {
+	.landing .stage {
+		padding-inline: 0.75rem;
 	}
 }
-.shot-win {
+
+/* One column, then from 1024px a heading column that stays in view beside
+   the content. */
+.landing .split {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.75rem;
+}
+@media (min-width: 1024px) {
+	.landing .split {
+		grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+		gap: 3.5rem;
+		align-items: start;
+	}
+	.landing .split > .side {
+		position: sticky;
+		top: calc(var(--hk-header-h) + 2rem);
+	}
+}
+.landing .side-text {
+	max-width: 34rem;
+	margin: 1rem 0 0;
+	font-size: 0.9375rem;
+	line-height: 1.6;
+	color: var(--hk-text-2);
+}
+.landing .more {
 	display: flex;
 	flex-direction: column;
-	min-width: 0;
-	border: 1px solid var(--rule-strong);
-	border-radius: var(--radius);
-	background: var(--surface);
-	overflow: hidden;
-	color: var(--pic-ink);
+	align-items: flex-start;
+	gap: 0.5rem;
+	margin: 1.25rem 0 0;
 }
-/* Run off the frame's bottom edge: the frame cuts it, so it has no
-   bottom edge or corners of its own. */
-.shot-win.open {
-	border-bottom: 0;
-	border-radius: var(--radius) var(--radius) 0 0;
+.landing .more .hk-more {
+	margin-top: 0;
 }
-/* The machine's wall (I-673): every window whose head is "your cloud
-   machine" (WinHead's data-who) takes the same edge, in the hero, the
-   setup section and the grid. */
-.rails :has(> .shot-head[data-who='machine']) {
-	border-color: var(--pic-wall);
-}
-/* In a cell the frame clips, so the pause button is placed from the cell
-   (.shot is not its containing block): on the floor between the frame
-   and the title, at the frame's right edge (I-673). */
-.land-cell > .shot.pic-frame {
-	position: static;
-}
-.land-cell > .shot > .pic-pause {
-	top: calc(var(--land-x) + var(--shot-h) + (var(--cell-floor) - 28px) / 2);
-	right: var(--land-x);
-	bottom: auto;
+/* On touch each link is a 44px target; the padding stands in for the gap. */
+@media (pointer: coarse), (max-width: 639.98px) {
+	.landing .more {
+		gap: 0;
+		margin-top: 0.5625rem;
+	}
+	.landing .more .hk-more {
+		padding-block: 0.6875rem;
+	}
 }
 
-/* The landing's one chip (I-673): a command or a port in the accent, in
-   every picture. While it fires only its ground changes over 180ms; the
-   text turns at once, so it never fades through a pale blue on a pale
-   blue. */
-.pic-chip {
-	display: inline-block;
-	flex: none;
-	padding: 2px 8px;
-	border: 1px solid var(--pic-accent);
-	border-radius: var(--radius);
-	background: var(--surface);
-	font-family: var(--font-mono);
-	font-size: 12px;
-	font-weight: 600;
-	line-height: 18px;
-	color: var(--pic-accent);
-	white-space: pre;
-	transition: background-color 0.18s;
-}
-.pic-chip.fire {
-	background: var(--pic-accent);
-	color: var(--surface);
-}
-
-/* Steps: rows wall to wall, the gauge counting up in the margin. */
-.steps {
-	list-style: none;
+/* Section 2: two steps on hairline rows, each with its command. */
+.landing .steps {
 	margin: 0;
 	padding: 0;
+	list-style: none;
 }
-.step {
+.landing .steps > li {
+	padding: 0.875rem 0;
+	border-top: 1px solid var(--hk-hairline);
+}
+.landing .steps > li:last-child {
+	border-bottom: 1px solid var(--hk-hairline);
+}
+.landing .step-title {
+	margin: 0 0 0.625rem;
+	font-size: 0.9375rem;
+	font-weight: 500;
+	color: var(--hk-text);
+}
+
+/* Start in three commands: a row each, wall to wall, the step's name and
+   gauge on the left and its command filling the right from 768px. */
+.landing .steps--rows > li {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	gap: 0.75rem;
-	padding: 1.625rem var(--land-x);
-	border-top: 1px solid var(--rule);
-}
-.step:last-child {
-	border-bottom: 1px solid var(--rule);
+	padding: 1.25rem 0;
 }
 @media (min-width: 768px) {
-	.step {
+	.landing .steps--rows > li {
 		grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
 		gap: 2.5rem;
 		align-items: center;
 	}
 }
-.step h3 {
+.landing .steps--rows .step-title {
 	display: flex;
 	align-items: center;
 	gap: 0.75rem;
-	font-family: var(--font-display);
-	font-size: 1.125rem;
-	font-weight: 600;
-	color: var(--ink);
+	margin: 0;
+	font-family: var(--hk-font-display);
+	font-size: 1.25rem;
+	font-weight: 400;
+	letter-spacing: -0.01em;
 }
-.step-mark {
+.landing .step-mark {
+	flex: none;
 	width: 1.5rem;
 	height: 1.5rem;
-	flex: none;
 }
-.step .cmd {
-	padding: 0.625rem 0.875rem;
+.landing .steps--rows .code-copy {
+	width: 100%;
+	max-width: none;
 }
 
-/* Sizes: three columns cut by hairlines, the price on its blue rule. */
-.tiers {
+/* Section 3: the feature cells, 2x2 from 768px. */
+.landing .cells {
 	display: grid;
-	list-style: none;
+	gap: 2.5rem 2rem;
 	margin: 0;
 	padding: 0;
+	list-style: none;
 }
 @media (min-width: 768px) {
-	.tiers {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+	.landing .cells {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
-.tier {
+.landing .cells > li {
+	--cell-floor: 2.5rem;
 	position: relative;
-	padding: 1.75rem var(--land-x) 2rem;
-	border-top: 1px solid var(--rule);
+	min-width: 0;
 }
-@media (min-width: 768px) {
-	.tier + .tier {
-		border-left: 1px solid var(--rule);
-	}
+.landing .cells h3 {
+	margin: var(--cell-floor) 0 0;
 }
-/* The units sit on the name's baseline and grow upward, a row per 8 GB:
-   Solo one row, Plus two, Pro four, so each plan reads as a stack of
-   Solos. The grid has no text, so its last baseline is its bottom edge,
-   and last-baseline alignment puts that edge on the letters, not on the
-   name's line box 5px below them. */
-.tier-top {
-	display: flex;
-	align-items: last baseline;
-	justify-content: space-between;
-	gap: 0.75rem;
+/* The frame clips, so the pause button is placed from the cell: on the
+   floor between the frame and the title, at the frame's right edge. */
+.landing .cells > li > .shot.pic-frame {
+	position: static;
 }
-/* Side by side, 50px holds Pro's four rows (45px) plus the 5px of the
-   name's line box under its baseline, so the names and the spec lines of
-   the three cards sit on one line across. */
-@media (min-width: 768px) {
-	.tier-top {
-		min-height: 50px;
-	}
+.landing .cells > li > .shot > .pic-pause {
+	top: calc(var(--shot-h) + (var(--cell-floor) - var(--pp, 28px)) / 2);
+	right: 0;
+	bottom: auto;
 }
-.tier-name {
-	font-family: var(--font-display);
-	font-size: 2.25rem;
-	line-height: 1;
-	font-weight: 700;
-	letter-spacing: -0.01em;
-	text-transform: uppercase;
-	color: var(--ink);
-}
-/* A flex box, so the grid inside is a block whose last baseline is its
-   bottom row: an inline grid would lend the line its first row instead. */
-.tier-units {
-	display: flex;
-	flex: none;
-	line-height: 0;
-}
-/* The plan's memory gets its own line in ink: it is what the plan sells,
-   and it runs at the same time across the projects (I-402). */
-.tier-run {
-	margin-top: 0.625rem;
+.landing .cells p {
+	margin: 0.75rem 0 0;
 	font-size: 0.9375rem;
-	color: var(--ink);
+	line-height: 1.6;
+	color: var(--hk-text-2);
 }
-.tier-spec {
-	margin-top: 0.125rem;
-	font-size: 0.875rem;
-	color: var(--ink-muted);
-}
-/* A fact stays on one line with the dot after it, so the line breaks
-   after a dot and never starts with one: at 1440 the bare dots between
-   spans fell to the head of line 2 on two cards and not the third. */
-.tier-spec span {
+.landing .cells code {
 	white-space: nowrap;
 }
-.tier-price {
-	display: flex;
-	align-items: baseline;
-	gap: 0.6rem;
-	margin-top: 1.5rem;
-	padding-top: 1.125rem;
-	background: linear-gradient(var(--sh-accent), var(--sh-accent)) no-repeat 0 0 / 100% 3px;
+.landing .cells .cell-cmd {
+	margin-top: 1rem;
+	font-family: var(--hk-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--hk-text);
 }
-.tier-price .n {
-	font-family: var(--font-display);
-	font-size: 2.75rem;
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	line-height: 1;
-	color: var(--ink);
+.landing .cell-cmd > span {
+	color: var(--hk-text-3);
+	user-select: none;
 }
-.tier-price .per {
-	font-family: var(--font-mono);
-	font-size: 0.6875rem;
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
-	color: var(--ink-faint);
+
+/* ---------- Pricing ---------- */
+
+.landing .pricing-head {
+	margin-bottom: 1.75rem;
 }
-/* The list price Solo's founding price comes off (I-772), struck
-   through before the price itself in the faint ink: the discount is the
-   two numbers, not a sentence about them. Smaller than `.n` and on its
-   baseline, so the founding price stays the one the eye lands on. */
-.tier-price .was {
-	font-family: var(--font-display);
-	font-size: 1.5rem;
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	line-height: 1;
-	color: var(--ink-faint);
-	text-decoration-thickness: 2px;
+.landing .pricing-head p {
+	margin: 0.5rem 0 0;
+	font-size: 0.9375rem;
+	color: var(--hk-text-3);
 }
-/* What the founding price holds for (I-772, cut from two lines to one),
-   under the price in the muted ink of the spec line. */
-.tier-then {
-	margin-top: 0.5rem;
-	font-size: 0.875rem;
-	color: var(--ink-muted);
-	text-wrap: balance;
-}
-.cta-row {
+.landing .cta-row {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 1rem 1.5rem;
-	padding: 2rem var(--land-x) var(--land-y);
-	border-top: 1px solid var(--rule);
+	gap: 0.75rem 1.25rem;
+	margin-top: 2rem;
 }
-/* The seats left, live from the api (I-290): one line beside the button,
-   in the muted ink, the reading of the launch's gauge. */
-.cta-row .seats {
+.landing .seats {
 	margin: 0;
-	font-size: 1rem;
-	color: var(--ink-muted);
+	font-size: 0.875rem;
+	color: var(--hk-text-3);
 }
 
-/* The sign-off: the page's shapes, one to a cell between the rails. */
-.frieze {
-	display: grid;
-	grid-template-columns: repeat(7, minmax(0, 1fr));
+/* ---------- Questions ---------- */
+
+.landing .faq details {
+	border-top: 1px solid var(--hk-hairline);
+}
+.landing .faq details:last-child {
+	border-bottom: 1px solid var(--hk-hairline);
+}
+.landing .faq summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1.125rem 0;
+	cursor: pointer;
 	list-style: none;
+	font-size: 0.9375rem;
+	font-weight: 500;
+	color: var(--hk-text);
+}
+.landing .faq summary::-webkit-details-marker {
+	display: none;
+}
+.landing .faq .plus {
+	flex: none;
+	width: 1rem;
+	height: 1rem;
+	stroke-width: 1.5;
+	stroke-linecap: round;
+	color: var(--hk-text-3);
+	transition: transform var(--hk-dur-fast) var(--hk-ease);
+}
+.landing .faq details[open] .plus {
+	transform: rotate(45deg);
+}
+.landing .faq details > p {
+	max-width: 40rem;
 	margin: 0;
-	padding: 0;
+	padding-bottom: 1.125rem;
+	font-size: 0.9375rem;
+	line-height: 1.6;
+	color: var(--hk-text-2);
 }
-.frieze li {
-	aspect-ratio: 1;
-	padding: 22%;
-	border-left: 1px solid var(--rule);
-}
-.frieze li:first-child {
-	border-left: 0;
-}
-/* Without the rails (below 1240) the row stands in the page's 20px gutter
-   like the text above it; edge to edge it read as cut off by the screen.
-   The site footer (SiteFooter) follows it, under the rails. */
-@media (max-width: 1239px) {
-	.frieze {
-		margin-inline: var(--frame-x);
+@media (prefers-reduced-motion: reduce) {
+	.landing .faq .plus {
+		transition: none;
 	}
 }

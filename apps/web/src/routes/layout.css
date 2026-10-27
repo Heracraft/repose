@@ -1,147 +1,92 @@
 @import 'tailwindcss';
-@plugin '@tailwindcss/typography';
+/* The Herakraft kit (I-837): tokens.css is the kit's file, copied byte for
+   byte; repose.css holds repose's additions. Both in the components layer,
+   so a Tailwind utility on the same element still wins (unlayered, the
+   kit's .hk .hk-btn would beat class="h-10"). */
+@import '../lib/hk/tokens.css' layer(components);
+@import '../lib/hk/repose.css' layer(components);
+/* The docs' prose and the Nix editor, each owned by its area. Unlayered on
+   purpose: CodeMirror injects its theme as unlayered styles, and a layered
+   rule loses to an unlayered one at any specificity. */
+@import '../lib/components/nix-editor.css';
+@import '../lib/components/doc.css';
+/* A frozen machine's frost and its generated masks (I-841 amendment). */
+@import '../lib/hk/frost-masks.css';
+@import '../lib/hk/frost.css';
 
 /*
- * One restrained system for every page: neutral paper and ink, hairline
- * rules, corners of 2 to 4px, no shadows or gradients, one accent colour
- * (links, focus, selection). Every heading is Noto Serif; body text is the
- * system sans; commands and ids are JetBrains Mono. Both faces are served
- * from static/fonts, so no page asks a third party for a font (the privacy
- * policy names every processor, and a font CDN is not one of them).
+ * One system for every page, the Herakraft kit: Noto Serif 400 for display
+ * only, Inter 15px for everything else, Geist Mono for commands, zinc
+ * neutrals with one blue for links, current items, eyebrows and focus,
+ * hairline rows on the page colour, and near-black code panes in both
+ * themes (DECISIONS I-837). The faces are served from static/fonts, so no
+ * page asks a third party for a font (I-371).
  *
- * The pages use Tailwind's zinc, blue, emerald, amber and red scales. They
- * are re-toned here so every page follows the same palette without each
- * page being rewritten: zinc is a neutral grey, blue the accent, emerald
- * "running", amber "attention", red "failed".
+ * Light and dark follow the OS, and the footer's theme switch overrides it
+ * with data-theme on <html> (lib/theme.svelte.ts). Tailwind's dark: follows
+ * the same switch through the variant below.
  */
+@custom-variant dark {
+	@media (prefers-color-scheme: dark) {
+		&:where(:root:not([data-theme='light']) *) {
+			@slot;
+		}
+	}
+	&:where(:root[data-theme='dark'] *) {
+		@slot;
+	}
+}
+
 @theme {
-	/* Each webfont is followed by a local face scaled to its metrics (the
-	   @font-face rules below), so the swap from fallback to webfont does not
-	   move the text. */
-	--font-display: 'Noto Serif', 'Noto Serif Fallback', Georgia, 'Times New Roman', serif;
-	--font-mono:
-		'JetBrains Mono', 'JetBrains Mono Fallback', ui-monospace, 'SF Mono', Menlo, Consolas,
-		'DejaVu Sans Mono', 'Liberation Mono', monospace;
-	/* Tailwind's own default, written out so the body face is a choice made
-	   here and not whatever a Tailwind upgrade ships. */
-	--font-sans:
-		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial,
-		sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+	/* The kit's three stacks, written out: a var(--hk-...) cannot resolve
+	   on :root, where Tailwind puts these. Each webfont is followed by a
+	   local face scaled to its metrics (the @font-face rules below), so the
+	   swap from fallback to webfont does not move the text. */
+	--font-sans: 'Inter', 'Inter Fallback', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, Menlo, monospace;
+	--font-display: 'Noto Serif', 'Noto Serif Fallback', Georgia, serif;
 
-	/* Two steps below Tailwind's text-sm, named so pages stop writing
-	   text-[13px] and text-[0.7rem] by hand. text-compact (13px) is a mono
-	   reading beside sans text (a size class, a meter's figures, a code
-	   block) and a dense nav; text-2xs (11px) is a badge, and the floor for
-	   any text on these pages. Neither sets a line height, so each keeps the
-	   line height of the text around it, as the arbitrary sizes did. */
+	/* One step below text-sm: text-compact (13px), with no line height. */
 	--text-compact: 0.8125rem;
-	--text-2xs: 0.6875rem;
-	/* One step above text-base, for reading: the docs' and the legal
-	   pages' prose (.doc). At 16px on the docs' 624px column the text read
-	   small under a 36px serif title; 17px at 1.7 keeps the line near 72
-	   characters (I-660). */
-	--text-prose: 1.0625rem;
-	--text-prose--line-height: 1.7;
 
-	/* Sharp by default: the whole radius scale runs from 2px to 4px, so
-	   rounded-xs on a badge or a dot is still a corner and not a 1px blur. */
-	--radius-xs: 2px;
-	--radius-sm: 2px;
-	--radius-md: 3px;
-	--radius-lg: 4px;
-	--radius-xl: 4px;
-	--radius-2xl: 4px;
-	--radius-3xl: 4px;
-
-	--color-zinc-50: #fafaf9;
-	--color-zinc-100: #f3f3f1;
-	--color-zinc-200: #e4e4e1;
-	--color-zinc-300: #cfcfcb;
-	--color-zinc-400: #a2a29d;
-	/* 500 is the darkest grey pages used for small text on --sunken, so it
-	   sits just dark enough for 4.5:1 there (#767671 gave 4.15). */
-	--color-zinc-500: #70706b;
-	--color-zinc-600: #595955;
-	--color-zinc-700: #3e3e3b;
-	--color-zinc-800: #282826;
-	--color-zinc-900: #181817;
-	--color-zinc-950: #0f0f0e;
-
-	--color-blue-50: #f2f5fb;
-	--color-blue-100: #e2e9f6;
-	--color-blue-200: #c3d1ec;
-	--color-blue-300: #9db3de;
-	--color-blue-400: #8aa4d8;
-	--color-blue-500: #4d6fb3;
-	--color-blue-600: #3b5a9c;
-	--color-blue-700: #2f4b86;
-	--color-blue-800: #283f6e;
-	--color-blue-900: #213354;
-	--color-blue-950: #141f33;
-
-	--color-emerald-50: #f1f7f3;
-	--color-emerald-100: #dfeee4;
-	--color-emerald-200: #bddcc8;
-	--color-emerald-300: #8fc2a2;
-	--color-emerald-400: #5fa67b;
-	--color-emerald-500: #3f8a5e;
-	--color-emerald-600: #31704c;
-	--color-emerald-700: #285b3e;
-	--color-emerald-800: #214a33;
-	--color-emerald-900: #1a3a28;
-	--color-emerald-950: #0e2016;
-
-	--color-amber-50: #fbf6ec;
-	--color-amber-100: #f5e9cf;
-	--color-amber-200: #ead29c;
-	--color-amber-300: #dcb567;
-	--color-amber-400: #cc9a3f;
-	--color-amber-500: #b07f27;
-	--color-amber-600: #8f661f;
-	--color-amber-700: #72511b;
-	--color-amber-800: #5c4119;
-	--color-amber-900: #4a3516;
-	--color-amber-950: #2a1d0b;
-
-	--color-red-50: #fbf1f0;
-	--color-red-100: #f6dfdc;
-	--color-red-200: #ecbdb7;
-	--color-red-300: #df928a;
-	--color-red-400: #d06c62;
-	--color-red-500: #b94d43;
-	--color-red-600: #9e3c33;
-	--color-red-700: #83312b;
-	--color-red-800: #6b2926;
-	--color-red-900: #572322;
-	--color-red-950: #311110;
+	/* The kit's radius steps, so a stray rounded-* lands on one of them.
+	   Markup prefers var(--hk-radius-*): 6px and 9px exist only there. */
+	--radius-xs: 4px;
+	--radius-sm: 5px;
+	--radius-md: 7px;
+	--radius-lg: 8px;
+	--radius-xl: 12px;
+	--radius-2xl: 14px;
+	--radius-3xl: 14px;
 }
 
 /*
- * The scheme-aware colours as utilities: text-ink, text-ink-muted,
- * text-ink-faint, border-control, bg-surface and the rest. Inline, so each
- * utility reads the variable itself and follows the scheme switch on :root
- * instead of a value frozen when the theme was built. Pages use these rather
- * than hand-pairing text-zinc-500 with dark:text-zinc-400, which is how the
- * dashboard and the landing ended up with two different "muted" greys.
+ * The kit's colours as utilities: bg-page, text-ink-2, border-hairline and
+ * the rest. Inline, so each utility reads the token at the element and
+ * follows the theme.
+ * Status colours are for text on their washes only (banners, badges).
  */
 @theme inline {
-	--color-ink: var(--ink);
-	--color-ink-muted: var(--ink-muted);
-	--color-ink-faint: var(--ink-faint);
-	--color-control: var(--control-edge);
-	--color-page: var(--page);
-	--color-surface: var(--surface);
-	--color-sunken: var(--sunken);
-	--color-rule: var(--rule);
-	--color-rule-strong: var(--rule-strong);
-	--color-accent: var(--accent);
-	--color-accent-strong: var(--accent-strong);
+	--color-page: var(--hk-bg);
+	--color-surface: var(--hk-surface);
+	--color-surface-2: var(--hk-surface-2);
+	--color-hairline: var(--hk-hairline);
+	--color-line: var(--hk-border);
+	--color-line-strong: var(--hk-border-strong);
+	--color-ink: var(--hk-text);
+	--color-ink-2: var(--hk-text-2);
+	--color-ink-3: var(--hk-text-3);
+	--color-control: var(--hk-control-edge);
+	--color-accent: var(--hk-accent);
+	--color-ok: var(--hk-ok);
+	--color-warn: var(--hk-warn);
+	--color-err: var(--hk-err);
 }
 
-/* The page frame (--frame-w above): the header's row, the footer, every
-   page's <main>, the docs' frame and the landing's rails all take it, so
-   no page picks its own max-width and gutter. A utility, not a component
-   class, so lg:grid and the like on the same element apply over it. */
+/* The page frame: the header's row, the footer, every page's <main>, the
+   docs' frame and the landing all take it, so no page picks its own
+   max-width and gutter (I-656). A utility, not a component class, so
+   lg:grid and the like on the same element apply over it. */
 @utility frame {
 	margin-inline: auto;
 	width: 100%;
@@ -149,10 +94,8 @@
 	padding-inline: var(--frame-x);
 }
 
-/* A bigger hit area for a word that does something (a ghost button, a
-   text link in a dense row) with no change to the layout: a transparent
-   box 8px out on every side takes the pointer, so a 20px word is a 36px
-   target. The element is the box's containing block. */
+/* A bigger hit area for a word that does something, with no change to the
+   layout: a transparent box 8px out on every side takes the pointer. */
 @utility hit {
 	position: relative;
 	&::before {
@@ -163,11 +106,87 @@
 }
 
 /*
- * The two webfonts, self-hosted (static/fonts, with their OFL licences).
- * Latin is what the pages are written in; latin-ext is there for names a
- * user types, and a browser fetches it only when a page has such a
- * character. JetBrains Mono's italic is the docs' code comments.
+ * The webfonts, self-hosted (static/fonts, with their OFL licences). Latin
+ * is what the pages are written in; latin-ext is there for names a user
+ * types, and a browser fetches it only when a page has such a character.
+ * Inter is one variable file (opsz 14..32, wght 100..900); Geist Mono's
+ * italic is the code comments.
  */
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/inter-latin-opsz-normal.woff2') format('woff2-variations');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('/fonts/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+@font-face {
+	font-family: 'Geist Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/geist-mono-latin-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Geist Mono';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/geist-mono-latin-500-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Geist Mono';
+	font-style: italic;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/geist-mono-latin-400-italic.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+	font-family: 'Geist Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/geist-mono-latin-ext-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+@font-face {
+	font-family: 'Geist Mono';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/geist-mono-latin-ext-500-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+/* Noto Serif 400 (display) and 600 (the wordmark). */
 @font-face {
 	font-family: 'Noto Serif';
 	font-style: normal;
@@ -184,16 +203,6 @@
 	font-weight: 600;
 	font-display: swap;
 	src: url('/fonts/noto-serif-latin-600-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'Noto Serif';
-	font-style: normal;
-	font-weight: 700;
-	font-display: swap;
-	src: url('/fonts/noto-serif-latin-700-normal.woff2') format('woff2');
 	unicode-range:
 		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
 		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -220,88 +229,33 @@
 		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
 		U+A720-A7FF;
 }
+/* Local faces scaled to the webfonts' average width and vertical metrics,
+   generated with @capsizecss/core createFontStack from @capsizecss/metrics
+   (inter over arial, geistMono over courierNew, notoSerif over georgia).
+   Text painted in the fallback wraps where the webfont will, so nothing
+   jumps when it arrives. */
 @font-face {
-	font-family: 'Noto Serif';
-	font-style: normal;
-	font-weight: 700;
-	font-display: swap;
-	src: url('/fonts/noto-serif-latin-ext-700-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 600;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-600-normal.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: italic;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-400-italic.woff2') format('woff2');
-	unicode-range:
-		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 400;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-ext-400-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-@font-face {
-	font-family: 'JetBrains Mono';
-	font-style: normal;
-	font-weight: 600;
-	font-display: swap;
-	src: url('/fonts/jetbrains-mono-latin-ext-600-normal.woff2') format('woff2');
-	unicode-range:
-		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-		U+A720-A7FF;
-}
-/* Local faces scaled to the webfonts' average width and vertical metrics
-   (from @capsizecss/metrics: Noto Serif 481/1000 wide, ascent 1069, descent
-   293; Georgia 913/2048; JetBrains Mono 600/1000, ascent 1020, descent 300;
-   Courier New 1229/2048). A heading painted in the fallback wraps where the
-   webfont will, so nothing jumps when it arrives. */
-@font-face {
-	font-family: 'Noto Serif Fallback';
-	src: local('Georgia');
-	size-adjust: 107.9%;
-	ascent-override: 99.07%;
-	descent-override: 27.15%;
+	font-family: 'Inter Fallback';
+	src: local('Arial'), local('ArialMT');
+	size-adjust: 107.1194%;
+	ascent-override: 90.4365%;
+	descent-override: 22.518%;
 	line-gap-override: 0%;
 }
 @font-face {
-	font-family: 'JetBrains Mono Fallback';
-	src: local('Courier New');
-	size-adjust: 99.98%;
-	ascent-override: 102.02%;
-	descent-override: 30.01%;
+	font-family: 'Geist Mono Fallback';
+	src: local('Courier New'), local('CourierNewPSMT');
+	size-adjust: 99.9837%;
+	ascent-override: 100.5164%;
+	descent-override: 29.5048%;
+	line-gap-override: 0%;
+}
+@font-face {
+	font-family: 'Noto Serif Fallback';
+	src: local('Georgia');
+	size-adjust: 107.8957%;
+	ascent-override: 99.0771%;
+	descent-override: 27.1558%;
 	line-gap-override: 0%;
 }
 
@@ -309,154 +263,67 @@
 	:root {
 		color-scheme: light dark;
 		/* The one frame every page is built in (DECISIONS I-656): a 1200px
-		   box, its gutter included, centred, so the content column is
-		   1120px wide from 1280 up and the logo, a page's title and the
-		   header's last item stand on the same two edges on the landing,
-		   the docs, the legal pages and the dashboard. Following a link
-		   between them moves nothing sideways; with a frame per kind of
-		   page the logo sat at x=100, 216 or 228 at 1440 depending on
-		   where you were (owner's ask). The gutter is 20px on a phone and
-		   grows to 40px. */
+		   box, its gutter included, centred; the gutter is 20px on a phone
+		   and grows to 40px. --hk-container and --hk-gutter (repose.css)
+		   hold the same numbers for markup inside .hk. */
 		--frame-w: 75rem;
 		--frame-x: clamp(1.25rem, 3vw, 2.5rem);
 		/* The site header's 56px row and its 1px rule: what a sticky bar
 		   under it, the docs' sidebar and a jump to a heading clear. */
 		--header-h: 57px;
-
-		--page: #fbfbfa;
-		--surface: #ffffff;
-		--sunken: #f4f4f2;
-		--rule: #e6e6e3;
-		--rule-strong: #cfcfcb;
-
-		/* The landing's shapes (Shape.svelte, Gauge, Units) and its bar use
-		   the palette the landing's pictures were drawn in, and nothing
-		   else (docs/LANDING.md, "Shape language"): the neutrals and the
-		   one blue accent. No brand colour of any agent: the product is a
-		   machine, not an AI vendor's accessory. */
-		--sh-accent: var(--color-blue-500);
-		/* Mid values only: a grey that holds its own on paper, a light one
-		   that still reads, and ink kept to small details (a hole, a
-		   diamond's top), never a whole shape. */
-		--sh-grey: var(--color-zinc-400);
-		--sh-light: var(--color-zinc-300);
-		--sh-ink: var(--color-zinc-700);
-		--sh-paper: var(--surface);
-		/* The drawn pictures' palette (Hero, OneCommand, ComesBack and the
-		   rest of components/landing): named once here so every picture
-		   draws its lines, text and marks from the same six values and none
-		   picks its own step. --accent and --ink stay the Foundation's (link
-		   text, body text); these are for what a picture draws. --pic-faint
-		   is --ink-faint itself: the zinc-400 (light) and zinc-600 (dark)
-		   the pictures used for muted rows held under 4.5:1 on --sunken.
-		   --pic-stop marks what is blocked or deleted, --pic-add a line
-		   count added, as a diff stat draws them. */
-		--pic-accent: var(--color-blue-600);
-		--pic-ink: var(--color-zinc-800);
-		--pic-dim: var(--color-zinc-500);
-		--pic-faint: var(--ink-faint);
-		--pic-stop: var(--color-red-600);
-		--pic-add: var(--color-emerald-600);
-
-		/* The text colours, for every page (text-ink, text-ink-muted,
-		   text-ink-faint). Here rather than in landing.css so they are set
-		   before the landing's own stylesheet arrives (DECISIONS I-331).
-		   Each holds 4.5:1 on --page, --surface and --sunken in its scheme,
-		   so small print on a code block still passes. */
-		--ink: var(--color-zinc-900);
-		--ink-muted: var(--color-zinc-600);
-		--ink-faint: #6b6b66;
-		/* The edge of anything you type into or press: fields, quiet
-		   buttons, the stopped dot. 3:1 against the page and the surface
-		   (WCAG 1.4.11); --rule-strong, at 1.6:1, is for rules and badges,
-		   which nobody has to find to use. */
-		--control-edge: #888883;
-		/* The accent, named once for each use so no page picks its own
-		   blue step: link text (7:1 on --page), a link under the pointer,
-		   the text selection, and the focus ring, which needs only 3:1 as
-		   an edge and so sits a step lighter than link text. */
-		--accent: var(--color-blue-700);
-		--accent-strong: var(--color-blue-900);
-		--selection: var(--color-blue-200);
-		--focus: var(--color-blue-600);
-		/* The usage charts' line and area (I-679). The owner switches it
-		   here: var(--accent) draws them blue, var(--ink) in ink (white on
-		   the dark scheme). Both hold the contrast floor in both schemes. */
-		--chart-line: var(--ink);
-		/* A frozen machine's colour (I-683, behind a flag): ice, kept off
-		   the accent so frozen never reads as a link or a measure. 5.4:1
-		   on --page. */
-		--frost: var(--color-cyan-700);
+		/* The compact footer's one row from 1024px (1px rule, 1.25rem
+		   padding, the 30px theme switch): the dashboard's rail ends this
+		   far over the window's foot, so it never meets the header. */
+		--dash-foot-h: 71px;
+		/* First-paint pair: equal to --hk-bg and --hk-text (app.html paints
+		   them before this file arrives, app-html.test holds them equal). */
+		--page: #fafafa;
+		--ink: #18181b;
 	}
 	@media (prefers-color-scheme: dark) {
-		:root {
-			--sh-accent: var(--color-blue-400);
-			--sh-grey: var(--color-zinc-500);
-			--sh-light: var(--color-zinc-600);
-			/* Light on dark: the pupil and the door are holes in the light
-			   scheme and lit marks in the dark one. zinc-900 here sat at
-			   1.02:1 on the paper ring and erased both; zinc-400 holds 7:1
-			   on it and stays a mid value beside the zinc-500 shapes. */
-			--sh-ink: var(--color-zinc-400);
-			--pic-accent: var(--color-blue-400);
-			--pic-ink: var(--color-zinc-200);
-			--pic-dim: var(--color-zinc-400);
-			--pic-faint: var(--ink-faint);
-			--pic-stop: var(--color-red-400);
-			--pic-add: var(--color-emerald-400);
-			--ink: var(--color-zinc-100);
-			--ink-muted: var(--color-zinc-400);
-			--ink-faint: #8f8f8a;
-			--control-edge: #6e6e6a;
-			--accent: var(--color-blue-300);
-			--accent-strong: var(--color-blue-200);
-			--frost: var(--color-cyan-300);
-			--selection: var(--color-blue-800);
-			--focus: var(--color-blue-400);
-			--page: #111110;
-			--surface: #161615;
-			--sunken: #1b1b1a;
-			/* One step up from #2a2a28, which at 1.2:1 on --surface left a
-			   filled card with an edge nobody could find (I-659). */
-			--rule: #31312e;
-			--rule-strong: #3b3b38;
+		:root:not([data-theme='light']) {
+			color-scheme: dark;
+			--page: #09090b;
+			--ink: #f4f4f5;
 		}
 	}
-	/* JetBrains Mono draws its programming ligatures as contextual
-	   alternates, and one of them spaces "://" apart, so an install URL
-	   read "https: //". Off for the whole page, not per element, because
-	   the landing's pictures set the mono in their own stylesheets; the
-	   system sans and Noto Serif lose nothing a reader would see. */
+	:root[data-theme='dark'] {
+		color-scheme: dark;
+		--page: #09090b;
+		--ink: #f4f4f5;
+	}
+	:root[data-theme='light'] {
+		color-scheme: light;
+	}
 	html {
+		/* Off for the whole page: a contextual alternate could space "://"
+		   apart in an install URL (design.spec reads it on .doc pre code). */
 		font-variant-ligatures: no-contextual;
-		/* The scrollbar's gutter is kept on every page, so a short page
-		   (settings, a 404) does not sit 8 to 15px right of one that
-		   scrolls, and the docs' drawer, which stops the page scrolling,
-		   does not shift the header under it. */
+		/* The scrollbar's gutter is kept on every page, so a short page does
+		   not sit 8 to 15px right of one that scrolls. */
 		scrollbar-gutter: stable;
-		/* A jump to a heading (a #section link, the docs' rail, a search
-		   hit) lands it 16px under the sticky header, on every page at
-		   once, instead of a scroll-margin on each heading. */
+		/* A jump to a heading lands it 16px under the sticky header. */
 		scroll-padding-top: calc(var(--header-h) + 1rem);
 	}
-	/* Below lg the docs add their 44px sub-bar under the header. */
-	@media (width < 64rem) {
+	/* Below 768px the docs add their 44px sub-bar under the header. */
+	@media (width < 48rem) {
 		:root:has([data-docs-subbar]) {
 			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
 		}
 	}
+	/* Below 1024px the dashboard adds its 44px strip under the header (I-841). */
+	@media (width < 64rem) {
+		:root:has([data-dash-strip]) {
+			scroll-padding-top: calc(var(--header-h) + 2.75rem + 1rem);
+		}
+	}
 	body {
-		@apply min-h-dvh text-ink antialiased;
+		min-height: 100dvh;
 		background-color: var(--page);
-	}
-	/* The landing page (routes/landing.css sets it visible) stays hidden
-	   until its own stylesheet applies, for the same reason as the body
-	   rule at the end of this file. In a layer, so landing.css wins. */
-	.rails {
-		visibility: hidden;
-	}
-	::selection {
-		background-color: var(--selection);
+		color: var(--ink);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
 	}
 	h1,
 	h2,
@@ -468,789 +335,83 @@
 		font-family: var(--font-display);
 	}
 	h1 {
-		@apply text-balance;
+		text-wrap: balance;
 	}
 	code,
 	kbd,
 	pre,
 	samp {
 		font-family: var(--font-mono);
+		font-feature-settings: normal;
 	}
 	:focus-visible {
-		@apply outline-2 outline-offset-2;
-		outline-color: var(--focus);
+		outline: 2px solid var(--hk-accent);
+		outline-offset: 2px;
 	}
 	input[type='checkbox'],
 	input[type='radio'] {
-		@apply accent-zinc-900 dark:accent-zinc-100;
-	}
-}
-
-@layer components {
-	/* The landing's own classes (rails, sections, stages, cells) are in
-	   routes/landing.css, imported by routes/+page.svelte alone. */
-
-	/* The landing's one motion for shapes: a group lands, one shape after
-	   another, when it comes into view (landOnView in landing/inview.ts
-	   sets data-land; each .land gets its --d delay). */
-	[data-land] .land {
-		transition:
-			opacity 0.3s ease-out var(--d, 0ms),
-			transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms);
-	}
-	[data-land='out'] .land {
-		opacity: 0;
-		transform: translateY(30%) scale(0.5);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		[data-land] .land {
-			transition: none;
-		}
-	}
-
-	/* The skip link (routes/+layout.svelte): off screen until a keyboard
-	   reaches it, then a quiet button in the top-left corner, over the
-	   header. The page's <main> takes focus from it with tabindex=-1 and
-	   draws no ring of its own: the ring would frame the whole page. */
-	.skip-link {
-		@apply sr-only;
-	}
-	.skip-link:focus {
-		@apply not-sr-only fixed top-2 left-5 z-50 rounded-sm border px-3 py-1.5 text-sm font-medium text-ink;
-		border-color: var(--control-edge);
-		background-color: var(--surface);
-	}
-	main[tabindex='-1']:focus {
-		outline: none;
-	}
-
-	/* Inputs */
-	.field {
-		@apply rounded-sm border px-3 py-2 text-sm text-ink placeholder:text-ink-faint;
-		background-color: var(--surface);
-		border-color: var(--control-edge);
-	}
-	/* Focus is the house ring from :focus-visible (a text field matches it on
-	   a click too); a field never restyles its border to show focus. */
-	textarea.field {
-		@apply min-h-24;
-	}
-	select.field {
-		@apply cursor-pointer appearance-none bg-no-repeat pr-9;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2370706b' stroke-width='1.5' stroke-linecap='square'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-		background-position: right 0.625rem center;
-		background-size: 1rem;
-	}
-	input[type='search'].field {
-		@apply bg-no-repeat pl-9;
-		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2370706b' stroke-width='1.5'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E");
-		background-position: left 0.6875rem center;
-		background-size: 1rem;
-	}
-	.field-error {
-		@apply mt-2 text-sm text-red-600 dark:text-red-400;
-	}
-
-	/* A top-level group on a settings page. The first one on a page draws
-	   no rule of its own: PageShell's title rule sits directly above it,
-	   and two hairlines 40px apart read as a gap where something failed to
-	   render. */
-	.form-section {
-		@apply mt-10 border-t pt-6;
-		border-color: var(--rule);
-	}
-	.form-section:first-child {
-		@apply mt-0 border-t-0 pt-0;
-	}
-
-	/* Buttons: rectangular, flat. The transition names its properties:
-	   Tailwind's transition-colors includes outline-color, so the focus
-	   ring faded in from the button's own colour instead of appearing. A
-	   press darkens the fill one step past hover (active:), so a click or
-	   a tap shows it landed. Plain hover: and active:, not enabled:, since
-	   :enabled never matches an <a>, and a link drawn as a button (the
-	   docs header's Dashboard) lost both (I-393). A disabled button stays
-	   inert through the disabled rule below, which outranks these. */
-	.btn,
-	.btn-quiet,
-	.btn-danger {
-		@apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-sm border px-4 py-2 text-sm font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50;
-		transition-property: color, background-color, border-color, text-decoration-color;
-		transition-duration: 150ms;
-		transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	.btn {
-		@apply border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-700 active:bg-zinc-600 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300 dark:active:bg-zinc-400;
-	}
-	.btn-quiet {
-		@apply text-zinc-800 hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:active:bg-zinc-700;
-		border-color: var(--control-edge);
-		background-color: var(--surface);
-	}
-	.btn-danger {
-		@apply border-red-600 text-red-700 hover:bg-red-50 active:bg-red-100 dark:border-red-400 dark:text-red-400 dark:hover:bg-red-950 dark:active:bg-red-900;
-	}
-	/* A danger button that is ready to do the thing: ConfirmType arms it
-	   once the word matches, so the moment the action becomes possible is
-	   one you can see, not only a grey outline turning red (I-661). White
-	   on red-700 is 7.6:1, on red-600 in the dark 6.4:1. */
-	.btn-danger--armed {
-		@apply border-red-700 bg-red-700 text-white hover:bg-red-800 active:bg-red-900 dark:border-red-600 dark:bg-red-600 dark:text-white dark:hover:bg-red-700 dark:active:bg-red-800;
-	}
-	/* Ghost buttons are words, but a word that does something shows it at
-	   rest: a hairline underline in the control edge's grey (3:1, like any
-	   control's edge), which turns to the text's own colour under the
-	   pointer. Grey and underlined, a ghost button cannot be mistaken for
-	   a link, which is blue. The danger kind's underline is its own red at
-	   45%, so the word and its mark stay one colour. Hover and press apply
-	   to anything not disabled, a link included (:enabled never matches an
-	   <a>), so a disabled one does not answer the pointer. */
-	.btn-ghost,
-	.btn-ghost-danger {
-		@apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 py-1 text-sm underline decoration-1 underline-offset-4 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50;
-		text-decoration-color: var(--control-edge);
-		transition-property: color, text-decoration-color;
-		transition-duration: 150ms;
-		transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-	}
-	:is(.btn-ghost, .btn-ghost-danger):not(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		text-decoration-color: currentColor;
-	}
-	.btn-ghost {
-		@apply text-ink-muted;
-	}
-	.btn-ghost:not(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		color: var(--ink);
-	}
-	.btn-ghost-danger {
-		@apply text-red-700 dark:text-red-400;
-		text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-	}
-	/* Sizes. The default suits a form; a row, a toolbar or a header bar
-	   takes the compact one. Pages use it instead of !py-* overrides, so one
-	   change here resizes every compact button at once. */
-	.btn--sm {
-		@apply px-3 py-1.5;
-	}
-	/* On a phone a compact button is still a thumb's target: 40px tall,
-	   the header's Sign in and a row's Stop included (I-657). */
-	@media (width < 40rem) {
-		.btn--sm {
-			min-height: 2.5rem;
-		}
-	}
-	/* The large step: the landing's calls to action (the hero's "Get
-	   started", pricing's "Start a free week"), which stand alone on their
-	   row and carry the page's one decision, so they get more room than a
-	   form's button. In place of the !px-5 !py-2.5 overrides they used. */
-	.btn--lg {
-		@apply px-5 py-2.5;
-	}
-
-	/* Disabled, one look for every kind: a quiet outline with faint text.
-	   Faded at 50%, the primary button was a solid grey block (in the dark,
-	   dark text on mid grey) while a danger button was a pale red outline,
-	   and the two read as different things. The outline says "not yet"
-	   the same way on both, and the faint text still reads at 4.5:1 even
-	   though WCAG exempts disabled controls. After the kinds' own rules, so
-	   their hover fills do not come back on a disabled button. */
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']),
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']):is(:hover, :active) {
-		@apply cursor-not-allowed opacity-100;
-		color: var(--ink-faint);
-		background-color: var(--surface);
-		border-color: var(--rule-strong);
-	}
-
-	/* Small tag. */
-	.badge {
-		@apply inline-flex items-center rounded-xs border px-1.5 py-px font-mono text-ink-muted;
-		font-size: var(--text-2xs);
-		border-color: var(--rule-strong);
-	}
-	.badge--new {
-		@apply border-emerald-600/40 text-emerald-700 dark:border-emerald-400/40 dark:text-emerald-300;
-	}
-	.badge--error {
-		@apply border-red-600/40 text-red-700 dark:border-red-400/40 dark:text-red-300;
-	}
-	/* Waiting on you, or over a limit: a question an agent asked, a
-	   meter past its line (I-659). Amber-800 on --page is 9:1 and
-	   amber-300 on the dark page 9.5:1. */
-	.badge--warn {
-		@apply border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300;
-	}
-
-	/* State marker: a small square, always next to the state's word. A
-	   plain .dot is hollow (stopped, destroyed: nothing inside is running);
-	   the others are filled, and the edge takes the fill's colour. Each
-	   holds 3:1 on the page in both schemes. Busy is ink, not the accent:
-	   blue means "you can act here" (links, focus, selection), and a
-	   machine that is starting or being destroyed is neither. It pulses
-	   only for visitors who have not asked for less motion. */
-	.dot {
-		@apply inline-block h-2 w-2 shrink-0 rounded-xs border bg-transparent;
-		border-color: var(--control-edge);
-	}
-	.dot--good {
-		@apply border-emerald-500 bg-emerald-500 dark:border-emerald-300 dark:bg-emerald-300;
-	}
-	/* In the dark, running is emerald-300 and error red-500: at emerald-400
-	   and red-400 the two had nearly the same lightness, and a red-green
-	   colour-blind eye could not tell them apart. */
-	.dot--error {
-		@apply border-red-600 bg-red-600 dark:border-red-500 dark:bg-red-500;
-	}
-	/* Waits on you: a question (I-693). Amber, as .badge--warn is;
-	   amber-500 holds 3.3:1 on the light surface, amber-300 9:1 on the dark. */
-	.dot--warn {
-		@apply border-amber-500 bg-amber-500 dark:border-amber-300 dark:bg-amber-300;
-	}
-	.dot--busy {
-		@apply border-zinc-700 bg-zinc-700 motion-safe:animate-pulse dark:border-zinc-300 dark:bg-zinc-300;
-	}
-
-	/* A row in a list: a hairline on its top edge. */
-	.row {
-		@apply border-t py-3 first:border-t-0;
-		border-color: var(--rule);
-	}
-
-	/* A hairline box on --surface, one step off the page (DESIGN-LANGUAGE.md,
-	   "Hairlines, not boxes"): the fill groups what is inside it without a
-	   shadow, so a card never reads as a raised panel. With no fill a card
-	   was an outline on paper, and a page of them read as a wireframe
-	   (I-659). */
-	.card {
-		@apply rounded-sm border p-5;
-		border-color: var(--rule);
-		background-color: var(--surface);
-	}
-
-	/* A strip of figures (I-659): the plan's memory, disk and egress on
-	   /billing, a project's size, disk and uptime. One box on --surface,
-	   its cells split by hairlines; below sm the cells stack and the
-	   hairlines turn horizontal. Each cell is a 12px label, a 24px serif
-	   figure in tabular numbers, and an optional note or meter under it. */
-	.stat-row {
-		@apply grid rounded-sm border;
-		grid-auto-flow: row;
-		border-color: var(--rule);
-		background-color: var(--surface);
-	}
-	.stat {
-		@apply min-w-0 p-4;
-		border-color: var(--rule);
-	}
-	.stat + .stat {
-		@apply border-t;
-	}
-	@media (width >= 40rem) {
-		.stat-row {
-			grid-auto-flow: column;
-			grid-auto-columns: minmax(0, 1fr);
-		}
-		.stat + .stat {
-			@apply border-t-0 border-l;
-		}
-	}
-	.stat-label {
-		@apply block text-xs text-ink-muted;
-	}
-	.stat-value {
-		@apply mt-1 block font-display text-2xl font-semibold text-ink tabular-nums;
-	}
-	.stat-sub {
-		@apply mt-1 block text-xs text-ink-muted;
-	}
-	/* A command block on a dashboard page. Its lines scroll sideways, as in
-	   a terminal and as the docs' blocks do (I-345), rather than wrap: the
-	   install line wrapped with "| sh" alone on the last line, which reads
-	   as a second command. Like a docs block it shows the 2px edge bars
-	   (below, with .doc pre) while a line runs past its box, and a block
-	   that scrolls takes a tab stop (tabStopWhenScrolls, lib/scroller.ts):
-	   at 390 the /projects install line was cut at ".../inst" with no sign
-	   it went on. */
-	.codeblock {
-		@apply overflow-x-auto rounded-sm border p-3 font-mono leading-relaxed whitespace-pre text-zinc-800 dark:text-zinc-200;
-		font-size: var(--text-compact);
-		--edge-fill: var(--sunken);
-		background: var(--edge-covers), var(--edge-bars), var(--sunken);
-		border-color: var(--rule);
-	}
-
-	.banner {
-		@apply mb-5 rounded-sm border px-4 py-3 text-sm;
-		border-color: var(--rule-strong);
-		background-color: var(--surface);
-	}
-	.banner--ok {
-		@apply border-emerald-600/40 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-950 dark:text-emerald-200;
-	}
-	.banner--warn {
-		@apply border-amber-600/40 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-950 dark:text-amber-200;
-	}
-	.banner--error {
-		@apply border-red-600/40 bg-red-50 text-red-800 dark:border-red-400/30 dark:bg-red-950 dark:text-red-200;
-	}
-
-	.link {
-		@apply cursor-pointer text-accent underline decoration-1 underline-offset-2 hover:text-accent-strong;
-	}
-	kbd,
-	.kbd {
-		@apply inline-flex items-center rounded-xs border px-1 font-mono text-zinc-700 dark:text-zinc-300;
-		/* 13px: mono under 13px is for badges only (I-395), and a key name is a label. */
-		font-size: var(--text-compact);
-		border-color: var(--rule-strong);
-		background-color: var(--sunken);
-	}
-
-	.check-row {
-		@apply flex items-center gap-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200;
-	}
-	.check-list-row {
-		@apply flex items-start gap-2.5 border-t py-2 first:border-t-0;
-		border-color: var(--rule);
-	}
-	.check-list-row input[type='checkbox'] {
-		@apply mt-1;
-	}
-
-	/* Data tables: hairlines, no fills. */
-	.table {
-		@apply w-full border-collapse text-sm;
-	}
-	.table th {
-		@apply border-b px-3 py-2 text-left text-xs font-medium text-ink-muted;
-		border-color: var(--rule-strong);
-	}
-	.table td {
-		@apply border-b px-3 py-3 align-top;
-		border-color: var(--rule);
-	}
-	.table th:first-child,
-	.table td:first-child {
-		@apply pl-0;
-	}
-	.table th:last-child,
-	.table td:last-child {
-		@apply pr-0;
-	}
-}
-
-/* Nix editor (CodeMirror 6). Unlayered on purpose: CodeMirror injects its
-   theme as unlayered styles, and those beat anything inside a layer. Code
-   sits on --sunken everywhere else (.codeblock, the docs' pre), so the
-   editor does too: on --surface it was a 320px pure white block on the
-   warm page in the light (I-393). The current line lifts one step toward
-   the reader: to --surface in the light; in the dark --surface is the
-   darker of the two, so the line mixes 5% --ink into --sunken instead,
-   which keeps --ink-faint's line number at 4.5:1 where --rule would not
-   (I-395). */
-.nix-editor .cm-editor {
-	@apply h-full rounded-sm border text-sm;
-	background-color: var(--sunken);
-	border-color: var(--control-edge);
-}
-.nix-editor .cm-editor.cm-focused {
-	@apply border-zinc-900 outline-2 outline-offset-2 dark:border-zinc-300;
-	outline-color: var(--focus);
-}
-/* The gutter is a solid strip with its own edge, and the code starts
-   0.5rem past it: a long line scrolled sideways slides under that edge
-   instead of running into the line numbers. --rule on --sunken was too
-   faint to read as an edge at 1x, so it takes the strong rule. */
-.nix-editor .cm-editor .cm-gutters {
-	@apply text-ink-faint;
-	background-color: var(--sunken);
-	border-right: 1px solid var(--rule-strong);
-}
-.nix-editor .cm-editor .cm-lineNumbers .cm-gutterElement {
-	@apply pr-2 pl-2.5;
-}
-.nix-editor .cm-editor .cm-content {
-	@apply pl-2 font-mono text-ink;
-}
-.nix-editor .cm-editor .cm-activeLine,
-.nix-editor .cm-editor .cm-activeLineGutter {
-	background-color: var(--surface);
-}
-@media (prefers-color-scheme: dark) {
-	.nix-editor .cm-editor .cm-activeLine,
-	.nix-editor .cm-editor .cm-activeLineGutter {
-		background-color: color-mix(in oklab, var(--ink) 5%, var(--sunken));
-	}
-}
-.nix-editor .cm-line-error {
-	@apply bg-red-100 dark:bg-red-950;
-}
-
-/* The user docs (/docs) and the legal pages (LegalPage.svelte): prose from
-   src/content, in the site's own palette rather than the typography
-   plugin's defaults. Outside any layer
-   on purpose: the plugin's rules sit in a later layer than components, and
-   a layered rule loses to an unlayered one whatever its specificity. */
-.doc {
-	/* Prose reads at the text-prose step, 17px at 1.7 (I-660). Set on the
-	   block, so the plugin's em margins and the inline code chip scale
-	   with it; tables, code blocks and the effective date set their own. */
-	font-size: var(--text-prose);
-	line-height: var(--text-prose--line-height);
-	/* The typography plugin's colours, mapped onto the house tokens. Its
-	   prose-zinc is Tailwind's stock cool zinc (hue 286), not the re-toned
-	   warm one, and prose-invert made the dark h2 pure white where --ink is
-	   zinc-100. Set here, unlayered, these win over the plugin's own. */
-	--tw-prose-body: var(--color-zinc-700);
-	--tw-prose-headings: var(--ink);
-	--tw-prose-lead: var(--ink-muted);
-	--tw-prose-links: var(--ink);
-	--tw-prose-bold: var(--ink);
-	--tw-prose-counters: var(--ink-muted);
-	--tw-prose-bullets: var(--control-edge);
-	--tw-prose-hr: var(--rule);
-	--tw-prose-quotes: var(--ink);
-	--tw-prose-quote-borders: var(--rule-strong);
-	--tw-prose-captions: var(--ink-muted);
-	--tw-prose-kbd: var(--ink);
-	--tw-prose-code: var(--ink);
-	--tw-prose-pre-code: var(--ink);
-	--tw-prose-pre-bg: var(--sunken);
-	--tw-prose-th-borders: var(--rule-strong);
-	--tw-prose-td-borders: var(--rule);
-}
-@media (prefers-color-scheme: dark) {
-	.doc {
-		--tw-prose-body: var(--color-zinc-300);
-	}
-}
-/* One heading weight, 600, as on the dashboard and the DocPage title: the
-   plugin set h1 at 800 and h2 at 700, so a policy's title was heavier than
-   any other page's. */
-.doc :where(h1, h2, h3, h4) {
-	@apply font-semibold;
-}
-/* A policy's title is the h1 inside its markdown: the page title's 36px
-   with its -0.01em tracking, as PageShell and DocPage draw theirs, at
-   every width (DESIGN-LANGUAGE.md, "Type"; I-660). */
-.doc :where(h1) {
-	@apply text-4xl tracking-[-0.01em];
-	line-height: 1.2;
-}
-/* No scroll-margin here: html's scroll-padding-top clears the sticky
-   header for every jump, and the two added up. */
-.doc :where(h2, h3) {
-	@apply relative;
-}
-.doc :where(h2) {
-	@apply mt-12 border-t pt-8 text-2xl;
-	border-color: var(--rule);
-}
-.doc :where(h2:first-child) {
-	@apply mt-0 border-t-0 pt-0;
-}
-.doc .anchor {
-	@apply absolute -left-5 font-normal text-ink-faint no-underline opacity-0 transition-opacity;
-}
-.doc :where(h2, h3):hover .anchor,
-.doc .anchor:focus-visible {
-	@apply opacity-100;
-}
-.doc a:not(.anchor) {
-	@apply text-accent decoration-1 underline-offset-2 hover:text-accent-strong;
-}
-.doc :not(pre) > code {
-	@apply rounded-xs px-1 py-px font-normal text-zinc-800 before:content-none after:content-none dark:text-zinc-200;
-	background-color: var(--sunken);
-	font-size: 0.88em;
-}
-/* A command, flag or path (inline code with no space in it, 30 characters
-   or fewer; lib/docs.ts marks it) never breaks across lines: a line that
-   ended at "--" left the flag's name at the start of the next. 30
-   characters fit the column at 360, and docs.test.ts holds the limit. Code
-   with spaces, a flag with its argument or an error message quoted whole,
-   wraps at its spaces only: each short word in it is a .nobreak span, so
-   "--api-url URL" cannot end a line at "--" (I-393). A longer span such
-   as a URL wraps at its slashes or, if it has none, anywhere, so no chip
-   pushes the page wider than the phone. */
-.doc code.nobreak,
-.doc code .nobreak {
-	@apply whitespace-nowrap;
-}
-.doc :not(pre) > code:not(.nobreak) {
-	overflow-wrap: anywhere;
-}
-/* A command as a heading (### `repose run [PROJECT]` in cli.md) is the
-   heading's own text in mono, not a code chip inside it. */
-/* Element selectors, not :where: this must outrank the chip rule above. */
-.doc h2 > code,
-.doc h3 > code {
-	@apply bg-transparent p-0 font-semibold text-ink;
-	font-size: 0.9em;
-}
-.doc pre {
-	@apply rounded-sm border leading-6 text-zinc-800 dark:text-zinc-200;
-	font-size: var(--text-compact);
-	tab-size: 2;
-	/* A long line scrolls, as in a terminal; the docs are written to fit the
-	   column (DECISIONS I-345, docs.test.ts). */
-	white-space: pre;
-	overflow-x: auto;
-	/* A block wider than its box shows a 2px bar at each edge that hides
-	   text, so a cut line such as "(2 new comm" reads as more to scroll to:
-	   a phone's overlay scrollbar shows only while the block moves. The
-	   bars stay put ("scroll"); two fill-coloured covers scroll with the
-	   text ("local") and sit over a bar once that edge is reached, so a
-	   block that fits shows none. One-colour layers only: a bar, not a
-	   shade, as DESIGN-LANGUAGE "Corners" allows (I-395). */
-	--edge-fill: var(--sunken);
-	background: var(--edge-covers), var(--edge-bars), var(--sunken);
-	border-color: var(--rule);
-}
-.doc .table-wrap {
-	@apply my-6 overflow-x-auto;
-	/* The same edge bars as a code block: a table that still overflows at
-	   390 shows where its cut text continues. */
-	--edge-fill: var(--page);
-	background: var(--edge-covers), var(--edge-bars);
-}
-/* The layers behind both. A custom property holding a layer list
-   resolves per element, so --edge-fill is the element's own fill. */
-.doc pre,
-.doc .table-wrap,
-.codeblock {
-	--edge-covers:
-		linear-gradient(var(--edge-fill), var(--edge-fill)) left / 0.75rem 100% no-repeat local,
-		linear-gradient(var(--edge-fill), var(--edge-fill)) right / 0.75rem 100% no-repeat local;
-	--edge-bars:
-		linear-gradient(var(--ink-faint), var(--ink-faint)) left / 2px 100% no-repeat scroll,
-		linear-gradient(var(--ink-faint), var(--ink-faint)) right / 2px 100% no-repeat scroll;
-}
-.doc .table-wrap table {
-	@apply my-0 text-sm;
-}
-.doc th {
-	@apply text-left font-medium text-ink-muted;
-}
-/* From sm up the term column (a command, a key, "day 33") stays on one
-   line. Code in a description wraps like code in prose, at its spaces
-   or anywhere in a long span: kept on one line too, it pushed the
-   /docs/cli Secrets table to 690px in a 624px column. */
-@media (width >= 40rem) {
-	.doc td:first-child,
-	.doc td:first-child code {
-		@apply whitespace-nowrap;
-	}
-}
-/* On a phone a reference table of two or three columns stacks each row:
-   the term on its own line, a middle cell (a Default) muted beside it,
-   and the description under both at the full width. Side by side, the
-   term column took all but 75px of a 350px table and cut the
-   description ("repose snapshots restore SNAPSHOT_ID", I-395), and the
-   config.toml and environment variable tables ran 70px past 335. A
-   wider table holds figures read across a row (plans, sizes), which
-   need their headings, so it keeps its grid at tighter cell padding
-   and scrolls only past that. */
-@media (width < 40rem) {
-	.doc .table-wrap:not(:has(th:nth-child(4))) {
-		& thead {
-			@apply sr-only;
-		}
-		& table,
-		& tbody {
-			@apply block;
-		}
-		& tr {
-			@apply flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2.5;
-		}
-		& td {
-			@apply min-w-0 p-0;
-		}
-		& td:first-child {
-			@apply font-medium text-ink;
-		}
-		& td:first-child code {
-			white-space: normal;
-			overflow-wrap: anywhere;
-		}
-		& td:not(:first-child, :last-child) {
-			@apply text-ink-muted;
-		}
-		& td:last-child:not(:first-child) {
-			@apply basis-full;
-		}
-	}
-	.doc .table-wrap:has(th:nth-child(4)) :is(th, td) {
-		@apply px-1.5 first:pl-0 last:pr-0;
-	}
-	.doc .table-wrap:has(th:nth-child(4)) td:not(:first-child) code {
-		white-space: normal;
-		overflow-wrap: anywhere;
-	}
-}
-.doc .note {
-	@apply my-6 rounded-sm border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-amber-900 dark:bg-amber-950/60 dark:text-amber-100;
-}
-.doc .note p {
-	@apply my-0;
-}
-
-/* A docs code block and its copy button (codeBlock in lib/docs.ts). From sm
-   up the first line of a block is written short enough to end before the
-   button; on a phone the column is narrower than most lines, so the button
-   gets a strip of its own above the code. */
-.doc .code {
-	@apply relative;
-}
-@media (width < 40rem) {
-	.doc .code pre {
-		@apply pt-10;
-	}
-}
-/* 28px tall, over the 24px target size: at py-0.5 it was 22px. */
-.doc .code .copy {
-	@apply absolute top-2 right-2 inline-flex h-7 cursor-pointer items-center rounded-xs border px-2 text-xs text-ink-muted hover:text-ink;
-	background-color: var(--page);
-	border-color: var(--control-edge);
-}
-.doc .code .copy:hover {
-	border-color: var(--ink-muted);
-}
-.doc pre .prompt,
-.doc pre .output {
-	@apply text-ink-muted;
-}
-.doc pre .prompt {
-	@apply select-none;
-}
-
-/* Code in the docs (highlight in lib/docs.ts): lezer's tok-* classes, in
-   the re-toned palette and mostly in weight rather than hue. Keywords are
-   ink at 600, names are full ink over the block's zinc-800, literals take
-   the two quiet hues the house already has (emerald, amber), and comments
-   and punctuation step back to the faint grey. No blue: in the docs blue is
-   a link. Every tone holds 4.5:1 on --sunken in both schemes. */
-.doc pre .tok-keyword {
-	@apply font-semibold text-ink;
-}
-.doc pre .tok-string,
-.doc pre .tok-string2 {
-	@apply text-emerald-700 dark:text-emerald-300;
-}
-.doc pre .tok-comment {
-	@apply text-ink-faint italic;
-}
-.doc pre .tok-number,
-.doc pre .tok-bool,
-.doc pre .tok-atom {
-	@apply text-amber-700 dark:text-amber-300;
-}
-.doc pre .tok-propertyName,
-.doc pre .tok-variableName.tok-definition {
-	@apply text-ink;
-}
-.doc pre .tok-url {
-	@apply text-emerald-700 underline dark:text-emerald-300;
-}
-.doc pre .tok-punctuation {
-	@apply text-ink-faint;
-}
-
-/* The docs sidebar from lg up draws no scrollbar (routes/docs/+layout),
-   so while more of its list is below, its foot fades out over 24px to say
-   so. A mask, not a painted gradient: it draws no colour of its own, only
-   lets the list's own text thin out (I-660). */
-@media (width >= 64rem) {
-	#docs-nav[data-fade] {
-		mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+		accent-color: var(--hk-accent);
 	}
 }
 
 /*
- * Toasts (svelte-sonner, mounted in routes/+layout.svelte without
- * richColors). Sonner's own look has 8px corners, a drop shadow and its own
- * saturated green and red; these rules give a toast the house's banner
- * instead: a 2px corner, a hairline, no shadow, and the .banner--ok and
- * .banner--error colours (9:1 or better in both schemes). Unlayered, and
- * one attribute more specific than sonner's rules, because sonner injects
- * its stylesheet unlayered when the Toaster mounts.
+ * Toasts (svelte-sonner, mounted in routes/+layout.svelte with the resolved
+ * theme and no richColors). Neutral: the surface, a 1px border, the pop
+ * shadow, 8px corners, 13px text. Only an error is coloured, as its banner
+ * is. Unlayered, and one attribute more specific than sonner's rules,
+ * because sonner injects its stylesheet unlayered when the Toaster mounts.
  */
 :root [data-sonner-toaster][data-sonner-theme] {
-	--normal-bg: var(--surface);
-	--normal-bg-hover: var(--sunken);
-	--normal-border: var(--rule-strong);
-	--normal-border-hover: var(--control-edge);
-	--normal-text: var(--ink);
-	--success-bg: var(--color-emerald-50);
-	--success-border: color-mix(in srgb, var(--color-emerald-600) 40%, transparent);
-	--success-text: var(--color-emerald-800);
-	--error-bg: var(--color-red-50);
-	--error-border: color-mix(in srgb, var(--color-red-600) 40%, transparent);
-	--error-text: var(--color-red-800);
-	--warning-bg: var(--color-amber-50);
-	--warning-border: color-mix(in srgb, var(--color-amber-600) 40%, transparent);
-	--warning-text: var(--color-amber-800);
-	--info-bg: var(--surface);
-	--info-border: var(--rule-strong);
-	--info-text: var(--ink);
-	--border-radius: var(--radius-sm);
-	font-family: var(--font-sans);
-}
-@media (prefers-color-scheme: dark) {
-	:root [data-sonner-toaster][data-sonner-theme] {
-		--success-bg: var(--color-emerald-950);
-		--success-border: color-mix(in srgb, var(--color-emerald-400) 30%, transparent);
-		--success-text: var(--color-emerald-200);
-		--error-bg: var(--color-red-950);
-		--error-border: color-mix(in srgb, var(--color-red-400) 30%, transparent);
-		--error-text: var(--color-red-200);
-		--warning-bg: var(--color-amber-950);
-		--warning-border: color-mix(in srgb, var(--color-amber-400) 30%, transparent);
-		--warning-text: var(--color-amber-200);
-	}
+	--normal-bg: var(--hk-surface);
+	--normal-bg-hover: var(--hk-surface-2);
+	--normal-border: var(--hk-border);
+	--normal-border-hover: var(--hk-border-strong);
+	--normal-text: var(--hk-text);
+	--success-bg: var(--hk-surface);
+	--success-border: var(--hk-border);
+	--success-text: var(--hk-text);
+	--warning-bg: var(--hk-surface);
+	--warning-border: var(--hk-border);
+	--warning-text: var(--hk-text);
+	--info-bg: var(--hk-surface);
+	--info-border: var(--hk-border);
+	--info-text: var(--hk-text);
+	--error-bg: var(--hk-err-wash);
+	--error-border: transparent;
+	--error-text: var(--hk-err);
+	--border-radius: var(--hk-radius);
+	font-family: var(--hk-font-sans);
 }
 :root [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
-	border-radius: var(--radius-sm);
-	box-shadow: none;
+	border-radius: var(--hk-radius);
+	box-shadow: var(--hk-shadow-pop);
+	font-size: 0.8125rem;
 }
 :root [data-sonner-toaster] [data-sonner-toast][data-styled='true']:focus-visible {
-	box-shadow: none;
-	outline: 2px solid var(--focus);
+	outline: 2px solid var(--hk-accent);
 	outline-offset: 2px;
 }
 :root [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-description] {
-	color: var(--ink-muted);
+	color: var(--hk-text-2);
 }
 :root [data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-button] {
-	border-radius: var(--radius-sm);
-}
-/* A typed toast is a banner of its kind; its description takes the same
-   colour, which holds 4.5:1 on the tinted ground where --ink-muted might
-   not. */
-:root [data-sonner-toaster] [data-sonner-toast][data-styled='true'][data-type='success'] {
-	background: var(--success-bg);
-	border-color: var(--success-border);
-	color: var(--success-text);
+	border-radius: var(--hk-radius-7);
 }
 :root [data-sonner-toaster] [data-sonner-toast][data-styled='true'][data-type='error'] {
-	background: var(--error-bg);
-	border-color: var(--error-border);
-	color: var(--error-text);
-}
-:root [data-sonner-toaster] [data-sonner-toast][data-styled='true'][data-type='warning'] {
-	background: var(--warning-bg);
-	border-color: var(--warning-border);
-	color: var(--warning-text);
+	background: var(--hk-err-wash);
+	border-color: transparent;
+	color: var(--hk-err);
 }
 :root
 	[data-sonner-toaster]
-	[data-sonner-toast][data-styled='true']:is(
-		[data-type='success'],
-		[data-type='error'],
-		[data-type='warning']
-	)
+	[data-sonner-toast][data-styled='true'][data-type='error']
 	[data-description] {
 	color: inherit;
+}
+/* A page with a bottom bar (config's Apply) lifts the toasts above it. */
+body:has(.hk-bottom-bar) [data-sonner-toaster][data-y-position='bottom'] {
+	--offset-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+	bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 /*
@@ -1258,23 +419,10 @@
  * every background as Canvas and every edge as one system colour, which
  * erases whatever carries a state in a fill or in a transparent-versus-
  * coloured border. Each rule below puts that state back in a system colour
- * the visitor's own theme chose. Unlayered, so the utilities in page markup
- * (border-transparent on the header's links) do not win.
+ * the visitor's own theme chose. Unlayered, so a utility in page markup
+ * does not win.
  */
 @media (forced-colors: active) {
-	/* State dots: filled states in CanvasText, the hollow one an outline. */
-	.dot {
-		forced-color-adjust: none;
-		border-color: CanvasText;
-		background-color: Canvas;
-	}
-	.dot--good,
-	.dot--error,
-	.dot--warn,
-	.dot--busy {
-		background-color: CanvasText;
-	}
-	/* Meters draw their own forced-colour fill (Meter.svelte). */
 	/* The current page in a nav: an underline the other links do not
 	   have, since every link's bottom edge is forced visible. */
 	nav a[aria-current='page'] {
@@ -1282,71 +430,93 @@
 		text-decoration-thickness: 2px;
 		text-underline-offset: 0.35em;
 	}
-	/* A transparent edge (a link that is not current in the header, the
-	   dashboard row, a project's tabs or a rail; the docs search before
-	   the list scrolls under it) is drawn in CanvasText like any other, so
-	   every link looked current. It is not drawn at all: in the page's
-	   colour it cut a gap in the rule it lies on. */
-	.border-transparent {
-		border-style: none;
+	/* A transparent edge (a header link or a page tab that is not
+	   current) is drawn in CanvasText like any other, so every link looked
+	   current. It is not drawn at all: in the page's colour it cut a gap in
+	   the rule it lies on. */
+	.hk-navlink:not([aria-current='page']),
+	.hk-tabs > a:not([aria-current='page']) {
+		border-bottom-style: none;
 	}
-	/* The current tab (config's Menu and Nix): its ink underline versus the
-	   others' transparent one was a colour difference, and forced colours
-	   drew every tab's edge in CanvasText, so none was marked (I-393). The
-	   current one takes the Highlight colour at 3px, the others keep none. */
-	[role='tab'] {
-		border-bottom-color: Canvas;
+	/* The kit's state dots: filled states in CanvasText with an edge of the
+	   same colour, the idle one an outline (design.spec reads fill = edge). */
+	.hk-dot {
+		forced-color-adjust: none;
+		border: 1px solid CanvasText;
+		background-color: Canvas;
+		box-shadow: none;
 	}
-	[role='tab'][aria-selected='true'] {
-		border-bottom-width: 3px;
-		border-bottom-color: Highlight;
+	.hk-dot--on,
+	.hk-dot--busy,
+	.hk-dot--warn,
+	.hk-dot--err,
+	.hk-dot--ok,
+	.hk-dot--live {
+		background-color: CanvasText;
 	}
-	/* A landing picture's pause button: pressed is its icon (play for
-	   pause) and a Highlight edge, since the accent edge is a colour
-	   difference (I-666). */
-	.pic-pause[aria-pressed='true'] {
-		border-color: Highlight;
+	/* With every fill one colour, the two that ask for you keep a shape:
+	   waiting on you (amber) a square, gone wrong (red) a diamond, so a
+	   rail row that waits is not read as one that runs (review IA). */
+	.hk-dot--warn {
+		border-radius: 0;
 	}
-	/* A select's chevron and the search field's glass are background
-	   images drawn in a fixed grey; the native arrow follows the theme. */
-	select.field {
+	.hk-dot--err {
+		border-radius: 0;
+		transform: rotate(45deg) scale(0.85);
+	}
+	/* Joined controls: the selected item takes a Highlight edge, since its
+	   raised fill is lost. */
+	.hk-seg label:has(input:checked),
+	.hk-seg--buttons > button[aria-pressed='true'],
+	.hk-seg--links > a[aria-current='page'] {
+		outline: 2px solid Highlight;
+		outline-offset: -2px;
+	}
+	.hk-seg-thumb {
+		display: none;
+	}
+	/* The ARIA tablist: the selected tab a 3px CanvasText edge, the others
+	   the same edge in the page's colour, so nothing shifts. */
+	.hk-tablist [role='tab'] {
+		border-bottom: 3px solid Canvas;
+	}
+	.hk-tablist [role='tab'][aria-selected='true'] {
+		border-bottom: 3px solid CanvasText;
+	}
+	.hk-tabs > a[aria-current='page'] {
+		border-bottom-width: 2px;
+	}
+	.hk-input--search {
+		background-image: none;
+		padding-left: 0.75rem;
+	}
+	.hk-select {
 		appearance: auto;
 		background-image: none;
 		padding-right: 0.5rem;
 	}
-	input[type='search'].field {
-		background-image: none;
-		padding-left: 0.75rem;
-	}
-	/* A disabled button says so in GrayText, since its opacity is lost. */
-	.btn {
-		border-color: ButtonText;
-	}
-	:is(.btn, .btn-quiet, .btn-danger):is(:disabled, [aria-disabled='true']) {
-		border-color: GrayText;
+	.hk-btn:is(:disabled, [aria-disabled='true']),
+	:is(.hk-btn-secondary, .hk-btn-ghost, .hk-btn-danger):is(:disabled, [aria-disabled='true']) {
 		color: GrayText;
+		border-color: GrayText;
 	}
-	.badge,
-	.kbd,
+	.hk-btn-danger--armed {
+		border: 2px solid ButtonText;
+	}
+	.hk-badge,
 	kbd {
-		border-color: CanvasText;
+		border: 1px solid CanvasText;
 	}
-	/* An amber badge says "waiting on you": its words carry it, and the
-	   edge is drawn heavier so it is not one more grey box. */
-	.badge--warn {
-		border-width: 2px;
-	}
-	/* The armed danger button's red fill is lost; its edge marks it. */
-	.btn-danger--armed {
-		border-color: ButtonText;
-		border-width: 2px;
+	.hk-meter-fill {
+		forced-color-adjust: none;
+		background-color: CanvasText;
 	}
 }
-
 /* app.html hides the body until this file applies, so a page rendered
    before its stylesheet arrives never paints unstyled; the inline html
    background already shows the right colour meanwhile (DECISIONS I-331).
-   Outside any layer, to beat app.html's unlayered rule. */
+   Outside any layer, and the file's last rule, to beat app.html's
+   unlayered rule. */
 body {
 	visibility: visible;
 }

@@ -73,19 +73,29 @@ module "environment" {
   flake_path = var.flake_path
   build_on   = var.build_on
 
+  # Both left at their defaults. null means every machine is installed
+  # through the image this flake builds, which the apply builds ahead of any
+  # VM; they are here so an operator bisecting an install can pin an image
+  # or shorten the deadline for one apply with -var, without editing a
+  # module. 45m is a deadline on a 15-to-20-minute install, not a budget.
+  kexec_image      = var.kexec_image
+  install_deadline = var.install_deadline
+
   hosts       = var.hosts
   join_tokens = var.join_tokens
 
   host_flake_attrs = var.host_flake_attrs
 
-  # DECISIONS I-14: the pre-launch host is a D16s_v7 with a 512 GB data disk (I-39).
-  # Launch values are Standard_D64s_v7 and 2048, changed here and applied with
-  # guests stopped (deallocate, resize, start).
+  # The globals are host-01's shape, a D16s_v7 with a 512 GB data disk
+  # (DECISIONS I-14, I-39). A bigger host names its own values in host_shapes
+  # instead, so it is added on an apply that leaves every host already
+  # carrying guests out of the plan.
   host_size           = var.host_size
   host_class          = var.host_class
   host_data_disk_gb   = var.host_data_disk_gb
   host_data_disk_iops = var.host_data_disk_iops
   host_data_disk_mbps = var.host_data_disk_mbps
+  host_shapes         = var.host_shapes
 
   # Comes from the environment's tfvars, which is where somebody reads it.
   # The variable has no default, so a plan without that file fails rather than

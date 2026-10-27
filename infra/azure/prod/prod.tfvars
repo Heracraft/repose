@@ -9,8 +9,9 @@ subscription_id     = "5f27aace-dd8c-4dc0-95bf-b59ee8de7d70"
 resource_group_name = "repose-prod"
 zone                = "1"
 
-# DECISIONS I-14 and I-39: the pre-launch host. Launch values are Standard_D64s_v7,
-# azure-d64s-v5 and 2048, applied with guests stopped.
+# host-01's shape (DECISIONS I-14, I-39), and the fallback for any host that
+# names nothing in host_shapes. These values stay as they are: host-01 carries
+# live guests, and changing a global here would plan a change on every host.
 host_size           = "Standard_D16s_v7"
 host_class          = "azure-d16s-v7"
 host_data_disk_gb   = 512
@@ -46,9 +47,38 @@ manage_dns = false
 # Hosts are added one at a time; see infra/README.md. Each production host
 # has its own nixosConfigurations attribute (nix/hosts/<name>.nix, DECISIONS
 # I-40); the join token goes in prod.local.tfvars.
-hosts = ["host-01"]
+hosts = ["host-01", "host-02"]
 host_flake_attrs = {
   host-01 = "host-01"
+  host-02 = "host-02"
+}
+
+# host-02 is the bigger host (DECISIONS I-14): it runs alongside host-01, and
+# host-01 is retired by moving its projects across. host-01 names no entry, so
+# every value it has today resolves from the globals above and its plan is
+# empty.
+#
+# os_disk_gb is 512, not the fleet's 256, because the OS disk holds
+# /nix/store and the store is shared by every guest on the host: hostd keeps
+# a GC root for each live closure and three revisions per project, and a root
+# filesystem past 80 percent makes hostd refuse Build with
+# `insufficient_capacity: host store full` for every tenant on that machine
+# (RUNBOOK, "StoreHigh"). host-01 sells 4 seats and host-02 sells 24. The
+# data disk grows online and the RUNBOOK says how; the OS disk is inline on
+# the VM resource, has no grow procedure, and changing it later is a plan
+# against a live host. $38 a month at the P15 to P20 step.
+#
+# data_disk_iops and data_disk_mbps are left at the fleet's 16000 and 600. A
+# 2048 GB disk under four times the guests may want more; provisioned IOPS and
+# throughput are billed, so raising them is the owner's call. Raising mbps is
+# also the only lever on the guest freeze's budget (DECISIONS I-786).
+host_shapes = {
+  host-02 = {
+    size         = "Standard_D64s_v7"
+    class        = "azure-d64s-v7"
+    data_disk_gb = 2048
+    os_disk_gb   = 512
+  }
 }
 
 snapshots_account_name = "reposesnapshots3912"
@@ -64,3 +94,21 @@ dns_zone = "herakraft.co"
 # Azure Monitor alerts on all three VMs, emailed to alert_email
 # (prod.local.tfvars). DECISIONS I-648; RUNBOOK "Azure alert".
 alerts_enabled = true
+
+# The kexec installer image every machine here is installed through
+# (nix/installer) is built by the apply, ahead of any VM, so there is nothing
+# to set here and nothing to remember. `kexec_image` exists to override that
+# with an image built by hand, which is a bisect rather than a configuration:
+#
+#   nix build '.?dir=nix#kexec-installer'
+#   make apply ENV=prod \
+#     TF_VAR_kexec_image="$(readlink -f result)/repose-kexec-installer-x86_64-linux.tar.gz"
+#
+# Pass the .tar.gz, not the directory: nixos-anywhere reads the extension to
+# know how to decompress it. `result` is a gc root, so the path survives a
+# `nix store gc` between the build and the apply.
+#
+# A URL works in the same variable and is the better shape once the image is
+# published somewhere: nixos-anywhere hands a URL to the target to fetch
+# directly, where a local path is uploaded through the edge's ProxyJump at
+# about half a gigabyte per install.

@@ -4,6 +4,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	// Under Vitest, resolve Svelte's browser build, so a component test can
+	// mount() into jsdom (ErrorView.test); the app's own build is unchanged.
+	resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
 	ssr: {
 		// Bundle every package into the server build. The runtime image holds
 		// build/ and no node_modules (Dockerfile), so a package left external

@@ -24238,6 +24238,545 @@ finding two releases with no notes at all.
   release fails to fix. The guard checks that notes exist; a person writes
   them.
 
+**I-837. The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif
+400 on zinc with one blue, hairline sections in place of cards, near-black
+code panes, a System, Light and Dark switch, and a landing led by a terminal
+of a real `repose run`.** (ui-revamp, 2026-10-20) The owner asked for a
+complete revamp of the UI and UX to Herakraft UI (Guide B,
+`branding/docs/ui-guide`), with the recruiting developer portal as the
+living reference, and asked that Guide B be followed where it and repose's
+own rules disagree. DESIGN-LANGUAGE.md is rewritten to the shipped system
+and is the visual spec again; the owner's 2026-10-18 note that the design
+language stays is withdrawn by this request. The build spec, its three
+critiques and the area reviews are in the branch's `.dev/notes/`.
+- *Tokens.* The kit's `tokens.css` is copied byte for byte to
+  `apps/web/src/lib/hk/` and scoped by `class="hk"` on `<body>`. Every
+  repose addition lives in `repose.css` beside it, each with its reason, so
+  a kit update is a file copy. One addition changes a kit value: inputs
+  take `--hk-control-edge` (#8b8b94 light, #71717a dark), since the kit's
+  #e4e4e7 edge is 1.27:1 and the 3:1 floor for control edges stands. Every
+  control reaches 44px on touch, inputs included, and inputs take 16px text
+  there so iOS does not zoom. Focus is the kit's 2px accent ring. Toasts are
+  neutral and only an error is coloured. Segmented controls now exist: the
+  theme switch, the projects and events filters, the usage range.
+- *Type.* Inter (the fontsource variable build, opsz 14 to 32, which has no
+  cv11 or ss01, as the reference renders), Geist Mono for code, and Noto
+  Serif at 400 for every heading and 600 for the wordmark only. All three
+  are self-hosted in `static/fonts` with metric-matched local fallbacks, so
+  the CSP still allows no third-party font. JetBrains Mono and Noto Serif
+  700 are deleted. Docs prose goes from 17px to 15px in the same 624px
+  column. Nothing on a page is heavier than 600.
+- *Geometry kept.* The 1200px frame, its 20 to 40px gutter, the 57px sticky
+  header at every width and the docs columns of 220, 48, 624, 48 and 180
+  stay (I-656), so the kit's 76rem container, 2rem gutter and stacked phone
+  header are not used. The dashboard keeps its three places in the header
+  and gets no left rail: three places do not need a column, and a rail
+  takes 248px from the projects table. The footer gains a compact form on
+  dashboard pages and holds the theme switch.
+- *Shape and depth.* Radii follow the kit, 4 to 14px and a pill, in place
+  of the 2 to 4px scale. A shadow exists only on menus, toasts and the hero
+  terminal; panes and the selected item of a joined control use 1px rings.
+- *Theme switch.* System, Light and Dark at the foot of every page store
+  the choice in this browser (`localStorage` `hk-theme`) and set
+  `data-theme` and `color-scheme` on `<html>` before first paint, from
+  app.html's one inline script, whose sha256 is in the CSP and checked by
+  `app-html.test.ts`. Tailwind's `dark:`, the tokens, the toasts and the
+  browser's theme-color follow it. The OS-only rule is gone; the first
+  paint is #fafafa on #18181b, or #09090b under #f4f4f5 in the dark.
+  `content/docs/index.md` "The dashboard" documents the control.
+- *Status colour.* Amber marks only what needs the user and red only what
+  went wrong (Guide B 5.3), and both appear only in badges, dots and
+  banners; the outage bar and the error toast count as banners. A status
+  line is secondary text with a 7px dot before it. A running machine is a
+  filled ink dot, busy states pulse, stopped and unused are a hollow 3:1
+  ring, and the green running dot is gone. A frozen machine shows a
+  snowflake and "frozen" in the secondary text colour on its status line,
+  with no band and no cyan. Plan disk and egress are meters; memory keeps
+  its squares, one per GB, inside the meter's layout, with frozen GB
+  hatched. Usage charts draw in the accent. The logo's blue block is the
+  one brand use of the accent.
+- *Page order.* Dashboard cards become sections with serif headings on the
+  page colour. `/projects`: the billing banner, Waiting on you, the table,
+  then the plan figures as one row under it, Recent activity (five rows,
+  repeats folded, never a question or a failure) and Recently destroyed;
+  row actions are lighter buttons, always shown. An empty account gets the
+  install, login and run commands in one pane. The project page leads
+  with Connect (one pane of three commands, each with its Copy) under the
+  exception banners, which stay first because each changes what Connect
+  will do; then Waiting on you, Events beside Agents and Machine,
+  Snapshots beside Details, Usage as four compact charts, and Destroy
+  behind "Destroy <name>…", which opens its typed confirmation with Keep
+  it. One Restore… per snapshot opens a panel that restores over the
+  project or, with Restore as new, into a new one. Config and Secrets keep
+  the project's name as their title, and Menu and Nix are a small
+  segmented tab list, so the page has one row of page tabs. Billing shows
+  the current plan as one row of facts (price, status, next charge) and no
+  plan to buy on an exempt account. Settings puts Notifications second, and
+  Delete account behind a button that opens its typed confirmation. A
+  styled 404 keeps the shell, an unknown path no longer sends signed-out
+  visitors to `/`, and a render failure shows "Something went wrong" with
+  Reload in place of a skeleton that never ended.
+- *The landing.* Guide B 13.1: an eyebrow, the serif headline, a two-tone
+  lead with "full permissions" in its second sentence, "Get started" and a
+  labelled copy of the install command, and a near-black terminal
+  replaying the Quickstart's `repose run -p` session, read at build time
+  from `content/docs/index.md`. The terminal in the hero follows Guide B
+  because the owner asked for it, which overrides LANDING.md's "Where
+  terminals are allowed" that kept terminals out of the hero; the lead's
+  measure drops from 48rem to 34rem beside it. The lead carries no figure,
+  since the terminal shows the one measured number. "Your laptop's setup,
+  in one command" keeps the owner's I-772 heading. Each command shows once:
+  the install line in the hero only, and the feature cells give their
+  commands as text with no copy button. The seven drawn pictures, their
+  shapes, the frieze, `animejs` and about 9,900 lines go; their claims stay
+  as text with the command that does each. No stat strip, because no public
+  figure can be read at render time and reproduced. Pricing stays on the
+  landing as PlanCells' public cards, since there is no `/pricing` route.
+- *Where the landing left the build spec.* (1) The hero terminal has no
+  copy button: its `cd ~/code/your-project` fails on a visitor's laptop,
+  and the `repose run -p` after it would then start an agent in whatever
+  folder they are in (Guide B 1.10). (2) It ends on "Ready in 16s." with a
+  still caret and no `$ ` line, because `repose run -p` attaches you to
+  the agent's window. (3) The pane has no minimum height and is centred on
+  the copy column: Guide B 12.9's 25 to 27rem is for a scrolling feed, and
+  this pane replays eight fixed lines; landing-hero.spec checks at most
+  4rem under the last line. (4) The run step shows and copies `repose run`
+  alone. (5) The lines are hidden from first paint under `html.js`, with a
+  5s CSS fallback, so the prerendered pane does not flash full and then
+  blank. (6) "Start a free week" signs in and comes back to `/billing`
+  through `signIn(returnTo)`, whose only allowed path is `/billing`, kept
+  in sessionStorage and never read from a URL; every other sign-in still
+  lands on `/projects`. The seats line and the full-state button keep
+  their wording ("18 seats left", "Start a free week").
+- *Kept on purpose.* Inline confirmation panels and ConfirmType (I-386,
+  I-391, I-661); Guide B's modal dialogs are not used. The outage bar and a
+  page's failed-load banner both show, since they say different things
+  (I-390, I-393). Dates keep the CLI's format. Waitlist, seat and trial
+  copy are unchanged pending the owner's 2026-10-17 decisions. Docs pages
+  get "View as Markdown" and no "Copy for LLM".
+- *What it overrules.* Supersedes I-369, I-379, I-397, I-399, I-400,
+  I-401, I-666, I-667, I-668, I-669, I-673, I-675, I-676, I-677, I-684,
+  and I-373's green running dot. Amends I-331, I-370, I-371, I-372, I-374, I-375,
+  I-376, I-378, I-388, I-392, I-398, I-655, I-659, I-660, I-663, I-664,
+  I-674, I-679, I-680, I-681, I-683, I-693 and I-772.
+- *Checks.* CHECKLIST.md "For every change to the web app's look" is the
+  greps for this system, and the landing loses its separate allow-lists,
+  since it has no pictures left to exempt. `pnpm a11y` passes 52 runs (13
+  pages, light and dark, 1440 and 390); the full Playwright suite passes
+  241 tests.
+
+**I-841. The dashboard gets a rail: Projects, Questions, Billing and
+Settings, your projects by name, and the plan; a Questions page; project and
+Settings pages split into tabs; every old URL keeps working.** (ui-revamp,
+2026-10-21) *Made during implementation.* The owner opened the dashboard's
+pages, menus and navigation to change, on the condition that the UX and UI
+improve. Three proposals and three judges are in the branch's
+`.dev/notes/ia-*.md`; this is the build of the top-scored one (ia-daily)
+with grafts from the others (`.dev/notes/ia-final.md`).
+- *Why a rail.* Measured on the fake stack: the question count sat on
+  "Projects" and read as a project count; Settings and Billing moved into the
+  Account menu below 640px and 360px; switching project took two clicks; the
+  project page was 2028px at 1440 and 3983px at 390 with nine sections and
+  every section's polls. The rail puts the four places at one spot at every
+  width, lists your projects with one dot each (amber while an agent waits on
+  you) so Connect is one click from any page, and holds the plan.
+- *Rail from 1024px, a named exception to Guide B 11.6 (768px).* At 768 the
+  page column is 470px, under the projects table's and Overview's one-column
+  floor. From 1024 it is 714px or wider. Below 1024 a sticky 44px strip under
+  the header holds the same four places and ends at 101px, the docs
+  sub-bar's line. Pages lay out by the page column's width (`@container
+  dash`), not the window's. Checked with shots at 1024, 1280 and 1440 (rail)
+  and 768, 390 and 360 (strip).
+- *Questions.* A Questions place with the pending count, a `/questions`
+  page with every waiting question and the last 7 days' answers (from `GET
+  /questions?state=all`, no API change), and a `(N)` prefix on every
+  dashboard page's title through `lib/title.ts`. /projects shows the first
+  question and "N more on Questions". Each count shows once per screen.
+- *Plan.* The /projects plan row and the lede's "· Pro" go. The rail's foot
+  shows the plan and one state line per billing mode, with dates and no
+  meter, and is left off /billing. With no plan and every seat taken it says
+  "repose is full", which is true, where the plan said "On the waitlist".
+  Below 1024 a plan line under the strip shows only for a failed payment, a
+  suspended account, no plan, the waitlist, a full fleet and a held seat; its
+  room is kept while the last mode seen (stored per browser) was one of
+  those, so it moves nothing in. One billing store (`lib/billing.svelte.ts`,
+  /me and /billing, passive every 60s while in view) replaces each page's
+  own read; a page's active read hands its answer to it.
+- *Shared reads.* `lib/projects.svelte.ts` holds the projects list the rail
+  draws: /projects's 10s poll sets it, a project's poll patches its row, and
+  elsewhere the rail reads it every 60s in view and on a navigation that
+  finds it older than 30s. `lib/questions.svelte.ts` keeps the pending list
+  and a count per project. A hidden tab reads none of them.
+- *Project tabs.* Overview, Events, Usage, Snapshots, Config.
+  `projects/[id]/+layout.svelte` owns the fetch, the poll and the header, so
+  Start and Stop stay mounted across tabs, and each tab fetches only its own
+  data. Overview leads with the project's questions, then Connect. Project
+  secrets move into Config under Secrets; `/projects/<id>/secrets` redirects
+  there.
+- *Settings tabs.* General (Account, Timezone, Install, Delete account),
+  Notifications, Secrets, machine.nix. `#account` and `#delete-account` stay
+  on `/settings`. Both secret lists open their add form inline from "Add
+  secret".
+- *Account menu.* The email, Docs and Feedback below 640px, and Sign out.
+  Sign out stays on Settings too (I-578).
+- *URLs.* Every path stays. `/settings#machine-nix`, `#secrets`,
+  `#notifications` and the project page's `events_*` keys and old section
+  fragments move client-side through one tested table (`lib/legacyUrls.ts`),
+  with `replaceState`, so Back leaves. `/account` keeps its 308 to
+  `/settings`; nothing new answers a 308 from `/settings`, since browsers
+  cache the old one. The `test` and `notify_channel_broken` emails link
+  `/settings/notifications`. `/billing` and its queries are unchanged for the
+  CLI, refusals and Polar.
+- *Kept.* Recent activity on /projects (I-762), the `events_*` keys (I-662),
+  sign-in landing on /projects, the header item counts design.spec reads.
+- *Found while joining the areas.* The project layout draws its tabs inside
+  `{#key id}<ProjectFrame>`: SvelteKit reuses a layout across a params
+  change, so a rail click from one project to another kept the first one's
+  poll and context. A project that does not exist is a 404 the frame draws,
+  not a routed error, so it raises a flag (`lib/notFound.svelte.ts`) and the
+  rail marks no place current, as on any signed-in 404. The rail's height is
+  its grid row's, at most the window under the header, so a short page with
+  the outage bar above the header still ends at the window's foot (review
+  r4); at a fixed `100dvh - 57px` it ran 108px past it.
+- *Fixed after the IA review* (`.dev/notes/ia-review-fixes.md`). The
+  rail is the window under the header less the compact footer's 71px row,
+  and the grid at least that tall: with the grid row's height (above) the
+  rail slid 71px under the header at a long page's foot and its plan sat
+  71px higher on a short page; now the first place stays at y=93 and the
+  plan at one height on every page. While the outage bar shows, its height
+  comes off both, so a short page still ends at the window's foot. Below 1024 a project's row is not drawn, so
+  Projects is current on a project's tabs (no place was before). On the
+  app's first load below 1024 the page column waits, hidden, for billing
+  (2.5s at most), so a plan line seen first on a fresh browser paints with
+  the page: CLS at 390 on /projects in past_due went from 0.31 to 0.0007.
+  The grid's min-height keeps the footer under the fold, and /projects
+  holds its lede's line and Settings its Install row until they fill:
+  CLS at 390 on /projects 0.24, /settings 0.24, /billing 0.11 went to
+  0.007 or less. At 1440 /projects measured 0.0523 to 0.0563 when the
+  events answered after the destroyed list: Recent activity mounted above
+  a painted Recently destroyed and pushed it 174px down, and each late
+  section pushed the in-view footer out. Recently destroyed now waits for
+  Recent activity's first answer, and a page filling in holds the footer
+  under the fold (`DashContext.hold`) until its first reads settle, so a
+  long page measures 0 and a short one 0.004, its footer rising 71px once. A failed payment is amber in the rail and the plan line,
+  as the banners have it (kit 7); red stays for suspended. Overview still
+  reads the 1h samples for Machine's "Memory in use", which the project
+  does not carry (amends ia-final 2.4), and keeps them, the config
+  revisions and the egress reading for a minute across tab switches.
+  Project tabs are 1rem apart below 480px and 0.625rem below 385px (the
+  spec's 1rem does not fit 360). Both secret lists are headed by their
+  count; machine.nix has no head under its own tab. Standalone links take
+  a 44px box on touch (`hk-tap`), command rows are 44px on touch, and in
+  forced colours a waiting dot is square and an error dot a diamond.
+- *Many projects, mostly stopped (amendment, 2026-10-21).* The owner asked
+  whether the dashboard holds up for an account with many projects, most of
+  them stopped, and had already decided "Project list defaults to Running"
+  (2026-10-17). Measured on the fake stack with 150 projects (4 up, 1 in
+  error, 145 stopped): /projects drew 25 rows, 20 of them stopped machines
+  two lines tall, 3289px at 1440 and 3980px at 390, and the rail spent its
+  eight rows on the first stopped ones. Past 8 projects the list now
+  defaults to **Running**: every machine that is up or wants you (an
+  agent's question, a failure), then the 5 stopped machines that ran last,
+  then "All 145 stopped" to `?state=off`. Each band has a head row (Needs
+  you, Running, Stopped) when more than one is drawn. The filters are
+  Running, Stopped and All; Needs you goes, since its rows lead Running, and
+  `?state=waiting` reads as Running. A search typed with no filter chosen
+  looks through every project; Running chosen beside a search is written
+  out as `state=up`. A stopped row is one line, its remote in the name's
+  title, so Stopped and All show 25 rows in about 1100px. The held order
+  holds each row's band too, so a machine stopped from its row stays under
+  Running until the set of projects changes. The rail lists, past 8
+  projects, what is up or wants you (8 at most), the open project's row
+  when it is not among them, then one fold row: "145 stopped" to
+  `?state=off`, or "All 150" when running rows are left out too. At 150
+  projects /projects is 2181px at 1440 (was 3289) with 13 table rows (was
+  25); its reads are unchanged (one list, the questions, events from the
+  10 machines started last at most, the destroyed list once a minute).
+  Accounts of 8 projects or fewer see every project, no toolbar, as before.
+  Checks: `lib/projectList.test.ts` (Running, Stopped and search at 40 and
+  150), `tests/projects-many.spec.ts` (default view, counts, search and
+  rail at 40 and 150, page.route accounts past the fake's 100).
+- *A frozen machine's frost, amendment 2026-10-21.* The owner asked for a
+  sleek, realistic frozen effect ("icy blurred background with realistic
+  ice colors. Or maybe only the edge"). Five looks were prototyped behind a
+  dev switch (ink, rime, pane, window, glaze) and judged at 1x by three
+  reviewers on realism, calm and cost (`.dev/notes/frost-judge-*.md`).
+  Window frost read as frost without being told and the others read as a
+  tint, glass, cloud or static; a slab or a card that exists only while
+  frozen moved the layout and broke the column; a texture on a `<tr>`
+  background painted once per cell (5.8x to 7.2x the paint with every row
+  frozen). The pick combines their best parts. Window frost grows in from
+  an edge, so it is drawn only where an edge meets a rule: the project
+  head's far corner (up the right edge and along the tab rule, with a
+  faint cold haze, inside the column; under 640px in the right gutter and
+  the column's last 20px), rime needles on the Machine section's memory
+  bar, whose fill takes the ice ink with a lit top edge, and rime needles
+  on a /projects row's bottom rule at its leading end, gone by 200px. The
+  word "frozen", its snowflake (the rail's too) and frozen memory squares
+  take `--hk-ice-ink` (`#456b86` light, 5.4:1; `#a1c1de` dark, 10.6:1),
+  which supersedes I-683's `--hk-text-2`. No surface changes size or
+  position when a machine freezes or wakes, and a stopped machine keeps
+  its hollow ring however many there are. The frost is one element
+  (`Frost.svelte`) inside the surface, which carries `data-frost-on`; it
+  paints `--hk-frost-shade` through a mask in alpha mode (frost and halo)
+  and `--hk-frost-ice` through the same mask in luminance mode (the frost
+  alone), so one mask serves both themes and the colours stay tokens. The
+  masks are SVG data URIs (CSP `img-src data:`) of fern sprites placed with
+  `<use>` and a clumped feTurbulence crust, written by
+  `apps/web/scripts/frost-masks.mjs` with a seeded random into
+  `lib/hk/frost-masks.css`; each is one fixed image, never tiled, so no
+  repeat shows, and three row masks take turns so a run of frozen rows
+  does not stripe. Nothing sits under text: the worst pixel under every
+  text run on a frozen surface, at 1920, 1440 and 390 in both schemes, is
+  5.44:1 light and 5.89:1 dark (floor 4.8). The frost forms over 600ms when
+  the machine froze in the last minute and thaws in 300ms when it wakes,
+  neither under reduced motion; reduced transparency drops the haze;
+  forced colours drop the frost and the word and snowflake carry the
+  state. The `?frost=` switch, the losing looks and the rail's ice bead are
+  gone. Frozen and its frost stay out of a production build (frozen.spec);
+  `lib/hk/frost-masks.test.ts` fails on a stale or undecodable mask. This
+  replaces the DESIGN-LANGUAGE line "a frozen machine has no band, no cyan
+  and no row fill" with its "Frost" section.
+- *Checks.* `lib/legacyUrls.test.ts` (one case per old URL),
+  `lib/billingMode.test.ts` (one case per billing mode); design.spec pins
+  the rail's geometry at 1440 and 1024, the strip's end at 101px, one current
+  place per page, at most one primary per page, the title's count and the
+  rail's foot; routes.spec renders every new route and every redirect;
+  `pnpm a11y` audits 19 pages (76 runs).
+- Supersedes the "no left rail" rule (spec 1.7, DESIGN-LANGUAGE "Frame and
+  header"). Amends I-578, I-655, I-664, I-679, I-680, I-693 and I-837:
+  I-578's menu contents, I-655's and I-679's header places, the page orders
+  and where questions sit of I-664, I-680 and I-693, and I-837's
+  DESIGN-LANGUAGE page list.
+- *Amended 2026-10-21, owner review (polish).* Command panes and command
+  lines are as wide as their longest command: `CommandList` from 22rem to
+  40rem, `CodeCopy` from 20rem to 40rem, both capped at the column on a
+  phone, so a Copy sits beside its command. At 1440 Connect was a 872px
+  pane with the first Copy 690px from `repose run`; it is now 352px, and
+  the Settings install line, the landing's two steps, the empty /projects
+  commands and /design follow from the shared components. In dark the
+  selected item of every joined control (theme switch, project and event
+  filters, Menu and Nix, Hour, Day and Week) is a quiet zinc-800 fill with
+  a zinc-700 inset hairline and a soft shadow, as the recruiting dashboard
+  draws it; the zinc-400 ring read as a bright frame. Selection stays more
+  than colour: the selected label is #fafafa over the others' #8b8b94, a
+  3.2:1 step in lightness at one weight, and forced colours keep the 2px
+  Highlight edge. Light is unchanged. design.spec pins the dark fill,
+  hairline, label step and equal weight, and Connect's width.
+- *Amended 2026-10-21, polish review of the frost and the long list.* At
+  1x the stroked rime strips on a /projects row and on the memory bar read
+  as a scribble, stray glyphs or a glitch, ended on hard 10px box edges,
+  and in light were white on #fafafa, so only a blue smear showed. They
+  are gone. A frozen row now shows frost seen through the glass along its
+  foot: a cloudy, grained white (a fixed 1600x64 feTurbulence field, never
+  tiled, offset three ways so a run does not stripe) over a cold tint, with
+  a crust on the rule, 18px tall (12px stacked) so it clears the text,
+  spanning the row and feathered on every side, fading out by 68 percent
+  of the row's width. The row's own rule is the only line; a row last in
+  its group, which has none, lifts the frost off its foot. The memory bar
+  keeps its ice fill and lit rim and draws nothing over it. The head's
+  crystals no longer climb a corner of the page background that has no
+  edge: they rise from the tab rule only, at most 56px, under the actions
+  and right of the tabs (`calc(100% - 24rem)`, at most 440px), and thin to
+  nothing at both ends. Under 640px the head shows the row's cloud along
+  the tab rule, 12px tall, inside the column, in place of the 40px gutter
+  smear. Light frost is a grey-blue shade (`#5f86a8`) with white at 55
+  percent as the highlight, and the cloud is `--hk-frost-cloud-ink`
+  (`rgb(111 149 186 / 0.5)` light, `rgb(214 232 246 / 0.4)` dark);
+  `--hk-frost-line` is gone. Worst pixel under text on a frozen surface:
+  remote 5.72:1 light and 5.89:1 dark at 1440, the stacked meta 5.44 and
+  5.89 at 390, the tabs 6.87 and 7.13. On the long list: the Stopped
+  filter keeps the "Stopped" band only, so a failed machine, which leads
+  Running under "Needs you", is no longer counted twice ("All 34 stopped"
+  opened "Show all 35"); `projectList.test.ts` pins the Stopped count to
+  Running's link. The table is `table-layout: fixed` with Disk and the
+  action sized to their content, so a filter or a search never moves the
+  columns. A search that matches only a remote shows that remote, on a
+  stopped row and on a phone. The stacked frozen row says how long it has
+  been frozen. The Running, Stopped and All control shares its track on a
+  phone. `CodeCopy` takes CommandList's 12px corners and ghost Copy, and
+  on a phone wraps the command (after a slash where it can) with an
+  icon-only Copy, so `| sh` shows. It stays light: a page keeps one dark
+  anchor, so the near-black pane is not used for a lone command.
+- *Amended 2026-10-21, a frozen row is one frosted L.* A frozen /projects
+  row now shows the same cloud along its foot, at full strength from x=0,
+  and frost down its leading edge, `max(1rem, 2.25%)` wide (19.6px at
+  1440, 16px on a phone), in a new generated mask `--hk-frost-cloud-side`
+  (96x480, seed 11). The side is densest at the bottom-left corner and
+  thins in pixels as it rises (0.6 at 16px, 0.25 at 34px, 0.12 at the
+  top), so the corner sits under the text on a row of any height. The
+  stopped prototype's 2px bright edge line is gone. Every frozen row
+  stands on a rule: the last row of a group, or a row above its stop
+  confirmation, draws a 1px hairline under its box. The owner rejected a
+  fill over the row body and a top hairline (variant D), so neither is
+  drawn. Hover and focus-within grow the frost in 450ms and recede it in
+  250ms: the foot reaches across the row (full to 40 percent, gone by 98)
+  and 2px taller, the side a third wider; a larger growth broke text
+  contrast. The row's hover fill paints over the frost, so a frozen row is
+  never brighter than another hovered row. Reduced motion is instant, a
+  coarse pointer keeps the rest state, forced colours hide the frost, and
+  phone rows show the same L. The remote line starts over the side frost;
+  its 5th-percentile background pixel holds 5.22:1 light and 5.27:1 dark
+  at rest at 1440, 4.68:1 and 4.56:1 hovered, 5.44:1 and 5.89:1 at 390,
+  and 5.2:1 or more against the mean background in every case. The darkest
+  single grains fall to 2.75:1 (dark, hovered). The frost tokens in
+  `repose.css` are unchanged. Checks: `tests/frozen.spec.ts` (the last
+  frozen row's rule 1px under the row at 1440 and 390; hover partway at
+  120ms, full, then back at rest; reduced motion full at once), with a
+  second build server on `PUBLIC_FLAG_FROZEN=1`; `frost-masks.test.ts`.
+- *Amended 2026-10-21, Memory running is one meter.* The owner, on the
+  memory display: "All the user needs to know is what is used vs max", so
+  the split per project stays on /projects. This retires looks A, B and C,
+  the `?memlook` switch, `MemoryBlocks.svelte` and `lib/memlook.ts`, and
+  I-674's squares for memory. /billing's Memory running is one bar in the
+  Meter anatomy (`MemoryMeter.svelte`): running GB in `--hk-accent`, the
+  fill of Disk held and Egress, so the three meters read as a set; frozen
+  GB in `--hk-ice-ink`, so frozen means the same colour everywhere; what
+  is left is the empty track; GB past the plan are amber
+  (`--hk-warn-dot` 60 percent into `--hk-warn`, 3.2:1 on the light page)
+  after a 1px tick at the plan's limit, with the bar scaled to the total.
+  No hatching and no per-project hues. With nothing running the track is
+  grey. One line under the bar names each figure ("12 GB running",
+  "24 GB frozen", "4 GB over" or "N GB left"); frozen is named only where
+  the dashboard draws frozen machines or frozen GB is above 0, so a
+  production build says running and left or over. Frozen GB is summed
+  from the frozen projects and running is the api's `running_gb` less
+  that. Checks: `MemoryMeter.test.ts` (over, under, zero, no plan
+  memory), `tests/billing.spec.ts` (the split's words, no project name in
+  the meter, the exact value text).
+- *Amended 2026-10-21, frost on the foot only; row fills bleed.* The
+  owner, on the live page: "for frost we can just do the bottom border and
+  we should be fine, the current animation is great too", and on the
+  /projects hover fill that ended at "job-board" and "Stop": "left right
+  padding?". The strip up a frozen row's leading edge and its mask
+  `--hk-frost-cloud-side` are gone; the cloud along the foot, the rule
+  under every frozen row and the hover and focus growth stay as the
+  frosted L amendment left them. A row's hover fill now bleeds
+  `--hk-row-bleed` (0.75rem, a new token) past its content on each side
+  with `--hk-radius-sm`, painted by the first cell's `::after` because a
+  collapsed table cell takes no radius; the text stays on the column's
+  edges, under the header and the title. `hk-table-wrap` around an
+  `hk-table--hover` widens its inline inset to the bleed so nothing clips,
+  and /projects drops its own 0.625rem end inset for it. The row link's
+  focus ring, the /projects stacked rows (a fill under a fine pointer
+  only) and a frozen row's frost take the same shape; the last frozen
+  row's drawn rule stays as wide as the column. `hk-row--hover` gets the
+  same bleed. The rail's rows already pad their fill (0.625rem), and
+  /questions, Recent activity, Recently destroyed, events, invoices and
+  secrets draw no row fill, so they are unchanged. Text over the frost,
+  5th-percentile pixel hovered: 5.28:1 light and 5.54:1 dark at 1440,
+  5.02:1 and 5.54:1 at 390. Checks: `tests/frozen.spec.ts` (one frost
+  element per frozen row), `frost-masks.test.ts`.
+- *Amended 2026-10-21, docs search is a palette.* The owner, comparing
+  the docs with recruiting's (the source of Guide B): "the original copy
+  from (recruiting) has better docs search, click around and see". The
+  sidebar's "Search the docs" field, which swapped the page list for
+  results of several lines each, is gone; the list stays put. Search is
+  the Guide B 12.14 palette (`lib/components/DocsSearch.svelte`): a "Search
+  docs" trigger at the top of the sidebar from 768px, with a ⌘K or Ctrl K
+  hint set after mount (the prerendered page has none, Guide B 15), and a
+  44px magnifier in the docs sub-bar below 768px, where the drawer no
+  longer holds a search. Cmd-K, Ctrl-K, or "/" outside a field opens it on
+  any docs page. It is a native `<dialog>` from `showModal()`, 36rem wide
+  at 12dvh over the blurred scrim, or the full width less 12px a side from
+  the top on a phone. The input, "Pages, commands, settings", is a combobox
+  over a listbox with `aria-activedescendant`. Empty, it lists every page
+  with its section on the right. Typed, each row is one line: a page, an
+  h2 or h3, or an item named in code in the first cell of a table row (CLI
+  flags, config.toml keys, environment variables, states, notification
+  titles), with its page or command on the right and the query in
+  `<mark>`, which Guide B 15 found missing in the reference. A row found
+  only in its section's text adds one muted line of that text. Ranking:
+  the label whole, its first words, whole words in it, then the label and
+  its context, then the text; a page over a heading over an item at each
+  step. Arrows wrap, Enter goes to the heading and focuses it, Escape gives
+  focus back to the trigger. The index is built from the markdown at build
+  time (`SEARCH` in `lib/docs.ts`), so there is no request and nothing for
+  the CSP to allow. Amends I-344 (the drawer keeps its state but no
+  longer has the search). Checks: `docs.test.ts` (flags and keys are
+  entries, every entry lands on a heading the page has, marks and
+  snippets), `tests/docs.spec.ts` (Ctrl-K, "/", arrows and Enter to the
+  anchor, Escape's focus, no match, the phone's sub-bar).
+- *Amended 2026-10-22, less rounding.* The owner, with a crop of the
+  landing hero in the dark: "check for unnecessary rounding". The rule:
+  the kit's scale stays, but each element takes the smallest step that
+  does its job, and a nested surface's radius is at most its parent's
+  minus the gap between them. Controls (buttons, inputs, menus, the
+  palette) and panes (code panes, plan cards, panels, the landing
+  stages) keep their Guide B steps. Tags drop to `--hk-radius-xs` (4px):
+  `hk-badge` and `hk-code-status` 5px to 4px, the palette's Esc key 5px
+  to 4px, as `kbd` is. A single command line (`CodeCopy`: the landing's
+  three steps, Settings' Install) is a command line at `--hk-radius`
+  (8px), not a 12px pane. An element edged by an accent bar on one side
+  is square: the docs sidebar's and the legal pages' current item
+  (`0 6px 6px 0` to 0) and the docs note (`0 8px 8px 0` to 0); a radius
+  on one side of a bar draws a tab, not a rule. Row hover fills stay at
+  `--hk-radius-sm`. Checks: the look greps' radii item; viewport shots at
+  1440 and 390 in both schemes in `.dev/shots/radii/`.
+
+**I-843. The landing gets main's drawn pictures back, in Herakraft UI.**
+(landing-restore, 2026-10-21) *Made during implementation.* Amends I-837.
+The owner called I-837's landing "a complete downgrade" and asked for the
+old content in the new style, keeping the new copy-command controls.
+- *What comes back.* Main's pictures (Hero, OneCommand, ComesBack,
+  Localhost, Browser, Editor, Ready), their motion controller, pause
+  buttons and assets, main's hero lead, and the agents heading "The agents
+  you use, and the tools they need, on first boot". anime.js returns as a
+  dependency.
+- *What stays from I-837.* The kit's type, colours, buttons and theme
+  switch; the hero's "Copy install command" button with the command shown
+  under it; `CodeCopy` rows for `repose login` and `repose run`;
+  `PlanCells`; the questions. The rails, ticks, shape marks and frieze
+  of main's page do not come back.
+- *How the pictures take the kit.* They keep their colour names
+  (`--pic-*`, `--sh-*`, `--ink`, `--surface`, `--sunken`, `--rule`);
+  `routes/landing.css` maps each onto an `--hk-*` token or a zinc step on
+  `.landing`, in both schemes and under the switch. Stages and frames take
+  the kit's 12px radius, windows 6px. Their blue is a muted slate step
+  (`#4b6496` light, `#93a7d0` dark) in place of the kit's link blue,
+  which the owner found too strong in the figures; links and the eyebrow
+  keep the kit's blue.
+- *The agents' links* sit beside the headline from 768px, not stacked
+  under it.
+- *The hero terminal leaves the landing.* `Terminal.svelte` stays for
+  `/design`. Main's rule that terminals appear only in the grid and the
+  agents picture applies again.
+- *"Start in three commands" comes back* as main drew it: rows wall to
+  wall, a gauge and the step's serif name on the left, the command (now
+  `CodeCopy`) filling the right. The install command shows in the hero
+  and in the first step, an exception to I-837's "each fact once" the
+  owner chose.
+- *Questions a visitor would try it for.* The FAQ's three setup questions
+  (files after a stop, the Claude Code login, Windows) give way to five
+  about the value: why not skip permissions on the laptop, close the
+  laptop while the agent works, recover from a wreck, three agents on
+  three approaches, why not set up a server yourself. The owner: questions about where a login lives "won't
+  pull them into the product".
+- *Docs tables.* A column whose every body cell is a figure right-aligns
+  its heading too (`lib/docs.ts`, `alignFigureHeads`); "Cores" sat left
+  over a right-aligned "1" in the machine sizes table.
+- *Pause button on touch.* It is a 44px button with the 28px chip drawn
+  inside, so the touch-target check holds (Guide B, 44px on touch).
+- *Amended 2026-10-22, quiet windows, square inside the stage.* The
+  owner, on a dark crop of the hero: "there is this ugly ass white border
+  added to the visualizations, also check for unnecessary rounding". A
+  machine's window was edged in `--pic-wall` (`#a1a1aa` in the dark, ink
+  in the light) and every other window in `--rule-strong`. Now every
+  window, the hero's snapshots panel and its tile, and the snapshot tiles
+  in the feature grid are a pane on the stage: the surface fill and a
+  `--rule` hairline (the kit's `--hk-border`, `#27272a` dark, `#e4e4e7`
+  light), the way the dashboard's panels sit on the page. `--pic-wall`
+  and WinHead's `data-who` hook are gone. Corners: the stage keeps the
+  kit's 12px; everything drawn inside it is square, since a window inset
+  12px from a 12px corner has no radius left to take. That is windows
+  (6px to 0) with their heads' top-only radius gone, the command and port
+  chips (6px to 0), the hero's skill tag, OneCommand's branch tag and
+  file count, Localhost's address bar (6px to 0), the snapshot tiles
+  (6px to 0) and Ready's terminal (2px to 0). The pause button is a
+  control and takes `--hk-radius-xs` (6px to 4px). Drawn details that
+  copy an app's shapes (the editor's tree connectors, skeleton bars,
+  dots) keep theirs. This replaces "windows 6px" under *How the pictures
+  take the kit*.
 **I-800. Seven alert rules on counters that already incremented, the
 rollup's lag gauge rises on its own, and `ops/check.sh` checks that a
 rule's runbook anchor resolves.** (launch-metrics, 2026-10-19) An audit of
@@ -24960,6 +25499,47 @@ which is the pair that collided); and reserving migration numbers the way
 decision ids are reserved (a number nobody has written yet is a number
 nobody can see is taken, and the loader is where the truth is).
 
+**I-856. A frozen machine is ice, not cyan, and the colour grep needs no
+allowance.** (ui-revamp, 2026-10-22; amends I-826, I-683) I-826 painted a
+frozen machine in the two `--frost` tokens in `routes/layout.css`,
+cyan-700 in the light and cyan-300 in the dark, and existed partly to give
+`CHECKLIST.md`'s colour grep the allowance I-683 had shipped without. The
+Herakraft kit answers the same question differently: `lib/hk/repose.css`
+carries an ice set measured from photographs of window frost, rime and
+glacier ice, hue 200 to 220 and never a saturated cyan, of which only
+`--hk-ice-ink` carries text (#456b86, 5.4:1 on the page; #a1c1de, 10.6:1
+at night). The merge takes the ice set. The `--frost` pair, its four
+usages and the CHECKLIST allowance all go, and the web app now has no
+permitted cyan at all.
+- *I-826's argument is why, not a casualty of this.* Blue is spent on
+  links, focus, the current item and selection, so a frozen machine
+  painted in the accent would read as a link or as a measure. `--hk-accent`
+  is still blue-700 and the ice set is not blue, so the argument holds
+  with a different answer to "then what colour". What does not survive is
+  the sentence that cyan is the one exception: an exception the grep must
+  be told about is worse than no exception, and the owner judged the frost
+  it belongs to on 2026-10-21 after five prototypes.
+- *The word, the places and the silence are unchanged.* `resting` on the
+  wire, "frozen" to a reader, the marker on the whole surface in the five
+  places I-826 lists, the snowflake at 13px, and `up` still correct beside
+  it. Nothing announces a pause: `ProjectMeta` carried
+  "It wakes when you connect." in a `title`, which is still a line the
+  user reads, so it is cut as I-826 cut it from the mock.
+- *The unused line prints beside the frozen one, not inside its chain.*
+  Both branches had built the state cell, and the merge of the two said
+  "unused" twice for a machine that was idle and not frozen. The frozen
+  duration and the unused line now sit in separate tests, each fact once,
+  which is what `frozen.spec.ts` asserts at 1440 and at 390.
+- *The flag and the test that guarded it are gone,* as I-826 said they
+  would be. `ui-revamp` still started a second server with
+  `PUBLIC_FLAG_FROZEN` to see its frost; `resting` is real, so those two
+  frost tests run on the same build as the rest of the suite.
+*Also settled by this merge, without changing either entry:* the logo is
+I-779's dividing cell, not I-363's traced cross, which I-779 superseded
+and `ui-revamp` had restyled in the kit; and its division is the one
+animation outside the kit's single curve and named durations, which I-779
+fixed at 900ms before I-837 named them. `DESIGN-LANGUAGE.md` records both
+under "Logo" and "Motion".
 **I-858. A test does not reassign a running Manager's dependency.**
 (freeze-test-race, 2026-10-23; the red CI run on main 573cf82f) Two freeze
 tests called `fh.create(gid1)` and then assigned `fh.m.d.Systemd`. `create`
@@ -25085,10 +25665,10 @@ sign-in starts, which is the owner's call.
   route also makes the button a real link, so middle-click, open in a new
   tab and copy link address start working, none of which a `<button>`
   gives you. It ships after ui-revamp is on main, not in that batch.
-- *Built as I-878* (2026-10-27), on main rather than after ui-revamp:
-  the branch was cut from this entry's own branch, which is cut from
-  main. Whichever lands second has to carry the other's change to
-  `authAction` in `routes/+page.svelte` and to `SiteHeader.svelte`.
+- *Built as I-878* (2026-10-27), after ui-revamp reached main, as this
+  entry asked. The branch was cut before that merge and took it with
+  `git merge main`; `authAction` and `SiteHeader` came from the revamp
+  and the `<button>` became an `<a href>` on top of them.
 - *The drawer and the palette are not covered by that choice.* A server
   route fixes a trigger whose job is to navigate. The docs drawer and the
   search palette open client UI and have no navigation to perform, so
@@ -25138,18 +25718,20 @@ which is what makes open-in-new-tab and copy-link-address work.
   Logto app stays a public client, so no secret moves: the route uses
   the same three `PUBLIC_*` values the bundle has.
 - *The open redirect, which is the real risk here.* `/signin` is a GET
-  anyone can put in a link, so an unchecked `?return=` would make the
+  anyone can put in a link, so a `?return=` taken on trust would make the
   site hand a visitor to an attacker's page at the moment they
-  authenticate. `safeReturnPath()` (`lib/signin.ts`) is an allow-list of
-  shapes, not a deny-list of hosts: one leading slash, not `//` and not
-  `/\`, no whitespace, backslash or control character, and then a parse
-  against a base that can never resolve has to come back on that same
-  base. Anything else becomes `/projects`. The cookie is re-checked
-  through the same function when it is read, so a tampered cookie cannot
-  carry an off-origin path either, and `/callback` hands the result to
-  `goto()`, which cannot leave the origin. `redirect_uri` is built from
-  the origin SvelteKit resolved; a forged `Host` can only make it a URI
-  Logto has not registered, which Logto refuses.
+  authenticate. `safeReturnPath()` (`lib/signin.ts`) answers it with an
+  allow-list of whole paths — `RETURN_PATHS`, which ui-revamp already
+  wrote for the browser flow ("never one read from a URL", Guide B 1.11)
+  and which both flows now share. Anything that is not one of them is
+  `/projects`. An allow-list of paths rather than a check on the shape of
+  an arbitrary one leaves nothing to outwit, and it makes the set of
+  destinations the set a reader sees in the file. The cookie goes back
+  through the same function when it is read, so a tampered cookie carries
+  nothing new either, and the value `/callback` hands `goto()` is one of
+  two literals. `redirect_uri` is built from the origin SvelteKit
+  resolved; a forged `Host` can only make it a URI Logto has not
+  registered, which Logto refuses.
 - *One flow per cookie.* `/callback` deletes the cookie before it does
   anything else, so a code cannot be put through the same verifier
   twice, and the cookie lives 10 minutes. `state` from the query must
@@ -25173,9 +25755,343 @@ which is what makes open-in-new-tab and copy-link-address work.
   (`tests/fixtures.ts`).
 - *Still open from I-864.* The docs drawer and the docs search palette
   keep the gap. They open client UI, so no route can serve them.
-- *Order.* I-864 said this ships after ui-revamp is on main. It is built
-  on main instead, because the branch carrying I-864 is cut from main and
-  the revamp is not merged. Both touch `authAction` and `SiteHeader`, so
-  whichever lands second carries the other's change into it; neither is
-  a semantic conflict — the revamp moves those two snippets, this entry
-  turns their `<button>` into an `<a href>`.
+- *Order.* I-864 asked for this after ui-revamp was on main, and that is
+  where it landed: the branch was cut before the revamp merged and took
+  it with `git merge main`, so `routes/+page.svelte`,
+  `lib/components/SiteHeader.svelte` and `routes/callback/+page.svelte`
+  are the revamp's, with the link change applied on top.
+**I-786. The launch host is added beside host-01, not grown out of it, and
+a host's shape is per-host (second-host, 2026-10-25).** Amends I-14 and
+I-39: their sizes stand, their *method* does not. *Made during
+implementation* (the owner asked to buy the launch host, then asked why it
+was not simply a second host).
+
+- *The mistake worth recording is not the Terraform.* `LAUNCH.md` step 1
+  said to set `host_size = "Standard_D64s_v7"` and apply, so that is what
+  was prepared. With `hosts = ["host-01"]` that is an in-place resize of
+  the one live host: Azure deallocates it, every guest on it stops,
+  `kanali` included, and the data disk has to be grown by hand afterwards
+  or 1,536 GB is paid for and unusable. The runbook had already said
+  otherwise, in the same session's own words: step 0, rewritten for I-782
+  four days earlier, describes "the launch host" registering and taking
+  10.255.0.4. **A resize registers nothing and keeps .2.** The document
+  contradicted itself and the half that was followed was the wrong half.
+  Following a runbook you wrote yourself, past evidence inside it, is the
+  failure that is hardest to catch, because the document agrees with you.
+- *What made the resize look like the only option.* The root module had
+  one size for the whole fleet: `infra/azure/prod/main.tf` passed
+  `host_size` into the environment module, which handed it to every host
+  in `for_each = toset(var.hosts)`. Two hosts at two sizes were not
+  expressible, so "bigger host" could only mean "grow this one".
+- *The shape.* `host_shapes`, a map of objects keyed by host name, each
+  attribute `optional()`: size, class, zone, data_disk_gb, data_disk_iops,
+  data_disk_mbps, os_disk_gb. A local resolves each attribute as
+  `coalesce(try(var.host_shapes[name].<attr>, null), var.<global>)`, so an
+  attribute left out takes the fleet default and **a host with no entry is
+  byte-for-byte what it was before the variable existed**. `host-01` names
+  no entry. That is the safety property, and it is checked rather than
+  claimed: `tofu console` against the real tfvars resolves host-01 to
+  `azure-d16s-v7 / Standard_D16s_v7 / zone 1 / 512 / 16000 / 600 / 256`,
+  identical to today.
+  One map of objects, not five parallel maps: a reader of `prod.tfvars`
+  sees one block that says what host-02 *is*, and the review failure of
+  five maps is an entry missing from one of them, which applies silently
+  as a 2 TB disk still provisioned for 512 GB.
+  `coalesce` fails when every argument is null, so every global keeps its
+  default; `merge()` was rejected because a null on the right beats the
+  default and a mixed-type object will not convert to a map.
+  `security_type` stays global: both validations pin it to `Standard`, and
+  a per-host value has no legitimate use.
+- *The plan, run 2026-10-25.* **8 to add, 0 to change, 0 to destroy**, and
+  no `host["host-01"]` resource appears in it at all. The resize plan, for
+  contrast, was 0 add, 3 change, 0 destroy, and one of the three changes
+  was the live VM's `size`.
+- *Two new check blocks, both warnings.* `host_shapes_name_real_hosts`: a
+  typo'd key applies nothing and reports nothing, so the host would come
+  up silently at the fleet default. `every_host_has_a_flake_attr`: a host
+  missing from `host_flake_attrs` installs the generic `host`
+  configuration and **never registers** -- its `apiAddr` is the default
+  `api.repose.herakraft.co:443`, where nothing gRPC answers, because
+  api-grpc's mTLS listeners are 8443 and 8444 and `manage_dns = false`
+  makes that name Cloudflare's proxied wildcard. The apply succeeds and
+  the VM is healthy, which is why the check exists. Both warn rather than
+  fail: `host_flake_attr_default` is a supported value, and a precondition
+  that aborts the plan would take the live host down with it over a stray
+  key.
+- *What the bigger host changes that nobody asked about.* The guest
+  freeze's budget is write rate times a deadline hard-capped at 300 s. At
+  the inherited 600 MB/s that is 180 GB, and at host-01's *measured* 400
+  MB/s it is 120 GB, against up to 192 GB of guest memory on a full
+  host-02. host-01 never met this because it holds at most 48 GB. The
+  lever is provisioned throughput, which is billed, so it is the owner's
+  and `host_shapes` is where it would go. `writeRateMBs` in
+  `nix/hosts/host-02.nix` is inherited from host-01 and marked unmeasured;
+  it must be measured on host-02's own pool device.
+- *Retiring host-01 later has three sharp edges, all now in LAUNCH and the
+  RUNBOOK.* `repose-admin hosts retire` refuses while the host holds any
+  project, stopped ones included. `repose-admin projects move --to` sets
+  the target directly and short-circuits `PickHost`, so memory, pool room
+  and the 1.5-vCPU-per-core rule are never checked for a move. A move of a
+  project that is **not running** restores the newest snapshot that
+  already exists, which may be a day old; start or snapshot it first.
+  Every moved project also emails its owner that it "was restored onto a
+  new host from its latest snapshot", which reads as data loss on a
+  planned migration.
+- *Seats go 4 to 28 on host-02's first heartbeat*, and the waitlist
+  Inviter mails every free seat in one tick with no rate limit, each
+  invitation holding a seat for 72 hours. Twenty-four invitations can go
+  out at once. Draining host-01 later drops the total by its 4 the moment
+  the drain lands.
+- *What the adversarial review changed, after the first commit.* Five
+  lenses raised 49 candidates and 43 died under refutation. The one that
+  changed the configuration: host-02 was taking the fleet's 256 GB OS
+  disk, which is `/nix/store`, shared by every guest on the machine.
+  hostd keeps a GC root per live closure and three revisions per project,
+  and past 80 percent hostd refuses `Build` with `insufficient_capacity:
+  host store full` for every tenant on that host. host-01 sells 4 seats
+  and host-02 sells 24. Every other dimension that scales with guest
+  count was scaled; the store was not. `os_disk_gb = 512`, about $38 a
+  month, and it had to be now: the data disk grows online and the RUNBOOK
+  says how, while the OS disk is inline on the VM resource with no grow
+  procedure, so changing it later is a plan against a live host -- the
+  failure this whole entry exists to avoid.
+  The rest were true statements that had stopped being true: the commit
+  added a check that warns and then wrote "the apply says nothing" in
+  three places; the Prometheus target reaches git and nothing deploys it,
+  so host-02 would carry tenants with every host alert silent (now a step
+  in two runbooks and a `HostNotInTargets` rule with its own test case and
+  runbook entry); and `/docs/agents` promises one Claude login covers
+  every machine, which is false across two hosts and false for a machine
+  that has just been moved.
+- *A money error this change inherited and would have amplified.* The cost
+  table in `infra/README.md` labelled its first subtotal "one host and the
+  edge ... about $857" when those rows sum to $1,094.59, then labelled
+  $1,094 as "one host **and the control plane**". The control plane's $237
+  was therefore dropped from every total below, and the two-host figure
+  read $4,473 when it is **$4,711**. The individual rows were right; the
+  two bold labels were not. Corrected here because this change is what
+  puts that number in front of a purchase. The deltas are unaffected:
+  host-02 adds about $3,379 a month and retiring host-01 gives back about
+  $939.
+- *Not done here, and deliberately.* The apply: `infra/Makefile` says
+  `make apply ENV=prod` is "the owner's call, never an agent's". The join
+  token, which is minted by `repose-admin hosts add --name host-02` and
+  lives only in the uncommitted `prod.local.tfvars` -- the plan warns
+  about its absence today, correctly. And `ssh host-01` from woker-1 fails
+  with REMOTE HOST IDENTIFICATION HAS CHANGED against an RSA key at
+  `known_hosts:16`; nothing was edited, because silencing a host-key
+  warning on a production host is not an agent's call.
+
+**I-872. repose builds the kexec installer it installs through, the install
+has a deadline, and both fail before a VM exists (second-host, 2026-10-26).**
+Sibling to I-786, which added host-02 and stops at the plan. This is what the
+apply then ran into. *Made during implementation* (host-02's install hung for
+16 h 56 m on 2026-10-26; the owner asked for the fix to be stable for a fleet
+that will grow).
+
+- *The installer was never ours.* `nixos-anywhere` passed no `--kexec`, so the
+  **target** downloaded a fixed upstream release asset -- nixos-images
+  `nixos-25.05`, Linux 6.14.10, last rebuilt 2025-12-25 -- and kexec'd into
+  it. `--flake` names only the system installed afterwards. The same bytes
+  installed host-01, host-stg-01 and host-02, so neither our nixpkgs nor
+  I-778's 6.18.57 kernel pin was ever involved, and the first hypothesis of
+  this investigation (that the pin broke it) was disproved rather than
+  argued.
+- *What that image does wrong on Azure.* Its `restore-network` writes one
+  `00-<ifname>.network` per link whose `[Match]` is `MACAddress=` and whose
+  `[Network]` is `DHCP=yes`. On Azure accelerated networking the `hv_netvsc`
+  synthetic link and the `mana` SR-IOV VF **share one MAC**, so every unit
+  matches both links and the installer DHCPs the VF as a second NIC, against
+  Microsoft's rule that addresses belong only to the synthetic interface. It
+  is still in upstream HEAD. Our installed hosts were never exposed to it:
+  `nix/hosts/network.nix` matches `10-uplink` by interface NAME and sets
+  `networking.useDHCP = false`, so the VF matches no unit. Only the borrowed
+  installer was wrong.
+- *So repose builds its own.* `nix/installer` on `nixos-images`'
+  `kexec-installer` module: the host kernel pin, `restore-network` masked,
+  `05-vf-unmanaged` matching `Driver = "mana mlx5_core mlx4_core"` as
+  unmanaged, `10-uplink` matching `Driver = "hv_netvsc"` with DHCP, and
+  `consoleLogLevel = 7`. Matching by **driver** is the fix: a driver tells
+  the two links apart where a MAC cannot. The image is named
+  `repose-kexec-installer` so it can never be mistaken in a log or a
+  container for the asset it replaces.
+- *`kexec_image` unset means ours, and no value asks for the upstream asset.*
+  The alternative -- unset means upstream, with a plan-time warning and a
+  documented procedure to pass a path -- was implemented, argued for well,
+  and rejected. A warning does not stop an apply, and the information that
+  would have prevented host-02's failure was already in the tree; what was
+  missing was a prompt at the moment it mattered. A default that selects a
+  known-broken artifact is not a default. The asymmetry decides it: unset
+  means ours and the flake is broken gives a loud failure naming the flake,
+  while unset means upstream and someone forgets gives a silent install into
+  the defect. Someone who truly wants the upstream image passes its URL,
+  which is explicit and shows up in a diff.
+- *The deadline, and why nothing else could bound it.* OpenTofu rejects a
+  `timeout` argument on `local-exec` (proved, not assumed), and
+  nixos-anywhere waits for the post-kexec machine with an unbounded
+  `until runSsh ...; do sleep 5; done` with no flag to bound it.
+  `connect_timeout` bounds only the SSH handshakes on the steps either side,
+  and its description claimed otherwise; that is corrected. The call now runs
+  under `timeout --kill-after=1m`, default `45m` against a real install's
+  15-20 minutes, and exits 124 or 137 print a block saying the install ran
+  out of time rather than failed, with the two read-only diagnostics.
+  **The cost of the missing bound was not the VM.** It was this environment's
+  only state lock, held for 17 hours, during which any emergency apply
+  against the edge, the control plane, DNS or the vaults would have been
+  refused.
+- *Failure moved before creation.* `terraform_data.kexec_image` builds the
+  image ahead of every machine, with `module.host` and `module.edge` ordered
+  behind it, plus a `flake_path` precondition and validations on
+  `kexec_image`'s extension and existence. It earned this on its first run: a
+  plan refused because `nix/installer` was untracked and because `flake_path`
+  names the **main checkout**, not the worktree the work is in. That second
+  one is a standing trap -- the apply builds from a different checkout than
+  the branch, so anything added here is invisible to it until the release
+  queue lands it on main.
+- *What is knowingly not checked at plan time.* Whether the image builds:
+  check blocks evaluate expressions and cannot run `nix`, and both
+  workarounds are worse -- a `terraform_data` is skipped once its triggers
+  stop changing, including after a `nix store gc` took the path it vouched
+  for, and an `external` data source shells out on every plan, giving a
+  read-only plan side effects. And whether a join token is unexpired: the api
+  keeps only its hash and expiry, so a stale token is indistinguishable from
+  a fresh one here and surfaces as hostd's exit 3.
+- *The diagnostics are the most reusable thing learned.* A flat, byte-exact
+  per-minute network count means the installer is alive with no usable
+  address; bulk inbound means the closure is copying. host-02 sat at 3,256
+  B/min in for 17 hours where host-stg-01's successful install moved 397 MB,
+  204 MB and 506 MB. Both reads need neither the machine nor the lock.
+  RUNBOOK, "Install hit the deadline".
+- *Still owed.* The image is passed as a local path, so it is uploaded
+  through the edge's jump host -- about 503 MiB per install, where the
+  upstream flow had the target fetch directly and never touch the edge.
+  Publishing it to the snapshots account and passing a URL restores the
+  direct fetch; the module already accepts one, and the extension validation
+  exists because a SAS query string would break nixos-anywhere's
+  decompression after the whole transfer.
+**I-866. The control plane's WireGuard socket takes a fixed port, because
+the edge learns its endpoint from the packets it sends.** (control-tunnel
+incident, 2026-10-26) The edge's static peer for the control plane carries
+no endpoint: the edge learns the VM's address and port from the first
+packet that authenticates, and WireGuard updates a peer's endpoint only on
+such a packet. `wg0.conf` as cloud-init wrote it had no `ListenPort`, so
+every restart came back on a new ephemeral port, the edge kept answering
+the port from before the restart, and the tunnel could be repaired only
+from the VM's side.
+
+On 2026-10-26 Azure stopped the VM at 07:46:55Z. It came back on port
+51275 and its packets stopped arriving at the edge altogether, so neither
+end could repair anything: the gateway lost `/internal`, its caches went
+stale after an hour, and from 08:50Z to 17:09Z no user could `ssh`, `run`,
+`attach` or `open`. `wg set wg0 listen-port 51820` fixed it in 12 seconds.
+Why that one 5-tuple was blackholed is Azure's side and is not
+established; what is settled is that a restart must not be a coin toss.
+`ListenPort = 51820` is now in the cloud-init template, in
+`infra/README.md` and on the live VM. The port matches the edge's hub port
+for one reason only: a number a reader recognises.
+
+*Rejected:* an endpoint on the edge's static peer, so the edge can dial
+first. It makes the control VM's address a second fact to keep in
+`nix/edge/edge-01.nix` and an edge rebuild part of replacing the VM;
+`persistent-keepalive` from the VM already means the VM dials, and a fixed
+port is what makes that work after a restart. *Revisit when:* the control
+plane is more than one VM, where a port per VM stops being obvious.
+`docs/incidents/2026-10-26-control-tunnel-one-way.md`.
+
+**I-868. A refusal the gateway makes because its own caches are stale does
+not count towards the source's ban.** (control-tunnel incident,
+2026-10-26) I-599 took the user's own refused certificate off the ban
+budget and its text already named "the control plane away", but the code
+read that budget off `st.ownCert`, which is set only after the CA,
+validity, revocation and handle checks. The two refusals for a stale CA or
+a stale revocation list happen *before* those checks, so they counted:
+during the 2026-10-26 outage the owner's laptop retried `repose attach`
+and banned its own address for 10 minutes on top of the 9-hour outage,
+reading `kex_exchange_identification: read: Connection reset by peer`,
+which names neither cause.
+
+A gateway that cannot judge any certificate cannot tell whether the client
+holds a good one, and that uncertainty is the gateway's, not the caller's.
+`connState.ours` marks those two paths and joins `ownCert` in the outcome.
+A client that offers no certificate at all is still refused before this and
+still counts, so the scanner protection is unchanged; a scanner that offers
+a random certificate escapes the ban for the length of an outage, which
+nftables' 64 connections and 20 a second per source still cover.
+`TestControlPlaneOutageNeverBansTheSource` fails on the old code at
+attempt 21.
+
+**I-870. The gateway's cache age is the alert for a control plane the
+gateway cannot reach.** (control-tunnel incident, 2026-10-26) Nothing paged
+in the nine hours of the 2026-10-26 outage, and the alert table explains
+why: `GatewayDown` and `MonitoringPathDown` read `up{job="gateway"}`, and
+the gateway was up and scrapeable the whole time — it was relaying
+existing sessions and refusing new ones. `ApiDown` would have seen it, but
+Prometheus scrapes the api at `10.255.255.1` through the very tunnel that
+was down, so it is not an independent witness of this failure.
+
+`GatewayCachesStale` pages on `repose_gateway_revocation_cache_age_seconds
+> 900` for 5 minutes: the gateway's own view, scraped over a path that was
+working, 45 minutes before `StaleAfter` turns it into a total outage. The
+gauge is already set on every refresh attempt, failures included, so this
+costs no new instrumentation. *Rejected:* alerting on the `route_fail` log
+lines (Loki, a second system, for a signal a gauge already carries), and
+raising `StaleAfter` so an outage is survived longer (a gateway that
+accepts certificates against an hours-old revocation list is a gateway
+that relays a revoked one, I-434).
+
+**I-874. The OS disk is wiped before disko partitions it (os-disk-zap,
+2026-10-27).** Amends the layout in `nix/hosts/disko-layout.nix`. *Made
+during implementation* (host-02's install failed at `mount /mnt/boot` on the
+first apply after I-872 fixed the installer).
+
+- *What the failure looked like, and why it named nothing useful.* The
+  install died with `mount: /mnt/boot: wrong fs type, bad option, bad
+  superblock on /dev/nvme0n1p1`. Three steps upstream, `sgdisk
+  --new=1:0:+1G` had answered **"Could not create partition 1 from 2097153
+  to 4194304. Error encountered; not saving changes."** The ESP was never
+  created. disko's next command for that partition is a bare
+  `--change-name`, which succeeded, so it **relabelled the disk's existing
+  partition 1 as `disk-os-ESP`**; `--new=2:0:-0` then took a leftover gap
+  and `disk-os-root` became a megabyte, which `mkfs.ext4` reported as
+  "Creating filesystem with 1020 1k blocks and 128 inodes". The ESP was not
+  formatted either, because the format step skips a partition whose `blkid`
+  already reports a TYPE. Every downstream symptom was a consequence of a
+  failure three steps earlier that did not stop the run.
+- *Why the disk still had a table.* disko's gpt handler emits `sgdisk
+  --clear` **only when `blkid` finds no signature** on the device. The data
+  disk had none, so it was cleared and partitioned cleanly in the same run;
+  the OS disk reported `PTTYPE="gpt"` and was not. Its destroy phase does not
+  cover the gap either: `osDevice` is a symlink under `/dev/disk/repose/`
+  (the indirection Azure's NVMe naming forces, I-39, I-41), and destroy
+  matched the symlink case and ran `rm -f` on the **link**, not on the disk
+  behind it. So create re-resolved the symlink and found the old table
+  intact.
+- *The fix is a wipe in the OS disk's `preCreateHook`*: `sgdisk --zap-all`,
+  `wipefs`, `partprobe`, `udevadm settle`, after the resolve so it wipes the
+  disk that was resolved and never a sibling. This is the install target and
+  the installer runs from RAM, so wiping it is the intent rather than a risk.
+- *It is deliberately not inside `azureOsResolve`.* That hook is wrapped in
+  `lib.optionalString (azureUdevRules != null)` and is Azure-only, because
+  what it does -- resolve a symlink -- is an Azure naming problem. Carrying a
+  table in the provider's image is true of every provider, so the wipe is its
+  own always-present hook. Putting it inside the Azure block would also have
+  made it invisible to the VM tests, which pass `azureUdevRules = null`.
+- *Why no test caught this.* `nix/hosts/tests`' storage test builds the
+  layout with `withOs = false` and `osDevice = "/dev/null"`: it covers the
+  data disk and has never exercised the OS disk at all. That gap is why a
+  layout that cannot survive a pre-existing table shipped and installed three
+  hosts without anyone noticing. **Owed:** a test that runs the OS layout
+  against a virtual disk that already carries a GPT, which fails without this
+  wipe.
+- *Evidence.* The built `diskoScript` carries the wipe at line 200 and
+  `--new=1:0:+1G` at 215, so it runs first. The host system derivation is
+  unchanged by it, because the wipe lives in the install-time script and not
+  in the installed system -- which is also why this can ship without
+  switching a live host.
+- *Not proved: whether a first install on a fresh provider image would have
+  hit this too.* host-01 and host-stg-01 installed through the same layout
+  and did not. host-02's disk carried our own partitions from the attempt
+  that failed after partitioning on 2026-10-26, so the retry is the case that
+  is certainly broken. A fresh Azure image also ships a GPT, so the same
+  branch is reachable there; nothing in this entry should be read as saying
+  it is not.

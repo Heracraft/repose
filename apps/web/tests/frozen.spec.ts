@@ -36,6 +36,26 @@ async function marks(el: Locator): Promise<{ frozen: number; unused: number }> {
 	};
 }
 
+/**
+ * The row's State cell in the table (`td.c-state`). The table is a named
+ * region only where it scrolls sideways (`tabStopWhenScrolls`, I-841), so
+ * at 1440 there is no region to go through.
+ */
+function stateCell(page: Page, name: string): Locator {
+	return page
+		.locator('table.ptable tbody tr')
+		.filter({ has: page.getByRole('link', { name, exact: true }) })
+		.locator('td.c-state');
+}
+
+/** The same project's row in the stacked list a phone shows. */
+function stackedRow(page: Page, name: string): Locator {
+	return page
+		.locator('ul.mgroup li.mrow')
+		.filter({ has: page.getByRole('link', { name, exact: true }) })
+		.first();
+}
+
 test('a frozen machine is marked in the list and on its page', async ({ page }) => {
 	const api = apiURLFromEnv();
 	const p = await createProject(api, {
@@ -45,12 +65,7 @@ test('a frozen machine is marked in the list and on its page', async ({ page }) 
 	try {
 		await setResting(p.id, 30);
 		await page.goto('/projects');
-		const cell = page
-			.getByRole('region', { name: 'Projects' })
-			.locator('tr')
-			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) })
-			.locator('td')
-			.nth(1);
+		const cell = stateCell(page, p.name);
 		await expect(cell).toContainText('frozen');
 		await expect(cell).toContainText('for 30m');
 		await expect(page.locator('[data-frozen]')).not.toHaveCount(0);
@@ -59,12 +74,19 @@ test('a frozen machine is marked in the list and on its page', async ({ page }) 
 		// The state stays running on the wire; the word a reader sees is
 		// frozen (I-818 S2, S3).
 		await expect(page.getByTestId('project-state')).toHaveText('frozen');
-		const band = page.getByTestId('frozen');
-		await expect(band).toHaveText('Frozen for 30m.');
-		// The band says how long and stops: what wakes it is the docs'
-		// answer, not the screen's (I-484, I-485).
-		await expect(band).not.toContainText('connect');
-		await expect(page.getByTestId('machine-card')).toContainText('frozen');
+		// How long, on the status line beside the word, not in a band of its
+		// own (I-841's status line; the band was the mock's).
+		const since = page.getByTestId('frozen');
+		await expect(since).toHaveText('for 30m');
+		const status = page.locator('.project-meta .status');
+		expect(await marks(status)).toEqual({ frozen: 1, unused: 0 });
+		// It says how long and stops: what wakes it is the docs' answer,
+		// not the screen's (I-484, I-485).
+		await expect(status).not.toContainText('connect');
+		// The Machine section marks it with ice on the memory meter rather
+		// than the word again: the status line above has already said it,
+		// once (I-826's whole surface, I-485's each fact once).
+		await expect(page.getByTestId('machine-card').locator('.hk-meter-ice')).toHaveCount(1);
 		await shots(page, 'frozen-project');
 
 		// The marker goes with the field, with no reload of its own.
@@ -104,23 +126,14 @@ test('a frozen and unused machine says each thing once at 1440 and at 390', asyn
 
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/projects');
-		const cell = page
-			.getByRole('region', { name: 'Projects' })
-			.locator('tr')
-			.filter({ has: page.getByRole('link', { name: p.name, exact: true }) })
-			.locator('td')
-			.nth(1);
+		const cell = stateCell(page, p.name);
 		await expect(cell).toContainText('for 42m');
 		await expect(cell).toContainText('unused 26h');
 		expect(await marks(cell)).toEqual({ frozen: 1, unused: 1 });
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.goto('/projects');
-		const stacked = page
-			.getByRole('list', { name: 'Projects' })
-			.locator('li')
-			.filter({ has: page.getByRole('link', { name: new RegExp(p.name) }) })
-			.first();
+		const stacked = stackedRow(page, p.name);
 		await expect(stacked).toContainText('for 42m');
 		await expect(stacked).toContainText('unused 26h');
 		expect(await marks(stacked)).toEqual({ frozen: 1, unused: 1 });
@@ -180,4 +193,85 @@ test('Keep this machine awake patches the project and sticks', async ({ page }) 
 	} finally {
 		await destroyProject(api, p.id);
 	}
+});
+
+// The frost itself (Frost.svelte, the I-841 amendment of 2026-10-21): the
+// drawing a frozen row carries, where an edge meets a rule. While the look
+// was a mock these ran on a second server started with PUBLIC_FLAG_FROZEN;
+// `resting` is real and no flag gates it (I-818, I-826), so they run on the
+// same build as the rest of the suite.
+test.describe('the frost a frozen row draws', () => {
+	/** A frozen project searched for alone, so its row is the last of its group. */
+	async function lastFrozenRow(page: Page, name: string) {
+		const p = await createProject(apiURLFromEnv(), {
+			name,
+			remote_url: `github.com/heracraft/${name}`
+		});
+		await setResting(p.id, 90);
+		await page.goto(`/projects?q=${encodeURIComponent(p.name)}`);
+		return p;
+	}
+
+	/** The foot's frost box against its row's: where its bottom sits, and
+	 *  whether it paints the rule. */
+	function footOf(row: Locator) {
+		return row.evaluate((r) => {
+			const foot = r.querySelector('.hk-frost--row') as HTMLElement;
+			const rb = r.getBoundingClientRect();
+			const fb = foot.getBoundingClientRect();
+			return {
+				below: Math.round(fb.bottom - rb.bottom),
+				rule: getComputedStyle(foot).backgroundImage
+			};
+		});
+	}
+
+	test('the last frozen row of a group keeps a rule under its frost', async ({ page }) => {
+		const p = await lastFrozenRow(page, 'frost-last');
+		try {
+			const row = page.locator('tr[data-frost-on="row"]', { hasText: p.name });
+			await expect(row).toBeVisible();
+			await expect(page.locator('tbody tr.prow')).toHaveCount(1);
+			const foot = await footOf(row);
+			expect(foot.below).toBe(1);
+			expect(foot.rule).toContain('linear-gradient');
+			// The foot is the whole of it: no strip up the leading edge.
+			await expect(row.locator('.hk-frost')).toHaveCount(1);
+
+			await page.setViewportSize({ width: 390, height: 844 });
+			const li = page.locator('li[data-frost-on="row"]', { hasText: p.name });
+			await expect(li).toBeVisible();
+			const phone = await footOf(li);
+			expect(phone.below).toBe(1);
+			expect(phone.rule).toContain('linear-gradient');
+			await shots(page, 'frozen-frost-row');
+		} finally {
+			await destroyProject(apiURLFromEnv(), p.id);
+		}
+	});
+
+	test('the frost grows in under the pointer, at once with reduced motion', async ({ page }) => {
+		const p = await lastFrozenRow(page, 'frost-hover');
+		try {
+			const row = page.locator('tr[data-frost-on="row"]', { hasText: p.name });
+			await expect(row).toBeVisible();
+			const g = () =>
+				row.evaluate((r) => Number(getComputedStyle(r).getPropertyValue('--frost-g')));
+			expect(await g()).toBe(0);
+			await row.hover();
+			await page.waitForTimeout(120);
+			const mid = await g();
+			expect(mid).toBeGreaterThan(0);
+			expect(mid).toBeLessThan(1);
+			await expect.poll(g).toBe(1);
+			await page.mouse.move(0, 0);
+			await expect.poll(g).toBe(0);
+
+			await page.emulateMedia({ reducedMotion: 'reduce' });
+			await row.hover();
+			expect(await g()).toBe(1);
+		} finally {
+			await destroyProject(apiURLFromEnv(), p.id);
+		}
+	});
 });

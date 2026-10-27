@@ -30,7 +30,7 @@ repose status todo-app
 repose status todo-app -f
 ```
 
-The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. It leads with the projects an agent is waiting on or that failed, then the running machines, then the stopped ones, most recently used first, and a stopped row says when it last ran. Past 8 projects, a search box finds one by name or remote and **All**, **Needs you**, **Running** and **Stopped** filter the list; both live in the page's address, so a reload keeps them. The list shows 25 and **Show all** lists the rest. A project's own page has its agents, its snapshots and its events, which filter to agents, errors or the machine. It lists no listening ports.
+The dashboard's **Projects** page lists the same projects, with **Stop** on a running one's row and **Start** on a stopped one's, and **Recent activity** under the list. It leads with the projects an agent is waiting on or that failed, then the running machines, then the stopped ones, most recently used first, and a stopped row says when it last ran. Past 8 projects the list opens on **Running**: the projects that want you or are up, then the 5 stopped ones used last and a link to all the stopped ones. **Stopped** lists the stopped ones and **All** every project, 25 at a time with **Show all**; a project that failed is listed under **Running**, not **Stopped**. A search box finds a project by name or remote in every state; the filter and the search live in the page's address, so a reload keeps them. The sidebar lists the same running projects and folds the stopped ones into one link. A project's page has five tabs: **Overview** with its questions, Connect, agents and machine; **Events**, which filter to agents, errors or the machine; **Usage**; **Snapshots**; and **Config** with its packages and secrets. It lists no listening ports.
 
 ## Stop and start
 
@@ -44,7 +44,7 @@ Stopping todo-app; 1 file not committed.
 
 A stop ends every process on the machine. It asks first when the machine's last sample showed an agent working or waiting for an answer, and it fetches that agent's commits before the machine goes. That fetch runs `git fetch repose` in each of the project's checkouts on this laptop, whatever folder you run it in. The line ends with what stays behind: commits your checkouts haven't fetched, files nobody committed, or both. If the machine stopped answering before any of it could be read, it says that instead. [`repose stop`](/docs/cli#repose-stop-project) has the flags and the exact lines.
 
-The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
+The dashboard asks the same question, in the same words, before a Stop that would end an agent's turn, on the project's page and on a row of **Projects**, with **Stop anyway** and **Keep it running**. A machine with no agent mid-turn or waiting on an answer stops on one click.
 
 The command comes back once the stop is under way. The snapshot and the shutdown run on the server, so you can close the laptop. Most of a stop is its snapshot, which grows with what the disk holds; `--no-snapshot`, or unticking **Snapshot on stop** in the dashboard, stops without one. A stop that fails after the command returned leaves the project in `error` with the reason and [notifies you](/docs/notifications), and `repose stop` tries again.
 
@@ -148,7 +148,7 @@ repose snapshots restore SNAPSHOT_ID --as todo-app-old
 
 The new project boots with its `shell` window alone; agent windows reopen only in the project they were recorded in.
 
-The dashboard's snapshot list has **Create snapshot**, **Restore…** and **Restore as new…**, which opens the project it makes, and shows the newest 8 with **Show all** for the rest. **Restore…** wants the project stopped and asks you to type its name, as **Destroy** does.
+The project's **Snapshots** tab has **Create snapshot** and, on each snapshot, **Restore…**, which restores over the project or, with **Restore as new**, into a new project that then opens. It shows the newest 8 with **Show all** for the rest. Restoring over the project wants it stopped and asks you to type its name, as **Destroy** does.
 
 A restore checks what it reads against the SHA-256 recorded when the snapshot was taken. If they differ it stops with `snapshot checksum mismatch` and deletes the disk it was writing, so nothing boots on it. A snapshot taken before 2026-10-03 has no digest and restores unchecked.
 

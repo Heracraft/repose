@@ -104,9 +104,15 @@ write_files:
         echo "repose:   public key $(cat /etc/wireguard/publickey)  allowed-ips ${wireguard_address}" >&2
         exit 0
       fi
+      # ListenPort is fixed, not ephemeral (DECISIONS I-866): the edge
+      # learns this machine's endpoint from the packets it sends, so a
+      # restart on a new random port leaves the edge answering the old
+      # one, and only this side can repair the tunnel. On 2026-10-26 it
+      # could not, and the gateway had no /internal for 9 hours.
       cat > /etc/wireguard/wg0.conf <<CONF
       [Interface]
       Address = ${wireguard_address}
+      ListenPort = 51820
       PostUp = wg set %i private-key /etc/wireguard/privatekey
 
       [Peer]

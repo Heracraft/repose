@@ -17,7 +17,10 @@ import {
 	share,
 	sizeGB,
 	tempLeft,
-	timeUntil
+	timeUntil,
+	upLabel,
+	sinceLabel,
+	uptime
 } from './format';
 
 describe('money', () => {
@@ -235,5 +238,29 @@ describe('relativeTime', () => {
 
 	it('never counts seconds', () => {
 		expect(relativeTime(new Date(Date.now() - 3_000).toISOString())).toBe('just now');
+	});
+});
+
+describe('upLabel and sinceLabel', () => {
+	const now = Date.parse('2026-10-21T12:00:00Z');
+	const ago = (ms: number) => new Date(now - ms).toISOString();
+	it('keeps uptime as "2h14m"', () => {
+		expect(uptime(ago((2 * 60 + 14) * 60_000), now)).toBe('2h14m');
+	});
+	it('says "just now" under a minute, as ageShort does', () => {
+		expect(upLabel(ago(30_000), now)).toBe('started just now');
+		expect(sinceLabel(ago(30_000), 'for', now)).toBe('just now');
+		expect(ageShort(ago(30_000), now)).toBe('just now');
+	});
+	it('says "just now" for a start ahead of the clock', () => {
+		expect(upLabel(ago(-5_000), now)).toBe('started just now');
+	});
+	it('counts from the first minute', () => {
+		expect(upLabel(ago(60_000), now)).toBe('up 1m');
+		expect(upLabel(ago(14 * 3_600_000 + 8 * 60_000), now)).toBe('up 14h8m');
+		expect(sinceLabel(ago(98 * 60_000), 'for', now)).toBe('for 1h38m');
+	});
+	it('keeps the dash when there is no start', () => {
+		expect(upLabel(undefined, now)).toBe('up —');
 	});
 });

@@ -169,10 +169,13 @@ party reuse of subscription OAuth is forbidden. So:
   feature this product wants.
 - The file Claude Code writes is the user's login share: one file per user
   on the host, bind-mounted into every guest of that user, so one `/login`
-  signs in every project, and a refresh in one guest is seen by the others
-  (DECISIONS I-278; how Claude Code writes it, and why a bind mount of the
-  one file rather than a symlink or the whole `~/.claude`, is in the
-  decision). repose creates and mounts the file and never opens it.
+  signs in every project of that user on that host, and a refresh in one
+  guest is seen by the others (DECISIONS I-278; how Claude Code writes it,
+  and why a bind mount of the one file rather than a symlink or the whole
+  `~/.claude`, is in the decision). repose creates and mounts the file and
+  never opens it. The share is per host, so a user with machines on two
+  hosts logs in once on each, and a moved machine lands on a host where the
+  share has no file of theirs (`docs/features/secrets.md` "Kind 2").
 - The fallback is `claude setup-token` on the laptop, stored as the named
   secret `CLAUDE_CODE_OAUTH_TOKEN`. It works headless and survives guest
   restarts, but loses Remote Control, connectors and Claude in Chrome. The

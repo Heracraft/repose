@@ -3,7 +3,7 @@
 // editor with Nix highlighting, Apply, build log streams, a failing
 // fragment shows the error block with the line highlighted."
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv } from './helpers';
+import { signIn, createProject, destroyProject, apiURLFromEnv } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -40,6 +40,31 @@ test('applying a menu selection shows the generated fragment on the Nix tab', as
 
 	await page.getByRole('tab', { name: 'Nix' }).click();
 	await expect(page.locator('.cm-content')).toContainText('pkgs.zig');
+});
+
+// The Revisions rail marks the live revision "current" and offers no
+// Re-apply on it; older applied ones keep both (review r3 r3-dash-1).
+test('the revisions rail marks the live revision current', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'rev-current-app',
+		remote_url: 'github.com/heracraft/rev-current-app'
+	});
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Menu' }).click();
+	await page.getByText('Zig', { exact: true }).click();
+	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(page.getByText('Applied.')).toBeVisible({ timeout: 10_000 });
+	// Both revisions fall in one minute, so their order is not pinned here.
+	const rows = page.locator('.rev-list > li');
+	await expect(rows).toHaveCount(2);
+	const live = rows.filter({ has: page.locator('.rev-status', { hasText: 'current' }) });
+	const older = rows.filter({ has: page.locator('.rev-status', { hasText: 'applied' }) });
+	await expect(live).toHaveCount(1);
+	await expect(live.getByRole('button', { name: 'Re-apply' })).toHaveCount(0);
+	await expect(older).toHaveCount(1);
+	await expect(older.getByRole('button', { name: 'Re-apply' })).toBeVisible();
+	await destroyProject(apiURLFromEnv(), p.id);
 });
 
 // A selection with nixpkgs packages added by name (`repose config add gcc`,
@@ -134,9 +159,12 @@ test('the Menu and Nix tabs are ARIA tabs the arrow keys move between', async ({
 	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toBeVisible();
 });
 
-// The Apply sits in the editor's own bar, beside its state (I-664), and
-// the editor says when it holds a change that is not applied.
-test('the Nix editor bar says Saved, then Unsaved changes, beside Apply', async ({ page }) => {
+// Apply sits in one bar held to the foot of the window, beside the state
+// of the tab in front (I-664, I-837), which says when a change is not
+// applied.
+test('the Apply bar says Unsaved changes beside Apply, which waits for a change', async ({
+	page
+}) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'nix-bar-app',
 		remote_url: 'github.com/heracraft/nix-bar-app'
@@ -144,28 +172,135 @@ test('the Nix editor bar says Saved, then Unsaved changes, beside Apply', async 
 	await page.goto(`/projects/${p.id}/config`);
 	await page.getByRole('tab', { name: 'Nix' }).click();
 	const panel = page.getByRole('tabpanel', { name: 'Nix' });
-	const bar = panel.locator('.nix-frame');
-	await expect(bar.getByRole('status')).toHaveText('Saved');
-	await expect(bar.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+	const bar = page.locator('.hk-bottom-bar');
+	// Nothing to apply: the bar says nothing (the tab's head says when it
+	// was applied), and Apply is off, as on the Menu tab.
+	await expect(bar.getByRole('status')).toHaveText('');
+	const apply = bar.getByRole('button', { name: 'Apply', exact: true });
+	await expect(apply).toBeVisible();
+	await expect(apply).toBeDisabled();
+	await expect(apply).toHaveClass(/hk-btn-secondary/);
 	await panel.locator('.cm-content').click();
 	await page.keyboard.press('End');
 	await page.keyboard.type(' ');
 	await expect(bar.getByRole('status')).toHaveText('Unsaved changes');
+	await expect(apply).toBeEnabled();
+	await expect(apply).toHaveClass(/(^|\s)hk-btn(\s|$)/);
 });
 
-test('at lg the revisions sit in a rail beside the editor', async ({ page }) => {
+test('a Menu search that matches nothing says so', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
-		name: 'rail-app',
-		remote_url: 'github.com/heracraft/rail-app'
+		name: 'menu-none-app',
+		remote_url: 'github.com/heracraft/menu-none-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('searchbox', { name: 'Search packages and services' }).fill('zzzz');
+	await expect(page.getByRole('tabpanel', { name: 'Menu' })).toContainText(
+		'No package matches “zzzz”.'
+	);
+});
+
+// Config has no side column (I-841): the switches sit in a row under the
+// tabs, then Secrets, then Packages with the editor across the column,
+// then Revisions under it.
+test('Config reads top to bottom: switches, Secrets, Packages, Revisions', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'config-order-app',
+		remote_url: 'github.com/heracraft/config-order-app'
 	});
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(`/projects/${p.id}/config`);
 	await page.getByRole('tab', { name: 'Nix' }).click();
-	const editor = await page.locator('.nix-frame').boundingBox();
-	const revisions = await page.getByRole('heading', { name: 'Revisions' }).boundingBox();
-	expect(revisions!.x).toBeGreaterThan(editor!.x + editor!.width);
-	expect(revisions!.x + 300).toBeGreaterThanOrEqual(1200);
-	// The editor is the page's subject: it opens with room to write in
-	// (28rem) even for an empty fragment.
+	const y = async (name: string) =>
+		(await page.getByRole('heading', { level: 2, name, exact: true }).boundingBox())!.y;
+	const hold = (await page.getByRole('checkbox', { name: /Hold base updates/ }).boundingBox())!;
+	const [secrets, packages, revisions] = [
+		await y('Secrets'),
+		await y('Packages'),
+		await y('Revisions')
+	];
+	expect(hold.y).toBeLessThan(secrets);
+	expect(secrets).toBeLessThan(packages);
+	expect(packages).toBeLessThan(revisions);
+	const editor = (await page.locator('.nix-frame').boundingBox())!;
+	const tabs = (await page.getByRole('navigation', { name: 'Project' }).boundingBox())!;
+	// The editor spans the column the tabs' rule spans.
+	expect(Math.abs(editor.x - tabs.x)).toBeLessThanOrEqual(1);
+	expect(editor.width).toBeGreaterThan(800);
+	// It opens with room to write in (28rem) even for an empty fragment.
 	expect((await page.locator('.nix-editor').boundingBox())!.height).toBeGreaterThanOrEqual(440);
+});
+
+// machine.nix is edited under Settings, on its own tab (I-841).
+test('Edit machine.nix goes to Settings, machine.nix', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'mnix-link-app',
+		remote_url: 'github.com/heracraft/mnix-link-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	const link = page.getByRole('link', { name: 'Edit machine.nix' });
+	await expect(link).toHaveAttribute('href', '/settings/machine-nix');
+	await link.click();
+	await expect(page).toHaveURL('/settings/machine-nix');
+});
+
+// One primary on the page: on Config the Apply bar holds it, so a stopped
+// project's Start in the header draws secondary there (ia-final 2.3).
+test("on Config a stopped project's Start is secondary beside the Apply bar", async ({ page }) => {
+	const api = apiURLFromEnv();
+	const p = await createProject(api, {
+		name: 'config-primary-app',
+		remote_url: 'github.com/heracraft/config-primary-app'
+	});
+	await fetch(`${api}/projects/${p.id}/stop`, {
+		method: 'POST',
+		headers: { Authorization: 'Bearer playwright', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ snapshot: false })
+	});
+	await page.goto(`/projects/${p.id}`);
+	const start = page.getByRole('button', { name: 'Start', exact: true });
+	await expect(start).toHaveClass(/(^|\s)hk-btn(\s|$)/, { timeout: 10_000 });
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Config' })
+		.click();
+	await expect(page.locator('.hk-bottom-bar')).toBeVisible();
+	await expect(start).toHaveClass(/hk-btn-secondary/);
+	await expect(page.locator('main .hk-btn:visible')).toHaveCount(0);
+});
+
+// An edit not applied holds a navigation away: Stay keeps it, Leave goes
+// on (I-578's guard, on the config page since I-837).
+test('leaving with an unapplied edit asks first', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'nix-guard-app',
+		remote_url: 'github.com/heracraft/nix-guard-app'
+	});
+	await page.goto(`/projects/${p.id}/config`);
+	await page.getByRole('tab', { name: 'Nix' }).click();
+	await page.locator('.cm-content').click();
+	await page.keyboard.press('End');
+	await page.keyboard.type(' ');
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Overview' })
+		.click();
+	const ask = page.getByRole('alert').filter({ hasText: 'Unsaved changes' });
+	await expect(ask).toBeVisible();
+	await expect(ask.getByRole('button', { name: 'Stay' })).toBeFocused();
+	// One banner per fact: the bar under it does not say it again.
+	await expect(page.locator('.hk-bottom-bar').getByRole('status')).not.toContainText(
+		'Unsaved changes'
+	);
+	await ask.getByRole('button', { name: 'Stay' }).click();
+	await expect(ask).toHaveCount(0);
+	await expect(page.locator('.hk-bottom-bar').getByRole('status')).toHaveText('Unsaved changes');
+	await expect(page).toHaveURL(`/projects/${p.id}/config`);
+
+	await page
+		.getByRole('navigation', { name: 'Project' })
+		.getByRole('link', { name: 'Overview' })
+		.click();
+	await page.getByRole('alert').getByRole('button', { name: 'Leave' }).click();
+	await expect(page).toHaveURL(`/projects/${p.id}`);
 });

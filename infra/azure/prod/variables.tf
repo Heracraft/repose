@@ -41,6 +41,23 @@ variable "api_identity_object_id" {
   default     = null
 }
 
+variable "kexec_image" {
+  type        = string
+  description = <<-EOT
+    Override for the kexec installer tarball every machine here is installed
+    through. null, the normal case, means the image nix/installer builds,
+    which the apply builds ahead of every VM. Set it only to pin an image by
+    path or URL while bisecting an install; prod.tfvars says how.
+  EOT
+  default     = null
+}
+
+variable "install_deadline" {
+  type        = string
+  description = "Wall-clock bound on each nixos-anywhere run, as a coreutils timeout duration. Nothing inside nixos-anywhere or OpenTofu can bound an install, and an unbounded one holds prod's only state lock: on 2026-10-26 it held it for 16h56m, which would have blocked an emergency apply against the edge, the control plane, DNS and the vaults."
+  default     = "45m"
+}
+
 variable "flake_path" {
   type        = string
   description = "Absolute path to the repository's nix/ directory."
@@ -109,6 +126,20 @@ variable "host_data_disk_mbps" {
   type        = number
   description = "Provisioned throughput MB/s on each host's data disk. The first 125 are free; Azure caps this at a quarter of the IOPS."
   default     = 600
+}
+
+variable "host_shapes" {
+  type = map(object({
+    size           = optional(string)
+    class          = optional(string)
+    zone           = optional(string)
+    data_disk_gb   = optional(number)
+    data_disk_iops = optional(number)
+    data_disk_mbps = optional(number)
+    os_disk_gb     = optional(number)
+  }))
+  description = "Per-host override of the host values above, keyed by host name (for example host-02 = { size = \"Standard_D64s_v7\" }). A host with no entry takes the globals, and its plan does not change."
+  default     = {}
 }
 
 variable "edge_operator_ssh_port" {

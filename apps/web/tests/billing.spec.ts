@@ -3,12 +3,16 @@
 // shows a subscription's status, usage of the plan and its invoices.
 import { test, expect } from '@playwright/test';
 import {
+	fail,
 	failNext,
+	unfail,
 	signIn,
 	setBilling,
 	resetBilling,
 	createProject,
-	apiURLFromEnv
+	destroyProject,
+	apiURLFromEnv,
+	type BillingState
 } from './helpers';
 
 test.afterAll(async () => {
@@ -41,8 +45,8 @@ test.beforeEach(async ({ page }) => {
 test('with billing off the page says so and sells nothing', async ({ page }) => {
 	await page.goto('/billing');
 	await expect(page.getByTestId('billing-disabled')).toHaveText('Billing is not switched on yet');
-	// A state in a card, not a stray line.
-	await expect(page.getByTestId('billing-disabled')).toHaveClass(/\bcard\b/);
+	// A state in the kit's empty row, not a stray line (I-837).
+	await expect(page.getByTestId('billing-disabled')).toHaveClass(/(^|\s)hk-empty-row(\s|$)/);
 	await expect(page.getByRole('button', { name: /Choose/ })).toHaveCount(0);
 	// billing_disabled is a 503 the api gives as an answer, not an outage,
 	// so no outage bar sits over the page (I-390).
@@ -51,15 +55,18 @@ test('with billing off the page says so and sells nothing', async ({ page }) => 
 
 test('a failed first load says so and Retry loads the page', async ({ page }) => {
 	await setBilling({ mode: 'none' });
-	// Loaded once first: the projects page that signIn lands on reads
-	// GET /billing for its plan strip (I-664) and could take the one
-	// failure; after this the reload is the only request for it.
 	await page.goto('/billing');
 	await expect(page.getByRole('heading', { level: 2, name: 'Solo' })).toBeVisible();
-	await failNext('GET', '/billing', 'internal');
-	await page.reload();
+	// Every read fails until unfail: the rail's own read in the root
+	// layout (I-841) would otherwise take a one-shot failure.
+	await fail('GET', '/billing', 'internal');
+	try {
+		await page.reload();
+		await expect(page.getByRole('alert')).toBeVisible();
+	} finally {
+		await unfail('GET', '/billing');
+	}
 	const failed = page.getByRole('alert');
-	await expect(failed).toBeVisible();
 	await failed.getByRole('button', { name: 'Retry' }).click();
 	await expect(page.getByRole('heading', { level: 2, name: 'Solo' })).toBeVisible();
 	await expect(failed).toHaveCount(0);
@@ -75,8 +82,8 @@ test('with no plan and seats free, the three plans are shown from GET /billing',
 	const solo = page.getByTestId('plan-solo');
 	await expect(solo.getByRole('heading', { name: 'Solo' })).toBeVisible();
 	await expect(solo.getByText('$39', { exact: true })).toBeVisible();
-	await expect(solo.getByTestId('intro-solo')).toHaveText('$39 for 12 months');
-	await expect(solo.getByText('then $49 from month 13')).toBeVisible();
+	await expect(solo.getByTestId('intro-solo')).toHaveText('For 12 months');
+	await expect(solo.locator('.p-then')).toHaveText('For 12 months, then $49');
 	await expect(page.getByTestId('intro-plus')).toHaveCount(0);
 	await expect(solo.getByText('8 GB running at once')).toBeVisible();
 	// The founding price keeps Solo's 250 GB egress (I-672); 100 GB is the disk.
@@ -107,7 +114,7 @@ test('with no plan and seats free, the three plans are shown from GET /billing',
 	await expect(page.getByRole('button', { name: 'Choose Plus' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Choose Pro' })).toBeEnabled();
 	// With no plan asked for, no button is the solid one.
-	await expect(page.locator('[data-testid^="plan-"] .btn')).toHaveCount(0);
+	await expect(page.locator('[data-testid^="plan-"] .hk-btn')).toHaveCount(0);
 	await expect(page.getByRole('main').getByRole('link', { name: 'Refunds' })).toHaveAttribute(
 		'href',
 		'/refunds'
@@ -119,8 +126,10 @@ test('?plan=plus makes Plus the solid button and gives it the focus', async ({ p
 	await page.goto('/billing?plan=plus');
 	const plus = page.getByRole('button', { name: 'Choose Plus' });
 	await expect(plus).toBeFocused();
-	await expect(plus).toHaveClass(/\bbtn\b/);
-	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(/btn-quiet/);
+	await expect(plus).toHaveClass(/(^|\s)hk-btn(\s|$)/);
+	await expect(page.getByRole('button', { name: 'Choose Solo' })).toHaveClass(
+		/(^|\s)hk-btn-secondary(\s|$)/
+	);
 });
 
 test('Solo costs $39 for 12 months on a first subscription, then $49; a returning account pays $49', async ({
@@ -132,6 +141,11 @@ test('Solo costs $39 for 12 months on a first subscription, then $49; a returnin
 	await expect(card.locator('.plan-price .n')).toHaveText('$39');
 	await expect(page.getByTestId('intro-until')).toContainText(/^then \$49 a month from \d{4}-/);
 	await expect(page.getByTestId('next-charge')).toHaveText('$39.00');
+	// The current card in Change plan shows the price the account pays.
+	await page.getByRole('button', { name: 'Change plan' }).click();
+	await expect(
+		page.getByTestId('change-plan').getByTestId('plan-solo').locator('.p-price .n')
+	).toHaveText('$39');
 	await setBilling({ mode: 'none', intro_used: true });
 	await page.goto('/billing');
 	const solo = page.getByTestId('plan-solo');
@@ -245,20 +259,25 @@ test('a trial shows the first charge date and the usage bars, and no project cou
 	const egress = page.getByTestId('meter-egress-this-period');
 	// A Solo trial inside the founding price keeps the plan's 250 GB (I-672).
 	await expect(egress).toContainText('300 GB of 250 GB');
-	await expect(egress).toContainText('Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.');
+	// The overage is said once, under its meter.
+	await expect(page.getByTestId('egress-over')).toHaveText(
+		'Over by 50 GB: $2.50 on the next invoice at $0.05 a GB.'
+	);
 	// Plans sell no project count (I-569): no meter, no row on the cards.
 	await expect(page.getByTestId('projects-count')).toHaveCount(0);
 	await expect(page.locator('dt', { hasText: /^Projects$/ })).toHaveCount(0);
 });
 
-test('the egress meter reads a thousand GB as 1 TB and the facts mark the day of the period', async ({
+test('the egress meter reads a thousand GB as 1 TB and This month marks the day of the period', async ({
 	page
 }) => {
 	await setBilling({ mode: 'active', plan: 'pro', egress_gb: 42 });
 	await page.goto('/billing');
 	const egress = page.getByTestId('meter-egress-this-period');
 	await expect(egress).toContainText('42 GB of 1 TB');
-	await expect(page.locator('.facts').getByText(/^Day \d+ of \d+$/)).toBeVisible();
+	// The period is the section's caption (I-837): the day and the reset.
+	const month = page.locator('section', { has: page.getByRole('heading', { name: 'This month' }) });
+	await expect(month.getByText(/^Day \d+ of \d+, resets \d{4}-\d{2}-\d{2}$/)).toBeVisible();
 });
 
 test('the disk meter counts what the projects hold and says what is refused while it is over', async ({
@@ -272,12 +291,44 @@ test('the disk meter counts what the projects hold and says what is refused whil
 	await setBilling({ disk_held_gb: 112.4 });
 	await page.reload();
 	await expect(disk).toContainText('112.4 GB of 100 GB · over');
-	await expect(disk).toContainText(
+	// What is refused is a banner under the meters, one sentence (I-837).
+	await expect(page.getByTestId('disk-over')).toHaveText(
 		'Creating, restoring and forking projects, and growing a disk, are refused until your projects hold less.'
 	);
+	await setBilling({ disk_held_gb: 37.5 });
+	await page.reload();
+	await expect(disk).toContainText('37.5 GB of 100 GB');
+	await expect(page.getByTestId('disk-over')).toHaveCount(0);
 });
 
-test('over its limits at 390, Solo keeps every usage row inside the plan card', async ({
+// Over on egress and disk (review r3 B1, B3): the next charge carries the
+// overage, the egress note gives only the rate, and the projects that hold
+// the most disk stay named while it is over.
+test('over the plan, Next charge adds the egress and the disk names who holds the most', async ({
+	page
+}) => {
+	const heavy = await createProject(apiURLFromEnv(), {
+		name: 'heavy-app',
+		remote_url: 'github.com/heracraft/heavy-app'
+	});
+	await setBilling({ mode: 'active', plan: 'solo', egress_gb: 312.4, disk_held_gb: 140 });
+	await page.goto('/billing');
+	await expect(page.getByTestId('next-charge')).toHaveText('$39.00');
+	await expect(page.getByTestId('next-charge').locator('..')).toContainText(
+		'$39.00 + $3.12 egress on'
+	);
+	await expect(page.getByTestId('egress-over')).toHaveText('Over by 62.4 GB at $0.05 a GB.');
+	await expect(page.getByTestId('disk-over')).toBeVisible();
+	await expect(
+		page
+			.getByTestId('meter-disk-held')
+			.locator('..')
+			.locator('.note', { hasText: /^Most: / })
+	).toBeVisible();
+	await destroyProject(apiURLFromEnv(), heavy.id);
+});
+
+test('over its limits at 390, Solo keeps every meter inside This month and the page narrow', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -288,16 +339,17 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 		'412.7 GB of 250 GB · over'
 	);
 	const fit = await page.evaluate(() => {
-		const card = document.querySelector('[data-testid="plan"]')!.getBoundingClientRect();
-		const rows = [...document.querySelectorAll('[data-testid="plan"] .u-row')];
-		const inside = rows.every((row) =>
-			[row, ...row.querySelectorAll('*')].every((el) => {
+		const section = document.getElementById('month-h')!.closest('section')!.getBoundingClientRect();
+		const meters = ['meter-running-now', 'meter-disk-held', 'meter-egress-this-period'].map(
+			(id) => document.querySelector(`[data-testid="${id}"]`)!
+		);
+		const inside = meters.every((m) =>
+			[m, ...m.querySelectorAll('*')].every((el) => {
 				const r = el.getBoundingClientRect();
-				return r.left >= card.left - 0.5 && r.right <= card.right + 0.5;
+				return r.left >= section.left - 0.5 && r.right <= section.right + 0.5;
 			})
 		);
 		return {
-			rows: rows.length,
 			inside,
 			// The body's width leaves out the stable scrollbar gutter, which
 			// the root's clientWidth counts on a desktop browser: the page
@@ -306,7 +358,6 @@ test('over its limits at 390, Solo keeps every usage row inside the plan card', 
 			bodyWidth: document.body.clientWidth
 		};
 	});
-	expect(fit.rows).toBe(2);
 	expect(fit.inside).toBe(true);
 	expect(fit.scrollWidth).toBeLessThanOrEqual(fit.bodyWidth);
 	await setBilling({ disk_held_gb: -1, egress_gb: 0 });
@@ -317,7 +368,13 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 }) => {
 	await setBilling({ mode: 'active', plan: 'plus' });
 	await page.goto('/billing');
-	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
+	await expect(page).toHaveTitle('Billing · repose');
+	// Status says Active once; Next charge carries the renewal date.
+	await expect(page.getByTestId('plan-status')).toHaveText('Active.');
+	await expect(page.getByTestId('plan')).toContainText(
+		/Next charge\s*\$89\.00 on \d{4}-\d{2}-\d{2}/
+	);
+	await expect(page.getByTestId('plan')).not.toContainText('Latest invoice');
 	const list = page.getByRole('table', { name: 'Invoices' });
 	await expect(list.getByText('$89.00')).toBeVisible();
 	await expect(list.getByText('REPOSE-0001', { exact: false })).toBeVisible();
@@ -328,7 +385,7 @@ test('an active plan shows its renewal, receipts through Polar, and invoices wit
 	await page.route('https://sandbox.polar.sh/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Polar portal</h1>' })
 	);
-	await page.getByRole('button', { name: /Manage card and receipts/ }).click();
+	await page.getByRole('button', { name: 'Card and receipts' }).click();
 	await page.waitForURL(
 		'https://sandbox.polar.sh/repose/portal?customer_session_token=polar_cst_fake'
 	);
@@ -403,20 +460,27 @@ test('upgrading takes effect at once; a downgrade the machines do not fit is ref
 	await page.reload();
 	await expect(page.getByTestId('meter-running-now')).toContainText('16 GB of 16 GB');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	// What runs now is set against each smaller plan, in amber.
+	// What runs now is set against each smaller plan, and a downgrade the
+	// account does not fit is not offered: its button waits (I-837).
 	await expect(page.getByTestId('change-plan').getByTestId('plan-solo')).toContainText(
-		'Running 16 GB, holds 8 GB'
+		'Running 16 GB, allows 8 GB'
 	);
-	await page.getByRole('button', { name: 'Downgrade to Solo' }).click();
-	const err = page.getByTestId('change-error');
-	// The api's sentence, the disk counted by what the projects hold (I-585).
-	await expect(err).toContainText(
-		'your account does not fit the Solo plan yet: 16 GB running (it allows 8)'
-	);
-	await expect(err).toContainText('GB of disk held by your projects (it allows 100)');
-	await expect(err).toContainText(
-		'stop machines, or destroy projects or delete files in them, first'
-	);
+	const down = page.getByRole('button', { name: 'Downgrade to Solo' });
+	await expect(down).toHaveAttribute('aria-disabled', 'true');
+	let asked = false;
+	page.on('request', (r) => {
+		if (r.method() === 'POST' && r.url().endsWith('/billing/plan')) asked = true;
+	});
+	// Forced: Playwright waits for an aria-disabled button to enable.
+	await down.click({ force: true });
+	await expect(page.getByTestId('change-error')).toHaveCount(0);
+	expect(asked).toBe(false);
+	// A refusal the page could not foresee (a machine started elsewhere)
+	// is the api's sentence, under the plans.
+	await failNext('POST', '/billing/plan', 'conflict');
+	await page.getByRole('button', { name: 'Upgrade to Pro' }).click();
+	await expect(page.getByTestId('change-error')).toBeVisible();
+	await expect(page.getByTestId('plan').getByRole('heading', { name: 'Plus' })).toBeVisible();
 });
 
 test('on Pro both other plans are downgrades, and Plus is refused while three large machines run', async ({
@@ -431,19 +495,30 @@ test('on Pro both other plans are downgrades, and Plus is refused while three la
 	await page.goto('/billing');
 	await expect(page.getByTestId('meter-running-now')).toContainText('24 GB of 32 GB');
 	await expect(page.getByTestId('meter-running-now')).toContainText(
-		'two xl, four large, or any mix'
+		'Fits two xl, four large, or any mix.'
 	);
-	// What runs is listed under the meter, each with its size.
-	await expect(page.getByRole('list', { name: 'Running now' })).toContainText('pro-a');
+	// Under the meter, used against the plan in words; the split per
+	// project is on /projects.
+	const split = page.getByTestId('meter-running-now').getByTestId('memory-split');
+	await expect(split).toContainText('24 GB running');
+	await expect(split).toContainText('8 GB left');
+	await expect(split).not.toContainText('pro-a');
+	await expect(page.getByRole('meter', { name: 'Memory running' })).toHaveAttribute(
+		'aria-valuetext',
+		'24 GB of 32 GB: 24 GB running, 8 GB left'
+	);
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveText('Downgrade to Plus');
 	await expect(page.getByRole('button', { name: /Upgrade/ })).toHaveCount(0);
-	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
-	const err = page.getByTestId('change-error');
-	await expect(err).toContainText(
-		'your account does not fit the Plus plan yet: 24 GB running (it allows 16)'
+	// 24 GB runs and Plus allows 16: the card says so and its button waits.
+	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText(
+		'Running 24 GB, allows 16 GB'
 	);
+	const refused = page.getByRole('button', { name: 'Downgrade to Plus' });
+	await expect(refused).toHaveAttribute('aria-disabled', 'true');
+	// The reason on the card is the button's description.
+	await expect(refused).toHaveAccessibleDescription('Running 24 GB, allows 16 GB');
 	await stopAll();
 });
 
@@ -457,9 +532,12 @@ test('a downgrade that fits is scheduled for the renewal and can be undone', asy
 	await page.getByRole('button', { name: 'Change plan' }).click();
 	await page.getByRole('button', { name: 'Downgrade to Plus' }).click();
 	await expect(page.getByTestId('plan-status')).toContainText('Changes to Plus on');
-	// With Plus scheduled, the box offers to keep Pro and still lists Solo.
+	// The renewal charges Plus, not Pro.
+	await expect(page.getByTestId('next-charge')).toHaveText('$89.00');
+	// With Plus scheduled, the Status fact offers to keep Pro (I-837), and
+	// Change plan still lists Solo and says from when Plus applies.
+	await expect(page.getByTestId('change-keep')).toHaveText('Keep Pro');
 	await page.getByRole('button', { name: 'Change plan' }).click();
-	await expect(page.getByTestId('change-keep')).toContainText('Plus is scheduled for');
 	await expect(page.getByTestId('change-to-solo')).toHaveText('Downgrade to Solo');
 	await expect(page.getByTestId('change-to-plus')).toHaveCount(0);
 	await expect(page.getByTestId('change-plan').getByTestId('plan-plus')).toContainText('From ');
@@ -497,7 +575,7 @@ test('cancelling asks first, then shows the end date and a Resume that undoes it
 	await expect(page.getByTestId('plan-status')).toContainText('Cancelled. Ends');
 	await expect(page.getByRole('button', { name: 'Change plan' })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Resume plan' }).click();
-	await expect(page.getByTestId('plan-status')).toContainText('Active. Renews');
+	await expect(page.getByTestId('plan-status')).toHaveText('Active.');
 	// Resume plan is gone; focus goes to Cancel plan, not <body>.
 	await expect(page.getByRole('button', { name: 'Cancel plan' })).toBeFocused();
 });
@@ -567,4 +645,145 @@ test('a plan that never arrives points at the support address', async ({ page })
 	);
 	// Not the feedback board, which is for feedback.
 	await expect(page.getByTestId('support-link')).not.toHaveAttribute('href', /fider/);
+	// The payment went through: the banner stands alone, with no second checkout.
+	await expect(page.locator('[id^="choose-"]')).toHaveCount(0);
+	await expect(page.getByRole('list', { name: 'Plans' })).toHaveCount(0);
+});
+
+// I-841: the plan lives in the rail's foot from 1024px, one state line per
+// billing mode, and below 1024px as one line under the strip only when
+// something needs doing. /billing is the plan's own page and shows neither.
+test.describe('the plan outside /billing', () => {
+	const calm = { seats: { total: 30, held: 12, waiting: 0 }, waitlist: { position: 0 } };
+	const full = { total: 30, held: 30, waiting: 5 };
+	const day = /\d{4}-\d{2}-\d{2}/;
+	/** [mode, state, foot's name line, foot's state line, phone's line link or none] */
+	const rows: [string, BillingState, string | undefined, RegExp, string | undefined][] = [
+		['exempt', { mode: 'exempt' }, undefined, /^\d+(\.\d)? GB$/, undefined],
+		['none', { mode: 'none' }, 'No plan', /^Choose a plan$/, 'Choose a plan'],
+		[
+			'waitlist',
+			{ mode: 'none', seats: full, waitlist: { position: 3 } },
+			'No plan',
+			/^On the waitlist$/,
+			'Billing'
+		],
+		['full', { mode: 'none', seats: full }, 'No plan', /^repose is full$/, 'Billing'],
+		[
+			'held',
+			{ mode: 'none', waitlist: { position: 1, invited: true } },
+			'No plan',
+			/^Seat held$/,
+			'Billing'
+		],
+		[
+			'trial',
+			{ mode: 'trial', plan: 'solo' },
+			'Solo',
+			new RegExp(`^Trial until ${day.source}$`),
+			undefined
+		],
+		[
+			'active',
+			{ mode: 'active', plan: 'pro' },
+			'Pro',
+			/^\d+ GB of 32 GB running( · over)?$/,
+			undefined
+		],
+		[
+			'cancelled',
+			{ mode: 'active', plan: 'pro', cancelled: true },
+			'Pro',
+			new RegExp(`^Ends ${day.source}$`),
+			undefined
+		],
+		[
+			'scheduled',
+			{ mode: 'active', plan: 'pro', scheduled_plan: 'plus' },
+			'Pro',
+			new RegExp(`^Changes to Plus ${day.source}$`),
+			undefined
+		],
+		['past_due', { mode: 'past_due', plan: 'pro' }, 'Pro', /^Payment failed$/, 'Update card'],
+		['suspended', { mode: 'suspended', plan: 'pro' }, 'Pro', /^Suspended$/, 'Update card and pay']
+	];
+
+	for (const [mode, state, name, line, phone] of rows) {
+		test(`${mode}: the rail foot and the phone's plan line`, async ({ page }) => {
+			await setBilling({ ...calm, scheduled_plan: '', cancelled: false, ...state });
+			await page.setViewportSize({ width: 1440, height: 900 });
+			await page.goto('/projects');
+			const foot = page.getByTestId('plan-strip');
+			await expect(foot).toBeVisible();
+			const lines = foot.locator(':scope > *');
+			await expect(lines.first()).toHaveText(mode === 'exempt' ? 'Running' : 'Plan');
+			// The state line leads with the err dot's space when it has one.
+			if (name) await expect(foot).toContainText(name);
+			await expect(lines.last()).toHaveText(new RegExp(`^\\s*${line.source.slice(1)}`));
+			// A state that needs the user links to /billing; the calm ones are text.
+			const link = foot.getByRole('link');
+			if (phone) await expect(link).toHaveAttribute('href', '/billing');
+			else await expect(link).toHaveCount(0);
+
+			await page.setViewportSize({ width: 390, height: 844 });
+			await expect(foot).toBeHidden();
+			const strip = page.getByRole('navigation', { name: 'Dashboard' });
+			await expect(strip.getByRole('link', { name: 'Billing' })).toBeInViewport();
+			const planLine = page.locator('.plan-line');
+			if (phone) {
+				await expect(planLine.getByRole('link', { name: phone, exact: true })).toHaveAttribute(
+					'href',
+					'/billing'
+				);
+			} else {
+				await expect(planLine.getByRole('link')).toHaveCount(0);
+			}
+
+			// The plan's own page shows neither.
+			await page.goto('/billing');
+			await expect(page.getByRole('heading', { level: 1, name: 'Billing' })).toBeVisible();
+			await expect(page.locator('.plan-line a')).toHaveCount(0);
+			await page.setViewportSize({ width: 1440, height: 900 });
+			await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+		});
+	}
+
+	test('billing off: no foot and no line', async ({ page }) => {
+		await page.goto('/projects');
+		await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+		await page.waitForLoadState('networkidle');
+		await expect(page.getByTestId('plan-strip')).toHaveCount(0);
+		await expect(page.locator('.plan-line a')).toHaveCount(0);
+	});
+
+	// /billing hands its own reads to the shared store, so the foot says
+	// what the page just did without waiting for the rail's 60s read.
+	test('cancelling on /billing shows in the rail foot on the next page', async ({ page }) => {
+		await setBilling({
+			...calm,
+			mode: 'active',
+			plan: 'solo',
+			cancelled: false,
+			scheduled_plan: ''
+		});
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/projects');
+		const foot = page.getByTestId('plan-strip');
+		await expect(foot).toContainText(/running/);
+		const rail = page.getByRole('navigation', { name: 'Dashboard' });
+		await rail.getByRole('link', { name: 'Billing' }).click();
+		await expect(page).toHaveURL('/billing');
+		await page.getByRole('button', { name: 'Cancel plan' }).click();
+		await page.getByTestId('confirm-cancel').getByRole('button', { name: 'Cancel plan' }).click();
+		await expect(page.getByTestId('plan-status')).toContainText('Cancelled. Ends');
+		await rail.getByRole('link', { name: 'Projects', exact: true }).click();
+		await expect(page).toHaveURL('/projects');
+		await expect(foot).toContainText(new RegExp(`Ends ${day.source}`), { timeout: 2000 });
+		// Resume, back on /billing, reaches it the same way.
+		await rail.getByRole('link', { name: 'Billing' }).click();
+		await page.getByRole('button', { name: 'Resume plan' }).click();
+		await expect(page.getByTestId('plan-status')).toHaveText('Active.');
+		await rail.getByRole('link', { name: 'Projects', exact: true }).click();
+		await expect(foot).toContainText(/GB of 8 GB running/, { timeout: 2000 });
+	});
 });

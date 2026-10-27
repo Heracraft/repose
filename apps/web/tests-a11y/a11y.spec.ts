@@ -105,7 +105,7 @@ const PAGES: Target[] = [
 		name: '/',
 		signedIn: false,
 		url: () => '/',
-		ready: (page) => expect(page.getByRole('button', { name: 'Get started' })).toBeVisible()
+		ready: (page) => expect(page.getByRole('link', { name: 'Get started' })).toBeVisible()
 	},
 	{ name: '/docs', signedIn: false, url: () => '/docs', ready: heading },
 	// A docs page with prompts, output and a copy button in its code blocks.
@@ -134,18 +134,39 @@ const PAGES: Target[] = [
 		url: () => `/projects/${projectId}/config`,
 		ready: (page) => expect(page.getByRole('tab', { name: 'Menu' })).toBeVisible()
 	},
+	// The dashboard's other pages (I-841): Questions, a project's other
+	// tabs and Settings' tabs. A tab page's title is the project's name.
 	{
-		name: '/projects/[id]/secrets',
+		name: '/questions',
 		signedIn: true,
-		url: () => `/projects/${projectId}/secrets`,
-		ready: (page) => expect(page.getByRole('heading', { level: 1, name: 'Secrets' })).toBeVisible()
+		url: () => '/questions',
+		ready: (page) =>
+			expect(page.getByRole('heading', { level: 1, name: 'Questions' })).toBeVisible()
 	},
+	...(['events', 'usage', 'snapshots'] as const).map(
+		(tab): Target => ({
+			name: `/projects/[id]/${tab}`,
+			signedIn: true,
+			url: () => `/projects/${projectId}/${tab}`,
+			ready: (page) =>
+				expect(page.getByRole('heading', { level: 1, name: /^a11y-app-/ })).toBeVisible()
+		})
+	),
 	{
 		name: '/settings',
 		signedIn: true,
 		url: () => '/settings',
 		ready: (page) => expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
 	},
+	...(['notifications', 'secrets', 'machine-nix'] as const).map(
+		(tab): Target => ({
+			name: `/settings/${tab}`,
+			signedIn: true,
+			url: () => `/settings/${tab}`,
+			ready: (page) =>
+				expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+		})
+	),
 	// With no plan the page shows the three plan cards, its densest state;
 	// the default fixture state (billing off) is a single sentence.
 	{

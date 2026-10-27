@@ -5,11 +5,14 @@ import {
 	MOVED,
 	NOBREAK_MAX,
 	SECTIONS,
+	closestDocs,
 	docBySlug,
 	highlightNix,
 	movedDoc,
 	renderShell,
-	search,
+	SEARCH,
+	searchDocs,
+	nearDocs,
 	slugify
 } from './docs';
 import { unaskedIn } from './unasked';
@@ -84,12 +87,96 @@ describe('user docs', () => {
 		expect(slugify('Things that don’t work yet')).toBe('things-that-dont-work-yet');
 	});
 
-	it('finds pages by words in them', () => {
-		expect(search('ntfy topic')[0]?.doc.slug).toBe('notifications');
-		expect(search('')).toEqual([]);
-		expect(search('zzzz-not-a-word')).toEqual([]);
+	it('finds pages, headings, flags and keys by words in them', () => {
+		const top = (q: string) => searchDocs(q)[0]?.entry;
+		expect(top('ntfy topic')?.slug).toBe('notifications');
+		expect(searchDocs('zzzz-not-a-word')).toEqual([]);
 		// A line commented out in a page is not searchable.
-		expect(search('live product for other people')).toEqual([]);
+		expect(searchDocs('live product for other people')).toEqual([]);
+		// CLI commands and flags are entries of their own (the palette's ask).
+		expect(top('repose run')).toMatchObject({
+			kind: 'heading',
+			slug: 'cli',
+			id: 'repose-run-project'
+		});
+		expect(top('--temp')).toMatchObject({ kind: 'item', slug: 'cli', context: 'repose run' });
+		expect(top('default_size')).toMatchObject({ kind: 'item', slug: 'cli', id: 'config-toml' });
+		expect(top('REPOSE_NO_FORWARD')?.label).toBe('REPOSE_NO_FORWARD=1');
+		// A title beats a heading, which beats the text.
+		const secret = searchDocs('secret');
+		expect(secret[0].entry).toMatchObject({ kind: 'page', slug: 'secrets' });
+		const tiers = secret.map((r) => (r.snippet ? 1 : 0));
+		expect(tiers).toEqual([...tiers].sort());
+	});
+
+	it('ranks a label that starts with the query over one that has it inside', () => {
+		const top = (q: string) => searchDocs(q)[0]?.entry;
+		expect(top('snapshot')).toMatchObject({ kind: 'heading', label: 'Snapshots' });
+		expect(top('port')).toMatchObject({ kind: 'heading', label: 'Ports' });
+	});
+
+	it('ranks a section about the term over an intro with it inside a word', () => {
+		const rows = searchDocs('port', 100).map((r) => r.entry.label);
+		const ports = rows.indexOf('Several repositories on one machine');
+		const supported = rows.indexOf('Quickstart');
+		expect(ports).toBeGreaterThanOrEqual(0);
+		expect(supported).toBeGreaterThan(ports);
+	});
+
+	it('offers labels a typo away when nothing matches', () => {
+		expect(searchDocs('snapshto')).toEqual([]);
+		expect(nearDocs('snapshto')[0]?.entry.label).toBe('Snapshots');
+		expect(nearDocs('memry').map((r) => r.entry.label)).toContain('Memory and disk');
+		expect(nearDocs('zzzz-not-a-word')).toEqual([]);
+		expect(nearDocs('ab')).toEqual([]);
+	});
+
+	it('lists every page, with its section, for an empty query', () => {
+		const all = searchDocs('  ');
+		expect(all.map((r) => r.entry.slug)).toEqual(DOCS.map((d) => d.slug));
+		expect(all.map((r) => r.entry.context)).toEqual(DOCS.map((d) => d.section));
+		expect(all.every((r) => !r.snippet && !r.label.some((p) => p.hit))).toBe(true);
+	});
+
+	it('lands every entry on a heading the page has', () => {
+		for (const e of SEARCH) {
+			if (e.kind === 'page') continue;
+			// A table above a page's first heading lands on the page.
+			if (e.id === undefined && e.kind === 'item') continue;
+			const doc = docBySlug(e.slug)!;
+			expect(
+				doc.headings.map((h) => h.id),
+				`${e.label} in ${e.slug}`
+			).toContain(e.id);
+		}
+	});
+
+	it('marks the query in a label, and snippets only a match in the text', () => {
+		for (const q of ['snap', 'cores memory', 'secret', '--temp']) {
+			for (const r of searchDocs(q)) {
+				expect(r.label.map((p) => p.text).join('')).toBe(r.entry.label);
+				if (r.snippet) {
+					expect(
+						r.snippet.some((p) => p.hit),
+						`${q}: ${r.entry.label}`
+					).toBe(true);
+					const text = r.snippet
+						.map((p) => p.text)
+						.join('')
+						.replace(/^…/, '');
+					expect(r.entry.body).toContain(text);
+					expect(text).not.toMatch(/-{3,}/);
+				} else {
+					const marked = [...r.label, ...r.context]
+						.filter((p) => p.hit)
+						.map((p) => p.text.toLowerCase());
+					expect(
+						q.split(' ').every((t) => marked.includes(t)),
+						`${q}: ${r.entry.label}`
+					).toBe(true);
+				}
+			}
+		}
 	});
 
 	it('sends a moved page on to its new slug', () => {
@@ -120,6 +207,11 @@ describe('user docs', () => {
 		expect(billing).toContain('<td class="num">100 GB</td>');
 		expect(billing).toContain('<td class="num">$89</td>');
 		expect(billing).not.toContain('<td class="num">Solo</td>');
+		// A heading over a column of figures sits right with them.
+		const machine = docBySlug('machine')!.html;
+		expect(machine).toContain('<th class="num">Cores</th>');
+		expect(machine).toContain('<th class="num">Disk</th>');
+		expect(machine).toContain('<th>Size</th>');
 	});
 
 	// The rail lists h2s and h3s; a command heading shows as its command.
@@ -234,5 +326,36 @@ describe('user docs', () => {
 		const html = docBySlug('tutorial-git')!.html;
 		expect(html).toContain('<code class="language-text">');
 		expect(html).not.toContain('class="line"');
+	});
+});
+
+// The docs 404 lists the pages closest to the slug asked for (spec 2.2).
+describe('closestDocs', () => {
+	const slugs = (s: string) => closestDocs(s).map((d) => d.slug);
+
+	it('ranks the longest shared prefix first', () => {
+		expect(slugs('secret')[0]).toBe('secrets');
+		expect(slugs('cli-ref')[0]).toBe('cli');
+	});
+
+	it('matches a word of a title or slug', () => {
+		expect(slugs('chrome')).toContain('your-chrome');
+		expect(slugs('lifecycl')).toContain('lifecycle');
+	});
+
+	it('puts a whole slug before a word of a title, and skips short words', () => {
+		expect(slugs('agent')[0]).toBe('agents');
+		expect(slugs('and')).toEqual(['index']);
+	});
+
+	it('holds to six pages, in sidebar order among equals', () => {
+		const tutorials = DOCS.filter((d) => d.slug.startsWith('tutorial-')).map((d) => d.slug);
+		expect(slugs('tutorial')).toEqual(tutorials.slice(0, 6));
+		expect(closestDocs('tutorial').length).toBeLessThanOrEqual(6);
+	});
+
+	it('falls back to the Quickstart when nothing shares four letters', () => {
+		expect(slugs('zzzz')).toEqual(['index']);
+		expect(slugs('')).toEqual(['index']);
 	});
 });

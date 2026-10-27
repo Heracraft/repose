@@ -1,8 +1,10 @@
 # host-stg-01: the staging host (infra/README.md, "Staging"). It exists to
 # prove host-level changes — pool activation, reboot recovery, kernel
 # hardening — on a machine whose guests nobody paid for, before host-01 is
-# switched. Like host-01.nix this file holds only what differs from the
-# generic `host`, and none of it is secret.
+# switched. It holds only what differs from the generic `host`, and none of
+# it is secret. It does not import `prod.nix`: staging answers to `hostdev`
+# rather than the api and shares none of the fleet's addresses, CA, vault
+# or Blob account (DECISIONS I-642), so every value it has is below.
 { ... }:
 {
   repose.host = {

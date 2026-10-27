@@ -7,7 +7,7 @@ repose sends nothing to Google Chat until you save a new webhook URL or a test m
 Save a new webhook
   repose notify set --gchat 'URL'
 
-Notification settings: https://repose.herakraft.co/settings
+Notification settings: https://repose.herakraft.co/settings/notifications
 
 --
 repose. Open the dashboard: https://repose.herakraft.co

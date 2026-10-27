@@ -13,6 +13,7 @@ import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
 import LogtoClient, { BrowserStorage, PersistKey } from '@logto/browser';
 import { apiResource } from '$lib/api/resource';
+import { RETURN_PATHS, type ReturnPath } from '$lib/signin';
 
 let client: LogtoClient | undefined;
 
@@ -43,12 +44,47 @@ export async function initAuth(): Promise<void> {
 	authState.authenticated = await getClient().isAuthenticated();
 }
 
+/**
+ * The signed-in user's email from the ID token Logto already holds, with no
+ * request: the Account menu's first line. Undefined when the token has
+ * none or cannot be read.
+ */
+export async function signedInEmail(): Promise<string | undefined> {
+	if (!browser) return undefined;
+	try {
+		const claims = await getClient().getIdTokenClaims();
+		return typeof claims.email === 'string' && claims.email ? claims.email : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function callbackUrl(): string {
 	return `${location.origin}/callback`;
 }
 
-export async function signIn(): Promise<void> {
+/** Where the browser flow remembers the page it is to come back to. */
+const RETURN_KEY = 'repose-return-to';
+
+export async function signIn(returnTo?: ReturnPath): Promise<void> {
+	try {
+		if (returnTo && RETURN_PATHS.includes(returnTo)) sessionStorage.setItem(RETURN_KEY, returnTo);
+		else sessionStorage.removeItem(RETURN_KEY);
+	} catch {
+		// No storage: the sign-in comes back to /projects.
+	}
 	await getClient().signIn(callbackUrl());
+}
+
+/** The page the sign-in asked to come back to, once; undefined for /projects. */
+export function takeReturnPath(): ReturnPath | undefined {
+	try {
+		const v = sessionStorage.getItem(RETURN_KEY);
+		sessionStorage.removeItem(RETURN_KEY);
+		return RETURN_PATHS.find((p) => p === v);
+	} catch {
+		return undefined;
+	}
 }
 
 /** Said when a sign-in did not finish, wherever that is noticed. */
@@ -66,7 +102,7 @@ let signingIn = false;
  * server's business out of it. A middle click or a modified click is left
  * to the browser, which is what makes open-in-new-tab and copy-link work.
  */
-export function onSignInLinkClick(event: MouseEvent): void {
+export function onSignInLinkClick(event: MouseEvent, returnTo?: ReturnPath): void {
 	if (event.defaultPrevented) return;
 	if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
 		return;
@@ -74,7 +110,7 @@ export function onSignInLinkClick(event: MouseEvent): void {
 	event.preventDefault();
 	if (signingIn) return;
 	signingIn = true;
-	void signIn().catch(() => {
+	void signIn(returnTo).catch(() => {
 		signingIn = false;
 		toast.error(SIGN_IN_FAILED);
 	});
