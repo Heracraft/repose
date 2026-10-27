@@ -25939,3 +25939,51 @@ first apply after I-872 fixed the installer).
   is certainly broken. A fresh Azure image also ships a GPT, so the same
   branch is reachable there; nothing in this entry should be read as saying
   it is not.
+
+**I-876. An install whose registration failed fails the apply (os-disk-zap,
+2026-10-27).** Amends the host module's post-install checks. *Made during
+implementation* (host-02 installed cleanly after I-874 and came up unable to
+register; the apply reported success).
+
+- *The property.* A join token is single use, and the api spends it inside
+  the same transaction that records the registration (`hostmgr.go`: `update
+  hosts set registered_at = now(), join_token_hash = null ...`). So a host
+  that reaches the api and then loses its local state comes back to a token
+  the api will not take twice. `repose-register` exits 3,
+  `RestartPreventExitStatus=3` stops it retrying by design, and `hostd` never
+  starts because it is ordered after it. **The host installs perfectly and is
+  not in the fleet.**
+- *What made it expensive was not the failure but the silence.* `Apply
+  complete! 4 added, 0 changed, 1 destroyed` was printed over a host that
+  could not register. The only reason anyone noticed was an operator running
+  `repose-admin hosts list` rather than trusting that line. Recovery is about
+  ten minutes once the cause is known and took the better part of an hour
+  without it.
+- *So the apply fails instead.* The host module already had post-install
+  checks whose stated purpose is this exact thing -- "the apply must fail
+  here rather than leave a host that registers and then refuses every
+  placement" -- so the registration check joins `/dev/kvm`, nested
+  virtualization and the data disk there, and names the recovery in its own
+  message.
+- *It deliberately does not wait for registration to succeed.* On success the
+  host's sshd moves off the VNet address to WireGuard only, so a step that
+  waited would race a connection that is about to close **because the thing
+  it is waiting for worked**. It checks only the deterministic terminal
+  failure, `systemctl is-failed repose-register`, and leaves the slow case to
+  `HostUnregistered`, which fires at 30 minutes from the api's own hosts
+  table and needs nothing copied to the monitoring server.
+- *That alert already existed and did not help, for a reason that is the
+  owner's and not the code's.* It shipped in r20261027-1 and would have fired
+  here. Alert **delivery** is still an open `CHECKLIST.md` row: nothing pages
+  a human yet. A rule that fires into a void is not detection, and this
+  incident is the second time this week that distinction has cost real time.
+- *The sshd move is in the runbook now*, because an operator recovering this
+  by hand loses their session at the moment of success and will read it as a
+  new fault. The second host is 10.255.0.4, not the monitoring server's .3
+  (I-782).
+- *What is not fixed, and cannot be here.* Nothing mints a fresh token
+  automatically when an install is replayed. OpenTofu cannot call the api,
+  and the host cannot ask for a new token because the token is what
+  authenticates it. A replayed install therefore still needs
+  `--reissue` by hand; this change makes that a loud apply failure naming
+  the command instead of a silent success.
