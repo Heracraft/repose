@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-820 entries.
+823 entries.
 
 ## Scope
 
@@ -852,3 +852,6 @@ pointer, not a summary.
 - **I-860** The conductor does not create the release draft; GoReleaser does, and the notes go on between the tag and the sign job — 2026-10-25; L25570
 - **I-786** The launch host is added beside host-01, not grown out of it, and a host's shape is per-host (second-host, 2026-10-25) — L25607
 - **I-872** repose builds the kexec installer it installs through, the install has a deadline, and both fail before a VM exists (second-host, 2026-10-26) — L25729
+- **I-866** The control plane's WireGuard socket takes a fixed port, because the edge learns its endpoint from the packets it sends — 2026-10-26; L25816
+- **I-868** A refusal the gateway makes because its own caches are stale does not count towards the source's ban — 2026-10-26; L25845
+- **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L25867

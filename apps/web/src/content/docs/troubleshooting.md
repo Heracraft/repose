@@ -27,7 +27,7 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **`too many open connections for your account; close some and try again`.** You have 32 [SSH connections](/docs/limits#ssh-connections) open through the gateway, across all your projects. A script that opens connections without closing them is the usual cause.
 
-**`kex_exchange_identification: Connection closed by remote host`.** Your address opened more connections at once than the gateway lets in, or failed to log in many times in a row. `ssh -v` shows the gateway's reason on a line starting `repose gateway:`. Wait a minute, or 10 minutes if it was the logins.
+**`kex_exchange_identification: Connection closed by remote host`, or `read: Connection reset by peer`.** Your address opened more connections at once than the gateway lets in, or failed to log in many times in a row. `ssh -v` shows the gateway's reason on a line starting `repose gateway:`. Wait a minute, or 10 minutes if it was the logins.
 
 **Your connection closed on its own after hours.** Its certificate expired, or a `repose logout` closed it ([SSH connections](/docs/limits#ssh-connections)). Connect again and your `ssh` renews the certificate. The session on the machine is as you left it.
 
@@ -39,9 +39,11 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 
 **Your editor can't connect to `todo-app.repose`.** Run `ssh todo-app.repose true` in a terminal. It fails the same way the editor did, with the reason. A stopped machine says ``todo-app is stopped; run `repose start todo-app` ``.
 
-**`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone don't count.
+**`repose gateway: too many authentication attempts from your address; try again later`.** Your address failed to log in 20 times in 10 minutes without a repose certificate, usually an ssh run with another key or an old `~/.ssh/config` entry. Every connection from that address is refused for 10 minutes. Connections refused because your machine is stopped or gone, or because repose couldn't reach its own control plane, don't count.
 
 **`repose gateway: certificate not valid for this project`.** The certificate on your laptop is for another project or another account handle: a project removed and made again has a new id, and so does a renamed handle. Any `repose` command gets a new certificate and connects; plain `ssh` and your editor don't, so run `repose ssh todo-app` once first.
+
+**`repose gateway: gateway cannot reach control plane; try again shortly`.** repose can't reach the service that checks your certificate, so it can't let anyone in. Your machine keeps running and connections already open keep working. Connect again in a few minutes.
 
 **`repose gateway: gateway busy`.** The gateway is at its limit for connections being set up, which has nothing to do with your account or your certificate. Connect again.
 

@@ -323,6 +323,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `HostServiceDown` | `node_systemd_unit_state{state="active"} == 0` for hostd, repose-guest-pool, repose-cache-volume, repose-npm-cache, docker-registry, for 15m (I-648) | warn |
 | `ApiDown` | `up{job=~"api\|api-grpc"} == 0` for 3m (I-648) | page |
 | `GatewayDown` | `up{job="gateway"} == 0` for 3m (I-648) | page |
+| `GatewayCachesStale` | `repose_gateway_revocation_cache_age_seconds > 900` for 5m (I-870) | page |
 | `MonitoringPathDown` | `sum(up{job=~"gateway\|hostd\|api\|api-grpc"}) == 0` for 2m; holds back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent (I-648) | page |
 | `ApiHostsAbsent` | `absent(repose_api_hosts) or absent(repose_api_host_state)` for 5m (I-648, I-786) | page |
 | `HostNotInTargets` | `max by (host_id) (repose_api_host_state{state="ready"}) == 1 unless on (host_id) count by (host_id) (up{job="hostd"})` for 15m: a ready host whose id no entry in `targets/hosts.yml` carries, so every host alert is silent on it. By id, not by count: a stale entry for a retired host balanced the two numbers and hid it (I-786) | warn |

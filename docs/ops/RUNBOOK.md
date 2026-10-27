@@ -714,7 +714,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
-| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; a refusal of the user's own certificate for its project is not a failure, I-599); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
+| `too many authentication attempts from your address; try again later` | 4 connections in the handshake or 20 failures from one source (an IPv6 /64 counts as one; neither a refusal of the user's own certificate for its project, I-599, nor a refusal because the gateway's own caches are stale, I-868, is a failure); sent as one plain line before the handshake, so the user sees `kex_exchange_identification: Connection closed by remote host`, or `read: Connection reset by peer` | a scan; the ban clears in 10 min. The edge's nftables also caps a source at 64 open and 20 new connections a second on 22 (I-435) |
 | `login name must be <project>.<user>` | a malformed SSH login name | the user's SSH config is wrong; `repose run` rewrites it |
 
 A relay ends when its certificate is revoked or expires (I-436):
@@ -2734,9 +2734,57 @@ cannot fetch `/internal/hosts`, or Prometheus cannot scrape.
    running without `WG_STATIC_PEERS` (an edge older than I-92).
 3. Handshake fine, `curl` from the edge to `https://10.255.255.1:8444`
    refused: the `api-grpc` app has no port mappings (`ops/coolify/README.md`).
+4. `wg show` on the VM says bytes sent and **0 B received**, and the edge's
+   peer line for it shows a `latest handshake` hours old with an endpoint
+   port the VM is no longer using: the tunnel is dead one way and the two
+   ends are talking past each other. Read the ports first, `wg show wg0
+   listen-port` on the VM against the port in the edge's `wg show wg0`
+   peer line. They differ after a restart on an ephemeral port
+   (DECISIONS I-866). Rebind the socket, which costs nothing and repairs
+   it in seconds:
+
+   ```bash
+   ssh root@<control ip> 'wg set wg0 listen-port 51820; sleep 12; wg show wg0'
+   ```
+
+   `latest handshake` within seconds and a reply to `ping -c3 10.255.0.1`
+   is the fix. Then make it survive the next restart: `ListenPort = 51820`
+   in `/etc/wireguard/wg0.conf` (`infra/README.md`, "Wiring the control
+   plane to the edge"). The gateway picks the control plane up on its own
+   within 30 s; no restart of it is needed.
+
+   The packets do leave the VM, so nothing on it looks wrong. What proves
+   where they stop is one capture on each side: `tcpdump -ni eth0 "udp
+   port 51820"` on the VM shows them going out every 5 s, and
+   `grep dport=51820 /proc/net/nf_conntrack` on the edge shows no flow
+   from the VM's current port (the edge has no tcpdump). A plain
+   `nc -u -p 40001 <edge ip> 51820` from the VM arriving in that same
+   conntrack table is how you tell a blackholed flow from a blocked path:
+   the path is fine, that one flow is not. This is
+   `docs/incidents/2026-10-26-control-tunnel-one-way.md`.
 
 The control plane's WireGuard private key is generated on the machine and
 never leaves it, so the fix takes two moves instead of one apply.
+
+## GatewayCachesStale
+
+The gateway's revocation list has not refreshed for 15 minutes. It still
+answers and still relays, so `GatewayDown` stays quiet; what it cannot do
+is reach the api. At one hour (`StaleAfter`) it refuses **every** new
+connection with `gateway cannot reach control plane; try again shortly`,
+so this page is the warning before a total outage of `ssh`, `run`,
+`attach` and `open`.
+
+1. `journalctl -u gateway | grep -E 'ca_refresh|revoked_refresh'` on the
+   edge names the cause in `err`. A `context deadline exceeded` against
+   `https://10.255.255.1:8444` is the tunnel, not the api: "Control plane
+   cannot reach the edge network" above.
+2. The api answering `https://api.repose.herakraft.co/healthz` while the
+   edge cannot reach `10.255.255.1:8444` is that same split: the public
+   path is Coolify's proxy, the gateway's path is the tunnel.
+3. `curl -s http://10.255.0.1:9102/metrics | grep revocation_cache_age`
+   on the edge is the age the alert reads. It falls to 0 within 30 s of
+   the tunnel coming back, and the gateway needs nothing else.
 
 ## Retiring a host's bootstrap key
 
