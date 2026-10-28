@@ -194,6 +194,22 @@ module "install" {
     "test -e /dev/kvm || { echo 'no /dev/kvm on ${var.name}: wrong VM size or security_type (docs/DESIGN.md §4)' >&2; exit 1; }",
     "test \"$(cat /sys/module/kvm_intel/parameters/nested)\" = Y || { echo 'nested virtualization disabled on ${var.name}' >&2; exit 1; }",
     "test -e ${var.data_disk_device} || { echo 'data disk pool ${var.data_disk_device} missing on ${var.name}' >&2; exit 1; }",
+    # A join token is single use and is spent inside the api transaction that
+    # records the registration, so an install that reaches the api and then
+    # loses its local state leaves a host that installs perfectly and can
+    # never register: repose-register exits 3, RestartPreventExitStatus stops
+    # it retrying, and hostd never starts. host-02 did exactly that on
+    # 2026-10-27 and the apply still said "Apply complete", so the only
+    # reason anyone noticed was an operator running `hosts list` instead of
+    # trusting it (DECISIONS I-876).
+    #
+    # This does not wait for registration to succeed. On success the host's
+    # sshd moves off the VNet address to WireGuard only, so waiting here
+    # would race a connection that is about to close by design. It catches
+    # the deterministic failure -- the unit already in a terminal failed
+    # state -- and leaves the slow case to HostUnregistered, which fires at
+    # 30 minutes from the api's own hosts table.
+    "systemctl is-failed --quiet repose-register.service && { journalctl -u repose-register.service -n 20 --no-pager >&2; echo 'repose-register failed on ${var.name}: the join token was refused, which usually means it was already spent by an earlier install attempt. Mint a fresh one with `repose-admin hosts add --name ${var.name} --reissue`, write it to /run/repose/join-token on the host, then `systemctl start repose-register hostd`. RUNBOOK, \"A host installed but never registered\".' >&2; exit 1; } || true",
   ]
 
   triggers = {

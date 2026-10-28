@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-824 entries.
+825 entries.
 
 ## Scope
 
@@ -856,3 +856,4 @@ pointer, not a summary.
 - **I-868** A refusal the gateway makes because its own caches are stale does not count towards the source's ban — 2026-10-26; L25845
 - **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L25867
 - **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L25886
+- **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L25943

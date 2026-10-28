@@ -2522,6 +2522,46 @@ edge, no Hello in the api log, and the boot log stops early or loops.
 4. If the OS disk cannot be saved: "Host loss". The data disk and the
    snapshots are what the tenants' work is on.
 
+## A host installed but never registered
+
+`repose-admin hosts list` shows the host `registering` with no heartbeat,
+long after the apply said `Apply complete`. On the host, `hostd` and
+`repose-register` are both failed and the journal says:
+
+    register: join token already used
+
+A join token is single use. The api spends it inside the same transaction
+that records the registration, so a host that reaches the api and then loses
+its local state -- a failed install replayed, a disk repartitioned under it --
+comes back to a token the api will not accept a second time.
+`repose-register` exits 3, `RestartPreventExitStatus=3` stops it retrying,
+and `hostd` never starts because it is ordered after it. The machine looks
+installed and is not in the fleet.
+
+Recovery is about ten minutes once the cause is known and the better part of
+an hour without it (host-02, 2026-10-27):
+
+1. Mint a fresh token: `repose-admin hosts add --name <host> --reissue`.
+   `--reissue` is required -- without it the api refuses, because the host
+   row already carries a registration.
+2. Write it to `/run/repose/join-token` on the host, mode 0600.
+3. `systemctl start repose-register` then `systemctl start hostd`.
+4. Confirm with `repose-admin hosts list`: the host moves to `ready` and a
+   heartbeat appears within about two minutes.
+
+**The operator path changes under you at step 3.** Once registration
+succeeds, the host's sshd moves off its VNet address to WireGuard only, so
+the session you are typing in dies at the moment the thing you wanted
+succeeds. That is the fix working, not a new fault. Come back on the host's
+WireGuard address -- `repose-admin hosts list` prints it, and I-782 means the
+second host is 10.255.0.4 rather than the monitoring server's .3.
+
+An install that fails this way now fails the apply instead: the host module's
+post-install step checks whether `repose-register` is already in a failed
+state and stops with this procedure named. It deliberately does not wait for
+registration to succeed, because success is exactly when sshd moves. A host
+that is merely slow is caught by `HostUnregistered` at 30 minutes.
+
 ## Install hit the deadline
 
 `make apply ENV=prod` printed that an install was killed at `install_deadline`
