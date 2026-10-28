@@ -477,6 +477,19 @@ type Manager struct {
 	// poolDownLogged paces the pool_unavailable log line (I-644).
 	poolDownLogged time.Time
 
+	// snapMu guards snapInFlight. It is deliberately not mu: a snapshot
+	// upload holds its entry for as long as the stream takes (minutes on
+	// a large volume), and mu is taken on every command.
+	snapMu sync.Mutex
+	// snapInFlight is the snapshot volumes being taken or uploaded right
+	// now, so the reconcile sweep leaves them alone (I-906). Without it
+	// the sweep's "at start no snapshot is in flight" assumption was
+	// read as true on every reconcile, and Reconcile is reachable while
+	// one is: the operator's `POST /reconcile`, and the one after a
+	// thaw, which hostd runs with its own upload goroutines still
+	// streaming.
+	snapInFlight map[string]bool
+
 	// authLocks serialises one user's login-share volume work: two of
 	// their guests booting together, and the sweep (I-464).
 	authLocks sync.Map // user id -> *sync.Mutex
@@ -543,7 +556,8 @@ func New(cfg Config, d Deps) (*Manager, error) {
 		cfg: cfg, d: d,
 		workers: map[string]*worker{}, inflight: map[string]bool{}, inflightTarget: map[string]string{}, freezeMu: make(chan struct{}, 1),
 		restingNow: map[string]*state.Resting{}, timerWakes: map[string]*time.Timer{},
-		secrets: map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
+		snapInFlight: map[string]bool{},
+		secrets:      map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
 		last:      map[string]sampleCursor{},
 		lastGuest: map[string]guestFigures{},
 		buildSeq:  map[string]uint64{},

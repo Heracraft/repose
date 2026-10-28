@@ -84,10 +84,16 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 		lv = fmt.Sprintf("snap-%s-%d", g.GuestID, start.UnixMilli())
 	}
 	t := &takenSnapshot{lv: lv, reason: reason, start: start}
+	// From here the volume is this snapshot's, so the reconcile sweep
+	// must not take it (I-906). Every path out of takeSnapshotAs and
+	// uploadSnapshot releases it: the failure paths below through
+	// t.fail, and the success path through uploadSnapshot's defer.
+	m.snapStarted(t.lv)
 	vol := VolumeName(g.GuestID)
 	t.log = m.log(g).With("reason", reason)
 	t.log.Info("snapshot start", "event", "snapshot_start")
 	t.fail = func(e *Error) (*hostdv1.SnapshotResult, *Error) {
+		m.snapDone(t.lv)
 		t.log.Error("snapshot failed", "event", "snapshot_fail", "code", e.Code, "reason", e.Message)
 		if m.d.Metrics != nil {
 			m.d.Metrics.SnapshotDuration.WithLabelValues(reason, e.Code).Observe(m.d.Now().Sub(start).Seconds())
@@ -145,6 +151,7 @@ func (m *Manager) takeSnapshotAs(ctx context.Context, g *state.Guest, reason, lv
 func (m *Manager) uploadSnapshot(ctx context.Context, g *state.Guest, t *takenSnapshot) (*hostdv1.SnapshotResult, *Error) {
 	defer func() {
 		_ = m.d.LVM.RemoveVolume(context.Background(), t.lv) // always, even on upload failure; a leftover snapshot is found by reconcile
+		m.snapDone(t.lv)                                     // after the remove, so the sweep never races it
 	}()
 	if err := m.d.LVM.Activate(ctx, t.lv); err != nil {
 		return t.fail(lvmErr("lvchange -ay -K", err))
@@ -409,4 +416,27 @@ type countingWriter uint64
 func (c *countingWriter) Write(p []byte) (int, error) {
 	*c += countingWriter(len(p))
 	return len(p), nil
+}
+
+// snapStarted marks a snapshot volume as this host's work in progress,
+// and snapDone releases it. The reconcile sweep skips what is marked
+// (I-906); a mark left by a hostd that died is gone with the process,
+// which is what makes the sweep at start right to take everything.
+func (m *Manager) snapStarted(lv string) {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	m.snapInFlight[lv] = true
+}
+
+func (m *Manager) snapDone(lv string) {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	delete(m.snapInFlight, lv)
+}
+
+// snapBusy reports whether lv is being taken or uploaded right now.
+func (m *Manager) snapBusy(lv string) bool {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	return m.snapInFlight[lv]
 }

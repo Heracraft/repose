@@ -240,11 +240,26 @@ func (m *Manager) flagWholeStore(ctx context.Context) {
 }
 
 // sweepStaleSnapshots removes LVM snapshot volumes left by a hostd that
-// died between `lvcreate -s` and `lvremove` (DECISIONS I-68). At start no
-// snapshot is in flight, so every `snap-*` volume is an orphan: the api
+// died between `lvcreate -s` and `lvremove` (DECISIONS I-68): the api
 // re-sends the interrupted Snapshot command and the re-run makes its own.
 // A fork point (`fp-*`, I-701) is one too: its expiry timer died with the
 // hostd that took it, and a sibling restore sent again takes a new one.
+//
+// It skips the volumes this hostd is taking or uploading now (I-906).
+// The rule used to be "at start no snapshot is in flight, so every
+// `snap-*` volume is an orphan", which was read as true on every
+// reconcile; Reconcile is reachable while one is in flight, from the
+// operator's `POST /reconcile` and from the one after a thaw, and the
+// sweep would have pulled a live snapshot out from under its own
+// upload. A mark cannot outlive the process that holds it, so after a
+// hostd that died there is nothing marked and the sweep still takes
+// everything.
+//
+// Running it on every reconcile, rather than only at start, is the
+// other half: a RemoveVolume that failed was logged once and then left,
+// and a thin snapshot kept behind accrues pool blocks for as long as
+// the origin diverges from it, with nothing to come back for it on a
+// hostd that never restarts.
 func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 	vols, err := m.d.LVM.ListVolumes(ctx)
 	if err != nil {
@@ -253,6 +268,9 @@ func (m *Manager) sweepStaleSnapshots(ctx context.Context) {
 	}
 	for _, v := range vols {
 		if !strings.HasPrefix(v, "snap-") && !strings.HasPrefix(v, "fp-") {
+			continue
+		}
+		if m.snapBusy(v) {
 			continue
 		}
 		if err := m.d.LVM.RemoveVolume(ctx, v); err != nil {
