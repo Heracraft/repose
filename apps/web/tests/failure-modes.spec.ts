@@ -230,7 +230,7 @@ test('a 5xx from the api shows the persistent bar, which clears once the api rec
 		// the window's foot, footer included (review r4).
 		expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(900);
 		await expect(
-			page.getByText('Could not load projects. The API failed on its side; try again shortly.')
+			page.getByText('Could not load projects. The API failed; try again.')
 		).toHaveCount(1);
 	} finally {
 		await unfail('GET', '/projects');
