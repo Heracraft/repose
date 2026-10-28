@@ -26143,3 +26143,59 @@ register; the apply reported success).
   authenticates it. A replayed install therefore still needs
   `--reissue` by hand; this change makes that a loud apply failure naming
   the command instead of a silent success.
+**I-884. The shared box has three costs nothing accounts for, and each
+one presents as something else.** (conductor, 2026-10-27) In one day
+woker-1 stopped work three times, and each time the first diagnosis was
+wrong in the same way: a symptom of the machine was read as a fault in
+the code.
+
+- *The disk.* `/` is 29 GB and reached 99 percent twice. The largest
+  single consumer was `/tmp/rt`, the shared `TMPDIR`, at 1.1 GB across
+  1,252 entries. Eleven of those were Postgres data directories with
+  **live postmasters still serving them**, PPID 1, started between 20 and
+  25 October, about 65 MB each. `internal/db/testdb` stops its cluster
+  from `TestMain`, so a `go test` that is SIGKILLed never calls it and
+  leaves the cluster running for ever. The conductor kills test runs
+  routinely -- a monitor timing out, a cut abandoned mid-merge, an agent
+  stopped to free the box for someone else -- so this leaks by how we
+  work rather than by accident.
+- *Memory.* Eight resident agent sessions at 260 to 480 MB each is a
+  standing floor of about 3 GB before anything builds, against 15 GB
+  total. A playwright suite was killed by the harness for low memory;
+  nothing that session started was at fault.
+- *Write latency.* Full-suite browser runs taken at 95 to 99 percent full
+  failed one test per run, a different one each time. The same suite on a
+  quiet box at 95 percent passed 323 of 323.
+
+What each cost before it was understood. `TestHerdrProjectWarnsHerdrDown`
+was called load-sensitive for hours; it fails because guestd correctly
+warns `disk_high` and the test asserts that no warning exists, so it
+passes on CI, whose disk is clean. A whole `go test -race ./...` reported
+`[build failed]` across unrelated packages, which is what out-of-disk
+looks like once `go build` and `go vet` have already passed. And a
+browser suite's failures were attributed to the branch under test.
+
+Two things changed on the box; only one is durable.
+
+- `/tmp/rt` is now a symlink to `/mnt/nixstore/rt`, the same device as
+  `/nix`: 308 GB free rather than 2. The path stays `/tmp/rt` because
+  `TMPDIR` must be short -- the hostd fakes bind unix sockets under it
+  and `sun_path` is 108 bytes. **This is a hand edit on a live box.** If
+  `/tmp` is cleared on boot the symlink goes with it and the small disk
+  fills again, silently. It belongs in that machine's configuration,
+  which this repository does not manage: woker-1 is in no resource group
+  of the Azure account the platform uses. `az` from kanali sees one
+  subscription, one group and three VMs -- coolify-01, edge-01, host-01
+  -- and woker-1 is not among them.
+- Nothing stops the leak. A reaper that sweeps stale clusters at
+  `testdb` start, keyed on a pidfile rather than on mtime, is the shape.
+  Age is not a safety test: a running postmaster does not update its data
+  directory's mtime, and a proposed
+  `find /tmp/rt -mmin +120 -exec rm -rf {} +` would have deleted the data
+  directory of a cluster that was three days idle by mtime and serving.
+  `lsof +D` is the safety test; age is only the convenience filter.
+
+The rule this leaves: **on this box, check the machine before the code.**
+`df`, `free` and `uptime` cost a second and rule out all three failures
+above, every one of which otherwise presents as a test that has started
+failing on its own.

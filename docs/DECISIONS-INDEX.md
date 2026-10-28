@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-827 entries.
+828 entries.
 
 ## Scope
 
@@ -859,3 +859,4 @@ pointer, not a summary.
 - **I-870** The gateway's cache age is the alert for a control plane the gateway cannot reach — 2026-10-26; L26023
 - **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26042
 - **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26099
+- **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
