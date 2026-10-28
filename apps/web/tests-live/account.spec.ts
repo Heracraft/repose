@@ -177,7 +177,7 @@ test('sign-out returns to the landing page and clears the session', async ({ pag
 	await page.getByRole('button', { name: 'Account', exact: true }).click();
 	await page.getByRole('button', { name: 'Sign out' }).click();
 	await expect(page).toHaveURL(`${LIVE_URL}/`, { timeout: 30_000 });
-	await expect(page.getByRole('button', { name: 'Get started' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
 	await page.goto('/projects');
 	await expect(page).toHaveURL(`${LIVE_URL}/`, { timeout: 30_000 });
 });

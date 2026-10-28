@@ -25604,6 +25604,162 @@ host-01 measured `wake_ms=225` on the first real wake. A measured figure
 from the wrong machine is still the wrong number for a user reading it
 about theirs.
 
+**I-864. A click on the landing's primary button is lost if it lands
+before hydration, and nothing tells the visitor.** (hydration-click-gap,
+2026-10-25) The sign-in call to action, the docs drawer and the docs
+search are all `<button>` elements whose `onclick` arrives with
+hydration. The markup is server-rendered and looks ready, so between
+first paint and hydration a click focuses the button and does nothing.
+The visitor gets no error, no spinner and no hint that the press was
+eaten; they press again and it works, and they read the first press as
+their own mistake. This entry records the defect and what a fix costs.
+It does not fix it: the only option that works for everyone changes how
+sign-in starts, which is the owner's call.
+- *Where.* The landing's "Get started" is the `authAction` snippet's
+  `<button type="button" onclick={onSignIn}>` — `routes/+page.svelte:183`
+  on main, `:95` after the revamp. The docs drawer is
+  `routes/docs/+layout.svelte:198` on main and `:292` after it. Both
+  predate this week's work. The docs search differs: main has an inline
+  `<input id="docs-search">`, which needs no handler to be usable, and
+  the revamp replaces it with a `<button id="docs-search"
+  onclick={openSearch}>` that opens a palette. So the revamp adds a third
+  surface to a pattern it did not introduce.
+- *Why the call to action is the worst case.* It is above the fold on a
+  prerendered page, which is the fastest thing on the site to paint and
+  the first thing a visitor reaches for. The window is first paint to
+  hydration, so the faster the page looks ready the more likely the press
+  falls inside it.
+- *Why it cannot simply become an anchor.* `onSignIn` calls `signIn()` in
+  `lib/auth.svelte.ts:73`, which writes the return path to
+  `sessionStorage` and then has the OIDC client build a PKCE
+  authorization URL in the browser. There is no URL to put in an `href`
+  until that client has run.
+- *The three fixes and what each costs.* A server route that starts the
+  flow, with the button an `<a href>` to it: the only one that works with
+  no JS at all, and the only one that fixes it for everyone, at the cost
+  of a new route with a security surface. The trigger refusing clicks it
+  cannot honour until hydration: honest, but it trades a swallowed click
+  for a primary call to action that looks dead on first paint. Capturing
+  early clicks in an inline script and replaying them after hydration:
+  cheapest, keeps the appearance, still fails with JS off.
+- *The palette swallows a click twice over.* `DocsSearch.show()` opens
+  with `if (!dialog || dialog.open) return;`, and `dialog` is a
+  `bind:this` that is set when the component mounts. So a press on
+  `#docs-search` is lost not only before hydration but in any window
+  where the layout has hydrated and the palette has not yet bound its
+  element, and it is lost silently, by an early return with no branch
+  that reports it. The layout's own client code finishing is not evidence
+  the palette is ready: `keyHint` is set in the layout and reads
+  "Ctrl K" on screen while `show()` is still returning early. That
+  mistaken inference cost a wrong diagnosis once in the session that
+  found this, which is a reason to say it here.
+- *The owner's choice: the server route, for sign-in only* (2026-10-25).
+  A route that starts the OIDC flow, with the call to action an `<a href>`
+  to it. The two cheaper options narrow the window; this one removes it.
+  Capture-and-replay was rejected on the ground that it only helps when
+  the bundle eventually arrives, so it does nothing for the visitors who
+  are actually lost — the ones whose JS is blocked, failed or timed out on
+  a bad connection, which is the same population the gap hurts most.
+  Refusing clicks until hydration was rejected for trading a swallowed
+  press for a primary call to action that looks dead on first paint. The
+  route also makes the button a real link, so middle-click, open in a new
+  tab and copy link address start working, none of which a `<button>`
+  gives you. It ships after ui-revamp is on main, not in that batch.
+- *Built as I-878* (2026-10-27), after ui-revamp reached main, as this
+  entry asked. The branch was cut before that merge and took it with
+  `git merge main`; `authAction` and `SiteHeader` came from the revamp
+  and the `<button>` became an `<a href>` on top of them.
+- *The drawer and the palette are not covered by that choice.* A server
+  route fixes a trigger whose job is to navigate. The docs drawer and the
+  search palette open client UI and have no navigation to perform, so
+  there is nothing for a route to do and they keep the gap until a
+  decision of their own settles them.
+- *How it was found, and what must not be done about it.* Five distinct
+  playwright tests failed once each across five full runs of the web
+  suite on a loaded box; two were diagnosed to this cause (`signIn` in
+  `tests/helpers.ts:8`, which waits for `/oidc/auth` after pressing "Get
+  started", and the phone drawer in `tests/docs.spec.ts:178`, which waits
+  for the article to go `inert`). `playwright.config.ts` sets
+  `workers: 1` and no `retries`, and `ci.yml` adds none, so there is no
+  slack in the suite to absorb it. The tempting repairs — waiting for
+  hydration inside the `signIn` helper, or turning retries on — would
+  both make the suite green and leave the defect shipping, and they would
+  remove the only thing that reports it. The suite is right; the
+  mechanism is wrong.
+
+**I-878. `GET /signin` starts the OIDC flow on the server, so every
+sign-in surface is a link.** (signin-route, 2026-10-27) The fix I-864's
+last entry chose. `routes/signin/+server.ts` generates a PKCE pair and a
+`state`, puts the verifier and the return path in an httpOnly cookie
+scoped to `/callback`, and answers `303` to Logto's authorization
+endpoint. The landing's "Get started" and "Start a free week" and the
+header's "Sign in" become `<a href="/signin">`; hydrated, their click
+handler calls `preventDefault()` on a plain left click and runs the
+browser flow as before, so nothing changes for a visitor whose bundle
+arrived. A modified click and a middle click are left to the browser,
+which is what makes open-in-new-tab and copy-link-address work.
+- *Why the server has to hold the verifier.* `signIn()` in
+  `lib/auth.svelte.ts` has `@logto/browser` build the authorization URL,
+  so there is no URL for an `href` until that code has run (I-864). A
+  route that builds the URL itself owns the PKCE pair, and an httpOnly
+  cookie is the only place to keep the verifier where the page's scripts
+  cannot read it. That in turn means the token exchange for such a flow
+  happens on the server: `routes/callback/+page.server.ts` does it and
+  hands the page the id and refresh token, which
+  `adoptServerSession()` writes into the browser client's own storage
+  through its public `PersistKey`/`BrowserStorage` API. The access token
+  is not written: the client fetches one per resource from the refresh
+  token, as it does on every reload.
+- *What that costs, and why it is acceptable.* "No server route ever
+  sees a token" (08-dashboard.md §5.1) was true and is now true of every
+  flow but this one. The web server already serves the script that holds
+  those tokens in `localStorage`, so a web server an attacker owns can
+  take them either way; the exchange adds no reachable attacker. The
+  Logto app stays a public client, so no secret moves: the route uses
+  the same three `PUBLIC_*` values the bundle has.
+- *The open redirect, which is the real risk here.* `/signin` is a GET
+  anyone can put in a link, so a `?return=` taken on trust would make the
+  site hand a visitor to an attacker's page at the moment they
+  authenticate. `safeReturnPath()` (`lib/signin.ts`) answers it with an
+  allow-list of whole paths — `RETURN_PATHS`, which ui-revamp already
+  wrote for the browser flow ("never one read from a URL", Guide B 1.11)
+  and which both flows now share. Anything that is not one of them is
+  `/projects`. An allow-list of paths rather than a check on the shape of
+  an arbitrary one leaves nothing to outwit, and it makes the set of
+  destinations the set a reader sees in the file. The cookie goes back
+  through the same function when it is read, so a tampered cookie carries
+  nothing new either, and the value `/callback` hands `goto()` is one of
+  two literals. `redirect_uri` is built from the origin SvelteKit
+  resolved; a forged `Host` can only make it a URI Logto has not
+  registered, which Logto refuses.
+- *One flow per cookie.* `/callback` deletes the cookie before it does
+  anything else, so a code cannot be put through the same verifier
+  twice, and the cookie lives 10 minutes. `state` from the query must
+  equal `state` from the cookie, which is what binds the callback to the
+  browser that started the flow.
+- *`/callback` renders on the server now* (`routes/callback/+page.ts`,
+  `ssr = true`), the way the landing does, because the server load has to
+  run on the request Logto redirects to — the one carrying the code and
+  the cookie. With scripts off a visitor gets that far and no further,
+  since the dashboard is a client-rendered SPA, so the page says "The
+  dashboard needs JavaScript." in place of "Signing in…", switched on
+  `html.js` (I-398). A `<noscript>` was tried first and dropped: its
+  children are only parsed when the parser itself had scripting off,
+  which is not the same condition, and Playwright's
+  `javaScriptEnabled: false` does not meet it.
+- *The test fixture sets `ORIGIN`.* adapter-node assumes https for a
+  request nothing tells it about, which is right behind Traefik and
+  wrong for a fixture on plain http loopback: without `ORIGIN` the
+  route's `redirect_uri` came out `https://127.0.0.1:4173/callback` and
+  the browser met `ERR_SSL_PROTOCOL_ERROR` on the way back
+  (`tests/fixtures.ts`).
+- *Still open from I-864.* The docs drawer and the docs search palette
+  keep the gap. They open client UI, so no route can serve them.
+- *Order.* I-864 asked for this after ui-revamp was on main, and that is
+  where it landed: the branch was cut before the revamp merged and took
+  it with `git merge main`, so `routes/+page.svelte`,
+  `lib/components/SiteHeader.svelte` and `routes/callback/+page.svelte`
+  are the revamp's, with the link change applied on top.
 **I-786. The launch host is added beside host-01, not grown out of it, and
 a host's shape is per-host (second-host, 2026-10-25).** Amends I-14 and
 I-39: their sizes stand, their *method* does not. *Made during

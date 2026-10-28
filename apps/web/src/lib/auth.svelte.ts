@@ -1,17 +1,19 @@
 // Logto SPA login (docs/workstreams/08-dashboard.md 5.1): authorization code
-// with PKCE entirely in the browser, access tokens for the api resource,
-// refresh in the client. No server route ever sees a token or a secret.
+// with PKCE in the browser, access tokens for the api resource, refresh in
+// the client. No server route holds a secret; the Logto app is a public
+// client. One flow is the exception, and only one: a sign-in a visitor
+// starts through `GET /signin` before this code has run, or without it
+// (DECISIONS I-864, I-878). There the server holds the PKCE verifier, so
+// the server does that one token exchange and hands the result to
+// adoptServerSession below.
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
-import LogtoClient from '@logto/browser';
-
-/** The api's resource identifier: PUBLIC_API_URL without its /v1 suffix. */
-export function apiResource(): string {
-	return (env.PUBLIC_API_URL ?? '').replace(/\/v1\/?$/, '');
-}
+import LogtoClient, { BrowserStorage, PersistKey } from '@logto/browser';
+import { apiResource } from '$lib/api/resource';
+import { RETURN_PATHS, type ReturnPath } from '$lib/signin';
 
 let client: LogtoClient | undefined;
 
@@ -61,13 +63,7 @@ export function callbackUrl(): string {
 	return `${location.origin}/callback`;
 }
 
-/**
- * The pages a sign-in may come back to in place of /projects: same-origin
- * paths named here, never one read from a URL (Guide B 1.11). The landing's
- * "Start a free week" comes back to /billing, where the plans are.
- */
-const RETURN_PATHS = ['/billing'] as const;
-export type ReturnPath = (typeof RETURN_PATHS)[number];
+/** Where the browser flow remembers the page it is to come back to. */
 const RETURN_KEY = 'repose-return-to';
 
 export async function signIn(returnTo?: ReturnPath): Promise<void> {
@@ -89,6 +85,57 @@ export function takeReturnPath(): ReturnPath | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/** Said when a sign-in did not finish, wherever that is noticed. */
+export const SIGN_IN_FAILED = 'Sign-in was cancelled or failed; try again.';
+
+/** Guards a second client flow while the first is still starting. */
+let signingIn = false;
+
+/**
+ * The click handler every sign-in link carries. The link's href is the
+ * floor: it is `GET /signin`, which starts the flow on the server and so
+ * works before this code has run and when it never runs at all (DECISIONS
+ * I-864, I-878). Once it has run a plain left click takes the browser flow
+ * instead, which costs no extra navigation and keeps the tokens the
+ * server's business out of it. A middle click or a modified click is left
+ * to the browser, which is what makes open-in-new-tab and copy-link work.
+ */
+export function onSignInLinkClick(event: MouseEvent, returnTo?: ReturnPath): void {
+	if (event.defaultPrevented) return;
+	if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+		return;
+	}
+	event.preventDefault();
+	if (signingIn) return;
+	signingIn = true;
+	void signIn(returnTo).catch(() => {
+		signingIn = false;
+		toast.error(SIGN_IN_FAILED);
+	});
+}
+
+/**
+ * Takes over a sign-in that `GET /signin` started and
+ * routes/callback/+page.server.ts completed, by writing the two tokens the
+ * Logto browser client persists into that client's own storage
+ * (`PersistKey`, `BrowserStorage`: both are its public API, so this does
+ * not depend on how it lays its storage out). The client is rebuilt
+ * afterwards so that no access token it cached for the session before this
+ * one survives into it.
+ *
+ * The access token is deliberately not written: the client fetches one per
+ * resource from the refresh token, which is what it does on every reload
+ * anyway.
+ */
+export async function adoptServerSession(idToken: string, refreshToken: string): Promise<void> {
+	const storage = new BrowserStorage(env.PUBLIC_LOGTO_APP_ID ?? '');
+	await storage.setItem(PersistKey.IdToken, idToken);
+	await storage.setItem(PersistKey.RefreshToken, refreshToken);
+	client = undefined;
+	authState.authenticated = await getClient().isAuthenticated();
+	if (!authState.authenticated) throw new Error('the adopted session did not take');
 }
 
 export async function handleSignInCallback(url: string): Promise<void> {

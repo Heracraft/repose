@@ -97,6 +97,12 @@ export async function startAll(): Promise<void> {
 			...process.env,
 			PORT: String(WEB_PORT),
 			HOST: '127.0.0.1',
+			// adapter-node reads https off a request it is not told about,
+			// which is right for the deployed site behind Traefik and wrong
+			// for a fixture on plain http loopback. /signin builds its OIDC
+			// redirect_uri from this origin (DECISIONS I-878), so without it
+			// the fake sends the browser to https://127.0.0.1:4173/callback.
+			ORIGIN: BASE_URL,
 			PUBLIC_API_URL: fakeApiURL,
 			PUBLIC_LOGTO_ENDPOINT: fakeLogtoURL,
 			PUBLIC_LOGTO_APP_ID: 'dashboard-test'

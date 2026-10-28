@@ -4,7 +4,8 @@ import { BASE_URL } from './fixtures';
 /** Drives the whole fake-Logto authorization-code round trip. */
 export async function signIn(page: Page): Promise<void> {
 	await page.goto('/');
-	await page.getByRole('button', { name: 'Get started' }).click();
+	// A link since I-878; hydrated, its click handler runs the browser flow.
+	await page.getByRole('link', { name: 'Get started' }).click();
 	await page.waitForURL(/\/oidc\/auth/);
 	await page.getByRole('button', { name: 'Continue as heracraft' }).click();
 	await page.waitForURL(/\/projects/);

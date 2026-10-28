@@ -39,7 +39,7 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByText('500 GB disk · 1 TB egress')).toBeVisible();
 	await expect(pricing.getByText('per hour')).toHaveCount(0);
 	await expect(page.getByTestId('seats-line')).toHaveText('18 seats left');
-	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	// The notice period and the 12-month hold left the landing with I-772.
 	// They are kept in terms.md (the site footer's Terms), billing.md and
 	// PRICING.md; "Launch prices" stays, in the section's head.
@@ -71,7 +71,7 @@ test('when full, the line says so with the number waiting', async ({ page }) => 
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
 	// The waitlist and seat copy stays as it is (spec 2.1, owner's call).
-	await expect(pricing.getByRole('button', { name: 'Start a free week' })).toBeVisible();
+	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	await expect(page.getByTestId('seats-line')).toContainText('Full for now. 41 waiting;');
 	await expect(page.getByTestId('seats-line')).toContainText(
 		"join the list and you're emailed when a seat frees."

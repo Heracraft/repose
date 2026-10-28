@@ -4,7 +4,8 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { authState, signIn, type ReturnPath } from '$lib/auth.svelte';
+	import { SIGN_IN_FAILED, authState, onSignInLinkClick } from '$lib/auth.svelte';
+	import { signinHref, type ReturnPath } from '$lib/signin';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { publicSeats } from '$lib/api/client';
 	import type { PublicSeats } from '$lib/api/types';
@@ -21,7 +22,6 @@
 	import Ready from '$lib/components/landing/Ready.svelte';
 	import Gauge from '$lib/components/landing/Gauge.svelte';
 
-	let signingIn = $state(false);
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
 
@@ -35,21 +35,10 @@
 		// was cancelled or failed before a code was issued.
 		const params = new URLSearchParams(location.search);
 		if (params.get('error')) {
-			toast.error('Sign-in was cancelled or failed; try again.');
+			toast.error(SIGN_IN_FAILED);
 			history.replaceState(null, '', location.pathname);
 		}
 	});
-
-	async function onSignIn(returnTo?: ReturnPath) {
-		if (signingIn) return;
-		signingIn = true;
-		try {
-			await signIn(returnTo);
-		} catch {
-			signingIn = false;
-			toast.error('Sign-in was cancelled or failed; try again.');
-		}
-	}
 
 	// On a phone the install line breaks at its spaces, never inside the URL
 	// and never between the pipe and its target.
@@ -92,12 +81,19 @@
 			>{@render authLabel(signedIn, signedOut)}</a
 		>
 	{:else}
-		<button
-			type="button"
+		<!-- A link, not a button: this page is prerendered, and a press
+		     that lands before the bundle has hydrated used to do nothing at
+		     all, with no feedback (DECISIONS I-864, I-878). The href starts
+		     the flow at `GET /signin`; once hydrated, a plain left click
+		     takes the browser flow instead. -->
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- signinHref() calls resolve('/signin') and adds the return path (lib/signin) -->
+		<a
+			href={signinHref(returnTo)}
 			class="hk-btn hk-btn-lg hk-btn--touch"
-			aria-disabled={signingIn ? 'true' : undefined}
-			onclick={() => onSignIn(returnTo)}>{@render authLabel(signedOut, signedIn)}</button
+			onclick={(e) => onSignInLinkClick(e, returnTo)}
+			>{@render authLabel(signedOut, signedIn)}</a
 		>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
 {/snippet}
 
