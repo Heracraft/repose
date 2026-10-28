@@ -25,7 +25,7 @@ While your projects hold more than [the plan's disk](/docs/billing#what-a-plan-m
 
 A seat is 8 GB of memory for running machines, so a plan takes one for each 8 GB it runs. Choosing a plan whose seats aren't free puts you on the waitlist instead: `repose is full right now. You're number 3 on the waitlist; we'll email you@example.com when there's a seat.` The Billing page shows your place and how many are waiting.
 
-We let people in, in the order they joined, one seat each, as plans end and as we add servers. You get one [email](/docs/notifications#emails-about-your-account) when it's your turn, and the seat is held for 72 hours. A hold that runs out hands the seat to the next person and puts you at the back of the list, with an email saying what number you are now.
+We let people in, in the order they joined, one seat each, as plans end and as we add servers. You get one [email](/docs/notifications#emails-about-your-account) when it's your turn, and the seat is held for 72 hours. A hold that runs out puts you at the back of the list, with an email saying what number you are now, and your turn comes round again a day later. Joining again yourself skips that day.
 
 Upgrading to a plan with more seats needs a free seat too, and is refused while there is none: each seat that frees goes to the oldest account on the waitlist.
 

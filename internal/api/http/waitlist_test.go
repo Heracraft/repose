@@ -278,12 +278,18 @@ func TestSeatsWaitlistAndInvitations(t *testing.T) {
 		t.Fatalf("expired email queued %d", n)
 	}
 	// Strict order and SEATS_TOTAL: with the total set to ten, everyone
-	// waiting is invited on the next tick, and no one twice.
+	// waiting is invited, and no one twice. C's hold has just run out,
+	// so C waits out the cooldown first (I-902) and is not a candidate
+	// on the next tick even with seven seats free.
 	big := &waitlist.Inviter{Pool: e.h.Pool, Total: 10}
-	if n, _, err := big.Run(ctx, clock.Add(time.Minute)); err != nil || n != 1 {
-		t.Fatalf("SEATS_TOTAL=10 invited %d %v, want C", n, err)
+	if n, _, err := big.Run(ctx, clock.Add(time.Minute)); err != nil || n != 0 {
+		t.Fatalf("SEATS_TOTAL=10 a minute after C's expiry invited %d %v, want none", n, err)
 	}
-	if ws, err := store.ListWaiting(ctx, e.h.Pool); err != nil || len(ws) != 0 {
+	clock = clock.Add(waitlist.CooldownDuration + time.Minute)
+	if n, _, err := big.Run(ctx, clock); err != nil || n != 1 {
+		t.Fatalf("SEATS_TOTAL=10 past the cooldown invited %d %v, want C", n, err)
+	}
+	if ws, err := store.ListWaiting(ctx, e.h.Pool, clock); err != nil || len(ws) != 0 {
 		t.Fatalf("still waiting: %+v %v", ws, err)
 	}
 	c, src, der, err := (&waitlist.Service{Pool: e.h.Pool, Total: 10, Now: func() time.Time { return clock.Add(time.Minute) }}).CountSource(ctx)
@@ -347,5 +353,102 @@ func TestWaitlistRejoinAfterConversion(t *testing.T) {
 	row, _ := store.GetWaitlistEntry(ctx, e.h.Pool, a.ID)
 	if row.ConvertedAt != nil || row.ExpiredInvites != 0 || !row.JoinedAt.Equal(clock) {
 		t.Fatalf("A row after rejoin: %+v", row)
+	}
+}
+
+// The lone waiting user is not re-invited by the tick that expired
+// their own hold (I-902). I-290 moves an expired hold to the back of the
+// list and I-294 (4) expires before it invites, so with one candidate
+// the back of the list was also its front: the same minute freed the
+// seat, counted the user as waiting and invited them again, sending
+// "your hold ran out" and "a seat is yours" together, every 72 hours,
+// with nothing to end it. The two-user handover above is covered; only
+// `Waiting == 1` reached the loop, and no test had one.
+func TestLoneWaiterIsNotReInvitedByItsOwnExpiry(t *testing.T) {
+	clock := time.Now().Truncate(time.Second)
+	e := newEnvWith(t, &httpapi.RateLimits{General: 10000, Certs: 10000, Config: 10000}, func(d *httpapi.Deps) {
+		d.Seats = &waitlist.Service{Pool: d.Pool, M: d.Metrics, Log: d.Log, Now: func() time.Time { return clock }}
+	})
+	ctx := e.h.Ctx
+	count := func(sql string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := e.h.Pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	// One seat in the fleet, nobody holding it, one user on the list.
+	inv := &waitlist.Inviter{Pool: e.h.Pool, Total: 1}
+	tok := e.signIn(t, "sub-lone", "lone")
+	e.subscribe(t, "sub-lone", "")
+	id := uuid.MustParse(e.do(t, tok, "GET", "/me", nil).body["id"].(string))
+	if r := e.do(t, tok, "POST", "/billing/waitlist", nil); r.status != 200 || r.body["position"] != float64(1) {
+		t.Fatalf("join: %d %s", r.status, r.raw)
+	}
+	// The free seat is theirs.
+	if n, x, err := inv.Run(ctx, clock); err != nil || n != 1 || x != 0 {
+		t.Fatalf("first tick: invited %d expired %d %v", n, x, err)
+	}
+	// 72 hours later the hold runs out. Before I-902 this one call both
+	// expired it and handed it straight back.
+	clock = clock.Add(waitlist.HoldDuration + time.Minute)
+	n, x, err := inv.Run(ctx, clock)
+	if err != nil || x != 1 || n != 0 {
+		t.Fatalf("the expiry tick: invited %d expired %d %v, want 0 invited", n, x, err)
+	}
+	entry, err := store.GetWaitlistEntry(ctx, e.h.Pool, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.InvitedAt != nil || entry.HoldUntil != nil {
+		t.Fatalf("re-invited by its own expiry: %+v", entry)
+	}
+	if entry.CooldownUntil == nil || !entry.CooldownUntil.Equal(clock.Add(waitlist.CooldownDuration)) {
+		t.Fatalf("cooldown %v, want %v", entry.CooldownUntil, clock.Add(waitlist.CooldownDuration))
+	}
+	// They keep their place and can still read it.
+	if entry.Position != 1 {
+		t.Fatalf("position %d while cooling, want 1", entry.Position)
+	}
+	// Ticks through the cooldown invite nobody and send nothing more.
+	for _, d := range []time.Duration{time.Minute, time.Hour, waitlist.CooldownDuration - time.Minute} {
+		if n, x, err := inv.Run(ctx, clock.Add(d)); err != nil || n != 0 || x != 0 {
+			t.Fatalf("tick at +%s: invited %d expired %d %v", d, n, x, err)
+		}
+	}
+	if n := count("select count(*) from events where user_id = $1 and kind = 'waitlist_invited'", id); n != 1 {
+		t.Fatalf("%d invitation emails during the cooldown, want the first one only", n)
+	}
+	if n := count("select count(*) from events where user_id = $1 and kind = 'waitlist_expired'", id); n != 1 {
+		t.Fatalf("%d expiry emails, want 1", n)
+	}
+	// Past the cooldown the seat is offered again, once.
+	after := clock.Add(waitlist.CooldownDuration + time.Minute)
+	if n, x, err := inv.Run(ctx, after); err != nil || n != 1 || x != 0 {
+		t.Fatalf("past the cooldown: invited %d expired %d %v", n, x, err)
+	}
+	if n := count("select count(*) from events where user_id = $1 and kind = 'waitlist_invited'", id); n != 2 {
+		t.Fatalf("%d invitation emails after the cooldown, want 2", n)
+	}
+	// A user who comes back and asks is not kept waiting: joining again
+	// clears the cooldown, which is only there for silence.
+	clock = after
+	tok2 := e.signIn(t, "sub-returning", "returning")
+	e.subscribe(t, "sub-returning", "")
+	id2 := uuid.MustParse(e.do(t, tok2, "GET", "/me", nil).body["id"].(string))
+	if _, err := e.h.Pool.Exec(ctx, `insert into waitlist (user_id, joined_at, invited_at, hold_until, invited_by, cooldown_until)
+		values ($1, $2, $2, $3, 'auto', $4)`, id2, after, after.Add(-time.Minute), after.Add(waitlist.CooldownDuration)); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.do(t, tok2, "POST", "/billing/waitlist", nil); r.status != 200 {
+		t.Fatalf("the returning user joins: %d %s", r.status, r.raw)
+	}
+	back, err := store.GetWaitlistEntry(ctx, e.h.Pool, id2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.CooldownUntil != nil {
+		t.Fatalf("asking again left the cooldown on: %+v", back)
 	}
 }

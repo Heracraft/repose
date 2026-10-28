@@ -30,8 +30,40 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if len(down) != 1 || down[0] != st.Applied[len(st.Applied)-1] {
 		t.Fatalf("down 1 reverted %v", down)
 	}
-	// 0030 (the idle pause, I-818) is the newest: three defaulted
-	// columns, which the down above takes and which nothing below it has.
+	// This test is about the downs of 0030, 0028 and 0027, so every
+	// migration above each is reverted to reach it. Counted rather than
+	// written out, because a version read as a constant is what makes
+	// this fail on the next migration added, which says nothing about
+	// any of those downs. I-806 counted the steps to 0028 that way and
+	// left "0030 is the newest" written in, so 0031 broke it again
+	// (I-902); nothing here names the newest version now.
+	reverted := 1 // the `down 1` above
+	// atOrAbove is how many applied migrations a down must revert to
+	// take version v with them.
+	atOrAbove := func(v int) int {
+		n := 0
+		for _, a := range st.Applied {
+			if a >= v {
+				n++
+			}
+		}
+		return n
+	}
+	downTo := func(v int, what string) {
+		t.Helper()
+		steps := atOrAbove(v) - reverted
+		if steps <= 0 {
+			return
+		}
+		if down, err := db.MigrateDown(ctx, pool, steps); err != nil || len(down) != steps {
+			t.Fatalf("down %d to %04d (%s): %v %v", steps, v, what, down, err)
+		}
+		reverted += steps
+	}
+	// 0030 (the idle pause, I-818): three defaulted columns, which its
+	// own down takes and which nothing below it has.
+	const idlePause = 30 // 0030_resting, I-818
+	downTo(idlePause, "the idle pause")
 	var n int
 	if err := pool.QueryRow(ctx, "select count(*) from information_schema.columns where table_name in ('projects', 'meter_samples') and column_name in ('resting_since', 'keep_awake', 'resting')").Scan(&n); err != nil {
 		t.Fatal(err)
@@ -39,21 +71,9 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("0030's down left %d of its columns", n)
 	}
-	// This test is about 0028's and 0027's downs, so every migration between
-	// them and the newest is reverted to reach them. Counted rather than
-	// written out, because the version this read as a constant (0028 was the
-	// newest when it was written) made the test fail on the next migration
-	// added, which says nothing about either down (I-806).
+	// Then down through 0028 itself, leaving 0027 the newest.
 	const classVCPU = 28 // 0028_class_vcpu_ratio, I-784
-	steps := 0
-	for i := len(st.Applied) - 1; i >= 0 && st.Applied[i] > classVCPU; i-- {
-		steps++
-	}
-	// The down above reverted the newest; these revert the rest of the
-	// migrations after 0028, and 0028 itself, leaving 0027 the newest.
-	if down, err = db.MigrateDown(ctx, pool, steps); err != nil || len(down) != steps {
-		t.Fatalf("down %d to %04d: %v %v", steps, classVCPU, down, err)
-	}
+	downTo(classVCPU, "the class vCPU figures")
 	// 0028 (the class vCPU figures in host_reservations, I-784) only
 	// replaces the view: hosts.cores and the view's own vcpus column,
 	// which 0027 added, survive its down. Then 0027's down takes both.

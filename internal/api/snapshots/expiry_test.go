@@ -188,3 +188,79 @@ func TestForkSnapshotExpires(t *testing.T) {
 		}
 	}
 }
+
+// A project keeps seven snapshots, which is the number R4-11 and every
+// public line promise. Only the seven-day window was enforced, so a
+// project stopped ten times a day held seventy full images: `stop` is
+// the one snapshot a user can fire at will (I-900).
+func TestLiveProjectKeepsSeven(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	b := blob.New()
+	e := snapshots.New(pool, b, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	busy := project(t, pool, false)
+	// Twenty stops inside one day, newest first by age.
+	var ids []uuid.UUID
+	for i := 20; i >= 1; i-- {
+		ids = append(ids, snap(t, pool, b, busy, time.Duration(i)*time.Hour, nil))
+	}
+	// A project with fewer than seven loses none of them.
+	calm := project(t, pool, false)
+	var calmIDs []uuid.UUID
+	for i := 3; i >= 1; i-- {
+		calmIDs = append(calmIDs, snap(t, pool, b, calm, time.Duration(i)*time.Hour, nil))
+	}
+	if _, err := e.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The newest seven of the twenty survive; the thirteen behind them go.
+	newest := ids[len(ids)-snapshots.MaxPerProject:]
+	older := ids[:len(ids)-snapshots.MaxPerProject]
+	for _, id := range newest {
+		s, _ := store.GetSnapshot(ctx, pool, id)
+		if s.DeletedAt != nil || !b.Exists(s.BlobPath) {
+			t.Fatalf("snapshot %s is within the newest %d and should survive", id, snapshots.MaxPerProject)
+		}
+	}
+	for _, id := range older {
+		s, _ := store.GetSnapshot(ctx, pool, id)
+		if s.DeletedAt == nil || b.Exists(s.BlobPath) {
+			t.Fatalf("snapshot %s is past the cap and should be gone", id)
+		}
+	}
+	for _, id := range calmIDs {
+		s, _ := store.GetSnapshot(ctx, pool, id)
+		if s.DeletedAt != nil || !b.Exists(s.BlobPath) {
+			t.Fatalf("snapshot %s is one of three and should survive", id)
+		}
+	}
+	// The sweep is idempotent: a second run has nothing left to take.
+	if d, err := e.Once(ctx); err != nil || len(d) != 0 {
+		t.Fatalf("second run: %v %v", d, err)
+	}
+}
+
+// A fork's snapshot does not count toward the seven and is not retired
+// by the cap: it expires on its own expires_at (I-703, I-900).
+func TestForkSnapshotIsNotOneOfTheSeven(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	b := blob.New()
+	e := snapshots.New(pool, b, metrics.NewNop(), slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	pid := project(t, pool, false)
+	for i := snapshots.MaxPerProject; i >= 1; i-- {
+		snap(t, pool, b, pid, time.Duration(i)*time.Hour, nil)
+	}
+	future := time.Now().Add(20 * 24 * time.Hour)
+	forkSnap := snap(t, pool, b, pid, 30*time.Hour, &future)
+	if _, err := pool.Exec(ctx, "update snapshots set reason = 'fork' where id = $1", forkSnap); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := e.Once(ctx); err != nil || len(d) != 0 {
+		t.Fatalf("seven dailies and a fork snapshot: deleted %v (%v)", d, err)
+	}
+	s, _ := store.GetSnapshot(ctx, pool, forkSnap)
+	if s.DeletedAt != nil || !b.Exists(s.BlobPath) {
+		t.Fatal("the fork's snapshot was retired by the count cap")
+	}
+}

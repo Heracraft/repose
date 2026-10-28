@@ -66,7 +66,7 @@ func (e *Env) waitlistCmd(ctx context.Context, args []string) error {
 		}
 		var handles []string
 		if next > 0 {
-			waiting, err := store.ListWaiting(ctx, e.pool)
+			waiting, err := store.ListWaiting(ctx, e.pool, time.Now())
 			if err != nil {
 				return err
 			}
