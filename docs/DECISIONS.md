@@ -26378,6 +26378,14 @@ machine here."
 *Kept, against the pattern.* "stopping a machine does not free pool
 space" on the thin-pool refusals: it is a mechanism, but it pre-empts the
 one wrong action every other capacity message trains the reader into.
+"Your machines keep running and starting" in `disk_over_plan`: read as
+reassurance in the audit and cut, then put back when the test that
+guards it failed. It sits beside an assertion that no machine was
+stopped for the disk, and `billing_stopped` and `egress_stopped` *do*
+stop machines, so without it the reader's obvious inference from "are
+refused" is the wrong one. Reassurance that rules out a wrong inference
+is a fact. The paragraph of accounting under it ("A deleted file stops
+counting within a day") stayed cut: the "Your plan" link carries it.
 `mcpforward`'s shell-startup diagnosis, the longest error in the CLI: the
 second clause is the only diagnosis there is, and the reader is stuck.
 The `(insufficient_capacity)` code after the English: the English is for

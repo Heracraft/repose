@@ -1,6 +1,6 @@
 Your projects hold more than your plan's disk
 
-Your projects hold 112.4 GB and Solo has 100 GB of disk. Creating, restoring and forking projects, and growing a disk, are refused until they hold less.
+Your projects hold 112.4 GB and Solo has 100 GB of disk. Your machines keep running and starting. Creating, restoring and forking projects, and growing a disk, are refused until they hold less.
 
 Your plan: https://repose.herakraft.co/billing
 
