@@ -38,7 +38,7 @@ in
 
     pauseIdle = lib.mkOption {
       type = lib.types.bool;
-      default = false;
+      default = true;
       description = ''
         Rest a guest nobody is using: its vCPUs stop and its memory stays
         resident on this host, every process and socket survives, and
@@ -46,11 +46,12 @@ in
         This is what puts `pause` in the host's Hello, so an api asks a
         host without it for no pause and no wake.
 
-        Off by default, and a host opts in the way it opts into the
-        freeze: a plain vm.pause and vm.resume of a guest with two
-        vhost-user devices is measured on no repose host yet, and I-652
-        records that a *snapshotted* VM must not be resumed at all
-        because its virtio-fs stops answering.
+        On by default since I-886, so a host that says nothing rests its
+        idle guests. It was off while the pause was unmeasured on any
+        repose host; it is now measured on three. Set it false for a host
+        that must never pause a guest -- I-652's rule is unchanged, and a
+        *snapshotted* VM must still not be resumed at all, because its
+        virtio-fs stops answering.
       '';
     };
 

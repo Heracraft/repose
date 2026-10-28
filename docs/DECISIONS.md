@@ -26215,3 +26215,35 @@ The rule this leaves: **on this box, check the machine before the code.**
 `df`, `free` and `uptime` cost a second and rule out all three failures
 above, every one of which otherwise presents as a test that has started
 failing on its own.
+
+**I-886. The idle pause is on by default; a host that says nothing rests
+its idle guests.** (conductor, 2026-10-28, amends I-818) I-818 made
+`repose.host.pauseIdle` default to false and said a host opts in the way
+it opts into the freeze. Its reason was evidence, not caution: "a plain
+vm.pause and vm.resume of a guest with two vhost-user devices is measured
+on no repose host yet". That reason has expired. It is measured on
+host-stg-01 (18-idle-pause.md §7), on host-01 since 2026-10-25, and on
+host-02 since its install -- three hosts, and a wake hostd timed at
+225 ms against 9.2 s for a boot, with a tmux session three days old and
+93 processes intact across a rest and a wake.
+
+The default is now true. What changes is only what a host gets when it
+says nothing: every production host already imports `prod.nix`, which has
+set `pauseIdle = true` since I-786, and `host-stg-01` sets it itself. So
+no running host changes behaviour from this entry, and host-02 was
+already resting idle guests before it was written. What it fixes is the
+next host: a bench host, a second region, anything that does not import
+`prod.nix` would have had the feature off and nobody would have noticed
+until a bill.
+
+Off is still available and still meaningful. A host that must never pause
+a guest sets it false, and the rollback is unchanged: `pauseIdle = false`
+plus a switch stops new pauses and still wakes what it froze, because
+I-824 gates the pause and never the wake. I-652's rule is untouched: a
+*snapshotted* VM must not be resumed at all, its virtio-fs having stopped
+answering, and that is a different mechanism from this one.
+
+The explicit `pauseIdle = true` in `prod.nix` and `host-stg-01.nix` is
+left in place rather than deleted. A production host's most expensive
+behaviour should be visible where someone reads that host's
+configuration, not inferred from a module default two files away.
