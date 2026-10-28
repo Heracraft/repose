@@ -26177,16 +26177,32 @@ browser suite's failures were attributed to the branch under test.
 
 Two things changed on the box; only one is durable.
 
-- `/tmp/rt` is now a symlink to `/mnt/nixstore/rt`, the same device as
-  `/nix`: 308 GB free rather than 2. The path stays `/tmp/rt` because
-  `TMPDIR` must be short -- the hostd fakes bind unix sockets under it
-  and `sun_path` is 108 bytes. **This is a hand edit on a live box.** If
-  `/tmp` is cleared on boot the symlink goes with it and the small disk
-  fills again, silently. It belongs in that machine's configuration,
+- `/tmp/rt` is now a **bind mount** of `/mnt/nixstore/rt`, the same
+  device as `/nix`: 306 GB free rather than 2. The path stays `/tmp/rt`
+  because `TMPDIR` must be short -- the hostd fakes bind unix sockets
+  under it and `sun_path` is 108 bytes. It must be a bind mount and not
+  a symlink: a symlink was tried first and broke twelve tests at once,
+  because Nix refuses one in a store path's parentage -- `the path
+  "/tmp/rt" is a symlink; this is not allowed for the Nix store and its
+  parent directories`. Those failures looked exactly like a batch that
+  had broken the CLI, the gateway and the config parser together, and
+  the batch had changed no Go file at all. **This is a hand change on a
+  live box.** A bind mount does not survive a reboot any more than the
+  symlink would have. It belongs in that machine's configuration,
   which this repository does not manage: woker-1 is in no resource group
   of the Azure account the platform uses. `az` from kanali sees one
   subscription, one group and three VMs -- coolify-01, edge-01, host-01
   -- and woker-1 is not among them.
+- *The third cost, found by this entry's own gate run.* `make -C infra
+  check` runs `tofu init`, which downloads a private copy of every
+  provider **per worktree** -- 482 MB each, 3.8 GB duplicated across the
+  box, and 245 MB of that is Cloudflare alone. A gate run filled the
+  disk it was measuring and reported `[build failed]` across unrelated
+  Go packages plus a false `infra validate` error. `~/.terraformrc` now
+  sets `plugin_cache_dir = "/mnt/nixstore/tf-plugin-cache"`, so copies
+  are shared and land on the big filesystem. That is the largest single
+  avoidable consumer found, and it was invisible until something looked
+  during a run rather than after one.
 - Nothing stops the leak. A reaper that sweeps stale clusters at
   `testdb` start, keyed on a pidfile rather than on mtime, is the shape.
   Age is not a safety test: a running postmaster does not update its data
