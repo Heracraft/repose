@@ -248,6 +248,7 @@ of its own for; `GET /projects/:id/secrets` lists the project's alone.
 
 | Method | Path | Body / result |
 |---|---|---|
+| GET | `/snapshots?limit=&before=` | `[{id, project_id, project, project_destroyed, created_at, bytes, reason, expires_at}]` across the user's projects, newest `taken_at` first, at most 200 (default 100); `before` is a snapshot id and pages by keyset on `(taken_at, id)`. Destroyed projects' snapshots are included, with `project_destroyed: true`: they are kept 30 days and are the set a home folder could not otherwise reach. Added with I-904; an older api answers `404` and the CLI falls back to naming a project |
 | GET | `/projects/:id/snapshots` | `[{id, created_at, bytes, reason, expires_at}]`; `reason` is `scheduled`, `stop`, `manual` or `fork` (I-703) |
 | POST | `/projects/:id/snapshots` | `{reason?: "fork"}` (body optional) → `{op_id}`; the op, once `done`, carries `result: {snapshot_id}` (the api has always set it; documented with I-254). No body is a manual snapshot. `reason: "fork"` (added with I-703; an older api ignores the body) is the snapshot a fork restores from when its copies cannot be cloned: it expires a day after it is taken and never counts as the project's newest |
 | POST | `/projects/:id/snapshots/:sid/restore` | `{as_new_project?: name, start?: bool=true}` → `{op_id, project_id}`; without `as_new_project`, replaces the stopped project's volume. `:id` may be a destroyed project. `POST /projects/restore` is the same restore resolved by name |

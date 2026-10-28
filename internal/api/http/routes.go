@@ -50,6 +50,7 @@ func (s *Server) registerUserRoutes() {
 	s.route(m, "PUT /v1/projects/{id}/secrets/{name}", a(s.putSecret))
 	s.route(m, "DELETE /v1/projects/{id}/secrets/{name}", a(s.deleteSecret))
 	// Snapshots
+	s.route(m, "GET /v1/snapshots", a(s.listAllSnapshots))
 	s.route(m, "GET /v1/projects/{id}/snapshots", a(s.listSnapshots))
 	s.route(m, "POST /v1/projects/{id}/snapshots", a(s.createSnapshot))
 	s.route(m, "POST /v1/projects/{id}/snapshots/{sid}/restore", a(s.restoreSnapshot))

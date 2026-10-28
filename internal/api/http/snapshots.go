@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -10,6 +12,71 @@ import (
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 )
+
+// listAllSnapshots is GET /v1/snapshots: every live snapshot the user
+// has, newest first, each naming its project (DECISIONS I-904). It is
+// the account-wide twin of the per-project route below, as
+// GET /v1/questions is of GET /v1/projects/{id}/questions.
+//
+// Destroyed projects are included: their last snapshot is kept 30 days
+// and is exactly what a user looking for "all my snapshots" from a home
+// folder cannot otherwise reach.
+func (s *Server) listAllSnapshots(w http.ResponseWriter, r *http.Request) error {
+	u := userFrom(r.Context())
+	// limit and before page through the list, keyset on (taken_at, id),
+	// as /projects/destroyed does (I-420).
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 200 {
+			return errf("invalid", "limit must be 1 to 200")
+		}
+		limit = n
+	}
+	var before *uuid.UUID
+	if v := r.URL.Query().Get("before"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			return errf("invalid", "before must be a snapshot id")
+		}
+		before = &id
+	}
+	rows, err := s.d.Pool.Query(r.Context(), `
+		select sn.id, sn.project_id, p.slug, p.destroyed_at is not null as project_destroyed,
+		       sn.taken_at, sn.bytes, sn.reason, sn.expires_at
+		from snapshots sn join projects p on p.id = sn.project_id
+		where p.user_id = $1 and sn.deleted_at is null
+		  and ($2::uuid is null or (sn.taken_at, sn.id) < (select b.taken_at, b.id from snapshots b join projects bp on bp.id = b.project_id where b.id = $2 and bp.user_id = $1))
+		order by sn.taken_at desc, sn.id desc
+		limit $3`, u.ID, before, limit)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	out := make([]map[string]any, 0, limit)
+	for rows.Next() {
+		var (
+			id, projectID uuid.UUID
+			slug, reason  string
+			destroyed     bool
+			takenAt       time.Time
+			bytes         int64
+			expiresAt     *time.Time
+		)
+		if err := rows.Scan(&id, &projectID, &slug, &destroyed, &takenAt, &bytes, &reason, &expiresAt); err != nil {
+			return err
+		}
+		out = append(out, map[string]any{
+			"id": id, "project_id": projectID, "project": slug, "project_destroyed": destroyed,
+			"created_at": takenAt, "bytes": bytes, "reason": reason, "expires_at": expiresAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
 
 func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) error {
 	p, err := s.userProjectAny(r)

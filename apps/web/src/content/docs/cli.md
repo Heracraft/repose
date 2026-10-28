@@ -408,7 +408,7 @@ Answer a [waiting question](/docs/notifications#agents-can-message-you-and-ask-q
 
 | Command                                          | What it does |
 | ------------------------------------------------ | ------------ |
-| `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
+| `repose snapshots list [PROJECT]`                | Alias `ls`, and `repose snapshots` alone. From a folder that is no project, with no PROJECT, it lists every snapshot you have, each with its project and `(destroyed)` where that project is gone. The table shows the last 8 characters of each id; `--json` for JSON, `-q`/`--quiet` for whole ids. |
 | `repose snapshots create [PROJECT]`              | Take one now; prints its id. `--json` prints the snapshot as JSON. |
 | `repose snapshots restore [PROJECT] SNAPSHOT_ID` | Replace a stopped project's disk and start it, after [a question](/docs/lifecycle#snapshots) about whether the restore can be undone. `--as NAME` restores into a new project instead, which starts too and ends as [`repose restore`](#repose-restore-name) does; `-y`/`--yes` skips the question. |
 

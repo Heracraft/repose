@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"text/tabwriter"
 	"time"
@@ -26,8 +27,15 @@ func projectForSnapshots(ctx context.Context, e *Env, projectArg string) (*Proje
 	return requireProject(ctx, e, projectArg)
 }
 
-// SnapshotsListCmd implements `repose snapshots list`.
+// SnapshotsListCmd implements `repose snapshots list`. With no PROJECT
+// and none to resolve from the folder, it lists every snapshot of the
+// account instead of refusing (I-904): the owner ran `repose snapshots`,
+// `snapshots ls` and `snapshots list` from their home folder and got the
+// same "name one" three times, for a question the api can now answer.
 func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
+	if e.resolveArg(projectArg) == "" && noProjectHere(ctx, e) {
+		return snapshotsListAll(ctx, e)
+	}
 	project, err := projectForSnapshots(ctx, e, projectArg)
 	if err != nil {
 		return err
@@ -57,6 +65,52 @@ func SnapshotsListCmd(ctx context.Context, e *Env, projectArg string) error {
 	_, _ = fmt.Fprintln(tw, "ID\tTAKEN\tSTORED\tREASON")
 	for _, s := range snaps {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
+	}
+	return tw.Flush()
+}
+
+// noProjectHere is whether this folder belongs to no project, so a
+// command that would otherwise refuse can act on the account. It asks
+// the same resolver the refusal would and reads its answer rather than
+// its error, so the two can never disagree.
+func noProjectHere(ctx context.Context, e *Env) bool {
+	_, err := requireProject(ctx, e, "")
+	var ee *exitError
+	return errors.As(err, &ee) && ee.code == ExitProjectNotFound
+}
+
+// snapshotsListAll prints every snapshot of the account, newest first,
+// with the project each belongs to. A destroyed project's snapshots are
+// here too, which is the set a home folder could not reach at all.
+func snapshotsListAll(ctx context.Context, e *Env) error {
+	snaps, err := e.Client.ListAllSnapshots(ctx)
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		if snaps == nil {
+			snaps = []Snapshot{}
+		}
+		return writeJSONOut(e.Out, snaps)
+	}
+	if e.Quiet {
+		for _, s := range snaps {
+			_, _ = fmt.Fprintln(e.Out, s.ID)
+		}
+		return nil
+	}
+	if len(snaps) == 0 {
+		_, _ = fmt.Fprintln(e.Out, "You have no snapshots yet.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(e.Out, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "PROJECT\tID\tTAKEN\tSTORED\tREASON")
+	for _, s := range snaps {
+		name := s.Project
+		if s.ProjectDestroyed {
+			name += " (destroyed)"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", name, shortID(s.ID), s.CreatedAt.Local().Format("2006-01-02 15:04"), humanBytes(s.Bytes), s.Reason)
 	}
 	return tw.Flush()
 }
