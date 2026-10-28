@@ -12,5 +12,5 @@ This project (monorepo):
   packageManager pnpm@9.0.0 (package.json packageManager): pnpm/npm on the machine are the base's
   not installed: astro (a dependency), changeset (from the dependency @changesets/cli), concurrently (a dependency), drizzle-kit (a dependency), eslint (a dependency), next (a dependency), play (the project's own command), playwright (from the dependency @playwright/test), prettier (a dependency), tsc (from the dependency typescript), tsup (a dependency), turbo (a dependency)
 
-6 to check on the machine; each one it lacks is installed in the background after `repose run`.
+6 to check on the machine.
 Made the machine's default the same way when it has another version: node 22.

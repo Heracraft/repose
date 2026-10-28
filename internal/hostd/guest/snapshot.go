@@ -36,8 +36,17 @@ func (m *Manager) snapshotCmd(ctx context.Context, c *hostdv1.Snapshot) (*hostdv
 
 // BlobPath is <user_id>/<project_id>/<ts>.img.zst; a guest created without
 // a user_id (an old CreateGuest shape) falls under its project only.
+//
+// The timestamp carries microseconds because it is the whole of the
+// path's uniqueness: at milliseconds, two snapshots of one project in
+// the same millisecond wrote the same blob, and the second overwrote
+// the first silently. A stop that snapshots followed at once by a
+// manual snapshot does exactly that, and the api is then holding two
+// snapshot rows pointing at one blob, so retiring either takes the
+// other's bytes with it and the survivor cannot be restored (I-910).
+// Old paths are stored per snapshot and keep working.
 func BlobPath(g *state.Guest, ts time.Time) string {
-	name := ts.UTC().Format("2006-01-02T15-04-05.000Z") + ".img.zst"
+	name := ts.UTC().Format("2006-01-02T15-04-05.000000Z") + ".img.zst"
 	if g.UserID == "" {
 		return path.Join(g.ProjectID, name)
 	}

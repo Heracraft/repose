@@ -161,7 +161,7 @@ func TestRestoreWithoutANameInACheckout(t *testing.T) {
 	var out strings.Builder
 	e.Out = &out
 	ctx := context.Background()
-	if err := RestoreCmd(ctx, e, "", "", "", nil); err == nil || !strings.Contains(err.Error(), "no git remote") {
+	if err := RestoreCmd(ctx, e, "", "", "", nil); err == nil || !strings.Contains(err.Error(), "Name the project to restore") {
 		t.Fatalf("no remote: %v", err)
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:Owner/izma.git"}} {

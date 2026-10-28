@@ -896,7 +896,7 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 		}
 		if time.Now().After(deadline) {
 			pr.Fail()
-			r.err = exitf(ExitGeneric, "The destroy of %s finished, but the project is still listed (%s). `repose status %s` shows it; %s", p.Slug, stateWords(p.State), p.Slug, retry)
+			r.err = exitf(ExitGeneric, "The destroy of %s finished, but the project is still listed (%s). %s", p.Slug, stateWords(p.State), retry)
 			return r
 		}
 		if err := sleepOrDone(ctx, pollDelay(polled)); err != nil {

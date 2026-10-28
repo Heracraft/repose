@@ -35,7 +35,7 @@ func TestStartUnreachableText(t *testing.T) {
 		t.Fatal(err)
 	}
 	r = e.do(t, tok, "POST", "/projects/"+pid.String()+"/start", nil)
-	want := "todo-app's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start todo-app` works then"
+	want := "todo-app's server is not answering; machines that were running on it start again when it is back"
 	if r.status != 409 || errMessage(r) != want {
 		t.Fatalf("unreachable: %d %s", r.status, r.raw)
 	}

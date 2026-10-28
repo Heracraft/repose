@@ -1,7 +1,7 @@
 {{define "heading"}}Your machine was stopped: a cryptocurrency miner was running{{end}}
 {{define "body"}}{{.M.Summary}}
 
-Mining is against the terms. If this was not you, an agent or a dependency on the machine did it; look before you start it again.{{end}}
+Mining is against the terms. Look at the machine before you start it again.{{end}}
 {{define "command_label"}}Attach from your laptop{{end}}
 {{define "command"}}{{if .M.Project}}repose attach --project {{.M.Project}}{{end}}{{end}}
 {{define "link_label"}}Open {{if .M.Project}}{{.M.Project}}{{else}}your projects{{end}}{{end}}

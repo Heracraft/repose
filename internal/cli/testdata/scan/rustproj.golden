@@ -6,4 +6,4 @@ This project (rustproj):
   wasm-pack            nixpkgs, looked up on the machine; from justfile wasm
   rust 1.80.0 (rust-toolchain.toml): rustup installs it at the first cargo
 
-2 to check on the machine; each one it lacks is installed in the background after `repose run`.
+2 to check on the machine.

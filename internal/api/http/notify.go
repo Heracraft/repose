@@ -20,7 +20,7 @@ func (s *Server) unsubscribeGet(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	return s.writeReplyPage(w, http.StatusOK, replyView{Title: "Unsubscribe from repose email notifications?", Token: token, Unsubscribe: true,
-		Note: "Account and billing email still arrive. You can turn notifications back on from the dashboard's notification settings."})
+		Note: "Account and billing email still arrive."})
 }
 
 // unsubscribePost turns email notifications off: the confirmation page's
@@ -42,7 +42,7 @@ func (s *Server) unsubscribePost(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return s.writeReplyPage(w, http.StatusOK, replyView{Title: "You have been unsubscribed",
-		Note: "repose no longer sends you agent notification email. You can turn it back on any time from the dashboard's notification settings."})
+		Note: "repose no longer sends you agent notification email. Turn it back on in the dashboard's notification settings."})
 }
 
 // unsubToken reads and verifies the token from the query or the form. A

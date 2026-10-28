@@ -311,7 +311,7 @@ func RestoreCmd(ctx context.Context, e *Env, name, as, snapshotID string, askNam
 func destroyedForCheckout(ctx context.Context, e *Env, ask func(prompt string) (string, error)) (*DestroyedProject, error) {
 	remote := gitRemoteOrigin(e.Cwd)
 	if remote == "" {
-		return nil, exitf(ExitUsage, "Name the project to restore: `repose restore NAME` (this directory has no git remote to find it by). `repose ls --destroyed` lists what can be restored.")
+		return nil, exitf(ExitUsage, "Name the project to restore: `repose restore NAME`. `repose ls --destroyed` lists what can be restored.")
 	}
 	list, err := e.Client.ListDestroyed(ctx)
 	if err != nil {

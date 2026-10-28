@@ -588,7 +588,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			name = n
 			if othersOpen {
 				pr.Fail()
-				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent, mux.Unit())
+				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open in the same working tree.\n", agent, mux.Unit())
 				pr.Resume("Starting "+agent, "")
 			}
 		}
@@ -1025,7 +1025,7 @@ func certRefusalHandler(reissue func() error) func(*sshError) (bool, error) {
 			}
 			return true, nil
 		}
-		return false, exitf(ExitGeneric, "The gateway refused a certificate issued just now (%s). `repose login` (as the account that owns the project) and try again; if it still refuses, an operator may have revoked your certificates.", sshStderrDetail(se.Stderr))
+		return false, exitf(ExitGeneric, "The gateway refused a certificate issued just now (%s). `repose login` as the account that owns the project, and try again.", sshStderrDetail(se.Stderr))
 	}
 }
 

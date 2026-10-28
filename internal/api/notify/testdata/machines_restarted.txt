@@ -8,4 +8,4 @@ Your machines: https://repose.herakraft.co/projects
 
 --
 repose. Open the dashboard: https://repose.herakraft.co
-You get these about your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+About your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

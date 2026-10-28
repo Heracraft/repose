@@ -57,7 +57,7 @@ describe('errorText', () => {
 		expect(errorText(refused, 'Could not save.')).toBe('Name is taken.');
 		const internal = new ApiError({ code: 'internal', message: 'internal error' }, 500, null);
 		expect(errorText(internal, 'Could not load projects.')).toBe(
-			'Could not load projects. The API failed on its side; try again shortly.'
+			'Could not load projects. The API failed; try again.'
 		);
 		expect(errorText(new NetworkError(new Error('x')), 'Could not save.')).toBe(
 			'Cannot reach the API.'

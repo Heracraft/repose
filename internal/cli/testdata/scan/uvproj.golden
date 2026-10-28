@@ -8,5 +8,5 @@ This project (uvproj):
   python 3.12 (.python-version): uv fetches it itself
   not installed: celery (a Python dependency), gunicorn (a Python dependency), mypy (a Python dependency), ruff (a Python dependency), svc (the project's own command)
 
-1 to check on the machine; each one it lacks is installed in the background after `repose run`.
+1 to check on the machine.
 Made the machine's default the same way when it has another version: node 20.

@@ -313,7 +313,7 @@ func ForkCmd(ctx context.Context, e *Env, opts ForkOptions) error {
 			verb = "restore"
 		}
 		if res.SnapshotID == "" {
-			return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s` makes another.", failed, len(res.Projects), verb, src.Slug)
+			return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it.", failed, len(res.Projects), verb)
 		}
 		return exitf(ExitGeneric, "%d of %d forks did not %s. Each failed fork is still a project: `repose rm NAME` removes it, and `repose fork %s --snapshot %s` makes another from the same snapshot.", failed, len(res.Projects), verb, src.Slug, res.SnapshotID)
 	}

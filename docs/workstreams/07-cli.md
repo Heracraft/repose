@@ -707,7 +707,7 @@ command line, a guest id, or the host's own wording (that is the op's
 | API unreachable | exit 1, `Cannot reach api.repose.herakraft.co: <err>`; never retried more than 3 times with backoff |
 | Rate limited on `/certs` | reuse existing cert if valid, warn on stderr |
 | Prompt given but agent not installed in guest | exit 1, `Agent 'pi' is not in this guest's config. Add it with \`repose config edit\`.` |
-| Second prompt while agent window exists | new window `<agent>-2` (then `-3`, ..., the lowest free, I-253), stderr warning `Another claude window is open; two agents share one working tree. \`repose run --worktree\` gives the next one its own.` (no warning with `--worktree`) |
+| Second prompt while agent window exists | new window `<agent>-2` (then `-3`, ..., the lowest free, I-253), stderr warning `Another claude window is open in the same working tree.` (no warning with `--worktree`); the flag it used to name went with I-894 |
 
 ## 7. Testing
 

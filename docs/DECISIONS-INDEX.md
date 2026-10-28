@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-828 entries.
+839 entries.
 
 ## Scope
 
@@ -368,10 +368,10 @@ pointer, not a summary.
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7563
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7588
 - **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; L7610
-- **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; L7688
+- **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; amended by I-902; L7688
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; L7727
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7753
-- **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; L7810
+- **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; amended by I-902; L7810
 - **I-295** The dashboard under plans: the fake's default is exempt, the Paddle stub, one site-wide CSP, and what the pages stop showing — 2026-09-27; L7878
 - **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; L7923
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8015
@@ -654,9 +654,9 @@ pointer, not a summary.
 - **I-600** Paddle's sandbox runs prod's billing until the live switch, and what the first end-to-end gate run fixed — 2026-10-08; amended by I-604; L16596
 - **I-601** The home folder is no project's: `run` there needs `--name` or `--temp`, never links it, never syncs it, and `rm` forgets the folders linked to the machine it destroys — 2026-10-08; amended by I-709; L16634
 - **I-602** A temporary machine may run herdr; on herdr it goes at its expiry, and only a working agent holds it past that — 2026-10-08; L16679
-- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; L16706
+- **I-603** `repose run [PROJECT]` and `repose sync [PROJECT]`: the argument is the machine of that name, created if there is none, and the prompt is `-p`/`--prompt` — 2026-10-08; amended by I-631; amended by I-633; amended by I-635; amended by I-709; amended by I-888; L16706
 - **I-614** A confirmation is asked only on a terminal, a no exits 1, Ctrl-C at it ends the command, and `stop` asks before it ends a busy agent — 2026-10-08; amended by I-629; amended by I-633; amended by I-637; amended by I-694; amended by I-710; L16767
-- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; L16834
+- **I-615** `stop` and `rm` take several projects, `stop --idle` stops the idle ones, a stop in the checkout fetches first, and the commands that make a way back name it — 2026-10-08; amended by I-629; amended by I-634; amended by I-638; amended by I-890; L16834
 - **I-610** `resize --size` and `fork` ask the plan's memory before they stop or snapshot anything; `fork --no-start`; a plan refusal with one machine in the way names `repose stop` — 2026-10-08; amended by I-633; amended by I-637; L16884
 - **I-611** `run --size` and `sync --size` size a stopped project before starting it, and refuse a running one of another size — 2026-10-08; L16918
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16933
@@ -680,9 +680,9 @@ pointer, not a summary.
 - **I-622** The CLI reads and switches what flags and the dashboard set: `config revisions`, `config apply --revision`, `config --global on|off`, `repose notify`, fork remotes, a `setup` line in status, and an `editor` key — 2026-10-09; amended by I-631; amended by I-632; amended by I-633; amended by I-635; L17602
 - **I-629** One vocabulary across the 2026-10-08 CLI packages (cli-devx, 2026-10-09) — amended by I-632; L17661
 - **I-630** The help teaches in the CLI's own words: grouped root help, one-clause Shorts, 80 columns, "machine" everywhere, and every docs page held to the real commands (cli-devx, 2026-10-09) — amended by I-631; L17694
-- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; L17793
+- **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; amended by I-888; L17793
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17890
-- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — L17929
+- **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — amended by I-894; L17929
 - **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; L18027
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18090
 - **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; amended by I-757; L18122
@@ -826,7 +826,7 @@ pointer, not a summary.
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23978
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24209
 - **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24241
-- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; L24368
+- **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; L24368
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24717
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24780
 - **I-802** The api publishes what the fleet earns: `repose_api_subscriptions{plan,status}` and `repose_api_mrr_cents{status}`, and a gate refusal carries the plan it was refused on — 2026-10-19; L24835
@@ -840,7 +840,7 @@ pointer, not a summary.
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
 - **I-824** The pause must never cost a machine its memory — L25208
-- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; L25242
+- **I-826** The word is "frozen", and the marker is the whole surface — 2026-10-20; amended by I-856; amended by I-896; L25242
 - **I-828** The memory half is not built, and this is what it would need — 2026-10-20; L25274
 - **I-852** Two branches numbered one migration 0029; the resting one became 0030, and the loader is what let it happen — 2026-10-22; L25293
 - **I-844** The rest rule is evaluated everywhere and obeyed only where the host says so, so a fleet can be read before it is touched — 2026-10-21; L25326
@@ -860,3 +860,14 @@ pointer, not a summary.
 - **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26042
 - **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26099
 - **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
+- **I-888** `repose run` refuses what it used to guess: the old prompt form is gone, and a duration spelled with a word after `--temp` is an error — 2026-10-28; L26219
+- **I-890** `repose stop` checks the ssh master before it fetches, waits 15 seconds rather than 60, and says where its time went — 2026-10-28; L26267
+- **I-892** A laptop folder reads as the user spells it, and the UP cell rolls to days — 2026-10-28; L26306
+- **I-894** The messages say the thing once and stop — 2026-10-28; L26332
+- **I-896** /projects shows what is running, one duration a row, and no head that repeats the control above it — 2026-10-28; L26400
+- **I-898** The word is freeze, not awake — 2026-10-28; L26450
+- **I-900** A project keeps seven snapshots, which is what the docs have always said — 2026-10-28; L26463
+- **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; L26514
+- **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26556
+- **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26579
+- **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26604

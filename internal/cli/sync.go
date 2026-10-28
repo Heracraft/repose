@@ -1839,11 +1839,7 @@ echo '#unrelated'
 	if err != nil || !strings.Contains(string(reply), "#unrelated") {
 		return nil
 	}
-	verb := "sync"
-	if firstOnly {
-		verb = "run"
-	}
-	return exitf(ExitUsage, "%s's checkout shares no commit with this one, so `repose %s %s` here would sync one repository into the other's machine. `repose attach %s` gets you onto it; another name makes a new machine for this checkout.", slug, verb, slug, slug)
+	return exitf(ExitUsage, "%s's checkout shares no commit with this one. `repose attach %s` gets you onto it; another name makes a new machine here.", slug, slug)
 }
 
 // commitsKnownLocally filters the guest's tips to the ones this checkout

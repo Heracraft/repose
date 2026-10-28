@@ -80,7 +80,7 @@ Run a prompt while an agent is already running:
 
 ```
 $ repose run -p "also update the README"
-Another claude window is open; two agents share one working tree. `repose run --worktree` gives the next one its own.
+Another claude window is open in the same working tree.
 ```
 
 The window is `claude-2`, then `claude-3`, and so on: the lowest free

@@ -31,7 +31,7 @@ var shellSecretNames = map[string]bool{"BASH_ENV": true, "ENV": true, "REPOSE_EN
 // history (I-620).
 func checkSecretName(name string) error {
 	if n, _, ok := strings.Cut(name, "="); ok && secretNameRe.MatchString(n) {
-		return exitf(ExitUsage, "secrets set takes NAME alone, so the value stays out of your shell history: type it at the prompt, pipe it in, or pass --from-env or --from-file PATH.")
+		return exitf(ExitUsage, "secrets set takes NAME alone: type the value at the prompt, pipe it in, or pass --from-env or --from-file PATH.")
 	}
 	if !secretNameRe.MatchString(name) {
 		return exitf(ExitUsage, "NAME must match [A-Z][A-Z0-9_]{0,63}, got %q", name)
@@ -129,7 +129,7 @@ func SecretsListCmd(ctx context.Context, e *Env, projectArg string) error {
 		}
 		writeAccountSecrets(e.Out, true, account, own, project.Slug, false)
 		skip, _, _ := e.Cfg.loginSkip(project.Slug)
-		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run, onto the machine's disk (so into its snapshots and forks):")
+		_, _ = fmt.Fprintln(e.Out, "Copied from this laptop at each repose run:")
 		writeLoginRows(e.Out, skip, e.loginsFound())
 	}
 	return nil
