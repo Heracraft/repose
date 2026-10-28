@@ -431,7 +431,7 @@ func TestSetupLine(t *testing.T) {
 		t.Errorf("defaults: %q", l)
 	}
 	// The line cli.md's `repose status` section prints as the example.
-	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: agent codex, machine.nix off, base updates held, kept awake" {
+	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: agent codex, machine.nix off, base updates held, never frozen" {
 		t.Errorf("all set: %q", l)
 	}
 }

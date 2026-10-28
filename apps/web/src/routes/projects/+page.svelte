@@ -400,8 +400,24 @@
 	let capped = $derived(view.folded > 0 ? 0 : view.matched - drawn);
 	/** Band heads, where more than one band is drawn. */
 	let heads = $derived(view.groups.length > 1);
-	/** The toolbar is drawn once the list is long enough to need it. */
-	let toolbar = $derived((projects?.length ?? 0) > TOOLBAR_FROM);
+	/**
+	 * The head over one band, or undefined where it says what the filter
+	 * control already says. Stopped was only ever absent under Stopped
+	 * by accident — that view draws one band, so `heads` was false — and
+	 * under Running the head read "Running" below a control marked
+	 * Running (I-896). "Needs you" always keeps its head: no filter
+	 * names it.
+	 */
+	function headFor(b: Band): string | undefined {
+		if (!heads || b === view.filter) return undefined;
+		return BAND_LABELS[b];
+	}
+	/**
+	 * The toolbar is drawn once the list is long enough to need it, and
+	 * whenever a machine is at rest: since I-896 those are not drawn
+	 * under Running, so the filter control is the way to them.
+	 */
+	let toolbar = $derived((projects?.length ?? 0) > TOOLBAR_FROM || view.resting > 0);
 
 	function filterHref(f: Filter): string {
 		return `${resolve('/projects')}${listSearch(page.url.searchParams, f, searchBox)}`;
@@ -447,14 +463,19 @@
 				: `made ${relativeTime(p.created_at)}`}</span
 		>
 	{/if}
-	{#if p.state === 'running' && p.idle}
+	{#if p.state === 'running' && p.idle && !frozen}
 		<!-- Nobody on it for a day, holding its memory against the plan
-		     (I-262, I-289, I-617). A frozen machine is normally unused as
-		     well, and this line says the other thing: the plan's memory is
-		     still held (I-826). It sits outside the chain above so each
-		     fact is said once and neither hides the other; the stacked row
-		     prints it too. Muted, not amber: status colour stays in
-		     badges, dots and banners (I-837). -->
+		     (I-262, I-289, I-617). Muted, not amber: status colour stays
+		     in badges, dots and banners (I-837).
+
+		     I-826 printed this beside the freeze duration, outside the
+		     chain above, so each fact got said once. Two durations in a
+		     22.5% cell is what they read as, though: "frozen for 2h29m
+		     unused 74h30m" ran the row into the table's own scrollbar,
+		     and the second figure does not change what the reader does.
+		     A frozen machine is almost always unused, so the freeze is
+		     the one to show, as the project page already does
+		     (ProjectMeta) — I-896. -->
 		<span class="sub">unused {uptime(p.idle.since)}</span>
 	{/if}
 	{#if p.host_unreachable}
@@ -690,17 +711,11 @@
 							</thead>
 							{#each view.groups as g (g.band)}
 								<tbody data-band={g.band}>
-									{#if heads}
+									{#if headFor(g.band)}
 										<tr class="band-row">
 											<th scope="rowgroup" colspan="6">
 												<span class="band-head">
-													<span>{BAND_LABELS[g.band]}</span>
-													{#if g.band === 'off' && view.folded > 0}
-														<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
-														<a href={filterHref('off')} class="band-all" data-testid="all-stopped"
-															>All {view.resting} stopped</a
-														>
-													{/if}
+													<span>{headFor(g.band)}</span>
 												</span>
 											</th>
 										</tr>
@@ -766,20 +781,16 @@
 					     Stop on the first line, the state and the figures on the second. -->
 					<div class="mlist">
 						{#each view.groups as g (g.band)}
-							{#if heads}
+							{#if headFor(g.band)}
 								<p class="band-head mband" id="mband-{g.band}">
-									<span>{BAND_LABELS[g.band]}</span>
-									{#if g.band === 'off' && view.folded > 0}
-										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- filterHref starts with resolve() -->
-										<a href={filterHref('off')} class="band-all">All {view.resting} stopped</a>
-									{/if}
+									<span>{headFor(g.band)}</span>
 								</p>
 							{/if}
 							<ul
 								class="mgroup"
 								data-band={g.band}
-								aria-label={heads ? undefined : 'Projects'}
-								aria-labelledby={heads ? `mband-${g.band}` : undefined}
+								aria-label={headFor(g.band) ? undefined : 'Projects'}
+								aria-labelledby={headFor(g.band) ? `mband-${g.band}` : undefined}
 							>
 								{#each g.rows as p, i (p.id)}
 									{@const agents = p.signals?.agents ?? []}
@@ -816,10 +827,10 @@
 										<!-- A temporary machine's countdown and the unused warning
 										     are losses the reader cannot undo, so the stacked row
 										     carries them as the table's state cell does. -->
-										{#if p.expires_at || (p.state === 'running' && p.idle) || p.host_unreachable || reason(p)}
+										{#if p.expires_at || (p.state === 'running' && p.idle && !frozen) || p.host_unreachable || reason(p)}
 											<div class="mrow-sub">
 												{#if p.host_unreachable}<span>server not answering</span>{/if}
-												{#if p.state === 'running' && p.idle}<span
+												{#if p.state === 'running' && p.idle && !frozen}<span
 														>unused {uptime(p.idle.since)}</span
 													>{/if}
 												{#if p.expires_at}<span>{tempLeft(p.expires_at)}</span>{/if}
@@ -905,6 +916,23 @@
 		padding-top: 0.875rem;
 		padding-bottom: 0.875rem;
 		vertical-align: top;
+	}
+	/* A fixed column cannot grow, and nothing here wrapped or clipped,
+	   so content wider than its share ran into the next cell and pushed
+	   the table into its own horizontal scrollbar — which also gave it a
+	   stray tab stop (tabStopWhenScrolls). The three cells whose content
+	   is set by the machine rather than by the user clip instead. The
+	   name's cell is left alone: its own ring and the frost are children
+	   of it, and `.premote` already ellipses (I-896). */
+	.ptable :is(.c-state, .c-size, .c-agents, .c-disk) {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	/* A frozen row's frost is 18px tall and sits at the row's foot, so
+	   the text above it needs more than 14px of clearance to stay clear
+	   of it (DESIGN-LANGUAGE, "Frost"). */
+	.ptable tr[data-frost-on='row'] td {
+		padding-bottom: 1.25rem;
 	}
 	/* Fixed widths, so a filter or a search never moves the columns:
 	   Disk and the action are sized to their content, the rest share
@@ -998,7 +1026,10 @@
 	}
 	.premote {
 		display: block;
-		max-width: 22rem;
+		/* Was 22rem, which is wider than the name's column below about a
+		   980px container, so the ellipsis never fired and the cell
+		   clipped the remote mid-character instead (I-896). */
+		max-width: 100%;
 		margin-top: 0.125rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1072,31 +1103,12 @@
 		text-transform: uppercase;
 		color: var(--hk-text-3);
 	}
-	.band-all {
-		font-size: 0.8125rem;
-		letter-spacing: 0;
-		text-transform: none;
-		color: var(--hk-accent);
-		text-decoration: none;
-	}
-	.band-all:hover {
-		text-decoration: underline;
-	}
 	.mband {
 		padding: 1.5rem 0 0.5rem;
 	}
 	.mband:first-child {
 		padding-top: 0.5rem;
 	}
-	@media (pointer: coarse), (max-width: 639.98px) {
-		.band-all {
-			display: inline-flex;
-			align-items: center;
-			min-height: 2.75rem;
-			margin-block: -0.75rem;
-		}
-	}
-
 	/* ---- Stopped rows: one line each ----
 	   An account is mostly stopped machines, so a stopped row takes one
 	   line: the name, and "last run" beside the state. Its remote is in

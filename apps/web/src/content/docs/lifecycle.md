@@ -116,9 +116,9 @@ Anything that reaches the machine wakes it first, and that first connection take
 
 The machine's clock keeps time while it's frozen, so nothing of yours sees it jump. What a program does see is that time passed with none of its own code running: anything whose deadline fell inside the frozen stretch runs at the wake instead, late by the time the machine was away. A [scheduled job](/docs/machine#scheduled-jobs) is the exception, because a job coming due wakes the machine for it.
 
-Connections the machine itself had open to the internet don't survive a long freeze. The server drops an outbound connection idle for 30 minutes and the far end can drop one sooner, and the program on the machine sees the connection closed when it next uses it: one that reconnects carries on, one that doesn't has to be restarted. Keep the machine awake for a job that has to hold a connection open.
+Connections the machine itself had open to the internet don't survive a long freeze. The server drops an outbound connection idle for 30 minutes and the far end can drop one sooner, and the program on the machine sees the connection closed when it next uses it: one that reconnects carries on, one that doesn't has to be restarted. Keep the machine from freezing for a job that has to hold a connection open.
 
-To keep one machine out of this, [keep it awake](/docs/config#keeping-a-machine-awake).
+To keep one machine out of this, [stop it freezing](/docs/config#keeping-a-machine-from-freezing).
 
 ## Snapshots
 
@@ -245,7 +245,7 @@ Not a git repository, so nothing was synced.
 ```
 
 - `--temp` always makes a new machine, named `tmp-` and four characters unless you name it (`repose run --temp spike`). It never uses the checkout's project, and can't be combined with `--project`. Running it twice makes two machines.
-- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours (`1d` is 24 hours). It's counted from when the machine was made. A word after `--temp` that is a number and a unit is its duration wherever it stands, so `repose run spike --temp 3h` works. A word that isn't a duration is the project's name, so `repose run --temp 2x` makes a temporary project called `2x` — unless it's a duration spelled with a word, which is refused: `--temp 3hr` names `3h`.
+- `--temp 3h` or `--temp 90m` gives it a shorter life, from 10 minutes to 24 hours (`1d` is 24 hours). It's counted from when the machine was made. A word after `--temp` that is a number and a unit is its duration wherever it stands, so `repose run spike --temp 3h` works. A word that isn't a duration is the project's name, so `repose run --temp 2x` makes a temporary project called `2x`. A duration spelled with a word is refused instead, so `--temp 3hr` exits 2 and names `3h`.
 - In a checkout it syncs as usual, uncommitted work included. In a directory that isn't a git repository it makes an empty machine. The checkout gets no `repose` git remote; fetch an agent's work with `git fetch tmp-k3f9.repose:~/todo-app BRANCH`, where `todo-app` is your checkout folder's name (the run prints it as `Checkout: ~/todo-app on the machine`).
 - `run` and `attach` say how long it has left: `tmp-k3f9 is temporary: destroyed in 5h.` `repose ls` shows it in a [`LEFT` column](/docs/cli#repose-ls); `repose status` says `temporary: destroyed in 5h`. The dashboard shows it as temporary.
 - If you're attached, or an agent is working, when the time runs out, the machine waits until nobody is attached and no agent is working, checking each minute, for up to a day. An agent sitting at its prompt doesn't count as working. On herdr only a working agent holds it.

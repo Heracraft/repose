@@ -168,10 +168,10 @@ func TestFrozenJSONKeepsTheFields(t *testing.T) {
 // Held awake is a setting a new project does not get, so it goes on the
 // setup line beside base updates held (I-622).
 func TestSetupLineNamesKeptAwake(t *testing.T) {
-	if l := setupLine(&Project{KeepAwake: true}, "claude"); l != "setup: kept awake" {
-		t.Errorf("kept awake %q", l)
+	if l := setupLine(&Project{KeepAwake: true}, "claude"); l != "setup: never frozen" {
+		t.Errorf("never frozen %q", l)
 	}
-	if l := setupLine(&Project{HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: base updates held, kept awake" {
+	if l := setupLine(&Project{HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: base updates held, never frozen" {
 		t.Errorf("both %q", l)
 	}
 	if l := setupLine(&Project{}, "claude"); l != "" {

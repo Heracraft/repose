@@ -356,27 +356,47 @@ function viewOf(n: number, filter: 'up' | 'off' | 'all', query = '', chosen = fa
 const names = (v: ReturnType<typeof viewOf>) => v.groups.flatMap((g) => g.rows.map((r) => r.name));
 
 describe('a large account', () => {
-	it('shows everything, in one band order, up to 8 projects', () => {
+	it('shows only what is running at 8 projects, as at 150 (I-896)', () => {
+		// A short list used to be forced to All, which since I-896 would
+		// make it the one account still reading its stopped machines
+		// under Running, and it had no toolbar to change that with.
 		const v = viewOf(8, 'up');
-		expect(v.filter).toBe('all');
+		expect(v.filter).toBe('up');
+		expect(v.groups.map((g) => g.band)).toEqual(['waiting', 'up']);
+		expect(names(v)).toHaveLength(3);
+		expect(v.resting).toBe(5);
+		expect(v.folded).toBe(5);
+	});
+
+	it('draws the stopped machines when none is running, rather than an empty page', () => {
+		const { list } = account(8);
+		const stopped = list.map((x) => ({ ...x, state: 'stopped' as const }));
+		const v = listView(orderProjects(stopped, () => false), {
+			filter: 'up',
+			chosen: false,
+			query: '',
+			waiting: () => false,
+			bandOf: () => 'off' as const,
+			cap: 25
+		});
+		expect(v.filter).toBe('off');
 		expect(names(v)).toHaveLength(8);
-		expect(v.folded).toBe(0);
 	});
 
 	for (const n of [40, 150]) {
-		it(`at ${n}, Running shows what is up or wants you, then the ${RECENT_STOPPED} stopped that ran last`, () => {
+		it(`at ${n}, Running shows only what is up or wants you`, () => {
 			const v = viewOf(n, 'up');
 			expect(v.filter).toBe('up');
-			expect(v.groups.map((g) => g.band)).toEqual(['waiting', 'up', 'off']);
+			// No stopped band: RECENT_STOPPED is 0 since I-896, so the
+			// Running view holds no machine it was chosen to exclude.
+			expect(RECENT_STOPPED).toBe(0);
+			expect(v.groups.map((g) => g.band)).toEqual(['waiting', 'up']);
 			// The failed machine and the one asking lead; the other running one follows.
 			expect(v.groups[0].rows.map((r) => r.name).sort()).toEqual(['p-001', 'p-002']);
 			expect(v.groups[1].rows.map((r) => r.name)).toEqual(['p-000']);
-			expect(v.groups[2].rows).toHaveLength(RECENT_STOPPED);
-			// Most recently run first.
-			const runs = v.groups[2].rows.map((r) => r.started_at!);
-			expect([...runs].sort().reverse()).toEqual(runs);
+			// Still counted, for the filter control's way back to them.
 			expect(v.resting).toBe(n - 3);
-			expect(v.folded).toBe(n - 3 - RECENT_STOPPED);
+			expect(v.folded).toBe(n - 3);
 		});
 
 		it(`at ${n}, Stopped lists the stopped band, capped at 25, in the count Running links with`, () => {
@@ -418,11 +438,14 @@ describe('a large account', () => {
 });
 
 describe('effectiveFilter', () => {
-	it('is All for a short list, whatever the URL says', () => {
-		expect(effectiveFilter('off', true, 8, '')).toBe('all');
-	});
-	it('keeps a chosen filter past 8', () => {
+	it('keeps the filter whatever the length of the list, short list included', () => {
+		expect(effectiveFilter('off', true, 8, '')).toBe('off');
 		expect(effectiveFilter('off', true, 9, 'x')).toBe('off');
+		expect(effectiveFilter('up', false, 3, '')).toBe('up');
+	});
+	it('widens an unchosen filter to All while a search is typed', () => {
+		expect(effectiveFilter('up', false, 40, 'findme')).toBe('all');
+		expect(effectiveFilter('up', true, 40, 'findme')).toBe('up');
 	});
 });
 

@@ -1,11 +1,32 @@
 // An account with many projects, most of them stopped (I-841, amended
-// 2026-10-21): /projects defaults to Running, which draws what is up or
-// wants you and the five stopped machines that ran last, with a link to
-// the rest; the rail lists what is up and folds the stopped ones into one
-// row. The list is the api's answer, shaped here by page.route, since
-// the fake holds 100 projects at most and the suite's account is shared.
+// 2026-10-21 and by I-896): /projects defaults to Running, which draws
+// what is up or wants you and nothing else, with the filter control as
+// the way to the stopped ones; the rail lists what is up and folds the
+// stopped ones into one row. The list is the api's answer, shaped here
+// by page.route, since the fake holds 100 projects at most and the
+// suite's account is shared.
 import { test, expect, type Page } from '@playwright/test';
 import { signIn } from './helpers';
+
+/**
+ * The viewport at 1440 and 390 in both schemes, at 1x, for the review
+ * CLAUDE.md asks for ("Judge visuals at real size"). Written only with
+ * REPOSE_SHOTS_DIR set, as frozen.spec.ts does. A full-page capture
+ * would hide what is wrong with a row, which is what this page's
+ * padding and overflow needed looking at (I-896).
+ */
+async function shots(page: Page, name: string): Promise<void> {
+	const dir = process.env.REPOSE_SHOTS_DIR;
+	if (!dir) return;
+	for (const width of [1440, 390]) {
+		for (const scheme of ['light', 'dark'] as const) {
+			await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+			await page.emulateMedia({ colorScheme: scheme });
+			await page.screenshot({ path: `${dir}/${name}-${width}-${scheme}.png` });
+		}
+	}
+	await page.emulateMedia({ colorScheme: null });
+}
 
 const DAY = 86_400_000;
 
@@ -83,9 +104,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const n of [40, 150]) {
-	test(`${n} projects: Running is the default, with five stopped and a link to the rest`, async ({
-		page
-	}) => {
+	test(`${n} projects: Running is the default and shows only what is up`, async ({ page }) => {
 		await mock(page, n);
 		await page.goto('/projects');
 		await expect(page.getByText(`${n} projects`)).toBeVisible();
@@ -100,17 +119,17 @@ for (const n of [40, 150]) {
 			'many-003'
 		]);
 		await expect(table.locator('tbody[data-band=up] .pname')).toHaveText(['many-001', 'many-002']);
-		// The five that ran last, newest first.
-		await expect(table.locator('tbody[data-band=off] .pname')).toHaveText([
-			'many-004',
-			'many-005',
-			'many-006',
-			'many-007',
-			'many-008'
-		]);
-		const rest = page.getByTestId('all-stopped');
-		await expect(rest).toHaveText(`All ${n - 4} stopped`);
-		await rest.click();
+		// No stopped rows under a view chosen to exclude them (I-896),
+		// and no second way to them: the filter control is the way.
+		await expect(table.locator('tbody[data-band=off]')).toHaveCount(0);
+		await expect(page.getByTestId('all-stopped')).toHaveCount(0);
+		// "Needs you" keeps its head, since no filter names it; "Running"
+		// does not, because the control already says Running (I-896).
+		await expect(table.getByRole('rowgroup').filter({ hasText: 'Needs you' })).toHaveCount(1);
+		await expect(table.locator('.band-head', { hasText: /^Running$/ })).toHaveCount(0);
+		await shots(page, `projects-running-${n}`);
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await filters.getByRole('link', { name: 'Stopped' }).click();
 		await expect(page).toHaveURL(/[?&]state=off/);
 		// Stopped: every stopped one, 25 at a time, in the count the link
 		// gave; the failed machine leads Running and is not counted again.
@@ -154,10 +173,27 @@ for (const n of [40, 150]) {
 	});
 }
 
-test('8 projects or fewer: no filter, every project listed', async ({ page }) => {
+// A short list used to be forced to All with no toolbar, which since
+// I-896 would make it the one account still reading its stopped
+// machines under Running and give it nothing to change that with. It
+// gets Running and the filter control, like any other (I-896).
+test('8 projects: Running is the default, and the filter control is the way to the rest', async ({
+	page
+}) => {
 	await mock(page, 8);
 	await page.goto('/projects');
-	await expect(page.getByRole('navigation', { name: 'Filter projects' })).toHaveCount(0);
+	const filters = page.getByRole('navigation', { name: 'Filter projects' });
+	await expect(filters.getByRole('link', { name: 'Running' })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+	expect(await names(page)).toHaveLength(4);
+	await filters.getByRole('link', { name: 'Stopped' }).click();
+	await expect(page).toHaveURL(/[?&]state=off/);
+	expect(await names(page)).toHaveLength(4);
+	await filters.getByRole('link', { name: 'All' }).click();
+	await expect(page).toHaveURL(/[?&]state=all/);
+	await expect(filters.getByRole('link', { name: 'All' })).toHaveAttribute('aria-current', 'page');
 	expect(await names(page)).toHaveLength(8);
 	await expect(page.getByTestId('rail-stopped')).toHaveCount(0);
 });
