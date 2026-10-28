@@ -1470,7 +1470,7 @@ func openInEditor(path string) error {
 
 func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 	root := &cobra.Command{Use: "snapshots", Short: "List, take or restore snapshots",
-		Long: "List, take or restore snapshots. Alone, list them: this checkout's project, or every project from a folder that is none."}
+		Long: "List, take or restore snapshots. Alone, list them: this checkout's\nproject, or every project from a folder that belongs to none."}
 	var as string
 	var yes bool
 	var quiet bool
