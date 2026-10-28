@@ -53,7 +53,6 @@ var quietAllowed = map[string]string{
 	"payment.go:namePlanFix: is using it. `repose stop ":                          "a refusal: exit 7, the gate's plan_limit (I-610)",
 	"payment.go:namePlanFix: are using it. `repose stop ":                         "a refusal: exit 7, the gate's plan_limit for several machines (I-633)",
 	"resize_class.go:fixOr:`repose stop %s` frees it":                             "a refusal: exit 7, the plan's memory (I-610)",
-	"run.go:runArgs:The prompt goes after -p: `repose run -p":                     "prevents a loss: the old prompt form stops working next release (I-603)",
 	"run.go:runRun:Another %s %s is open; two agents share ":                      "a warning: two agents are about to edit one tree",
 	"carry_mcp.go:mcpLines: repose mcp forward NAME runs one from h":              "unblocks: a server was left on the laptop (I-556, I-557)",
 	"carry_mcp.go:mcpLines: repose mcp forward ":                                  "unblocks: a server was left on the laptop (I-556, I-557)",

@@ -3,7 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -121,6 +124,27 @@ func runFetches(ctx context.Context, jobs []*fetchJob) {
 	wg.Wait()
 }
 
+// laptopPath is an absolute path on this laptop as the user reads it:
+// "~/code/api" under the home folder, the path itself anywhere else.
+//
+// It exists because these lines used tildePath, which spells a path the
+// *guest's* shell gives it and so only ever takes a name relative to
+// the guest's home. Handed a laptop absolute path it prepended "~/" to
+// it, and the owner's stop printed
+// "Fetched 10 commits ... in ~//home/agustus/Documents/projects/..."
+// (I-892).
+func laptopPath(p string) string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
+			if rel == "." {
+				return "~"
+			}
+			return "~/" + filepath.ToSlash(rel)
+		}
+	}
+	return p
+}
+
 // fetchedLine is the line for one folder's fetch: "Fetched 3 commits on
 // repose/main." in the working directory's checkout, with " in
 // ~/code/api" for another folder; "" when nothing came.
@@ -131,7 +155,7 @@ func (j *fetchJob) fetchedLine() string {
 	if j.here {
 		return fmt.Sprintf("Fetched %s.", j.fetched)
 	}
-	return fmt.Sprintf("Fetched %s in %s.", j.fetched, tildePath(j.root))
+	return fmt.Sprintf("Fetched %s in %s.", j.fetched, laptopPath(j.root))
 }
 
 // fetchFailure is the warning for a failed fetch, or "".
@@ -141,7 +165,7 @@ func (j *fetchJob) fetchFailure(what string) string {
 	}
 	where := ""
 	if !j.here {
-		where = " into " + tildePath(j.root)
+		where = " into " + laptopPath(j.root)
 	}
 	return fmt.Sprintf("Could not fetch from %s%s before %s: %s", j.slug, where, what, oneLine(j.err.Error()))
 }

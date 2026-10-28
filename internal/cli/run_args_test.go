@@ -11,38 +11,43 @@ import (
 	fakeapi "github.com/heracraft/repose/internal/fakes/api"
 )
 
-// run's words (I-603): one word is the project; for a release, several
-// words or one with a space are the old prompt, with a line; an id or
-// PROJECT:CHECKOUT names a project that exists.
+// run's words (I-603, I-888): one word is the project; an id or
+// PROJECT:CHECKOUT names a project that exists; anything else is a
+// usage error naming -p. The old prompt form, which I-603 kept for one
+// release and which lasted eight, is gone: it built a machine nobody
+// asked for out of whatever words were left over.
 func TestRunArgs(t *testing.T) {
 	const id = "01900000-0000-7000-8000-000000000001"
+	const wantPFirst = "run takes one PROJECT; put the prompt after -p, quoted"
 	cases := []struct {
-		name               string
-		args               []string
-		prompt, nameFlag   string
-		project            string
-		wantName, wantArg  string
-		wantPrompt, wantLn string
-		wantErr            string
+		name              string
+		args              []string
+		prompt, nameFlag  string
+		project           string
+		wantName, wantArg string
+		wantPrompt        string
+		wantErr           string
 	}{
 		{name: "nothing"},
 		{name: "a project", args: []string{"izma"}, wantName: "izma"},
 		{name: "a project and its prompt", args: []string{"izma"}, prompt: "fix it", wantName: "izma", wantPrompt: "fix it"},
-		{name: "a word beside --name is the old prompt", args: []string{"fix"}, nameFlag: "izma", wantName: "izma", wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
-		{name: "a word beside --project is the old prompt", args: []string{"fix"}, project: "izma", wantPrompt: "fix", wantLn: "repose run -p 'fix'"},
 		{name: "the project --project names", args: []string{"izma"}, project: "izma", wantName: "izma"},
 		{name: "the project --name names", args: []string{"izma"}, nameFlag: "izma", wantName: "izma"},
 		{name: "an id", args: []string{id}, wantArg: id},
 		{name: "a checkout", args: []string{"todo-app:api"}, wantArg: "todo-app:api"},
-		{name: "old prompt, quoted", args: []string{"fix the tests"}, wantPrompt: "fix the tests", wantLn: "The prompt goes after -p: `repose run -p 'fix the tests'`. This form stops working in the next release.\n"},
-		{name: "old prompt, words", args: []string{"fix", "the", "tests"}, wantPrompt: "fix the tests", wantLn: "repose run -p 'fix the tests'"},
-		{name: "old prompt beside -p", args: []string{"fix", "it"}, prompt: "x", wantErr: "run takes one PROJECT; put the prompt after -p, quoted"},
+		{name: "a word beside --name that is not it", args: []string{"fix"}, nameFlag: "izma", wantErr: wantPFirst},
+		{name: "a word beside --project that is not it", args: []string{"fix"}, project: "izma", wantErr: wantPFirst},
+		{name: "one word with spaces", args: []string{"fix the tests"}, wantErr: wantPFirst},
+		{name: "several words", args: []string{"fix", "the", "tests"}, wantErr: wantPFirst},
+		{name: "several words beside -p", args: []string{"fix", "it"}, prompt: "x", wantErr: wantPFirst},
+		// The owner's line: --temp takes no value here, so `3hr` was a
+		// leftover beside the PROJECT and the pair became a prompt.
+		{name: "a project and a leftover duration", args: []string{"traffic", "3hr"}, wantErr: wantPFirst},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			opts := RunOptions{Prompt: c.prompt, Name: c.nameFlag}
-			var errOut strings.Builder
-			err := runArgs(&opts, c.args, c.project, &errOut)
+			err := runArgs(&opts, c.args, c.project)
 			if c.wantErr != "" {
 				var ue cobraUsageError
 				if !errors.As(err, &ue) || !strings.Contains(err.Error(), c.wantErr) {
@@ -56,15 +61,11 @@ func TestRunArgs(t *testing.T) {
 			if opts.Name != c.wantName || opts.ProjectArg != c.wantArg || opts.Prompt != c.wantPrompt {
 				t.Fatalf("name %q arg %q prompt %q", opts.Name, opts.ProjectArg, opts.Prompt)
 			}
-			if c.wantLn == "" && errOut.Len() != 0 || !strings.Contains(errOut.String(), c.wantLn) {
-				t.Fatalf("stderr %q, want %q", errOut.String(), c.wantLn)
-			}
 		})
 	}
 }
 
-// Through the command tree: the usage errors come before any api call,
-// and the old prompt form's line is printed before the run goes on.
+// Through the command tree: the usage errors come before any api call.
 func TestRunCommandArgs(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
@@ -93,6 +94,13 @@ func TestRunCommandArgs(t *testing.T) {
 		{[]string{"sync", "izma", "--name", "other"}, "izma and --name other name two projects"},
 		{[]string{"run", "-p", "x", "fix", "it"}, "run takes one PROJECT"},
 		{[]string{"sync", "a", "b"}, "takes at most one PROJECT"},
+		// The old prompt form, gone since I-888.
+		{[]string{"run", "fix the tests"}, "run takes one PROJECT"},
+		{[]string{"run", "--agent", "claude", "fix", "the", "tests"}, "run takes one PROJECT"},
+		// The owner's two lines: a duration spelled with a word is
+		// refused, rather than left over to become a prompt (I-888).
+		{[]string{"run", "traffic", "--temp", "3hr"}, `--temp takes a duration from 10m to 24h, such as 3h or 90m, got "3hr"`},
+		{[]string{"run", "--temp", "1hr", "boilerplate"}, `--temp takes a duration from 10m to 24h, such as 3h or 90m, got "1hr"`},
 	} {
 		_, err := run(c.args...)
 		var ue cobraUsageError
@@ -102,9 +110,9 @@ func TestRunCommandArgs(t *testing.T) {
 			t.Errorf("repose %s: err = %v, want %q", strings.Join(c.args, " "), err, c.want)
 		}
 	}
-	// Past the argument checks (they stop at the api, not logged in): one
-	// project named two ways, and --agent with the old prompt form.
-	for _, args := range [][]string{{"run", "izma", "--project", "izma"}, {"run", "--agent", "claude", "fix", "the", "tests"}} {
+	// Past the argument checks (they stop at the api, not logged in):
+	// one project named two ways.
+	for _, args := range [][]string{{"run", "izma", "--project", "izma"}} {
 		_, err := run(args...)
 		var ue cobraUsageError
 		var ee *exitError
@@ -117,13 +125,11 @@ func TestRunCommandArgs(t *testing.T) {
 	if _, err := run("sync", "--temp", "2h", "spike"); err == nil || strings.Contains(err.Error(), "at most one PROJECT") {
 		t.Fatalf("sync --temp 2h spike: %v", err)
 	}
-	// Not logged in, so the run stops at the api; the line came first.
-	errOut, err := run("run", "fix the tests")
-	if err == nil {
-		t.Fatal("run with no credentials went through")
-	}
-	if !strings.Contains(errOut, "The prompt goes after -p: `repose run -p 'fix the tests'`.") {
-		t.Fatalf("stderr %q", errOut)
+	// `run spike --temp 3h` still works: the duration is found wherever
+	// it sits among the arguments (I-631), so only the misspellings
+	// above are refused. Not logged in, so it stops at the api.
+	if _, err := run("run", "spike", "--temp", "3h"); err == nil || strings.Contains(err.Error(), "takes one PROJECT") {
+		t.Fatalf("run spike --temp 3h: %v", err)
 	}
 }
 

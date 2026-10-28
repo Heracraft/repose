@@ -529,3 +529,22 @@ func TestAgentRunning(t *testing.T) {
 		t.Fatalf("ls cell %q", got)
 	}
 }
+
+// TestUpFor covers the UP cell's roll to days. A machine left running
+// for a week read "172h14m"; past two days the column says "7d".
+func TestUpFor(t *testing.T) {
+	for _, c := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{30 * time.Minute, "30m"},
+		{90 * time.Minute, "1h30m"},
+		{47*time.Hour + 59*time.Minute, "47h59m"},
+		{48 * time.Hour, "2d"},
+		{172*time.Hour + 14*time.Minute, "7d"},
+	} {
+		if got := upFor(c.d); got != c.want {
+			t.Errorf("upFor(%s) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}

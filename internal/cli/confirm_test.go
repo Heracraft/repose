@@ -530,7 +530,19 @@ func TestStopFetchesInTheRecordedFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(out.String(), "\n")
-	if lines[0] != "Fetched 2 commits on repose/main in "+tildePath(root)+"." || !strings.HasPrefix(lines[1], "Stopped demo in ") {
+	// The expected path is spelled out, not taken from the formatter the
+	// line uses: asserting against laptopPath would have passed just as
+	// happily on the `~//home/...` it used to print (I-892).
+	wantIn := root
+	if home, err := os.UserHomeDir(); err == nil {
+		if rel, err := filepath.Rel(home, root); err == nil && !strings.HasPrefix(rel, "..") {
+			wantIn = "~/" + filepath.ToSlash(rel)
+		}
+	}
+	if strings.HasPrefix(wantIn, "~//") || strings.Contains(wantIn, "//") {
+		t.Fatalf("the folder reads %q", wantIn)
+	}
+	if lines[0] != "Fetched 2 commits on repose/main in "+wantIn+"." || !strings.HasPrefix(lines[1], "Stopped demo in ") {
 		t.Fatalf("out %q err %q", out.String(), errOut.String())
 	}
 	if git(laptop, "rev-parse", "repose/main") != git(machine, "rev-parse", "main") {

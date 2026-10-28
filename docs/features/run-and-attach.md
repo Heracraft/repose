@@ -68,10 +68,13 @@ age-calculator is in an error state: the environment's agent (guestd) stopped an
 
 `run`'s argument is the project, as on every command whose object is a
 project (I-155, I-603): `repose run izma` works on `izma`, and creates it
-when there is none. The prompt is `-p`/`--prompt`. For one release the
-old form still runs: several words, or one with a space in it, are the
-prompt, and stderr says ``The prompt goes after -p: `repose run -p 'fix the
-tests'`. This form stops working in the next release.``
+when there is none. The prompt is `-p`/`--prompt`. Anything else exits 2
+with ``run takes one PROJECT; put the prompt after -p, quoted``: several
+words, one with a space in it, or a word beside a `--project` or `--name`
+that names another. I-603 kept the old prompt form for one release and
+it lasted eight; what it did instead of refusing was build a machine
+nobody asked for, so `repose run traffic --temp 3hr` left a 24-hour
+`tmp-jaxr` running the prompt "traffic 3hr" (I-888).
 
 Run a prompt while an agent is already running:
 

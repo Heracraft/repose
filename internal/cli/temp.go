@@ -57,6 +57,23 @@ func looksLikeDuration(s string) bool {
 	return durationShape.MatchString(s)
 }
 
+// durationWordShape is a number and a unit spelled out: 3hr, 90mins,
+// 2hours. None of them is a duration repose takes, and none of them is
+// a plausible project name either, so after a bare --temp they are a
+// misspelled duration and are refused (I-888). I-631 narrowed the
+// units to s, m, h, d and w to keep `run 1password --temp` working,
+// which turned `--temp 3hr` into a project named 3hr beside a prompt;
+// the owner got a 24h machine called tmp-jaxr and no error.
+var durationWordShape = regexp.MustCompile(`^[0-9]+(hr|hrs|hour|hours|min|mins|minute|minutes|sec|secs|second|seconds|day|days|wk|wks|week|weeks)$`)
+
+// looksLikeDurationTypo is whether an argument after a bare --temp is a
+// duration spelled with a word, which is refused rather than taken as
+// the PROJECT. It must stay an allow-list of unit words: a pattern as
+// loose as `[0-9]+[smhdw][a-z]+` would swallow the project 3dprint.
+func looksLikeDurationTypo(s string) bool {
+	return durationWordShape.MatchString(s)
+}
+
 // resolveTempFlag turns the --temp flag's raw value and the command's
 // arguments into the lifetime, consuming a duration argument after a bare
 // --temp. raw is "" when --temp was not given.
@@ -68,7 +85,7 @@ func resolveTempFlag(raw string, args []string) (time.Duration, []string, error)
 		// Flags and arguments interleave, so `run spike --temp 3h` has
 		// the duration after the PROJECT.
 		for i, a := range args {
-			if looksLikeDuration(a) {
+			if looksLikeDuration(a) || looksLikeDurationTypo(a) {
 				d, err := parseTempDuration(a)
 				return d, append(slices.Clone(args[:i]), args[i+1:]...), err
 			}

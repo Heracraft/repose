@@ -489,6 +489,13 @@ func TestTempFlagParsing(t *testing.T) {
 		{tempBare, []string{"2fa"}, 24 * time.Hour, 1, false},
 		{tempBare, []string{"1password", "fix"}, 24 * time.Hour, 2, false},
 		{tempBare, []string{"3dprint"}, 24 * time.Hour, 1, false},
+		// A duration spelled with a word is refused, not kept as the
+		// PROJECT: `--temp 3hr` silently made a 24h machine (I-888).
+		{tempBare, []string{"3hr"}, 0, 0, true},
+		{tempBare, []string{"traffic", "3hr"}, 0, 0, true},
+		{tempBare, []string{"1hr", "boilerplate"}, 0, 0, true},
+		{tempBare, []string{"90mins"}, 0, 0, true},
+		{tempBare, []string{"2hours"}, 0, 0, true},
 		{tempBare, []string{"2d"}, 0, 0, true},
 		{"1d", nil, 24 * time.Hour, 0, false},
 	} {

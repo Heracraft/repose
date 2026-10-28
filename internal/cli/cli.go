@@ -488,7 +488,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
-			if err := runArgs(&opts, args, g.project, cmd.ErrOrStderr()); err != nil {
+			if err := runArgs(&opts, args, g.project); err != nil {
 				return err
 			}
 			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {

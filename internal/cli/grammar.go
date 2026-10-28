@@ -71,13 +71,7 @@ func displayConfigTOML() string {
 	if base := os.Getenv(envXDGConfigHome); base != "" {
 		dir = filepath.Join(base, "repose")
 	}
-	p := filepath.Join(dir, "config.toml")
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
-			return "~/" + filepath.ToSlash(rel)
-		}
-	}
-	return p
+	return laptopPath(filepath.Join(dir, "config.toml"))
 }
 
 // setupLine is `repose status`'s line for the settings a flag or the

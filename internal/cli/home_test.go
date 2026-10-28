@@ -318,7 +318,7 @@ func TestAttachAndRunByNameFromTheHomeFolder(t *testing.T) {
 	e, out, errOut := freshEnv(f.env, home)
 	// `repose run unwrap`: the word is the project (I-603).
 	opts := RunOptions{NoAttach: true}
-	if err := runArgs(&opts, []string{"unwrap"}, "", errOut); err != nil {
+	if err := runArgs(&opts, []string{"unwrap"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := runRun(ctx, e, opts, false); err != nil {

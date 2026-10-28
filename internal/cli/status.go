@@ -617,11 +617,24 @@ func statusFirstLineMux(p *Project, mux string) string {
 
 // uptime is only meaningful while running: v0.1.4 printed "47h30m" for a
 // project that had been in `error` for two days.
+//
+// Past two days it rolls to days, as the unused stretch does (idleFor):
+// a machine left running for a week read "172h14m", and the minutes of
+// the fourth hour of the seventh day are not what the column is for.
 func uptime(p *Project) string {
 	if p.State != "running" || p.StartedAt == nil {
 		return ""
 	}
-	return humanDuration(time.Since(*p.StartedAt))
+	return upFor(time.Since(*p.StartedAt))
+}
+
+// upFor is the UP cell: minutes under an hour, hours and minutes up to
+// two days, then whole days.
+func upFor(d time.Duration) string {
+	if d >= 48*time.Hour {
+		return fmt.Sprintf("%dd", int(d/(24*time.Hour)))
+	}
+	return humanDuration(d)
 }
 
 // agentStateWords are guestd's agent states as text prints them
