@@ -26215,3 +26215,43 @@ The rule this leaves: **on this box, check the machine before the code.**
 `df`, `free` and `uptime` cost a second and rule out all three failures
 above, every one of which otherwise presents as a test that has started
 failing on its own.
+
+**I-916. An operator ssh block pins no `HostKeyAlias`; the WireGuard
+address is the identity.** (conductor, 2026-10-30) The operator block for
+a host used to carry `HostKeyAlias <VNet address>`, because that is where
+the key is first recorded during the install. It is the wrong thing to
+pin to. The record under a VNet address is written once at bootstrap and
+nothing rewrites it, so a host whose `/etc/ssh` keys are regenerated
+after that answers for ever with keys the alias does not know. host-01
+did: the entry under `10.200.1.4` held an unrelated pair, while its real
+keys sat correctly under `10.255.0.2`, its `HostName`.
+
+The address in `HostName` is the stable one. It is where the host is
+reached for the rest of its life, and the record under it is written by
+the connection that uses it rather than by one install-time write.
+
+What this cost, which is the reason it is an entry and not a tidy-up.
+The symptom is `REMOTE HOST IDENTIFICATION HAS CHANGED` and
+`Offending RSA key in known_hosts:16` -- the loudest warning ssh has,
+and in this case a false one. It stopped a conductor session on
+2026-10-25 for long enough to check Azure's VM creation time, hunt for a
+rebuild in git, look for an out-of-band channel and conclude it needed
+the owner. It then stopped another session on 2026-10-30 **during a live
+incident**, with a tenant's machine frozen and six hours of an agent's
+work in its memory, while that session correctly refused to clear the
+entry and asked first.
+
+Both refusals were right. A warning that means "someone may be between
+you and this machine" must not be cleared because it is inconvenient,
+and an operator who learns to clear it has lost the only alarm that
+matters. The fault was never the operator's caution; it was a
+configuration that made the alarm fire routinely. An alarm that cries
+wolf is worse than no alarm, because it trains the response away.
+
+The safe check, now in `RUNBOOK.md` "Operator machine": override the
+alias to the `HostName` and read the host's own keys. That verifies
+against a record already in `known_hosts`, so it grants no new trust, and
+it says in one command which of the two records is the stale one. host-01
+answers `SHA256:97Ss5+VEjlvR3o9OHiMsgFecUVufGoAiD5ggcWseJ2I` (ED25519)
+and `SHA256:ogVl23nprqDH49Y66i4xakT0SouAlz195X7WwyLGVQI` (RSA), both
+labelled `root@host-01`.
