@@ -59,6 +59,10 @@ var (
 	WakeResumeWait = 5 * time.Second
 	WakeGuestdWait = 5 * time.Second
 	wakeResumePoll = 50 * time.Millisecond
+	// maxWakeResumePoll caps the backoff resumeVM grows from
+	// wakeResumePoll, so a resume that takes its whole budget costs a
+	// handful of vm.info calls rather than a hundred (I-920).
+	maxWakeResumePoll = 800 * time.Millisecond
 )
 
 // why_not words of PauseResult. A refusal is not a failure: the api reads
@@ -524,19 +528,32 @@ func (m *Manager) countWakeFailed(reason string) {
 // shape resumeAfterFailedSnapshot uses: vm.resume of a VM that already
 // runs is refused by Cloud Hypervisor, so what counts is the state, not
 // the call's answer.
+// It sends vm.resume once and then polls vm.info alone, backing off
+// from wakeResumePoll. It used to re-send both every 50 ms, which is up
+// to a hundred turns and two hundred API calls against a socket that
+// accepts ten connections at once (I-920): the loop meant to recover a
+// slow wake was the thing most likely to make the guest unreachable for
+// good. Re-sending the resume bought nothing anyway -- as the comment
+// above says, what counts is the state, not the call's answer.
 func (m *Manager) resumeVM(ctx context.Context, g *state.Guest, sock string) error {
 	deadline := m.d.Now().Add(WakeResumeWait)
-	var last error
+	rctx, cancel := context.WithTimeout(ctx, WakeResumeWait)
+	defer cancel()
+	last := m.d.CH.Resume(rctx, sock)
+	wait := wakeResumePoll
 	for {
-		rctx, cancel := context.WithTimeout(ctx, WakeResumeWait)
-		last = m.d.CH.Resume(rctx, sock)
 		info, ierr := m.d.CH.Info(rctx, sock)
-		cancel()
 		if ierr == nil && ch.VMState(info) == ch.StateRunning {
 			return nil
 		}
 		if ierr != nil {
 			last = ierr
+			// A full API connection cap is the one answer no amount of
+			// asking again can improve, and every ask holds another
+			// slot. Stop at once and say so (I-920).
+			if isConnCapFull(ierr) {
+				return errf(CodeGuestUnresponsive, "the hypervisor's API is out of connections: %v", ierr)
+			}
 		}
 		if !m.d.Now().Before(deadline) {
 			if last == nil {
@@ -547,9 +564,19 @@ func (m *Manager) resumeVM(ctx context.Context, g *state.Guest, sock string) err
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(wakeResumePoll):
+		case <-time.After(wait):
+		}
+		if wait < maxWakeResumePoll {
+			wait *= 2
 		}
 	}
+}
+
+// isConnCapFull is Cloud Hypervisor answering that its API has all the
+// connections it accepts. The body is the only place it is said, which
+// is why I-912 had to put it into the error in the first place.
+func isConnCapFull(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Too many open connections")
 }
 
 // wakeIfResting brings a resting guest back before hostd uses it. Every

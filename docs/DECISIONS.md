@@ -26263,15 +26263,26 @@ deliberately far below the ssh wait a client gives up after, so one
 attach still gets several real attempts; they are only no longer back to
 back.
 
-*Not fixed here, and the more important half.* Nothing frees a CH API
-connection slot from outside: the fds belong to the hypervisor, hostd
-holds none, and the peers are already gone, so no hostd restart and no
-timeout reaps them. The only levers are CH closing them or CH dying. CH
-can expose a second control channel over D-Bus, which would not share the
-HTTP socket's cap, but `--dbus-service-name` is a start-time flag and
-these guests run with `--api-socket` alone. Whether to start guests with
-both is open, and it is the difference between this failure being
-recoverable and costing the tenant their session.
+*The paragraph that was here was wrong, and it cost the tenant their
+session.* It said: "Nothing frees a CH API connection slot from outside:
+the fds belong to the hypervisor, hostd holds none ... no hostd restart
+and no timeout reaps them." hostd held every one of them (I-920), and
+`systemctl restart repose-hostd` would have freed the cap without
+touching the guest.
+
+The live check that produced that sentence could not have found the
+truth. It scanned `/proc/*/fd` for symlinks naming the socket path, but
+only a *listening* unix socket shows its path there; an accepted or
+connected one reads `socket:[inode]`. So the scan could only ever match
+cloud-hypervisor's listener, and "hostd holds none" was an artifact of
+the method. `ss -x -a -p` showed the server side alone and was read as
+"no peer process". The right tools were `ss -xp` resolving both ends, or
+`lsof -U +E`.
+
+The lesson is the generalisable part: **a negative finding from a scan is
+only as good as the scan's ability to see a positive one.** Before
+reporting "nothing holds this", establish that the method would show
+something if it did.
 
 **I-918. A stop or a destroy is not blocked by the wake it opens with.**
 (job incident, 2026-10-30. Amends I-818.)
@@ -26316,3 +26327,66 @@ covers that case alongside the two that now survive.
 runs through the component it recovers from is not a recovery path. The
 tell is a plan, a runbook step or a CLI command that is the documented
 answer to "X is broken" and whose first step needs X.
+
+**I-920. hostd leaked one Cloud Hypervisor API connection per call, which
+is what made a guest unreachable, and the incident record blamed the
+hypervisor.** (gap hunt after the job incident, 2026-10-30. Corrects
+I-914.)
+
+`ch.HTTP.client` built a fresh `http.Transport` for every call and
+dropped it. A dropped Transport does not close its idle connection and is
+never collected -- its `persistConn`'s readLoop goroutine holds a
+reference -- so the connection stayed open for the life of the hostd
+process. Measured on this branch before the fix:
+
+    after 25 calls: 25 connections opened, 25 STILL OPEN
+
+Cloud Hypervisor's API accepts ten at once (micro_http's
+`MAX_CONNECTIONS`, measured on 53.0) and reaps none. So roughly **ten API
+calls** -- a handful of rest/wake cycles, one Info per guest per
+reconcile, a pause, a snapshot -- exhausted a guest's API for good. After
+that nothing could resume, stop or snapshot it. That is the whole of
+I-912's and I-914's incident: `job` was not the victim of a hypervisor
+bug, it was the victim of hostd's own client.
+
+`DisableKeepAlives: true`, so each call closes its connection. Not a
+client cached per socket, which would be the tidier fix, because
+`Snapshot` copies the struct (`long := *h`) and a mutex or `sync.Map` in
+`HTTP` would be copied with it. A unix-socket connect costs microseconds
+and these calls are rare. After: `0 STILL OPEN`, and the test fails on
+the old code.
+
+`resumeVM` multiplied it. It re-sent `vm.resume` **and** `vm.info` every
+50 ms for five seconds -- up to a hundred turns, two hundred calls,
+twenty times the cap -- so the loop written to rescue a slow wake was the
+most likely thing to make a guest permanently unreachable. It now sends
+the resume once (its own comment already said "what counts is the state,
+not the call's answer"), polls `vm.info` with a backoff from 50 ms to
+800 ms, and stops at once on `Too many open connections`, which is the
+one answer that asking again can only worsen. `resumeAfterFailedSnapshot`
+in freeze.go has the same shape at 500 ms for two minutes and is **not**
+changed here: it runs after a snapshot has already failed, and wants its
+own entry rather than a drive-by.
+
+*What this corrects, and the method error behind it.* I-914 recorded
+"the fds belong to the hypervisor, hostd holds none ... no hostd restart
+and no timeout reaps them", and the operator reasoning that followed went
+straight to killing the hypervisor, which loses the running session the
+whole resting feature exists to keep. `systemctl restart repose-hostd`
+would have freed every slot without touching the guest.
+
+The live check behind that sentence could not have found the truth. It
+scanned `/proc/*/fd` for symlinks naming the socket path, and only a
+*listening* unix socket shows its path there -- an accepted or connected
+one reads `socket:[inode]`. The scan could match cloud-hypervisor's
+listener and nothing else, so "hostd holds none" was an artifact of the
+method, not an observation. `ss -xp` resolving both ends, or `lsof -U
++E`, would have shown it.
+
+**A negative finding from a scan is worth only what the scan could have
+shown had it been positive.** Before recording "nothing holds this",
+establish that the method would see something if something did. That
+rule, not the leak, is the expensive part of this entry.
+
+*The runbook follows.* GuestWakeFailed's `resume` step now names a hostd
+restart as the first lever, ahead of anything that ends the guest.

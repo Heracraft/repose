@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-831 entries.
+832 entries.
 
 ## Scope
 
@@ -862,4 +862,5 @@ pointer, not a summary.
 - **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
 - **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26219
 - **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26242
-- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26276
+- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26287
+- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26331
