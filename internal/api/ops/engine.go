@@ -429,6 +429,25 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			// phase was for is done (DECISIONS I-461).
 			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
 		}
+		if !res.Ok && currentPhase(op) == PhaseWake && endsTheGuest(op.Kind) {
+			// A stop or a destroy must not be blocked by the wake it
+			// opens with (DECISIONS I-918). The wake is there so the
+			// guest can take a shutdown request and be snapshotted
+			// cleanly; hostd's own stopGuest already re-does it and says
+			// so -- "A wake that fails changes nothing here: the
+			// escalation below stops the guest either way" -- then falls
+			// through guestd, the hypervisor and finally the unit.
+			//
+			// Failing the op here put the only documented recovery for a
+			// guest that will not wake (RUNBOOK GuestWakeFailed step 5,
+			// stop then start) behind the wake itself. On 2026-10-30 an
+			// owner's `repose stop job` answered `guest_unresponsive`
+			// while their machine stayed frozen and unreachable.
+			// log already carries op_id, kind and project_id.
+			log.Warn("wake failed before a stop; stopping anyway", "event", "guest_wake_fail",
+				"cause", res.GetError().GetCode())
+			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
+		}
 		if !res.Ok {
 			code, msg, line, pline := "internal", "command failed", 0, 0
 			if res.Error != nil {

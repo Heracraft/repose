@@ -196,3 +196,70 @@ func TestWakePhaseHasItsOwnTimeout(t *testing.T) {
 		t.Fatalf("the wake (%s) must outlast a hostd restart", d)
 	}
 }
+
+// A stop whose wake fails still stops the machine (DECISIONS I-918).
+//
+// The wake opening PlanStop is there so the guest can take a shutdown
+// request and be snapshotted cleanly, but hostd's own stopGuest re-does
+// it and escalates past a guest that cannot answer -- guestd, then the
+// hypervisor, then the unit. Failing the op on the wake put the only
+// documented recovery for a guest that will not wake (RUNBOOK
+// GuestWakeFailed step 5, stop then start) behind the wake itself: on
+// 2026-10-30 an owner's `repose stop job` answered `guest_unresponsive`
+// while the machine stayed frozen and unreachable.
+func TestAStopWhoseWakeFailsStillStops(t *testing.T) {
+	h := apitest.New(t, apitest.Options{FakeOpts: fakehostd.Options{Fail: map[string]string{"WakeGuest": "guest_unresponsive"}}})
+	u := h.NewUser("ada-stuck")
+	p := h.CreateRunning(u, "wont-wake")
+	pid := p.ID
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set resting_since = now() where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	n := len(h.Fake.Commands())
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Params: map[string]any{"snapshot": false}, Phases: ops.PlanStop()}))
+	if op.State != "done" {
+		t.Fatalf("stop with a failing wake: state %s error %+v, want done", op.State, op.Error)
+	}
+	// The wake was tried and refused; the stop went on regardless.
+	if got := wakeKinds(commandsSince(h, n)); got != "WakeGuest,StopGuest" {
+		t.Fatalf("commands %s, want WakeGuest,StopGuest", got)
+	}
+	if p := h.Project(pid); p.State != "stopped" || p.RestingSince != nil {
+		t.Fatalf("after the stop: state %s resting_since %v, want stopped and unmarked", p.State, p.RestingSince)
+	}
+}
+
+// A destroy is the same shape: every phase after the wake works on a
+// guest that need not answer, so a wake that fails must not strand the
+// project (I-918).
+func TestADestroyWhoseWakeFailsStillDestroys(t *testing.T) {
+	h := apitest.New(t, apitest.Options{FakeOpts: fakehostd.Options{Fail: map[string]string{"WakeGuest": "guest_unresponsive"}}})
+	u := h.NewUser("ada-rm")
+	p := h.CreateRunning(u, "wont-wake-rm")
+	pid := p.ID
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set resting_since = now() where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(h.Project(pid))}))
+	if op.State != "done" {
+		t.Fatalf("destroy with a failing wake: state %s error %+v, want done", op.State, op.Error)
+	}
+}
+
+// A wake that fails anywhere else still fails its op: the exemption is
+// for plans whose every later phase ends the guest, not a blanket one.
+// A resize needs guestd to grow the filesystem, so a resize that could
+// not wake the machine has not resized it and must say so.
+func TestAResizeWhoseWakeFailsStillFails(t *testing.T) {
+	h := apitest.New(t, apitest.Options{FakeOpts: fakehostd.Options{Fail: map[string]string{"WakeGuest": "guest_unresponsive"}}})
+	u := h.NewUser("ada-resize")
+	p := h.CreateRunning(u, "wont-wake-resize")
+	pid := p.ID
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set resting_since = now() where id = $1", pid); err != nil {
+		t.Fatal(err)
+	}
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindResize, ProjectID: &pid, Params: map[string]any{"bytes": 80 << 30}, Phases: ops.PlanResize()}))
+	if op.State != "error" {
+		t.Fatalf("resize with a failing wake: state %s, want error", op.State)
+	}
+}

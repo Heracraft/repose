@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-830 entries.
+831 entries.
 
 ## Scope
 
@@ -836,7 +836,7 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24946
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24965
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25002
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L25007
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-918; L25007
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
 - **I-824** The pause must never cost a machine its memory — L25208
@@ -862,3 +862,4 @@ pointer, not a summary.
 - **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
 - **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26219
 - **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26242
+- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26276

@@ -74,8 +74,16 @@ func PlanStart(pendingRevision bool) []string {
 
 // PlanStop is one stop. A machine that rests is woken first: hostd's
 // stop asks guestd to shut the system down, and a paused guest answers
-// nothing (DECISIONS I-818).
+// nothing (DECISIONS I-818). The wake is an optimisation, not a
+// requirement: a stop whose wake fails goes on without it (I-918,
+// endsTheGuest), because hostd escalates past a guest that cannot
+// answer.
 func PlanStop() []string { return []string{PhaseWake, PhaseStopGuest} }
+
+// endsTheGuest reports whether this op's whole purpose is to take the
+// guest down, which is what makes a failed PhaseWake survivable: every
+// phase after it works on a guest that need not answer (I-918).
+func endsTheGuest(kind string) bool { return kind == KindStop || kind == KindDestroy }
 
 // PlanDestroy stops the guest (without a snapshot), takes the final
 // snapshot of the stopped volume and destroys (I-165); a project that

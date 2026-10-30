@@ -26272,3 +26272,47 @@ HTTP socket's cap, but `--dbus-service-name` is a start-time flag and
 these guests run with `--api-socket` alone. Whether to start guests with
 both is open, and it is the difference between this failure being
 recoverable and costing the tenant their session.
+
+**I-918. A stop or a destroy is not blocked by the wake it opens with.**
+(job incident, 2026-10-30. Amends I-818.)
+
+`PlanStop()` is `{PhaseWake, PhaseStopGuest}` and `PlanDestroy()` opens
+the same way. The wake is there for a good reason -- hostd's stop asks
+guestd to shut the system down and a paused guest answers nothing -- but
+a failed wake phase failed the whole op before `PhaseStopGuest` was ever
+sent. That put the only documented recovery for a guest that will not
+wake, RUNBOOK GuestWakeFailed step 5 ("a stop and a start"), behind the
+wake itself. The escape hatch was inside the thing it escapes.
+
+What it cost: on 2026-10-30 a guest's Cloud Hypervisor had a full API
+connection cap (I-912), so no wake could reach it. The owner ran `repose
+stop job` and read
+
+    Could not stop job: repose's service on the machine stopped
+    answering; `repose start` restarts it (guest_unresponsive).
+
+while the machine stayed frozen, unreachable, and holding their session.
+Every route out was shut.
+
+hostd had it right all along. `stopGuest` calls `wakeIfResting`, logs a
+failure and carries on, and its own comment says why: *"A wake that
+fails changes nothing here: the escalation below stops the guest either
+way"* -- guestd's shutdown request, then the hypervisor, then the unit.
+The api was the only component insisting on the wake.
+
+So a `!res.Ok` on `PhaseWake` is rewritten to Ok when `endsTheGuest(op.Kind)`
+-- `KindStop` and `KindDestroy` -- and the op goes on, with one warning
+line carrying the refusal's code. This is the shape I-461 already used
+for a restore whose `PhaseDestroyGuest` answers `not_found`: a phase
+whose purpose is already served does not fail its op.
+
+*Deliberately not a blanket exemption.* `PlanResize` and `PlanSnapshot`
+open with the same phase and both need the guest afterwards -- guestd
+grows the filesystem, and the snapshot wants its freeze. A resize that
+could not wake the machine has not resized it and must say so. The test
+covers that case alongside the two that now survive.
+
+*The general shape, worth looking for elsewhere.* A recovery path that
+runs through the component it recovers from is not a recovery path. The
+tell is a plan, a runbook step or a CLI command that is the documented
+answer to "X is broken" and whose first step needs X.
