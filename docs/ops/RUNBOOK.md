@@ -958,7 +958,7 @@ machine.
 3. `reason` is the step that failed:
    - `resume`: `vm.resume` did not leave the VM `Running` within
      `WakeResumeWait`. **If the error says `Too many open connections`,
-     restart hostd first** (`systemctl restart repose-hostd`): the
+     restart hostd first** (`systemctl restart hostd`): the
      hypervisor's API accepts ten connections and hostd used to leak one
      per call (I-920), so the slots are hostd's to free and the restart
      costs no guest anything. Fixed in hostd, but a host running an

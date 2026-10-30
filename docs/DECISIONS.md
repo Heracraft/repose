@@ -26267,7 +26267,7 @@ back.
 session.* It said: "Nothing frees a CH API connection slot from outside:
 the fds belong to the hypervisor, hostd holds none ... no hostd restart
 and no timeout reaps them." hostd held every one of them (I-920), and
-`systemctl restart repose-hostd` would have freed the cap without
+`systemctl restart hostd` would have freed the cap without
 touching the guest.
 
 The live check that produced that sentence could not have found the
@@ -26372,7 +26372,7 @@ own entry rather than a drive-by.
 "the fds belong to the hypervisor, hostd holds none ... no hostd restart
 and no timeout reaps them", and the operator reasoning that followed went
 straight to killing the hypervisor, which loses the running session the
-whole resting feature exists to keep. `systemctl restart repose-hostd`
+whole resting feature exists to keep. `systemctl restart hostd`
 would have freed every slot without touching the guest.
 
 The live check behind that sentence could not have found the truth. It
@@ -26390,6 +26390,22 @@ rule, not the leak, is the expensive part of this entry.
 
 *The runbook follows.* GuestWakeFailed's `resume` step now names a hostd
 restart as the first lever, ahead of anything that ends the guest.
+
+*Proved on the live host, 2026-10-30 23:45.* `job` wedged again the same
+day (this fix is queued, not shipped, so host-01 still runs the leaking
+build). `lsof -U +E` resolved every one of the ten peers to
+`1160507,hostd` -- the thing the first investigation could not see. A
+`systemctl restart hostd` took the socket from 11 connections to 2,
+`vm.info` answered at once, `hostd wake` returned `woken in 1885 ms`,
+and the guest came back with its uptime unbroken at 22h20m and its
+agent and checkouts intact. The session the night before did not have
+to be lost.
+
+Two readings went wrong before that, both the same mistake: `lsof -p
+<hostd> | grep ch.sock` also returns nothing, because the CLIENT end of
+a unix socket carries no path either. Only `+E`, which resolves the peer
+of each endpoint, shows the relationship. Grepping for a path finds a
+unix socket only when the fd is the listener.
 
 **I-922. Three more places that threw the diagnosis away, and one that
 never checked its input.** (gap hunt after the job incident, 2026-10-30.
