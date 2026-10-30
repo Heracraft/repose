@@ -26215,3 +26215,60 @@ The rule this leaves: **on this box, check the machine before the code.**
 `df`, `free` and `uptime` cost a second and rule out all three failures
 above, every one of which otherwise presents as a test that has started
 failing on its own.
+
+**I-912. A failing Cloud Hypervisor call carries the body, because the
+body is the diagnosis.** (job incident, 2026-10-30.)
+
+`ch.get` wrapped a non-2xx as ``ch api %s: status %d`` and discarded the
+response it had already read. `put` and `putJSON` beside it have always
+included it. So a guest that would not wake logged, every attempt for
+three hours:
+
+    event=guest_resting phase=resume err="ch api vm.info: status 503"
+
+while the body said:
+
+    { "error": "Too many open connections" }
+
+which is the whole of it: CH had accepted its cap of API connections and
+reaped none, so nothing could reach the VM to resume it. Reading that
+took a hand probe of `ch.sock` with curl on the host, after the hypervisor
+process, its threads, both virtiofsd pairs and the guest unit had all been
+cleared one at a time. One format verb would have skipped all of it.
+
+The test asserts the three calls behave alike against a 503 with a body,
+and it fails on the old line with exactly the string the incident saw.
+
+**I-914. A failed wake stands for ten seconds before another is sent.**
+(job incident, 2026-10-30.)
+
+`resting.Service` already shared one in-flight wake per project (`flight`),
+so simultaneous callers send one command. Nothing covered wakes that
+*follow* each other, which is what a retrying client produces: the gateway
+asks for a wake on every ssh connection, and `repose attach` reconnects
+about every two seconds for a minute, so a single user command sent about
+thirty `WakeGuest` into one guest.
+
+That is wasteful when a wake is merely slow. It is the bug when the wake
+fails for a reason that retrying consumes: the guest's CH API had a full
+connection cap that never drains, and every attempt took another slot.
+The retry policy is what held the cap full. A 503 from that API is a
+back-off condition, not a try-again-now condition.
+
+`lastFail` records a failed wake per project and the next wake inside
+`WakeFailCooldown` (10 s) returns it without sending. A success clears
+the mark at once, and `ErrNoHost` never sets one, since a host coming
+back is exactly the retry that should go straight through. Ten seconds is
+deliberately far below the ssh wait a client gives up after, so one
+attach still gets several real attempts; they are only no longer back to
+back.
+
+*Not fixed here, and the more important half.* Nothing frees a CH API
+connection slot from outside: the fds belong to the hypervisor, hostd
+holds none, and the peers are already gone, so no hostd restart and no
+timeout reaps them. The only levers are CH closing them or CH dying. CH
+can expose a second control channel over D-Bus, which would not share the
+HTTP socket's cap, but `--dbus-service-name` is a start-time flag and
+these guests run with `--api-socket` alone. Whether to start guests with
+both is open, and it is the difference between this failure being
+recoverable and costing the tenant their session.

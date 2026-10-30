@@ -128,6 +128,12 @@ type Service struct {
 	// flight shares one in-flight wake per project, so an editor opening
 	// several connections at once is one wake.
 	flight map[uuid.UUID]*wake
+	// lastFail is the most recent failed wake per project, so a caller
+	// that retries does not send another until WakeFailCooldown has
+	// passed (I-914). flight covers wakes that overlap; this covers the
+	// ones that follow each other, which is what a retrying ssh client
+	// produces.
+	lastFail map[uuid.UUID]failedWake
 	// CountWake, when set, counts one wake by its reason and result
 	// (`woken`, `awake`, `failed`). It lives here rather than at the one
 	// HTTP route because the api asks for a wake from four places -- the
@@ -160,7 +166,8 @@ type wake struct {
 // New builds the service.
 func New(pool *db.Pool, send Sender, log *slog.Logger) *Service {
 	return &Service{pool: pool, send: send, log: log.With("component", "api"), Now: time.Now,
-		waiting: map[uuid.UUID]chan *hostdv1.Result{}, pauses: map[uuid.UUID]pauseRec{}, flight: map[uuid.UUID]*wake{}}
+		waiting: map[uuid.UUID]chan *hostdv1.Result{}, pauses: map[uuid.UUID]pauseRec{}, flight: map[uuid.UUID]*wake{},
+		lastFail: map[uuid.UUID]failedWake{}}
 }
 
 // Run evaluates the rule every TickInterval on the one replica that holds
@@ -390,7 +397,32 @@ func (s *Service) Wake(ctx context.Context, projectID uuid.UUID, reason string) 
 	return res, err
 }
 
-// wakeShared is Wake without the counting: one in-flight wake per project.
+// WakeFailCooldown is how long a failed wake stands for the project
+// before another is sent (DECISIONS I-914).
+//
+// A wake that fails is almost never fixed by sending the same command
+// again a second later, and sending it again can be what keeps it
+// broken: on 2026-10-29 a guest's Cloud Hypervisor had accepted its cap
+// of API connections and reaped none, so every wake got `503 Too many
+// open connections` -- and every retry took another slot at a cap that
+// never drains. One `repose attach` fires an ssh connection every two
+// seconds for a minute, and the gateway asks for a wake on each, so a
+// single user command sent about thirty wakes into a guest that could
+// not take them.
+//
+// It is deliberately shorter than the ssh wait a client gives up after,
+// so a wake that fails once still gets several real attempts within one
+// attach; it only stops them being back to back.
+const WakeFailCooldown = 10 * time.Second
+
+// failedWake is a wake that failed, and when.
+type failedWake struct {
+	at  time.Time
+	err error
+}
+
+// wakeShared is Wake without the counting: one in-flight wake per
+// project, and no new one while a recent failure still stands.
 func (s *Service) wakeShared(ctx context.Context, projectID uuid.UUID, reason string) (*hostdv1.WakeResult, error) {
 	s.mu.Lock()
 	if w, ok := s.flight[projectID]; ok {
@@ -402,6 +434,13 @@ func (s *Service) wakeShared(ctx context.Context, projectID uuid.UUID, reason st
 			return nil, ctx.Err()
 		}
 	}
+	if f, ok := s.lastFail[projectID]; ok {
+		if s.Now().Sub(f.at) < WakeFailCooldown {
+			s.mu.Unlock()
+			return nil, f.err
+		}
+		delete(s.lastFail, projectID)
+	}
 	w := &wake{done: make(chan struct{})}
 	s.flight[projectID] = w
 	s.mu.Unlock()
@@ -409,6 +448,15 @@ func (s *Service) wakeShared(ctx context.Context, projectID uuid.UUID, reason st
 	close(w.done)
 	s.mu.Lock()
 	delete(s.flight, projectID)
+	// A wake that reached the guest clears the mark; ErrNoHost does not
+	// set one, since the host coming back is exactly the retry that
+	// should go straight through.
+	switch {
+	case w.err == nil:
+		delete(s.lastFail, projectID)
+	case !errors.Is(w.err, ErrNoHost):
+		s.lastFail[projectID] = failedWake{at: s.Now(), err: w.err}
+	}
 	s.mu.Unlock()
 	return w.res, w.err
 }

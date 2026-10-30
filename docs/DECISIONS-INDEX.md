@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-828 entries.
+830 entries.
 
 ## Scope
 
@@ -860,3 +860,5 @@ pointer, not a summary.
 - **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26042
 - **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26099
 - **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
+- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26219
+- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26242

@@ -221,7 +221,13 @@ func (h *HTTP) get(ctx context.Context, sock, path string) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return body, fmt.Errorf("ch api %s: status %d", path, resp.StatusCode)
+		// With the body, as put and putJSON have always done. Without
+		// it, a wake that could not reach a live VM logged `ch api
+		// vm.info: status 503` for three hours while the body said
+		// `{"error": "Too many open connections"}`, which is the whole
+		// diagnosis: CH had accepted its cap of API connections and
+		// reaped none of them (I-912).
+		return body, fmt.Errorf("ch api %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return body, nil
 }
