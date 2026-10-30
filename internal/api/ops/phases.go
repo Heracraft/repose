@@ -419,6 +419,11 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		if p.GuestID == nil || p.HostID == nil || p.State != "running" {
 			return nil, uuid.Nil, true, nil
 		}
+		if gone, err := e.hostGone(ctx, *p.HostID); err != nil {
+			return nil, uuid.Nil, false, err
+		} else if gone {
+			return nil, uuid.Nil, true, nil // nobody expects that host back (I-924)
+		}
 		pauses, err := e.hostPauses(ctx, *p.HostID)
 		if err != nil {
 			return nil, uuid.Nil, false, err
@@ -448,6 +453,11 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		if p.GuestID == nil || p.HostID == nil {
 			return nil, uuid.Nil, true, nil
 		}
+		if gone, err := e.hostGone(ctx, *p.HostID); err != nil {
+			return nil, uuid.Nil, false, err
+		} else if gone {
+			return nil, uuid.Nil, true, nil // nobody expects that host back (I-924)
+		}
 		// A destroy's stop does not snapshot when a snapshot phase follows
 		// it (I-165); a destroy enqueued before I-165 with the old plan
 		// (stop, destroy) still takes its snapshot in the stop. Every other
@@ -468,6 +478,11 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		if p.GuestID == nil || p.HostID == nil {
 			return nil, uuid.Nil, true, nil
 		}
+		if gone, err := e.hostGone(ctx, *p.HostID); err != nil {
+			return nil, uuid.Nil, false, err
+		} else if gone {
+			return nil, uuid.Nil, true, nil // nobody expects that host back (I-924)
+		}
 		reason := snapshotReason(op)
 		if op.Kind == KindDestroy {
 			if err := e.setState(ctx, p, "destroying"); err != nil {
@@ -482,6 +497,21 @@ func (e *Engine) buildCommand(ctx context.Context, op *store.Op, phase string) (
 		return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Snapshot{Snapshot: &hostdv1.Snapshot{GuestId: p.GuestID.String(), Reason: reason}}}, *p.HostID, false, nil
 	case PhaseDestroyGuest:
 		if p.GuestID == nil || p.HostID == nil {
+			return nil, uuid.Nil, true, nil
+		}
+		if gone, err := e.hostGone(ctx, *p.HostID); err != nil {
+			return nil, uuid.Nil, false, err
+		} else if gone {
+			// Nothing to destroy on a host nobody expects back, and
+			// addressing it waits out the phase timeout and then tells
+			// the owner to try again -- which can never work, leaves the
+			// project counting against their plan, and blocks the host's
+			// retirement for good (I-924).
+			if op.Kind == KindDestroy {
+				if err := e.setState(ctx, p, "destroying"); err != nil {
+					return nil, uuid.Nil, false, err
+				}
+			}
 			return nil, uuid.Nil, true, nil
 		}
 		if op.Kind == KindDestroy {

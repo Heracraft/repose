@@ -263,3 +263,57 @@ func TestAResizeWhoseWakeFailsStillFails(t *testing.T) {
 		t.Fatalf("resize with a failing wake: state %s, want error", op.State)
 	}
 }
+
+// A project on a host nobody expects back can still be destroyed
+// (DECISIONS I-924). Its guest-bound phases address a host that will
+// never send Hello again, so each waited out its timeout and the op
+// failed with "repose rm NAME tries again" -- an instruction that can
+// never work. The project kept `destroyed_at is null`, so it counted
+// against the owner's plan for good and blocked the host's retirement.
+func TestDestroyOfAProjectOnALostHostCompletes(t *testing.T) {
+	for _, state := range []string{"lost", "retired"} {
+		t.Run(state, func(t *testing.T) {
+			h := apitest.New(t, apitest.Options{})
+			u := h.NewUser("ada-" + state)
+			p := h.CreateRunning(u, "on-a-"+state+"-host")
+			pid := p.ID
+			if _, err := h.Pool.Exec(h.Ctx, "update hosts set state = $2 where id = $1", *p.HostID, state); err != nil {
+				t.Fatal(err)
+			}
+			n := len(h.Fake.Commands())
+			op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(h.Project(pid))}))
+			if op.State != "done" {
+				t.Fatalf("destroy on a %s host: state %s error %+v, want done", state, op.State, op.Error)
+			}
+			// Nothing was addressed to the host that is gone.
+			if got := wakeKinds(commandsSince(h, n)); got != "" {
+				t.Fatalf("commands sent to a %s host: %s, want none", state, got)
+			}
+			var destroyed *time.Time
+			if err := h.Pool.QueryRow(h.Ctx, "select destroyed_at from projects where id = $1", pid).Scan(&destroyed); err != nil {
+				t.Fatal(err)
+			}
+			if destroyed == nil {
+				t.Fatal("the project is still live, so it still counts against the plan and holds the host")
+			}
+		})
+	}
+}
+
+// An `unreachable` host is NOT gone: it may answer again in a minute,
+// and skipping its phases would destroy a guest's volume behind its
+// back. Its op is still sent (I-924).
+func TestDestroyOfAProjectOnAnUnreachableHostStillAddressesIt(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("ada-unreach-rm")
+	p := h.CreateRunning(u, "on-an-unreachable-host")
+	pid := p.ID
+	n := len(h.Fake.Commands())
+	op := h.WaitOp(h.Enqueue(ops.NewOp{Kind: ops.KindDestroy, ProjectID: &pid, Phases: ops.PlanDestroy(h.Project(pid))}))
+	if op.State != "done" {
+		t.Fatalf("destroy: state %s error %+v", op.State, op.Error)
+	}
+	if got := wakeKinds(commandsSince(h, n)); got == "" {
+		t.Fatal("a live host was sent nothing; the lost-host guard is too wide")
+	}
+}

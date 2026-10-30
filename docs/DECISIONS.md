@@ -26436,3 +26436,51 @@ in the code ever deletes it; a project on a host marked `lost` can never
 be destroyed, by its owner or by an operator, and keeps counting against
 the owner's plan while blocking the host's retirement. Both want the
 owner, not a sweep.
+
+**I-924. A project on a host nobody expects back can be destroyed.**
+(gap hunt after the job incident, 2026-10-30. Same shape as I-918.)
+
+`hosts mark-lost` sets the host `lost` and leaves every project's
+`host_id` and `guest_id` where they were, which is right: an operator
+may still want to restore them elsewhere. But a destroy's plan is
+`{wake, stop_guest, snapshot, destroy_guest}` and nothing in it looked at
+whether the host was still there, so each phase was addressed to a host
+that will never send Hello again. The engine's only shortcut matched
+`state = "unreachable"`, which `mark-lost` never sets, so the op sat out
+`phaseTimeout("stop_guest")` -- thirty minutes -- and then failed with
+
+    destroying todo-app failed: stop_guest did not complete in 30m0s.
+    `repose rm todo-app` tries again
+
+an instruction that cannot work, which the owner will follow, half an
+hour at a time. The project keeps `destroyed_at is null`, so it counts
+against their plan for ever and they cannot create the replacement; and
+`hosts retire` refuses while the host still holds projects, so the host
+cannot be retired and the `tofu apply` that removes it cannot run.
+`repose-admin projects destroy`, the documented operator remedy for a
+project stuck in `error`, calls the same plan and dead-ends identically.
+Short of hand-edited SQL there was no way out.
+
+This is I-918 again: the recovery ran through the thing that was broken.
+
+`buildCommand` now skips `wake`, `stop_guest`, `snapshot` and
+`destroy_guest` when `hostGone` -- `lost` or `retired` -- so a destroy
+drains to no phases and `markDestroyed` runs, which already keeps the
+newest earlier snapshot for 30 days. That is the end state `recoverFrom`
+already produced for a destroy whose host answered `not_found`.
+`checkTimeout`'s shortcut gains the same two states, so any op addressed
+to a host nobody expects back fails inside `HostUnreachableGrace`
+instead of waiting out a phase.
+
+*`unreachable` is deliberately excluded.* That host may answer in a
+minute, and skipping its phases would mark a guest destroyed with its
+volume still live on a host that comes back. The guard is only for the
+two states that mean a human has said the host is not returning. A test
+covers that boundary: a destroy on an unreachable host still addresses
+it.
+
+*Not fixed here.* `hostmgr.Sweep` recomputes `host_unreachable = (state
+= 'unreachable')` for every live row, so `mark-lost`'s
+`host_unreachable = true` is reset to false on the next sweep. That does
+not affect the destroy, but it does mean the gateway's and the idle
+reaper's flags stop reflecting a lost host. It wants its own entry.

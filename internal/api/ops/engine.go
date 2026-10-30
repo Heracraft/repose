@@ -352,6 +352,19 @@ func (e *Engine) hostPauses(ctx context.Context, hostID uuid.UUID) (bool, error)
 	return ok, err
 }
 
+// hostGone reports whether nobody expects this host back: `lost` (an
+// operator ran `hosts mark-lost`) or `retired`. Deliberately NOT
+// `unreachable`, which is a host that may answer again in a minute
+// (DECISIONS I-924).
+func (e *Engine) hostGone(ctx context.Context, hostID uuid.UUID) (bool, error) {
+	var state string
+	err := e.pool.QueryRow(ctx, "select state from hosts where id = $1", hostID).Scan(&state)
+	if db.IsNoRows(err) {
+		return true, nil // the row is gone; so is the host
+	}
+	return state == "lost" || state == "retired", err
+}
+
 // restingNow reports whether the api believes the op's project rests.
 func (e *Engine) restingNow(ctx context.Context, op *store.Op) bool {
 	if op.ProjectID == nil {
@@ -390,7 +403,10 @@ func (e *Engine) checkTimeout(ctx context.Context, op *store.Op) {
 	age := e.now().Sub(*op.SentAt)
 	if op.HostID != nil {
 		h, err := store.GetHost(ctx, e.pool, *op.HostID)
-		if err == nil && h.State == "unreachable" && age > e.cfg.HostUnreachableGrace {
+		// `lost` and `retired` join `unreachable` here: an op addressed
+		// to a host nobody expects back should fail in the grace window
+		// rather than wait out a 30-minute phase timeout (I-924).
+		if err == nil && (h.State == "unreachable" || h.State == "lost" || h.State == "retired") && age > e.cfg.HostUnreachableGrace {
 			e.fail(ctx, op, "host_unreachable", "host unreachable")
 			return
 		}

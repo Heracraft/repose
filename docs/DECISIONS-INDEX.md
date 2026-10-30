@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-833 entries.
+834 entries.
 
 ## Scope
 
@@ -865,3 +865,4 @@ pointer, not a summary.
 - **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26287
 - **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26331
 - **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26394
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26440
