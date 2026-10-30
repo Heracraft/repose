@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"unsafe"
 
@@ -80,8 +81,19 @@ func (i *Image) cryptOpen(ctx context.Context, guestID string, key []byte) error
 	if err != nil {
 		return err
 	}
-	if err := p.Wait(); err != nil {
-		return fmt.Errorf("cryptsetup open: %w", err)
+	// Drained so cryptsetup never blocks on a full pipe, and so Wait's
+	// ExitError carries the tail: the one thing that says why a guest's
+	// memory image could not be opened used to read `cryptsetup: exit
+	// 1: ` with nothing after the colon (I-922).
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(io.Discard, p.Stderr())
+	}()
+	werr := p.Wait()
+	<-done
+	if werr != nil {
+		return fmt.Errorf("cryptsetup open: %w", werr)
 	}
 	return nil
 }

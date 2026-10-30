@@ -782,10 +782,10 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	// retried, the in-flight one finishes and the same body is answered
 	// with the first result.
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 || (resp.StatusCode == http.StatusConflict && req.Header.Get("Idempotency-Key") != "") {
-		return &statusError{"email", resp.StatusCode}
+		return &statusError{"email", resp.StatusCode, ""}
 	}
 	if resp.StatusCode >= 400 {
-		return Permanent{&statusError{"email", resp.StatusCode}}
+		return Permanent{&statusError{"email", resp.StatusCode, ""}}
 	}
 	return nil
 }
@@ -831,10 +831,10 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	}
 	_ = resp.Body.Close() // status is all we need
 	if resp.StatusCode >= 500 || resp.StatusCode == 429 {
-		return &statusError{"ntfy", resp.StatusCode}
+		return &statusError{"ntfy", resp.StatusCode, ""}
 	}
 	if resp.StatusCode >= 400 {
-		return Permanent{&statusError{"ntfy", resp.StatusCode}}
+		return Permanent{&statusError{"ntfy", resp.StatusCode, ""}}
 	}
 	return nil
 }
@@ -1015,6 +1015,14 @@ func sendFailure(err error) string {
 type statusError struct {
 	channel string
 	code    int
+	// detail is the provider's own reason, decoded from its body and
+	// never the body itself, for the operator log (I-922).
+	detail string
 }
 
-func (e *statusError) Error() string { return fmt.Sprintf("%s: status %d", e.channel, e.code) }
+func (e *statusError) Error() string {
+	if e.detail == "" {
+		return fmt.Sprintf("%s: status %d", e.channel, e.code)
+	}
+	return fmt.Sprintf("%s: status %d: %s", e.channel, e.code, e.detail)
+}

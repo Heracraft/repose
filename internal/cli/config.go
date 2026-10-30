@@ -136,6 +136,19 @@ func loadConfig(dir string) (Config, error) {
 	if cfg.LogtoClientID == "" {
 		cfg.LogtoClientID = defaultLogtoClientID
 	}
+	// As default_multiplexer below. Without it an unknown size went
+	// straight into the create request and came back as an api refusal
+	// naming a value the user never typed on that command, once per
+	// machine, for as long as the file said it (I-922).
+	if cfg.DefaultClass != "" {
+		if _, ok := classSpecs[cfg.DefaultClass]; !ok {
+			key := "default_size"
+			if cfg.DefaultSize == "" {
+				key = "default_class"
+			}
+			return cfg, fmt.Errorf("%s: %s is %q; it takes small, large or xl", configPath(dir), key, cfg.DefaultClass)
+		}
+	}
 	if cfg.DefaultMultiplexer != "" && !multiplexer.Valid(cfg.DefaultMultiplexer) {
 		return cfg, fmt.Errorf("%s: default_multiplexer is %q; it takes %s", configPath(dir), cfg.DefaultMultiplexer, strings.Join(multiplexer.Names, " or "))
 	}

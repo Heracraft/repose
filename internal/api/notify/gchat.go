@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/heracraft/repose/internal/api/store"
 	"html"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -111,9 +113,19 @@ func (p *pacer) wait(ctx context.Context, key string, now time.Time, gap time.Du
 // ErrChannelBroken is a webhook Google refused with 401, 403 or 404: it
 // was deleted, its space removed it, or the space is gone. The outbox
 // marks the channel broken and stops delivering to it (I-692).
-type ErrChannelBroken struct{ Code int }
+type ErrChannelBroken struct {
+	Code int
+	// Detail is Google's own reason, for the operator log; "" when it
+	// sent none (I-922).
+	Detail string
+}
 
-func (e *ErrChannelBroken) Error() string { return fmt.Sprintf("gchat: status %d", e.Code) }
+func (e *ErrChannelBroken) Error() string {
+	if e.Detail == "" {
+		return fmt.Sprintf("gchat: status %d", e.Code)
+	}
+	return fmt.Sprintf("gchat: status %d: %s", e.Code, e.Detail)
+}
 
 // GChat posts to the user's Google Chat webhook.
 type GChat struct {
@@ -178,16 +190,49 @@ func (g *GChat) Send(ctx context.Context, m Message) error {
 		}
 		return fmt.Errorf("gchat: %w", err)
 	}
-	_ = resp.Body.Close() // status is all we need
+	detail := gchatReason(resp)
+	_ = resp.Body.Close()
 	switch {
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests:
-		return &statusError{"gchat", resp.StatusCode}
+		return &statusError{"gchat", resp.StatusCode, detail}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound:
-		return Permanent{&ErrChannelBroken{resp.StatusCode}}
+		return Permanent{&ErrChannelBroken{resp.StatusCode, detail}}
 	case resp.StatusCode >= 400:
-		return Permanent{&statusError{"gchat", resp.StatusCode}}
+		return Permanent{&statusError{"gchat", resp.StatusCode, detail}}
 	}
 	return nil
+}
+
+// gchatReason is Google's own explanation of a refusal, for the operator
+// log. "status 400" alone is what I-731 had to take a body to diagnose,
+// and a channel that is broken for good says only which code it was
+// (I-922).
+//
+// It decodes Google's envelope and keeps the two fields Google writes.
+// It never returns the raw body: a 400 quotes the request back, and the
+// request carries the tenant's notification text, which may not leave
+// this function ("Never log what a tenant typed").
+func gchatReason(resp *http.Response) string {
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	if err != nil || len(b) == 0 {
+		return ""
+	}
+	var env struct {
+		Error struct {
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(b, &env) != nil {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	for _, p := range []string{env.Error.Status, env.Error.Message} {
+		if p = strings.TrimSpace(p); p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return store.CleanText(strings.Join(parts, ": "), 200)
 }
 
 // GChatThread is the threadKey of a message: a question's thread, which

@@ -26390,3 +26390,49 @@ rule, not the leak, is the expensive part of this entry.
 
 *The runbook follows.* GuestWakeFailed's `resume` step now names a hostd
 restart as the first lever, ahead of anything that ends the guest.
+
+**I-922. Three more places that threw the diagnosis away, and one that
+never checked its input.** (gap hunt after the job incident, 2026-10-30.
+Applies I-912.)
+
+I-912 fixed one error boundary that dropped the body. A sweep for the
+same shape found three more, and they fail in the same way: the operator
+reads a code and has to go and get the thing the code already had.
+
+- **`shell.execProc.Wait`** built its `ExitError` with an empty `Result`,
+  and every consumer of `Proc.Stderr()` in this repo copies it to
+  `io.Discard` -- correctly, so the process does not block on a full
+  pipe, but that is also where the output went. A failed `zstd`, `dd`,
+  `nix-store` or `cryptsetup` rendered as ``exit 1: `` with nothing
+  after the colon. `Stderr()` now tees into a 4 KiB capped tail that
+  `Wait` puts in the error, so every `Start` caller gets it from the
+  drain it already does. `freeze.Image.cryptOpen` drained nothing at
+  all, so it also now drains -- which is what makes a guest memory image
+  that cannot be opened say why, the one case where the alternative is a
+  tenant's lost session.
+- **`notify.GChat.Send`** closed the body unread on every refusal:
+  `_ = resp.Body.Close() // status is all we need`. A permanently broken
+  webhook said `gchat: status 400` and no more, which is exactly what
+  I-731 needed a body to diagnose. It now decodes Google's envelope and
+  keeps `error.status` and `error.message` on the error.
+
+  It decodes rather than echoes **because a 400 quotes the request back,
+  and the request carries the tenant's notification text**. The raw body
+  may not leave that function ("Never log what a tenant typed"), so only
+  Google's own two fields survive, through `store.CleanText` at 200
+  characters.
+
+- **`config.toml`'s `default_size`** was never validated while
+  `default_multiplexer` four lines below it always was. An unknown size
+  went into the create request and came back as an api refusal naming a
+  value the user had not typed on that command, once per machine, for as
+  long as the file said it. It is now refused where the file is read,
+  naming the key the file actually used (`default_size` or the older
+  `default_class`).
+
+*Still open from the same sweep, and bigger than this entry.* `POST
+/me/delete` tells the user their data is deleted in 30 days and nothing
+in the code ever deletes it; a project on a host marked `lost` can never
+be destroyed, by its owner or by an operator, and keeps counting against
+the owner's plan while blocking the host's retirement. Both want the
+owner, not a sweep.
