@@ -13,7 +13,7 @@ import (
 
 // bridgeUpLine is the line that says the bridge is on.
 func bridgeUpLine(c laptopChrome, slug string, allow bridgeAllow) string {
-	s := fmt.Sprintf("%s → %s: the agents there browse in your Chrome now, with your logins. Ctrl-C hands them back the machine's browser.", c.Name(), slug)
+	s := fmt.Sprintf("%s → %s: the agents there browse in your Chrome (Ctrl-C ends it).", c.Name(), slug)
 	if c.Switch {
 		s += "\nChrome asks you to allow each new connection."
 	}
@@ -34,7 +34,7 @@ func bridgeTmuxLine(on bool) string {
 
 // bridgeWardenHint is said before the warden connects through Chrome's
 // switch, where Chrome asks first.
-const bridgeWardenHint = "Chrome asks you to allow the bridge's own connection first: it is what holds the agents to --allow."
+const bridgeWardenHint = "Chrome asks you to allow the bridge's own connection first."
 
 // errWardenLost is the warden's connection ending mid-bridge.
 var errWardenLost = errors.New("the bridge's own connection to Chrome closed")
@@ -60,7 +60,7 @@ func runBridge(ctx context.Context, t sshTarget, chrome laptopChrome, policy *br
 			if ctx.Err() != nil {
 				return nil
 			}
-			return exitf(ExitGeneric, "Could not connect to Chrome to hold the agents to --allow (%s). If Chrome asked, allow the connection; with --allow the bridge doesn't open without it.", oneLine(err.Error()))
+			return exitf(ExitGeneric, "Could not connect to Chrome to hold the agents to --allow (%s). Allow the connection in Chrome and run it again.", oneLine(err.Error()))
 		}
 		warden = w
 		defer warden.Close()
@@ -155,7 +155,7 @@ func BrowserBridgeCmd(ctx context.Context, e *Env, projectArg string, opts Bridg
 	bridgeStop(target, project.Slug, bridgeTmuxLine(false))
 	switch {
 	case errors.Is(err, errWardenLost):
-		return exitf(ExitGeneric, "The bridge's own connection to Chrome closed (Chrome quit, or remote debugging was turned off), and --allow can't hold without it, so the bridge closed. The agents on %s are back on the machine's browser.", project.Slug)
+		return exitf(ExitGeneric, "Chrome's connection to the bridge closed (Chrome quit, or remote debugging was turned off). The agents on %s are back on the machine's browser.", project.Slug)
 	case errors.Is(err, errBridgeHeld):
 		return exitf(ExitGeneric, "Another bridge to %s is still open (a laptop that went to sleep keeps its bridge for up to two minutes). Try again in a moment.", project.Slug)
 	case errors.Is(err, errBridgeEndedByGuest):

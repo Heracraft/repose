@@ -98,7 +98,7 @@ func ensureReposeRemote(root, slug, dir string) (string, error) {
 	if cur != "" {
 		return "", nil
 	}
-	return "Added the git remote repose: `git fetch repose` brings the machine's commits to this checkout.", nil
+	return "Added the git remote repose.", nil
 }
 
 // forgetReposeRemote removes the `repose` remote of the checkout at root

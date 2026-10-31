@@ -147,8 +147,9 @@ exactly as before.
   would cancel the project's open questions. A wake that failed is the
   exception: it alerts the operator (`GuestWakeFailed`) and the user sees
   a machine that did not answer ssh.
-- A per-project **Keep awake** switch on the Config page holds a machine
-  awake, effective at once.
+- A per-project **Never freeze this machine** switch on the Config page
+  keeps a machine out of the freeze, effective at once. The wire field is
+  still `keep_awake`; the word a user reads is freeze (I-683, I-898).
 
 ## Behaviour that must hold
 

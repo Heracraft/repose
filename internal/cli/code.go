@@ -102,7 +102,7 @@ func pickEditor(flag, configured, home string) (editorSpec, string, error) {
 			return ed, bin, nil
 		}
 	}
-	return editorSpec{}, "", exitf(ExitGeneric, "No editor found: repose code opens VS Code (`code`), Cursor (`cursor`) or Zed (`zed`), and none is on your PATH. Any editor that connects over SSH can open the project: see https://repose.herakraft.co/docs/ssh-and-editors")
+	return editorSpec{}, "", exitf(ExitGeneric, "No editor found: repose code opens VS Code (`code`), Cursor (`cursor`) or Zed (`zed`), and none is on your PATH. Other editors: https://repose.herakraft.co/docs/ssh-and-editors")
 }
 
 func installHint(ed editorSpec) string {

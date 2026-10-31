@@ -183,7 +183,7 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 		}
 		switch kind {
 		case KindResize:
-			return "the disk grew, but the environment's agent (guestd) stopped answering, so the filesystem inside did not; `repose start` restarts it, then run the resize again", true
+			return "the disk grew but the filesystem inside did not: the environment's agent (guestd) stopped answering. `repose start` restarts it, then resize again", true
 		case KindSnapshot:
 			return "the environment's agent (guestd) stopped answering, so the filesystem could not be frozen for a snapshot; `repose start` restarts it", true
 		}
@@ -199,7 +199,7 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 			// The revision stays built: the next start boots the system
 			// the machine has, whose stage 1 removes the whiteouts
 			// (I-587), then switches to it.
-			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` repairs the machine's store and applies the new system", true
+			return "a nix garbage collection inside the machine hid parts of the new system, so it keeps its current one; `repose stop` then `repose start` applies the new one", true
 		}
 	case "host_unreachable":
 		return "the host running this project stopped answering; the operation can be run again once the host is back", true
@@ -220,7 +220,7 @@ func humanError(kind, phase, code, msg string) (string, bool) {
 			// holds its own until it stops (I-724); the three minutes
 			// after a stop or rm are the api's own wait (I-408), so a
 			// refusal that reaches here has nothing left to wait for.
-			return "the host has no free memory for a machine this size; a machine holds its memory while it runs, so stopping one frees room", true
+			return "the host has no free memory for a machine this size; stopping a running machine frees room", true
 		case strings.Contains(msg, "thin pool"):
 			// I-586: no start past 95 percent, and nothing stops a
 			// running guest for the pool, so neither waiting nor

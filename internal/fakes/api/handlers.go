@@ -1476,6 +1476,31 @@ func (f *Fake) deleteAccountSecret(w http.ResponseWriter, r *http.Request) *apiE
 
 // Snapshots.
 
+// listAllSnapshots is GET /v1/snapshots: every live snapshot of the
+// account, newest first, each naming its project, destroyed projects
+// included (I-904).
+func (f *Fake) listAllSnapshots(w http.ResponseWriter, r *http.Request) *apiError {
+	u := userFrom(r)
+	type row struct {
+		Snapshot
+		ProjectID        string `json:"project_id"`
+		Project          string `json:"project"`
+		ProjectDestroyed bool   `json:"project_destroyed"`
+	}
+	out := []row{}
+	for _, p := range f.projects {
+		if p.owner != u.ID {
+			continue
+		}
+		for _, s := range p.snapshots {
+			out = append(out, row{Snapshot: *s, ProjectID: p.ID, Project: p.Slug, ProjectDestroyed: p.destroyed})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	writeJSON(w, http.StatusOK, out)
+	return nil
+}
+
 func (f *Fake) listSnapshots(w http.ResponseWriter, r *http.Request) *apiError {
 	p, e := f.projectAny(userFrom(r), r.PathValue("id"))
 	if e != nil {

@@ -7,8 +7,6 @@ Write an answer: https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75
 
 Or from your laptop: repose reply todo-app
 
-The first answer wins.
-
 --
 repose. Open the dashboard: https://repose.herakraft.co
-You get these because an agent on your machine asked you something. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

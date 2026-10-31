@@ -261,6 +261,12 @@ type Snapshot struct {
 	Bytes     int64      `json:"bytes"`
 	Reason    string     `json:"reason"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Project and ProjectID are set only by GET /v1/snapshots, the
+	// account-wide list (I-904); the per-project route has no need of
+	// them and leaves them empty.
+	ProjectID        string `json:"project_id,omitempty"`
+	Project          string `json:"project,omitempty"`
+	ProjectDestroyed bool   `json:"project_destroyed,omitempty"`
 }
 
 type Event struct {

@@ -189,12 +189,14 @@
 		transition: none;
 	}
 }
-/* The row's frost keeps to its hover fill's shape: --hk-row-bleed past the
-   row on each side, its foot rounded with the fill's radius. */
+/* The row's frost spans --hk-row-bleed past the row on each side, with
+   square corners. It took the hover fill's small radius at its foot; on
+   a list of frozen projects that reads as a stack of rounded cards
+   rather than rows of a table, which is not what the row is (I-896). */
 .hk .hk-frost--row {
 	left: calc(-1 * var(--hk-row-bleed));
 	right: calc(-1 * var(--hk-row-bleed));
-	border-radius: 0 0 var(--hk-radius-sm) var(--hk-radius-sm);
+	border-radius: 0;
 	height: calc(18px + var(--frost-g) * 2px);
 	/* Full from the leading edge. */
 	--frost-feather: linear-gradient(

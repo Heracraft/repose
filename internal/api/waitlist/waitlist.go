@@ -35,6 +35,15 @@ const SeatBytes = int64(8) << 30
 // HoldDuration is how long an invitation holds a seat.
 const HoldDuration = 72 * time.Hour
 
+// CooldownDuration is how long a user whose hold ran out unconverted
+// waits before they are a candidate again (DECISIONS I-902). Without
+// it, the one tick that expires a hold frees the seat and re-invites
+// the same user when they are the only one waiting, so the owner got
+// "your hold ran out" and "a seat is yours" in the same minute, every
+// 72 hours, with no way for the cycle to end. They keep their place in
+// the queue throughout; they are only not picked.
+const CooldownDuration = 24 * time.Hour
+
 // Event kinds this package raises; each is an account email (I-291).
 const (
 	KindJoined  = "waitlist_joined"
@@ -168,7 +177,8 @@ func count(ctx context.Context, q store.Querier, total int, now time.Time) (Coun
 		(select coalesce(sum(seats), 0) from subscriptions where status in ('trialing','active','past_due'))::integer
 		+ (select count(*) from waitlist where invited_at is not null and converted_at is null and hold_until > $1)::integer,
 		(select count(*) from waitlist w join users u on u.id = w.user_id
-		  where w.invited_at is null and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null)::integer`, now).Scan(&c.Held, &c.Waiting)
+		  where w.invited_at is null and (w.cooldown_until is null or w.cooldown_until <= $1)
+		    and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null)::integer`, now).Scan(&c.Held, &c.Waiting)
 	if err != nil {
 		return c, d, err
 	}
@@ -275,7 +285,10 @@ func (s *Service) join(ctx context.Context, tx db.Tx, userID uuid.UUID, now time
 	if !joined {
 		// Re-queue an expired hold or a converted row; leave a waiting or
 		// holding row alone.
-		if _, err := tx.Exec(ctx, `update waitlist set joined_at = $2, invited_at = null, hold_until = null, invited_by = null, converted_at = null,
+		// The cooldown goes with it: it exists to stop the tick
+		// re-inviting someone who never answered, and a user asking
+		// again has answered (I-902).
+		if _, err := tx.Exec(ctx, `update waitlist set joined_at = $2, invited_at = null, hold_until = null, invited_by = null, converted_at = null, cooldown_until = null,
 			expired_invites = expired_invites + case when converted_at is null then 1 else 0 end
 			where user_id = $1 and invited_at is not null and (converted_at is not null or hold_until <= $2)`, userID, now); err != nil {
 			return nil, err
@@ -357,7 +370,10 @@ func Invite(ctx context.Context, pool *db.Pool, userID uuid.UUID, by string, now
 
 func inviteTx(ctx context.Context, tx db.Tx, userID uuid.UUID, by string, now time.Time, invited *bool) error {
 	until := now.Add(HoldDuration)
-	tag, err := tx.Exec(ctx, "update waitlist set invited_at = $2, hold_until = $3, invited_by = $4 where user_id = $1 and invited_at is null", userID, now, until, by)
+	// The invitation clears any cooldown: it has served its purpose, and
+	// an operator admitting a cooling user by handle (I-294 (5)) must not
+	// leave the row saying the user is still waiting it out (I-902).
+	tag, err := tx.Exec(ctx, "update waitlist set invited_at = $2, hold_until = $3, invited_by = $4, cooldown_until = null where user_id = $1 and invited_at is null", userID, now, until, by)
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
@@ -405,7 +421,7 @@ func (a *Inviter) Run(ctx context.Context, now time.Time) (invited, expired int,
 			if c.Free <= 0 || c.Waiting == 0 {
 				return nil
 			}
-			waiting, err := store.ListWaiting(ctx, tx)
+			waiting, err := store.ListWaiting(ctx, tx, now)
 			if err != nil || len(waiting) == 0 {
 				return err
 			}
@@ -454,8 +470,8 @@ func (a *Inviter) expire(ctx context.Context, now time.Time) (int, error) {
 			}
 			// Guarded again under the lock: a checkout that converted the
 			// user meanwhile keeps its row.
-			tag, err := tx.Exec(ctx, `update waitlist set invited_at = null, hold_until = null, invited_by = null, joined_at = $2, expired_invites = expired_invites + 1
-				where user_id = $1 and invited_at is not null and converted_at is null and hold_until < $2`, id, now)
+			tag, err := tx.Exec(ctx, `update waitlist set invited_at = null, hold_until = null, invited_by = null, joined_at = $2, expired_invites = expired_invites + 1, cooldown_until = $3
+				where user_id = $1 and invited_at is not null and converted_at is null and hold_until < $2`, id, now, now.Add(CooldownDuration))
 			if err != nil || tag.RowsAffected() == 0 {
 				return err
 			}

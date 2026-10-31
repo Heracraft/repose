@@ -167,19 +167,30 @@ export function listSearch(current: URLSearchParams, f: Filter | undefined, quer
 }
 
 /**
- * The filter the list is drawn with. A short list (TOOLBAR_FROM or
- * fewer) has no toolbar and shows everything. A search typed while no
- * filter is chosen looks through every project, stopped ones included:
- * a name the user types is one they want, whatever its state.
+ * The filter the list is drawn with. A search typed while no filter is
+ * chosen looks through every project, stopped ones included: a name the
+ * user types is one they want, whatever its state.
+ *
+ * A short list used to be forced to `all`, which with RECENT_STOPPED at
+ * 0 would be the one account that still sees its stopped machines under
+ * Running, and it had no toolbar to change that with; the toolbar is
+ * now drawn whenever there is a stopped machine to filter out (I-896).
  */
 export function effectiveFilter(f: Filter, chosen: boolean, count: number, query: string): Filter {
-	if (count <= TOOLBAR_FROM) return 'all';
 	if (!chosen && query.trim()) return 'all';
 	return f;
 }
 
-/** Stopped machines the Running view keeps under it, most recently run first. */
-export const RECENT_STOPPED = 5;
+/**
+ * Stopped machines the Running view keeps under it.
+ *
+ * It was 5, so Running was not a filter: an account with a dozen
+ * stopped projects read half of them under the heading it had chosen to
+ * exclude them with, and the two durations on a long-unused row ran the
+ * table into its own scrollbar. Running now shows what is running, and
+ * "All N stopped" in the toolbar is the way to the rest (I-896).
+ */
+export const RECENT_STOPPED = 0;
 
 /** One band of the drawn list, with its rows in order. */
 export interface Group {
@@ -196,17 +207,19 @@ export interface ListView {
 	matched: number;
 	/** Machines at rest the Running view leaves out; 0 elsewhere. */
 	folded: number;
-	/** Machines at rest in all, for the Running view's "All N stopped". */
+	/**
+	 * Machines at rest, under every filter: what decides whether the
+	 * filter control is drawn at all (I-896).
+	 */
 	resting: number;
 }
 
 /**
  * The rows /projects draws, in bands. `ordered` is every project in the
- * held order. Running draws every machine that is up or wants you and,
- * under them, the RECENT_STOPPED stopped ones that ran last, so a machine
- * stopped yesterday is one click from Start and an account with nothing
- * running is not an empty page. Stopped and All, and any search, cap at
- * `cap` rows until "Show all".
+ * held order. Running draws every machine that is up or wants you, and
+ * under them the RECENT_STOPPED stopped ones that ran last (0 since
+ * I-896, so none). Stopped and All, and any search, cap at `cap` rows
+ * until "Show all".
  *
  * `bandOf` is the band each row was in when the order was taken (see
  * byHeldOrder): a machine stopped from its row keeps its place under
@@ -224,14 +237,25 @@ export function listView(
 		cap: number;
 	}
 ): ListView {
-	const f = effectiveFilter(opts.filter, opts.chosen, ordered.length, opts.query);
+	let f = effectiveFilter(opts.filter, opts.chosen, ordered.length, opts.query);
+	// Running with nothing running is an empty page, not a filter: an
+	// account whose machines are all stopped reads them instead, which
+	// is what `all` would show anyway since none of them is up (I-896).
+	if (f === 'up' && !opts.query.trim() && !ordered.some((p) => opts.bandOf(p) !== 'off')) {
+		f = 'off';
+	}
 	const matched = ordered.filter(
 		(p) =>
 			(f === 'all' || (opts.bandOf(p) === 'off') === (f === 'off')) && matchesQuery(p, opts.query)
 	);
 	let rows: Project[];
 	let folded = 0;
-	let resting = 0;
+	// Machines at rest, counted under every filter. The toolbar is drawn
+	// whenever this is above 0, since the filter control is the only way
+	// to the stopped rows now that Running draws none of them; computing
+	// it only under Running took the toolbar away as soon as the reader
+	// pressed Stopped, and left them there (I-896).
+	const resting = ordered.filter((p) => opts.bandOf(p) === 'off').length;
 	if (f === 'up') {
 		const rest = ordered
 			.filter((p) => opts.bandOf(p) === 'off')
@@ -239,7 +263,6 @@ export function listView(
 		// Running chosen beside a search keeps to what is up.
 		const recent = opts.query.trim() ? [] : rest.slice(0, RECENT_STOPPED);
 		folded = opts.query.trim() ? 0 : rest.length - recent.length;
-		resting = rest.length;
 		rows = [...matched, ...recent];
 	} else {
 		rows = matched.slice(0, opts.cap);

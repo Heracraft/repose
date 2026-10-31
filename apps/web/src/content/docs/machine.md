@@ -175,7 +175,7 @@ There are no public URLs for a project's ports. To show someone a running app, d
 cloudflared tunnel --url http://localhost:3000
 ```
 
-This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine awake](/docs/config#keeping-a-machine-awake) while the URL has to work.
+This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
 
 ## Browser
 

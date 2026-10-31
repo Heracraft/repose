@@ -39,7 +39,10 @@ func TestSince(t *testing.T) {
 
 func TestSummaryCarriesNoGuestContent(t *testing.T) {
 	s := Summary("todo-app", "xl", 26*time.Hour+40*time.Minute)
-	for _, want := range []string{"todo-app", "26h", "holds 16 GB of your plan's memory (xl) until you stop it", "`repose stop todo-app`."} {
+	// The size class and "until you stop it" went with I-894: the class
+	// is a fourth number in a line of three, and the command after it
+	// already says what stopping it would be.
+	for _, want := range []string{"todo-app", "26h", "holds 16 GB of your plan's memory", "`repose stop todo-app`."} {
 		if !strings.Contains(s, want) {
 			t.Errorf("summary %q lacks %q", s, want)
 		}

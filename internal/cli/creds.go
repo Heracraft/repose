@@ -39,7 +39,7 @@ var retiredCredRows = []credRow{
 
 // retiredCredNotice is what `run` prints, once, when it removed a copy.
 // It goes inside single quotes in the guest's shell: no apostrophes.
-const retiredCredNotice = "Removed the Vercel login an earlier repose run copied to the machine: repose no longer copies it. Run vercel login on the machine, or store a scoped token with repose secrets set VERCEL_TOKEN."
+const retiredCredNotice = "Removed the Vercel login from the machine: repose no longer copies it. Run vercel login on the machine, or store a scoped token with repose secrets set VERCEL_TOKEN."
 
 // laptopRel is where the row's file is on this laptop.
 func (r credRow) laptopRel() string {

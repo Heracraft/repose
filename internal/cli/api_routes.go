@@ -349,6 +349,17 @@ func (c *Client) DeleteAccountSecret(ctx context.Context, name string) error {
 	return c.delete(ctx, "/me/secrets/"+url.PathEscape(name), nil)
 }
 
+// ListAllSnapshots reads every snapshot of the account, newest first,
+// each naming its project (I-904). It is what `repose snapshots list`
+// with no PROJECT asks for.
+func (c *Client) ListAllSnapshots(ctx context.Context) ([]Snapshot, error) {
+	var s []Snapshot
+	if err := c.get(ctx, "/snapshots", &s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 func (c *Client) ListSnapshots(ctx context.Context, id string) ([]Snapshot, error) {
 	var s []Snapshot
 	if err := c.get(ctx, "/projects/"+url.PathEscape(id)+"/snapshots", &s); err != nil {

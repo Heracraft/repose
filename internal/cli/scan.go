@@ -1044,7 +1044,7 @@ func printScan(out io.Writer, dir string, global []toolItem, sc *scanResult, pre
 	if tc != nil {
 		n = len(tc.Wanted.Items)
 	}
-	p("\n%d to check on the machine; each one it lacks is installed in the background after `repose run`.\n", n)
+	p("\n%d to check on the machine.\n", n)
 	if tc != nil {
 		var pins []string
 		for _, r := range []struct{ tool, v string }{{"node", tc.Wanted.Node}, {"ruby", tc.Wanted.Ruby}, {"java", tc.Wanted.Java}} {

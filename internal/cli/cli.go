@@ -488,7 +488,7 @@ func newRunCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 				return cobraUsageError{err}
 			}
 			opts.Temp = temp
-			if err := runArgs(&opts, args, g.project, cmd.ErrOrStderr()); err != nil {
+			if err := runArgs(&opts, args, g.project); err != nil {
 				return err
 			}
 			if opts.ProjectArg != "" && g.project != "" && opts.ProjectArg != g.project {
@@ -1469,15 +1469,15 @@ func openInEditor(path string) error {
 }
 
 func newSnapshotsCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
-	root := &cobra.Command{Use: "snapshots", Short: "List, take or restore a project's snapshots",
-		Long: "List, take or restore a project's snapshots. Alone, list them."}
+	root := &cobra.Command{Use: "snapshots", Short: "List, take or restore snapshots",
+		Long: "List, take or restore snapshots. Alone, list them: this checkout's\nproject, or every project from a folder that belongs to none."}
 	var as string
 	var yes bool
 	var quiet bool
 	list := &cobra.Command{
 		Use:               "list [PROJECT]",
 		Aliases:           []string{"ls"},
-		Short:             "List a project's snapshots",
+		Short:             "List snapshots, of PROJECT or of every project",
 		Args:              projectArgs,
 		ValidArgsFunction: completeProject(env),
 		RunE: func(cmd *cobra.Command, args []string) error {

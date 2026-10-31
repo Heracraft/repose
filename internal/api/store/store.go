@@ -705,6 +705,10 @@ type WaitlistEntry struct {
 	// Position is 0 once invited, and for a waiting user whose account is
 	// suspended, cancelled or deleted: such a user holds no place.
 	Position int `db:"position"`
+	// CooldownUntil is set while a user whose hold ran out unconverted
+	// is not yet a candidate again (I-902). They keep their Position
+	// throughout; ListWaiting leaves them out until it passes.
+	CooldownUntil *time.Time `db:"cooldown_until"`
 }
 
 // Holding reports whether the entry holds a seat: invited, not
@@ -715,7 +719,7 @@ func (e *WaitlistEntry) Holding(now time.Time) bool {
 
 // waitlistSQL numbers the waiting users of live accounts oldest first;
 // everyone else gets position 0.
-const waitlistSQL = `select w.user_id, u.handle, w.joined_at, w.invited_at, w.invited_by, w.hold_until, w.converted_at, w.expired_invites,
+const waitlistSQL = `select w.user_id, u.handle, w.joined_at, w.invited_at, w.invited_by, w.hold_until, w.converted_at, w.expired_invites, w.cooldown_until,
 	coalesce(q.position, 0)::integer as position
 	from waitlist w join users u on u.id = w.user_id
 	left join (select w2.user_id, row_number() over (order by w2.joined_at, w2.user_id) as position
@@ -728,9 +732,13 @@ func GetWaitlistEntry(ctx context.Context, q Querier, userID uuid.UUID) (*Waitli
 	return one[WaitlistEntry](ctx, q, waitlistSQL+" where w.user_id = $1", userID)
 }
 
-// ListWaiting returns the users holding a place, next first.
-func ListWaiting(ctx context.Context, q Querier) ([]WaitlistEntry, error) {
-	return many[WaitlistEntry](ctx, q, waitlistSQL+" where q.position is not null order by q.position")
+// ListWaiting returns the candidates for a free seat, next first: the
+// users holding a place whose cooldown, if any, has passed at now
+// (I-902). A cooling user keeps their position and still reads it; they
+// are only not picked, which is what stops the one waiting user from
+// being re-invited by the same tick that expired their hold.
+func ListWaiting(ctx context.Context, q Querier, now time.Time) ([]WaitlistEntry, error) {
+	return many[WaitlistEntry](ctx, q, waitlistSQL+" where q.position is not null and (w.cooldown_until is null or w.cooldown_until <= $1) order by q.position", now)
 }
 
 // ListWaitlist returns every row: the waiting in order, then the rest,

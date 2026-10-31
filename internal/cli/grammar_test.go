@@ -132,11 +132,11 @@ func TestParseOpenPorts(t *testing.T) {
 func TestCheckSecretName(t *testing.T) {
 	for name, want := range map[string]string{
 		"STRIPE_KEY":           "",
-		"STRIPE_KEY=sk_live":   "stays out of your shell history",
+		"STRIPE_KEY=sk_live":   "takes NAME alone",
 		"stripe":               "must match",
 		"user_ca.pub":          "must match",
 		"BASH_ENV":             "reserved",
-		"A=b=c":                "stays out of your shell history",
+		"A=b=c":                "takes NAME alone",
 		"lower=x":              "must match",
 		"ssh_host_ed25519_key": "must match",
 	} {
@@ -431,7 +431,7 @@ func TestSetupLine(t *testing.T) {
 		t.Errorf("defaults: %q", l)
 	}
 	// The line cli.md's `repose status` section prints as the example.
-	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: agent codex, machine.nix off, base updates held, kept awake" {
+	if l := setupLine(&Project{AgentDefault: "codex", PersonalOptOut: true, HoldBaseUpdates: true, KeepAwake: true}, "claude"); l != "setup: agent codex, machine.nix off, base updates held, never frozen" {
 		t.Errorf("all set: %q", l)
 	}
 }

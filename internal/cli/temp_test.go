@@ -414,14 +414,27 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 	if _, err := e2.Client.CreateProject(ctx, CreateProjectRequest{Name: "other", Class: "large", RemoteURL: "github.com/someone/else"}); err != nil {
 		t.Fatal(err)
 	}
-	err := runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true}, false)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "github.com/someone/else") || !strings.Contains(ee.msg, "`repose run other`") {
-		t.Fatalf("--name of another repository's project: %v", err)
-	}
-	// The refusal names the command typed (I-633).
-	err = runRun(ctx, e2, RunOptions{Name: "other", NoAttach: true, Sync: true}, false)
-	if ee, ok := err.(*exitError); !ok || ee.code != ExitUsage || !strings.Contains(ee.msg, "`repose sync other`") {
-		t.Fatalf("sync of another repository's project: %v", err)
+	// The refusal names the three facts and the two ways on, and no
+	// longer the command typed back (I-633, amended by I-894): what the
+	// verb was in for was a clause explaining what the sync would have
+	// done, which is the mechanism the reader did not ask about.
+	for _, opts := range []RunOptions{
+		{Name: "other", NoAttach: true},
+		{Name: "other", NoAttach: true, Sync: true},
+	} {
+		err := runRun(ctx, e2, opts, false)
+		ee, ok := err.(*exitError)
+		if !ok || ee.code != ExitUsage {
+			t.Fatalf("another repository's project: %v", err)
+		}
+		for _, want := range []string{"other is the project for", "github.com/someone/else", "`repose attach other`"} {
+			if !strings.Contains(ee.msg, want) {
+				t.Fatalf("refusal %q lacks %q", ee.msg, want)
+			}
+		}
+		if strings.Contains(ee.msg, "would sync one repository") {
+			t.Fatalf("the refusal still explains the sync: %q", ee.msg)
+		}
 	}
 }
 
@@ -489,6 +502,13 @@ func TestTempFlagParsing(t *testing.T) {
 		{tempBare, []string{"2fa"}, 24 * time.Hour, 1, false},
 		{tempBare, []string{"1password", "fix"}, 24 * time.Hour, 2, false},
 		{tempBare, []string{"3dprint"}, 24 * time.Hour, 1, false},
+		// A duration spelled with a word is refused, not kept as the
+		// PROJECT: `--temp 3hr` silently made a 24h machine (I-888).
+		{tempBare, []string{"3hr"}, 0, 0, true},
+		{tempBare, []string{"traffic", "3hr"}, 0, 0, true},
+		{tempBare, []string{"1hr", "boilerplate"}, 0, 0, true},
+		{tempBare, []string{"90mins"}, 0, 0, true},
+		{tempBare, []string{"2hours"}, 0, 0, true},
 		{tempBare, []string{"2d"}, 0, 0, true},
 		{"1d", nil, 24 * time.Hour, 0, false},
 	} {

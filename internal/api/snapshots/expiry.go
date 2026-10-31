@@ -34,6 +34,21 @@ type BlobStore interface {
 // Retention is the live-project window.
 const Retention = 7 * 24 * time.Hour
 
+// MaxPerProject is how many snapshots a live project keeps, which is
+// what R4-11, features/snapshots.md and PRICING.md have always said
+// ("Seven daily snapshots per project ... Manual snapshots count toward
+// the seven"). Only the window was enforced, with no count and no
+// LIMIT anywhere, so the number a project held was however many times
+// it had been stopped in seven days: `stop` is the one snapshot a user
+// can fire at will, and ten stops a day kept seventy full images
+// instead of seven (I-900). I-809 found the same missing cap on the
+// destroy path, where a destroy kept up to seven snapshots against a
+// promise of one; this is that bug on the hot path.
+//
+// Fork snapshots are not counted: they expire on their own expires_at
+// (I-703) and are not a project's dailies.
+const MaxPerProject = 7
+
 // Expiry is the job.
 type Expiry struct {
 	pool *db.Pool
@@ -85,15 +100,28 @@ func (e *Expiry) Once(ctx context.Context) ([]uuid.UUID, error) {
 }
 
 // expiredWhere selects the rows the retention rule retires: a destroyed
-// project's past expires_at, a live project's older than Retention except
-// its newest, and a fork's own snapshot past its expires_at, which is
-// never a project's newest (DECISIONS I-703); never one a restore holds
-// (restoring_op_id).
+// project's past expires_at, a live project's older than Retention or
+// beyond MaxPerProject except its newest, and a fork's own snapshot past
+// its expires_at, which is never a project's newest (DECISIONS I-703);
+// never one a restore holds (restoring_op_id).
+//
+// The count is correlated rather than a window function so the fragment
+// stays a bare WHERE both queries below can embed: a row is beyond the
+// cap when MaxPerProject newer non-fork snapshots of its project are
+// still live. The tuple compares in the same order the newest-snapshot
+// subquery sorts by.
 const expiredWhere = `s.deleted_at is null and s.restoring_op_id is null
 	and (
 	  (p.destroyed_at is not null and s.expires_at is not null and s.expires_at < $1)
 	  or (s.reason = 'fork' and s.expires_at is not null and s.expires_at < $1)
-	  or (p.destroyed_at is null and s.taken_at < $2 and s.id <> (select id from snapshots n where n.project_id = s.project_id and n.deleted_at is null and n.reason <> 'fork' order by n.taken_at desc, n.created_at desc limit 1))
+	  or (p.destroyed_at is null
+	      and (
+	        s.taken_at < $2
+	        or (s.reason <> 'fork' and (select count(*) from snapshots n
+	              where n.project_id = s.project_id and n.deleted_at is null and n.reason <> 'fork'
+	                and (n.taken_at, n.created_at) > (s.taken_at, s.created_at)) >= $3)
+	      )
+	      and s.id <> (select id from snapshots n where n.project_id = s.project_id and n.deleted_at is null and n.reason <> 'fork' order by n.taken_at desc, n.created_at desc limit 1))
 	)`
 
 // Sweep is one run: the candidates are read once, then each is locked,
@@ -101,7 +129,7 @@ const expiredWhere = `s.deleted_at is null and s.restoring_op_id is null
 // counts rows whose blob delete failed; they stay for the next run.
 func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, err error) {
 	now := e.Now()
-	rows, err := e.pool.Query(ctx, `select s.id from snapshots s join projects p on p.id = s.project_id where `+expiredWhere+` order by s.taken_at`, now, now.Add(-Retention))
+	rows, err := e.pool.Query(ctx, `select s.id from snapshots s join projects p on p.id = s.project_id where `+expiredWhere+` order by s.taken_at`, now, now.Add(-Retention), MaxPerProject)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -120,7 +148,7 @@ func (e *Expiry) Sweep(ctx context.Context) (deleted []uuid.UUID, failed int, er
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
 			// Still expired, not taken by a restore since the candidate list,
 			// and not locked by another replica's sweep.
-			err := tx.QueryRow(ctx, `select s.blob_path from snapshots s join projects p on p.id = s.project_id where s.id = $3 and `+expiredWhere+` for update of s skip locked`, now, now.Add(-Retention), id).Scan(&path)
+			err := tx.QueryRow(ctx, `select s.blob_path from snapshots s join projects p on p.id = s.project_id where s.id = $4 and `+expiredWhere+` for update of s skip locked`, now, now.Add(-Retention), MaxPerProject, id).Scan(&path)
 			if err != nil {
 				if db.IsNoRows(err) {
 					return errSkip

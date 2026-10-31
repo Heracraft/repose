@@ -296,7 +296,7 @@ func TestRunAddsTheReposeRemote(t *testing.T) {
 		t.Fatalf("remote.repose.url after run = %q", got)
 	}
 	errOut := f.env.ErrOut.(*discardWriter).buf.String()
-	if !strings.Contains(errOut, "Added the git remote repose: `git fetch repose` brings the machine's commits to this checkout.") {
+	if !strings.Contains(errOut, "Added the git remote repose.") {
 		t.Fatalf("run did not say it added the remote:\n%s", errOut)
 	}
 

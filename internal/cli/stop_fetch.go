@@ -8,13 +8,18 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 // stopFetchTimeout bounds the fetch a stop makes first. A machine that
 // does not answer is often why it is being stopped, and its commits are
 // in the stop's snapshot either way.
-var stopFetchTimeout = 60 * time.Second
+//
+// It was 60 s, which is a minute of a stop the user is watching for
+// commits that are already safe. 15 s matches the budget the guest read
+// beside it takes (I-890).
+var stopFetchTimeout = 15 * time.Second
 
 // fetchBeforeStop runs `git fetch repose` in every laptop folder whose
 // `repose` remote is one of the running machines about to stop
@@ -45,7 +50,16 @@ func fetchBefore(ctx context.Context, e *Env, running []*Project, what, interrup
 	pr := e.newProgress()
 	defer pr.Fail()
 	pr.Phase("Fetching from "+joinNames(slugsOfJobs(jobs)), "")
-	runFetches(ctx, jobs)
+	// A ControlPersist master that answers `ssh -O check` but whose
+	// connection died (the laptop slept) holds the fetch for its whole
+	// budget. masterAlive stops such a master, as the guest read does
+	// (I-740); the fetch had the same exposure and none of the guard,
+	// which is the likeliest reason the owner's stop took 55 s (I-890).
+	checkMasters(ctx, e, slugsOfJobs(jobs))
+	func() {
+		defer timeSpan("stop: fetch")()
+		runFetches(ctx, jobs)
+	}()
 	pr.Fail()
 	if ctx.Err() != nil {
 		return exitf(ExitInterrupted, "%s", interrupted)
@@ -59,6 +73,23 @@ func fetchBefore(ctx context.Context, e *Env, running []*Project, what, interrup
 		}
 	}
 	return nil
+}
+
+// checkMasters stops any ssh master of these machines that answers
+// `-O check` but not a command, so the fetch that follows connects
+// afresh instead of waiting out its budget on a dead socket. One check
+// per machine, all at once, each inside masterAlive's own short budget.
+func checkMasters(ctx context.Context, e *Env, slugs []string) {
+	defer timeSpan("stop: ssh masters")()
+	var wg sync.WaitGroup
+	for _, slug := range slugs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			masterAlive(ctx, e.target(slug))
+		}()
+	}
+	wg.Wait()
 }
 
 // fetchRepose fetches the checkout's `repose` remote and says what it

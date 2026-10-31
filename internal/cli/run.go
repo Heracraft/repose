@@ -588,7 +588,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 			name = n
 			if othersOpen {
 				pr.Fail()
-				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open; two agents share one working tree. `repose run --worktree` gives the next one its own.\n", agent, mux.Unit())
+				_, _ = fmt.Fprintf(e.ErrOut, "Another %s %s is open in the same working tree.\n", agent, mux.Unit())
 				pr.Resume("Starting "+agent, "")
 			}
 		}
@@ -1025,7 +1025,7 @@ func certRefusalHandler(reissue func() error) func(*sshError) (bool, error) {
 			}
 			return true, nil
 		}
-		return false, exitf(ExitGeneric, "The gateway refused a certificate issued just now (%s). `repose login` (as the account that owns the project) and try again; if it still refuses, an operator may have revoked your certificates.", sshStderrDetail(se.Stderr))
+		return false, exitf(ExitGeneric, "The gateway refused a certificate issued just now (%s). `repose login` as the account that owns the project, and try again.", sshStderrDetail(se.Stderr))
 	}
 }
 
@@ -2286,11 +2286,14 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 
 // runArgs reads `repose run`'s words (DECISIONS I-603): one word is the
 // project, as for attach and sync. Before I-603 the words were the
-// prompt; for one release several words, one with a space in it, or a
-// word beside --project or --name that is not the project they name
-// (`repose run --project X fix`), still are, with a line saying where
-// the prompt went.
-func runArgs(opts *RunOptions, args []string, project string, errOut io.Writer) error {
+// prompt, and for one release several words, one with a space in it, or
+// a word beside --project or --name that is not the project they name
+// (`repose run --project X fix`), still were, with a line saying where
+// the prompt went. I-603 promised that form would stop working in the
+// next release; it kept working for eight (I-888), and what it did
+// instead of refusing was build a machine nobody asked for: `repose run
+// traffic --temp 3hr` made a 24h tmp-jaxr with the prompt "traffic 3hr".
+func runArgs(opts *RunOptions, args []string, project string) error {
 	switch {
 	case len(args) == 0:
 		return nil
@@ -2300,13 +2303,7 @@ func runArgs(opts *RunOptions, args []string, project string, errOut io.Writer) 
 			return positionalProject(opts, w)
 		}
 	}
-	prompt := strings.TrimSpace(strings.Join(args, " "))
-	if opts.Prompt != "" {
-		return cobraUsageError{fmt.Errorf("run takes one PROJECT; put the prompt after -p, quoted")}
-	}
-	opts.Prompt = prompt
-	_, _ = fmt.Fprintf(errOut, "The prompt goes after -p: `repose run -p %s`. This form stops working in the next release.\n", shQuote(prompt))
-	return nil
+	return cobraUsageError{fmt.Errorf("run takes one PROJECT; put the prompt after -p, quoted")}
 }
 
 // positionalProject is the PROJECT of run and sync (I-603): the machine

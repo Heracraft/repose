@@ -1,6 +1,6 @@
 {{define "heading"}}Your seat hold ran out{{end}}
-{{define "body"}}The seat we held for you for 72 hours went to the next person on the list.
+{{define "body"}}The seat we held for you for 72 hours is free again.
 
-{{if .P.Has "position"}}You're number {{.P.Num "position"}} again, at the back. {{else}}You're back on the list. {{end}}We email you when a seat is yours; the next hold is 72 hours too.{{end}}
+{{if .P.Has "position"}}You're number {{.P.Num "position"}} again.{{else}}You're back on the list.{{end}}{{end}}
 {{define "link_label"}}Your place{{end}}
 {{define "link_url"}}{{.Billing}}{{end}}

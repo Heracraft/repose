@@ -181,6 +181,6 @@ The platform updates the base (agents, tools, kernel) most weeks, sooner for a s
 
 Holding has a price: a held project doesn't get what a new base adds. [herdr](/docs/run-and-attach#herdr-instead-of-tmux) arrived in base 2026.10.07, so a project on an older base, held or not yet rebuilt, can't switch to it. `repose run --multiplexer herdr` stops with `todo-app runs base 2026.09.15; herdr needs 2026.10.07 or newer.` Untick the hold and let it update first.
 
-## Keeping a machine awake
+## Keeping a machine from freezing
 
-A machine nobody is using is [frozen](/docs/lifecycle#frozen-machines) until something reaches it. To keep one awake instead, tick **Keep this machine awake** on its Config page; there's no CLI flag for it. It takes effect at once: a machine that is frozen when you tick it wakes.
+A machine nobody is using is [frozen](/docs/lifecycle#frozen-machines) until something reaches it. To keep one out of that, tick **Never freeze this machine** on its Config page; there's no CLI flag for it. It takes effect at once: a machine that is frozen when you tick it wakes.

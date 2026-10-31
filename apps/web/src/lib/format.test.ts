@@ -264,3 +264,18 @@ describe('upLabel and sinceLabel', () => {
 		expect(upLabel(undefined, now)).toBe('up —');
 	});
 });
+
+describe('uptime past two days', () => {
+	// A machine left running for a week read "172h14m" (I-892).
+	const base = Date.parse('2026-10-28T00:00:00Z');
+	const ago = (h: number, m = 0) => new Date(base - (h * 60 + m) * 60_000).toISOString();
+	it('keeps hours and minutes up to two days', () => {
+		expect(uptime(ago(2, 14), base)).toBe('2h14m');
+		expect(uptime(ago(47, 59), base)).toBe('47h59m');
+	});
+	it('rolls to whole days past two', () => {
+		expect(uptime(ago(48), base)).toBe('2d');
+		expect(uptime(ago(74, 30), base)).toBe('3d');
+		expect(uptime(ago(172, 14), base)).toBe('7d');
+	});
+});

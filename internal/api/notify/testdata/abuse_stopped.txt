@@ -2,7 +2,7 @@ Your machine was stopped: a cryptocurrency miner was running
 
 xmrig was running at full CPU on todo-app; the machine was stopped.
 
-Mining is against the terms. If this was not you, an agent or a dependency on the machine did it; look before you start it again.
+Mining is against the terms. Look at the machine before you start it again.
 
 Attach from your laptop
   repose attach --project todo-app
@@ -11,4 +11,4 @@ Open todo-app: https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7
 
 --
 repose. Open the dashboard: https://repose.herakraft.co
-You get these because an agent on your machine reported something. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

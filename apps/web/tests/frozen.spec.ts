@@ -99,10 +99,12 @@ test('a frozen machine is marked in the list and on its page', async ({ page }) 
 	}
 });
 
-// The table replaced `unused` with `frozen` while the stacked row printed
-// both, so a machine that was frozen and unused said it twice on a phone
-// and once on a desktop.
-test('a frozen and unused machine says each thing once at 1440 and at 390', async ({ page }) => {
+// A frozen machine is almost always unused as well, and the row showed
+// both durations: "frozen for 2h29m unused 74h30m" in a 22.5% cell ran
+// the table into its own scrollbar, and the second figure changes
+// nothing the reader does. The freeze is the one shown, at both
+// breakpoints, as the project page already does (I-896).
+test('a frozen and unused machine shows the freeze alone at 1440 and at 390', async ({ page }) => {
 	const api = apiURLFromEnv();
 	const p = await createProject(api, {
 		// A name with neither word in it: the row prints the name and the
@@ -128,22 +130,22 @@ test('a frozen and unused machine says each thing once at 1440 and at 390', asyn
 		await page.goto('/projects');
 		const cell = stateCell(page, p.name);
 		await expect(cell).toContainText('for 42m');
-		await expect(cell).toContainText('unused 26h');
-		expect(await marks(cell)).toEqual({ frozen: 1, unused: 1 });
+		await expect(cell).not.toContainText('unused');
+		expect(await marks(cell)).toEqual({ frozen: 1, unused: 0 });
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.goto('/projects');
 		const stacked = stackedRow(page, p.name);
 		await expect(stacked).toContainText('for 42m');
-		await expect(stacked).toContainText('unused 26h');
-		expect(await marks(stacked)).toEqual({ frozen: 1, unused: 1 });
+		await expect(stacked).not.toContainText('unused');
+		expect(await marks(stacked)).toEqual({ frozen: 1, unused: 0 });
 		await shots(page, 'frozen-list');
 	} finally {
 		await destroyProject(api, p.id);
 	}
 });
 
-test('Keep this machine awake patches the project and sticks', async ({ page }) => {
+test('Never freeze this machine patches the project and sticks', async ({ page }) => {
 	const api = apiURLFromEnv();
 	const p = await createProject(api, {
 		name: 'keep-awake-app',
@@ -177,18 +179,18 @@ test('Keep this machine awake patches the project and sticks', async ({ page }) 
 		});
 
 		await page.goto(`/projects/${p.id}/config`);
-		const box = page.getByRole('checkbox', { name: 'Keep this machine awake' });
+		const box = page.getByRole('checkbox', { name: 'Never freeze this machine' });
 		await expect(box).not.toBeChecked();
 		await box.check();
 		await expect(box).toBeChecked();
 		expect(patched).toEqual([true]);
 
 		await page.reload();
-		await expect(page.getByRole('checkbox', { name: 'Keep this machine awake' })).toBeChecked();
+		await expect(page.getByRole('checkbox', { name: 'Never freeze this machine' })).toBeChecked();
 		await shots(page, 'keep-awake-config');
 
-		await page.getByRole('checkbox', { name: 'Keep this machine awake' }).uncheck();
-		await expect(page.getByRole('checkbox', { name: 'Keep this machine awake' })).not.toBeChecked();
+		await page.getByRole('checkbox', { name: 'Never freeze this machine' }).uncheck();
+		await expect(page.getByRole('checkbox', { name: 'Never freeze this machine' })).not.toBeChecked();
 		expect(patched).toEqual([true, false]);
 	} finally {
 		await destroyProject(api, p.id);

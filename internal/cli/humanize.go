@@ -183,7 +183,7 @@ func notRunningMessage(p *Project) string {
 	case "restoring":
 		return fmt.Sprintf("%s is being restored from a snapshot. `repose status %s` shows when it is done.", s, s)
 	case "destroying":
-		return fmt.Sprintf("%s is being destroyed. `repose run` in its checkout waits for that and creates a fresh %s; `%s` brings the old one back once it is gone.", s, s, restoreHint(s))
+		return fmt.Sprintf("%s is being destroyed. `%s` brings it back once it is gone.", s, restoreHint(s))
 	case "destroyed":
 		return fmt.Sprintf("%s is %s; its last snapshot is kept for 30 days, and `%s` brings it back.", s, p.State, restoreHint(s))
 	case "error":

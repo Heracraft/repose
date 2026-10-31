@@ -3,9 +3,14 @@ export function money(cents: number): string {
 	return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** "2h14m" from a start timestamp to now. Under a minute this is "0m";
- * a line a reader sees goes through `upLabel` or `sinceLabel`, which say
- * "just now" there, as `ageShort` does. */
+/** "2h14m" from a start timestamp to now, and "7d" past two days. Under
+ * a minute this is "0m"; a line a reader sees goes through `upLabel` or
+ * `sinceLabel`, which say "just now" there, as `ageShort` does.
+ *
+ * It ran to hours without limit, so a machine left running for a week
+ * read "172h14m" and one unused for three days "unused 74h30m". The
+ * minutes of the fourth hour of the seventh day are not what either
+ * line is for, and the CLI's UP cell rolls the same way (I-892). */
 export function uptime(startedAt?: string, now = Date.now()): string {
 	if (!startedAt) return '—';
 	const ms = now - new Date(startedAt).getTime();
@@ -13,6 +18,7 @@ export function uptime(startedAt?: string, now = Date.now()): string {
 	const totalMinutes = Math.floor(ms / 60_000);
 	const hours = Math.floor(totalMinutes / 60);
 	const minutes = totalMinutes % 60;
+	if (hours >= 48) return `${Math.floor(hours / 24)}d`;
 	if (hours === 0) return `${minutes}m`;
 	return `${hours}h${minutes}m`;
 }

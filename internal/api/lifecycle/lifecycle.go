@@ -222,7 +222,7 @@ func Start(ctx context.Context, tx db.Tx, d Deps, u *store.User, projectID uuid.
 // the api once it does (DECISIONS I-645); restoring a snapshot elsewhere
 // would lose up to a day of work.
 func UnreachableMessage(slug string) string {
-	return fmt.Sprintf("%s's server is not answering; machines that were running on it start again by themselves when it is back, and `repose start %s` works then", slug, slug)
+	return fmt.Sprintf("%s's server is not answering; machines that were running on it start again when it is back", slug)
 }
 
 func stateRefusal(p *store.Project) *Refusal {

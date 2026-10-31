@@ -26247,3 +26247,417 @@ The explicit `pauseIdle = true` in `prod.nix` and `host-stg-01.nix` is
 left in place rather than deleted. A production host's most expensive
 behaviour should be visible where someone reads that host's
 configuration, not inferred from a module default two files away.
+**I-888. `repose run` refuses what it used to guess: the old prompt form
+is gone, and a duration spelled with a word after `--temp` is an error.**
+(cli triage round 2, 2026-10-28; owner transcript. Amends I-603, I-631.)
+
+I-603 made `run`'s one word the PROJECT and kept the old form -- several
+words, or one with a space in it -- working "for one release", with
+``The prompt goes after -p ... This form stops working in the next
+release.`` on stderr. It shipped in v0.1.33 and was still there at
+v0.1.41, eight releases later. What it did instead of refusing was build
+a machine nobody asked for:
+
+```
+$ repose run traffic --temp 3hr
+The prompt goes after -p: `repose run -p 'traffic 3hr'`. ...
+Created tmp-jaxr (large, temporary until Oct 20 17:02)
+```
+
+The owner asked for a 3-hour machine called `traffic` and got a 24-hour
+one called `tmp-jaxr` running the prompt "traffic 3hr". Two faults
+compound. `--temp` has `NoOptDefVal`, so pflag never consumes the word
+after it and `resolveTempFlag` scans the arguments for a duration; I-631
+had narrowed the units to `s m h d w` so that `run 1password --temp`
+keeps working, which makes `3hr` not a duration, so it was left as a
+positional and the 24-hour default stood **with no error**. Then
+`runArgs` found two leftover positionals and the legacy branch swallowed
+them as a prompt.
+
+Both are closed. `runArgs`'s fall-through is now
+``run takes one PROJECT; put the prompt after -p, quoted`` (exit 2), the
+message it already gave beside `-p`. And `looksLikeDurationTypo` is an
+allow-list of unit **words** (`hr hrs hour hours min mins minute minutes
+sec secs second seconds day days wk wks week weeks`) routed to
+`parseTempDuration`, so `--temp 3hr` exits 2 naming `3h`. It must stay an
+allow-list: `^[0-9]+[smhdw][a-z]+` would swallow the project `3dprint`,
+which I-631 exists to protect, and `2fa`, `1password` and `3dprint` are
+still project names.
+
+*Rejected.* Keeping the heuristic behind a config key: it is the shape
+that produced the machine. Making every unmatched word after `--temp` an
+error: that is I-631's rule, and `repose run --temp 2x` making a project
+called `2x` is documented and wanted.
+
+*Not changed.* A PROJECT that names nothing still **creates** it -- that
+is I-603's contract and how a second machine for a checkout is made, and
+it is what the owner wanted when they typed `boilerplate`. The earlier
+report that a nonexistent name attached the checkout's own machine was a
+CLI older than v0.1.34; `resolveForRun` has not done that since.
+
+**I-890. `repose stop` checks the ssh master before it fetches, waits 15
+seconds rather than 60, and says where its time went.** (cli triage round
+2, 2026-10-28; owner transcript. Amends I-615.)
+
+Two stops the owner timed took 21 s and 55 s. I-710 already moved the
+snapshot and the shutdown off the terminal (measured at 1.6 s to return),
+so neither is in that time: of what I-710 left in the foreground, the
+`git fetch repose` of I-615 held the largest budget by far, 60 s.
+
+The mechanism is one I-740 already found and fixed **somewhere else**. The
+fetch runs with `-F` the CLI's own ssh config, which sets `ControlMaster
+auto` and `ControlPersist 10m`. A master whose connection died (the laptop
+slept) still answers `ssh -O check`, so a new connection over its socket
+hangs for the whole budget. I-740's own words: "a ControlPersist master
+that answers `-O check` but whose connection died would hold the read for
+the whole 15 s, so the read calls `masterAlive` first (I-491), which stops
+a dead master". `guestStatusWithin` does that; `fetchRepose` had the same
+exposure, four times the budget and none of the guard. `--unused` was
+worse again: it skips `startStopProbes` entirely, so nothing touched ssh
+before the fetch.
+
+`fetchBefore` now calls `masterAlive` once per machine, all at once,
+before `runFetches`, and `stopFetchTimeout` is 15 s -- the budget the
+guest read beside it already takes. A minute of a stop the user is
+watching is not worth commits that are in the snapshot either way.
+
+The stop path also had **one** timing line in it, so a 55-second stop
+could not be attributed from the user's side at all while `run` and
+`sync` are instrumented throughout. It now has spans for the fetch, the
+ssh masters, the resolve, the probe, the enqueue and the engine pickup.
+
+*Not done, and worth doing.* The stop already knows whether there is
+anything to fetch -- the probe returns `gitRow.NotOnLaptop` -- but it
+fetches at `lifecycle.go:221`, before `probeBeforeStop` reads it at
+`:323`. Gating the fetch on that would make the common case free. It
+changes observable behaviour (no fetch, so no ref update, when the probe
+says nothing is new) and depends on the probe succeeding, so it wants its
+own entry and a measurement rather than being folded in here.
+
+**I-892. A laptop folder reads as the user spells it, and the UP cell
+rolls to days.** (cli triage round 2, 2026-10-28; owner transcript.)
+
+The owner's stop printed
+
+```
+Fetched 10 commits on repose/main and 11 on repose/nuru-platform in ~//home/agustus/Documents/projects/teksafari/nuru-wasm.
+```
+
+`fetchedLine` and `fetchFailure` formatted a **laptop absolute path**
+with `tildePath`, which is the *guest's* spelling and takes a name
+relative to the guest's home, so it prepended `~/` to a path that already
+began with `/`. `laptopPath` replaces it: `~/code/api` under the home
+folder, the path itself anywhere else. `displayConfigTOML` already had
+that logic inline and now shares the one spelling.
+
+The test could not catch it: `confirm_test.go` asserted the output
+against `tildePath(root)`, the same function the line used, so it passed
+while printing `~//tmp/Test...`. It now spells the expected string out and
+fails on a doubled slash.
+
+Separately, `UP` and the dashboard's `up`/`unused` ran to hours without
+limit: a machine left running a week read `172h14m`, and a long-unused
+one `unused 74h30m`. Both roll to whole days past two, as `idleFor`
+already did.
+
+**I-894. The messages say the thing once and stop.** (cli triage round 2,
+2026-10-28; owner transcript, every user-facing string read. Applies
+I-484 and I-485; amends I-633.)
+
+The owner flagged one line as longer than it needed to be --
+
+> Could not start partition-poster: the host has no free memory for a
+> machine this size; a machine holds its memory while it runs, so
+> stopping one frees room (insufficient_capacity).
+
+-- and asked for the others, found by reading every message rather than
+by grepping for a pattern. Thirty-five were read as breaking the rule;
+the ones changed here fall into five shapes:
+
+- *A mechanism the reader did not ask about.* The capacity line teaches
+  memory accounting to justify its own lever; the lever alone is what
+  they act on. Now "the host has no free memory for a machine this size;
+  stopping a running machine frees room".
+- *A next command after a success* (I-484). `Added the git remote repose:
+  \`git fetch repose\` brings the machine's commits to this checkout.` is
+  now `Added the git remote repose.` -- the fork path in the same file
+  already did it that way. It had passed the `TestSuccessOutputNamesNoCommand`
+  gate only because the command it named was `git`, not `repose`.
+- *A footer explaining the list under it.* `repose scan`'s install model,
+  `repose secrets`' "so into its snapshots and forks", the bridge's
+  "Pages the agents open are listed below".
+- *The same fact twice, or in three wordings.* The three waitlist emails
+  each restated the 72-hour hold and what lapsing does; the rule is now in
+  `waitlist_joined` alone. The `why` footer under agent email said "You
+  get these because an agent on your machine reported something" three
+  ways beside an unsubscribe link that explains itself; all three are now
+  "About agents on your machines."
+- *Reassurance and speculation.* "We have been alerted" was removed by
+  I-623; "try again shortly", "any time", "an operator may have revoked
+  your certificates", "If this was not you, an agent or a dependency did
+  it" are the same thing in other words.
+
+*Amends I-633,* which required a refusal to name the command the user
+typed. The only place the verb appeared was inside the clause explaining
+what the sync *would have done* -- "so `repose run other` here would sync
+one repository into the other's machine" -- which is the mechanism this
+entry cuts. The refusal now gives the three facts and the two ways on:
+"other is the project for github.com/someone/else, not for this checkout
+(/path). `repose attach other` gets you onto it; another name makes a new
+machine here."
+
+*Kept, against the pattern.* "stopping a machine does not free pool
+space" on the thin-pool refusals: it is a mechanism, but it pre-empts the
+one wrong action every other capacity message trains the reader into.
+"Your machines keep running and starting" in `disk_over_plan`: read as
+reassurance in the audit and cut, then put back when the test that
+guards it failed. It sits beside an assertion that no machine was
+stopped for the disk, and `billing_stopped` and `egress_stopped` *do*
+stop machines, so without it the reader's obvious inference from "are
+refused" is the wrong one. Reassurance that rules out a wrong inference
+is a fact. The paragraph of accounting under it ("A deleted file stops
+counting within a day") stayed cut: the "Your plan" link carries it.
+`mcpforward`'s shell-startup diagnosis, the longest error in the CLI: the
+second clause is the only diagnosis there is, and the reader is stuck.
+The `(insufficient_capacity)` code after the English: the English is for
+the reader, the code for a ticket and a grep.
+
+*The gate that did not catch any of this.* `quiet_success_test.go`
+catches a repose command named on a success path and a fixed list of
+phrases. It does not catch length, mechanism-explaining, or saying a fact
+twice, and nothing does. No new gate is added here -- the ones that
+exist were written after specific incidents and each catches its own --
+but the audit itself should be repeated, not automated.
+
+*Privacy.* Every message in `internal/cli` and `internal/api` and all 20
+email templates were read against the "Never log what a tenant typed"
+rule. No violation. Two places defend it on purpose: `sshLabel` collapses
+any remote command with a newline, `;`, `|`, `&` or over 40 characters to
+`script(%dB)`, so a prompt cannot reach `-v`; and the credential carriers
+report counts, never keys or values.
+
+**I-896. /projects shows what is running, one duration a row, and no
+head that repeats the control above it.** (dash triage, 2026-10-28; owner
+notes. Amends I-826 and I-841.)
+
+Five faults on one page, all of them the same mistake in different
+places: the page said more than the reader asked for.
+
+- *Running was not a filter.* `RECENT_STOPPED` was 5, so the view chosen
+  to exclude stopped machines drew five of them, and `effectiveFilter`
+  forced any account of 8 or fewer projects to `all` with **no toolbar
+  drawn**, so a small account could not choose at all. `RECENT_STOPPED` is
+  0 and the short-list short-circuit is gone. The filter control is drawn
+  whenever a machine is at rest, since it is now the only way to them, and
+  `resting` is counted under every filter rather than only under Running
+  -- computing it only there took the toolbar away the moment the reader
+  pressed Stopped and left them with no way back. Running with **nothing**
+  running draws the stopped list rather than an empty page.
+- *The band head repeated the control.* "Stopped" was absent under Stopped
+  only by accident: that view draws one band, so the page-wide `heads`
+  was false. Under Running the head read "Running" below a control marked
+  Running. The head is now per band and suppressed where it matches the
+  filter. "Needs you" always keeps its head, because no filter names it.
+  The phone list's `aria-labelledby` follows the same value, or it would
+  point at an id that is not rendered.
+- *Two durations in one cell.* I-826 ruled that the unused line still
+  prints beside the freeze, "each fact once, neither hiding the other".
+  Read at size, in a 22.5 percent column, "frozen for 2h29m unused
+  74h30m" ran the row into the table's own horizontal scrollbar, and the
+  second figure changes nothing the reader does: a frozen machine is
+  almost always unused. The freeze is shown alone, as
+  `ProjectMeta` already did on the project page.
+- *Nothing clipped.* The table is `table-layout: fixed` with percentage
+  columns and `white-space: nowrap` content, and no cell had `overflow`
+  or `text-overflow`, so anything wider than its share spilled into the
+  next cell and pushed the table into a sideways scroll -- which also gave
+  it a stray tab stop through `tabStopWhenScrolls`. State, Size, Agents
+  and Disk clip now; the name's cell is left alone because the focus ring
+  and the frost are children of it. `.premote`'s `max-width: 22rem` was
+  wider than the name column below a 980px container, so its ellipsis
+  never fired; it is `100%`. The agent chips' gap goes 0.75rem to 0.5rem.
+- *The frost's rounded foot.* It took the hover fill's small radius, so a
+  list of frozen projects read as a stack of rounded cards rather than
+  rows of a table. Square. A frozen row also gets 1.25rem of bottom
+  padding, because the frost is 18px tall at the row's foot and 14px of
+  clearance put it into the text.
+
+`projects-many.spec.ts` gains the `shots()` helper `frozen.spec.ts`
+already had, so this page is captured at 1x at 1440 and 390 in both
+schemes. Judged there: the 150-project account draws four rows.
+
+**I-898. The word is freeze, not awake.** (dash triage, 2026-10-28; owner
+notes. Applies I-683.)
+
+I-683 settled that a user reads "frozen" for a machine the api has
+paused, and the CLI, the dashboard and the docs all say so. The one
+switch that turns it off said "Keep this machine awake", which asks the
+reader to hold a second model of the same mechanism. It is **Never freeze
+this machine**; the toast, the Config page's docs heading, `lifecycle.md`,
+`machine.md`, `features/stop-start-destroy.md` and the CLI's `setup:`
+word ("kept awake" to "never frozen") follow it. The wire field stays
+`keep_awake`: renaming it would break every client for a word nobody
+sees.
+
+**I-900. A project keeps seven snapshots, which is what the docs have
+always said.** (cli triage round 2, 2026-10-28; owner transcript.)
+
+The owner: "stopping a guest that ran for like 4 mins and did nothing
+still snapshots the whole disk. Our storage costs are gonna go
+parabolic!" The snapshot itself is already as small as it gets without
+incremental uploads -- I-164's extent format reads only blocks the
+filesystem says are in use and skips all-zero pieces -- but the number
+kept was unbounded, and that is where the figure comes from.
+
+R4-11, `features/snapshots.md` and `PRICING.md` all promise "Seven daily
+snapshots per project ... Manual snapshots count toward the seven" and
+"the retention is fixed". `expiredWhere` enforced only a **window**:
+`taken_at < now() - 7 days`, with no count, no `LIMIT` and no per-day
+cap. `max_snapshots`, `MaxSnapshots`, `snapshotLimit` and `KeepN` have
+zero hits anywhere in `internal/`. So a project stopped ten times a day
+held seventy full images against a promise of seven, and `stop` is the
+one snapshot a user can fire at will. At I-710's own measured sizes (480
+MB, 2.7 GB, 3.8 GB) that is tens of GB per project.
+
+This is I-809 one layer down. That entry found `markDestroyed` setting
+`expires_at` on *every* live snapshot of a destroyed project, "seven
+times the bytes" its public line promised, and capped the destroy path to
+one. The live path still had no cap at all.
+
+`MaxPerProject` is 7 and `expiredWhere` retires a snapshot of a live
+project that is older than `Retention` **or** has `MaxPerProject` newer
+live non-fork snapshots of the same project, keeping the newest-snapshot
+and `restoring_op_id` guards. The count is a correlated subquery rather
+than a window function so the fragment stays a bare `WHERE` that both the
+candidate query and the locked re-check can embed. Fork snapshots are not
+counted and not retired by the cap: they expire on their own `expires_at`
+(I-703) and are not a project's dailies.
+
+Per `CLAUDE.md`, code that disagrees with a doc is the thing that is
+wrong, so this is the code being brought to the doc rather than a change
+of promise. The entry exists because it changes what a busy project can
+restore in practice.
+
+*Still deferred, and now the dominant cost.* There is no dirty or
+change detection anywhere: `thin_delta`, `thin_dump`, `dm_thin` and
+`CBT` have no hits in product code, and `features/snapshots.md` lists
+"Incremental uploads (block-level deltas between snapshots)" under
+Deferred. A guest that ran four minutes and changed nothing still
+re-uploads its whole used set. The design is written and unadopted in
+`proposals/2026-10-01-snapshot-speed.md` §3, down to the two blob
+strategies and the fact that `RPSXT001` is already a versioned magic.
+With the cap in place the bill is bounded by seven copies rather than
+seventy; making those seven cheap is the next piece of work and wants
+the owner's call on the proposal.
+
+**I-902. An expired waitlist hold cools down before its turn comes
+round.** (api triage, 2026-10-28; owner report. Amends I-290 and
+I-294 (4).)
+
+The owner: "there is an infinite loop bug with waitlists -- if I am the
+only one in the waitlist, once my hold runs out, I immediately get
+invited again."
+
+Real, and the two decisions that produce it are each right on their own.
+I-290 moves a hold that runs out unconverted to the back of the list
+(`joined_at = now`, `expired_invites + 1`) so a ghost cannot block the
+queue; I-294 (4) runs expiries before invitations in the same tick. With
+one candidate the back of the list is also its front, so one minute:
+expires the hold and raises `waitlist_expired`; counts the seat it just
+released as `Free`; counts the same user as `Waiting`; invites them and
+raises `waitlist_invited`. Two contradictory emails in the same minute,
+every 72 hours, with nothing able to end it.
+
+I-290 had already rejected the two obvious answers -- holding the seat
+for ever blocks the queue, and dropping the user loses them ("three days
+is enough to read one email, but a launch weekend is not a reason to lose
+them"). A cooldown is neither. `waitlist.cooldown_until` (migration 0031)
+is set by `expire` to 24 hours out; `ListWaiting` and `count`'s `Waiting`
+skip a cooling row. The user keeps their place and still reads it --
+`position` is unchanged, so the expiry email still says what number they
+are -- they are only not picked. Asking again clears it (`join`, so a
+checkout or `POST /billing/waitlist`), because the cooldown exists for
+silence and a user who comes back has answered; so does `inviteTx`, so an
+operator's `repose-admin waitlist admit HANDLE` (I-294 (5)) still
+overrides everything.
+
+The expiry email dropped "went to the next person on the list", which
+with one waiting user was not true, and the restated 72-hour rule
+(I-894).
+
+*Why no test had it.* `TestSeatsWaitlistAndInvitations` covers the
+two-user handover and asserts `invited 1 expired 1` in one tick on
+purpose -- that is the behaviour that is right. Only `Waiting == 1`
+reaches the loop and no case had one.
+`TestLoneWaiterIsNotReInvitedByItsOwnExpiry` does; with the filter
+removed it fails with exactly the owner's symptom.
+
+**I-906. The snapshot sweep skips a live upload, and runs on every
+reconcile.** (hostd triage, 2026-10-28.)
+
+`sweepStaleSnapshots` removes every `snap-*` and `fp-*` volume, on the
+rule "at start no snapshot is in flight, so every one is an orphan"
+(I-68). That rule was read as true on **every** reconcile, and
+`Reconcile` is reachable while a snapshot is in flight: the operator's
+`POST /reconcile`, and the one hostd runs after a thaw with its own
+upload goroutines still streaming. The sweep could pull the volume out
+from under its own upload.
+
+The manager now marks the volumes it is taking or uploading, from the
+moment `takeSnapshotAs` names one until after `uploadSnapshot`'s
+`RemoveVolume`, and the sweep skips what is marked. A mark cannot outlive
+the process holding it, so after a hostd that died there is nothing
+marked and the sweep still takes everything, which is what I-68 wanted.
+
+That makes it safe to run every time rather than only at start, which is
+the other half: a `RemoveVolume` that failed was logged once and left,
+and a thin snapshot kept behind accrues pool blocks for as long as the
+origin diverges from it, with nothing to come back for it on a hostd that
+never restarts.
+
+**I-908. An agent checks a secret by its file, not by its environment
+variable.** (guest triage, 2026-10-28; owner question.)
+
+The owner asked whether agents should have "a simple and secure way to
+verify that a given secret has been added and exists", after watching one
+resort to `cat`-ing a task output file and `[ -n "${CITEBOOK_TOKEN:-}" ]`.
+
+They already have one, and the agent guide was pointing at the wrong
+thing. `/run/repose/secrets` is tmpfs, mode 0700 `dev`, files 0400 `dev`,
+and `removeStale` keeps it exactly equal to the current set, so
+`[ -e /run/repose/secrets/NAME ]` is the authoritative answer and opens no
+value. `ops/checks/secrets.sh` already uses that test.
+
+The guide said to use `[ -n "${NAME:-}" ]`, which answers a different
+question and gets it wrong both ways: true for a value the agent or an
+`.envrc` set itself, which I-475 deliberately preserves, and false in a
+process started before the secret was, since the refresh comes through
+`BASH_ENV`. The guide and `/docs/secrets` now name the file test and say
+why.
+
+No new surface. A `repose-guest-profile secrets` subcommand was
+considered and dropped: it is a contract to maintain for something the
+filesystem already answers, and it would need its own entry in
+`guest-conventions.md`.
+
+**I-910. A snapshot's blob path carries microseconds, because it is the
+whole of its uniqueness.** (hostd triage, 2026-10-28.)
+
+`BlobPath` is `<user_id>/<project_id>/<ts>.img.zst` with the timestamp at
+millisecond resolution, and nothing else distinguishes two snapshots of
+one project. Two taken in the same millisecond wrote the **same blob**,
+and the second overwrote the first with no error anywhere: a
+`StopGuest{snapshot_first}` followed at once by a manual `Snapshot` does
+exactly that. The api is then holding two snapshot rows against one blob,
+so the expiry retiring either takes the other's bytes with it and the
+survivor cannot be restored -- a silent loss of a snapshot the user can
+see listed.
+
+Microseconds. Paths are stored per snapshot, so the ones already written
+keep working.
+
+Found because `TestSnapshotRestoreRoundTrip` fails on `main` whenever the
+whole `internal/hostd/guest` package runs -- the stop's snapshot and the
+manual one land in the same millisecond and the blob count does not grow
+-- and passes when run alone, which is why it read as flake rather than
+as the bug it is reporting.

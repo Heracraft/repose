@@ -2,10 +2,10 @@ Your machines were stopped: a payment failed
 
 Your payment has been failing for three days, so todo-app was snapshotted and stopped.
 
-Each machine was snapshotted before it stopped. A payment brings the account back; your machines start again when you start them.
+Each machine was snapshotted before it stopped. A payment brings the account back.
 
 Your plan: https://repose.herakraft.co/billing
 
 --
 repose. Open the dashboard: https://repose.herakraft.co
-You get these because an agent on your machine reported something. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def

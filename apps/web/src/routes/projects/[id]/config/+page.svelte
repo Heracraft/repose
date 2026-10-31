@@ -307,8 +307,13 @@
 	}
 
 	// Effective at once: a machine already frozen is woken by the api, and
-	// one that is awake is not frozen again while this is ticked (I-818).
-	// The checkbox follows the project, as the two above it do.
+	// one that is running is not frozen again while this is ticked
+	// (I-818). The checkbox follows the project, as the two above it do.
+	//
+	// The label says freeze, not awake: "frozen" is the word a user
+	// reads for this everywhere else (I-683), and "awake" asked them to
+	// hold a second model of the same mechanism (I-898). The wire field
+	// stays keep_awake.
 	async function toggleKeepAwake(box: HTMLInputElement) {
 		if (!project) return;
 		const next = box.checked;
@@ -317,7 +322,7 @@
 			project = await patchProject(id, { keep_awake: next });
 		} catch (err) {
 			box.checked = !!project.keep_awake;
-			toastApiError(err, 'Could not change whether this machine is kept awake.');
+			toastApiError(err, 'Could not change whether this machine is kept from freezing.');
 		} finally {
 			keepAwakeSaving = false;
 		}
@@ -379,7 +384,7 @@
 					disabled={keepAwakeSaving}
 					onchange={(e) => void toggleKeepAwake(e.currentTarget)}
 				/>
-				Keep this machine awake
+				Never freeze this machine
 			</label>
 		</div>
 	</div>

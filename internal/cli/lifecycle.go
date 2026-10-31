@@ -147,6 +147,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	}
 	var projects []*Project
 	var err error
+	resolved := timeSpan("stop: resolve")
 	if o.Idle {
 		projects, err = idleProjects(ctx, e)
 		if err == nil && len(projects) == 0 {
@@ -156,6 +157,7 @@ func StopProjectsCmd(ctx context.Context, e *Env, o StopOptions) error {
 	} else {
 		projects, err = resolveProjects(ctx, e, o.Projects)
 	}
+	resolved()
 	if err != nil {
 		return err
 	}
@@ -320,20 +322,26 @@ const stopPickupWait = 10 * time.Second
 func stopBegin(ctx context.Context, e *Env, project *Project, snapshot bool) stopResult {
 	var r stopResult
 	started := time.Now()
+	probed := timeSpan("stop: probe")
 	left := probeBeforeStop(ctx, e, project)
+	probed()
 	var opID string
+	enqueued := timeSpan("stop: enqueue")
 	r.err = retryOnOpConflict(ctx, func() error {
 		var err error
 		opID, err = e.Client.StopProject(ctx, project.ID, snapshot)
 		return err
 	})
+	enqueued()
 	if r.err != nil {
 		return r
 	}
 	r.accepted = true
 	closeMaster(ctx, e, project.Slug)
 	saveStopLeft(e.Dir, project.ID, left, time.Now())
+	pickedUp := timeSpan("stop: pickup")
 	op, err := waitStopTaken(ctx, e, project.ID, opID)
+	pickedUp()
 	if err != nil {
 		r.err = err
 		return r
@@ -888,7 +896,7 @@ func destroyOne(ctx context.Context, e *Env, project *Project, wait, asked bool,
 		}
 		if time.Now().After(deadline) {
 			pr.Fail()
-			r.err = exitf(ExitGeneric, "The destroy of %s finished, but the project is still listed (%s). `repose status %s` shows it; %s", p.Slug, stateWords(p.State), p.Slug, retry)
+			r.err = exitf(ExitGeneric, "The destroy of %s finished, but the project is still listed (%s). %s", p.Slug, stateWords(p.State), retry)
 			return r
 		}
 		if err := sleepOrDone(ctx, pollDelay(polled)); err != nil {

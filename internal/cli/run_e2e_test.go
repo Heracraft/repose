@@ -260,7 +260,7 @@ func TestRunWorktreeThenPlainRun(t *testing.T) {
 
 	errOut.Reset()
 	wantLoginRefusal(t, runRun(ctx, f.env, RunOptions{Name: testSlug, Agent: "claude", Prompt: "try it another way", NoAttach: true}, false), "claude-2")
-	if !strings.Contains(errOut.String(), "Another claude window is open; two agents share one working tree. `repose run --worktree` gives the next one its own.") {
+	if !strings.Contains(errOut.String(), "Another claude window is open in the same working tree.") {
 		t.Fatalf("stderr lacks the shared-tree warning: %s", errOut.String())
 	}
 	pwd, err = runSSH(ctx, f.target, "tmux display -p -t "+testSlug+":claude-2 '#{pane_current_path}'", nil)

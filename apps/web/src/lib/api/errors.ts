@@ -40,7 +40,7 @@ export function isApiError(e: unknown, code?: ErrorCode): e is ApiError {
 export function errorText(err: unknown, fallback: string): string {
 	if (err instanceof ApiError) {
 		if (err.code === 'internal')
-			return `${fallback} The API failed on its side; try again shortly.`;
+			return `${fallback} The API failed; try again.`;
 		return projectLimitText(err) ?? err.message;
 	}
 	if (err instanceof NetworkError) return 'Cannot reach the API.';

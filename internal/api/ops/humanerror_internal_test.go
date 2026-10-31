@@ -72,7 +72,7 @@ func TestCapacitySaysWhichKindAndWhatWorks(t *testing.T) {
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%q\n got: %q\nwant it to contain: %q", c.msg, got, c.want)
 		}
-		if saysStopping := strings.Contains(got, "stopping one frees room"); saysStopping != c.lever {
+		if saysStopping := strings.Contains(got, "stopping a running machine frees room"); saysStopping != c.lever {
 			t.Errorf("%q: says stopping frees room = %v, want %v\n got: %q", c.msg, saysStopping, c.lever, got)
 		}
 		// I-623 removed "(We have been alerted.)" everywhere, and that

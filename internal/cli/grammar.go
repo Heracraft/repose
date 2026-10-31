@@ -71,19 +71,13 @@ func displayConfigTOML() string {
 	if base := os.Getenv(envXDGConfigHome); base != "" {
 		dir = filepath.Join(base, "repose")
 	}
-	p := filepath.Join(dir, "config.toml")
-	if home, err := os.UserHomeDir(); err == nil {
-		if rel, err := filepath.Rel(home, p); err == nil && !strings.HasPrefix(rel, "..") {
-			return "~/" + filepath.ToSlash(rel)
-		}
-	}
-	return p
+	return laptopPath(filepath.Join(dir, "config.toml"))
 }
 
 // setupLine is `repose status`'s line for the settings a flag or the
 // dashboard made that differ from a new project's (DECISIONS I-622): the
 // agent `run -p` starts, machine.nix kept off, base updates held, the
-// machine kept awake. ""
+// machine never frozen. ""
 // when every one is the default.
 func setupLine(p *Project, defaultAgent string) string {
 	var parts []string
@@ -105,7 +99,9 @@ func setupLine(p *Project, defaultAgent string) string {
 	// Held awake: the api never freezes it while idle (I-820). Set on
 	// the Config page, as base updates are.
 	if p.KeepAwake {
-		parts = append(parts, "kept awake")
+		// "never frozen", not "kept awake": frozen is the word for this
+		// everywhere a user reads it (I-683, I-898).
+		parts = append(parts, "never frozen")
 	}
 	if len(parts) == 0 {
 		return ""

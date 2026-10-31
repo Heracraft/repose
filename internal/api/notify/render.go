@@ -319,7 +319,7 @@ func Render(m Message) (Rendered, error) {
 		return Rendered{}, err
 	}
 	if c.Why == "" {
-		c.Why = "You get these because an agent on your machine reported something."
+		c.Why = "About agents on your machines."
 	}
 	if c.Heading, err = block(t, "heading", d); err != nil {
 		return Rendered{}, err

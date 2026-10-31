@@ -63,8 +63,13 @@
 	.chips {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.75rem;
+		/* Was 0.75rem, which with two mono names, their dots and a "+N"
+		   ran past 19% of a 600px column and spilled over Disk (I-896). */
+		gap: 0.5rem;
+		max-width: 100%;
+		min-width: 0;
 		white-space: nowrap;
+		overflow: hidden;
 	}
 	.chip {
 		display: inline-flex;

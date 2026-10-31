@@ -14,6 +14,12 @@ ID                                    TAKEN             SIZE    REASON
 0199a0f1-8e22-7c01-a3b4-1d2e3f405162  2026-09-16 22:14  2.0 GB  stop
 01999c9b-1a07-7d55-8e66-0f1a2b3c4d5e  2026-09-16 03:00  1.9 GB  scheduled
 
+$ repose snapshots list            # from ~, which is no project (I-904)
+PROJECT               ID        TAKEN             STORED  REASON
+todo-app              4c5e6f7a  2026-09-17 03:00  2.1 GB  scheduled
+api                   1d2e3f40  2026-09-17 03:00  3.4 GB  scheduled
+spike (destroyed)     0f1a2b3c  2026-09-16 19:02  1.1 GB  stop
+
 $ repose snapshots create
 Snapshot 0199a1c2-3f40-7b8e-9d21-4c5e6f7a8b90 of todo-app taken in 41s (1.9 GB).
 
@@ -69,7 +75,12 @@ Taking (DECISIONS R3-6):
 Retention (DECISIONS R4-11):
 
 - Seven daily snapshots per project, oldest deleted after the newest
-  succeeds, never before. Manual snapshots count toward the seven.
+  succeeds, never before. Manual snapshots count toward the seven, and
+  so do a busy project's stop snapshots: the count is enforced as well
+  as the seven-day window since I-900, which is what keeps a project
+  stopped ten times a day to seven images rather than seventy. A fork's
+  own snapshot is not one of the seven and expires on its own
+  `expires_at` (I-703).
 - After `destroy`, the last snapshot is kept 30 days and listed under
   "Recently destroyed" in the dashboard and in `repose ls
   --destroyed`; `repose restore <name>` (or the dashboard's Restore)

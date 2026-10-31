@@ -41,7 +41,14 @@ With no free seat in the fleet, "Choose" answers `503 waitlisted`:
 `repose is full right now. You're number 3 on the waitlist; we'll email
 you@example.com when there's a seat.` The user is on the waitlist from
 then on and gets one email when a seat is theirs, held for 72 hours
-(DECISIONS I-290).
+(DECISIONS I-290). A hold that runs out unconverted moves the user to
+the back of the list and starts a 24-hour cooldown, during which they
+keep their place and read it but are not a candidate: with one person
+waiting, the back of the list is also its front, and the tick that
+expired the hold used to hand it straight back, every 72 hours, for
+ever (I-902). Asking again (`POST /billing/waitlist`, or a checkout)
+clears the cooldown, and so does an operator's `repose-admin waitlist
+admit HANDLE`.
 
 ## What the plan buys
 
