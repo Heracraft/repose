@@ -32,7 +32,12 @@ func TestBlobPathSeparatesSnapshotsInOneMillisecond(t *testing.T) {
 	}
 	// The same instant is the same path, so a retry of one snapshot
 	// overwrites its own bytes rather than leaving a second blob.
-	if BlobPath(g, base) != BlobPath(g, base) {
-		t.Fatal("BlobPath is not a function of its arguments")
+	// Through variables, because staticcheck reads the two calls as one
+	// expression (SA4000) and the point here is that they are not: a
+	// BlobPath made unique with a counter or a random suffix would pass
+	// the collision test above and fail this one.
+	again, andAgain := BlobPath(g, base), BlobPath(g, base)
+	if again != andAgain {
+		t.Fatalf("BlobPath is not a function of its arguments: %q then %q", again, andAgain)
 	}
 }
