@@ -22,22 +22,45 @@ ops/dev/operator-cert.sh <control>           # 8h Host-CA cert next to ~/.ssh/id
 woker-1 has no WireGuard interface and no route to 10.255.0.0/16, so it
 reaches a host through the edge's sshd. This block in `~/.ssh/config` is
 what makes `ssh host-01` and `ssh-ng://host-01` ("Switch a host to main")
-work there; `HostKeyAlias` is the host's VNet address, under which its key
-is known:
+work there:
 
 ```
 Host host-01
   HostName 10.255.0.2
   User root
   ProxyJump root@<edge ip>:2222
-  HostKeyAlias 10.200.1.4
 
 Host host-02
   HostName 10.255.0.4
   User root
   ProxyJump root@<edge ip>:2222
-  HostKeyAlias <its VNet address>
 ```
+
+**No `HostKeyAlias`** (DECISIONS I-916). This block used to pin one to
+the host's VNet address, on the reasoning that the key is first recorded
+there during the install. A VNet address is the wrong thing to pin an
+identity to: the record under it is written once at bootstrap and nothing
+rewrites it, so a host whose `/etc/ssh` keys are regenerated after that
+keeps answering with keys the alias does not know, for ever. host-01 did,
+and the alias named a key pair that was not its. The WireGuard address in
+`HostName` is the stable one -- it is the address the host is reached at
+for the rest of its life, and the record under it is written by the
+connection that uses it.
+
+If you meet `REMOTE HOST IDENTIFICATION HAS CHANGED` on a host, **do not
+clear the entry**. That warning is what a man-in-the-middle looks like,
+and clearing it on a hunch is how an operator trains themselves past the
+one alarm that matters. Check which record is wrong first:
+
+```
+ssh -o HostKeyAlias=10.255.0.2 host-01 'for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done'
+ssh-keygen -F 10.255.0.2 -f ~/.ssh/known_hosts     # what is recorded there
+```
+
+Overriding the alias to the `HostName` verifies against a record already
+in `known_hosts` and grants no new trust. If the two fingerprints agree,
+the stale record is the alias's and this block is what to fix. If they do
+not, stop and treat it as an incident.
 
 host-02 is 10.255.0.4, not .3: `hostmgr.allocate` steps over the address
 the monitoring server holds (I-782). Its VNet address, which is what its

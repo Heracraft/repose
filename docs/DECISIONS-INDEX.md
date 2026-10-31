@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-840 entries.
+841 entries.
 
 ## Scope
 
@@ -872,3 +872,4 @@ pointer, not a summary.
 - **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26595
 - **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26618
 - **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26643
+- **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26664
