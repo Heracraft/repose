@@ -244,7 +244,14 @@ jobs:
 
   web:
     name: dashboard unit + e2e tests, Docker build
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`: the runner image rolled to Ubuntu
+    # 26.04 and Playwright 1.58.2 refuses to install a browser on it
+    # ("Playwright does not support chromium on ubuntu26.04-x64"), which
+    # reds this job on every branch at once (I-928). The version bump is
+    # the real fix and wants its own run across the 330 specs; this pin
+    # is what unreds main in the meantime. Raise it with that bump, not
+    # on its own.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0

@@ -27045,3 +27045,34 @@ A test that fails only on the runner is not thereby a test bug: the
 runner is a slower, busier machine than a dev box, which makes it the
 *better* reproduction of a production host, not a worse one. Read it
 before re-running it.
+**I-928. The dashboard job pins its runner, because `ubuntu-latest`
+moved out from under Playwright.** (CI red on every branch, 2026-10-31.)
+
+The GitHub runner image rolled to Ubuntu 26.04 and Playwright 1.58.2
+refuses to install a browser there:
+
+    Playwright does not support chromium on ubuntu26.04-x64
+
+That reds the `web` job on every branch at once, ours and anyone's, for
+a change nobody in this repository made. `runs-on: ubuntu-latest` is a
+moving target by design, and the one job that installs a browser is the
+one that cannot afford it.
+
+`web` is now `ubuntu-24.04`. It is the only job that installs browsers
+(`playwright install --with-deps chromium`), so it is the only one
+pinned; the rest stay on `ubuntu-latest`, where floating is the point.
+
+*This is the smaller half on purpose.* Bumping Playwright to a version
+that supports 26.04 is the real fix, and it is not a one-line change
+pretending to be one: it wants its own branch and its own run across all
+330 specs, because a browser bump moves layout, timing and screenshot
+behaviour under a suite that asserts all three. Pinning unreds main
+tonight and costs nothing; the bump can take the time it needs. Raise
+the pin *with* that bump, not on its own, or the next image roll finds
+the same job unpinned again.
+
+*Worth noticing about the failure.* A red CI that no commit caused is
+easy to read as noise and wait out. It is not noise: it is a dependency
+of the build changing without a commit, and it blocks every branch until
+someone owns it. The same week's lesson from I-926 points the other way
+and is the same lesson -- read the failure, do not re-run it.
