@@ -26547,3 +26547,17 @@ hotfix.
 *The rule.* A diagnostic that is only correct when nobody else is
 looking at the same stream is not a diagnostic. If a capture races a
 reader, put it in the reader.
+
+*And the rule about the finding.* The only thing between this and a
+lossy diagnostic shipping silently was one CI failure. It passed 5 of 5
+locally, including under `-race`, and failed once on a runner. The cheap
+response was available and wrong: re-run it, call it flaky, move on. A
+tee that wins the sprint on a fast machine and loses it on a loaded one
+is worse than no tee, because it reads as a feature -- the log line
+looks right in every test anyone runs by hand.
+
+This is the second CI-only failure this week that turned out to be real.
+A test that fails only on the runner is not thereby a test bug: the
+runner is a slower, busier machine than a dev box, which makes it the
+*better* reproduction of a production host, not a worse one. Read it
+before re-running it.
