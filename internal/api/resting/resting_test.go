@@ -193,3 +193,57 @@ func pause(t *testing.T, h *apitest.Harness, svc *resting.Service, snd *sender, 
 		t.Fatalf("%d pauses sent, want one more than %d", snd.count(), before)
 	}
 }
+
+// A wake that failed stands for WakeFailCooldown, so a client that
+// retries does not send another command straight away (I-914). The
+// incident this comes from: a guest's Cloud Hypervisor had accepted its
+// cap of API connections and reaped none, every wake got `503 Too many
+// open connections`, and each retry took another slot at a cap that
+// never drains. One `repose attach` sent about thirty.
+func TestAFailedWakeIsNotSentAgainStraightAway(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	u := h.NewUser("storm")
+	p := h.CreateRunning(u, "stuck")
+	if _, err := h.Pool.Exec(h.Ctx, "update projects set resting_since = now() where id = $1", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	snd := &sender{}
+	svc := resting.New(h.Pool, snd, h.Log)
+	now := time.Now()
+	svc.Now = func() time.Time { return now }
+	// Every wake is refused, as the stuck guest's were.
+	snd.answer = func(cmd *hostdv1.Command) {
+		svc.OnResult(h.Ctx, *p.HostID, &hostdv1.Result{CommandId: cmd.CommandId, Ok: false,
+			Error: &hostdv1.Error{Code: "guest_unresponsive", Message: "ch api vm.info: status 503"}})
+	}
+	// Ten attempts two seconds apart, which is what an ssh client that
+	// keeps retrying produces inside one attach.
+	for i := 0; i < 10; i++ {
+		if _, err := svc.Wake(h.Ctx, p.ID, resting.ReasonConnect); err == nil {
+			t.Fatalf("attempt %d: wake reported success against a guest that refuses", i)
+		}
+		now = now.Add(2 * time.Second)
+	}
+	// 20s of retries at a 10s cooldown is two commands, not ten.
+	if n := snd.count(); n != 2 {
+		t.Fatalf("%d commands for ten attempts over 20s, want 2", n)
+	}
+	// Past the cooldown another is sent, so a guest that comes back is
+	// not locked out.
+	now = now.Add(resting.WakeFailCooldown)
+	snd.answer = func(cmd *hostdv1.Command) {
+		svc.OnResult(h.Ctx, *p.HostID, &hostdv1.Result{CommandId: cmd.CommandId, Ok: true,
+			Payload: &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WakeMs: 9}}})
+	}
+	res, err := svc.Wake(h.Ctx, p.ID, resting.ReasonConnect)
+	if err != nil || !res.GetWasResting() {
+		t.Fatalf("after the cooldown: %+v %v", res, err)
+	}
+	if n := snd.count(); n != 3 {
+		t.Fatalf("%d commands in all, want 3", n)
+	}
+	// A success clears the mark, so the next wake goes straight through.
+	if _, err := svc.Wake(h.Ctx, p.ID, resting.ReasonConnect); err != nil {
+		t.Fatalf("after a success: %v", err)
+	}
+}

@@ -26700,3 +26700,287 @@ it says in one command which of the two records is the stale one. host-01
 answers `SHA256:97Ss5+VEjlvR3o9OHiMsgFecUVufGoAiD5ggcWseJ2I` (ED25519)
 and `SHA256:ogVl23nprqDH49Y66i4xakT0SouAlz195X7WwyLGVQI` (RSA), both
 labelled `root@host-01`.
+**I-912. A failing Cloud Hypervisor call carries the body, because the
+body is the diagnosis.** (job incident, 2026-10-30.)
+
+`ch.get` wrapped a non-2xx as ``ch api %s: status %d`` and discarded the
+response it had already read. `put` and `putJSON` beside it have always
+included it. So a guest that would not wake logged, every attempt for
+three hours:
+
+    event=guest_resting phase=resume err="ch api vm.info: status 503"
+
+while the body said:
+
+    { "error": "Too many open connections" }
+
+which is the whole of it: CH had accepted its cap of API connections and
+reaped none, so nothing could reach the VM to resume it. Reading that
+took a hand probe of `ch.sock` with curl on the host, after the hypervisor
+process, its threads, both virtiofsd pairs and the guest unit had all been
+cleared one at a time. One format verb would have skipped all of it.
+
+The test asserts the three calls behave alike against a 503 with a body,
+and it fails on the old line with exactly the string the incident saw.
+
+**I-914. A failed wake stands for ten seconds before another is sent.**
+(job incident, 2026-10-30.)
+
+`resting.Service` already shared one in-flight wake per project (`flight`),
+so simultaneous callers send one command. Nothing covered wakes that
+*follow* each other, which is what a retrying client produces: the gateway
+asks for a wake on every ssh connection, and `repose attach` reconnects
+about every two seconds for a minute, so a single user command sent about
+thirty `WakeGuest` into one guest.
+
+That is wasteful when a wake is merely slow. It is the bug when the wake
+fails for a reason that retrying consumes: the guest's CH API had a full
+connection cap that never drains, and every attempt took another slot.
+The retry policy is what held the cap full. A 503 from that API is a
+back-off condition, not a try-again-now condition.
+
+`lastFail` records a failed wake per project and the next wake inside
+`WakeFailCooldown` (10 s) returns it without sending. A success clears
+the mark at once, and `ErrNoHost` never sets one, since a host coming
+back is exactly the retry that should go straight through. Ten seconds is
+deliberately far below the ssh wait a client gives up after, so one
+attach still gets several real attempts; they are only no longer back to
+back.
+
+*The paragraph that was here was wrong, and it cost the tenant their
+session.* It said: "Nothing frees a CH API connection slot from outside:
+the fds belong to the hypervisor, hostd holds none ... no hostd restart
+and no timeout reaps them." hostd held every one of them (I-920), and
+`systemctl restart hostd` would have freed the cap without
+touching the guest.
+
+The live check that produced that sentence could not have found the
+truth. It scanned `/proc/*/fd` for symlinks naming the socket path, but
+only a *listening* unix socket shows its path there; an accepted or
+connected one reads `socket:[inode]`. So the scan could only ever match
+cloud-hypervisor's listener, and "hostd holds none" was an artifact of
+the method. `ss -x -a -p` showed the server side alone and was read as
+"no peer process". The right tools were `ss -xp` resolving both ends, or
+`lsof -U +E`.
+
+The lesson is the generalisable part: **a negative finding from a scan is
+only as good as the scan's ability to see a positive one.** Before
+reporting "nothing holds this", establish that the method would show
+something if it did.
+
+**I-918. A stop or a destroy is not blocked by the wake it opens with.**
+(job incident, 2026-10-30. Amends I-818.)
+
+`PlanStop()` is `{PhaseWake, PhaseStopGuest}` and `PlanDestroy()` opens
+the same way. The wake is there for a good reason -- hostd's stop asks
+guestd to shut the system down and a paused guest answers nothing -- but
+a failed wake phase failed the whole op before `PhaseStopGuest` was ever
+sent. That put the only documented recovery for a guest that will not
+wake, RUNBOOK GuestWakeFailed step 5 ("a stop and a start"), behind the
+wake itself. The escape hatch was inside the thing it escapes.
+
+What it cost: on 2026-10-30 a guest's Cloud Hypervisor had a full API
+connection cap (I-912), so no wake could reach it. The owner ran `repose
+stop job` and read
+
+    Could not stop job: repose's service on the machine stopped
+    answering; `repose start` restarts it (guest_unresponsive).
+
+while the machine stayed frozen, unreachable, and holding their session.
+Every route out was shut.
+
+hostd had it right all along. `stopGuest` calls `wakeIfResting`, logs a
+failure and carries on, and its own comment says why: *"A wake that
+fails changes nothing here: the escalation below stops the guest either
+way"* -- guestd's shutdown request, then the hypervisor, then the unit.
+The api was the only component insisting on the wake.
+
+So a `!res.Ok` on `PhaseWake` is rewritten to Ok when `endsTheGuest(op.Kind)`
+-- `KindStop` and `KindDestroy` -- and the op goes on, with one warning
+line carrying the refusal's code. This is the shape I-461 already used
+for a restore whose `PhaseDestroyGuest` answers `not_found`: a phase
+whose purpose is already served does not fail its op.
+
+*Deliberately not a blanket exemption.* `PlanResize` and `PlanSnapshot`
+open with the same phase and both need the guest afterwards -- guestd
+grows the filesystem, and the snapshot wants its freeze. A resize that
+could not wake the machine has not resized it and must say so. The test
+covers that case alongside the two that now survive.
+
+*The general shape, worth looking for elsewhere.* A recovery path that
+runs through the component it recovers from is not a recovery path. The
+tell is a plan, a runbook step or a CLI command that is the documented
+answer to "X is broken" and whose first step needs X.
+
+**I-920. hostd leaked one Cloud Hypervisor API connection per call, which
+is what made a guest unreachable, and the incident record blamed the
+hypervisor.** (gap hunt after the job incident, 2026-10-30. Corrects
+I-914.)
+
+`ch.HTTP.client` built a fresh `http.Transport` for every call and
+dropped it. A dropped Transport does not close its idle connection and is
+never collected -- its `persistConn`'s readLoop goroutine holds a
+reference -- so the connection stayed open for the life of the hostd
+process. Measured on this branch before the fix:
+
+    after 25 calls: 25 connections opened, 25 STILL OPEN
+
+Cloud Hypervisor's API accepts ten at once (micro_http's
+`MAX_CONNECTIONS`, measured on 53.0) and reaps none. So roughly **ten API
+calls** -- a handful of rest/wake cycles, one Info per guest per
+reconcile, a pause, a snapshot -- exhausted a guest's API for good. After
+that nothing could resume, stop or snapshot it. That is the whole of
+I-912's and I-914's incident: `job` was not the victim of a hypervisor
+bug, it was the victim of hostd's own client.
+
+`DisableKeepAlives: true`, so each call closes its connection. Not a
+client cached per socket, which would be the tidier fix, because
+`Snapshot` copies the struct (`long := *h`) and a mutex or `sync.Map` in
+`HTTP` would be copied with it. A unix-socket connect costs microseconds
+and these calls are rare. After: `0 STILL OPEN`, and the test fails on
+the old code.
+
+`resumeVM` multiplied it. It re-sent `vm.resume` **and** `vm.info` every
+50 ms for five seconds -- up to a hundred turns, two hundred calls,
+twenty times the cap -- so the loop written to rescue a slow wake was the
+most likely thing to make a guest permanently unreachable. It now sends
+the resume once (its own comment already said "what counts is the state,
+not the call's answer"), polls `vm.info` with a backoff from 50 ms to
+800 ms, and stops at once on `Too many open connections`, which is the
+one answer that asking again can only worsen. `resumeAfterFailedSnapshot`
+in freeze.go has the same shape at 500 ms for two minutes and is **not**
+changed here: it runs after a snapshot has already failed, and wants its
+own entry rather than a drive-by.
+
+*What this corrects, and the method error behind it.* I-914 recorded
+"the fds belong to the hypervisor, hostd holds none ... no hostd restart
+and no timeout reaps them", and the operator reasoning that followed went
+straight to killing the hypervisor, which loses the running session the
+whole resting feature exists to keep. `systemctl restart hostd`
+would have freed every slot without touching the guest.
+
+The live check behind that sentence could not have found the truth. It
+scanned `/proc/*/fd` for symlinks naming the socket path, and only a
+*listening* unix socket shows its path there -- an accepted or connected
+one reads `socket:[inode]`. The scan could match cloud-hypervisor's
+listener and nothing else, so "hostd holds none" was an artifact of the
+method, not an observation. `ss -xp` resolving both ends, or `lsof -U
++E`, would have shown it.
+
+**A negative finding from a scan is worth only what the scan could have
+shown had it been positive.** Before recording "nothing holds this",
+establish that the method would see something if something did. That
+rule, not the leak, is the expensive part of this entry.
+
+*The runbook follows.* GuestWakeFailed's `resume` step now names a hostd
+restart as the first lever, ahead of anything that ends the guest.
+
+*Proved on the live host, 2026-10-30 23:45.* `job` wedged again the same
+day (this fix is queued, not shipped, so host-01 still runs the leaking
+build). `lsof -U +E` resolved every one of the ten peers to
+`1160507,hostd` -- the thing the first investigation could not see. A
+`systemctl restart hostd` took the socket from 11 connections to 2,
+`vm.info` answered at once, `hostd wake` returned `woken in 1885 ms`,
+and the guest came back with its uptime unbroken at 22h20m and its
+agent and checkouts intact. The session the night before did not have
+to be lost.
+
+Two readings went wrong before that, both the same mistake: `lsof -p
+<hostd> | grep ch.sock` also returns nothing, because the CLIENT end of
+a unix socket carries no path either. Only `+E`, which resolves the peer
+of each endpoint, shows the relationship. Grepping for a path finds a
+unix socket only when the fd is the listener.
+
+**I-922. Three more places that threw the diagnosis away, and one that
+never checked its input.** (gap hunt after the job incident, 2026-10-30.
+Applies I-912.)
+
+I-912 fixed one error boundary that dropped the body. A sweep for the
+same shape found three more, and they fail in the same way: the operator
+reads a code and has to go and get the thing the code already had.
+
+- **`shell.execProc.Wait`** built its `ExitError` with an empty `Result`,
+  and every consumer of `Proc.Stderr()` in this repo copies it to
+  `io.Discard` -- correctly, so the process does not block on a full
+  pipe, but that is also where the output went. A failed `zstd`, `dd`,
+  `nix-store` or `cryptsetup` rendered as ``exit 1: `` with nothing
+  after the colon. `Stderr()` now tees into a 4 KiB capped tail that
+  `Wait` puts in the error, so every `Start` caller gets it from the
+  drain it already does. `freeze.Image.cryptOpen` drained nothing at
+  all, so it also now drains -- which is what makes a guest memory image
+  that cannot be opened say why, the one case where the alternative is a
+  tenant's lost session.
+- **`notify.GChat.Send`** closed the body unread on every refusal:
+  `_ = resp.Body.Close() // status is all we need`. A permanently broken
+  webhook said `gchat: status 400` and no more, which is exactly what
+  I-731 needed a body to diagnose. It now decodes Google's envelope and
+  keeps `error.status` and `error.message` on the error.
+
+  It decodes rather than echoes **because a 400 quotes the request back,
+  and the request carries the tenant's notification text**. The raw body
+  may not leave that function ("Never log what a tenant typed"), so only
+  Google's own two fields survive, through `store.CleanText` at 200
+  characters.
+
+- **`config.toml`'s `default_size`** was never validated while
+  `default_multiplexer` four lines below it always was. An unknown size
+  went into the create request and came back as an api refusal naming a
+  value the user had not typed on that command, once per machine, for as
+  long as the file said it. It is now refused where the file is read,
+  naming the key the file actually used (`default_size` or the older
+  `default_class`).
+
+*Still open from the same sweep, and bigger than this entry.* `POST
+/me/delete` tells the user their data is deleted in 30 days and nothing
+in the code ever deletes it; a project on a host marked `lost` can never
+be destroyed, by its owner or by an operator, and keeps counting against
+the owner's plan while blocking the host's retirement. Both want the
+owner, not a sweep.
+
+**I-924. A project on a host nobody expects back can be destroyed.**
+(gap hunt after the job incident, 2026-10-30. Same shape as I-918.)
+
+`hosts mark-lost` sets the host `lost` and leaves every project's
+`host_id` and `guest_id` where they were, which is right: an operator
+may still want to restore them elsewhere. But a destroy's plan is
+`{wake, stop_guest, snapshot, destroy_guest}` and nothing in it looked at
+whether the host was still there, so each phase was addressed to a host
+that will never send Hello again. The engine's only shortcut matched
+`state = "unreachable"`, which `mark-lost` never sets, so the op sat out
+`phaseTimeout("stop_guest")` -- thirty minutes -- and then failed with
+
+    destroying todo-app failed: stop_guest did not complete in 30m0s.
+    `repose rm todo-app` tries again
+
+an instruction that cannot work, which the owner will follow, half an
+hour at a time. The project keeps `destroyed_at is null`, so it counts
+against their plan for ever and they cannot create the replacement; and
+`hosts retire` refuses while the host still holds projects, so the host
+cannot be retired and the `tofu apply` that removes it cannot run.
+`repose-admin projects destroy`, the documented operator remedy for a
+project stuck in `error`, calls the same plan and dead-ends identically.
+Short of hand-edited SQL there was no way out.
+
+This is I-918 again: the recovery ran through the thing that was broken.
+
+`buildCommand` now skips `wake`, `stop_guest`, `snapshot` and
+`destroy_guest` when `hostGone` -- `lost` or `retired` -- so a destroy
+drains to no phases and `markDestroyed` runs, which already keeps the
+newest earlier snapshot for 30 days. That is the end state `recoverFrom`
+already produced for a destroy whose host answered `not_found`.
+`checkTimeout`'s shortcut gains the same two states, so any op addressed
+to a host nobody expects back fails inside `HostUnreachableGrace`
+instead of waiting out a phase.
+
+*`unreachable` is deliberately excluded.* That host may answer in a
+minute, and skipping its phases would mark a guest destroyed with its
+volume still live on a host that comes back. The guard is only for the
+two states that mean a human has said the host is not returning. A test
+covers that boundary: a destroy on an unreachable host still addresses
+it.
+
+*Not fixed here.* `hostmgr.Sweep` recomputes `host_unreachable = (state
+= 'unreachable')` for every live row, so `mark-lost`'s
+`host_unreachable = true` is reset to false on the next sweep. That does
+not affect the destroy, but it does mean the gateway's and the idle
+reaper's flags stop reflecting a lost host. It wants its own entry.

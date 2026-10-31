@@ -980,7 +980,14 @@ machine.
    HostReportsRefused.
 3. `reason` is the step that failed:
    - `resume`: `vm.resume` did not leave the VM `Running` within
-     `WakeResumeWait`. Check the guest's hypervisor process is alive
+     `WakeResumeWait`. **If the error says `Too many open connections`,
+     restart hostd first** (`systemctl restart hostd`): the
+     hypervisor's API accepts ten connections and hostd used to leak one
+     per call (I-920), so the slots are hostd's to free and the restart
+     costs no guest anything. Fixed in hostd, but a host running an
+     older build still does it, and a guest already wedged stays wedged
+     until those connections close. Otherwise check the guest's
+     hypervisor process is alive
      (`systemctl status guest@GUEST_ID`) and the `vm.info` state beside
      it; a guest whose hypervisor is gone is not a wake problem, see
      "hostd: hypervisor exited unexpectedly". A host with no CPU left is

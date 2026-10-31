@@ -186,6 +186,23 @@ func (h *HTTP) client(sock string) *http.Client {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", sock)
 		},
+		// Every call builds a Transport here and drops it. Without this,
+		// each one keeps its connection alive in an idle pool nothing
+		// ever closes -- the discarded Transport is never collected,
+		// because its persistConn's readLoop goroutine holds a
+		// reference -- so one connection leaked per API call, for the
+		// life of hostd. Cloud Hypervisor's API accepts ten
+		// (micro_http MAX_CONNECTIONS), so about ten calls made a guest
+		// permanently unreachable: no resume, no stop, no snapshot, and
+		// the tenant's running session lost with the hypervisor that
+		// had to be killed to recover it (I-920, the cause of I-912's
+		// and I-914's incident).
+		//
+		// Closing per call rather than caching a client per socket,
+		// because Snapshot copies this struct (`long := *h`), so a
+		// mutex or sync.Map here would be copied with it. A connect to
+		// a unix socket costs microseconds and these calls are rare.
+		DisableKeepAlives: true,
 	}}
 }
 
@@ -221,7 +238,13 @@ func (h *HTTP) get(ctx context.Context, sock, path string) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 300 {
-		return body, fmt.Errorf("ch api %s: status %d", path, resp.StatusCode)
+		// With the body, as put and putJSON have always done. Without
+		// it, a wake that could not reach a live VM logged `ch api
+		// vm.info: status 503` for three hours while the body said
+		// `{"error": "Too many open connections"}`, which is the whole
+		// diagnosis: CH had accepted its cap of API connections and
+		// reaped none of them (I-912).
+		return body, fmt.Errorf("ch api %s: status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return body, nil
 }

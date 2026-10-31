@@ -352,6 +352,19 @@ func (e *Engine) hostPauses(ctx context.Context, hostID uuid.UUID) (bool, error)
 	return ok, err
 }
 
+// hostGone reports whether nobody expects this host back: `lost` (an
+// operator ran `hosts mark-lost`) or `retired`. Deliberately NOT
+// `unreachable`, which is a host that may answer again in a minute
+// (DECISIONS I-924).
+func (e *Engine) hostGone(ctx context.Context, hostID uuid.UUID) (bool, error) {
+	var state string
+	err := e.pool.QueryRow(ctx, "select state from hosts where id = $1", hostID).Scan(&state)
+	if db.IsNoRows(err) {
+		return true, nil // the row is gone; so is the host
+	}
+	return state == "lost" || state == "retired", err
+}
+
 // restingNow reports whether the api believes the op's project rests.
 func (e *Engine) restingNow(ctx context.Context, op *store.Op) bool {
 	if op.ProjectID == nil {
@@ -390,7 +403,10 @@ func (e *Engine) checkTimeout(ctx context.Context, op *store.Op) {
 	age := e.now().Sub(*op.SentAt)
 	if op.HostID != nil {
 		h, err := store.GetHost(ctx, e.pool, *op.HostID)
-		if err == nil && h.State == "unreachable" && age > e.cfg.HostUnreachableGrace {
+		// `lost` and `retired` join `unreachable` here: an op addressed
+		// to a host nobody expects back should fail in the grace window
+		// rather than wait out a 30-minute phase timeout (I-924).
+		if err == nil && (h.State == "unreachable" || h.State == "lost" || h.State == "retired") && age > e.cfg.HostUnreachableGrace {
 			e.fail(ctx, op, "host_unreachable", "host unreachable")
 			return
 		}
@@ -427,6 +443,25 @@ func (e *Engine) advance(ctx context.Context, op *store.Op) {
 			// The guest a restore replaces is already gone (a restore
 			// that failed before hostd recorded its guest): what the
 			// phase was for is done (DECISIONS I-461).
+			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
+		}
+		if !res.Ok && currentPhase(op) == PhaseWake && endsTheGuest(op.Kind) {
+			// A stop or a destroy must not be blocked by the wake it
+			// opens with (DECISIONS I-918). The wake is there so the
+			// guest can take a shutdown request and be snapshotted
+			// cleanly; hostd's own stopGuest already re-does it and says
+			// so -- "A wake that fails changes nothing here: the
+			// escalation below stops the guest either way" -- then falls
+			// through guestd, the hypervisor and finally the unit.
+			//
+			// Failing the op here put the only documented recovery for a
+			// guest that will not wake (RUNBOOK GuestWakeFailed step 5,
+			// stop then start) behind the wake itself. On 2026-10-30 an
+			// owner's `repose stop job` answered `guest_unresponsive`
+			// while their machine stayed frozen and unreachable.
+			// log already carries op_id, kind and project_id.
+			log.Warn("wake failed before a stop; stopping anyway", "event", "guest_wake_fail",
+				"cause", res.GetError().GetCode())
 			res = &hostdv1.Result{CommandId: res.CommandId, Ok: true}
 		}
 		if !res.Ok {

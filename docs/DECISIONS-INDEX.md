@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-841 entries.
+847 entries.
 
 ## Scope
 
@@ -836,7 +836,7 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24946
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24965
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25002
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; L25007
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; amended by I-918; L25007
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
 - **I-824** The pause must never cost a machine its memory — L25208
@@ -873,3 +873,9 @@ pointer, not a summary.
 - **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26618
 - **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26643
 - **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26664
+- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26703
+- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26726
+- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26771
+- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26815
+- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26894
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26940
