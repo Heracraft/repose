@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-828 entries.
+829 entries.
 
 ## Scope
 
@@ -836,7 +836,7 @@ pointer, not a summary.
 - **I-810** A daily digest to Google Chat, from a timer on the personal server — 2026-10-19; L24946
 - **I-848** Alertmanager emails the owner itself; calert and the Google Chat path go — 2026-10-21; L24965
 - **I-840** The action pins move to the current majors, the week's updates arrive as one PR, and the buf job stops checking format; amends I-429 — 2026-10-20; L25002
-- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; L25007
+- **I-818** A machine nobody is using rests, and comes back at once — 2026-10-20; partly amended by I-844; amended by I-886; L25007
 - **I-820** A machine rests unless its project keeps it awake — 2026-10-20; L25137
 - **I-822** Everything that reaches a machine wakes it first — 2026-10-20; L25165
 - **I-824** The pause must never cost a machine its memory — L25208
@@ -860,3 +860,4 @@ pointer, not a summary.
 - **I-874** The OS disk is wiped before disko partitions it (os-disk-zap, 2026-10-27) — L26042
 - **I-876** An install whose registration failed fails the apply (os-disk-zap, 2026-10-27) — L26099
 - **I-884** The shared box has three costs nothing accounts for, and each one presents as something else — 2026-10-27; L26146
+- **I-886** The idle pause is on by default; a host that says nothing rests its idle guests — 2026-10-28; L26219
