@@ -87,50 +87,11 @@ func (Exec) Run(ctx context.Context, argv ...string) (Result, error) {
 	}
 }
 
-// tailBuf keeps the last bytes written to it, capped, and is safe for
-// the goroutine a caller drains stderr on (I-922).
-type tailBuf struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func (t *tailBuf) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.buf = append(t.buf, p...)
-	if len(t.buf) > t.max {
-		t.buf = t.buf[len(t.buf)-t.max:]
-	}
-	return len(p), nil
-}
-
-func (t *tailBuf) Bytes() []byte {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return append([]byte(nil), t.buf...)
-}
-
-// teeCloser reads from r while copying into the tail, and closes c.
-type teeCloser struct {
-	r io.Reader
-	c io.Closer
-}
-
-func (t *teeCloser) Read(p []byte) (int, error) { return t.r.Read(p) }
-func (t *teeCloser) Close() error               { return t.c.Close() }
-
 type execProc struct {
 	cmd    *exec.Cmd
 	stdout io.ReadCloser
 	stderr io.ReadCloser
-	// errTail is what the caller read off stderr, capped. Every
-	// consumer of Proc.Stderr() in this repo copies it to io.Discard so
-	// the process does not block on a full pipe, which threw the
-	// diagnosis away with it: a failed `zstd` or `cryptsetup` reported
-	// `exit 1: ` and nothing else (I-922).
-	errTail *tailBuf
-	argv    []string
+	argv   []string
 }
 
 func (p *execProc) Stdout() io.ReadCloser { return p.stdout }
@@ -144,11 +105,14 @@ func (p *execProc) Wait() error {
 		if code < 0 {
 			code = 137
 		}
-		res := Result{ExitCode: code}
-		if p.errTail != nil {
-			res.Stderr = p.errTail.Bytes()
-		}
-		return &ExitError{Argv: p.argv, Result: res}
+		// Result.Stderr stays empty here on purpose. A caller that
+		// wants the output reads the pipe to EOF and then calls Wait,
+		// which is what os/exec requires ("it is incorrect to call Wait
+		// before all reads from the pipe have completed"), and wraps
+		// the error itself. Capturing it here was tried and reverted:
+		// the capture raced the caller's own reader and lost the tail
+		// in 10 of 10 runs as soon as that reader was slow (I-926).
+		return &ExitError{Argv: p.argv, Result: Result{ExitCode: code}}
 	}
 	return err
 }
@@ -171,8 +135,7 @@ func (Exec) Start(ctx context.Context, stdin io.Reader, argv ...string) (Proc, e
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("%s: %w", argv[0], err)
 	}
-	tail := &tailBuf{max: 4 << 10}
-	return &execProc{cmd: cmd, stdout: stdout, stderr: &teeCloser{r: io.TeeReader(stderr, tail), c: stderr}, errTail: tail, argv: argv}, nil
+	return &execProc{cmd: cmd, stdout: stdout, stderr: stderr, argv: argv}, nil
 }
 
 // Script is one scripted response of a Fake: when the recorded argv starts

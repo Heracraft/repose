@@ -26984,3 +26984,64 @@ it.
 `host_unreachable = true` is reset to false on the next sweep. That does
 not affect the destroy, but it does mean the gateway's and the idle
 reaper's flags stop reflecting a lost host. It wants its own entry.
+
+
+**I-926. The stderr tail cannot be captured inside the primitive,
+because only the caller knows when its own read is finished.** (CI red
+on main, 2026-10-31. Corrects I-922.)
+
+I-922 made `shell.execProc` tee stderr into a capped tail so `Wait`'s
+`ExitError` carried it, "so every Start caller gets it from the drain it
+already does". That was wrong, and CI found it before a tenant did.
+
+`Wait` read the tail at the moment the process exited, with no
+synchronisation against the caller's reader. `os/exec` says why that
+cannot work: *"Wait will close the pipe after seeing the command exit
+... it is thus incorrect to call Wait before all reads from the pipe
+have completed."* The tail was whatever the drain happened to have
+copied by then. It passed locally because `echo` writes one line and the
+goroutine usually won the sprint. Measured with a reader made merely
+slow -- which a loaded CI runner makes of any reader:
+
+    tail LOST in 10 of 10 runs
+
+So the mechanism lost the diagnosis exactly when something else was
+reading stderr, which by its own comment is every caller. Had it shipped
+unnoticed it would have been I-912's failure again: an operator reading
+`cryptsetup: exit 1:` while the reason went to `io.Discard`.
+
+The tee is reverted. `Wait` returns the exit code alone, and a caller
+that wants the output reads the pipe to EOF and *then* calls Wait, which
+is both the order `os/exec` requires and the only place the
+synchronisation can be correct. `freeze.Image.cryptOpen` does that now
+and is deterministic. `nixbuild.stream` already did -- its own tail, its
+own `wg.Wait()` before reading it -- which is the pattern, and is why
+`Stderr()` must stay a real streaming reader: nix writes its build log
+there line by line.
+
+*So what I-922 actually delivers, corrected:* the Google Chat reason and
+the `default_size` check stand as written, and `cryptsetup` now says why
+a guest's memory image would not open. `zstd` and `dd` in
+`snapshot/stream.go` still discard theirs and still report `exit 1:`
+with nothing after it; `-q` and `status=none` mean it is usually empty,
+and fixing them means restructuring a pipeline whose stdout is being
+streamed, which wants its own change rather than a drive-by in a
+hotfix.
+
+*The rule.* A diagnostic that is only correct when nobody else is
+looking at the same stream is not a diagnostic. If a capture races a
+reader, put it in the reader.
+
+*And the rule about the finding.* The only thing between this and a
+lossy diagnostic shipping silently was one CI failure. It passed 5 of 5
+locally, including under `-race`, and failed once on a runner. The cheap
+response was available and wrong: re-run it, call it flaky, move on. A
+tee that wins the sprint on a fast machine and loses it on a loaded one
+is worse than no tee, because it reads as a feature -- the log line
+looks right in every test anyone runs by hand.
+
+This is the second CI-only failure this week that turned out to be real.
+A test that fails only on the runner is not thereby a test bug: the
+runner is a slower, busier machine than a dev box, which makes it the
+*better* reproduction of a production host, not a worse one. Read it
+before re-running it.

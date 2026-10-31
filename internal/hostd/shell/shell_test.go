@@ -8,29 +8,44 @@ import (
 	"testing"
 )
 
-// A process that fails carries what it said on stderr. Every consumer
-// of Proc.Stderr() in this repo copies it to io.Discard so the process
-// does not block on a full pipe, which threw the diagnosis away with
-// it: a failed cryptsetup or zstd reported `exit 1: ` and nothing
-// else, and a lost guest memory image said nothing about why (I-922).
-func TestStartedProcessKeepsItsStderrTail(t *testing.T) {
+// Wait does NOT capture stderr, and that is deliberate. Capturing it
+// inside the primitive raced the caller's own reader: with a reader
+// merely slow -- which a loaded CI box makes of any reader -- the tail
+// was empty in 10 of 10 runs, so the diagnosis vanished exactly when
+// something else was reading, which is every caller (I-926).
+//
+// The correct order is the one os/exec requires: read the pipe to EOF,
+// then Wait, then wrap. Only the caller knows when its read is done.
+func TestWaitDoesNotRaceTheCallersReader(t *testing.T) {
+	// The wrong order, run enough times that a race would show.
+	for i := 0; i < 10; i++ {
+		p, err := Exec{}.Start(context.Background(), nil, "sh", "-c", "echo boom >&2; exit 1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() { _, _ = io.Copy(io.Discard, p.Stderr()) }()
+		var ee *ExitError
+		if !errors.As(p.Wait(), &ee) || ee.Result.ExitCode != 1 {
+			t.Fatalf("run %d: want exit 1", i)
+		}
+		if len(ee.Result.Stderr) != 0 {
+			t.Fatalf("run %d: Wait captured stderr; that capture is what raced the reader", i)
+		}
+	}
+	// The right order: read to EOF first, then Wait. Deterministic.
 	p, err := Exec{}.Start(context.Background(), nil, "sh", "-c", "echo 'device-mapper: reload ioctl failed' >&2; exit 1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _, _ = io.Copy(io.Discard, p.Stderr()) }() // as every caller does
-	werr := p.Wait()
-	if werr == nil {
-		t.Fatal("exit 1 was not an error")
+	out, rerr := io.ReadAll(p.Stderr())
+	if rerr != nil {
+		t.Fatal(rerr)
 	}
 	var ee *ExitError
-	if !errors.As(werr, &ee) {
-		t.Fatalf("err %T, want *ExitError", werr)
+	if !errors.As(p.Wait(), &ee) {
+		t.Fatal("exit 1 was not an ExitError")
 	}
-	if !strings.Contains(ee.Error(), "device-mapper: reload ioctl failed") {
-		t.Errorf("error %q lacks the stderr tail", ee.Error())
-	}
-	if ee.Result.ExitCode != 1 {
-		t.Errorf("exit code %d", ee.Result.ExitCode)
+	if got := Tail(out, 512); !strings.Contains(got, "device-mapper: reload ioctl failed") {
+		t.Errorf("stderr read before Wait = %q", got)
 	}
 }
