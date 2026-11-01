@@ -18,12 +18,21 @@ of it. So the question "does this branch actually change the host" is
 answerable, but not by comparing drvPaths.
 
 How. A structural hash per derivation, bottom-up: the builder, args, system,
-output *names*, sources, and the structural hashes of its input derivations,
-with the stamp text replaced and every store path that an input produces
-replaced by that input's structural hash. Two systems are the same iff their
-roots hash the same. Store paths that nothing in the closure produces
-(fetched sources, fixed-output derivations) are content-addressed already and
-compare directly.
+output *names*, sources, env, structuredAttrs, and the structural hashes of
+its input derivations, with the stamp text replaced and every store path that
+an input produces replaced by that input's structural hash. Two systems are
+the same iff their roots hash the same. Store paths that nothing in the
+closure produces (fetched sources, fixed-output derivations) are
+content-addressed already and compare directly.
+
+structuredAttrs is where the content now is, and leaving it out made the tool
+answer "unchanged" to every config-only change. A derivation built with
+__structuredAttrs (nixpkgs' writeText among them, so every file a NixOS
+config generates) carries its payload there and leaves `env` holding nothing
+but the output path: 2646 of the edge's 4657 derivations had nothing hashable
+in `env` at all. The edge's whole nftables ruleset is one such `text`, so
+opening a port compared equal to not opening it and the branch was charged no
+deploy target (DECISIONS I-958).
 """
 import hashlib, json, re, sys
 
@@ -106,6 +115,18 @@ def structural(drvs, producer, stamp):
 
             return STORE.sub(sub, text)
 
+        def nrm_any(x):
+            # structuredAttrs is a JSON tree, not a flat string map: text,
+            # lists of flags, nested outputChecks. Normalise at every depth or
+            # a store path or a stamp below the top level is compared raw.
+            if isinstance(x, str):
+                return nrm(x)
+            if isinstance(x, list):
+                return [nrm_any(v) for v in x]
+            if isinstance(x, dict):
+                return {k: nrm_any(v) for k, v in sorted(x.items())}
+            return x
+
         memo[key] = "pending"           # formal inputs are acyclic
         ins = sorted(h(k) for k in (d.get("inputs", {}).get("drvs") or {}))
         body = {
@@ -115,6 +136,10 @@ def structural(drvs, producer, stamp):
             "args": [nrm(a) for a in (d.get("args") or [])],
             "env": {k: nrm(v) for k, v in sorted(env.items())
                     if k not in outs and k != "outputs"},
+            # No filter on the output names here: a path of this derivation's
+            # own is already @SELF@ by the time it is compared, and the names
+            # vary by derivation, so dropping keys by name would drop content.
+            "sattrs": nrm_any(d.get("structuredAttrs") or {}),
             "outs": outs,
             "inputs": ins,
             "srcs": sorted(nrm(x) for x in (d.get("inputs", {}).get("srcs") or [])),
