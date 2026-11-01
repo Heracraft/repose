@@ -41,8 +41,10 @@ Migrations `0021_host_pool_unavailable` (L4) and `0022_resume` (L6).
   `repose_host_pool_available`, the hostd and host shutting-down flags.
 - api: migration 0021, `hosts.pool_unavailable`, the scheduler filter, a
   failed start left `stopped`, the user sentence. CLI: exit 1.
-- Alerts `PoolUnavailable` (page), `PoolUnmonitored` (warn), the
-  inhibition in `repose-route.yaml`.
+- Alerts `PoolUnavailable` (page) and `PoolUnmonitored` (warn).
+  `PoolUnavailable` was the cause the other pool alerts were held behind;
+  Grafana has no inhibitions, so that relationship is now prose in
+  `docs/ops/OBSERVABILITY.md` (I-956).
 - VM test `host-reboot`; host-services' graceful reboot subtest.
 
 What only a host can prove waits for L8: the pool unit's duration on a

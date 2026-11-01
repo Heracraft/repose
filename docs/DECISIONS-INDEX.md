@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-861 entries.
+862 entries.
 
 ## Scope
 
@@ -893,3 +893,4 @@ pointer, not a summary.
 - **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27385
 - **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27398
 - **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27415
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27435
