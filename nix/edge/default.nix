@@ -154,13 +154,26 @@ in
 
       logPorts = lib.mkOption {
         type = lib.types.listOf lib.types.port;
-        default = [ 3100 ];
+        default = [ 3100 9090 ];
         description = ''
-          Ports peers may reach *on* the monitoring server: Loki's push
-          endpoint, which every host's Fluent Bit writes to. The other
-          direction of the same tunnel, and the reason a host that cannot
-          reach Loki buffers for ever instead of failing (alert
-          FluentBitStuck).
+          Ports peers may push to *on* the monitoring server. The other
+          direction of the same tunnel from scrapePorts, and the reason a
+          host that cannot reach Loki buffers for ever instead of failing
+          (alert FluentBitStuck).
+
+          3100 is Loki's push endpoint, which every host's Fluent Bit
+          writes to. 9090 is Prometheus's remote-write receiver, which the
+          control VM's Grafana Alloy writes the api processes' series to
+          (DECISIONS I-952): the HTTP `api` app publishes no port and
+          cannot, so a scrape from the monitoring server has never been
+          able to reach it. Prometheus answers that path only with
+          `--web.enable-remote-write-receiver`, so until the owner sets
+          that flag the port being open reaches a closed socket.
+
+          Opening a port here lets any peer reach it, hosts included, not
+          only the control VM. That is the same bound 3100 already has and
+          the reason this list is short: nothing goes in it that the
+          monitoring server would mind a host reaching.
         '';
       };
     };
