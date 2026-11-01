@@ -191,8 +191,13 @@ its password field; a new CLI against an older base opens stock noVNC's
   running for the agent; with it gone, Xvnc stops and `DISPLAY` is no
   longer exported.
 - The viewer stops after 30 minutes with no client. The agents' browser
-  stops after 30 minutes with no DevTools client (an MCP server keeps its
-  connection for the agent's whole session) and no viewer client.
+  stops after 30 minutes with no DevTools *traffic* and no viewer client.
+  Traffic, not a connection: an MCP server keeps its CDP connection open
+  for the agent's whole session and sends nothing between calls, so
+  counting open sockets held the browser alive for ever and the machine
+  could never freeze -- Chromium alone burns about 15 s of CPU a minute
+  against the rest rule's 6 s (I-930). The check sums `bytes_sent` on
+  the CDP sockets each minute and treats a changed total as use.
 - A crashed or killed browser starts again on the next DevTools
   connection with the same profile, and both MCP servers reconnect on
   their next call.

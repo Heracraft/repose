@@ -193,7 +193,7 @@ Watching todo-app's browser at http://localhost:6080/#p=5m2k8Q1p
 
 Your browser reads the password after the link's `#` and never sends it anywhere. The agent's browser tools use whatever you log into there. Text you copy on the machine lands on your clipboard, and `Ctrl+V` (`Cmd+V` on a Mac) in the page, or its paste button, pastes your clipboard on the machine. If no agent has used the browser yet, the command starts it.
 
-`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it. A base update doesn't restart it; the new Chromium runs from its next start.
+`repose browser stop` closes the view and the forward. After the machine reboots the link's password changes: the page says so, and `repose browser` prints the new link. The agent's browser keeps running while an agent uses it, and stops after 30 minutes with neither an agent nor you on it. An agent that has a browser tool open but isn't using it doesn't count: the machine watches for DevTools traffic, not an open connection, so a browser nobody is driving stops and the machine can [freeze](/docs/lifecycle#frozen-machines) as usual. A base update doesn't restart it; the new Chromium runs from its next start.
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page.
 
