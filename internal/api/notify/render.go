@@ -400,6 +400,22 @@ func Render(m Message) (Rendered, error) {
 	if len(c.Buttons) == 0 {
 		c.ButtonsLabel = ""
 	}
+	// The agent's link (I-931) is the main button of a message, the way
+	// to the project then a plain link; a question keeps its own way to
+	// answer as the main one.
+	if l := m.Link; l.Set() && m.Kind != QuestionClosedKind {
+		lk := &link{Label: l.Button(), URL: l.URL}
+		switch {
+		case c.Primary == nil:
+			c.Primary = lk
+		case m.Question != nil:
+			if c.Quiet == nil {
+				c.Quiet = lk
+			}
+		default:
+			c.Quiet, c.Primary = c.Primary, lk
+		}
+	}
 	var h, x bytes.Buffer
 	if err := htmlTmpl.Execute(&h, c); err != nil {
 		return Rendered{}, err

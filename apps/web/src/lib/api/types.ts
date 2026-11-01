@@ -1,3 +1,4 @@
+import type { AgentLink } from '$lib/agent-link';
 // Shapes copied from docs/interfaces/api.md. This file is the thin typed
 // client's contract; a field added there without a matching field here is a
 // bug in this file, not a reason to read the response as `any`.
@@ -403,6 +404,8 @@ export interface ProjectEvent {
 	/** The tmux window the agent ran in, when the event names one. */
 	window?: string;
 	summary: string;
+	/** The agent's `--link URL --label TEXT` (I-931). */
+	link?: AgentLink;
 }
 
 /** One page of events and, from an api with I-662, how many match in all. */
@@ -440,6 +443,8 @@ export interface Question {
 	 * Its answer is the value, stored as that secret, never in `answer`.
 	 */
 	secret?: string;
+	/** The agent's `--link URL --label TEXT` (I-931). */
+	link?: AgentLink;
 }
 
 export interface UsageRow {

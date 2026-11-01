@@ -114,7 +114,15 @@ export { BASE_URL };
 /** Has a project's guest ask a question, as repose-ask would (the fake's admin POST /question). */
 export async function addQuestion(
 	projectId: string,
-	q: { agent?: string; text: string; options?: string[]; timeout_s?: number; secret?: string }
+	q: {
+		agent?: string;
+		text: string;
+		options?: string[];
+		timeout_s?: number;
+		secret?: string;
+		link?: string;
+		link_label?: string;
+	}
 ): Promise<{ id: string }> {
 	const adminURL = process.env.FAKEAPI_ADMIN_URL;
 	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');
@@ -158,6 +166,9 @@ export async function addEvents(
 		windows?: string[];
 		summaries?: string[];
 		spacingMinutes?: number;
+		/** The newest event's `--link` (I-931). */
+		link?: string;
+		linkLabel?: string;
 	} = {}
 ): Promise<void> {
 	const res = await fetch(`${adminURL()}/events`, {
@@ -170,7 +181,9 @@ export async function addEvents(
 			agents: opts.agents,
 			windows: opts.windows,
 			summaries: opts.summaries,
-			spacing_minutes: opts.spacingMinutes
+			spacing_minutes: opts.spacingMinutes,
+			link: opts.link,
+			link_label: opts.linkLabel
 		})
 	});
 	if (!res.ok) throw new Error(`/events: ${res.status} ${await res.text()}`);

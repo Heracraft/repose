@@ -106,7 +106,10 @@ message Response {
 message Ready { string boot_id = 1; }
 // tmux_window in AgentEvent, AgentState and Question is a tmux window name
 // or a herdr agent key, at most 64 bytes (DECISIONS I-504).
-message AgentEvent { string agent = 1; string tmux_window = 2; string kind = 3; string summary = 4; }
+// link_url and link_label are the `--link URL --label TEXT` of a
+// repose-notify (DECISIONS I-931), checked by internal/msglink; empty on
+// every other event.
+message AgentEvent { string agent = 1; string tmux_window = 2; string kind = 3; string summary = 4; string link_url = 5; string link_label = 6; }
 message AgentState { string agent = 1; string tmux_window = 2; string state = 3; }
 message Warning { string kind = 1; string detail = 2; }
 // Question is a `repose-ask` (DECISIONS I-244). guestd sends it when the
@@ -131,6 +134,9 @@ message Question {
   // owner sets it through the api's secrets store, and the AnswerQuestion
   // that closes the question carries no answer.
   string secret = 9;
+  // The `--link URL --label TEXT` of the ask (DECISIONS I-931).
+  string link_url = 10;
+  string link_label = 11;
 }
 
 message Notify {

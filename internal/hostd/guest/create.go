@@ -971,6 +971,7 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 			m.notifyDropped("invalid")
 			return
 		}
+		ev.LinkUrl, ev.LinkLabel = cleanLink(ae.LinkUrl, ae.LinkLabel)
 		m.log(mon.g).Info("agent event", "event", "agent_event", "agent", ev.Agent, "kind", ev.Kind)
 		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:
@@ -980,6 +981,7 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 			m.notifyDropped("invalid")
 			return
 		}
+		aq.LinkUrl, aq.LinkLabel = cleanLink(q.LinkUrl, q.LinkLabel)
 		if aq.State == "" {
 			mon.opened.open(aq.QuestionId, m.d.Now())
 		}

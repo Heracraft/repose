@@ -242,6 +242,28 @@ func (f *Fake) AddEventAs(projectID string, ts time.Time, kind, agent, window, s
 	}
 }
 
+// LinkLast gives the project's newest event the link a `--link URL
+// --label TEXT` attaches (DECISIONS I-931), and the question it announces
+// when questionID is set.
+func (f *Fake) LinkLast(projectID, questionID, url, label string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.projects[projectID]
+	if !ok || len(p.events) == 0 || url == "" {
+		return
+	}
+	l := map[string]string{"url": url}
+	if label != "" {
+		l["label"] = label
+	}
+	p.events[len(p.events)-1].Link = l
+	for _, q := range f.questions {
+		if q.ID == questionID {
+			q.Link = l
+		}
+	}
+}
+
 // BackdateCreation moves a project's creation to ts when it is newer: its
 // created_at, a started_at equal to it, and the events written at create
 // (project.created and the guest_state_changed beside it), so events

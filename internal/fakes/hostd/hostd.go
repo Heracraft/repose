@@ -194,6 +194,12 @@ func (f *Fake) Message(guestID, agent, text string) {
 	f.event(&hostdv1.Event{Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{GuestId: guestID, Agent: agent, Kind: "agent_message", Summary: text, TmuxWindow: agent}}})
 }
 
+// AgentEvent relays an AgentEvent as guestd would, a `repose-notify
+// --link` (I-931) included.
+func (f *Fake) AgentEvent(ev *hostdv1.AgentEvent) {
+	f.event(&hostdv1.Event{Ev: &hostdv1.Event_AgentEvent{AgentEvent: ev}})
+}
+
 // Answer is what closed a question, nil while it is open or unknown.
 func (f *Fake) Answer(questionID string) *hostdv1.AnswerQuestion {
 	f.mu.Lock()

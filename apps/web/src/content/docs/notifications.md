@@ -112,12 +112,16 @@ Two commands on every machine let an agent reach you:
 
 ```
 repose-notify "Deploy to staging is green"
-repose-notify --done "PR 12 is up: retries for the webhook sender"
+repose-notify --done --label "PR 12" \
+  --link https://github.com/acme/app/pull/12 \
+  "Retries for the webhook sender are up for review"
 repose-ask --options yes,no "Drop the legacy sessions table?"
 repose-ask --secret STRIPE_KEY "Stripe, Developers > API keys"
 ```
 
 `repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
+
+`--link URL` gives a message or a question a button that opens URL, an `http` or `https` address. `--label TEXT` names it, up to 40 characters, and the button always names the address's host as well: **PR 12 · github.com**, **Compare resumes · localhost:8742**. A message without `--link` has no link button, even with an address in its text. Google Chat and email show the button, ntfy shows it as an action, and the dashboard shows the link under the message or the question. A `localhost` address opens on your laptop while you're attached, or after [`repose open PORT`](/docs/machine#ports). An address with a user name or password in it is refused.
 
 A question can be answered in five places:
 
@@ -145,6 +149,7 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
 | `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                   |
+| `--link URL`      | none       | A button to what the question is about. `--label TEXT` names it. As on `repose-notify`.                                                               |
 | `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds.                                      |
 | `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
 | `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |

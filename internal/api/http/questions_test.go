@@ -421,3 +421,43 @@ func TestQuestionSecretAnswer(t *testing.T) {
 		return got != nil && got.Status == "answered" && got.Answer == ""
 	})
 }
+
+// TestAgentLink (DECISIONS I-931): an agent's link reaches the events
+// list, a question and the message the outbox builds, and one that fails
+// the rule is dropped while the message stays.
+func TestAgentLink(t *testing.T) {
+	a := newAskEnv(t, "lnk")
+	a.h.Fake.AgentEvent(&hostdv1.AgentEvent{GuestId: a.p.GuestID.String(), Agent: "claude", Kind: "agent_done", Summary: "resume done", TmuxWindow: "claude",
+		LinkUrl: "http://localhost:8742/out/a.html", LinkLabel: "Compare resumes"})
+	a.h.Fake.AgentEvent(&hostdv1.AgentEvent{GuestId: a.p.GuestID.String(), Agent: "claude", Kind: "agent_message", Summary: "sneaky", TmuxWindow: "claude",
+		LinkUrl: "https://bank.example@evil.example/", LinkLabel: "Verify"})
+	var doneID uuid.UUID
+	a.h.WaitFor("the two events", func() bool {
+		var n int
+		_ = a.h.Pool.QueryRow(a.h.Ctx, "select count(*) from events where project_id = $1 and kind in ('agent_done', 'agent_message')", a.p.ID).Scan(&n)
+		_ = a.h.Pool.QueryRow(a.h.Ctx, "select id from events where project_id = $1 and kind = 'agent_done'", a.p.ID).Scan(&doneID)
+		return n == 2
+	})
+	r := a.do(t, a.tok, "GET", "/projects/"+a.p.ID.String()+"/events?kind=agent_done,agent_message", nil)
+	raw := string(r.raw)
+	if !strings.Contains(raw, `"link":{"label":"Compare resumes","url":"http://localhost:8742/out/a.html"}`) || strings.Contains(raw, "evil.example") {
+		t.Fatalf("events: %s", raw)
+	}
+	m := a.outboxMessage(t, "email", doneID)
+	if m.Link.URL != "http://localhost:8742/out/a.html" || m.Link.Button() != "Compare resumes · localhost:8742" {
+		t.Fatalf("message link %+v", m.Link)
+	}
+
+	qid := uuid.Must(uuid.NewV7())
+	a.h.Fake.Ask(&hostdv1.AgentQuestion{GuestId: a.p.GuestID.String(), QuestionId: qid.String(), Agent: "claude", TmuxWindow: "claude", Text: "Merge?", Options: []string{"yes", "no"}, TimeoutS: 600,
+		LinkUrl: "https://github.com/h/r/pull/12", LinkLabel: "PR 12"})
+	a.h.WaitFor("the question row", func() bool {
+		var n int
+		_ = a.h.Pool.QueryRow(a.h.Ctx, "select count(*) from questions q join events e on e.id = q.event_id where q.id = $1", qid).Scan(&n)
+		return n == 1
+	})
+	r = a.do(t, a.tok, "GET", "/projects/"+a.p.ID.String()+"/questions?state=pending", nil)
+	if !strings.Contains(string(r.raw), `"link":{"label":"PR 12","url":"https://github.com/h/r/pull/12"}`) {
+		t.Fatalf("questions: %s", r.raw)
+	}
+}

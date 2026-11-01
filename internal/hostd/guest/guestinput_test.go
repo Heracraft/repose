@@ -330,3 +330,16 @@ func TestAgentDoneAndRunningAreAccepted(t *testing.T) {
 		t.Fatalf("running became %q", out.Agents[0].State)
 	}
 }
+
+// TestCleanLink (DECISIONS I-931): hostd keeps a link the rule passes and
+// drops one it refuses, keeping the event.
+func TestCleanLink(t *testing.T) {
+	if u, l := cleanLink(" http://localhost:8742/a ", "Compare‮ resumes"); u != "http://localhost:8742/a" || l != "Compare resumes" {
+		t.Fatalf("%q %q", u, l)
+	}
+	for _, bad := range [][2]string{{"javascript:alert(1)", ""}, {"https://u:p@x.example/", "x"}, {"", "label only"}} {
+		if u, l := cleanLink(bad[0], bad[1]); u != "" || l != "" {
+			t.Errorf("%v kept as %q %q", bad, u, l)
+		}
+	}
+}

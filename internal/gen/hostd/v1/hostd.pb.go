@@ -4332,7 +4332,11 @@ type AgentEvent struct {
 	// The tmux window the hook came from, as guestd resolved it (the
 	// `window` of 13-notifications.md §5.1); empty when unknown. I-121.
 	// A tmux window name or a herdr agent key, at most 64 bytes (I-504).
-	TmuxWindow    string `protobuf:"bytes,5,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	TmuxWindow string `protobuf:"bytes,5,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
+	// The link a `repose-notify --link URL --label TEXT` attached
+	// (DECISIONS I-931), as internal/msglink checked it; tenant content.
+	LinkUrl       string `protobuf:"bytes,6,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel     string `protobuf:"bytes,7,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4402,6 +4406,20 @@ func (x *AgentEvent) GetTmuxWindow() string {
 	return ""
 }
 
+func (x *AgentEvent) GetLinkUrl() string {
+	if x != nil {
+		return x.LinkUrl
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetLinkLabel() string {
+	if x != nil {
+		return x.LinkLabel
+	}
+	return ""
+}
+
 // AgentQuestion is a guest's Question notify, relayed (DECISIONS I-244).
 // The text is tenant content: delivered to the user's channels, never
 // logged.
@@ -4421,7 +4439,10 @@ type AgentQuestion struct {
 	Reason string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
 	// The named secret the question asks for (DECISIONS I-929); empty for
 	// a question that takes a written answer.
-	Secret        string `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
+	Secret string `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
+	// The `--link URL --label TEXT` of the ask (DECISIONS I-931).
+	LinkUrl       string `protobuf:"bytes,11,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel     string `protobuf:"bytes,12,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4522,6 +4543,20 @@ func (x *AgentQuestion) GetReason() string {
 func (x *AgentQuestion) GetSecret() string {
 	if x != nil {
 		return x.Secret
+	}
+	return ""
+}
+
+func (x *AgentQuestion) GetLinkUrl() string {
+	if x != nil {
+		return x.LinkUrl
+	}
+	return ""
+}
+
+func (x *AgentQuestion) GetLinkLabel() string {
+	if x != nil {
+		return x.LinkLabel
 	}
 	return ""
 }
@@ -5368,7 +5403,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x11GuestStateChanged\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x8c\x01\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xc6\x01\n" +
 	"\n" +
 	"AgentEvent\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x14\n" +
@@ -5376,7 +5411,10 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x18\n" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x1f\n" +
 	"\vtmux_window\x18\x05 \x01(\tR\n" +
-	"tmuxWindow\"\x93\x02\n" +
+	"tmuxWindow\x12\x19\n" +
+	"\blink_url\x18\x06 \x01(\tR\alinkUrl\x12\x1d\n" +
+	"\n" +
+	"link_label\x18\a \x01(\tR\tlinkLabel\"\xcd\x02\n" +
 	"\rAgentQuestion\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vquestion_id\x18\x02 \x01(\tR\n" +
@@ -5390,7 +5428,10 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x05state\x18\b \x01(\tR\x05state\x12\x16\n" +
 	"\x06reason\x18\t \x01(\tR\x06reason\x12\x16\n" +
 	"\x06secret\x18\n" +
-	" \x01(\tR\x06secret\"k\n" +
+	" \x01(\tR\x06secret\x12\x19\n" +
+	"\blink_url\x18\v \x01(\tR\alinkUrl\x12\x1d\n" +
+	"\n" +
+	"link_label\x18\f \x01(\tR\tlinkLabel\"k\n" +
 	"\fGuestResting\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x18\n" +
 	"\aresting\x18\x02 \x01(\bR\aresting\x12\x0e\n" +

@@ -21,6 +21,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { encodeBase64 } from '$lib/base64';
+	import { agentLink, type AgentLink } from '$lib/agent-link';
 
 	const NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
 	const SHELL = new Set(['BASH_ENV', 'ENV', 'REPOSE_ENV_GEN']);
@@ -35,6 +36,7 @@
 		target,
 		existing,
 		notice,
+		link,
 		saveLabel = 'Save',
 		fileTestId = 'secret-file-name',
 		onsave,
@@ -54,6 +56,8 @@
 		existing?: (name: string) => string | undefined;
 		/** A line over the field, when the save is not what the dialog first offered. */
 		notice?: string;
+		/** The agent's `--link`, where to get the value (I-931). */
+		link?: AgentLink;
 		saveLabel?: string;
 		/** The picked file's name, for tests. */
 		fileTestId?: string;
@@ -94,6 +98,7 @@
 				: ''
 	);
 	let replaces = $derived(name && NAME_RE.test(name) ? existing?.(name) : undefined);
+	let shownLink = $derived(agentLink(link));
 	let canToggle = $derived(!file && (!multiline || canMaskArea));
 	const uid = Math.random().toString(36).slice(2, 8);
 	const ids = {
@@ -241,6 +246,16 @@
 							<span class="sdlg-agent">{agent}</span> asks for it on {target}
 						</p>
 						{#if reason}<p class="sdlg-reason">{reason}</p>{/if}
+						{#if shownLink}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+							<a
+								class="hk-link sdlg-link"
+								href={shownLink.href}
+								target="_blank"
+								rel="noopener noreferrer">{shownLink.text}</a
+							>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/if}
 					</div>
 				{/if}
 				{#if notice}<p class="sdlg-notice" role="status">{notice}</p>{/if}
@@ -412,6 +427,12 @@
 		line-height: 1.5;
 		color: var(--hk-text-2);
 		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.sdlg-link {
+		display: inline-block;
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
 		overflow-wrap: anywhere;
 	}
 	.sdlg-notice {

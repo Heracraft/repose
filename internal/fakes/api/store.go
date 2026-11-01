@@ -118,6 +118,8 @@ type Event struct {
 	Agent   string    `json:"agent,omitempty"`
 	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
+	// Link is an agent's `--link` (DECISIONS I-931): {url, label}.
+	Link map[string]string `json:"link,omitempty"`
 }
 
 // SecretMeta is one row of GET /projects/:id/secrets. Values are never

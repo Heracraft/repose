@@ -319,3 +319,39 @@ func TestSecretAskWaitsForAHostdThatRelaysIt(t *testing.T) {
 		t.Fatalf("after a Ping that says so: %d %s", code, body)
 	}
 }
+
+// TestNotifyAndAskCarryTheLink (DECISIONS I-931): a link travels in the
+// AgentEvent and the Question, checked again here; one the rule refuses
+// is 400 invalid_link.
+func TestNotifyAndAskCarryTheLink(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	code, _ := hookDo(t, c, http.MethodPost, "/notify", hooks.MessagePayload{Agent: "claude", Kind: hooks.KindDone, Text: "done", Link: "http://localhost:8742/a", LinkLabel: "Compare"})
+	if code != http.StatusNoContent {
+		t.Fatalf("POST /notify = %d", code)
+	}
+	n := h.waitForNotify(t, "agent_done", func(n *guestdv1.Notify) bool { return n.GetAgentEvent().GetKind() == hooks.KindDone })
+	if ev := n.GetAgentEvent(); ev.GetLinkUrl() != "http://localhost:8742/a" || ev.GetLinkLabel() != "Compare" {
+		t.Fatalf("event = %+v", ev)
+	}
+	for _, bad := range []hooks.MessagePayload{
+		{Agent: "claude", Text: "x", Link: "javascript:alert(1)"},
+		{Agent: "claude", Text: "x", LinkLabel: "no link"},
+		{Agent: "claude", Text: "x", Link: "https://u:p@evil.example/"},
+	} {
+		if code, body := hookDo(t, c, http.MethodPost, "/notify", bad); code != http.StatusBadRequest || !strings.Contains(string(body), "invalid_link") {
+			t.Errorf("%+v: %d %s", bad, code, body)
+		}
+		if code, _ := hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: "claude", Text: "q?", Link: bad.Link, LinkLabel: bad.LinkLabel}); code != http.StatusBadRequest {
+			t.Errorf("ask %+v: %d", bad, code)
+		}
+	}
+	code, _ = hookDo(t, c, http.MethodPost, "/ask", hooks.AskPayload{Agent: "claude", Text: "Merge?", Link: "https://github.com/h/r/pull/12", LinkLabel: "PR 12"})
+	if code != http.StatusCreated {
+		t.Fatalf("POST /ask = %d", code)
+	}
+	qn := h.waitForNotify(t, "question", func(n *guestdv1.Notify) bool { return n.GetQuestion().GetText() == "Merge?" })
+	if q := qn.GetQuestion(); q.GetLinkUrl() != "https://github.com/h/r/pull/12" || q.GetLinkLabel() != "PR 12" {
+		t.Fatalf("question = %+v", q)
+	}
+}

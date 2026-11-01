@@ -1645,12 +1645,17 @@ func (x *Ready) GetBootId() string {
 
 // tmux_window in AgentEvent, AgentState and Question is a tmux window name
 // or a herdr agent key, at most 64 bytes (DECISIONS I-504).
+// link_url and link_label are the `--link URL --label TEXT` of a
+// repose-notify (DECISIONS I-931), checked by internal/msglink; empty on
+// every other event.
 type AgentEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agent         string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
 	TmuxWindow    string                 `protobuf:"bytes,2,opt,name=tmux_window,json=tmuxWindow,proto3" json:"tmux_window,omitempty"`
 	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
 	Summary       string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	LinkUrl       string                 `protobuf:"bytes,5,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel     string                 `protobuf:"bytes,6,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1709,6 +1714,20 @@ func (x *AgentEvent) GetKind() string {
 func (x *AgentEvent) GetSummary() string {
 	if x != nil {
 		return x.Summary
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetLinkUrl() string {
+	if x != nil {
+		return x.LinkUrl
+	}
+	return ""
+}
+
+func (x *AgentEvent) GetLinkLabel() string {
+	if x != nil {
+		return x.LinkLabel
 	}
 	return ""
 }
@@ -1847,7 +1866,10 @@ type Question struct {
 	// I-929), [A-Z][A-Z0-9_]{0,63}. The value never travels this way: the
 	// owner sets it through the api's secrets store, and the AnswerQuestion
 	// that closes the question carries no answer.
-	Secret        string `protobuf:"bytes,9,opt,name=secret,proto3" json:"secret,omitempty"`
+	Secret string `protobuf:"bytes,9,opt,name=secret,proto3" json:"secret,omitempty"`
+	// The `--link URL --label TEXT` of the ask (DECISIONS I-931).
+	LinkUrl       string `protobuf:"bytes,10,opt,name=link_url,json=linkUrl,proto3" json:"link_url,omitempty"`
+	LinkLabel     string `protobuf:"bytes,11,opt,name=link_label,json=linkLabel,proto3" json:"link_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1941,6 +1963,20 @@ func (x *Question) GetReason() string {
 func (x *Question) GetSecret() string {
 	if x != nil {
 		return x.Secret
+	}
+	return ""
+}
+
+func (x *Question) GetLinkUrl() string {
+	if x != nil {
+		return x.LinkUrl
+	}
+	return ""
+}
+
+func (x *Question) GetLinkLabel() string {
+	if x != nil {
+		return x.LinkLabel
 	}
 	return ""
 }
@@ -2180,14 +2216,17 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x04exec\x18\x0e \x01(\v2\x1c.repose.guestd.v1.ExecResultH\x00R\x04execB\b\n" +
 	"\x06result\" \n" +
 	"\x05Ready\x12\x17\n" +
-	"\aboot_id\x18\x01 \x01(\tR\x06bootId\"q\n" +
+	"\aboot_id\x18\x01 \x01(\tR\x06bootId\"\xab\x01\n" +
 	"\n" +
 	"AgentEvent\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1f\n" +
 	"\vtmux_window\x18\x02 \x01(\tR\n" +
 	"tmuxWindow\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x18\n" +
-	"\asummary\x18\x04 \x01(\tR\asummary\"Y\n" +
+	"\asummary\x18\x04 \x01(\tR\asummary\x12\x19\n" +
+	"\blink_url\x18\x05 \x01(\tR\alinkUrl\x12\x1d\n" +
+	"\n" +
+	"link_label\x18\x06 \x01(\tR\tlinkLabel\"Y\n" +
 	"\n" +
 	"AgentState\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x1f\n" +
@@ -2196,7 +2235,7 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\tR\x05state\"5\n" +
 	"\aWarning\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xf3\x01\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xad\x02\n" +
 	"\bQuestion\x12\x1f\n" +
 	"\vquestion_id\x18\x01 \x01(\tR\n" +
 	"questionId\x12\x14\n" +
@@ -2208,7 +2247,11 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\ttimeout_s\x18\x06 \x01(\rR\btimeoutS\x12\x14\n" +
 	"\x05state\x18\a \x01(\tR\x05state\x12\x16\n" +
 	"\x06reason\x18\b \x01(\tR\x06reason\x12\x16\n" +
-	"\x06secret\x18\t \x01(\tR\x06secret\"\xb1\x02\n" +
+	"\x06secret\x18\t \x01(\tR\x06secret\x12\x19\n" +
+	"\blink_url\x18\n" +
+	" \x01(\tR\alinkUrl\x12\x1d\n" +
+	"\n" +
+	"link_label\x18\v \x01(\tR\tlinkLabel\"\xb1\x02\n" +
 	"\x06Notify\x12/\n" +
 	"\x05ready\x18\x01 \x01(\v2\x17.repose.guestd.v1.ReadyH\x00R\x05ready\x12?\n" +
 	"\vagent_event\x18\x02 \x01(\v2\x1c.repose.guestd.v1.AgentEventH\x00R\n" +

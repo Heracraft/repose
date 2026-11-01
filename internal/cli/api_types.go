@@ -269,6 +269,12 @@ type Snapshot struct {
 	ProjectDestroyed bool   `json:"project_destroyed,omitempty"`
 }
 
+// EventLink is the link an agent attached to an event or a question.
+type EventLink struct {
+	URL   string `json:"url"`
+	Label string `json:"label,omitempty"`
+}
+
 type Event struct {
 	ID      string    `json:"id"`
 	TS      time.Time `json:"ts"`
@@ -276,6 +282,8 @@ type Event struct {
 	Agent   string    `json:"agent,omitempty"`
 	Window  string    `json:"window,omitempty"`
 	Summary string    `json:"summary"`
+	// Link is the agent's `--link URL --label TEXT` (DECISIONS I-931).
+	Link *EventLink `json:"link,omitempty"`
 	// Project is the project's name, which the CLI adds (the api answers
 	// for one project); `repose events` outside a checkout covers them
 	// all (DECISIONS I-609).

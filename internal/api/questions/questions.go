@@ -134,6 +134,9 @@ type Question struct {
 	// the secret's value, which is stored as that secret and never here,
 	// so Answer stays null.
 	Secret string `json:"secret,omitempty"`
+	// Link is the agent's `--link` (DECISIONS I-931), kept on the
+	// question's event: {url, label}, absent when there is none.
+	Link map[string]string `json:"link,omitempty"`
 }
 
 // Service is the question store and its delivery worker.
@@ -313,7 +316,8 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 	if row.window != nil {
 		w = *row.window
 	}
-	_, _, err = s.events.Insert(ctx, events.Incoming{ID: eventID, ProjectID: p.ID, TS: row.created, Kind: "agent_question", Agent: row.agent, Window: w, Summary: row.text, Source: "host"})
+	_, _, err = s.events.Insert(ctx, events.Incoming{ID: eventID, ProjectID: p.ID, TS: row.created, Kind: "agent_question", Agent: row.agent, Window: w, Summary: row.text, Source: "host",
+		LinkURL: q.GetLinkUrl(), LinkLabel: q.GetLinkLabel()})
 	return err
 }
 
@@ -336,11 +340,14 @@ func closedIDs(rows pgx.Rows, err error) ([]uuid.UUID, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 }
 
-const selectCols = `q.id, q.project_id, p.slug, q.agent, coalesce(q.tmux_window, ''), q.text, q.options, q.state, q.answer, q.answered_via, q.created_at, q.expires_at, q.answered_at, coalesce(q.secret_name, '')`
+const selectCols = `q.id, q.project_id, p.slug, q.agent, coalesce(q.tmux_window, ''), q.text, q.options, q.state, q.answer, q.answered_via, q.created_at, q.expires_at, q.answered_at, coalesce(q.secret_name, ''),
+	(select e.link_url from events e where e.id = q.event_id), (select e.link_label from events e where e.id = q.event_id)`
 
 func scan(r interface{ Scan(...any) error }) (Question, error) {
 	var q Question
-	err := r.Scan(&q.ID, &q.ProjectID, &q.Project, &q.Agent, &q.Window, &q.Text, &q.Options, &q.State, &q.Answer, &q.AnsweredVia, &q.CreatedAt, &q.ExpiresAt, &q.AnsweredAt, &q.Secret)
+	var linkURL, linkLabel *string
+	err := r.Scan(&q.ID, &q.ProjectID, &q.Project, &q.Agent, &q.Window, &q.Text, &q.Options, &q.State, &q.Answer, &q.AnsweredVia, &q.CreatedAt, &q.ExpiresAt, &q.AnsweredAt, &q.Secret, &linkURL, &linkLabel)
+	q.Link = store.EventLink(linkURL, linkLabel)
 	if q.Options == nil {
 		q.Options = []string{}
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/guestd/questions"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // KindMessage is the AgentEvent kind `repose-notify` sends (DECISIONS I-244).
@@ -32,6 +33,9 @@ type MessagePayload struct {
 	Window string `json:"window,omitempty"`
 	Kind   string `json:"kind,omitempty"`
 	Text   string `json:"text"`
+	// Link and LinkLabel are `--link URL --label TEXT` (DECISIONS I-931).
+	Link      string `json:"link,omitempty"`
+	LinkLabel string `json:"link_label,omitempty"`
 }
 
 // AskPayload is POST /ask.
@@ -44,6 +48,9 @@ type AskPayload struct {
 	// Secret asks for the named secret instead of a written answer
 	// (DECISIONS I-929); it takes no Options.
 	Secret string `json:"secret,omitempty"`
+	// Link and LinkLabel are `--link URL --label TEXT` (DECISIONS I-931).
+	Link      string `json:"link,omitempty"`
+	LinkLabel string `json:"link_label,omitempty"`
 }
 
 // AskState is what POST /ask and GET /ask/{id} answer, and one entry of
@@ -76,6 +83,13 @@ type AskClosed struct {
 // Without it they answer 404, which an older repose-hook never calls. msg
 // receives a notify; it is not the hook sink, because a message says
 // nothing about whether the agent is working or waiting.
+// LinkSink receives a notify that carries a link (DECISIONS I-931).
+type LinkSink func(agent, window, kind, text string, link msglink.Link)
+
+// SetLinkSink sends a notify with `--link` to sink. Without one, POST
+// /notify refuses a link (400 links_unsupported) rather than drop it.
+func (s *Server) SetLinkSink(sink LinkSink) { s.linkSink = sink }
+
 func (s *Server) EnableAsk(q *questions.Store, msg Sink) {
 	s.questions = q
 	s.msgSink = msg
@@ -130,10 +144,23 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		s.reject(w, r, http.StatusBadRequest, "unknown_kind")
 		return
 	}
+	link, err := msglink.Check(p.Link, p.LinkLabel)
+	if err != nil {
+		s.reject(w, r, http.StatusBadRequest, "invalid_link")
+		return
+	}
 	agent := callerAgent(p.Agent)
 	window := s.callerWindow(r, p.Window, agent)
-	s.msgSink(agent, window, kind, text)
-	s.log.Info("agent message received", "event", "agent_event", "agent", agent, "kind", kind, "summary_bytes", len(text))
+	if link.Set() {
+		if s.linkSink == nil {
+			s.reject(w, r, http.StatusBadRequest, "links_unsupported")
+			return
+		}
+		s.linkSink(agent, window, kind, text, link)
+	} else {
+		s.msgSink(agent, window, kind, text)
+	}
+	s.log.Info("agent message received", "event", "agent_event", "agent", agent, "kind", kind, "summary_bytes", len(text), "has_link", link.Set())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -145,8 +172,11 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	agent := callerAgent(p.Agent)
 	window := s.callerWindow(r, p.Window, agent)
-	var q questions.Question
-	var err error
+	link, err := msglink.Check(p.Link, p.LinkLabel)
+	if err != nil {
+		s.reject(w, r, http.StatusBadRequest, "invalid_link")
+		return
+	}
 	if p.Secret != "" {
 		if len(p.Options) > 0 {
 			s.reject(w, r, http.StatusBadRequest, "invalid_question")
@@ -156,10 +186,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			s.reject(w, r, http.StatusConflict, "secret_not_relayed")
 			return
 		}
-		q, err = s.questions.OpenSecret(agent, window, s.agentProcOf(r, agent), p.Secret, p.Text, time.Duration(p.TimeoutS)*time.Second)
-	} else {
-		q, err = s.questions.Open(agent, window, s.agentProcOf(r, agent), p.Text, p.Options, time.Duration(p.TimeoutS)*time.Second)
 	}
+	q, err := s.questions.OpenAsk(questions.Question{Agent: agent, Window: window, AgentProc: s.agentProcOf(r, agent), Text: p.Text, Options: p.Options,
+		Secret: p.Secret, LinkURL: link.URL, LinkLabel: link.Label}, time.Duration(p.TimeoutS)*time.Second)
 	switch {
 	case errors.Is(err, questions.ErrTooMany):
 		s.reject(w, r, http.StatusTooManyRequests, "too_many_questions")

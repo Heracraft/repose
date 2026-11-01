@@ -308,9 +308,25 @@ type Event struct {
 	HostEventID *string        `db:"host_event_id"`
 	Delivered   map[string]any `db:"delivered"`
 	CreatedAt   time.Time      `db:"created_at"`
+	// LinkURL and LinkLabel are an agent's `--link` (DECISIONS I-931).
+	LinkURL   *string `db:"link_url"`
+	LinkLabel *string `db:"link_label"`
 }
 
-const eventCols = `id, project_id, ts, ts_second, kind, agent, tmux_window, summary, source, skew_seconds, host_event_id, delivered, created_at`
+const eventCols = `id, project_id, ts, ts_second, kind, agent, tmux_window, summary, source, skew_seconds, host_event_id, delivered, created_at, link_url, link_label`
+
+// EventLink is an event's link as the routes show it: {url, label}, nil
+// when it has none (DECISIONS I-931).
+func EventLink(url, label *string) map[string]string {
+	if url == nil || *url == "" {
+		return nil
+	}
+	l := map[string]string{"url": *url}
+	if label != nil && *label != "" {
+		l["label"] = *label
+	}
+	return l
+}
 
 // BaseVersion is a base_versions row.
 type BaseVersion struct {
