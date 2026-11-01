@@ -16,11 +16,23 @@ import (
 
 // fakeClipboard is the laptop clipboard for tests.
 type fakeClipboard struct {
-	img []byte
-	err error
+	img     []byte
+	text    string
+	err     error
+	textErr error
 }
 
 func (f fakeClipboard) ReadPNG(context.Context) ([]byte, error) { return f.img, f.err }
+
+func (f fakeClipboard) ReadText(context.Context) (string, error) {
+	if f.textErr != nil {
+		return "", f.textErr
+	}
+	if f.text == "" {
+		return "", errNoText
+	}
+	return f.text, nil
+}
 
 func withClipboard(t *testing.T, c clipboardReader) {
 	t.Helper()
@@ -322,4 +334,48 @@ func TestPasteIsBracketedWhenAsked(t *testing.T) {
 		t.Fatalf("files = %v", files)
 	}
 	waitPane(t, f, "agent", "^[[200~"+files[0]+"^[[201~")
+}
+
+// The text reader asks the clipboard which types it offers and reads the
+// best text one; an image-only clipboard is errNoText, and a missing tool
+// or display is an error, never a message (I-940: Ctrl+V then sends the
+// key on, and ReadPNG has already named a missing tool).
+func TestSystemClipboardText(t *testing.T) {
+	sh, err := lookPathIn("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("REPOSE_TEST_GOOS", "linux")
+	t.Setenv(envWaylandDisplay, "wayland-0")
+	t.Setenv(envDisplay, "")
+	ctx := context.Background()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!"+sh+"\n"+body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := (systemClipboard{}).ReadText(ctx); err == nil || errors.Is(err, errNoText) {
+		t.Errorf("no wl-paste: %v", err)
+	}
+	write("wl-paste", `case "$1" in --list-types) printf 'image/png\n';; *) printf 'PNGDATA';; esac`+"\n")
+	if _, err := (systemClipboard{}).ReadText(ctx); !errors.Is(err, errNoText) {
+		t.Errorf("an image-only clipboard: %v", err)
+	}
+	// The script prints the type it was asked for, so the preference
+	// order and the --no-newline are both checked.
+	write("wl-paste", `case "$1" in --list-types) printf 'text/plain\ntext/plain;charset=utf-8\n';; *) printf 'got %s %s' "$2" "$3";; esac`+"\n")
+	if got, err := (systemClipboard{}).ReadText(ctx); err != nil || got != "got --type text/plain;charset=utf-8" {
+		t.Errorf("wayland text: %q %v", got, err)
+	}
+	t.Setenv(envWaylandDisplay, "")
+	if _, err := (systemClipboard{}).ReadText(ctx); !errors.Is(err, errNoText) {
+		t.Errorf("no display: %v", err)
+	}
+	t.Setenv(envDisplay, ":0")
+	write("xclip", `case "$3$4" in *TARGETS*) printf 'TIMESTAMP\nSTRING\nUTF8_STRING\n';; *) printf 'got %s' "$4";; esac`+"\n")
+	if got, err := (systemClipboard{}).ReadText(ctx); err != nil || got != "got UTF8_STRING" {
+		t.Errorf("x11 text: %q %v", got, err)
+	}
 }

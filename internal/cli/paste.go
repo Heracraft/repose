@@ -48,10 +48,13 @@ const (
 // pngMagic is the eight bytes every PNG starts with.
 var pngMagic = []byte("\x89PNG\r\n\x1a\n")
 
-// clipboardReader reads the image on the laptop's clipboard as PNG bytes.
-// Tests swap pasteClipboard for a fake so they need no clipboard.
+// clipboardReader reads the laptop's clipboard: the image on it as PNG
+// bytes, or the text on it (I-940, for Ctrl+V with no image on the
+// clipboard). Tests swap pasteClipboard for a fake so they need no
+// clipboard.
 type clipboardReader interface {
 	ReadPNG(ctx context.Context) ([]byte, error)
+	ReadText(ctx context.Context) (string, error)
 }
 
 var pasteClipboard clipboardReader = systemClipboard{}
@@ -59,6 +62,10 @@ var pasteClipboard clipboardReader = systemClipboard{}
 // errNoImage is a clipboard with no image on it; the message is the one
 // the user sees.
 var errNoImage = errors.New("there is no image on the clipboard")
+
+// errNoText is a clipboard with no text on it. Nobody sees it: Ctrl+V
+// then sends the key on, as it did before text was pasted at all.
+var errNoText = errors.New("there is no text on the clipboard")
 
 // clipboardToolError names the program the user has to install.
 type clipboardToolError struct{ msg string }
@@ -78,6 +85,86 @@ func (systemClipboard) ReadPNG(ctx context.Context) ([]byte, error) {
 	default:
 		return readClipboardUnix(ctx)
 	}
+}
+
+// ReadText reads the text on the clipboard. It carries no message of
+// its own: every failure here, a missing tool included, means Ctrl+V
+// sends the key on, and ReadPNG has already named a missing tool.
+func (systemClipboard) ReadText(ctx context.Context) (string, error) {
+	switch goos() {
+	case "darwin":
+		out, err := runClipboardTool(ctx, "pbpaste")
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	case "windows":
+		return "", errNoText
+	default:
+		return readClipboardTextUnix(ctx)
+	}
+}
+
+// textTargets are the clipboard types that hold text, best first. A
+// terminal pastes the same UTF-8 these offer.
+var textTargets = []string{"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "STRING", "TEXT"}
+
+// readClipboardTextUnix reads Wayland's clipboard when there is a
+// Wayland display, else X11's, asking for the offered types first so a
+// clipboard holding only an image is errNoText and not a tool failure.
+func readClipboardTextUnix(ctx context.Context) (string, error) {
+	switch {
+	case os.Getenv(envWaylandDisplay) != "":
+		if _, err := exec.LookPath("wl-paste"); err != nil {
+			return "", err
+		}
+		types, err := runClipboardTool(ctx, "wl-paste", "--list-types")
+		if err != nil {
+			return "", err
+		}
+		t := pickType(types, textTargets)
+		if t == "" {
+			return "", errNoText
+		}
+		out, err := runClipboardTool(ctx, "wl-paste", "--no-newline", "--type", t)
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	case os.Getenv(envDisplay) != "":
+		if _, err := exec.LookPath("xclip"); err != nil {
+			return "", err
+		}
+		types, err := runClipboardTool(ctx, "xclip", "-selection", "clipboard", "-t", "TARGETS", "-o")
+		if err != nil {
+			return "", err
+		}
+		t := pickType(types, textTargets)
+		if t == "" {
+			return "", errNoText
+		}
+		out, err := runClipboardTool(ctx, "xclip", "-selection", "clipboard", "-t", t, "-o")
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	default:
+		return "", errNoText
+	}
+}
+
+// pickType is the first of want the clipboard offers.
+func pickType(types []byte, want []string) string {
+	have := map[string]bool{}
+	for _, l := range strings.Split(string(types), "\n") {
+		have[strings.TrimSpace(l)] = true
+	}
+	for _, w := range want {
+		if have[w] {
+			return w
+		}
+	}
+	return ""
 }
 
 // runClipboardTool runs one clipboard program and returns its stdout.

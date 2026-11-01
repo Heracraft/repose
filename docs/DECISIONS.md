@@ -27076,3 +27076,66 @@ easy to read as noise and wait out. It is not noise: it is a dependency
 of the build changing without a commit, and it blocks every branch until
 someone owns it. The same week's lesson from I-926 points the other way
 and is the same lesson -- read the failure, do not re-run it.
+**I-940. Ctrl+V with text on the clipboard pastes the text, because in a
+machine's terminal nothing else can.** (owner, 2026-11-01: "when you
+click paste ... it tells you no image found even though what I'm trying
+to paste is text ... I think that's just bad user experience."
+Supersedes I-280's "no image ... sends the key on untouched and prints
+nothing".)
+
+Ctrl+V is not a paste key in a terminal: the terminal pastes on
+Ctrl+Shift+V (Cmd+V on a Mac) and sends Ctrl+V to the program as 0x16.
+What pastes on Ctrl+V is Claude Code itself, by reading the clipboard of
+the machine it runs on. On a laptop that is the user's clipboard, so it
+works. In a guest it is the guest's clipboard, which is empty, so Claude
+Code says there is no image and the user reaches for Ctrl+Shift+V
+instead. I-280 passed the key through for text on purpose, to leave
+vim's block select and readline's quoted insert alone; the cost of that
+choice is this message, on the one key the user presses most.
+
+Doing nothing is not an option that exists here. The clipboard is on the
+laptop and the agent is on the host, and the input proxy is the only
+piece of repose still running on the laptop while the agent runs over
+there. So Ctrl+V now reads the clipboard image first, as before, and
+with no image on it reads the text and types it as a bracketed paste:
+byte for byte the paste the terminal's own paste key sends, which is why
+every program on the far side -- Claude Code, a shell, vim -- treats
+both keys the same. tmux strips the markers for a pane that did not ask
+for a paste, as it already does for a pasted image path, so a password
+prompt sees the text and not the escapes.
+
+- *The text.* `pbpaste` on macOS; on Linux the offered types are listed
+  first and the best text one read, `wl-paste --no-newline --type <t>`
+  or `xclip -selection clipboard -t <t> -o` for the first of
+  `text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`, `STRING`,
+  `TEXT`. The same 2 s probe as the image covers both reads.
+- *One trailing newline goes.* `wl-paste --no-newline` drops it anyway,
+  so keeping it on the others would paste one clipboard two ways
+  depending on the display server, and a pasted line that keeps its
+  newline runs itself in a shell pane.
+- *Paste markers inside the text are removed*, as terminals remove them.
+  Text carrying an end marker would otherwise close the paste early and
+  have its remainder read as keys -- the one way a clipboard could have
+  typed commands of its own.
+- *Paths are still a drop.* Clipboard text that is only paths of files on
+  the laptop, within the 64 KiB the scanner reads, takes the drop path:
+  same copy, limits, key and hidden-file refusals, same status line. A
+  path copied and pasted with either key now does the same thing.
+- *The key still goes through* when the clipboard holds neither image nor
+  text, cannot be read, or has no tool. That is the vim case and the
+  readline case, and both answer to Ctrl+Q where they do not; the docs
+  say so, in run-and-attach and in troubleshooting.
+- *Nothing is stored or logged.* The text goes over the ssh that is
+  already attached, to the pane. Unlike an image it is never written to
+  a file, so a password pasted this way leaves nothing in
+  `/tmp/repose-paste`.
+
+*Rejected:* asking the multiplexer what the focused pane runs
+(`pane_current_command`) and pasting only into an agent's pane. It keeps
+vim's key perfectly and costs an ssh round trip per Ctrl+V, a second
+rule users have to know, and herdr, which does not report the pane's
+program at all; the Ctrl+Q substitution that Windows terminals forced on
+vim users years ago is cheaper than a behaviour that changes by pane.
+An OSC 52 or clipboard socket into the guest (I-252's reasons stand: the
+guest must not read the laptop's clipboard). Telling the user to press
+Ctrl+Shift+V (that is the complaint, written down).

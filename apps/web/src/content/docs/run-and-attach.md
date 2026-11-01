@@ -190,7 +190,7 @@ A private key is a file whose name starts with `id_rsa`, `id_dsa`, `id_ecdsa` or
 
 On macOS a terminal sends nothing at all for `Cmd+V` when the clipboard holds only an image, so no key handler can see it. While you're attached, repose adds a text version to such a clipboard: the path of a PNG copy in `~/Library/Caches/repose/clipboard/`. `Cmd+V` pastes that path, and the file is copied like a dropped one. The image stays on the clipboard as well, so apps that take images still get it; a plain text field gets the path. When you detach, the text comes off again unless you've copied something since. The next attach deletes the copies over a day old and all but the newest 20. `REPOSE_NO_CLIPBOARD_PATH=1` leaves your clipboard alone, and then only `Ctrl+V` pastes an image.
 
-`Ctrl+V` reads the clipboard itself. With no image on it, `Ctrl+V` is an ordinary `Ctrl+V`, so vim and friends are unaffected. On Linux it needs `wl-clipboard` under Wayland or `xclip` under X11, and the status line names the missing one once.
+`Ctrl+V` reads the clipboard itself: the image on it, else the text on it, without one trailing line end. With nothing on your clipboard it reaches the program as `Ctrl+V`; vim's block select and the shell's quoted insert also answer to `Ctrl+Q`. On Linux it needs `wl-clipboard` under Wayland or `xclip` under X11, and the status line names the missing one once.
 
 `REPOSE_NO_INPUT_PROXY=1` turns all of this off: `run` and `attach` hand your terminal straight to `ssh`, and a drop pastes your laptop's path.
 
