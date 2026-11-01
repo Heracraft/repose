@@ -26892,6 +26892,41 @@ a unix socket carries no path either. Only `+E`, which resolves the peer
 of each endpoint, shows the relationship. Grepping for a path finds a
 unix socket only when the fd is the listener.
 
+- *Addendum (stop-asked, 2026-11-01).* The fault stopped, which the
+  evidence above could not show. Counted from
+  `journalctl -u hostd --since "14 days ago" -o cat | grep "wake failed"`
+  on both hosts and parsed whole, not tailed:
+
+  | | |
+  |---|---|
+  | host-01, 14 days | 38 `wake failed` |
+  | by phase | `resume` 37, `guestd` 1 |
+  | by day | 29 Oct 8, 30 Oct 29, 1 Nov 1 |
+  | by error | `status 503` 25, `vm.info ... write` 12, `vsockrpc: EOF` 1 |
+  | distinct guests | 2 |
+  | host-02, 14 days | **zero**, of any phase |
+
+  Every one of the 37 `resume` failures falls on 29 or 30 October: first
+  `2026-10-29T22:24:52Z`, last `2026-10-30T23:39:33Z`. The switch was 31
+  October at 00:52 and 00:53. **No `resume` failure postdates it.** The
+  two error strings are the connection cap by its signature -- an API
+  that answers 503 and then refuses the write -- and they stop dead at
+  the switch.
+
+  This is the claim the entry makes and the evidence above could not
+  reach. A unit test (25 calls, 25 sockets left open, then 0) and one
+  live guest (20 calls, 0 left open) show the *client stopped leaking*.
+  29 failures on 30 October against none in the days since shows the
+  *fault stopped*, which is the part an operator cares about and the
+  only form of the claim that could have been wrong.
+
+  The one line left over is the `guestd`-phase failure of
+  2026-11-01T21:39:07Z, which is not the leak: a VM whose `resume`
+  succeeded and whose guestd was gone (`vsockrpc: EOF`). It is the only
+  one of its kind, the only one after the switch, and the only one the
+  leak does not explain. I-950 makes its consequence cheap; the cause is
+  unreproduced and on the owner's list.
+
 **I-922. Three more places that threw the diagnosis away, and one that
 never checked its input.** (gap hunt after the job incident, 2026-10-30.
 Applies I-912.)
