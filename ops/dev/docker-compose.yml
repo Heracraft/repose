@@ -13,6 +13,14 @@
 # The dashboards and their provisioning file are mounted read-only from
 # ops/, so a provisioning mistake shows up here rather than on the server. `ops/check.sh --grafana`
 # brings the stack up, waits for Grafana, and asserts every dashboard loaded.
+#
+# The alerting is NOT mounted, deliberately: the owner's Grafana is a
+# Coolify-managed container that is not to grow another bind mount, so the
+# alert rules, contact points and notification policy go in over the HTTP API
+# (DECISIONS I-944). `ops/check.sh --grafana` runs `ops/grafana/push.py`
+# against this stack and then `ops/grafana/verify.py`, which is the same path
+# the server takes. Dev's Grafana is anonymous admin, so the push needs no
+# token here; a real one needs GRAFANA_TOKEN.
 name: repose-obs-dev
 
 services:
@@ -67,21 +75,12 @@ services:
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_USERS_DEFAULT_THEME: dark
       GF_LOG_LEVEL: info
-      # The inbox the provisioned contact points expand at load time. Dev
-      # sends no mail (no GF_SMTP_ENABLED), so this only has to be an address.
-      REPOSE_ALERT_EMAIL: alerts@example.invalid
     volumes:
       # The real dashboard provider and the real dashboards; only the
       # datasource URLs differ from the server, because two provisioning files
       # declaring the same uid is an error rather than an override.
       - ../grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ../dashboards:/etc/grafana/dashboards/repose:ro
-      # The real alert rules, contact points and notification policy, so a
-      # rule Grafana would refuse is refused here and not on the server.
-      - ../grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
-      # The notification policy reads the Uptime Kuma push URL from a file.
-      # Dev's is a dummy: nothing in this stack should push anywhere.
-      - ./grafana-watchdog-url-dev:/etc/grafana/secrets/repose-watchdog-url:ro
       - ./grafana-datasources-dev.yaml:/etc/grafana/provisioning/datasources/repose.yaml:ro
       - grafana:/var/lib/grafana
     ports:

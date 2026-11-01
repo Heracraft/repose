@@ -13,7 +13,7 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
 Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (Grafana Postgres datasource, read-only role)
-personal server        Loki, Prometheus, Grafana (evaluates the alerts and emails the owner)
+personal server        Loki, Prometheus, Grafana (evaluates the alerts and notifies the owner)
 ```
 
 Every exporter binds the host's WireGuard address and nothing else; a repose
@@ -327,36 +327,51 @@ host row by id and is always scraped, and
 host is in, 0 for its others. `HostUnregistered` reads `registering`,
 `HostUnreachable` reads `unreachable` (one alert per host, which the
 Alertmanager route held back behind *that* host's HostdDown and no other;
-Grafana has no inhibitions, so both now arrive in the same page email),
+Grafana has no inhibitions, so both now arrive),
 and `HostNotInTargets` compares the ready ids against the `host_id`
 labels of the `hostd` job. The sweep that sets it runs in api-grpc, every
 15 seconds; `ApiHostsAbsent` is what says the series are gone.
 
 The rules are written once in `ops/alerts.yaml`, as Prometheus rules, and
 `ops/grafana/alerts-gen.py` turns them into Grafana's own alert rules under
-`ops/grafana/provisioning/alerting/`. Grafana evaluates them and emails the
-owner itself, at the address Azure's alerts use (I-942: the personal server
-has no Alertmanager, so the routing of I-648 and I-848 was never installed;
-Grafana was already running. I-848 moved email off Google Chat, which needed
-calert and put an unwatched process in the alert path). A `page` goes out
-after 20 s and repeats hourly; the rest wait 30 s for their group and repeat
-every 12 hours. The always-firing `Watchdog` goes only to an Uptime Kuma push
-monitor, once a minute, which posts to the Chat space when the pushes stop,
-so a dead Prometheus or Grafana is heard too, and a dead personal server as
-long as Kuma runs somewhere else. Azure's own view of the three VMs (a
-platform reboot, planned maintenance, a VM not running) is emailed by Azure
-Monitor and needs none of this (RUNBOOK "Azure alert", DECISIONS I-648). Each
-alert name is a heading in `RUNBOOK.md`, and `ops/check.sh` fails if one is
-missing. Each also has a `promtool` test case, because an alert with a wrong
-expression looks like a quiet system until the incident it was written for.
+`ops/grafana/provisioning/alerting/`. Grafana evaluates them, by querying
+Prometheus, and notifies through its own contact point; `ops/grafana/push.py`
+puts them in over Grafana's HTTP API (I-942: the personal server has no
+Alertmanager, so the routing of I-648 and I-848 was never installed, and
+Grafana was already running. I-944: no mount, and no routing of ours).
+Prometheus itself has no `rule_files:` and no `alerting:` block and needs
+neither. Azure's own view of the three VMs (a platform reboot, planned
+maintenance, a VM not running) is emailed by Azure Monitor and needs none of
+this (RUNBOOK "Azure alert", DECISIONS I-648). Each alert name is a heading
+in `RUNBOOK.md`, and `ops/check.sh` fails if one is missing. Each also has a
+`promtool` test case, because an alert with a wrong expression looks like a
+quiet system until the incident it was written for.
 
-Two things are different from the Alertmanager routing the rest of these
-docs grew up with. **There are no inhibitions.** Grafana cannot express
-`inhibit_rules`, so nothing holds HostUnreachable back behind HostdDown, or
-the four pool alerts behind PoolUnavailable. Instead every `page` of this
-stack is one notification group, so an outage that trips three of them sends
-one email naming all three; which of the three is the cause is for the reader
-to pick, and `RUNBOOK.md` says which under each heading. **Silences are
-Grafana's**, not `amtool`'s: Alerting -> Silences, or the **Silence** button
-on a firing rule. Say why in the comment; a silence with no comment is
-deleted by a nightly job.
+Four things are different from the Alertmanager routing the rest of these
+docs grew up with.
+
+**Who gets told is set up in Grafana, not here.** One contact point, with
+the default notification policy pointed at it, both in the UI. repose
+provisions no contact point and no policy, so it holds no SMTP password and
+no address, and whether notifications arrive by email or Google Chat is the
+owner's choice. A fresh Grafana delivers nothing until both of those are
+done (`ops/README.md` step 3).
+
+**There are no inhibitions, and no grouping of ours either.** Grafana cannot
+express `inhibit_rules`, so nothing holds HostUnreachable back behind
+HostdDown, or the four pool alerts behind PoolUnavailable, and the default
+policy groups by folder and alert name: a host that goes away sends HostdDown,
+HostUnreachable and MonitoringPathDown as three notifications, not one. Each
+names its own runbook heading. Grouping the pages into one message is one
+field in the UI (group by `stack`), and is the owner's call to make.
+
+**There is no heartbeat.** `Watchdog` is the one alert of `ops/alerts.yaml`
+that Grafana does not get (I-944). A dead-man's switch has to be watched from
+somewhere the failure cannot reach, and this server's Uptime Kuma is on this
+server, so it would have gone down with the thing it was watching. A
+Prometheus or Grafana that is wholly down therefore says nothing, and Azure's
+VM alert is what is left.
+
+**Silences are Grafana's**, not `amtool`'s: Alerting -> Silences, or the
+**Silence** button on a firing rule. Say why in the comment; a silence with
+no comment is deleted by a nightly job.

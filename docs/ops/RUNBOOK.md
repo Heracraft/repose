@@ -180,17 +180,20 @@ copy-paste version):
   `ops/prometheus/targets/hosts.yml`, which Prometheus re-reads every minute,
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
-- `ops/alerts.yaml` goes in Prometheus's rule files. The same rules are
-  evaluated a second time by Grafana, which is what emails the owner:
-  `ops/grafana/provisioning/alerting/` holds them, generated from
-  `ops/alerts.yaml` by `ops/grafana/alerts-gen.py`, with the contact points
-  and the notification policy beside them. The SMTP password is a Resend API
-  key in `/etc/grafana/secrets`, and Watchdog goes to an Uptime Kuma push
-  monitor. There is no Alertmanager (DECISIONS I-648, I-848, I-942;
-  `ops/README.md` step 3).
-- `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
-  provisioning; the eight dashboards appear in a `repose` folder and the 54
-  alert rules under Alerting, in a `repose alerts` folder of their own.
+- `ops/alerts.yaml` is not loaded by Prometheus, which has no `rule_files:`
+  and no `alerting:` block and needs neither. Grafana evaluates the rules, by
+  querying Prometheus, and notifies through its own contact point.
+  `ops/grafana/alerts-gen.py` generates them from `ops/alerts.yaml` into
+  `ops/grafana/provisioning/alerting/`, and `ops/grafana/push.py` puts them
+  into Grafana over its HTTP API; nothing is mounted. There is no
+  Alertmanager, no SMTP password of repose's and no heartbeat (DECISIONS
+  I-648, I-848, I-942, I-944; `ops/README.md` step 3).
+- `ops/dashboards/*.json` and the datasources go in the same way, by the same
+  command. The eight dashboards appear in a `repose` folder and the 53 alert
+  rules under Alerting, in a `repose alerts` folder of their own.
+- `ops/grafana/verify.py` says whether that Grafana still holds what the
+  repository says it should. Nothing reconciles at boot, so a Grafana whose
+  database was replaced has no alert rules and says nothing about it.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
   console logs, and needs the compactor enabled to do anything.
 - The server joins the edge's WireGuard as one more peer:
@@ -549,20 +552,30 @@ HostdDown, not this.
 
 ## Watchdog
 
-Always firing, by design. Grafana sends it every minute to an Uptime
-Kuma push monitor and to nothing else. When the pushes stop, Kuma posts
-"down" to the Chat space itself: Prometheus, Grafana or the
-personal server has stopped, and no other alert can reach anyone.
+**Not deployed.** This alert exists in `ops/alerts.yaml`, which is also the
+definition for the Alertmanager route that is kept and not deployed, and
+Grafana is not given it: `ops/grafana/alerts-gen.py` excludes it (DECISIONS
+I-944). Nothing pings Uptime Kuma, and no Kuma monitor should be waiting for
+a push.
 
-1. Is the server up? `tailscale ping augusti` from woker-1.
-2. On it: `systemctl status prometheus grafana` (or their containers),
-   `curl -s localhost:3000/api/health`, and Grafana's Alerting -> Alert
-   rules, where `Watchdog` should be firing.
-3. Watchdog firing but Kuma reports down: the push URL file
-   (`/etc/grafana/secrets/repose-watchdog-url`), or the webhook contact
-   point's own error under Alerting -> Contact points, or Kuma itself.
-4. Until it is fixed, the Azure alert email is the only alert that still
-   reaches the owner.
+Why: a dead-man's switch is only worth having where the watcher sits
+somewhere the failure it watches for cannot reach. The owner's Uptime Kuma
+runs on the same server as Prometheus and Grafana, so the one outage this
+alert exists to catch -- that server stopping -- would have stopped Kuma
+with it and the monitor would have reported down for the wrong reason, or
+not at all. A heartbeat that proves nothing is worse than none, because it
+reads as cover.
+
+What is left when the whole personal server goes quiet:
+
+1. Azure Monitor emails about the VM itself (RUNBOOK "Azure alert"). That is
+   the only automatic notice.
+2. Nothing else. No repose alert can reach anyone, and nothing says so.
+3. If this matters enough to fix, the fix is an Uptime Kuma (or any other
+   checker) running somewhere else, watching Grafana's `/api/health`. Then
+   `Watchdog` can be taken out of EXCLUDED in the generator and pointed at
+   it. Until then this heading is here because every alert name in
+   `ops/alerts.yaml` has one, and `ops/check.sh` enforces that.
 
 ## Azure alert
 

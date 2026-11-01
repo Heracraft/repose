@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Generate the repose Grafana-managed alert rules.
 
-The 54 rules of `ops/alerts.yaml`, turned into the provisioning file
-Grafana's own alerting engine reads
-(`ops/grafana/provisioning/alerting/repose-rules.yaml`).
+The rules of `ops/alerts.yaml`, turned into the provisioning file Grafana's
+own alerting engine reads
+(`ops/grafana/provisioning/alerting/repose-rules.yaml`). 54 alerts in, 53
+out: `Watchdog` is left behind on purpose, see EXCLUDED.
 
-Why a generator and not 54 hand-written Grafana rules: a Grafana rule is 40
+Why a generator and not 53 hand-written Grafana rules: a Grafana rule is 40
 lines of query, reduce and threshold nodes of which the name, the expression
 and one number matter, and the alert itself is already written down once in
 `ops/alerts.yaml` -- which promtool parses, which `promtool test rules`
@@ -21,11 +22,12 @@ generated protobuf stubs of DECISIONS I-38.
     python3 ops/grafana/alerts-gen.py          # rewrite the YAML
     python3 ops/grafana/alerts-gen.py --check  # fail if it is out of date
 
-Contact points and the notification policy are not generated: there is no
-second source for them. They are hand-kept in
-`ops/grafana/provisioning/alerting/repose-notifications.yaml`, next to the
-output of this file, and `ops/check.sh --grafana` proves Grafana accepts
-them.
+Rules, and nothing else. No contact point and no notification policy are
+generated or pushed: with no `policies:` of ours, Grafana's own default
+policy sends every alert to whatever default contact point that Grafana has,
+which the owner sets up in the UI as email, Google Chat or anything else
+(DECISIONS I-944). The `severity` labels are still on every rule, so a route
+can be added later by hand, but routing is not this repository's business.
 
 How a Prometheus rule becomes a Grafana rule (DECISIONS I-942)
 --------------------------------------------------------------
@@ -42,7 +44,7 @@ and `condition: C`.
 What goes in A depends on the shape of the expression:
 
 * A *threshold* expression -- anything ending in a top-level comparison
-  against a number, which is 48 of the 54 -- is split. `a / b > 0.8` becomes
+  against a number, which is 48 of the 53 -- is split. `a / b > 0.8` becomes
   A = `a / b` and C = `is above 0.8`. Splitting, rather than passing the
   whole expression and asking for "above 0", is not tidiness: the value of
   `up{job="hostd"} == 0` *is* zero, so "above 0" would never fire for the
@@ -55,14 +57,16 @@ What goes in A depends on the shape of the expression:
   firing value is always above zero, which is true of all six but is not
   something a generator can prove, so they are named in BOOLEAN_EXPRS with
   the reason. A new rule of that shape fails this generator rather than
-  getting a condition that silently never fires.
+  getting a condition that silently never fires. Five of them reach Grafana;
+  the sixth was `Watchdog`.
 
-`noDataState: OK` and `execErrState: OK` are both deliberate, and both match
-Prometheus: a rule whose series are absent does not fire (absence has its
-own rules, `ApiHostsAbsent` and `HostNotInTargets`), and a Prometheus that
-cannot be queried at all is what `Watchdog` is for -- it stops pinging Uptime
-Kuma, and Kuma says so. The alternative, `execErrState: Error`, would send
-one DatasourceError notification per rule every time Prometheus restarts.
+`noDataState: OK` and `execErrState: OK` are both deliberate. They match
+Prometheus, where a rule whose series are absent does not fire -- absence has
+its own rules, `ApiHostsAbsent` and `HostNotInTargets`. The alternative,
+`execErrState: Error`, would send one DatasourceError notification per rule
+every time Prometheus restarts, 53 of them for one planned event. The cost is
+that a Prometheus Grafana cannot query at all goes unsaid, which is what the
+heartbeat would have covered if there were anywhere to put it.
 """
 
 from __future__ import annotations
@@ -117,7 +121,21 @@ BOOLEAN_EXPRS = {
     "BootSlow": "the value is the slow-boot share, and the rule needs it > 0.5",
     "HostNotInTargets": "the value is the ready-state gauge, which is 1",
     "NotifyFailing": "both sides of the `or` are counts the rule needs above 0",
-    "Watchdog": "vector(1) is 1, always",
+}
+
+# Alerts of ops/alerts.yaml that Grafana does not get, with the reason.
+#
+# `Watchdog` is a dead-man's switch: it always fires, and the point of it is
+# the Uptime Kuma push monitor going red when the pings stop. Kuma has to be
+# somewhere the failure it watches for cannot reach it, and the owner's runs
+# on the same server as Grafana and Prometheus, so the one outage it exists
+# to catch would take Kuma with it. Rather than ship a heartbeat that proves
+# nothing, there is none: no rule here, no webhook contact point, no route
+# (DECISIONS I-944). `ops/alerts.yaml` keeps it, because that file is also
+# the Alertmanager definition, which is kept and not deployed.
+EXCLUDED = {
+    "Watchdog": "a heartbeat is only worth having where the watcher is "
+                "somewhere else, and the owner's Uptime Kuma is on this server",
 }
 
 # Annotation templates are Go templates in both systems, but the value is
@@ -170,8 +188,29 @@ def _scalar(text: str, where: int) -> str:
         if not text.endswith("'") or len(text) < 2:
             raise YamlError(f"line {where}: unterminated single-quoted scalar")
         return text[1:-1].replace("''", "'")
-    if text.startswith(("[", "{", "&", "*", "!", ">")):
+    if text.startswith("[") and text.endswith("]"):
+        # A flow sequence of scalars, which is how the notification policy
+        # writes `group_by` and its matchers. Nothing nests inside one here.
+        inner = text[1:-1].strip()
+        if not inner:
+            return []
+        if "[" in inner or "{" in inner:
+            raise YamlError(f"line {where}: a nested flow sequence is not read here")
+        return [_scalar(part, where) for part in inner.split(",")]
+    if text.startswith(("{", "&", "*", "!", ">")):
         raise YamlError(f"line {where}: {text[0]!r} is not a construct this reader knows")
+    # A plain scalar carries its type, because ops/grafana/push.py reads the
+    # datasource file with this same reader and sends it as JSON, where
+    # `isDefault: "true"` and `maxOpenConns: "4"` are the wrong types. Nothing
+    # in ops/alerts.yaml is affected: `5m`, `warn` and `1m` are not numbers.
+    if text in ("true", "false"):
+        return text == "true"
+    if text in ("null", "~"):
+        return None
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    if re.fullmatch(r"-?(\d+\.\d*|\.\d+)([eE][-+]?\d+)?|-?\d+[eE][-+]?\d+", text):
+        return float(text)
     return text
 
 
@@ -181,19 +220,31 @@ def _parse(lines: list[tuple[int, str]], start: int, indent: int):
     out = None
     while i < len(lines):
         no, raw = lines[i]
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            i += 1
+            continue
         col = len(raw) - len(raw.lstrip())
         if col < indent:
             break
         if col > indent:
             raise YamlError(f"line {no}: unexpected indent")
         body = raw.strip()
+        if not body or body.startswith("#"):
+            i += 1
+            continue
         if body.startswith("- "):
             if out is None:
                 out = []
             if not isinstance(out, list):
                 raise YamlError(f"line {no}: sequence item inside a mapping")
+            rest = body[2:]
+            if not re.match(r"[A-Za-z_][A-Za-z0-9_]*:(\s|$)", rest):
+                # A sequence of scalars, `- [stack, =, repose]` included.
+                out.append(_scalar(rest, no))
+                i += 1
+                continue
             # `- key: value` opens a mapping whose first key sits at col + 2.
-            lines[i] = (no, " " * (col + 2) + body[2:])
+            lines[i] = (no, " " * (col + 2) + rest)
             item, i = _parse(lines, i, col + 2)
             out.append(item)
             continue
@@ -218,6 +269,8 @@ def _parse(lines: list[tuple[int, str]], start: int, indent: int):
 
 
 def _next_indent(lines, i, parent_col, no) -> int:
+    while i < len(lines) and (not lines[i][1].strip() or lines[i][1].lstrip().startswith("#")):
+        i += 1
     if i >= len(lines):
         raise YamlError(f"line {no}: key with nothing under it")
     col = len(lines[i][1]) - len(lines[i][1].lstrip())
@@ -227,32 +280,49 @@ def _next_indent(lines, i, parent_col, no) -> int:
 
 
 def _block_scalar(lines, i, parent_col) -> tuple[str, int]:
+    """A literal `|` block: newlines kept, which is what `|` means.
+
+    They are kept because one of these is an email body, where the blank
+    lines between the summary, the description and the runbook are the
+    message's shape. A PromQL expression broken over lines is folded back to
+    one by its own caller, not here."""
     body = []
     while i < len(lines):
         no, raw = lines[i]
-        col = len(raw) - len(raw.lstrip())
-        if col <= parent_col:
-            break
-        body.append(raw.strip())
+        if raw.strip():
+            col = len(raw) - len(raw.lstrip())
+            if col <= parent_col:
+                break
+        body.append(raw)
         i += 1
+    while body and not body[-1].strip():
+        body.pop()
     if not body:
         raise YamlError("empty block scalar")
-    # Folded onto one line: every block scalar here is one PromQL expression
-    # broken for reading, which is what `promtool` sees too.
-    return " ".join(body), i
+    indent = min(len(l) - len(l.lstrip()) for l in body if l.strip())
+    return "\n".join(l[indent:] if l.strip() else "" for l in body) + "\n", i
 
 
-def read_source(path: pathlib.Path) -> list[dict]:
+def read_yaml(path: pathlib.Path) -> dict:
+    """One YAML document of the subset above. `ops/grafana/push.py` reads the
+    datasource and notification files with this too, so there is one parser in
+    ops/grafana and one place where an unknown construct is refused."""
     lines = []
     for n, raw in enumerate(path.read_text().splitlines(), 1):
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
         if raw.rstrip() != raw:
-            raise YamlError(f"line {n}: trailing whitespace")
+            raise YamlError(f"{path.name} line {n}: trailing whitespace")
+        # Blank and comment lines are kept, because inside a `|` block they
+        # are content: dropping them turned an email body into one line.
+        # _parse skips them everywhere else.
         lines.append((n, raw))
     doc, end = _parse(lines, 0, 0)
     if end != len(lines):
-        raise YamlError(f"line {lines[end][0]}: trailing content")
+        raise YamlError(f"{path.name} line {lines[end][0]}: trailing content")
+    return doc
+
+
+def read_source(path: pathlib.Path) -> list[dict]:
+    doc = read_yaml(path)
     if set(doc) != {"groups"}:
         raise YamlError(f"expected one top-level key `groups`, got {sorted(doc)}")
     return doc["groups"]
@@ -341,7 +411,8 @@ def _number(text: str):
 
 def split(name: str, expr: str) -> tuple[str, str, float]:
     """(query, threshold evaluator, threshold) for one Prometheus expression."""
-    expr = expr.strip()
+    # An expression broken over several lines for reading is one expression.
+    expr = " ".join(expr.split())
     tokens = list(_top_level(expr))
     logical = [t for _, t in tokens if t in ("and", "or", "unless")]
     comparisons = [(p, t) for p, t in tokens if t in EVALUATOR]
@@ -498,13 +569,22 @@ HEADER = """\
 # and re-run the generator; `ops/check.sh` fails if this file is stale
 # (DECISIONS I-942).
 #
+# NOT MOUNTED. This is the readable definition; ops/grafana/push.py puts it
+# into a Grafana over the HTTP API (DECISIONS I-944). The shape is still
+# Grafana's provisioning format, so a Grafana that does mount it loads the
+# same rules.
+#
 # Each rule is a Prometheus query (A), a reduce to one number (B) and a
 # threshold (C), because Grafana needs a named condition where Prometheus
 # needs none. The number the annotations quote is B, so `{{ $values.B }}` is
 # what Prometheus wrote as `{{ $value }}`.
 #
-# Who gets told, and how often, is not here: it is the notification policy of
-# repose-notifications.yaml in this directory.
+# Who gets told is not here and is not generated: Grafana's own default
+# notification policy sends these to its default contact point, which the
+# owner sets up in the UI. The `severity` label is on every rule for whoever
+# wants to add a route.
+#
+# 53 rules for 54 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
 """
 
 _BARE = re.compile(r"[A-Za-z0-9_.:/@-]+")
@@ -556,28 +636,63 @@ def emit(value, indent: int = 0) -> list[str]:
     return lines
 
 
-def render() -> str:
-    groups = []
+def groups() -> list[dict]:
+    """Every rule group, in the provisioning file's own shape.
+
+    `ops/grafana/push.py` and `ops/grafana/verify.py` call this rather than
+    re-reading the YAML, so there is one definition of a Grafana rule in this
+    repository and the pusher cannot drift from the generator. They check the
+    committed file against `render()` before trusting either.
+    """
+    out = []
     seen = {}
+    names = set()
     for group in read_source(SOURCE):
         rules = []
         for rule in group["rules"]:
+            names.add(rule["alert"])
+            if rule["alert"] in EXCLUDED:
+                continue
             built = grafana_rule(rule)
             if built["uid"] in seen:
                 raise YamlError(f"{rule['alert']} and {seen[built['uid']]} share a uid")
             seen[built["uid"]] = rule["alert"]
             rules.append(built)
-        groups.append(
-            {
-                "orgId": 1,
-                "name": group["name"],
-                "folder": FOLDER,
-                "interval": group["interval"],
-                "rules": rules,
-            }
+        # A group whose every rule is excluded is left out rather than emitted
+        # empty: `repose-meta` held only Watchdog.
+        if rules:
+            out.append(
+                {
+                    "orgId": 1,
+                    "name": group["name"],
+                    "folder": FOLDER,
+                    "interval": group["interval"],
+                    "rules": rules,
+                }
+            )
+    for name in sorted(set(EXCLUDED) | set(BOOLEAN_EXPRS)):
+        if name not in names:
+            raise YamlError(
+                f"{name} is named in this generator and is not an alert of "
+                "ops/alerts.yaml any more; take it out"
+            )
+    return out
+
+
+def render() -> str:
+    return HEADER + "\n".join(emit({"apiVersion": 1, "groups": groups()})) + "\n"
+
+
+def stale() -> str | None:
+    """The reason the committed file cannot be trusted, or None."""
+    if not OUT.exists():
+        return f"{OUT.relative_to(ROOT)} does not exist"
+    if OUT.read_text() != render():
+        return (
+            f"{OUT.relative_to(ROOT)} is not what ops/alerts.yaml produces; "
+            "run python3 ops/grafana/alerts-gen.py"
         )
-    body = emit({"apiVersion": 1, "groups": groups})
-    return HEADER + "\n".join(body) + "\n"
+    return None
 
 
 def main() -> int:
@@ -590,12 +705,9 @@ def main() -> int:
         print(f"ops/grafana/alerts-gen.py: {exc}", file=sys.stderr)
         return 1
     if args.check:
-        have = OUT.read_text() if OUT.exists() else ""
-        if have != want:
-            print(
-                f"{OUT.relative_to(ROOT)} is out of date, run python3 ops/grafana/alerts-gen.py",
-                file=sys.stderr,
-            )
+        why = stale()
+        if why:
+            print(why, file=sys.stderr)
             return 1
         rules = want.count("\n      - uid: ")
         print(f"up to date, {rules} rules")

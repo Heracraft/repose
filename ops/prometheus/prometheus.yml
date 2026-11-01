@@ -1,5 +1,5 @@
-# Prometheus on the owner's personal server (the one that already runs Loki,
-# Grafana and Alertmanager: DECISIONS R2-9). It scrapes repose over the edge's
+# Prometheus on the owner's personal server (the one that already runs Loki
+# and Grafana; there is no Alertmanager, DECISIONS I-942). It scrapes repose over the edge's
 # WireGuard and nothing over the internet, which is why every job's targets
 # are 10.255.0.0/16 addresses (docs/ops/OBSERVABILITY.md "Where things are").
 #
@@ -22,13 +22,14 @@ global:
     env: prod
     stack: repose
 
-rule_files:
-  - /etc/prometheus/repose/alerts.yaml
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ["127.0.0.1:9093"]
+# No rule_files and no alerting block, both deliberate (DECISIONS I-944).
+# Grafana evaluates repose's alert rules itself, by querying this Prometheus,
+# and notifies through its own contact point. So Prometheus has nothing to
+# evaluate and nowhere to send: an `alerting:` block here would point at an
+# Alertmanager the server does not run, and loading ops/alerts.yaml would
+# evaluate every rule a second time for an alert path that goes nowhere.
+# ops/alerts.yaml is still the source of truth -- promtool parses and tests
+# it, and ops/grafana/alerts-gen.py generates Grafana's rules from it.
 
 scrape_configs:
   # node_exporter on every host: CPU, memory, filesystems (StoreFull reads

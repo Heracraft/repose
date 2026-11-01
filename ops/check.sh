@@ -24,9 +24,12 @@
 #                          check is verify.py under --grafana
 #   gen.py --check         committed JSON that no longer matches the generator
 #   grafana                a provisioning file, a dashboard or an alert rule
-#                          Grafana refuses, and an alert that lands on the
-#                          wrong contact point (a page that waits 12 h, a
-#                          Watchdog that emails every 30 s)
+#                          Grafana refuses; an alert that lands on the wrong
+#                          contact point (a page that waits 12 h, a Watchdog
+#                          that emails every 30 s); and, since the alerting
+#                          goes in over the API rather than a mount
+#                          (DECISIONS I-944), that a push followed by a
+#                          second push changes nothing
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -163,22 +166,43 @@ if [ "${1:-}" = "--grafana" ]; then
       fail=1
     fi
   done
-  say "Grafana accepted every alert rule, contact point and route"
-  # The count against ops/alerts.yaml, not just "no error": a rule Grafana
-  # takes the file for and then drops is the failure the generator exists to
-  # prevent.
+  say "the alerting pushes in over the API, as it does on the server"
+  # The alerting is not mounted (DECISIONS I-944), so this is the real path:
+  # ops/grafana/push.py against a running Grafana, then the drift check.
+  # Dev's Grafana is anonymous admin, so there is no token. Its datasources
+  # come from a file of its own (the dev URLs differ), so the push reports
+  # them as left alone rather than writing them.
+  export GRAFANA_URL=http://127.0.0.1:3000
+  export REPOSE_PG_HOST=postgres:5432 REPOSE_PG_PASSWORD=repose
+  unset GRAFANA_TOKEN
+  python3 "$ops/grafana/push.py" --skip-dashboards 2>&1 | sed 's/^/  /' || fail=1
+
+  say "a second push changes nothing"
+  # Idempotence, said by the thing itself: --dry-run reports what it would
+  # change, and after a push that has to be nothing.
+  out=$(python3 "$ops/grafana/push.py" --skip-dashboards --dry-run 2>&1) || fail=1
+  printf '%s\n' "$out" | sed 's/^/  /'
+  if printf '%s' "$out" | grep -qE ': (created|deleted)|[1-9][0-9]* (new|changed)'; then
+    echo "a second push would still change something" >&2
+    fail=1
+  fi
+
+  say "Grafana holds what the generator produces"
+  # The count against ops/alerts.yaml, rule by rule, not just "no error": a
+  # rule that was pushed once and then edited away in the UI is the drift
+  # nothing else catches now.
   python3 "$ops/grafana/verify.py" || fail=1
 
   say "Grafana logged no provisioning or template error"
-  # The dev stack has nowhere to deliver: no GF_SMTP_*, and the Watchdog
-  # webhook points at a closed port on purpose. Those two failures are the
-  # alerting path working, so they are the only errors allowed through. An
-  # annotation that will not expand is NOT one of them: it reaches the owner
-  # as its own template source, and is how `{{ $values.B.Value | ... }}`
-  # without its `if` guard was found (I-942).
+  # The dev stack has nowhere to deliver: no GF_SMTP_* and no contact point
+  # of its own, so a firing alert reaching Grafana's default email receiver
+  # fails. That failure is the alerting path working, and is the only error
+  # allowed through. An annotation that will not expand is NOT one of them:
+  # it reaches the reader as its own template source, and is how
+  # `{{ $values.B.Value | ... }}` without its `if` guard was found (I-942).
   if docker compose -f "$ops/dev/docker-compose.yml" logs grafana 2>&1 \
      | grep -iE 'level=error|provisioning.*error|alerting.*(failed|invalid)' \
-     | grep -vE 'SMTP not configured|dial tcp 127\.0\.0\.1:65535'; then
+     | grep -vE 'SMTP not configured'; then
     fail=1
   else
     echo "clean"

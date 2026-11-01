@@ -7,13 +7,22 @@
 # and re-run the generator; `ops/check.sh` fails if this file is stale
 # (DECISIONS I-942).
 #
+# NOT MOUNTED. This is the readable definition; ops/grafana/push.py puts it
+# into a Grafana over the HTTP API (DECISIONS I-944). The shape is still
+# Grafana's provisioning format, so a Grafana that does mount it loads the
+# same rules.
+#
 # Each rule is a Prometheus query (A), a reduce to one number (B) and a
 # threshold (C), because Grafana needs a named condition where Prometheus
 # needs none. The number the annotations quote is B, so `{{ $values.B }}` is
 # what Prometheus wrote as `{{ $value }}`.
 #
-# Who gets told, and how often, is not here: it is the notification policy of
-# repose-notifications.yaml in this directory.
+# Who gets told is not here and is not generated: Grafana's own default
+# notification policy sends these to its default contact point, which the
+# owner sets up in the UI. The `severity` label is on every rule for whoever
+# wants to add a route.
+#
+# 53 rules for 54 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
 apiVersion: 1
 groups:
   - orgId: 1
@@ -3803,83 +3812,6 @@ groups:
                 uid: repose-prometheus
               editorMode: code
               expr: "max(repose_api_abuse_busy_unattended_projects)"
-              instant: true
-              range: false
-              intervalMs: 1000
-              maxDataPoints: 43200
-          - refId: B
-            relativeTimeRange:
-              from: 600
-              to: 0
-            datasourceUid: __expr__
-            model:
-              refId: B
-              datasource:
-                type: __expr__
-                uid: __expr__
-              type: reduce
-              reducer: last
-              expression: A
-              settings:
-                mode: dropNN
-          - refId: C
-            relativeTimeRange:
-              from: 600
-              to: 0
-            datasourceUid: __expr__
-            model:
-              refId: C
-              datasource:
-                type: __expr__
-                uid: __expr__
-              type: threshold
-              expression: B
-              conditions:
-                - type: query
-                  evaluator:
-                    type: gt
-                    params:
-                      - 0
-                  operator:
-                    type: and
-                  query:
-                    params:
-                      - B
-                  reducer:
-                    type: last
-                    params: []
-  - orgId: 1
-    name: repose-meta
-    folder: "repose alerts"
-    interval: 1m
-    rules:
-      - uid: repose-watchdog
-        title: Watchdog
-        condition: C
-        for: 0m
-        noDataState: OK
-        execErrState: OK
-        isPaused: false
-        labels:
-          severity: heartbeat
-          stack: repose
-        annotations:
-          summary: "the alerting path is working"
-          description: "Always firing. Routed only to the Uptime Kuma push monitor, never to Chat."
-          runbook: "docs/ops/RUNBOOK.md#watchdog"
-        data:
-          - refId: A
-            relativeTimeRange:
-              from: 600
-              to: 0
-            datasourceUid: repose-prometheus
-            model:
-              refId: A
-              datasource:
-                type: prometheus
-                uid: repose-prometheus
-              editorMode: code
-              expr: "vector(1)"
               instant: true
               range: false
               intervalMs: 1000
