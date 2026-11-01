@@ -2653,6 +2653,46 @@ in
           guest.succeed("systemctl stop repose-browser.service")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
 
+      with subtest("a CDP connection held open but silent does not keep the browser alive (I-930)"):
+          # A browser MCP server holds one CDP connection for its whole
+          # life and sends nothing between calls. Counting established
+          # sockets stamped last-cdp every minute for ever, so the stop
+          # below never fired: Chromium kept burning about 15 s of CPU a
+          # minute against the rest rule's 6 s and the machine could
+          # never freeze. Measured on a tenant's guest with no viewer
+          # for 10.8 hours and bytes_sent flat at 0 over 15 s.
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl is-active repose-browser.service")
+          guest.succeed(
+              "systemd-run --unit cdphold python3 -c "
+              "'import socket,time; s=socket.create_connection((\"127.0.0.1\",9225)); time.sleep(900)'"
+          )
+          # The socket is there and established, which is what used to
+          # count as use all by itself.
+          guest.wait_until_succeeds(
+              "test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -ge 1"
+          )
+          # First pass records the byte total; nothing is sent after it.
+          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client /run/repose/desktop/last-cdp")
+          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.wait_until_fails("systemctl is-active repose-browser.service")
+          guest.succeed("systemctl stop cdphold.service || true")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
+
+      with subtest("CDP that is actually used keeps the browser alive (I-930)"):
+          # The other half: traffic must still count, or the fix would
+          # stop a browser an agent is driving.
+          guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client /run/repose/desktop/last-cdp")
+          # Real CDP traffic between the two passes.
+          guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
+          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl is-active repose-browser.service")
+          guest.succeed("systemctl stop repose-browser.service")
+          guest.wait_until_fails("systemctl is-active repose-xvnc.service")
+
       with subtest("a guest's old headless registration gives way; the user's own entries stay"):
           guest.succeed("""cat > /home/dev/.claude.json <<'EOF'
       {"mcpServers": {

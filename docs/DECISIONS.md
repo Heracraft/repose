@@ -27076,3 +27076,58 @@ easy to read as noise and wait out. It is not noise: it is a dependency
 of the build changing without a commit, and it blocks every branch until
 someone owns it. The same week's lesson from I-926 points the other way
 and is the same lesson -- read the failure, do not re-run it.
+
+**I-930. A CDP connection counts as use when bytes move on it, not when
+it is open.** (owner report, 2026-11-01.)
+
+`repose browser` starts Chromium under Xvnc, and `repose-desktop-idle-check`
+stops both after 30 minutes with no viewer and no devtools activity. It
+decided devtools activity like this:
+
+    devtools=$(ss -Htn state established '( sport = :9225 )' | wc -l)
+    [ "$devtools" -eq 0 ] || repose-desktop-stamp last-cdp
+
+A connection *existing* was read as somebody using it. A browser MCP
+server -- `chrome-devtools-mcp`, `playwright-mcp`, which the guest
+registers by default -- opens one CDP connection and holds it for its
+whole life, sending nothing between calls. So `last-cdp` was stamped
+every minute for ever, the 30-minute stop never fired, and Chromium ran
+until the machine was stopped by hand.
+
+That costs the tenant their plan's memory, because the rest rule's quiet
+test also needs `cpu_ns` under 6 s a minute (0.10 of a core). Measured
+on a tenant's guest:
+
+    whole guest:    15,160 ms CPU in 60 s   (threshold 6,000)
+    chromium:       13,430 + 1,640 + 300 ms
+    claude x2 idle:    360 + 270 ms         (the threshold budgets ~2 s)
+    next-server:          10 ms
+    network:          16.7 KB               (threshold 64 KiB)
+    last-client:     38,794 s stale         last-cdp: 12 s
+
+No viewer for 10.8 hours, both agents idle, and `bytes_sent` on the one
+CDP socket flat at 0 over 15 s. The machine had been up 8h43m and could
+never have frozen. The owner found it by noticing the anomaly; nothing
+surfaced it.
+
+The check now sums `bytes_sent` across established CDP sockets and
+stamps only when the total moves, keeping the previous total in
+`/run/repose/desktop/cdp-bytes`. A changed total, not a greater one, so
+a browser restart resetting the counter reads as traffic rather than
+silence. An idle-but-open socket now ages out and the existing stop
+works as designed.
+
+*This is the third instance of one mistake this week, and the reason to
+name it.* I-920: hostd leaked a CH API connection per call, and the cap
+counted sockets that existed rather than work in progress. I-926: a
+stderr tail captured by whoever was not reading. Here: an open socket
+read as a person. **Presence is not activity.** Where a rule asks "is
+this in use", counting things that exist answers a different question,
+and the answer is always "yes".
+
+*Not changed here.* Whether an agent's browser should count toward the
+rest rule's CPU at all is a separate question: a guest running a browser
+nobody is watching is not a guest in use, and 0.10 of a core cannot tell
+them apart. And `repose status` can see every term of this rule but
+prints none of them, so a machine that will not freeze gives its owner
+nothing to go on. Both want the owner.

@@ -114,7 +114,7 @@ let
 
   idleCheck = pkgs.writeShellApplication {
     name = "repose-desktop-idle-check";
-    runtimeInputs = [ pkgs.coreutils pkgs.iproute2 pkgs.systemd stamp ];
+    runtimeInputs = [ pkgs.coreutils pkgs.gawk pkgs.iproute2 pkgs.systemd stamp ];
     text = ''
       # A bridge whose tunnel is gone (the laptop's ssh ended without its
       # hold script running, or sshd gave up on a sleeping laptop) goes
@@ -137,9 +137,29 @@ let
         echo $((now - $(stat -c %Y "${dir}/$1")))
       }
       viewers=$(ss -Htn state established '( sport = :6081 or sport = :5900 )' | wc -l)
-      devtools=$(ss -Htn state established '( sport = :9225 )' | wc -l)
       [ "$viewers" -eq 0 ] || repose-desktop-stamp last-client
-      [ "$devtools" -eq 0 ] || repose-desktop-stamp last-cdp
+      # CDP counts as use when bytes MOVE on it, not when a socket is
+      # merely open (I-930). A browser MCP server -- chrome-devtools-mcp,
+      # playwright-mcp -- holds one CDP connection for its whole life and
+      # sends nothing between calls, so counting established sockets
+      # stamped last-cdp every minute for ever: the 30-minute stop below
+      # never fired, Chromium kept burning about 15 s of CPU a minute
+      # against the rest rule's 6 s, and the machine could never freeze.
+      # Measured on a tenant's guest with no viewer for 10.8 hours and
+      # bytes_sent flat at 0 over 15 s.
+      cdp_now=$(ss -Htni state established '( sport = :9225 )' | awk '
+        { while (match($0, /bytes_sent:[0-9]+/)) {
+            s += substr($0, RSTART + 11, RLENGTH - 11)
+            $0 = substr($0, RSTART + RLENGTH) } }
+        END { printf "%d", s + 0 }')
+      cdp_was=0
+      [ ! -e ${dir}/cdp-bytes ] || cdp_was=$(cat ${dir}/cdp-bytes)
+      # A browser restart resets the counter, so a smaller total is new
+      # traffic, not none.
+      if [ "''${cdp_now:-0}" -ne "''${cdp_was:-0}" ]; then
+        repose-desktop-stamp last-cdp
+      fi
+      printf '%s' "''${cdp_now:-0}" > ${dir}/cdp-bytes
       viewer_idle=$(age last-client)
       cdp_idle=$(age last-cdp)
       if [ "$viewer" = true ] && [ "$viewer_idle" -ge ${toString idleSeconds} ]; then
