@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Tests for ops/dev/closure-equiv.py, against fixture closures.
+
+    ops/dev/closure-equiv-test            run every test
+    ops/dev/closure-equiv-test stamp      run the tests whose name matches
+
+The tool decides whether a branch that touches `nix/` is charged a deploy
+target, and it had no test: `release-queue-test` stubs the comparison out
+(`equiv-stub`), and the comparison itself was checked by hand against two
+revisions of this repository, which is slow, needs nix, and needs a
+revision that happens to show the bug. That is how it came to answer
+"unchanged" to every change that lives in `structuredAttrs` and nobody
+noticed for as long as it took someone to query one branch by hand
+(DECISIONS I-958, and the plan asked for this file in
+docs/research/queue-revamp-plan.md).
+
+A fixture is the shape `nix derivation show -r` emits: a map of
+`<hash>-<name>.drv` to a derivation, wrapped in "derivations". Both
+directions are asserted for every case, because a tool that answers
+"changed" to everything is as useless as one that answers "unchanged",
+and more expensive.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TOOL = os.path.join(HERE, "closure-equiv.py")
+
+# Two revisions, as the tool is given them: the short rev is the stamp.
+A, B = "aaaaaa1", "bbbbbb2"
+
+
+def drv(name, stamp, *, sattrs=None, env=None, inputs=(), args=(), srcs=()):
+    """One derivation, keyed the way nix keys them: bare <hash>-<name>.drv.
+
+    The hash is derived from the name and the stamp so that a stamp change
+    moves every store path, which is the thing the tool must see past.
+    """
+    h = f"{abs(hash((name, stamp))):032x}"[:32]
+    key = f"{h}-{name}-{stamp}.drv"
+    out = f"/nix/store/{h}-{name}-{stamp}"
+    d = {
+        "name": f"{name}-{stamp}",
+        "builder": "/nix/store/00000000000000000000000000000000-bash/bin/bash",
+        "system": "x86_64-linux",
+        "args": list(args),
+        "env": dict(env or {}, out=out),
+        "outputs": {"out": {"path": out}},
+        "inputs": {"drvs": {k: {"outputs": ["out"], "dynamicOutputs": {}}
+                            for k in inputs},
+                   "srcs": list(srcs)},
+    }
+    if sattrs is not None:
+        d["structuredAttrs"] = sattrs
+    return key, out, d
+
+
+def closure(stamp, *, ports="3100", extra_env=None, text_prefix=""):
+    """A system closure three deep: config -> etc -> system.
+
+    `config` is a writeText-shaped derivation: its payload is in
+    structuredAttrs and its `env` holds nothing but the output path, which
+    is what nixpkgs now produces for every generated file.
+    """
+    ck, cout, cd = drv(
+        "nftables-rules", stamp,
+        sattrs={
+            "name": f"nftables-rules-{stamp}",
+            "text": f"{text_prefix}table inet filter {{ tcp dport {{ {ports} }} accept }}\n",
+            "outputs": ["out"],
+            "preferLocalBuild": True,
+            "outputChecks": {"out": {"disallowedReferences": []}},
+        },
+        env=extra_env,
+    )
+    ek, eout, ed = drv("etc", stamp, inputs=[ck],
+                       args=[f"--rules={cout}"])
+    sk, _, sd = drv("nixos-system-x", stamp, inputs=[ek],
+                    args=[f"--etc={eout}"])
+    return {"derivations": {ck: cd, ek: ed, sk: sd}}
+
+
+def run(ca, cb):
+    """Run the tool on two fixtures. Returns (verdict, whole output)."""
+    paths = []
+    try:
+        for c in (ca, cb):
+            fd, p = tempfile.mkstemp(suffix=".json")
+            with os.fdopen(fd, "w") as f:
+                json.dump(c, f)
+            paths.append(p)
+        r = subprocess.run([sys.executable, TOOL, paths[0], paths[1], A, B],
+                           capture_output=True, text=True)
+        m = re.search(r"^VERDICT: (.*)$", r.stdout, re.M)
+        verdict = m.group(1) if m else f"(no verdict; rc={r.returncode})"
+        return verdict, r.stdout + r.stderr
+    finally:
+        for p in paths:
+            os.unlink(p)
+
+
+SAME = "the same system; only the version stamp differs"
+DIFF = "the system really changes"
+
+tests = {}
+
+
+def test(fn):
+    tests[fn.__name__[2:]] = fn
+    return fn
+
+
+@test
+def t_the_stamp_alone_is_not_a_change():
+    """Every store path, name and key moves with the stamp. Still the same."""
+    return run(closure(A), closure(B)), SAME
+
+
+@test
+def t_a_structured_attrs_text_change_is_a_change():
+    """The case that shipped wrong: the whole payload is in structuredAttrs,
+    `env` holds only the output path, and opening a port compared equal to
+    not opening it (I-958)."""
+    return run(closure(A), closure(B, ports="3100, 9090")), DIFF
+
+
+@test
+def t_an_env_change_is_a_change():
+    """The behaviour that already worked, so the fix does not trade one
+    blindness for another."""
+    return run(closure(A), closure(B, extra_env={"RULES": "strict"})), DIFF
+
+
+@test
+def t_a_structured_attrs_change_reaches_the_root():
+    """A change three derivations down is reported at the root, through the
+    formal input graph, not only at the node that holds it."""
+    (verdict, out), _ = (run(closure(A), closure(B, ports="22")), DIFF)
+    changed = re.findall(r"^   (\S+)", out, re.M)
+    assert verdict == DIFF, verdict
+    # The listing strips the store hash but not a stamp inside the name,
+    # which is what these fixtures have and what hostd and guestd have in
+    # the real closures.
+    assert sorted(changed) == [f"etc-{A}.drv", f"nftables-rules-{A}.drv",
+                               f"nixos-system-x-{A}.drv"], changed
+    return (verdict, out), DIFF
+
+
+@test
+def t_a_stamp_nested_in_structured_attrs_is_not_a_change():
+    """The stamp appears inside the payload too (a unit naming a versioned
+    path). Normalising only the top level of structuredAttrs would read
+    that as a change and charge a deploy for every commit."""
+    return run(closure(A, text_prefix=f"# built from {A}\n"),
+               closure(B, text_prefix=f"# built from {B}\n")), SAME
+
+
+def main():
+    filt = sys.argv[1] if len(sys.argv) > 1 else ""
+    names = [n for n in tests if filt in n]
+    if not names:
+        print(f"no test matches {filt!r}", file=sys.stderr)
+        return 2
+    bad = 0
+    for n in sorted(names):
+        try:
+            (got, out), want = tests[n]()
+        except AssertionError as e:
+            print(f"  FAIL    {n}\n          {e}")
+            bad += 1
+            continue
+        if got == want:
+            print(f"  ok      {n}")
+        else:
+            bad += 1
+            print(f"  FAIL    {n}\n          got  '{got}'\n"
+                  f"          want '{want}'")
+            print("".join(f"          {l}\n" for l in out.splitlines()))
+    print(f"\n{len(names) - bad} passed, {bad} failed")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
