@@ -50,7 +50,7 @@ var allowed = map[string]bool{
 	// that used to carry them (DECISIONS I-53).
 	"certs": true, "keys": true, "secrets": true, "secret_count": true,
 	"secret_names_count": true, "secrets_count": true, "token_used": true,
-	"has_token": true, "cert_bytes": true, "key_bytes": true,
+	"has_token": true, "has_secret": true, "cert_bytes": true, "key_bytes": true,
 	"argv_len": true, "summary_bytes": true, "env_count": true,
 	"secrets_bytes": true, "prompt_len": true,
 	// A store path or a unit path on the host is the platform's own

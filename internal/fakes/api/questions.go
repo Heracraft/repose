@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"sort"
@@ -24,6 +25,8 @@ type Question struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	ExpiresAt   time.Time  `json:"expires_at"`
 	AnsweredAt  *time.Time `json:"answered_at"`
+	// Secret is the named secret the question asks for (DECISIONS I-929).
+	Secret string `json:"secret,omitempty"`
 }
 
 // AddQuestion has the project's guest ask a question, as a repose-ask in
@@ -51,6 +54,37 @@ func (f *Fake) AddQuestion(projectID, agent, text string, options []string, time
 	f.questions = append(f.questions, q)
 	f.event(p, "agent_question", agent, text)
 	return *q, nil
+}
+
+// AddSecretQuestion has the project's guest ask for the named secret, as
+// `repose-ask --secret NAME REASON` would (DECISIONS I-929).
+func (f *Fake) AddSecretQuestion(projectID, agent, name, text string, timeout time.Duration) (Question, error) {
+	if !secretNameRe.MatchString(name) {
+		return Question{}, fmt.Errorf("%q is not a secret name", name)
+	}
+	q, err := f.AddQuestion(projectID, agent, text, nil, timeout)
+	if err != nil {
+		return q, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.questions {
+		if c.ID == q.ID {
+			c.Secret = name
+			return *c, nil
+		}
+	}
+	return q, nil
+}
+
+// SecretAnswer is the value a secret question's answer stored, as bytes,
+// and whether one did: the fake keeps it so a test can check what the
+// dashboard sent. The real api keeps no value outside the secrets table.
+func (f *Fake) SecretAnswer(questionID string) ([]byte, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.secretAnswers[questionID]
+	return v, ok
 }
 
 // CloseQuestion closes a pending question from the guest's side, as
@@ -166,6 +200,9 @@ func describe(q *Question) string {
 	}
 	switch q.State {
 	case "answered":
+		if q.Secret != "" && via != "terminal" {
+			return "already answered: " + q.Secret + " is saved"
+		}
 		if via == "terminal" || q.Answer == nil {
 			return "answered in the terminal"
 		}
@@ -186,6 +223,9 @@ func describe(q *Question) string {
 func (f *Fake) answer(q *Question, answer, via string) *apiError {
 	if !f.pendingNow(q) {
 		return errf("conflict", "%s", describe(q)).withDetail(map[string]any{"question": *q})
+	}
+	if q.Secret != "" {
+		return invalid("this question asks for the secret %s: send its value", q.Secret).withDetail(map[string]any{"secret": q.Secret})
 	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
@@ -214,8 +254,9 @@ func (f *Fake) answerQuestion(w http.ResponseWriter, r *http.Request) *apiError 
 		return e
 	}
 	var body struct {
-		Answer string `json:"answer"`
-		Via    string `json:"via"`
+		Answer string  `json:"answer"`
+		Value  *string `json:"value"`
+		Via    string  `json:"via"`
 	}
 	if e := decodeBody(r, &body, false); e != nil {
 		return e
@@ -224,10 +265,53 @@ func (f *Fake) answerQuestion(w http.ResponseWriter, r *http.Request) *apiError 
 	if via != "cli" {
 		via = "dashboard"
 	}
+	if body.Value != nil {
+		if e := f.answerSecret(q, *body.Value, via); e != nil {
+			return e
+		}
+		writeJSON(w, http.StatusOK, *q)
+		return nil
+	}
 	if e := f.answer(q, body.Answer, via); e != nil {
 		return e
 	}
 	writeJSON(w, http.StatusOK, *q)
+	return nil
+}
+
+// answerSecret stores a secret question's value as the project's secret
+// of its name and closes the question with no answer text, as the api's
+// AnswerSecret does.
+func (f *Fake) answerSecret(q *Question, encoded, via string) *apiError {
+	if q.Secret == "" {
+		return invalid("this question takes a written answer, not a secret")
+	}
+	if !f.pendingNow(q) {
+		return errf("conflict", "%s", describe(q)).withDetail(map[string]any{"question": *q})
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return invalid("value must be base64")
+	}
+	if len(raw) == 0 {
+		return invalid("value is required")
+	}
+	if len(raw) > 64<<10 {
+		return invalid("value exceeds 64 KB")
+	}
+	p := f.projects[q.ProjectID]
+	now := f.now()
+	if s, ok := p.secrets[q.Secret]; ok {
+		s.UpdatedAt = now
+	} else {
+		p.secrets[q.Secret] = &SecretMeta{Name: q.Secret, CreatedAt: now, UpdatedAt: now}
+	}
+	if f.secretAnswers == nil {
+		f.secretAnswers = map[string][]byte{}
+	}
+	f.secretAnswers[q.ID] = raw
+	f.event(p, "secret.updated", "", "secret "+q.Secret+" set")
+	q.State, q.Answer, q.AnsweredVia, q.AnsweredAt = "answered", nil, &via, &now
 	return nil
 }
 

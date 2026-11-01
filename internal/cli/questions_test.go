@@ -312,3 +312,42 @@ func TestReplyDismissLosesTheRace(t *testing.T) {
 		t.Fatalf("printed %q", out.buf.String())
 	}
 }
+
+// TestReplySecret: a question for a secret (I-929) takes its value from
+// standard input or the hidden prompt, never from the words, and stores
+// it as the project's secret with no answer text.
+func TestReplySecret(t *testing.T) {
+	e, p, fake, out, _ := questionEnv(t)
+	ctx := context.Background()
+	q, err := fake.AddSecretQuestion(p.ID, "claude", "STRIPE_KEY", "Stripe dashboard", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplyCmd(ctx, e, []string{"sk_test_words"}, "", "", strings.NewReader(""), false); exitCodeOf(err) != ExitUsage || !strings.Contains(err.Error(), "shell history") {
+		t.Fatalf("value as words: %v", err)
+	}
+	if _, ok := fake.SecretAnswer(q.ID); ok {
+		t.Fatal("a value given as words was sent")
+	}
+	if err := ReplyCmd(ctx, e, []string{"todo-app"}, "", "", strings.NewReader("sk_test_piped\n"), false); err != nil {
+		t.Fatalf("piped: %v", err)
+	}
+	if v, ok := fake.SecretAnswer(q.ID); !ok || string(v) != "sk_test_piped" {
+		t.Fatalf("stored %q %v", v, ok)
+	}
+	got := fake.Questions()[0]
+	if got.State != "answered" || got.Answer != nil || !strings.Contains(out.buf.String(), "Set STRIPE_KEY on todo-app") {
+		t.Fatalf("%+v %q", got, out.buf.String())
+	}
+
+	q2, _ := fake.AddSecretQuestion(p.ID, "codex", "OPENAI_KEY", "platform.openai.com", time.Hour)
+	old := readHiddenAnswer
+	t.Cleanup(func() { readHiddenAnswer = old })
+	readHiddenAnswer = func(*Env, string) ([]byte, error) { return []byte("sk-hidden"), nil }
+	if err := ReplyCmd(ctx, e, nil, "", "", strings.NewReader(""), true); err != nil {
+		t.Fatalf("prompted: %v", err)
+	}
+	if v, _ := fake.SecretAnswer(q2.ID); string(v) != "sk-hidden" {
+		t.Fatalf("prompted value %q", v)
+	}
+}

@@ -95,11 +95,17 @@ type Config struct {
 }
 
 // Server is the daemon.
+// FeatureQuestionSecret is the Ping feature of a hostd that relays a
+// secret question's name (DECISIONS I-929).
+const FeatureQuestionSecret = "question_secret"
+
 type Server struct {
 	cfg   Config
 	paths sysdep.Paths
 	log   *slog.Logger
 	now   func() time.Time
+	// relaysSecret: the hostd that last pinged relays AgentQuestion.secret.
+	relaysSecret atomic.Bool
 
 	freeze  *freeze.Handler
 	system  *system.Handler
@@ -186,6 +192,7 @@ func New(cfg Config) (*Server, error) {
 	s.hooks.SetProcRoot(paths.Proc())
 	s.asks = questions.New(paths.QuestionsDir(), s.emitQuestion, log, cfg.Now)
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
+	s.hooks.SetSecretRelay(s.relaysSecret.Load)
 	return s, nil
 }
 
@@ -420,7 +427,7 @@ func (s *Server) emitQuestion(q questions.Question) {
 	}
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: &guestdv1.Question{
 		QuestionId: q.ID, Agent: q.Agent, TmuxWindow: q.Window, Text: q.Text,
-		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason,
+		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason, Secret: q.Secret,
 	}}})
 }
 

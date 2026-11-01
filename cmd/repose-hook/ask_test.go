@@ -32,6 +32,8 @@ type guestSide struct {
 	asked    []questions.Question
 	// herdr resolves herdr pane ids as guestd's watcher would.
 	herdr hooks.HerdrResolver
+	// noRelay: the hostd has not said it relays a secret's name (I-929).
+	noRelay bool
 }
 
 func newGuestSide(t *testing.T) *guestSide {
@@ -64,6 +66,7 @@ func (g *guestSide) start(t *testing.T) {
 	}, log, nil)
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
 	srv.SetHerdrResolver(g.herdr)
+	srv.SetSecretRelay(func() bool { return !g.noRelay })
 	srv.EnableAsk(g.store, func(agent, window, kind, summary string) {
 		g.mu.Lock()
 		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary}, "|"))
@@ -436,4 +439,76 @@ func TestAskCancel(t *testing.T) {
 	if code, out, _ := cancel("--all"); code != ExitOK || out != "withdrew 0 questions\n" {
 		t.Fatalf("--cancel --all: %d %q", code, out)
 	}
+}
+
+// TestAskSecret is `repose-ask --secret NAME` (DECISIONS I-929): guestd
+// takes it as a secret question, an answer text that arrives anyway is
+// never printed or kept, and the exit says whether the secret reached
+// the machine.
+func TestAskSecret(t *testing.T) {
+	old := pollWait
+	pollWait = 1
+	t.Cleanup(func() { pollWait = old })
+	g := newGuestSide(t)
+	dir := t.TempDir()
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "", "REPOSE_SECRETS_DIR", dir)
+
+	t.Run("set: exit 0, nothing on stdout", func(t *testing.T) {
+		done, out, errb := ask([]string{"--secret", "STRIPE_KEY", "Stripe", "dashboard"}, make(chan os.Signal))
+		q := g.open(t)
+		if q.Secret != "STRIPE_KEY" || q.Text != "Stripe dashboard" || len(q.Options) != 0 {
+			t.Fatalf("asked %+v", q)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "STRIPE_KEY"), []byte("sk_test_NEVER"), 0o400); err != nil {
+			t.Fatal(err)
+		}
+		// A hostd must send no answer for it; one that does is dropped.
+		if err := g.store.Answer(q.ID, questions.StateAnswered, "sk_test_NEVER"); err != nil {
+			t.Fatal(err)
+		}
+		if c := waitExit(t, done); c != ExitOK || out.Len() != 0 || !strings.Contains(errb.String(), "STRIPE_KEY is set") {
+			t.Fatalf("exit %d stdout %q stderr %q", c, out, errb)
+		}
+		if got, _ := g.store.Get(q.ID); got.Answer != "" {
+			t.Fatalf("guestd kept an answer for a secret question: %q", got.Answer)
+		}
+		b, _ := os.ReadFile(filepath.Join(g.dir, q.ID+".json"))
+		if strings.Contains(string(b), "NEVER") || strings.Contains(errb.String(), "NEVER") {
+			t.Fatal("the value reached the question file or stderr")
+		}
+	})
+	t.Run("answered but not on the machine: exit 1", func(t *testing.T) {
+		done, out, errb := ask([]string{"--secret", "MISSING_KEY", "why"}, make(chan os.Signal))
+		q := g.open(t)
+		_ = g.store.Answer(q.ID, questions.StateAnswered, "")
+		if c := waitExit(t, done); c != ExitError || out.Len() != 0 || !strings.Contains(errb.String(), "has not reached this machine") {
+			t.Fatalf("exit %d stdout %q stderr %q", c, out, errb)
+		}
+	})
+	t.Run("a hostd that drops the name: refused before anyone is asked", func(t *testing.T) {
+		g.noRelay = true
+		defer func() { g.noRelay = false }()
+		n := len(g.asked)
+		done, _, errb := ask([]string{"--secret", "KEY", "why"}, make(chan os.Signal))
+		if c := waitExit(t, done); c != ExitError || !strings.Contains(errb.String(), "repose secrets set KEY") {
+			t.Fatalf("exit %d stderr %q", c, errb)
+		}
+		if len(g.asked) != n {
+			t.Fatal("the question reached hostd")
+		}
+	})
+	t.Run("usage", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"--secret", "lower", "why"},
+			{"--secret", "BASH_ENV", "why"},
+			{"--secret", "KEY", "--options", "a,b", "why"},
+			{"--secret", "KEY"},
+			{"--cancel", "--secret", "KEY"},
+		} {
+			done, _, _ := ask(args, make(chan os.Signal))
+			if got := waitExit(t, done); got != ExitUsage {
+				t.Errorf("%v: exit %d", args, got)
+			}
+		}
+	})
 }

@@ -32,8 +32,29 @@ export const DEFAULT_RETURN = '/projects' as const;
 export const RETURN_PATHS = ['/billing'] as const;
 export type ReturnPath = (typeof RETURN_PATHS)[number];
 
+/**
+ * A notification's link to the dialog for an agent's secret question
+ * (DECISIONS I-929): `/projects/<id>?answer=<question id>`, both ids
+ * UUIDs and nothing else, so the one shape that is not a fixed path still
+ * names only a page of this site. A phone that opens the link signed out
+ * comes back to it after sign-in.
+ */
+export type AnswerReturn = `/projects/${string}?answer=${string}`;
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const ANSWER_RETURN = new RegExp(`^/projects/${UUID}\\?answer=${UUID}$`);
+
+/** Whether v is an {@link AnswerReturn}, whole. */
+export function isAnswerReturn(v: unknown): v is AnswerReturn {
+	return typeof v === 'string' && ANSWER_RETURN.test(v);
+}
+
 /** Everywhere a completed sign-in may land. */
-export type SignInReturn = ReturnPath | typeof DEFAULT_RETURN;
+export type SignInReturn = ReturnPath | typeof DEFAULT_RETURN | AnswerReturn;
+
+/** The href for a return path: a fixed one through resolve, an answer link as it is. */
+export function returnHref(r: SignInReturn): string {
+	return isAnswerReturn(r) ? r : resolve(r);
+}
 
 /** The path Logto is told to come back to, and the only path the cookie below is sent to. */
 export const CALLBACK_PATH = '/callback';
@@ -69,6 +90,7 @@ export interface SignInFlow {
  * reader can see in this file.
  */
 export function safeReturnPath(raw: string | null | undefined): SignInReturn {
+	if (isAnswerReturn(raw)) return raw;
 	return RETURN_PATHS.find((p) => p === raw) ?? DEFAULT_RETURN;
 }
 
@@ -77,7 +99,7 @@ export function safeReturnPath(raw: string | null | undefined): SignInReturn {
  * page at any depth; the query parameter is read back by `GET /signin`
  * through safeReturnPath above.
  */
-export function signinHref(returnTo?: ReturnPath): string {
+export function signinHref(returnTo?: ReturnPath | AnswerReturn): string {
 	const base = resolve('/signin');
 	return returnTo ? `${base}?${RETURN_PARAM}=${encodeURIComponent(returnTo)}` : base;
 }

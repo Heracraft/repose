@@ -297,3 +297,25 @@ func TestReconnectResendsAGuestClose(t *testing.T) {
 		return n.GetQuestion().GetQuestionId() == st.ID && n.GetQuestion().GetReason() == "withdrawn"
 	})
 }
+
+// TestSecretAskWaitsForAHostdThatRelaysIt (DECISIONS I-929): a
+// `repose-ask --secret` is refused until a Ping says the hostd relays the
+// secret's name, and is taken, and announced with it, after.
+func TestSecretAskWaitsForAHostdThatRelaysIt(t *testing.T) {
+	h := newHarness(t)
+	c := hookClient(h.srv.HookSocketPath())
+	ask := hooks.AskPayload{Agent: "claude", Text: "Stripe dashboard", Secret: "STRIPE_KEY"}
+	if code, body := hookDo(t, c, http.MethodPost, "/ask", ask); code != http.StatusConflict || !strings.Contains(string(body), "secret_not_relayed") {
+		t.Fatalf("before a Ping: %d %s", code, body)
+	}
+	h.do(t, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{}}})
+	if code, _ := hookDo(t, c, http.MethodPost, "/ask", ask); code != http.StatusConflict {
+		t.Fatalf("after an old hostd's Ping: %d", code)
+	}
+	h.do(t, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{Features: []string{FeatureQuestionSecret}}}})
+	code, body := hookDo(t, c, http.MethodPost, "/ask", ask)
+	var st hooks.AskState
+	if code != http.StatusCreated || json.Unmarshal(body, &st) != nil || st.Secret != "STRIPE_KEY" {
+		t.Fatalf("after a Ping that says so: %d %s", code, body)
+	}
+}

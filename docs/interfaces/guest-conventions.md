@@ -802,6 +802,7 @@ shell tool, a script, the user.
 ```
 repose-notify [--done] [--agent NAME] MESSAGE...   # or the message on stdin
 repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
+repose-ask --secret NAME [--timeout 2h] [--agent NAME] REASON...
 repose-ask --cancel [ID | --all]
 ```
 
@@ -824,6 +825,20 @@ repose-ask --cancel [ID | --all]
   unreachable (a restart) it retries for 2 minutes. SIGINT, SIGTERM or
   SIGHUP cancel the question (`DELETE /ask/<id>`, reason `interrupted`) and
   exit 130.
+- `repose-ask --secret NAME` (I-929) asks the owner for the value of the
+  named secret NAME (`[A-Z][A-Z0-9_]{0,63}`, not `BASH_ENV`, `ENV` or
+  `REPOSE_ENV_GEN`; exit 2 otherwise, or with `--options`). The owner
+  pastes it on the dashboard or into `repose reply`, and the api stores it
+  as the project's secret NAME. Nothing is printed on stdout. It waits 2
+  hours without `--timeout`. The close arrives once the secrets push has
+  finished, so on exit 0 `/run/repose/secrets/NAME` exists and the next
+  bash command has `$NAME`; stderr says `NAME is set`. A close whose
+  answer is `push_failed`, or a missing file: exit 1. A timeout with the
+  file written since the ask (the owner answered while the push was on its
+  way): exit 0. guestd refuses it (`409 secret_not_relayed`, exit 1) until
+  a hostd that relays the name has pinged; a guestd that does not echo
+  `secret` from `POST /ask` predates it, and the question is withdrawn at
+  once with exit 1.
 - guestd keys each question to the asker's agent process, `pid:starttime`
   of the nearest of the five agents among the asker's ancestors (by
   `/proc/<pid>/stat` comm, or the exe link's name for Gemini CLI's
@@ -847,9 +862,9 @@ repose-ask --cancel [ID | --all]
 
 | Exit | Meaning |
 |---|---|
-| 0 | answered; the answer is on stdout |
+| 0 | answered; the answer is on stdout (with `--secret`, the secret is on the machine and nothing is printed) |
 | 1 | guestd unreachable, refused the question, or lost for 2 minutes |
-| 2 | usage: no question, more than 3 options, a bad `--timeout` |
+| 2 | usage: no question, more than 3 options, a bad `--timeout`, a bad `--secret` name or `--secret` with `--options` |
 | 3 | no answer before the timeout |
 | 4 | no notification channel is on for the owner (email off, no ntfy, no working Google Chat webhook) |
 | 5 | cancelled: the owner dismissed it, the agent withdrew it, the guest stopped, or the question is gone (the guest rebooted) |

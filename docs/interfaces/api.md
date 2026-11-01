@@ -324,12 +324,17 @@ plain `cancelled` (or `expired`) with `answered_via: null`. A client
 shows them as "answered in the terminal" and "withdrawn by the agent",
 the words a `conflict` message and the reply page use. `gchat` is an
 answer from a Google Chat card's reply link (I-692).
+Since I-929 a question can ask for a named secret: `secret: NAME` is then
+set (absent otherwise), `options` is empty, and the answer is the
+secret's value, sent as `value` and stored as the project's secret NAME
+exactly as `PUT /projects/:id/secrets/:name` stores it. Such a question
+is answered with `state: answered`, `answer: null`, never with the value.
 
 | Method | Path | Body / result |
 |---|---|---|
 | GET | `/questions?state=pending\|all` | `{questions: [Question]}` across the user's projects, newest first, at most 50; `pending` (the default) lists only questions still waiting |
 | GET | `/projects/:id/questions?state=pending` | `{questions: [Question]}`, pending first, then the latest, at most 20 |
-| POST | `/projects/:id/questions/:qid/answer` | `{answer, via?: cli\|dashboard}` → `Question`. With options, `answer` must equal one of them (case does not matter; the stored answer uses the option's spelling), else `invalid` with `detail.options`. A question no longer pending (answered, expired, cancelled) is `conflict` with `detail.question`: the first answer wins |
+| POST | `/projects/:id/questions/:qid/answer` | `{answer, via?: cli\|dashboard}` → `Question`. With options, `answer` must equal one of them (case does not matter; the stored answer uses the option's spelling), else `invalid` with `detail.options`. A question no longer pending (answered, expired, cancelled) is `conflict` with `detail.question`: the first answer wins. A question with `secret` takes `{value, via?}` instead (I-929): `value` is base64, 1 byte to 64 KB, stored as the project's secret, audited as `secret_put` with the question's id, and pushed to a running machine; the question closes when that push has finished. `answer` for such a question, or `value` for one without `secret`, is `invalid` (`detail.secret` names the secret). Two answers at once store one value: the second is `conflict` at once and stores nothing. Other pending questions of the project that ask for the same name close with it |
 | POST | `/projects/:id/questions/:qid/cancel` | `{via?: cli\|dashboard}` or no body → `Question` in state `cancelled`, `answered_via` the `via` sent (`dashboard` when there is no body: the dashboard's Dismiss sends none, `repose reply --dismiss` sends `cli`, I-692); the waiting `repose-ask` exits 5. `conflict` when it is no longer pending, with the `Describe` message (`answered in the terminal`, `withdrawn by the agent`, `already answered: yes`, ...) |
 | GET | `/questions/reply?token=&via=` | no auth; the one-click link an email, ntfy or Google Chat notification carries for one option; `via` is `email`, `ntfy` or `gchat` (anything else is recorded as `ntfy`). The token is signed (the unsubscribe key, a separate domain) and names the question, the option and the question's expiry. Answers an HTML page showing the question and a button that POSTs; a GET never answers, because mail scanners open links. Expired → `410`, invalid → `400`, both HTML |
 | POST | `/questions/reply?token=&via=` | no auth; answers with the token's option (`token` and `via` may also be form fields). ntfy's `http` button calls it. `200` HTML on success; a question already answered or closed → `409` naming the answer it has; 20 tries per question per minute, then `429` |

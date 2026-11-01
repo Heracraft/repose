@@ -2,6 +2,7 @@ package guest
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -153,8 +154,14 @@ func cleanAgentEvent(guestID, agent, kind, summary, window string) (*hostdv1.Age
 
 // cleanQuestion bounds a guest's Question; ok is false for an id that is not
 // a uuid or a state a guest may not send.
-func cleanQuestion(guestID string, id, agent, window, text string, options []string, timeoutS uint32, st, reason string) (*hostdv1.AgentQuestion, bool) {
+func cleanQuestion(guestID string, id, agent, window, text string, options []string, timeoutS uint32, st, reason, secret string) (*hostdv1.AgentQuestion, bool) {
 	if _, err := uuid.Parse(id); err != nil || !questionStates[st] {
+		return nil, false
+	}
+	// A secret question names the secret and offers no options (I-929); a
+	// name the api would not store, or options beside one, is not a
+	// question this guest could have asked.
+	if secret != "" && (!questionSecret.MatchString(secret) || len(options) > 0) {
 		return nil, false
 	}
 	if st == "" || !questionReasons[reason] {
@@ -171,9 +178,12 @@ func cleanQuestion(guestID string, id, agent, window, text string, options []str
 	}
 	return &hostdv1.AgentQuestion{
 		GuestId: guestID, QuestionId: id, Agent: cleanToken(agent, capAgent), TmuxWindow: cleanLine(window, capWindow),
-		Text: cleanText(text, capText), Options: opts, TimeoutS: timeoutS, State: st, Reason: reason,
+		Text: cleanText(text, capText), Options: opts, TimeoutS: timeoutS, State: st, Reason: reason, Secret: secret,
 	}, true
 }
+
+// questionSecret is a secret name a question may ask for: the api's rule.
+var questionSecret = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
 // cleanWarning turns a guest's Warning into the HostWarning hostd forwards.
 // The detail is rebuilt by hostd from the numbers and the process name the

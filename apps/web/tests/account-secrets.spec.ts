@@ -1,18 +1,22 @@
 // Account secrets (DECISIONS I-697): Settings → Secrets lists, adds and
-// deletes them, the form opening inline from "Add secret" (I-841); a
+// deletes them, the form opening in a dialog from "Add secret" (I-929); a
 // project's Config tab shows the ones that reach it and marks the one its
 // own replaces. Values never reach the DOM.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv } from './helpers';
 import type { Locator } from '@playwright/test';
 
-/** Opens the inline form and fills it; Add submits. */
+/** The Add secret dialog, over the page (I-929). */
+const dlg = (section: Locator) => section.page().getByRole('dialog');
+
+/** Opens the dialog and fills it; Add submits. */
 async function add(section: Locator, name: string, value?: string) {
-	const open = section.getByRole('button', { name: 'Add secret' });
-	if ((await open.getAttribute('aria-expanded')) !== 'true') await open.click();
-	await expect(section.getByLabel('Name', { exact: true })).toBeFocused();
-	await section.getByLabel('Name', { exact: true }).fill(name);
-	if (value !== undefined) await section.getByLabel('Value', { exact: true }).fill(value);
+	if (!(await dlg(section).isVisible())) {
+		await section.getByRole('button', { name: 'Add secret' }).click();
+	}
+	await expect(dlg(section).getByLabel('Name', { exact: true })).toBeFocused();
+	await dlg(section).getByLabel('Name', { exact: true }).fill(name);
+	if (value !== undefined) await dlg(section).getByLabel('Value', { exact: true }).fill(value);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -51,19 +55,19 @@ test('Settings adds and deletes an account secret; a project page shows it', asy
 	await expect(page).toHaveURL('/settings/secrets');
 	const section = page.locator('#secrets');
 	await expect(section.getByRole('heading', { name: /^(Secrets|\d+ secrets?)$/ })).toBeVisible();
-	// The form is closed until asked for.
-	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
+	// The dialog is closed until asked for.
+	await expect(dlg(section).getByLabel('Name', { exact: true })).toHaveCount(0);
 	for (const [name, value] of [
 		['COOLIFY_BASE_URL', 'https://coolify.hunter2.example'],
 		['STRIPE_KEY', 'sk_live_hunter2']
 	]) {
 		await add(section, name, value);
-		await section.getByRole('button', { name: 'Add', exact: true }).click();
+		await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 		await expect(
 			section.getByTestId('account-secrets').getByText(name, { exact: true })
 		).toBeVisible();
 		// Stored: the form closes and Add secret has the focus back.
-		await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
+		await expect(dlg(section).getByLabel('Name', { exact: true })).toHaveCount(0);
 		await expect(section.getByRole('button', { name: 'Add secret' })).toBeFocused();
 	}
 	// The toast names the projects whose own STRIPE_KEY wins (others from
@@ -109,21 +113,21 @@ test('an account secret name is checked before it is sent', async ({ page }) => 
 	await page.goto('/settings/secrets');
 	const section = page.locator('#secrets');
 	await add(section, 'BASH_ENV', 'x');
-	await section.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(section.getByText('BASH_ENV is reserved.')).toBeVisible();
-	await section.getByLabel('Name', { exact: true }).fill('MY-KEY');
-	await section.getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(dlg(section).getByText(/BASH_ENV is taken/)).toBeVisible();
+	await dlg(section).getByLabel('Name', { exact: true }).fill('MY-KEY');
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	// The rule in words, not as a regular expression (Guide B 1.3).
 	await expect(
-		section.getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
+		dlg(section).getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
 	).toBeVisible();
-	await expect(section.getByLabel('Name', { exact: true })).toBeFocused();
-	// Cancel closes the form, cleared, and gives the focus back.
-	await section.getByRole('button', { name: 'Cancel', exact: true }).click();
-	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
+	await expect(dlg(section).getByLabel('Name', { exact: true })).toBeFocused();
+	// Cancel closes the dialog, cleared, and gives the focus back.
+	await dlg(section).getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(dlg(section).getByLabel('Name', { exact: true })).toHaveCount(0);
 	await expect(section.getByRole('button', { name: 'Add secret' })).toBeFocused();
 	await section.getByRole('button', { name: 'Add secret' }).click();
-	await expect(section.getByLabel('Name', { exact: true })).toHaveValue('');
+	await expect(dlg(section).getByLabel('Name', { exact: true })).toHaveValue('');
 });
 
 // The Settings form takes a file as the project page does (I-698): the
@@ -134,32 +138,35 @@ test('Settings Load from file reads the value from the picked file', async ({ pa
 	await add(section, 'gcp_sa_json');
 
 	const chooser = page.waitForEvent('filechooser');
-	await section.getByRole('button', { name: 'Load from file' }).click();
+	await dlg(section).getByRole('button', { name: 'Load from file' }).click();
 	const bytes = Buffer.from('{"type":"service_account","k":"hunter2"}\n');
 	await (await chooser).setFiles({ name: 'sa.json', mimeType: 'application/json', buffer: bytes });
-	await expect(section.getByTestId('account-secret-file-name')).toHaveText('sa.json');
-	await expect(section.getByLabel('Value', { exact: true })).toBeDisabled();
+	await expect(section.page().getByTestId('account-secret-file-name')).toHaveText('sa.json');
+	await expect(dlg(section).getByLabel('Value', { exact: true })).toContainText('sa.json');
 
 	const put = page.waitForRequest(
 		(r) => r.method() === 'PUT' && r.url().endsWith('/me/secrets/GCP_SA_JSON')
 	);
-	await section.getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	const body = (await put).postDataJSON() as { value: string };
 	expect(body.value).toBe(bytes.toString('base64'));
 	await expect(
 		section.getByTestId('account-secrets').getByText('GCP_SA_JSON', { exact: true })
 	).toBeVisible();
-	await expect(section.getByTestId('account-secret-file-name')).toHaveCount(0);
+	await expect(section.page().getByTestId('account-secret-file-name')).toHaveCount(0);
 	expect(await page.content()).not.toContain('hunter2');
 
 	await add(section, 'BIG_ACCOUNT_FILE');
-	await section.locator('input[type=file]').setInputFiles({
-		name: 'big.bin',
-		mimeType: 'application/octet-stream',
-		buffer: Buffer.alloc(64 * 1024 + 1, 7)
-	});
-	await section.getByRole('button', { name: 'Add', exact: true }).click();
-	await expect(section.getByText('Secret values are limited to 64 KB.')).toBeVisible();
+	await section
+		.page()
+		.locator('input[type=file]')
+		.setInputFiles({
+			name: 'big.bin',
+			mimeType: 'application/octet-stream',
+			buffer: Buffer.alloc(64 * 1024 + 1, 7)
+		});
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(dlg(section).getByText('Secret values are limited to 64 KB.')).toBeVisible();
 	await expect(section.getByText('BIG_ACCOUNT_FILE', { exact: true })).toHaveCount(0);
 
 	// Account secrets reach every project page; leave none for later specs.

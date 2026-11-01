@@ -381,7 +381,12 @@ func gchatHeading(m Message) (*gchatHeader, string) {
 		}
 		return &gchatHeader{Title: gchatPlain(title, 200)}, m.Summary
 	case m.Agent != "":
-		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(m.Agent+" "+gchatVerb(m.Kind), 200)}, m.Summary
+		verb := gchatVerb(m.Kind)
+		if q := m.Question; q != nil && q.Secret != "" {
+			// The phone's notification says what is asked for (I-929).
+			verb += " for " + q.Secret
+		}
+		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(m.Agent+" "+verb, 200)}, m.Summary
 	}
 	if s, ok := platformSubjects[m.Kind]; ok {
 		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(s, 200)}, m.Summary
@@ -414,6 +419,8 @@ func gchatButtons(m Message) []gchatButton {
 			bs = append(bs, button(gchatPlain(o, 64), "OUTLINED", m.Question.Replies[i]))
 		}
 		return bs
+	case m.Question != nil && m.Question.Secret != "":
+		return []gchatButton{button(gchatPlain("Enter "+m.Question.Secret, 64), "OUTLINED", m.AnswerURL())}
 	case m.Question != nil:
 		return []gchatButton{button("Answer", "OUTLINED", m.ProjectURL())}
 	case events.UserNoticeKinds[m.Kind] || m.ProjectID == uuid.Nil:

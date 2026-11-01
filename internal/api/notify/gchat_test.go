@@ -323,3 +323,24 @@ func TestGChatGolden(t *testing.T) {
 		}
 	}
 }
+
+// A question for a secret (I-929) gets one button, to the dashboard's
+// dialog for it, and no reply link.
+func TestGChatSecretQuestionButton(t *testing.T) {
+	m := gchatMsg()
+	m.Kind = "agent_question"
+	qid := uuid.MustParse("01a0c14a-0000-7000-8000-0000000000a1")
+	m.Question = &notify.QuestionLinks{ID: qid, Secret: "STRIPE_KEY", Expires: time.Now().Add(time.Hour)}
+	b, err := json.Marshal(notify.RenderGChat(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	want := dash + "/projects/" + fixtureProject.String() + "?answer=" + qid.String()
+	// One button straight to the dialog, nothing to copy from the body,
+	// and the subtitle and the phone's preview say what is asked for.
+	if strings.Count(s, `"openLink"`) != 1 || !strings.Contains(s, want) || !strings.Contains(s, "Enter STRIPE_KEY") || strings.Contains(s, "questions/reply") ||
+		strings.Count(s, "?answer=") != 1 || !strings.Contains(s, `"subtitle":"claude asks for STRIPE_KEY"`) || !strings.Contains(s, `"fallbackText":"todo-app: claude asks for STRIPE_KEY`) {
+		t.Fatalf("card %s", s)
+	}
+}

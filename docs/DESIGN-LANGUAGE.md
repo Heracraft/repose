@@ -189,7 +189,7 @@ Guide B 10.1 on repose's frame:
 |---|---|
 | Page top to title | 1.75rem, 2.25rem from 640px (PageShell) |
 | Title block to content | 1.75rem |
-| Between dashboard sections | 2.75rem |
+| Between dashboard sections | 3.5rem (I-929) |
 | Section head to its content | 0.875rem |
 | Row padding | 0.75rem (facts), 0.875rem (kit rows, questions) |
 | Table row, skeleton row | 56px |
@@ -530,9 +530,8 @@ not draw.
   through the glass: a cloudy, grained white over a cold tint, with a
   crust on the rule, 18px tall (12px stacked), clear of the text, full
   from the leading edge, feathered on every side and gone by 68 percent of
-  the row's width. It keeps to the row's hover fill shape: it bleeds
-  `--hk-row-bleed` past the row on each side and its foot takes the small
-  radius. Nothing climbs the leading edge. Every frozen row stands on a
+  the row's width. It keeps to the row's hover fill shape: as wide as
+  the row's rules, square (`--hk-row-bleed` is 0 since I-929). Nothing climbs the leading edge. Every frozen row stands on a
   rule: the row's own, or for the last row of a group (or one above its
   stop confirmation) a hairline 1px under its box, as wide as the column
   like the rows' own rules. No fill over the row body and no top hairline.
@@ -636,11 +635,11 @@ the header and the tabs once, so switching tabs keeps them mounted.
 rules between rows, outer cells flush with the frame, numbers right-aligned
 and tabular (`hk-num-col`). `hk-table--hover` washes the row under the
 pointer, and a row's main link covers the row with its `::after`; any action
-in the row sits above it (`position: relative; z-index: 1`). The wash
-bleeds `--hk-row-bleed` (0.75rem) past the row on each side with
-`--hk-radius-sm`, so it clears the first and last column's text while that
-text stays on the column's edges, under the header and the page title. A
-row's focus ring takes the same shape. `hk-row--hover` does the same for a
+in the row sits above it (`position: relative; z-index: 1`). The wash spans
+the row between its rules, exactly as wide as them, with square corners
+(I-929: a wash past the rules read as an overflow, and its radius added
+nothing). `--hk-row-bleed` stays as the one knob, set to 0. A row's focus
+ring takes the same shape. `hk-row--hover` does the same for a
 list row, and the /projects stacked rows and a frozen row's frost follow
 it. A table that may scroll sideways sits in `hk-table-wrap` (repose) with
 `role="region"`, a name, and a tab stop while it overflows
@@ -866,7 +865,7 @@ the page tabs sit 1.25rem under the title on a full-width hairline.
 ## Sections
 
 A dashboard page is sections on the page colour: `hk-section` (repose),
-2.75rem apart, a `hk-section-head` row with an `h2.hk-h2-app` and, on the
+3.5rem apart (I-929), a `hk-section-head` row with an `h2.hk-h2-app` and, on the
 right, a 13px `--hk-text-3` caption or one small button. No border, no fill,
 no card. Rows inside are hairlines. A panel (`hk-panel`, 12px corners, a
 1px border on the surface) is only for plan cards; panels are never nested.

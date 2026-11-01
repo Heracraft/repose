@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { returnHref } from '$lib/signin';
 	import { toast } from 'svelte-sonner';
 	import {
 		SIGN_IN_FAILED,
@@ -21,10 +22,12 @@
 				// the page to come back to rode in the same cookie
 				// (DECISIONS I-878).
 				await adoptServerSession(data.adopt.idToken, data.adopt.refreshToken);
-				await goto(resolve(data.adopt.returnTo));
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- returnHref resolves a fixed path; an answer link is checked whole against our ids
+				await goto(returnHref(data.adopt.returnTo));
 			} else {
 				await handleSignInCallback(location.href);
-				await goto(resolve(takeReturnPath() ?? '/projects'));
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- as above
+				await goto(returnHref(takeReturnPath() ?? '/projects'));
 			}
 		} catch {
 			toast.error(SIGN_IN_FAILED);

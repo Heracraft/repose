@@ -274,6 +274,17 @@ Rules that must hold:
   ciphertext; `repose-admin secrets rewrap` does it and is rehearsed before
   launch.
 
+### An agent asks for one (I-929)
+
+`repose-ask --secret NAME REASON` asks the owner for a named secret.
+The owner pastes the value into the dashboard's dialog (the notification
+links it; no channel takes a value) or into `repose reply`, and the api
+stores it with the same `Secrets.Put`, audit row and UpdateSecrets op as
+`repose secrets set`. Same home: the `questions` row keeps the name and
+never the value, and the guest's AnswerQuestion carries none. The close
+reaches the asker only after the push has finished, so its next command
+has `$NAME`. DECISIONS I-929 has the rules and what was rejected.
+
 ### Account secrets (I-697)
 
 `repose secrets set|list|rm|import --global` and the dashboard's Settings

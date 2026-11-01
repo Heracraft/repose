@@ -1022,7 +1022,6 @@
 		inset: 0 calc(-1 * var(--hk-row-bleed));
 		outline: 2px solid var(--hk-accent);
 		outline-offset: -2px;
-		border-radius: var(--hk-radius-sm);
 	}
 	.premote {
 		display: block;
@@ -1056,9 +1055,8 @@
 		color: var(--hk-text-3);
 	}
 	/* Always visible, above the row's link, its text flush with the
-	   frame's edge like every ghost on the page. The scroll box's inset is
-	   the row's bleed (hk-table--hover), wider than the ghost's 10px, so the
-	   pull stays inside it and the table does not scroll sideways when the
+	   frame's edge like every ghost on the page. The scroll box's inset
+	   (hk-table-wrap) is at least the ghost's 10px, so the pull stays inside it and the table does not scroll sideways when the
 	   button takes focus. */
 	.row-action {
 		position: relative;
@@ -1182,7 +1180,6 @@
 		position: absolute;
 		inset: 0 calc(-1 * var(--hk-row-bleed));
 		z-index: -1;
-		border-radius: var(--hk-radius-sm);
 		pointer-events: none;
 	}
 	@media (hover: hover) and (pointer: fine) {

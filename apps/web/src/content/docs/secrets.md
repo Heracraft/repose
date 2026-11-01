@@ -53,7 +53,9 @@ repose secrets rm STRIPE_SECRET_KEY
 
 Nothing shows a value again after you set it. Names are uppercase letters, digits and underscores, start with a letter and are up to 64 characters, other than `BASH_ENV`, `ENV` and `REPOSE_ENV_GEN`; values up to 64 KB.
 
-The dashboard does the same under **Secrets** on the project's **Config** tab, behind **Add secret**: type the value, or take it from a file with **Load from file**.
+The dashboard does the same under **Secrets** on the project's **Config** tab, behind **Add secret**: paste the value, or take it from a file with **Load from file**.
+
+An agent that needs a secret you haven't set can [ask you for it](/docs/notifications#when-an-agent-asks-for-a-secret) with `repose-ask --secret NAME`. You paste the value on the dashboard or into `repose reply`, and it's stored the same way.
 
 ## Secrets for every project
 

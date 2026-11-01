@@ -13,7 +13,7 @@ import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
 import LogtoClient, { BrowserStorage, PersistKey } from '@logto/browser';
 import { apiResource } from '$lib/api/resource';
-import { RETURN_PATHS, type ReturnPath } from '$lib/signin';
+import { RETURN_PATHS, isAnswerReturn, type AnswerReturn, type ReturnPath } from '$lib/signin';
 
 let client: LogtoClient | undefined;
 
@@ -66,9 +66,10 @@ export function callbackUrl(): string {
 /** Where the browser flow remembers the page it is to come back to. */
 const RETURN_KEY = 'repose-return-to';
 
-export async function signIn(returnTo?: ReturnPath): Promise<void> {
+export async function signIn(returnTo?: ReturnPath | AnswerReturn): Promise<void> {
 	try {
-		if (returnTo && RETURN_PATHS.includes(returnTo)) sessionStorage.setItem(RETURN_KEY, returnTo);
+		if (returnTo && (isAnswerReturn(returnTo) || RETURN_PATHS.includes(returnTo)))
+			sessionStorage.setItem(RETURN_KEY, returnTo);
 		else sessionStorage.removeItem(RETURN_KEY);
 	} catch {
 		// No storage: the sign-in comes back to /projects.
@@ -77,10 +78,11 @@ export async function signIn(returnTo?: ReturnPath): Promise<void> {
 }
 
 /** The page the sign-in asked to come back to, once; undefined for /projects. */
-export function takeReturnPath(): ReturnPath | undefined {
+export function takeReturnPath(): ReturnPath | AnswerReturn | undefined {
 	try {
 		const v = sessionStorage.getItem(RETURN_KEY);
 		sessionStorage.removeItem(RETURN_KEY);
+		if (isAnswerReturn(v)) return v;
 		return RETURN_PATHS.find((p) => p === v);
 	} catch {
 		return undefined;

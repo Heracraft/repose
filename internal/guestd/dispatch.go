@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"time"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
@@ -64,6 +65,7 @@ func (s *Server) deadlineFor(req *guestdv1.Request) time.Duration {
 func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Response {
 	switch r := req.GetReq().(type) {
 	case *guestdv1.Request_Ping:
+		s.relaysSecret.Store(slices.Contains(r.Ping.GetFeatures(), FeatureQuestionSecret))
 		return ok(&guestdv1.Response_Ping{Ping: &guestdv1.PingResult{
 			Version: ProtocolVersion,
 			UptimeS: s.uptimeSeconds(),

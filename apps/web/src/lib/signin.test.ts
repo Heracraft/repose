@@ -124,3 +124,25 @@ describe('the flow cookie', () => {
 		expect(decodeFlow(tampered)?.returnTo).toBe(DEFAULT_RETURN);
 	});
 });
+
+// I-929: a notification's link to a secret question comes back after
+// sign-in, and only that exact shape of our own ids does.
+describe('the answer link as a return path', () => {
+	const pid = '01900000-0000-7000-8000-000000000001';
+	const qid = '01900000-0000-7000-8000-000000000015';
+	it('is kept whole', () => {
+		expect(safeReturnPath(`/projects/${pid}?answer=${qid}`)).toBe(`/projects/${pid}?answer=${qid}`);
+	});
+	it('refuses anything else that looks like one', () => {
+		for (const raw of [
+			`/projects/${pid}?answer=${qid}&next=https://evil.example`,
+			`//evil.example/projects/${pid}?answer=${qid}`,
+			`/projects/${pid}/../../x?answer=${qid}`,
+			`/projects/${pid}?answer=x`,
+			`https://evil.example/projects/${pid}?answer=${qid}`,
+			`/projects/01900000-0000-7000-8000-00000000ABCD?answer=${qid}`
+		]) {
+			expect(safeReturnPath(raw)).toBe(DEFAULT_RETURN);
+		}
+	});
+});

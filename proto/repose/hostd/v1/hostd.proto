@@ -449,6 +449,9 @@ message AgentQuestion {
   // Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
   // (I-690). Empty on an open and from older hosts.
   string reason = 9;
+  // The named secret the question asks for (DECISIONS I-929); empty for
+  // a question that takes a written answer.
+  string secret = 10;
 }
 // GuestResting is a guest paused or woken (DECISIONS I-818), so the api
 // shows the marker within seconds rather than at the next minute's

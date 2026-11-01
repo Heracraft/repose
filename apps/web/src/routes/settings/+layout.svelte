@@ -45,6 +45,11 @@
 		}
 	}
 
+	/* The tab's content stands clear of the tabs' rule. */
+	.settings {
+		margin-top: 1rem;
+	}
+
 	/* A settings row (General, Notifications): the h2 and at most one
 	   note in 12rem on the left, the controls in at most 40rem on the
 	   right, from a 640px column (I-841). One column below. */

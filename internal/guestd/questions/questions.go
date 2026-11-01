@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -80,12 +81,33 @@ const (
 	StateNoChannel = "no_channel"
 )
 
+// PushFailed is the only answer a secret question keeps (I-929): the
+// owner set the secret, and the push that carries it to this machine
+// failed.
+const PushFailed = "push_failed"
+
+// SecretTimeout is how long `repose-ask --secret` waits without
+// --timeout: long enough to sign in to a provider on a phone.
+const SecretTimeout = 2 * time.Hour
+
 // Errors.
 var (
 	ErrNotFound = errors.New("questions: no such question")
 	ErrTooMany  = errors.New("questions: too many open questions")
 	ErrInvalid  = errors.New("questions: invalid question")
 )
+
+// secretName is what a named secret may be called, the api's rule
+// (internal/api/secrets): [A-Z][A-Z0-9_]{0,63}.
+var secretName = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+
+// shellNames are the names the guest's command loader uses (DECISIONS
+// I-475), which the api refuses to store.
+var shellNames = map[string]bool{"BASH_ENV": true, "ENV": true, "REPOSE_ENV_GEN": true}
+
+// ValidSecretName reports whether a `repose-ask --secret` may ask for name:
+// one the api would store.
+func ValidSecretName(name string) bool { return secretName.MatchString(name) && !shellNames[name] }
 
 // Question is one ask.
 type Question struct {
@@ -110,6 +132,10 @@ type Question struct {
 	// GuestClosed marks a close made on this side, which is re-sent on a
 	// new hostd connection until Keep has passed.
 	GuestClosed bool `json:"guest_closed,omitempty"`
+	// Secret is the named secret the question asks for (DECISIONS
+	// I-929). Its value never reaches this side through the question:
+	// an answer to it is stored empty.
+	Secret string `json:"secret,omitempty"`
 }
 
 // Open reports whether the question is still waiting.
@@ -192,6 +218,24 @@ func Clean(s string, n int) string {
 // Open starts a question and announces it. proc is the asker's agent
 // process key ("" for none).
 func (s *Store) Open(agent, window, proc, text string, options []string, timeout time.Duration) (Question, error) {
+	return s.open(agent, window, proc, "", text, options, timeout)
+}
+
+// OpenSecret starts a question that asks the owner for the named secret
+// name, with text saying what it is for (DECISIONS I-929). It takes no
+// options: the owner answers with the value, on the dashboard or with
+// `repose reply`, and the value reaches the guest as a secret.
+func (s *Store) OpenSecret(agent, window, proc, name, text string, timeout time.Duration) (Question, error) {
+	if !ValidSecretName(name) {
+		return Question{}, fmt.Errorf("%w: secret names match [A-Z][A-Z0-9_]{0,63}", ErrInvalid)
+	}
+	if timeout <= 0 {
+		timeout = SecretTimeout
+	}
+	return s.open(agent, window, proc, name, text, nil, timeout)
+}
+
+func (s *Store) open(agent, window, proc, secret, text string, options []string, timeout time.Duration) (Question, error) {
 	text = Clean(text, TextCap)
 	if text == "" {
 		return Question{}, fmt.Errorf("%w: the question is empty", ErrInvalid)
@@ -219,7 +263,7 @@ func (s *Store) Open(agent, window, proc, text string, options []string, timeout
 	q := Question{
 		ID: uuid.Must(uuid.NewV7()).String(), Agent: agent, Window: window, Text: text, Options: opts,
 		TimeoutS: uint32(timeout / time.Second), Created: now, Expires: now.Add(timeout), State: StateOpen,
-		AgentProc: proc,
+		AgentProc: proc, Secret: secret,
 	}
 	s.mu.Lock()
 	open := 0
@@ -357,7 +401,7 @@ func (s *Store) closeLocked(id, state, answer, reason string, guest bool) (*Ques
 		return nil, nil
 	}
 	e.q.State = state
-	if state == StateAnswered {
+	if state == StateAnswered && (e.q.Secret == "" || answer == PushFailed) {
 		e.q.Answer = answer
 	}
 	e.q.Reason = reason

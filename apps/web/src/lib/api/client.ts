@@ -311,6 +311,12 @@ export const answerQuestion = (id: string, qid: string, answer: string) =>
 		method: 'POST',
 		body: { answer, via: 'dashboard' }
 	});
+/** Answers a question that asks for a secret (I-929): the api stores the value as the project's secret. */
+export const answerSecretQuestion = (id: string, qid: string, valueBase64: string) =>
+	request<Question>(`/projects/${id}/questions/${qid}/answer`, {
+		method: 'POST',
+		body: { value: valueBase64, via: 'dashboard' }
+	});
 export const cancelQuestion = (id: string, qid: string) =>
 	request<Question>(`/projects/${id}/questions/${qid}/cancel`, { method: 'POST' });
 

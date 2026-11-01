@@ -133,3 +133,39 @@ func TestEmailQuestionHasReplyLinks(t *testing.T) {
 		}
 	}
 }
+
+// TestSecretQuestionLinksTheDialog: a question for a secret (I-929) has no
+// reply links on any channel, only one link to the dashboard's dialog for
+// it, and its title names the secret.
+func TestSecretQuestionLinksTheDialog(t *testing.T) {
+	var actions, click, title string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actions, click, title = r.Header.Get("Actions"), r.Header.Get("Click"), r.Header.Get("Title")
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	pid, qid := uuid.New(), uuid.New()
+	m := notify.Message{Kind: "agent_question", Agent: "claude", Project: "todo", Summary: "Stripe dashboard > Webhooks", NtfyURL: srv.URL + "/t", Dashboard: "https://d", ProjectID: pid,
+		Question: &notify.QuestionLinks{ID: qid, Secret: "STRIPE_WEBHOOK_SECRET", Expires: time.Now().Add(time.Hour)}}
+	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), m); err != nil {
+		t.Fatal(err)
+	}
+	want := "https://d/projects/" + pid.String() + "?answer=" + qid.String()
+	var acts []map[string]any
+	_ = json.Unmarshal([]byte(actions), &acts)
+	if title != "todo: claude asks for STRIPE_WEBHOOK_SECRET" || click != want || len(acts) != 1 || acts[0]["action"] != "view" || acts[0]["url"] != want || acts[0]["label"] != "Enter STRIPE_WEBHOOK_SECRET" {
+		t.Fatalf("title %q click %q actions %v", title, click, acts)
+	}
+	r, err := notify.Render(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"Enter STRIPE_WEBHOOK_SECRET", want, "Replying to this email does not set it.", "repose reply todo"} {
+		if !strings.Contains(r.Text, s) {
+			t.Errorf("email text lacks %q:\n%s", s, r.Text)
+		}
+	}
+	if strings.Contains(r.Text, "Write an answer") || strings.Contains(r.Text, "one click") {
+		t.Errorf("a secret question offers a written or one-click answer:\n%s", r.Text)
+	}
+}

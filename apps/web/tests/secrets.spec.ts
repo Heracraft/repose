@@ -1,6 +1,6 @@
 // Checklist: "Secrets: add via text and via file, list, delete; values
 // never appear in the DOM after save." A project's secrets are a section
-// of its Config tab, and "Add secret" opens the form inline (DECISIONS
+// of its Config tab, and "Add secret" opens a dialog (DECISIONS I-929;
 // I-841); /projects/<id>/secrets still lands there.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
@@ -29,7 +29,7 @@ test('add via text, list, and delete; the value never reaches the DOM', async ({
 
 	await page.getByLabel('Name', { exact: true }).fill('DATABASE_URL');
 	await page.getByLabel('Value', { exact: true }).fill('postgres://user:hunter2@db/app');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	const secretRow = page.getByText('DATABASE_URL', { exact: true });
 	await expect(secretRow).toBeVisible({ timeout: 5_000 });
@@ -65,7 +65,7 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 	// a mismatch; a hyphen still is.
 	await page.getByLabel('Name', { exact: true }).fill('MY-KEY');
 	await page.getByLabel('Value', { exact: true }).fill('x');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(
 		page.getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
@@ -74,7 +74,7 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 
 	// Add is never greyed out: an empty name is said under the field.
 	await page.getByLabel('Name', { exact: true }).fill('');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(page.getByText('Name is required.')).toBeVisible();
 });
 
@@ -87,10 +87,10 @@ test('a value over 64 KB is rejected client-side before it reaches the api', asy
 
 	await page.getByLabel('Name', { exact: true }).fill('BIG_VALUE');
 	await page.getByLabel('Value', { exact: true }).fill('x'.repeat(70_000));
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
-	await expect(page.getByText('BIG_VALUE')).toHaveCount(0);
+	await expect(page.locator('#secrets').getByText('BIG_VALUE')).toHaveCount(0);
 });
 
 // The other half of the checklist row: "add via text **and via file**".
@@ -113,7 +113,7 @@ test('add via file stores the bytes, and they never reach the DOM', async ({ pag
 		mimeType: 'application/octet-stream',
 		buffer: bytes
 	});
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('SERVICE_ACCOUNT_KEY', { exact: true })).toBeVisible({
 		timeout: 5_000
@@ -147,10 +147,10 @@ test('a file over 64 KB is rejected client-side', async ({ page }) => {
 		mimeType: 'application/octet-stream',
 		buffer: Buffer.alloc(64 * 1024 + 1, 7)
 	});
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
-	await expect(page.getByText('BIG_FILE', { exact: true })).toHaveCount(0);
+	await expect(page.locator('#secrets').getByText('BIG_FILE', { exact: true })).toHaveCount(0);
 });
 
 test('a failed first load shows the error and Retry loads the list', async ({ page }) => {
@@ -183,12 +183,12 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 	const bytes = Buffer.from('ssh-ed25519 AAAA picked\n');
 	await (await chooser).setFiles({ name: 'id_deploy', mimeType: 'text/plain', buffer: bytes });
 	await expect(page.getByTestId('secret-file-name')).toHaveText('id_deploy');
-	await expect(page.getByLabel('Value', { exact: true })).toBeDisabled();
+	await expect(page.getByLabel('Value', { exact: true })).toContainText('id_deploy');
 
 	const put = page.waitForRequest(
 		(r) => r.method() === 'PUT' && r.url().endsWith(`/projects/${p.id}/secrets/DEPLOY_KEY`)
 	);
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	const body = (await put).postDataJSON() as { value: string };
 	expect(body.value).toBe(bytes.toString('base64'));
 	await expect(page.getByText('DEPLOY_KEY', { exact: true })).toBeVisible();
@@ -201,10 +201,10 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('');
 });
 
-// The form waits behind "Add secret" (I-841): closed, the section is its
-// head and the list; open, the form sits under the head, and Cancel
-// closes it and gives focus back.
-test('Add secret opens the form inline and Cancel closes it', async ({ page }) => {
+// The form waits behind "Add secret" (I-841), in a dialog over the
+// page since I-929: the name over the value, the two the same width, and
+// Cancel closes it and gives focus back.
+test('Add secret opens the dialog and Cancel closes it', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'secrets-inline-app',
 		remote_url: 'github.com/heracraft/secrets-inline-app'
@@ -214,19 +214,25 @@ test('Add secret opens the form inline and Cancel closes it', async ({ page }) =
 	const section = page.locator('#secrets');
 	const open = section.getByRole('button', { name: 'Add secret' });
 	await expect(section.getByRole('heading', { level: 3, name: 'No secrets yet' })).toBeVisible();
-	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
-	await expect(open).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0);
+	await expect(open).toHaveAttribute('aria-haspopup', 'dialog');
 	await expect(open).toHaveClass(/hk-btn-secondary/);
 	await open.click();
-	await expect(open).toHaveAttribute('aria-expanded', 'true');
-	const name = section.getByLabel('Name', { exact: true });
-	const value = section.getByLabel('Value', { exact: true });
+	const dialog = page.getByRole('dialog', { name: 'Add a secret' });
+	await expect(dialog).toBeVisible();
+	const name = dialog.getByLabel('Name', { exact: true });
+	const value = dialog.getByLabel('Value', { exact: true });
 	await expect(name).toBeFocused();
-	// Side by side in the 872px column.
+	// One column: the value under the name, their edges aligned.
+	// Measured once the dialog's opening animation, a slight scale, has ended.
+	await dialog.evaluate((el) =>
+		Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished))
+	);
 	const [n, v] = [await name.boundingBox(), await value.boundingBox()];
-	expect(Math.abs(n!.y - v!.y)).toBeLessThan(4);
-	expect(v!.x).toBeGreaterThan(n!.x + n!.width);
-	await section.getByRole('button', { name: 'Cancel' }).click();
+	expect(v!.y).toBeGreaterThan(n!.y + n!.height);
+	expect(Math.abs(n!.x - v!.x)).toBeLessThan(1);
+	expect(Math.abs(n!.width - v!.width)).toBeLessThan(1);
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
 	await expect(name).toHaveCount(0);
 	await expect(open).toBeFocused();
 });
@@ -278,7 +284,7 @@ test('on a phone a long name breaks at its underscores and Updated folds under i
 	await openAdd(page, p.id);
 	await page.getByLabel('Name', { exact: true }).fill(name);
 	await page.getByLabel('Value', { exact: true }).fill('whsec_x');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	const cell = page.getByText(name, { exact: true });
 	await expect(cell).toBeVisible({ timeout: 5_000 });
 

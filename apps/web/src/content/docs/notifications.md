@@ -52,28 +52,28 @@ Google refuses a webhook that was deleted, or whose space removed it. repose the
 
 ## What you'll get
 
-| Title                                           | When                                                                                                                                                                                         |
-|-------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `todo-app: claude is done`                      | The agent ran `repose-notify --done`. The body is its report.                                                                                                                                 |
-| `todo-app: claude says`                         | An agent, or you, ran `repose-notify`. The body is the message.                                                                                                                              |
-| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                    |
-| `todo-app: claude needs input`                  | The agent is waiting for your permission; [not every agent reports one](/docs/agents#agent-states).                                                                                          |
-| `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                 |
-| `todo-app: snapshot failed`                     | A snapshot couldn't be taken; the body says why.                                                                                                                                             |
-| `todo-app: base update failed`                  | A [platform update](/docs/config#revisions-and-base-updates) didn't build with your configuration, or built and didn't switch in. The machine keeps what it had.                              |
-| `todo-app: base updated`                        | A platform update reached the machine. The body says whether it's running or waits for a stop and start, which a kernel change needs.                                                         |
-| `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                    |
-| `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                            |
-| `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                  |
-| `todo-app: stop failed`                         | A stop didn't finish; the body says why.                                                                                                                                                     |
-| `todo-app: host moved`                          | The project was restored onto another server from its latest snapshot.                                                                                                                       |
+| Title                                           | When                                                                                                                                                                                                                 |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `todo-app: claude is done`                      | The agent ran `repose-notify --done`. The body is its report.                                                                                                                                                        |
+| `todo-app: claude says`                         | An agent, or you, ran `repose-notify`. The body is the message.                                                                                                                                                      |
+| `todo-app: claude asks`                         | An agent ran `repose-ask` and is waiting for your answer.                                                                                                                                                            |
+| `todo-app: claude needs input`                  | The agent is waiting for your permission; [not every agent reports one](/docs/agents#agent-states).                                                                                                                  |
+| `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                                         |
+| `todo-app: snapshot failed`                     | A snapshot couldn't be taken; the body says why.                                                                                                                                                                     |
+| `todo-app: base update failed`                  | A [platform update](/docs/config#revisions-and-base-updates) didn't build with your configuration, or built and didn't switch in. The machine keeps what it had.                                                     |
+| `todo-app: base updated`                        | A platform update reached the machine. The body says whether it's running or waits for a stop and start, which a kernel change needs.                                                                                |
+| `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                                           |
+| `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                                                   |
+| `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                                          |
+| `todo-app: stop failed`                         | A stop didn't finish; the body says why.                                                                                                                                                                             |
+| `todo-app: host moved`                          | The project was restored onto another server from its latest snapshot.                                                                                                                                               |
 | `The server running your machines restarted`    | The server under your machines restarted and some of them stopped with it. One per restart, with a line for each that stopped ([When a machine's server restarts](/docs/lifecycle#when-a-machines-server-restarts)). |
-| `todo-app: abuse stopped`                       | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your machine was stopped: a cryptocurrency miner was running`.                     |
-| `todo-app: unused for 24h, holding plan memory` | Nobody has used the machine for 24 hours and its memory counts against your plan. Once per [unused stretch](/docs/lifecycle#unused-machines).                                                 |
-| `tmp-k3f9: destroyed in an hour`                | A [temporary machine](/docs/lifecycle#temporary-machines) made with more than an hour has an hour left.                                                                                       |
-| `tmp-k3f9: temporary machine destroyed`         | Its time ran out and it was destroyed, with no snapshot.                                                                                                                                      |
-| `todo-app: notifications paused`                | The project hit its hourly cap ([Limits](#limits)).                                                                                                                                          |
-| `repose: test`                                  | You ran `repose notify test`, or pressed **Send test**.                                                                                                                                      |
+| `todo-app: abuse stopped`                       | The machine was stopped because a miner was running ([Limits](/docs/limits#what-isnt-allowed)). By email: `Your machine was stopped: a cryptocurrency miner was running`.                                            |
+| `todo-app: unused for 24h, holding plan memory` | Nobody has used the machine for 24 hours and its memory counts against your plan. Once per [unused stretch](/docs/lifecycle#unused-machines).                                                                        |
+| `tmp-k3f9: destroyed in an hour`                | A [temporary machine](/docs/lifecycle#temporary-machines) made with more than an hour has an hour left.                                                                                                              |
+| `tmp-k3f9: temporary machine destroyed`         | Its time ran out and it was destroyed, with no snapshot.                                                                                                                                                             |
+| `todo-app: notifications paused`                | The project hit its hourly cap ([Limits](#limits)).                                                                                                                                                                  |
+| `repose: test`                                  | You ran `repose notify test`, or pressed **Send test**.                                                                                                                                                              |
 
 A notification goes to every channel you have on.
 
@@ -91,20 +91,20 @@ An agent finishing its turn sends you nothing. The turn lands in `repose events`
 
 Account emails are email only, they're sent even with notification emails off, and they carry no unsubscribe link, because each one answers something you did or are about to be charged for. Polar, which takes the payments, sends the receipt for each charge, the confirmation of a new plan and the reminder when your card is about to expire. The rest are ours.
 
-| Subject                                        | When                                                                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Welcome to repose`                            | You signed in for the first time.                                                                                          |
-| `You're on the waitlist`                       | Every seat was taken when you tried to choose a plan ([When repose is full](/docs/limits#when-repose-is-full)).            |
-| `A seat is yours for 72 hours`                 | It's your turn.                                                                                                            |
-| `Your seat hold ran out`                       | You didn't choose a plan in time.                                                                                          |
-| `Your free week ends soon`                     | Two days before the first charge ([The free week](/docs/billing#the-free-week)).                                           |
-| `Your payment failed`                          | A charge didn't go through ([If a payment fails](/docs/billing#if-a-payment-fails)).                                      |
-| `Your plan is ending`                          | You cancelled ([Changing and cancelling](/docs/billing#changing-and-cancelling)).                                          |
-| `Your plan has ended`                          | The period ended after a cancellation.                                                                                     |
-| `Your plan changed`                            | The day you upgrade, or the renewal a scheduled downgrade takes effect on; scheduling one sends nothing.                   |
-| `Your machines were stopped: egress limit`     | The month's egress passed four times the plan's allowance ([Egress](/docs/limits#egress)).                                 |
-| `Your projects hold more than your plan's disk` | Once a month while your projects hold more than the plan's disk ([Projects](/docs/limits#projects)).                      |
-| `Google Chat notifications stopped`            | Google refused your Chat webhook.                                                                                          |
+| Subject                                         | When                                                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Welcome to repose`                             | You signed in for the first time.                                                                               |
+| `You're on the waitlist`                        | Every seat was taken when you tried to choose a plan ([When repose is full](/docs/limits#when-repose-is-full)). |
+| `A seat is yours for 72 hours`                  | It's your turn.                                                                                                 |
+| `Your seat hold ran out`                        | You didn't choose a plan in time.                                                                               |
+| `Your free week ends soon`                      | Two days before the first charge ([The free week](/docs/billing#the-free-week)).                                |
+| `Your payment failed`                           | A charge didn't go through ([If a payment fails](/docs/billing#if-a-payment-fails)).                            |
+| `Your plan is ending`                           | You cancelled ([Changing and cancelling](/docs/billing#changing-and-cancelling)).                               |
+| `Your plan has ended`                           | The period ended after a cancellation.                                                                          |
+| `Your plan changed`                             | The day you upgrade, or the renewal a scheduled downgrade takes effect on; scheduling one sends nothing.        |
+| `Your machines were stopped: egress limit`      | The month's egress passed four times the plan's allowance ([Egress](/docs/limits#egress)).                      |
+| `Your projects hold more than your plan's disk` | Once a month while your projects hold more than the plan's disk ([Projects](/docs/limits#projects)).            |
+| `Google Chat notifications stopped`             | Google refused your Chat webhook.                                                                               |
 
 ## Agents can message you and ask questions
 
@@ -114,6 +114,7 @@ Two commands on every machine let an agent reach you:
 repose-notify "Deploy to staging is green"
 repose-notify --done "PR 12 is up: retries for the webhook sender"
 repose-ask --options yes,no "Drop the legacy sessions table?"
+repose-ask --secret STRIPE_KEY "Stripe, Developers > API keys"
 ```
 
 `repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
@@ -126,6 +127,12 @@ A question can be answered in five places:
 - **The dashboard:** waiting questions are on the dashboard's **Questions** page, which also lists the last week's answers, and on the project's page, with a button per option or a text box. The Projects page shows the first one. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses.
 
+### When an agent asks for a secret
+
+`repose-ask --secret NAME` asks you for the value of a secret, with the agent's reason. The notification links to a page on the dashboard where you paste the value; a value can't be sent by email, ntfy or Google Chat. On the dashboard the question has an **Enter NAME** button, and on your laptop `repose reply PROJECT` asks for the value, showing a `*` for each character, or reads it from a pipe (a value of several lines has to be piped): `op read op://dev/stripe/webhook | repose reply todo-app`.
+
+The value is stored as the project's secret NAME, as [`repose secrets set NAME`](/docs/secrets#store-an-api-key) stores it, and replaces a value the project already had. The agent never sees it in the answer. Its `repose-ask` waits 2 hours unless the agent asks for less, and returns once the machine has the secret; its next command reads `$NAME`.
+
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. The dashboard says where an answer came from, such as `Answered yes by email` or `Answered in the terminal`. **Dismiss** on the dashboard ends a question without answering.
@@ -137,22 +144,23 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 | Option            | Default    |                                                                                                                                                       |
 | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
-| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.                                                                          |
+| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                   |
+| `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours; 2 hours by default with `--secret`. A duration like `90s` or `2h`, or seconds.                                      |
 | `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
 | `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |
 
 It exits with:
 
-| Code | Meaning                                                                                                        |
-| ---- | -------------------------------------------------------------------------------------------------------------- |
-| 0    | You answered. The answer is on standard output.                                                                |
-| 1    | The machine's agent service couldn't be reached, or refused the question.                                      |
-| 2    | Wrong usage, such as no question or more than three options.                                                   |
-| 3    | No answer before the timeout.                                                                                  |
-| 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question. |
-| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                      |
-| 6    | You answered the agent in its terminal. Nothing is on standard output.                                         |
-| 130  | Interrupted, for example with `Ctrl-C`. The question is cancelled.                                             |
+| Code | Meaning                                                                                                                                           |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | You answered. The answer is on standard output; with `--secret`, the secret is on the machine.                                                    |
+| 1    | The machine's agent service couldn't be reached, or refused the question. With `--secret`, also: the secret was set but didn't reach the machine. |
+| 2    | Wrong usage, such as no question, more than three options, or a `--secret` name that isn't valid.                                                 |
+| 3    | No answer before the timeout.                                                                                                                     |
+| 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question.                                    |
+| 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                                                         |
+| 6    | You answered the agent in its terminal. Nothing is on standard output.                                                                            |
+| 130  | Interrupted, for example with `Ctrl-C`. The question is cancelled.                                                                                |
 
 Messages and questions are capped at 1 KB and count toward the [hourly cap](#limits). Neither is written to any log.
 
