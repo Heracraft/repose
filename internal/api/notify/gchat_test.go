@@ -337,7 +337,10 @@ func TestGChatSecretQuestionButton(t *testing.T) {
 	}
 	s := string(b)
 	want := dash + "/projects/" + fixtureProject.String() + "?answer=" + qid.String()
-	if strings.Count(s, `"openLink"`) != 1 || !strings.Contains(s, want) || !strings.Contains(s, "Enter STRIPE_KEY") || strings.Contains(s, "questions/reply") {
+	// One button straight to the dialog, nothing to copy from the body,
+	// and the subtitle and the phone's preview say what is asked for.
+	if strings.Count(s, `"openLink"`) != 1 || !strings.Contains(s, want) || !strings.Contains(s, "Enter STRIPE_KEY") || strings.Contains(s, "questions/reply") ||
+		strings.Count(s, "?answer=") != 1 || !strings.Contains(s, `"subtitle":"claude asks for STRIPE_KEY"`) || !strings.Contains(s, `"fallbackText":"todo-app: claude asks for STRIPE_KEY`) {
 		t.Fatalf("card %s", s)
 	}
 }

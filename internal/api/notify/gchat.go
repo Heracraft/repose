@@ -381,7 +381,12 @@ func gchatHeading(m Message) (*gchatHeader, string) {
 		}
 		return &gchatHeader{Title: gchatPlain(title, 200)}, m.Summary
 	case m.Agent != "":
-		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(m.Agent+" "+gchatVerb(m.Kind), 200)}, m.Summary
+		verb := gchatVerb(m.Kind)
+		if q := m.Question; q != nil && q.Secret != "" {
+			// The phone's notification says what is asked for (I-929).
+			verb += " for " + q.Secret
+		}
+		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(m.Agent+" "+verb, 200)}, m.Summary
 	}
 	if s, ok := platformSubjects[m.Kind]; ok {
 		return &gchatHeader{Title: gchatPlain(m.Project, 200), Subtitle: gchatPlain(s, 200)}, m.Summary
