@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 
@@ -83,6 +84,11 @@ func (m *Manager) stopCmd(ctx context.Context, c *hostdv1.StopGuest) (*hostdv1.S
 
 // stopGuest shuts a guest down: guestd Shutdown, then the CH API, then
 // SIGKILL, then teardown. The volume, root and address remain.
+// errNotAsked stands in for the wait that is skipped when no shutdown
+// request reached guestd, so the escalation below runs unchanged
+// (I-950).
+var errNotAsked = errors.New("no shutdown request was delivered")
+
 func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32) *Error {
 	if timeoutS == 0 {
 		timeoutS = m.cfg.StopTimeoutS
@@ -107,10 +113,16 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 	// the guest's console and with it PID 1, and every such stop waited out
 	// the whole timeout (DECISIONS I-186).
 	var stopConsole func()
+	// asked is whether guestd took a shutdown request. Waiting the whole
+	// timeout for a graceful power-off nobody was asked for is 60
+	// seconds of nothing (I-950).
+	asked := false
 	if mon := m.removeMonitor(g.GuestID); mon != nil {
 		if sess := mon.current(); sess != nil {
 			if err := sess.Shutdown(ctx, timeoutS); err != nil {
 				m.log(g).Warn("guestd shutdown request failed", "event", "guest_stop", "err", err.Error())
+			} else {
+				asked = true
 			}
 		}
 		stopConsole = mon.stopKeepConsole()
@@ -121,14 +133,33 @@ func (m *Manager) stopGuest(ctx context.Context, g *state.Guest, timeoutS uint32
 		}
 	}()
 	if active, _ := m.d.Systemd.IsActive(ctx, unit); active {
-		wctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutS)*time.Second)
-		err := m.d.Systemd.WaitInactive(wctx, unit)
-		cancel()
+		// A guest that was never asked goes straight to the power
+		// button. The wait exists to let a guest shut itself down
+		// cleanly after guestd passed the request on; with no session
+		// to pass it -- guestd dead, or a wake whose `guestd` phase
+		// failed and left the VM running without it -- there is
+		// nothing to wait for, and the button works perfectly well
+		// (I-950).
+		wait := time.Duration(timeoutS) * time.Second
+		if !asked {
+			m.log(g).Info("no shutdown request reached guestd; asking the hypervisor now", "event", "guest_stop")
+			wait = 0
+		}
+		var err error
+		if wait > 0 {
+			wctx, cancel := context.WithTimeout(ctx, wait)
+			err = m.d.Systemd.WaitInactive(wctx, unit)
+			cancel()
+		} else {
+			err = errNotAsked
+		}
 		if err != nil {
-			m.log(g).Warn("guest did not power off; asking the hypervisor", "event", "guest_stop")
+			if asked {
+				m.log(g).Warn("guest did not power off; asking the hypervisor", "event", "guest_stop")
+			}
 			escalated = "hypervisor"
 			_ = m.d.CH.Shutdown(ctx, ch.APISocket(m.guestDir(g.GuestID))) // the next step kills the unit if this did nothing
-			wctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+			wctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			err = m.d.Systemd.WaitInactive(wctx, unit)
 			cancel()
 			if err != nil {

@@ -189,3 +189,73 @@ func TestStopLogsItsPhases(t *testing.T) {
 		t.Fatalf("%d \"stop timings\" lines after one stop with a snapshot", n)
 	}
 }
+
+// A stop whose shutdown request never reached guestd goes straight to
+// the power button instead of waiting the whole timeout for a reply
+// nobody was asked for (DECISIONS I-950).
+//
+// Seen on host-01 at 2026-11-01T21:40:09Z: a guest whose wake failed at
+// its `guestd` phase ("vsockrpc: EOF") had resumed -- it had vCPUs --
+// but had no guestd to take the request, so the stop sat out its 60 s
+// and then escalated. `power_off_ms: 61317, escalated: "hypervisor"`.
+// The ACPI button then stopped it in about a second, which is the
+// point: the button was never the problem, the waiting was.
+func TestStopDoesNotWaitWhenGuestdWasNeverAsked(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	// No session to carry the request, which is what a dead guestd
+	// leaves behind: on host-01 the wake had failed at its `guestd`
+	// phase with "vsockrpc: EOF", so the VM was running and the monitor
+	// had nothing to talk to.
+	h.m.removeMonitor(gid1)
+	start := time.Now()
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: false}))
+	took := time.Since(start)
+
+	// The default stop timeout is 60 s; the whole point is not spending it.
+	if took > 20*time.Second {
+		t.Fatalf("the stop took %s; it waited for a shutdown request that was never delivered", took)
+	}
+	lines := logLines(t, h, "no shutdown request reached guestd; asking the hypervisor now")
+	if len(lines) != 1 {
+		t.Fatalf("%d \"no shutdown request reached guestd\" lines, want 1", len(lines))
+	}
+	// The power button was tried, which is the whole point: on host-01
+	// it stopped the guest in about a second once it was finally sent.
+	var shutdowns int
+	for _, c := range h.chc.Calls {
+		if strings.HasPrefix(c, "shutdown ") {
+			shutdowns++
+		}
+	}
+	if shutdowns != 1 {
+		t.Fatalf("%d CH shutdown calls, want 1", shutdowns)
+	}
+	// The misleading line is not printed: nothing failed to power off,
+	// because nothing was asked to.
+	if n := len(logLines(t, h, "guest did not power off; asking the hypervisor")); n != 0 {
+		t.Fatalf("%d \"guest did not power off\" lines; the guest was never asked", n)
+	}
+	// The fake hypervisor only records the button, so this harness goes
+	// on to the kill that follows it; a real CH powers the guest off
+	// and the stop ends at "hypervisor".
+	stopped := logLines(t, h, "guest stopped")
+	if len(stopped) != 1 || stopped[0]["escalated"] == "none" {
+		t.Fatalf("guest stopped: %v", stopped)
+	}
+}
+
+// The other half: a guest whose guestd DOES take the request still gets
+// its full grace period, so a clean shutdown is never cut short (I-950).
+func TestStopStillWaitsWhenGuestdTookTheRequest(t *testing.T) {
+	h := newHarness(t, nil)
+	h.create(gid1)
+	h.mustOK(cmd(&hostdv1.StopGuest{GuestId: gid1, SnapshotFirst: false}))
+	if n := len(logLines(t, h, "no shutdown request reached guestd; asking the hypervisor now")); n != 0 {
+		t.Fatalf("%d skip lines for a guest whose guestd answered", n)
+	}
+	stopped := logLines(t, h, "guest stopped")
+	if len(stopped) != 1 || stopped[0]["escalated"] != "none" {
+		t.Fatalf("guest stopped: %v", stopped)
+	}
+}

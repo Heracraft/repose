@@ -27329,3 +27329,61 @@ The owner, looking at a done report in Google Chat: "Simple resume done: open ht
 *Reviewed before hand-off* by a gap hunt over the branch. It found a query of raw non-ASCII bytes that passed the rule and would have failed the events insert for ever, holding the host's event stream; a Chat button cut at 64 bytes through the host; a label that could carry its own " · host"; Unicode hosts; the email drawing the project link above the agent's; two dashboard lists without the link. All fixed above.
 
 *Rejected:* finding addresses in the text (above). *Rejected:* several links per message: one page to open is the case, and a row of buttons named by host reads as a list to choose from.
+
+**I-950. A stop does not wait out a grace period for a shutdown request
+nobody took.** (handed over by the conductor, 2026-11-01.)
+
+`stopGuest` asks guestd to shut the system down, then waits
+`timeoutS` (60 s) for the unit to go inactive, then presses the
+hypervisor's ACPI power button, then kills. The wait is right when
+guestd took the request: the guest is shutting down and deserves its
+grace period. It is 60 seconds of nothing when no request was delivered
+at all, and the code did not distinguish the two.
+
+The observation, on host-01:
+
+    21:39:07  wake failed      event=guest_resting phase="guestd" err="vsockrpc: EOF"
+    21:39:07  snapshot failed  code=guest_unresponsive "guestd unreachable"
+    21:39:08  stopping guest   timeout_s=60
+    21:40:08  guest did not power off; asking the hypervisor
+    21:40:09  guest stopped    power_off_ms=61317 escalated="hypervisor"
+
+`stopGuest` now records whether guestd actually took the request and,
+when it did not, goes straight to the power button.
+
+*Two things the handover had wrong, and the evidence that corrects
+them.* The guest was described as resting with no vCPUs to answer the
+power button. It was not: the wake's **`resume` phase succeeded** and
+only its `guestd` phase failed, so the VM was running without guestd.
+And the power button was never the problem — once sent at 21:40:08 it
+stopped the guest by 21:40:09, about a second. The 60 seconds were spent
+before trying it, waiting on a request that had nowhere to go. I had
+endorsed the resting framing before reading the journal, and the fix I
+first proposed (skip the button for a resting guest) would not have
+helped this guest at all. The general form does: **do not wait for an
+answer you never managed to ask for.** It covers a dead guestd, which is
+what happened, and a wake that fails before guestd, which is what was
+feared.
+
+*It postdates I-920.* The leak fix shipped in r20261031-2 and both hosts
+switched on 31 Oct at 00:52 and 00:53; this is 1 Nov at 21:40. So the
+failed wake behind it is not the connection-cap exhaustion and is still
+unexplained — `vsockrpc: EOF` from a guest whose VM had resumed. That
+wants its own look; this entry only stops the 60 seconds being spent on
+it.
+
+*Why it became visible now.* I-918 made a failed wake non-fatal for stop
+and destroy, because the stop was the documented recovery for a guest
+that would not wake and sat behind the wake itself. Before that, this
+stop failed in seconds; after it, the stop proceeds — correctly, the
+owner gets their machine stopped — and spends the grace period doing
+nothing. I-918 is right and stays; this is the other half of it.
+
+*What the test can and cannot show.* The harness's fake hypervisor
+records the power button without powering anything off, so the test
+reaches the kill that follows it where a real host stops at
+`hypervisor`. It asserts the things that are true either way: the grace
+period is not spent, the button is pressed once, and the misleading
+"guest did not power off" line is not printed for a guest that was
+never asked. The counter-test holds the other side — a guestd that
+takes the request still gets its full grace period.
