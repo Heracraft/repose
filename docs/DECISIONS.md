@@ -27329,3 +27329,44 @@ The owner, looking at a done report in Google Chat: "Simple resume done: open ht
 *Reviewed before hand-off* by a gap hunt over the branch. It found a query of raw non-ASCII bytes that passed the rule and would have failed the events insert for ever, holding the host's event stream; a Chat button cut at 64 bytes through the host; a label that could carry its own " · host"; Unicode hosts; the email drawing the project link above the agent's; two dashboard lists without the link. All fixed above.
 
 *Rejected:* finding addresses in the text (above). *Rejected:* several links per message: one page to open is the case, and a row of buttons named by host reads as a list to choose from.
+
+
+**I-952. The edge lets peers reach Prometheus's remote-write receiver, so
+the api's series can be pushed instead of scraped.** (edge-remote-write,
+2026-11-01) Amends I-133's choice and I-648's port list.
+`repose.edge.monitoring.logPorts` goes from `[ 3100 ]` to
+`[ 3100 9090 ]`.
+- *What could not be scraped.* The HTTP `api` app publishes no port and
+  cannot: a published port stops the old and new container coexisting, so
+  Coolify could not roll it (I-2). Its ~57 series have therefore never
+  been scraped at all. I-133 answered that with a Traefik router on the
+  app behind an IP allow-list, and those labels were never pasted --
+  confirmed against the live Coolify on 2026-11-01, where `api:main`
+  carries only Coolify's own generated routing for
+  `api.repose.herakraft.co` on port 8080 and no `api-metrics` router.
+- *Why not the labels now.* The owner refused them, and the reason holds:
+  the hostname is in the label block and again in an `/etc/hosts` line on
+  the monitoring server, Coolify regenerates its own labels from the app's
+  FQDN but would not touch a hand-pasted one, and R4-12 has the domain
+  graduating off `herakraft.co`. A domain change would leave one stale
+  copy and break metrics silently, with nothing connecting the two.
+- *The direction that was closed.* `scrapePorts` is the monitoring peer
+  reaching out; `logPorts` is peers reaching in, and held only Loki's
+  3100. Alloy on the control VM scraping `api` and `api-grpc` over the
+  Docker network and remote-writing to `10.255.0.3:9090` is the second
+  direction, so without this it fails at the edge and looks like a bug in
+  Alloy. I-133 rejected Alloy partly because the owner's Prometheus
+  exposed no remote-write receiver; the owner is now enabling one
+  deliberately, wanting the push path for their other projects as well,
+  which removes that objection rather than working around it.
+- *What this opens, stated plainly.* A port in `logPorts` is reachable by
+  every peer, hosts included, not only the control VM. That is the bound
+  3100 already had and the reason the list stays short. Prometheus answers
+  the path only with `--web.enable-remote-write-receiver`, which is the
+  owner's to set on the personal server, so until then the open port
+  reaches a closed socket.
+- Evidence: `nix eval` of `nixosConfigurations.edge.config` gives
+  `[ 3100 9090 ]`, and the generated ruleset carries
+  `iifname "wg0" oifname "wg0" ip daddr { 10.255.0.3/32 } tcp dport { 3100, 9090 } accept`.
+  The edge switch that applies it is the owner's or the conductor's; this
+  branch ships the configuration only.
