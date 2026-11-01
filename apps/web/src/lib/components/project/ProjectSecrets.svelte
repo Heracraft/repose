@@ -1,7 +1,7 @@
 <!--
   A project's secrets, under Secrets on its Config tab (DECISIONS I-697,
   I-841): the names and when each changed, Delete… asking in its row,
-  and "Add secret", which opens the form inline under the head. Under
+  and "Add secret", which opens SecretDialog over the page (I-929). Under
   them, the account's secrets, which reach this machine too; a name the
   project sets itself is struck there, since the project's own wins.
   Values never come back from the api, so none is ever in the page.
@@ -12,21 +12,14 @@
 	import { toast } from 'svelte-sonner';
 	import { listSecrets, putSecret, deleteSecret, listAccountSecrets } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { encodeBase64 } from '$lib/base64';
+	import { ApiError } from '$lib/api/errors';
+	import SecretDialog from '$lib/components/SecretDialog.svelte';
 	import { dateTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { SecretMeta } from '$lib/api/types';
 
-	let { projectId }: { projectId: string } = $props();
-
-	const NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
-	const RESERVED = new Set([
-		'ssh_host_ed25519_key',
-		'ssh_host_ed25519_key-cert.pub',
-		'user_ca.pub'
-	]);
-	const MAX_BYTES = 64 * 1024;
+	let { projectId, projectName }: { projectId: string; projectName?: string } = $props();
 
 	let secrets = $state<SecretMeta[] | undefined>(undefined);
 	let account = $state<SecretMeta[]>([]);
@@ -35,16 +28,6 @@
 	let loadError = $state<string | undefined>(undefined);
 
 	let adding = $state(false);
-	let name = $state('');
-	let value = $state('');
-	let fileInput = $state<HTMLInputElement | undefined>(undefined);
-	let nameField = $state<HTMLInputElement | undefined>(undefined);
-	// The file Load from file picked, shown by name in place of a native
-	// file widget; while one is picked it is the value, not the textarea.
-	let file = $state<File | undefined>(undefined);
-	let nameError = $state<string | undefined>(undefined);
-	let valueError = $state<string | undefined>(undefined);
-	let saving = $state(false);
 	let deleting = $state<string | undefined>(undefined);
 	/** The secret whose Delete was pressed once: its row asks in place. */
 	let confirming = $state<string | undefined>(undefined);
@@ -78,68 +61,27 @@
 		}
 	});
 
-	function validateName(n: string): string | undefined {
-		if (n === '') return 'Name is required.';
-		if (RESERVED.has(n)) return 'This name is reserved for the guest’s SSH host material.';
-		if (!NAME_RE.test(n))
-			return 'Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.';
-		return undefined;
-	}
-
-	function pickFile() {
-		file = fileInput?.files?.[0];
-		valueError = undefined;
-	}
-
-	function clearFile() {
-		file = undefined;
-		if (fileInput) fileInput.value = '';
-		valueError = undefined;
-	}
-
-	function size(n: number): string {
-		return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
-	}
-
-	/** Closes the form, cleared, and gives focus back to Add secret. */
-	function closeForm() {
-		adding = false;
-		name = '';
-		value = '';
-		nameError = undefined;
-		valueError = undefined;
-		clearFile();
-		void focusAfterRender('secret-add-open');
-	}
-
-	async function onAdd() {
-		// The field shows what it holds in capitals; the name sent is that.
-		name = name.trim().toUpperCase();
-		nameError = validateName(name);
-		valueError = undefined;
-		let base64: string;
-		if (file) {
-			if (file.size > MAX_BYTES) valueError = 'Secret values are limited to 64 KB.';
-			base64 = encodeBase64(await file.arrayBuffer());
-		} else {
-			if (new Blob([value]).size > MAX_BYTES) valueError = 'Secret values are limited to 64 KB.';
-			base64 = encodeBase64(value);
-		}
-		if (nameError) nameField?.focus();
-		if (nameError || valueError) return;
-
-		saving = true;
+	/** Stores the dialog's secret; an error comes back to show under its field. */
+	async function onAdd(name: string, base64: string): Promise<string | undefined> {
 		try {
-			const stored = name;
-			await putSecret(projectId, stored, base64);
-			toast.success(`Stored ${stored}.`);
+			await putSecret(projectId, name, base64);
+			toast.success(`Stored ${name}.`);
+			adding = false;
 			await load();
-			closeForm();
+			void focusAfterRender('secret-add-open');
+			return undefined;
 		} catch (err) {
+			if (err instanceof ApiError && err.code === 'invalid') return err.message;
 			toastApiError(err, 'Could not store the secret.');
-		} finally {
-			saving = false;
+			return 'Could not store the secret. Try again.';
 		}
+	}
+
+	function replaces(n: string): string | undefined {
+		if (own.has(n)) return 'It replaces the current value.';
+		if (account.some((s) => s.name === n))
+			return 'This project uses it in place of your account’s.';
+		return undefined;
 	}
 
 	/** Closes the two-step and gives focus back to the row's Delete. */
@@ -186,9 +128,8 @@
 				type="button"
 				id="secret-add-open"
 				class="hk-btn-secondary hk-btn-sm"
-				aria-expanded={adding}
-				aria-controls="secret-add"
-				onclick={() => (adding ? closeForm() : (adding = true))}>Add secret</button
+				aria-haspopup="dialog"
+				onclick={() => (adding = true)}>Add secret</button
 			>
 		{/if}
 	</div>
@@ -199,90 +140,6 @@
 		error={loadError}
 		shape="rows"
 	>
-		{#if adding}
-			<!-- Each field has a visible label and its error is tied to it,
-			     so a screen reader hears why Add refused. -->
-			<form
-				id="secret-add"
-				class="sform"
-				aria-labelledby="add-title"
-				onsubmit={(e) => {
-					e.preventDefault();
-					void onAdd();
-				}}
-			>
-				<h3 id="add-title" class="hk-sr">Add a secret</h3>
-				<div class="sfields">
-					<div>
-						<label for="secret-name" class="hk-field-label">Name</label>
-						<input
-							id="secret-name"
-							class="hk-input sname-input"
-							placeholder="API_KEY"
-							autocomplete="off"
-							autocapitalize="characters"
-							spellcheck="false"
-							bind:value={name}
-							bind:this={nameField}
-							use:focusOnMount
-							aria-invalid={nameError ? 'true' : undefined}
-							aria-describedby={nameError ? 'secret-name-error' : undefined}
-							oninput={() => (nameError = undefined)}
-						/>
-						{#if nameError}<p id="secret-name-error" class="hk-field-error">{nameError}</p>{/if}
-					</div>
-					<div>
-						<label for="secret-value" class="hk-field-label">Value</label>
-						<textarea
-							id="secret-value"
-							rows="2"
-							class="hk-textarea svalue"
-							autocomplete="off"
-							spellcheck="false"
-							disabled={!!file}
-							bind:value
-							aria-invalid={valueError ? 'true' : undefined}
-							aria-describedby={valueError ? 'secret-value-error' : undefined}
-							oninput={() => (valueError = undefined)}
-						></textarea>
-						<!-- A ghost button opens the file picker, and the picked file
-						     shows by name; the input keeps a real label. -->
-						<label for="secret-file" class="hk-sr">Value from a file</label>
-						<input
-							id="secret-file"
-							type="file"
-							tabindex="-1"
-							class="hk-sr"
-							bind:this={fileInput}
-							onchange={pickFile}
-						/>
-						<div class="sfile">
-							{#if file}
-								<span class="sfile-name" data-testid="secret-file-name">{file.name}</span>
-								<span class="sfile-size">{size(file.size)}</span>
-								<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={clearFile}
-									>Clear</button
-								>
-							{:else}
-								<button
-									type="button"
-									class="hk-btn-ghost hk-btn-sm sfile-load"
-									onclick={() => fileInput?.click()}>Load from file</button
-								>
-							{/if}
-						</div>
-						{#if valueError}<p id="secret-value-error" class="hk-field-error">{valueError}</p>{/if}
-					</div>
-				</div>
-				<div class="sbuttons">
-					<button type="submit" class="hk-btn-secondary" disabled={saving}>
-						{saving ? 'Storing…' : 'Add'}
-					</button>
-					<button type="button" class="hk-btn-ghost" onclick={closeForm}>Cancel</button>
-				</div>
-			</form>
-		{/if}
-
 		{#if secrets && secrets.length === 0}
 			<div class="hk-empty-row sempty">
 				<h3 class="hk-empty-title">No secrets yet</h3>
@@ -380,29 +237,19 @@
 	</LoadState>
 </section>
 
+<SecretDialog
+	open={adding}
+	mode="add"
+	target={projectName}
+	existing={replaces}
+	onsave={onAdd}
+	onclose={() => {
+		adding = false;
+		void focusAfterRender('secret-add-open');
+	}}
+/>
+
 <style>
-	/* The add form: one panel under the head, the fields side by side
-	   from a 640px column. */
-	.sform {
-		margin-bottom: 1.25rem;
-		padding: 1rem;
-		border-radius: var(--hk-radius);
-		background: var(--hk-surface-2);
-	}
-	.sfields {
-		display: grid;
-		gap: 1rem 1.25rem;
-	}
-	@container dash (min-width: 640px) {
-		.sfields {
-			grid-template-columns: 16rem minmax(0, 1fr);
-		}
-	}
-	.sbuttons {
-		display: flex;
-		gap: 0.5rem;
-		margin-top: 0.75rem;
-	}
 	.sempty {
 		justify-content: flex-start;
 		flex-wrap: wrap;
@@ -489,42 +336,6 @@
 		font-size: 0.8125rem;
 		color: var(--hk-text-3);
 	}
-	.sname-input,
-	.svalue {
-		font-family: var(--hk-font-mono);
-	}
-	.sname-input {
-		text-transform: uppercase;
-	}
-	.sname-input::placeholder {
-		text-transform: none;
-	}
-	.svalue {
-		min-height: 0;
-		resize: vertical;
-	}
-	.sfile {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 0.75rem;
-		min-height: 1.875rem;
-		margin-top: 0.5rem;
-	}
-	.sfile-load {
-		margin-left: -0.625rem;
-	}
-	.sfile-name {
-		min-width: 0;
-		font-family: var(--hk-font-mono);
-		font-size: 0.8125rem;
-		word-break: break-all;
-	}
-	.sfile-size {
-		font-size: 0.75rem;
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-	}
 	/* A thumb's 44px, the row's height unchanged. */
 	@media (pointer: coarse), (max-width: 639.98px) {
 		.settings-link {
@@ -536,8 +347,7 @@
 	}
 	/* Forced colours draw a ghost's border: keep it inside the frame. */
 	@media (forced-colors: active) {
-		.sact .hk-btn-ghost,
-		.sfile-load {
+		.sact .hk-btn-ghost {
 			margin-inline: 0;
 		}
 	}

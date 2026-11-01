@@ -161,6 +161,14 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   question is gone after a reboot), 6 answered in the terminal, 130
   interrupted. At most 3 options; timeout 30 minutes by default, 24 hours
   at most.
+- `repose-ask --secret NAME REASON` (I-929) asks for the named secret
+  instead: title `<project>: <agent> asks for NAME`, no options and no
+  reply links. Email, ntfy and Google Chat carry one link, "Enter NAME",
+  to the project page with `?answer=<question id>`, which opens the
+  dashboard's secret dialog; the email adds that a reply does not set it.
+  The value is stored as the project's secret and never in the question;
+  the agent's repose-ask prints nothing and returns once the machine has
+  the secret.
 - Answering in the terminal (I-690): any prompt the owner sends the agent
   that asked closes its open questions; all five agents report the prompt
   through a hook (gemini and pi through the platform's extensions). The

@@ -121,6 +121,11 @@ message Question {
   // Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
   // (I-690). Empty on an open and on older guests.
   string reason = 8;
+  // The named secret a `repose-ask --secret NAME` asks for (DECISIONS
+  // I-929), [A-Z][A-Z0-9_]{0,63}. The value never travels this way: the
+  // owner sets it through the api's secrets store, and the AnswerQuestion
+  // that closes the question carries no answer.
+  string secret = 9;
 }
 
 message Notify {

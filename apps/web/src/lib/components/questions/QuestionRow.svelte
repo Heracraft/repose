@@ -23,6 +23,7 @@
 		busy = false,
 		note = '',
 		onanswer,
+		onsecret,
 		ondismiss
 	}: {
 		question: Question;
@@ -35,6 +36,8 @@
 		/** Why the last answer was refused, under the controls. */
 		note?: string;
 		onanswer: (answer: string) => void;
+		/** A question for a secret (I-929): open the dialog its value is pasted into. */
+		onsecret?: () => void;
 		ondismiss: () => void;
 	} = $props();
 
@@ -207,7 +210,19 @@
 					>{/if}
 			</p>
 			<div class="qrow-answer">
-				{#if q.options.length > 0}
+				{#if q.secret}
+					<!-- The value is never typed into the row: the button opens
+					     the dialog over a blurred page (I-929). -->
+					<button
+						type="button"
+						class="hk-btn-secondary hk-btn-sm qrow-secret"
+						data-qrow-first
+						data-testid="question-secret"
+						disabled={busy}
+						onclick={() => onsecret?.()}
+						>Enter <span class="qrow-secret-name">{q.secret}</span></button
+					>
+				{:else if q.options.length > 0}
 					{#if !inline}{@render options()}{/if}
 				{:else}
 					<label class="hk-sr" for={idFor('answer')}>Your answer</label>
@@ -368,6 +383,11 @@
 		line-height: 1.25rem;
 		resize: none;
 		overflow-y: hidden;
+	}
+	.qrow-secret-name {
+		margin-left: 0.25rem;
+		font-family: var(--hk-font-mono);
+		font-size: 0.75rem;
 	}
 	.qrow-dismiss {
 		margin-left: auto;

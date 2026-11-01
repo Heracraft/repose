@@ -64,6 +64,20 @@ type QuestionLinks struct {
 	Options []string
 	Replies []string // parallel to Options; empty when no signer is configured
 	Expires time.Time
+	// Secret is the named secret the question asks for (I-929). Such a
+	// question has no reply links: its answer is a value, which only the
+	// dashboard's form and `repose reply` take.
+	Secret string
+}
+
+// AnswerURL is where the owner answers a question: for one that asks for
+// a secret, the project page with that question's form open; else the
+// project page.
+func (m Message) AnswerURL() string {
+	if q := m.Question; q != nil && q.Secret != "" {
+		return m.ProjectURL() + "?answer=" + q.ID.String()
+	}
+	return m.ProjectURL()
 }
 
 // ProjectURL is the dashboard page of the message's project.
@@ -225,6 +239,7 @@ type row struct {
 	qState      *string
 	options     []string
 	expires     *time.Time
+	secret      *string // the named secret a question asks for (I-929)
 	delivered   *string // this channel's delivered value, if any
 	tz          *string // the user's zone, for the times an email prints
 }
@@ -254,7 +269,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, e.delivered ->> o.channel, u.tz
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, q.secret_name, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -265,7 +280,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.delivered, &r.tz); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.secret, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -408,6 +423,9 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	}
 	if r.questionID != nil && r.expires != nil {
 		q := &QuestionLinks{ID: *r.questionID, Options: r.options, Expires: *r.expires}
+		if r.secret != nil {
+			q.Secret = *r.secret
+		}
 		if o.Unsub != nil {
 			for i := range r.options {
 				q.Replies = append(q.Replies, o.Unsub.ReplyURL(o.APIBase, q.ID, i, q.Expires, r.channel))
@@ -681,6 +699,9 @@ func Title(m Message) string {
 	}
 	// The CLI's `repose events` says the same words (I-634).
 	verb := eventverbs.Verb(m.Kind)
+	if q := m.Question; q != nil && q.Secret != "" && m.Kind != QuestionClosedKind {
+		verb += " for " + q.Secret
+	}
 	if m.Agent != "" {
 		return fmt.Sprintf("%s: %s %s", m.Project, m.Agent, verb)
 	}
@@ -808,7 +829,7 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	// Priority says the urgency; no tag, since ntfy shows tags as emoji
 	// (DECISIONS I-691).
 	req.Header.Set("Priority", ntfyPriority(m.Kind))
-	req.Header.Set("Click", m.ProjectURL())
+	req.Header.Set("Click", m.AnswerURL())
 	if m.Question != nil {
 		if a := ntfyActions(m); a != "" {
 			req.Header.Set("Actions", a)
@@ -875,7 +896,11 @@ func ntfyActions(m Message) string {
 			acts = append(acts, ntfyAction{Action: "http", Label: o, URL: q.Replies[i], Method: "POST", Clear: true})
 		}
 	} else {
-		acts = append(acts, ntfyAction{Action: "view", Label: "Answer", URL: m.ProjectURL()})
+		label := "Answer"
+		if q.Secret != "" {
+			label = "Enter " + q.Secret
+		}
+		acts = append(acts, ntfyAction{Action: "view", Label: label, URL: m.AnswerURL()})
 	}
 	b, err := json.Marshal(acts)
 	if err != nil {

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-849 entries.
+850 entries.
 
 ## Scope
 
@@ -881,3 +881,4 @@ pointer, not a summary.
 - **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26940
 - **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L26989
 - **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27048
+- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27079

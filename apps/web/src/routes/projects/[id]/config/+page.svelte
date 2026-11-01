@@ -389,7 +389,7 @@
 		</div>
 	</div>
 
-	<ProjectSecrets projectId={id} />
+	<ProjectSecrets projectId={id} projectName={project?.slug} />
 {/if}
 
 <section class="hk-section packages" aria-labelledby="packages-title">

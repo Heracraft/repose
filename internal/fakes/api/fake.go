@@ -156,9 +156,10 @@ type Fake struct {
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
 	// wakes counts POST /internal/wake, for the gateway's dedupe tests.
-	wakes     int
-	sessions  []SessionReport
-	questions []*Question // newest last (DECISIONS I-245)
+	wakes         int
+	sessions      []SessionReport
+	questions     []*Question       // newest last (DECISIONS I-245)
+	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
 	bill billingState

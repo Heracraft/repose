@@ -34,6 +34,10 @@ export interface ClosedLine {
 export function closedLine(q: Question): ClosedLine {
 	const via = q.answered_via ?? undefined;
 	if (q.state === 'answered') {
+		if (q.secret && via !== 'terminal') {
+			const from = via ? FROM[via] : undefined;
+			return { text: from ? `Set ${q.secret} ${from}` : `Set ${q.secret}`, tone: 'answered' };
+		}
 		if (via === 'terminal' || q.answer === null) {
 			return { text: 'Answered in the terminal', tone: 'answered' };
 		}

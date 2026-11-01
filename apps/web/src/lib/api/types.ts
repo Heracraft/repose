@@ -435,6 +435,11 @@ export interface Question {
 	created_at: string;
 	expires_at: string;
 	answered_at: string | null;
+	/**
+	 * The named secret the question asks for (`repose-ask --secret`, I-929).
+	 * Its answer is the value, stored as that secret, never in `answer`.
+	 */
+	secret?: string;
 }
 
 export interface UsageRow {

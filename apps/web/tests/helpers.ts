@@ -114,7 +114,7 @@ export { BASE_URL };
 /** Has a project's guest ask a question, as repose-ask would (the fake's admin POST /question). */
 export async function addQuestion(
 	projectId: string,
-	q: { agent?: string; text: string; options?: string[]; timeout_s?: number }
+	q: { agent?: string; text: string; options?: string[]; timeout_s?: number; secret?: string }
 ): Promise<{ id: string }> {
 	const adminURL = process.env.FAKEAPI_ADMIN_URL;
 	if (!adminURL) throw new Error('FAKEAPI_ADMIN_URL not set — run tests through global-setup.ts');

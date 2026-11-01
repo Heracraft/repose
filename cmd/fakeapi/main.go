@@ -64,7 +64,8 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices"}; every field optional
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
-//	POST /question   {"project_id","agent","text","options","timeout_s"} -> f.AddQuestion
+//	POST /question   {"project_id","agent","text","options","timeout_s","secret"} -> f.AddQuestion,
+//	                 or f.AddSecretQuestion with "secret" (I-929)
 //	POST /question/close {"question_id","state","reason"} -> f.CloseQuestion: the guest closes it;
 //	                 reason terminal answers it in the terminal, withdrawn withdraws it (I-690)
 //	POST /events     {"project_id","count","kinds","agents","windows","summaries","spacing_minutes"}: count events
@@ -142,12 +143,19 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Text      string   `json:"text"`
 			Options   []string `json:"options"`
 			TimeoutS  int      `json:"timeout_s"`
+			Secret    string   `json:"secret"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		q, err := f.AddQuestion(body.ProjectID, body.Agent, body.Text, body.Options, time.Duration(body.TimeoutS)*time.Second)
+		var q api.Question
+		var err error
+		if body.Secret != "" {
+			q, err = f.AddSecretQuestion(body.ProjectID, body.Agent, body.Secret, body.Text, time.Duration(body.TimeoutS)*time.Second)
+		} else {
+			q, err = f.AddQuestion(body.ProjectID, body.Agent, body.Text, body.Options, time.Duration(body.TimeoutS)*time.Second)
+		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

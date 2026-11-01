@@ -289,7 +289,9 @@ stored as `answered` with `answered_via` `terminal`), `withdrawn` (the
 agent took it back, stored as `cancelled` with `answered_via` `agent`),
 `interrupted` or `asker_gone` (stored as a plain cancel); empty for an
 expiry and on an open question; an older hostd drops it and the close is a
-plain cancel),
+plain cancel; `secret` (field 10, I-929) is the named secret a `repose-ask
+--secret` asks for, `[A-Z][A-Z0-9_]{0,63}`, with no options beside it;
+hostd drops a question whose name breaks that rule or that has both),
 `guest_resting {guest_id, resting, at, reason}` (DECISIONS I-818: the guest
 was paused or woken, so the api shows the marker within seconds rather than
 at the next minute's sample. It is **not** a `guest_state_changed`: the

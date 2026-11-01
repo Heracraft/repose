@@ -41,6 +41,9 @@ type AskPayload struct {
 	Text     string   `json:"text"`
 	Options  []string `json:"options,omitempty"`
 	TimeoutS uint32   `json:"timeout_s,omitempty"`
+	// Secret asks for the named secret instead of a written answer
+	// (DECISIONS I-929); it takes no Options.
+	Secret string `json:"secret,omitempty"`
 }
 
 // AskState is what POST /ask and GET /ask/{id} answer, and one entry of
@@ -53,6 +56,10 @@ type AskState struct {
 	Reason  string    `json:"reason,omitempty"`
 	Text    string    `json:"text,omitempty"`
 	Expires time.Time `json:"expires_at"`
+	// Secret is the name a secret question asks for (I-929). POST /ask
+	// echoes it, so a repose-ask that asked for a secret knows this
+	// guestd took the question as one and not as a written answer.
+	Secret string `json:"secret,omitempty"`
 }
 
 // AskList is GET /ask.
@@ -133,7 +140,17 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	agent := callerAgent(p.Agent)
 	window := s.callerWindow(r, p.Window, agent)
-	q, err := s.questions.Open(agent, window, s.agentProcOf(r, agent), p.Text, p.Options, time.Duration(p.TimeoutS)*time.Second)
+	var q questions.Question
+	var err error
+	if p.Secret != "" {
+		if len(p.Options) > 0 {
+			s.reject(w, r, http.StatusBadRequest, "invalid_question")
+			return
+		}
+		q, err = s.questions.OpenSecret(agent, window, s.agentProcOf(r, agent), p.Secret, p.Text, time.Duration(p.TimeoutS)*time.Second)
+	} else {
+		q, err = s.questions.Open(agent, window, s.agentProcOf(r, agent), p.Text, p.Options, time.Duration(p.TimeoutS)*time.Second)
+	}
 	switch {
 	case errors.Is(err, questions.ErrTooMany):
 		s.reject(w, r, http.StatusTooManyRequests, "too_many_questions")
@@ -146,7 +163,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("agent question opened", "event", "agent_question", "agent", agent, "question_id", q.ID,
-		"options", len(q.Options), "timeout_s", q.TimeoutS, "text_bytes", len(q.Text))
+		"options", len(q.Options), "has_secret", q.Secret != "", "timeout_s", q.TimeoutS, "text_bytes", len(q.Text))
 	writeState(w, http.StatusCreated, q)
 }
 
@@ -242,7 +259,7 @@ func (s *Server) handleAskList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := AskList{Questions: []AskState{}}
 	for _, q := range s.questions.List(match) {
-		out.Questions = append(out.Questions, AskState{ID: q.ID, State: q.State, Text: q.Text, Expires: q.Expires})
+		out.Questions = append(out.Questions, AskState{ID: q.ID, State: q.State, Text: q.Text, Expires: q.Expires, Secret: q.Secret})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out) // the caller went away
@@ -270,5 +287,5 @@ func (s *Server) handleAskCancelMany(w http.ResponseWriter, r *http.Request) {
 func writeState(w http.ResponseWriter, status int, q questions.Question) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(AskState{ID: q.ID, State: q.State, Answer: q.Answer, Reason: q.Reason, Expires: q.Expires}) // the asker went away
+	_ = json.NewEncoder(w).Encode(AskState{ID: q.ID, State: q.State, Answer: q.Answer, Reason: q.Reason, Expires: q.Expires, Secret: q.Secret}) // the asker went away
 }

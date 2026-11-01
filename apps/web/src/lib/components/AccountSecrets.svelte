@@ -1,7 +1,7 @@
 <!--
   The account's secrets, Settings → Secrets (DECISIONS I-697, I-841):
   every project gets them with its own, and a project's own secret of the
-  same name wins. The same names, limits, inline "Add secret" form and
+  same name wins. The same names, limits, "Add secret" dialog (I-929) and
   two-step delete as a project's Secrets on its Config tab. Values never
   come back from the api, so none is ever in the page.
 -->
@@ -10,28 +10,16 @@
 	import { toast } from 'svelte-sonner';
 	import { listAccountSecrets, putAccountSecret, deleteAccountSecret } from '$lib/api/client';
 	import { toastApiError } from '$lib/api/toast';
-	import { encodeBase64 } from '$lib/base64';
+	import { ApiError } from '$lib/api/errors';
+	import SecretDialog from '$lib/components/SecretDialog.svelte';
 	import { dateTime } from '$lib/format';
 	import LoadState, { loadErrorText } from '$lib/components/LoadState.svelte';
 	import { focusAfterRender, focusOnMount } from '$lib/focus';
 	import type { SecretMeta } from '$lib/api/types';
 
-	const NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
-	const SHELL = new Set(['BASH_ENV', 'ENV', 'REPOSE_ENV_GEN']);
-	const MAX_BYTES = 64 * 1024;
-
 	let secrets = $state<SecretMeta[] | undefined>(undefined);
 	let loadError = $state<string | undefined>(undefined);
 	let adding = $state(false);
-	let name = $state('');
-	let value = $state('');
-	let nameField = $state<HTMLInputElement | undefined>(undefined);
-	let fileInput = $state<HTMLInputElement | undefined>(undefined);
-	// The file Load from file picked; while one is picked it is the value.
-	let file = $state<File | undefined>(undefined);
-	let nameError = $state<string | undefined>(undefined);
-	let valueError = $state<string | undefined>(undefined);
-	let saving = $state(false);
 	let deleting = $state<string | undefined>(undefined);
 	let confirming = $state<string | undefined>(undefined);
 
@@ -47,71 +35,31 @@
 
 	onMount(load);
 
-	function validateName(n: string): string | undefined {
-		if (n === '') return 'Name is required.';
-		if (SHELL.has(n)) return `${n} is reserved.`;
-		if (!NAME_RE.test(n))
-			return 'Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.';
-		return undefined;
-	}
-
-	function pickFile() {
-		file = fileInput?.files?.[0];
-		valueError = undefined;
-	}
-
-	function clearFile() {
-		file = undefined;
-		if (fileInput) fileInput.value = '';
-		valueError = undefined;
-	}
-
-	function bytes(n: number): string {
-		return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
-	}
-
-	/** Closes the form, cleared, and gives focus back to Add secret. */
-	function closeForm() {
-		adding = false;
-		name = '';
-		value = '';
-		nameError = undefined;
-		valueError = undefined;
-		clearFile();
-		void focusAfterRender('account-secret-add-open');
-	}
-
-	async function onAdd() {
-		if (saving) return;
-		name = name.trim().toUpperCase();
-		nameError = validateName(name);
-		const size = file ? file.size : new Blob([value]).size;
-		valueError = size > MAX_BYTES ? 'Secret values are limited to 64 KB.' : undefined;
-		if (nameError || valueError) {
-			if (nameError) nameField?.focus();
-			else document.getElementById('account-secret-value')?.focus();
-			return;
-		}
-		const base64 = file ? encodeBase64(await file.arrayBuffer()) : encodeBase64(value);
-		saving = true;
+	/** Stores the dialog's secret; an error comes back to show under its field. */
+	async function onAdd(name: string, base64: string): Promise<string | undefined> {
 		try {
-			const stored = name;
-			const res = await putAccountSecret(stored, base64);
+			const res = await putAccountSecret(name, base64);
 			const own = res?.overridden_by ?? [];
 			// The projects that keep their own would otherwise read as
 			// having this value.
-			toast.success(`Stored ${stored} for every project.`, {
+			toast.success(`Stored ${name} for every project.`, {
 				description: own.length
 					? `${own.join(', ')} ${own.length === 1 ? 'keeps its' : 'keep their'} own.`
 					: undefined
 			});
+			adding = false;
 			await load();
-			closeForm();
+			void focusAfterRender('account-secret-add-open');
+			return undefined;
 		} catch (err) {
+			if (err instanceof ApiError && err.code === 'invalid') return err.message;
 			toastApiError(err, 'Could not store the secret.');
-		} finally {
-			saving = false;
+			return 'Could not store the secret. Try again.';
 		}
+	}
+
+	function replaces(n: string): string | undefined {
+		return secrets?.some((s) => s.name === n) ? 'It replaces the current value.' : undefined;
 	}
 
 	function keep(n: string) {
@@ -157,9 +105,8 @@
 				type="button"
 				id="account-secret-add-open"
 				class="hk-btn-secondary hk-btn-sm"
-				aria-expanded={adding}
-				aria-controls="account-secret-add"
-				onclick={() => (adding ? closeForm() : (adding = true))}>Add secret</button
+				aria-haspopup="dialog"
+				onclick={() => (adding = true)}>Add secret</button
 			>
 		{/if}
 	</div>
@@ -170,92 +117,6 @@
 		onretry={load}
 		shape="rows"
 	>
-		{#if adding}
-			<form
-				id="account-secret-add"
-				class="sform"
-				aria-label="Add an account secret"
-				onsubmit={(e) => {
-					e.preventDefault();
-					void onAdd();
-				}}
-			>
-				<div class="sfields">
-					<div>
-						<label for="account-secret-name" class="hk-field-label">Name</label>
-						<input
-							id="account-secret-name"
-							class="hk-input mono name"
-							placeholder="API_KEY"
-							autocomplete="off"
-							autocapitalize="characters"
-							spellcheck="false"
-							bind:value={name}
-							bind:this={nameField}
-							use:focusOnMount
-							aria-invalid={nameError ? 'true' : undefined}
-							aria-describedby={nameError ? 'account-secret-name-error' : undefined}
-							oninput={() => (nameError = undefined)}
-						/>
-						{#if nameError}<p id="account-secret-name-error" class="hk-field-error">
-								{nameError}
-							</p>{/if}
-					</div>
-					<div>
-						<label for="account-secret-value" class="hk-field-label">Value</label>
-						<textarea
-							id="account-secret-value"
-							rows="2"
-							class="hk-textarea mono value"
-							autocomplete="off"
-							spellcheck="false"
-							disabled={!!file}
-							bind:value
-							aria-invalid={valueError ? 'true' : undefined}
-							aria-describedby={valueError ? 'account-secret-value-error' : undefined}
-							oninput={() => (valueError = undefined)}
-						></textarea>
-						<label for="account-secret-file" class="hk-sr">Value from a file</label>
-						<input
-							id="account-secret-file"
-							type="file"
-							tabindex="-1"
-							class="hk-sr"
-							bind:this={fileInput}
-							onchange={pickFile}
-						/>
-						<div class="sfile">
-							{#if file}
-								<span class="sfile-name" data-testid="account-secret-file-name">{file.name}</span>
-								<span class="sfile-size">{bytes(file.size)}</span>
-								<button type="button" class="hk-btn-ghost hk-btn-sm" onclick={clearFile}
-									>Clear</button
-								>
-							{:else}
-								<button
-									type="button"
-									class="hk-btn-ghost hk-btn-sm sfile-load"
-									onclick={() => fileInput?.click()}>Load from file</button
-								>
-							{/if}
-						</div>
-						{#if valueError}<p id="account-secret-value-error" class="hk-field-error">
-								{valueError}
-							</p>{/if}
-					</div>
-				</div>
-				<div class="sbuttons">
-					<button
-						type="submit"
-						class="hk-btn-secondary"
-						aria-disabled={saving ? 'true' : undefined}
-					>
-						{saving ? 'Storing…' : 'Add'}
-					</button>
-					<button type="button" class="hk-btn-ghost" onclick={closeForm}>Cancel</button>
-				</div>
-			</form>
-		{/if}
 		{#if secrets && secrets.length === 0}
 			<div class="hk-empty-row">
 				<h3 class="hk-empty-title">No account secrets.</h3>
@@ -325,34 +186,24 @@
 	</LoadState>
 </section>
 
+<SecretDialog
+	open={adding}
+	mode="add"
+	existing={replaces}
+	fileTestId="account-secret-file-name"
+	onsave={onAdd}
+	onclose={() => {
+		adding = false;
+		void focusAfterRender('account-secret-add-open');
+	}}
+/>
+
 <style>
 	.lede {
 		margin: -0.25rem 0 1.25rem;
 		font-size: 0.875rem;
 		color: var(--hk-text-3);
 		text-wrap: pretty;
-	}
-	/* The add form: one panel under the head, the fields side by side
-	   from a 640px column, as on a project's Config tab. */
-	.sform {
-		margin-bottom: 1.25rem;
-		padding: 1rem;
-		border-radius: var(--hk-radius);
-		background: var(--hk-surface-2);
-	}
-	.sfields {
-		display: grid;
-		gap: 1rem 1.25rem;
-	}
-	@container dash (min-width: 640px) {
-		.sfields {
-			grid-template-columns: 16rem minmax(0, 1fr);
-		}
-	}
-	.sbuttons {
-		display: flex;
-		gap: 0.5rem;
-		margin-top: 0.75rem;
 	}
 	.list {
 		border-bottom: 1px solid var(--hk-hairline);
@@ -412,47 +263,8 @@
 			font-variant-numeric: tabular-nums;
 		}
 	}
-	.mono {
-		font-family: var(--hk-font-mono);
-	}
-	.name {
-		text-transform: uppercase;
-	}
-	.name::placeholder {
-		text-transform: none;
-	}
-	.value {
-		display: block;
-		min-height: 0;
-		resize: vertical;
-	}
-	.sfile {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 0.75rem;
-		margin-top: 0.5rem;
-		min-height: 1.875rem;
-		font-size: 0.8125rem;
-	}
-	.sfile-name {
-		min-width: 0;
-		font-family: var(--hk-font-mono);
-		overflow-wrap: anywhere;
-		color: var(--hk-text);
-	}
-	.sfile-size {
-		font-size: 0.75rem;
-		color: var(--hk-text-3);
-		font-variant-numeric: tabular-nums;
-	}
-	/* A ghost button's text on the field's left edge. */
-	.sfile-load {
-		margin-left: -0.625rem;
-	}
 	@media (forced-colors: active) {
-		.c-act button,
-		.sfile-load {
+		.c-act button {
 			margin-inline: 0;
 		}
 	}

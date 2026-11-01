@@ -975,7 +975,7 @@ func (mon *monitor) handleNotify(n *guestdv1.Notify) {
 		m.emitGuestEvent(&hostdv1.Event_AgentEvent{AgentEvent: ev})
 	case *guestdv1.Notify_Question:
 		q := v.Question
-		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State, q.Reason)
+		aq, ok := cleanQuestion(mon.g.GuestID, q.QuestionId, q.Agent, q.TmuxWindow, q.Text, q.Options, q.TimeoutS, q.State, q.Reason, q.Secret)
 		if !ok {
 			m.notifyDropped("invalid")
 			return

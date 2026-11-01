@@ -114,6 +114,7 @@ Two commands on every machine let an agent reach you:
 repose-notify "Deploy to staging is green"
 repose-notify --done "PR 12 is up: retries for the webhook sender"
 repose-ask --options yes,no "Drop the legacy sessions table?"
+repose-ask --secret STRIPE_WEBHOOK_SECRET "Stripe dashboard, Developers > Webhooks > Signing secret"
 ```
 
 `repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.
@@ -126,6 +127,12 @@ A question can be answered in five places:
 - **The dashboard:** waiting questions are on the dashboard's **Questions** page, which also lists the last week's answers, and on the project's page, with a button per option or a text box. The Projects page shows the first one. In the text box, Enter sends and Shift+Enter starts a new line.
 - **Your laptop:** `repose questions` lists the waiting ones, `repose reply` answers and `repose reply --dismiss` dismisses.
 
+### When an agent asks for a secret
+
+`repose-ask --secret NAME` asks you for the value of a secret, with the agent's reason. The notification links to a page on the dashboard where you paste the value; a value can't be sent by email, ntfy or Google Chat. On the dashboard the question has an **Enter NAME** button, and on your laptop `repose reply PROJECT` asks for the value without showing it, or reads it from a pipe: `op read op://dev/stripe/webhook | repose reply todo-app`.
+
+The value is stored as the project's secret NAME, as [`repose secrets set NAME`](/docs/secrets#store-an-api-key) stores it, and replaces a value the project already had. The agent never sees it in the answer. Its `repose-ask` returns once the machine has the secret, and its next command reads `$NAME`.
+
 You can also answer the agent in its own terminal: any prompt you send the agent that asked closes its open questions. OpenCode 2 doesn't report your prompts, so its questions stay open until answered here.
 
 The first answer wins. A link or button used after that says the question was already answered, and what the answer was. The dashboard says where an answer came from, such as `Answered yes by email` or `Answered in the terminal`. **Dismiss** on the dashboard ends a question without answering.
@@ -137,6 +144,7 @@ A question whose `repose-ask` was killed closes 90 seconds after it last checked
 | Option            | Default    |                                                                                                                                                       |
 | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--options A,B,C` | none       | Up to three fixed answers. Without options, any text is an answer.                                                                                    |
+| `--secret NAME`   | none       | Ask for the value of the secret NAME instead of an answer. Takes no `--options`. Prints nothing on standard output.                                   |
 | `--timeout 30m`   | 30 minutes | How long to wait, up to 24 hours. A duration like `90s` or `2h`, or seconds.                                                                          |
 | `--agent NAME`    | detected   | Who is asking. Detected from the agent running the command, else `shell`.                                                                             |
 | `--cancel [ID]`   |            | Withdraw this agent's open questions, or the one with the ID `repose-ask` printed. With `--all`, every open question on the machine. Prints how many. |
@@ -145,9 +153,9 @@ It exits with:
 
 | Code | Meaning                                                                                                        |
 | ---- | -------------------------------------------------------------------------------------------------------------- |
-| 0    | You answered. The answer is on standard output.                                                                |
-| 1    | The machine's agent service couldn't be reached, or refused the question.                                      |
-| 2    | Wrong usage, such as no question or more than three options.                                                   |
+| 0    | You answered. The answer is on standard output; with `--secret`, the secret is on the machine.                 |
+| 1    | The machine's agent service couldn't be reached, or refused the question. With `--secret`, also: the secret was set but didn't reach the machine. |
+| 2    | Wrong usage, such as no question, more than three options, or a `--secret` name that isn't valid.              |
 | 3    | No answer before the timeout.                                                                                  |
 | 4    | No channel is on (email off, no ntfy topic, no working Google Chat webhook), so nobody would see the question. |
 | 5    | Cancelled: you dismissed it, the agent withdrew it, the machine stopped, or it restarted.                      |

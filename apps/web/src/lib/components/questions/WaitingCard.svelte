@@ -13,13 +13,18 @@
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import {
 		answerQuestion,
+		answerSecretQuestion,
 		cancelQuestion,
+		listAccountSecrets,
 		listProjectQuestions,
-		listQuestions
+		listQuestions,
+		listSecrets
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
@@ -28,6 +33,8 @@
 	import { clock } from '$lib/clock.svelte';
 	import { CLOSED_LINE_MS, closedLine, layoutQuestions } from '$lib/question-view';
 	import QuestionRow from './QuestionRow.svelte';
+	import SecretDialog from '$lib/components/SecretDialog.svelte';
+	import { toast } from 'svelte-sonner';
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { frozenSince } from '$lib/frozen';
 	import type { Project, Question } from '$lib/api/types';
@@ -120,6 +127,94 @@
 			stopClock();
 			stopPoll();
 		};
+	});
+
+	// The question whose secret the dialog takes (I-929), and what that
+	// name would replace on its project, read when the dialog opens.
+	let asking = $state<Question | undefined>(undefined);
+	let ownNames = $state<Set<string>>(new Set());
+	let accountNames = $state<Set<string>>(new Set());
+
+	async function openSecret(q: Question) {
+		asking = q;
+		ownNames = new Set();
+		accountNames = new Set();
+		try {
+			const [own, acct] = await Promise.all([
+				listSecrets(q.project_id),
+				listAccountSecrets().catch(() => [])
+			]);
+			if (asking?.id !== q.id) return;
+			ownNames = new Set(own.map((s) => s.name));
+			accountNames = new Set(acct.map((s) => s.name));
+		} catch {
+			// The dialog works without the note.
+		}
+	}
+
+	function replaces(name: string): string | undefined {
+		if (ownNames.has(name)) return 'It replaces the current value.';
+		if (accountNames.has(name)) return 'This project uses it in place of your account’s.';
+		return undefined;
+	}
+
+	async function saveSecret(q: Question, base64: string): Promise<string | undefined> {
+		const hadFocus = true;
+		try {
+			const res = await answerSecretQuestion(q.project_id, q.id, base64);
+			asking = undefined;
+			void passFocus(q.id, hadFocus);
+			close(res);
+			await refresh();
+			if (projectId) void pendingQuestions.refresh();
+			return undefined;
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'conflict') {
+				// Closed elsewhere first: the row says how, and nothing was stored.
+				asking = undefined;
+				const theirs = err.detail?.question as Question | undefined;
+				if (theirs) close(theirs);
+				await refresh();
+				if (projectId) void pendingQuestions.refresh();
+				toast.info(`Not saved: ${err.message}.`);
+				return undefined;
+			}
+			if (err instanceof ApiError && err.code === 'invalid') return err.message;
+			toastApiError(err, 'Could not save the secret.');
+			return 'Could not save the secret. Try again.';
+		}
+	}
+
+	// A notification's link opens the dialog for its question (I-929):
+	// /projects/<id>?answer=<question id>. The query leaves the URL once
+	// read, so a reload or Back does not open it again.
+	let deepLinked = false;
+	$effect(() => {
+		const want = page.url.searchParams.get('answer');
+		if (!want || deepLinked) return;
+		const q = questions.find((c) => c.id === want);
+		untrack(() => {
+			deepLinked = true;
+			const url = new URL(page.url);
+			url.searchParams.delete('answer');
+			replaceState(url, page.state);
+			if (q?.state === 'pending' && q.secret) {
+				void openSecret(q);
+				return;
+			}
+			void (async () => {
+				try {
+					const all = projectId
+						? await listProjectQuestions(projectId, false, { passive: true })
+						: await listQuestions('all', { passive: true });
+					const c = all.find((x) => x.id === want);
+					if (c?.state === 'pending' && c.secret) void openSecret(c);
+					else if (c) toast.info(`That question is closed: ${closedLine(c).text}.`);
+				} catch {
+					// The card still shows what waits.
+				}
+			})();
+		});
 	});
 
 	/** Shows q's closing line for 8 seconds in its row and says it to a screen reader. */
@@ -253,9 +348,29 @@
 		busy={busy === q.id}
 		note={notes[q.id]}
 		onanswer={(a) => act(q, a)}
+		onsecret={() => openSecret(q)}
 		ondismiss={() => act(q)}
 	/>
 {/snippet}
+
+<SecretDialog
+	open={!!asking}
+	mode="ask"
+	name={asking?.secret ?? ''}
+	agent={asking?.window || asking?.agent || ''}
+	reason={asking?.text ?? ''}
+	target={asking?.project}
+	existing={replaces}
+	onsave={(_, b64) => (asking ? saveSecret(asking, b64) : Promise.resolve(undefined))}
+	onclose={() => {
+		const id = asking?.id;
+		asking = undefined;
+		if (id)
+			void tick().then(() =>
+				section?.querySelector<HTMLElement>(`[data-qid="${id}"] [data-qrow-first]`)?.focus()
+			);
+	}}
+/>
 
 {#if open.length > 0 || closed.size > 0 || empty}
 	<!-- A section on the page's paper, no frame (I-837). -->

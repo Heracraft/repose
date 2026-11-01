@@ -414,6 +414,8 @@ func gchatButtons(m Message) []gchatButton {
 			bs = append(bs, button(gchatPlain(o, 64), "OUTLINED", m.Question.Replies[i]))
 		}
 		return bs
+	case m.Question != nil && m.Question.Secret != "":
+		return []gchatButton{button(gchatPlain("Enter "+m.Question.Secret, 64), "OUTLINED", m.AnswerURL())}
 	case m.Question != nil:
 		return []gchatButton{button("Answer", "OUTLINED", m.ProjectURL())}
 	case events.UserNoticeKinds[m.Kind] || m.ProjectID == uuid.Nil:

@@ -199,7 +199,11 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
               answer text null, answered_via text null,  -- dashboard|cli|ntfy|email|gchat|terminal|agent (I-690, I-692)
               expires_at, answered_at null,
               delivered_at null, delivery text null,  -- ok|gone|given_up|guest: the close reached the guest, or why not
-              deliver_command_id uuid null, deliver_attempts int, deliver_next_at null)
+              deliver_command_id uuid null, deliver_attempts int, deliver_next_at null,
+              secret_name text null,   -- the named secret the question asks for (0032, I-929);
+                                       -- its value goes to `secrets`, never to `answer`
+              secret_op_id uuid null)  -- the UpdateSecrets op the answer queued; the close is
+                                       -- delivered once that op is done or error
               -- repose-ask (0006, I-244/I-245); text and answer are tenant content stored
               -- like events.summary: plain, shown to the owner, never logged
 

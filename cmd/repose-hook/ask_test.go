@@ -437,3 +437,63 @@ func TestAskCancel(t *testing.T) {
 		t.Fatalf("--cancel --all: %d %q", code, out)
 	}
 }
+
+// TestAskSecret is `repose-ask --secret NAME` (DECISIONS I-929): guestd
+// takes it as a secret question, an answer text that arrives anyway is
+// never printed or kept, and the exit says whether the secret reached
+// the machine.
+func TestAskSecret(t *testing.T) {
+	old := pollWait
+	pollWait = 1
+	t.Cleanup(func() { pollWait = old })
+	g := newGuestSide(t)
+	dir := t.TempDir()
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "", "REPOSE_AGENT", "", "REPOSE_SECRETS_DIR", dir)
+
+	t.Run("set: exit 0, nothing on stdout", func(t *testing.T) {
+		done, out, errb := ask([]string{"--secret", "STRIPE_KEY", "Stripe", "dashboard"}, make(chan os.Signal))
+		q := g.open(t)
+		if q.Secret != "STRIPE_KEY" || q.Text != "Stripe dashboard" || len(q.Options) != 0 {
+			t.Fatalf("asked %+v", q)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "STRIPE_KEY"), []byte("sk_test_NEVER"), 0o400); err != nil {
+			t.Fatal(err)
+		}
+		// A hostd must send no answer for it; one that does is dropped.
+		if err := g.store.Answer(q.ID, questions.StateAnswered, "sk_test_NEVER"); err != nil {
+			t.Fatal(err)
+		}
+		if c := waitExit(t, done); c != ExitOK || out.Len() != 0 || !strings.Contains(errb.String(), "STRIPE_KEY is set") {
+			t.Fatalf("exit %d stdout %q stderr %q", c, out, errb)
+		}
+		if got, _ := g.store.Get(q.ID); got.Answer != "" {
+			t.Fatalf("guestd kept an answer for a secret question: %q", got.Answer)
+		}
+		b, _ := os.ReadFile(filepath.Join(g.dir, q.ID+".json"))
+		if strings.Contains(string(b), "NEVER") || strings.Contains(errb.String(), "NEVER") {
+			t.Fatal("the value reached the question file or stderr")
+		}
+	})
+	t.Run("answered but not on the machine: exit 1", func(t *testing.T) {
+		done, out, errb := ask([]string{"--secret", "MISSING_KEY", "why"}, make(chan os.Signal))
+		q := g.open(t)
+		_ = g.store.Answer(q.ID, questions.StateAnswered, "")
+		if c := waitExit(t, done); c != ExitError || out.Len() != 0 || !strings.Contains(errb.String(), "has not reached this machine") {
+			t.Fatalf("exit %d stdout %q stderr %q", c, out, errb)
+		}
+	})
+	t.Run("usage", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"--secret", "lower", "why"},
+			{"--secret", "BASH_ENV", "why"},
+			{"--secret", "KEY", "--options", "a,b", "why"},
+			{"--secret", "KEY"},
+			{"--cancel", "--secret", "KEY"},
+		} {
+			done, _, _ := ask(args, make(chan os.Signal))
+			if got := waitExit(t, done); got != ExitUsage {
+				t.Errorf("%v: exit %d", args, got)
+			}
+		}
+	})
+}

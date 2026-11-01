@@ -1829,7 +1829,12 @@ type Question struct {
 	State      string   `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
 	// Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
 	// (I-690). Empty on an open and on older guests.
-	Reason        string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The named secret a `repose-ask --secret NAME` asks for (DECISIONS
+	// I-929), [A-Z][A-Z0-9_]{0,63}. The value never travels this way: the
+	// owner sets it through the api's secrets store, and the AnswerQuestion
+	// that closes the question carries no answer.
+	Secret        string `protobuf:"bytes,9,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1916,6 +1921,13 @@ func (x *Question) GetState() string {
 func (x *Question) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *Question) GetSecret() string {
+	if x != nil {
+		return x.Secret
 	}
 	return ""
 }
@@ -2170,7 +2182,7 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\tR\x05state\"5\n" +
 	"\aWarning\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xdb\x01\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xf3\x01\n" +
 	"\bQuestion\x12\x1f\n" +
 	"\vquestion_id\x18\x01 \x01(\tR\n" +
 	"questionId\x12\x14\n" +
@@ -2181,7 +2193,8 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\aoptions\x18\x05 \x03(\tR\aoptions\x12\x1b\n" +
 	"\ttimeout_s\x18\x06 \x01(\rR\btimeoutS\x12\x14\n" +
 	"\x05state\x18\a \x01(\tR\x05state\x12\x16\n" +
-	"\x06reason\x18\b \x01(\tR\x06reason\"\xb1\x02\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12\x16\n" +
+	"\x06secret\x18\t \x01(\tR\x06secret\"\xb1\x02\n" +
 	"\x06Notify\x12/\n" +
 	"\x05ready\x18\x01 \x01(\v2\x17.repose.guestd.v1.ReadyH\x00R\x05ready\x12?\n" +
 	"\vagent_event\x18\x02 \x01(\v2\x1c.repose.guestd.v1.AgentEventH\x00R\n" +

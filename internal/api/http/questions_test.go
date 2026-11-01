@@ -356,3 +356,68 @@ func TestReplyLinkRateLimit(t *testing.T) {
 		t.Fatalf("25 tries in a row never hit the limit (last %d)", last)
 	}
 }
+
+// TestQuestionSecretAnswer (DECISIONS I-929): a question for a named
+// secret notifies with a link to the dashboard's dialog, refuses a
+// written answer, stores the value as the project's secret with an audit
+// row and no copy in the question, answers once, and reaches the guest
+// with no answer text.
+func TestQuestionSecretAnswer(t *testing.T) {
+	a := newAskEnv(t, "sia")
+	qid := uuid.Must(uuid.NewV7())
+	a.h.Fake.Ask(&hostdv1.AgentQuestion{GuestId: a.p.GuestID.String(), QuestionId: qid.String(), Agent: "claude", TmuxWindow: "claude", Text: "Stripe dashboard", Secret: "STRIPE_KEY", TimeoutS: 600})
+	a.h.WaitFor("the question row", func() bool {
+		var n int
+		_ = a.h.Pool.QueryRow(a.h.Ctx, "select count(*) from questions q join events e on e.id = q.event_id where q.id = $1", qid).Scan(&n)
+		return n == 1
+	})
+	m := a.outboxMessage(t, "email", a.eventOf(t, qid))
+	if m.Question == nil || m.Question.Secret != "STRIPE_KEY" || len(m.Question.Replies) != 0 || !strings.HasSuffix(m.AnswerURL(), "?answer="+qid.String()) {
+		t.Fatalf("message %+v", m.Question)
+	}
+	path := "/projects/" + a.p.ID.String() + "/questions/" + qid.String() + "/answer"
+	if r := a.do(t, a.tok, "GET", "/projects/"+a.p.ID.String()+"/questions", nil); !strings.Contains(string(r.raw), `"secret":"STRIPE_KEY"`) {
+		t.Fatalf("list: %s", r.raw)
+	}
+	r := a.do(t, a.tok, "POST", path, map[string]any{"answer": "sk_live_NEVER"})
+	if r.status != 400 || errCode(r) != "invalid" || !strings.Contains(string(r.raw), "STRIPE_KEY") {
+		t.Fatalf("written answer: %d %s", r.status, r.raw)
+	}
+	for _, v := range []string{"not base64!", ""} {
+		if r := a.do(t, a.tok, "POST", path, map[string]any{"value": v}); r.status != 400 {
+			t.Fatalf("value %q: %d %s", v, r.status, r.raw)
+		}
+	}
+	other := a.signIn(t, "sub-mallory2", "mallory2")
+	if r := a.do(t, other, "POST", path, map[string]any{"value": "c2tfdGVzdF9TRUNSRVQ="}); r.status != 404 {
+		t.Fatalf("another user's question: %d", r.status)
+	}
+	// sk_test_SECRET
+	r = a.do(t, a.tok, "POST", path, map[string]any{"value": "c2tfdGVzdF9TRUNSRVQ="})
+	if r.status != 200 || r.body["state"] != "answered" || r.body["answer"] != nil || strings.Contains(string(r.raw), "SECRET\"") {
+		t.Fatalf("answer: %d %s", r.status, r.raw)
+	}
+	if r := a.do(t, a.tok, "POST", path, map[string]any{"value": "b3RoZXI="}); r.status != 409 {
+		t.Fatalf("second answer: %d %s", r.status, r.raw)
+	}
+	if r := a.do(t, a.tok, "GET", "/projects/"+a.p.ID.String()+"/secrets", nil); !strings.Contains(string(r.raw), `"STRIPE_KEY"`) {
+		t.Fatalf("secrets: %s", r.raw)
+	}
+	var row string
+	if err := a.h.Pool.QueryRow(a.h.Ctx, "select row_to_json(q)::text from questions q where id = $1", qid).Scan(&row); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(row, "sk_test") || strings.Contains(row, "c2tf") {
+		t.Fatalf("the value is in the question row: %s", row)
+	}
+	var audits int
+	_ = a.h.Pool.QueryRow(a.h.Ctx, "select count(*) from audit_log where action = 'secret_put' and detail->>'question_id' = $1 and detail->>'name' = 'STRIPE_KEY'", qid.String()).Scan(&audits)
+	if audits != 1 {
+		t.Fatalf("%d audit rows", audits)
+	}
+	a.h.WaitFor("the answer at the guest", func() bool {
+		_ = a.h.Questions.Once(a.h.Ctx)
+		got := a.h.Fake.Answer(qid.String())
+		return got != nil && got.Status == "answered" && got.Answer == ""
+	})
+}

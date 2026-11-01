@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ type Question struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	ExpiresAt   time.Time  `json:"expires_at"`
 	AnsweredAt  *time.Time `json:"answered_at"`
+	// Secret is the named secret the question asks for (DECISIONS I-929).
+	Secret string `json:"secret,omitempty"`
 }
 
 type questionList struct {
@@ -61,6 +64,18 @@ func (c *Client) AnswerQuestion(ctx context.Context, projectID, questionID, answ
 	var q Question
 	path := "/projects/" + url.PathEscape(projectID) + "/questions/" + url.PathEscape(questionID) + "/answer"
 	if err := c.post(ctx, path, map[string]string{"answer": answer, "via": "cli"}, &q); err != nil {
+		return nil, err
+	}
+	return &q, nil
+}
+
+// AnswerSecretQuestion answers a question that asks for a secret with its
+// value (POST .../answer with value), which the api stores as the
+// project's secret of that name.
+func (c *Client) AnswerSecretQuestion(ctx context.Context, projectID, questionID string, value []byte) (*Question, error) {
+	var q Question
+	path := "/projects/" + url.PathEscape(projectID) + "/questions/" + url.PathEscape(questionID) + "/answer"
+	if err := c.post(ctx, path, map[string]string{"value": base64.StdEncoding.EncodeToString(value), "via": "cli"}, &q); err != nil {
 		return nil, err
 	}
 	return &q, nil
@@ -99,6 +114,9 @@ func printQuestion(w io.Writer, q Question, now time.Time) {
 	}
 	if len(q.Options) > 0 {
 		_, _ = fmt.Fprintf(w, "  options: %s\n", strings.Join(q.Options, "|"))
+	}
+	if q.Secret != "" {
+		_, _ = fmt.Fprintf(w, "  asks for the secret %s\n", q.Secret)
 	}
 }
 
@@ -308,9 +326,61 @@ func pickQuestion(ctx context.Context, e *Env, args []string, projectFlag, quest
 	return cands[0], args, nil
 }
 
+// readHiddenAnswer reads a secret's value at a prompt that does not echo;
+// tests replace it.
+var readHiddenAnswer = func(e *Env, name string) ([]byte, error) {
+	_, _ = fmt.Fprintf(e.ErrOut, "Value for %s: ", name)
+	return readHiddenLine()
+}
+
+// answerSecret answers a question that asks for a secret (DECISIONS
+// I-929): the value comes from a prompt that does not echo, or from
+// standard input, never from the command line, where it would stay in
+// the shell's history.
+func answerSecret(ctx context.Context, e *Env, q Question, args []string, in io.Reader, interactive bool) error {
+	if len(args) > 0 {
+		return exitf(ExitUsage, "%s asks for the secret %s. Run `repose reply %s` and paste it at the prompt, or pipe it in; a value on the command line stays in your shell history.", questionAsker(q), q.Secret, q.Project)
+	}
+	var value []byte
+	var err error
+	if interactive {
+		printQuestion(e.ErrOut, q, time.Now())
+		value, err = readHiddenAnswer(e, q.Secret)
+		if err == nil && len(value) == 0 {
+			return exitf(ExitUsage, "No value given; nothing was sent.")
+		}
+	} else {
+		value, err = readPipedSecret(in, q.Secret)
+	}
+	if err != nil {
+		return err
+	}
+	got, err := e.Client.AnswerSecretQuestion(ctx, q.ProjectID, q.ID, value)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case "invalid":
+			return exitf(ExitUsage, "%s", apiErr.Message)
+		case "conflict":
+			return exitf(ExitGeneric, "Not sent: %s.", apiErr.Message)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if e.JSON {
+		return writeJSONOut(e.Out, got)
+	}
+	_, _ = fmt.Fprintf(e.Out, "Set %s in %s for %s.\n", q.Secret, q.Project, questionAsker(q))
+	return nil
+}
+
 // answerQuestion sends the answer the words make, asking for one on a
 // terminal when there are none.
 func answerQuestion(ctx context.Context, e *Env, q Question, args []string, in io.Reader, interactive bool) error {
+	if q.Secret != "" {
+		return answerSecret(ctx, e, q, args, in, interactive)
+	}
 	answer := strings.TrimSpace(strings.Join(args, " "))
 	if answer == "" {
 		if !interactive {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -224,5 +226,37 @@ func TestPendingResendsGuestCloses(t *testing.T) {
 		if q.ID == closed.ID {
 			t.Fatal("a close older than Keep is still re-sent")
 		}
+	}
+}
+
+// TestOpenSecret: a secret question (I-929) checks its name, keeps it
+// through a restart, and never stores an answer text.
+func TestOpenSecret(t *testing.T) {
+	dir := t.TempDir()
+	var sent []Question
+	s := New(dir, func(q Question) { sent = append(sent, q) }, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	for _, bad := range []string{"", "lower", "1KEY", "BASH_ENV", "ENV", "REPOSE_ENV_GEN", strings.Repeat("A", 65)} {
+		if _, err := s.OpenSecret("claude", "w", "", bad, "why", 0); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+	q, err := s.OpenSecret("claude", "w", "", "STRIPE_KEY", "why", 0)
+	if err != nil || q.Secret != "STRIPE_KEY" || len(sent) != 1 || sent[0].Secret != "STRIPE_KEY" {
+		t.Fatalf("%+v %v %+v", q, err, sent)
+	}
+	if err := s.Answer(q.ID, StateAnswered, "sk_live_NEVER"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(q.ID)
+	if got.State != StateAnswered || got.Answer != "" {
+		t.Fatalf("%+v", got)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, q.ID+".json"))
+	if strings.Contains(string(b), "NEVER") {
+		t.Fatal("the answer reached the question file")
+	}
+	again := New(dir, func(Question) {}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	if r, _ := again.Get(q.ID); r.Secret != "STRIPE_KEY" {
+		t.Fatalf("after a restart: %+v", r)
 	}
 }

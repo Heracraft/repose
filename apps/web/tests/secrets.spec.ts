@@ -1,6 +1,6 @@
 // Checklist: "Secrets: add via text and via file, list, delete; values
 // never appear in the DOM after save." A project's secrets are a section
-// of its Config tab, and "Add secret" opens the form inline (DECISIONS
+// of its Config tab, and "Add secret" opens a dialog (DECISIONS I-929;
 // I-841); /projects/<id>/secrets still lands there.
 import { test, expect } from '@playwright/test';
 import { signIn, createProject, apiURLFromEnv, failNext } from './helpers';
@@ -90,7 +90,7 @@ test('a value over 64 KB is rejected client-side before it reaches the api', asy
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
-	await expect(page.getByText('BIG_VALUE')).toHaveCount(0);
+	await expect(page.locator('#secrets').getByText('BIG_VALUE')).toHaveCount(0);
 });
 
 // The other half of the checklist row: "add via text **and via file**".
@@ -150,7 +150,7 @@ test('a file over 64 KB is rejected client-side', async ({ page }) => {
 	await page.getByRole('button', { name: 'Add', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
-	await expect(page.getByText('BIG_FILE', { exact: true })).toHaveCount(0);
+	await expect(page.locator('#secrets').getByText('BIG_FILE', { exact: true })).toHaveCount(0);
 });
 
 test('a failed first load shows the error and Retry loads the list', async ({ page }) => {
@@ -201,10 +201,10 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 	await expect(page.getByLabel('Name', { exact: true })).toHaveValue('');
 });
 
-// The form waits behind "Add secret" (I-841): closed, the section is its
-// head and the list; open, the form sits under the head, and Cancel
-// closes it and gives focus back.
-test('Add secret opens the form inline and Cancel closes it', async ({ page }) => {
+// The form waits behind "Add secret" (I-841), in a dialog over the
+// page since I-929: the name over the value, the two the same width, and
+// Cancel closes it and gives focus back.
+test('Add secret opens the dialog and Cancel closes it', async ({ page }) => {
 	const p = await createProject(apiURLFromEnv(), {
 		name: 'secrets-inline-app',
 		remote_url: 'github.com/heracraft/secrets-inline-app'
@@ -214,19 +214,21 @@ test('Add secret opens the form inline and Cancel closes it', async ({ page }) =
 	const section = page.locator('#secrets');
 	const open = section.getByRole('button', { name: 'Add secret' });
 	await expect(section.getByRole('heading', { level: 3, name: 'No secrets yet' })).toBeVisible();
-	await expect(section.getByLabel('Name', { exact: true })).toHaveCount(0);
-	await expect(open).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.getByLabel('Name', { exact: true })).toHaveCount(0);
+	await expect(open).toHaveAttribute('aria-haspopup', 'dialog');
 	await expect(open).toHaveClass(/hk-btn-secondary/);
 	await open.click();
-	await expect(open).toHaveAttribute('aria-expanded', 'true');
-	const name = section.getByLabel('Name', { exact: true });
-	const value = section.getByLabel('Value', { exact: true });
+	const dialog = page.getByRole('dialog', { name: 'Add a secret' });
+	await expect(dialog).toBeVisible();
+	const name = dialog.getByLabel('Name', { exact: true });
+	const value = dialog.getByLabel('Value', { exact: true });
 	await expect(name).toBeFocused();
-	// Side by side in the 872px column.
+	// One column: the value under the name, their edges aligned.
 	const [n, v] = [await name.boundingBox(), await value.boundingBox()];
-	expect(Math.abs(n!.y - v!.y)).toBeLessThan(4);
-	expect(v!.x).toBeGreaterThan(n!.x + n!.width);
-	await section.getByRole('button', { name: 'Cancel' }).click();
+	expect(v!.y).toBeGreaterThan(n!.y + n!.height);
+	expect(Math.abs(n!.x - v!.x)).toBeLessThan(1);
+	expect(Math.abs(n!.width - v!.width)).toBeLessThan(1);
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
 	await expect(name).toHaveCount(0);
 	await expect(open).toBeFocused();
 });

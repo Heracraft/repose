@@ -420,7 +420,7 @@ func (s *Server) emitQuestion(q questions.Question) {
 	}
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: &guestdv1.Question{
 		QuestionId: q.ID, Agent: q.Agent, TmuxWindow: q.Window, Text: q.Text,
-		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason,
+		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason, Secret: q.Secret,
 	}}})
 }
 

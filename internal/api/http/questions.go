@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/base64"
 	"errors"
 	"html/template"
 	"net/http"
@@ -10,8 +12,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/heracraft/repose/internal/api/notify"
+	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/secrets"
+	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
+	"github.com/heracraft/repose/internal/obs"
 )
 
 // Questions an agent asked with repose-ask (DECISIONS I-245): listed for the
@@ -90,6 +96,10 @@ func questionErr(q *questions.Question, err error) error {
 		return withDetail(errf("invalid", "the answer must be one of the options"), map[string]any{"options": q.Options})
 	case errors.Is(err, questions.ErrEmpty):
 		return errf("invalid", "answer is required")
+	case errors.Is(err, questions.ErrSecret):
+		return withDetail(errf("invalid", "this question asks for the secret %s: send its value", q.Secret), map[string]any{"secret": q.Secret})
+	case errors.Is(err, questions.ErrNoSecret):
+		return errf("invalid", "this question takes a written answer, not a secret")
 	}
 	return err
 }
@@ -102,7 +112,10 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) error {
 	}
 	var body struct {
 		Answer string `json:"answer"`
-		Via    string `json:"via"`
+		// Value answers a question that asks for a secret (I-929):
+		// base64, as PUT /projects/:id/secrets/:name takes it.
+		Value *string `json:"value"`
+		Via   string  `json:"via"`
 	}
 	if err := decode(r, &body); err != nil {
 		return err
@@ -112,10 +125,72 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) error {
 		via = "dashboard"
 	}
 	uid := userFrom(r.Context()).ID
+	if body.Value != nil {
+		return s.answerSecret(w, r, qid, *body.Value, via)
+	}
 	q, err := s.d.Questions.Answer(r.Context(), &uid, qid, body.Answer, via)
 	if err != nil {
 		return questionErr(q, err)
 	}
+	writeJSON(w, http.StatusOK, q)
+	return nil
+}
+
+// answerSecret answers a question that asks for a secret (DECISIONS
+// I-929): the value is checked and stored exactly as PUT
+// /projects/:id/secrets/:name stores it, audited and pushed to a running
+// machine, and the question closes with no answer text. The value is in
+// no response, no log line and no question row.
+func (s *Server) answerSecret(w http.ResponseWriter, r *http.Request, qid uuid.UUID, encoded, via string) error {
+	value, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return errf("invalid", "value must be base64")
+	}
+	if len(value) == 0 {
+		return errf("invalid", "value is required")
+	}
+	if len(value) > secrets.MaxValueBytes {
+		return errf("invalid", "value exceeds 64 KB")
+	}
+	p, err := s.userProject(r)
+	if err != nil {
+		return err
+	}
+	u := userFrom(r.Context())
+	queued := false
+	put := func(ctx context.Context, tx db.Tx, projectID uuid.UUID, name string) (*uuid.UUID, error) {
+		if projectID != p.ID {
+			return nil, db.ErrNotFound
+		}
+		if err := s.d.Secrets.Put(ctx, u.ID.String(), p.ID.String(), name, value); err != nil {
+			if errors.Is(err, secrets.ErrInvalidName) || errors.Is(err, secrets.ErrTooLarge) {
+				return nil, errf("invalid", "%v", err)
+			}
+			return nil, err
+		}
+		s.d.Metrics.SecretsOpsTotal.WithLabelValues("put").Inc()
+		if _, err := store.Audit(ctx, tx, "user:"+u.ID.String(), "secret_put", p.ID.String(), map[string]any{"name": name, "question_id": qid.String()}); err != nil {
+			return nil, err
+		}
+		if p.State != "running" {
+			return nil, nil
+		}
+		pid := p.ID
+		id, err := s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindUpdateSecrets, ProjectID: &pid, Phases: ops.PlanUpdateSecrets()}, true)
+		if err != nil {
+			return nil, err
+		}
+		queued = true
+		return &id, nil
+	}
+	q, err := s.d.Questions.AnswerSecret(r.Context(), u.ID, qid, via, put)
+	if queued {
+		s.d.Engine.Kick()
+	}
+	if err != nil {
+		return questionErr(q, err)
+	}
+	obs.Logger(r.Context(), s.d.Log).Info("secret stored", "event", "secret_put", "project_id", p.ID.String(), "question_id", qid.String())
 	writeJSON(w, http.StatusOK, q)
 	return nil
 }

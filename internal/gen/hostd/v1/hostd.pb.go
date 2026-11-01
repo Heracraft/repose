@@ -4418,7 +4418,10 @@ type AgentQuestion struct {
 	State      string   `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
 	// Why a guest-side close happened: terminal|withdrawn|interrupted|asker_gone
 	// (I-690). Empty on an open and from older hosts.
-	Reason        string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The named secret the question asks for (DECISIONS I-929); empty for
+	// a question that takes a written answer.
+	Secret        string `protobuf:"bytes,10,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4512,6 +4515,13 @@ func (x *AgentQuestion) GetState() string {
 func (x *AgentQuestion) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *AgentQuestion) GetSecret() string {
+	if x != nil {
+		return x.Secret
 	}
 	return ""
 }
@@ -5366,7 +5376,7 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x18\n" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x1f\n" +
 	"\vtmux_window\x18\x05 \x01(\tR\n" +
-	"tmuxWindow\"\xfb\x01\n" +
+	"tmuxWindow\"\x93\x02\n" +
 	"\rAgentQuestion\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x1f\n" +
 	"\vquestion_id\x18\x02 \x01(\tR\n" +
@@ -5378,7 +5388,9 @@ const file_repose_hostd_v1_hostd_proto_rawDesc = "" +
 	"\aoptions\x18\x06 \x03(\tR\aoptions\x12\x1b\n" +
 	"\ttimeout_s\x18\a \x01(\rR\btimeoutS\x12\x14\n" +
 	"\x05state\x18\b \x01(\tR\x05state\x12\x16\n" +
-	"\x06reason\x18\t \x01(\tR\x06reason\"k\n" +
+	"\x06reason\x18\t \x01(\tR\x06reason\x12\x16\n" +
+	"\x06secret\x18\n" +
+	" \x01(\tR\x06secret\"k\n" +
 	"\fGuestResting\x12\x19\n" +
 	"\bguest_id\x18\x01 \x01(\tR\aguestId\x12\x18\n" +
 	"\aresting\x18\x02 \x01(\bR\aresting\x12\x0e\n" +
