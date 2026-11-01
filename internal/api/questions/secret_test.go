@@ -111,7 +111,7 @@ func TestSecretQuestion(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	close(release)
 	e1, e2 := <-errs, <-errs
-	if (e1 == nil) == (e2 == nil) || !(errors.Is(e1, questions.ErrClosed) || errors.Is(e2, questions.ErrClosed)) {
+	if (e1 == nil) == (e2 == nil) || (!errors.Is(e1, questions.ErrClosed) && !errors.Is(e2, questions.ErrClosed)) {
 		t.Fatalf("two answers: %v, %v", e1, e2)
 	}
 	if puts != 1 {

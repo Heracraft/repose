@@ -197,11 +197,13 @@ entry and this list with it. Counts as of 2026-10-21.
       -v -e '--hk-|--i:|--n:|--cols:|--d:' | rg -v 'components/landing/'`
       prints 0 lines (with `-e`: after
       a bare `--`, rg reads `--glob` as a path).
-- [ ] No native or modal dialogs outside the docs search palette. Evidence:
+- [ ] No native or modal dialogs outside the docs search palette and the
+      secret dialog. Evidence:
       `rg -n 'window\.confirm|[^.\w/]confirm\(|<dialog|showModal' $W --glob
       '*.{svelte,ts}' | rg -v '//|onconfirm'` prints only
-      `lib/components/DocsSearch.svelte`, 2 lines (I-841, amended
-      2026-10-21).
+      `lib/components/DocsSearch.svelte` and
+      `lib/components/SecretDialog.svelte`, 4 lines (I-841, amended
+      2026-10-21; I-929: a pasted value gets a page of its own).
 - [ ] Copy holds. Evidence: `pnpm -C apps/web exec vitest run
       src/lib/copy.test.ts src/lib/docs.test.ts` passes; `rg -n '—'
       $W/routes $W/lib/components --glob '*.svelte' | rg -v '<!--|//|\*'`

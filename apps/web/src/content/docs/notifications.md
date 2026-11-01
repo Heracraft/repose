@@ -114,7 +114,7 @@ Two commands on every machine let an agent reach you:
 repose-notify "Deploy to staging is green"
 repose-notify --done "PR 12 is up: retries for the webhook sender"
 repose-ask --options yes,no "Drop the legacy sessions table?"
-repose-ask --secret STRIPE_WEBHOOK_SECRET "Stripe dashboard, Developers > Webhooks > Signing secret"
+repose-ask --secret STRIPE_KEY "Stripe, Developers > API keys"
 ```
 
 `repose-notify` sends the message and returns at once; with `--done` it says the work you asked for is finished. `repose-ask` sends the question and waits for your answer, then prints it. Run them yourself too, for example at the end of a long script.

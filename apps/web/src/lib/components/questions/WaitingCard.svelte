@@ -13,7 +13,6 @@
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
@@ -195,9 +194,10 @@
 		const q = questions.find((c) => c.id === want);
 		untrack(() => {
 			deepLinked = true;
-			const url = new URL(page.url);
+			// As billing drops ?checkout: the router's own state is kept.
+			const url = new URL(location.href);
 			url.searchParams.delete('answer');
-			replaceState(url, page.state);
+			history.replaceState(history.state, '', url.pathname + url.search + url.hash);
 			if (q?.state === 'pending' && q.secret) {
 				void openSecret(q);
 				return;
