@@ -7743,7 +7743,8 @@ portal link), `subscription_cancelled` (the end date, what stops then),
 `egress_stopped`. Account emails are transactional: sent whatever
 `notify_email` says and without an unsubscribe link, since each answers
 something the user did or is about to be charged for; agent notifications
-keep their unsubscribe line. Subjects stay `[repose] <subject>`. Paddle's
+keep their unsubscribe line. Subjects stay `[repose] <subject>` (dropped
+by I-934). Paddle's
 own receipts and payment-failure emails stay on in Paddle's dashboard, so
 a failed payment produces Paddle's email about the card and ours about
 the machines. *Rejected:* a third-party template service (one more
@@ -27076,3 +27077,46 @@ easy to read as noise and wait out. It is not noise: it is a dependency
 of the build changing without a commit, and it blocks every branch until
 someone owns it. The same week's lesson from I-926 points the other way
 and is the same lesson -- read the failure, do not re-run it.
+**I-934. The email subject drops its `[repose]` prefix, because the
+sender column already said it.** (owner report, 2026-11-01. Amends
+I-291.)
+
+The owner, from an inbox screenshot: "why is the `[repose]` in the
+subject, didnt we updat ethat at some point?"
+
+We did not. I-291 redesigned every email -- one HTML layout, a plain-text
+twin, the account kinds -- and kept the prefix on purpose: "Subjects stay
+`[repose] <subject>`." The screenshot is what that looks like in a real
+list:
+
+    repose     [repose] Welcome to repose
+
+The From is `repose <notify@repose.herakraft.co>`, so the sender column
+is already the word `repose`, and the subject spends its first nine
+characters saying it twice more. On a phone that is roughly a third of
+the subject text a reader is shown, given to the one thing the row
+cannot be ambiguous about.
+
+That is `Trust the reader` (I-485) losing to a convention nobody
+re-opened: the prefix was there before the email design and survived it
+because the design was about layout. Every subject already names itself
+-- `Welcome to repose`, `todo-app: claude finished`, `Your free week ends
+soon`, `A seat is yours for 72 hours` -- and the two jobs the brackets
+are usually kept for are both done better without them. Identity is the
+sender column. A mail filter matches `from:notify@repose.herakraft.co`,
+which a forward cannot strip and a subject rewrite cannot break.
+
+`Email.Send` now passes `Render`'s subject through unchanged
+(`internal/api/notify/notify.go`). `notify.Subject` is untouched: it was
+always the subject without the prefix, which is why the dashboard, ntfy,
+Google Chat and `repose events` never showed one.
+
+*Nothing parses it.* An emailed answer to a question comes back through
+a signed reply link (I-245), not through a subject line, so no inbound
+path reads the brackets and no mail already in an inbox is invalidated
+by their going.
+
+*One public doc becomes true.* `apps/web/src/content/docs/billing.md`
+tells the reader the day-3 subject is `Your machines were stopped: a
+payment failed`, for a mail filter. That was wrong by nine characters
+from the day it was written, and a filter built on it never matched.

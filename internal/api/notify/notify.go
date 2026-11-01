@@ -748,7 +748,9 @@ func (e *Email) Send(ctx context.Context, m Message) error {
 	if err != nil {
 		return Permanent{fmt.Errorf("email: render %s: %w: %w", m.Kind, ErrRender, err)}
 	}
-	body := map[string]any{"from": from, "to": []string{m.Email}, "subject": "[repose] " + r.Subject, "html": r.HTML, "text": r.Text}
+	// No "[repose]" before the subject: the From name already says it, and
+	// the brackets cost a phone a third of the line it shows (I-934).
+	body := map[string]any{"from": from, "to": []string{m.Email}, "subject": r.Subject, "html": r.HTML, "text": r.Text}
 	if m.Unsubscribe != "" {
 		// RFC 8058 one-click: the mail client POSTs to the link itself.
 		body["headers"] = map[string]string{"List-Unsubscribe": "<" + m.Unsubscribe + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}

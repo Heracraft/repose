@@ -149,8 +149,8 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   returns at once. Messages are never collapsed into each other and count
   against the 30-an-hour cap like any event.
 - `repose-notify --done TEXT` sends TEXT (1 KB) as an `agent_done`: title
-  `<project>: <agent> is done`, email subject `[repose] <project>: <agent>
-  is done`, ntfy priority 4. The agent says the work the owner asked for
+  `<project>: <agent> is done`, email subject `<project>: <agent> is
+  done`, ntfy priority 4. The agent says the work the owner asked for
   is finished, since a finished turn notifies nobody. Like a message it is
   never collapsed and counts against the cap (I-688).
 - `repose-ask [--options A,B,C] [--timeout 30m] QUESTION` sends an
@@ -199,8 +199,8 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
 Channels (`workstreams/13-notifications.md` §5.6):
 
 - Email through Resend, to the account's email, one message per event,
-  subject `[repose] <project>: <agent> <verb>` for agent events (e.g.
-  `[repose] todo-app: claude is done`) or a dedicated line for platform
+  subject `<project>: <agent> <verb>` for agent events (e.g. `todo-app:
+  claude is done`) or a dedicated line for platform
   and account events (`internal/api/notify.Subject`). Every email is
   rendered twice from one content, as HTML and as plain text, and both go
   in the one Resend call (DECISIONS I-291): one HTML layout

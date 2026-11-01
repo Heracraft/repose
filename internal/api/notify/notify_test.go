@@ -248,7 +248,7 @@ func TestEmailTemplate(t *testing.T) {
 	if err := e.Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	if gotSubject != "[repose] todo-app: claude finished" {
+	if gotSubject != "todo-app: claude finished" {
 		t.Fatalf("subject %q", gotSubject)
 	}
 	for _, want := range []string{
@@ -333,7 +333,7 @@ func TestAccountEmail(t *testing.T) {
 	if err := e.Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	if got.Subject != "[repose] A seat is yours for 72 hours" || len(got.To) != 1 || got.To[0] != "new@example.com" {
+	if got.Subject != "A seat is yours for 72 hours" || len(got.To) != 1 || got.To[0] != "new@example.com" {
 		t.Fatalf("subject %q to %v", got.Subject, got.To)
 	}
 	if !strings.Contains(got.Text, "30 September 2026 at 14:00 UTC") || !strings.Contains(got.Text, "https://dash.test/billing") || strings.Contains(got.Text, "repose attach") || strings.Contains(got.Text, "unsubscribe") {
