@@ -60,13 +60,16 @@ What goes in A depends on the shape of the expression:
   getting a condition that silently never fires. Five of them reach Grafana;
   the sixth was `Watchdog`.
 
-`noDataState: OK` and `execErrState: OK` are both deliberate. They match
-Prometheus, where a rule whose series are absent does not fire -- absence has
-its own rules, `ApiHostsAbsent` and `HostNotInTargets`. The alternative,
-`execErrState: Error`, would send one DatasourceError notification per rule
-every time Prometheus restarts, 53 of them for one planned event. The cost is
-that a Prometheus Grafana cannot query at all goes unsaid, which is what the
-heartbeat would have covered if there were anywhere to put it.
+`noDataState: OK` matches Prometheus, where a rule whose series are absent
+does not fire -- absence has its own rules, `ApiHostsAbsent` and
+`HostNotInTargets`.
+
+`execErrState` is `OK` on every rule but one. `Error` on all of them would
+send a DatasourceError notification per rule on every Prometheus restart, 53
+for one planned event; `OK` on all of them is worse, because a datasource
+that answers nothing then leaves 53 rules green and silent, which is measured
+behaviour and not a guess. So exactly one rule carries `Error` --
+EXEC_ERR_ALERTING, and `ops/grafana/verify.py` fails if it does not.
 """
 
 from __future__ import annotations
@@ -121,6 +124,30 @@ BOOLEAN_EXPRS = {
     "BootSlow": "the value is the slow-boot share, and the rule needs it > 0.5",
     "HostNotInTargets": "the value is the ready-state gauge, which is 1",
     "NotifyFailing": "both sides of the `or` are counts the rule needs above 0",
+}
+
+# The one rule that is told to shout when its query cannot run at all.
+#
+# `execErrState` decides what a rule does when Grafana cannot evaluate it --
+# a Prometheus that is down, a datasource pointing somewhere that answers
+# nothing. `OK`, which every other rule here uses, means the rule reads
+# Normal and its health stays "ok": measured on Grafana 12.4, a datasource
+# returning "connection refused" on every query left all 53 rules green and
+# silent, with nothing in the API to distinguish them from a quiet fleet.
+# That is the failure this whole arrangement exists to prevent, so one rule
+# does not take `OK`.
+#
+# `Error` on all 53 instead would send one DatasourceError notification per
+# rule every time Prometheus restarts. One is the right number, and
+# MonitoringPathDown is the one, because it is already the single alert for
+# "the monitoring path is broken" (DECISIONS I-800): Grafana being unable to
+# query Prometheus is that same failure, one hop further back. It is also
+# what is left of the dead-man's switch after I-944 dropped the heartbeat --
+# narrower, since it needs Grafana itself to be alive, but it is inside the
+# system rather than resting on a watcher that was not.
+EXEC_ERR_ALERTING = {
+    "MonitoringPathDown": "the one alert for a broken monitoring path, so it is the "
+                          "one that must not go quiet when the query itself fails",
 }
 
 # Alerts of ops/alerts.yaml that Grafana does not get, with the reason.
@@ -498,7 +525,7 @@ def grafana_rule(rule: dict) -> dict:
         "condition": "C",
         "for": rule.get("for", "0m"),
         "noDataState": "OK",
-        "execErrState": "OK",
+        "execErrState": "Error" if name in EXEC_ERR_ALERTING else "OK",
         "isPaused": False,
         "labels": {**rule.get("labels", {}), **EXTERNAL_LABELS},
         "annotations": annotations(rule),
@@ -670,7 +697,7 @@ def groups() -> list[dict]:
                     "rules": rules,
                 }
             )
-    for name in sorted(set(EXCLUDED) | set(BOOLEAN_EXPRS)):
+    for name in sorted(set(EXCLUDED) | set(BOOLEAN_EXPRS) | set(EXEC_ERR_ALERTING)):
         if name not in names:
             raise YamlError(
                 f"{name} is named in this generator and is not an alert of "

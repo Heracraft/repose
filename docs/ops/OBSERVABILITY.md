@@ -350,16 +350,28 @@ quiet system until the incident it was written for.
 Four things are different from the Alertmanager routing the rest of these
 docs grew up with.
 
-**The per-project panels are empty, by design.** `ops/grafana/push.py`
-creates the Prometheus and Loki datasources and not the Postgres one, because
-it holds no password and asks for none (I-944). So 21 of the 83 dashboard
-panels read "no data": the per-account and per-project figures, which live in
-Postgres precisely because `project_id` and `user_id` are refused as metric
-labels and cannot be Prometheus series at all. Nothing is broken, and no
-alert is affected -- all 53 rules query Prometheus. `ops/sql/launch.sql`
-answers the same questions through `psql`, and the owner can add the
-datasource by hand with the uid `repose-postgres` if they want the panels
-(`ops/README.md` step 3).
+**The datasources are the target's, not ours.** `ops/grafana/push.py` creates
+none: it finds that Grafana's Prometheus and Loki by type and rewrites the
+uids in the rules and panels to them, because only the target knows its own
+addresses (I-944). So 21 of the 83 dashboard panels read "no data" unless
+that Grafana also has a Postgres datasource: the per-account and per-project
+figures, which live in Postgres precisely because `project_id` and `user_id`
+are refused as metric labels and cannot be Prometheus series at all. Nothing
+is broken, and no alert is affected -- all 53 rules query Prometheus.
+`ops/sql/launch.sql` answers the same questions through `psql`, and the owner
+can add the datasource by hand with the uid `repose-postgres` if they want
+the panels (`ops/README.md` step 3).
+
+**A rule whose query fails reads OK, and one rule is the exception.** Every
+rule is `execErrState: OK`, measured to mean that a datasource answering
+nothing leaves all of them green with health "ok" -- there is no signal in
+Grafana to distinguish that from a quiet fleet. `Error` on all 53 would send
+53 notifications per Prometheus restart, so exactly one carries it:
+`MonitoringPathDown`, which was already the single alert for a broken
+monitoring path. That is the whole of what notices a dead query path, and it
+needs Grafana to be alive. `ops/grafana/verify.py` is the deliberate check:
+it has Grafana test the datasource and reports any rule the engine cannot
+evaluate.
 
 **Who gets told is set up in Grafana, not here.** One contact point, with
 the default notification policy pointed at it, both in the UI. repose

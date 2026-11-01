@@ -188,9 +188,12 @@ copy-paste version):
   into Grafana over its HTTP API; nothing is mounted. There is no
   Alertmanager, no SMTP password of repose's and no heartbeat (DECISIONS
   I-648, I-848, I-942, I-944; `ops/README.md` step 3).
-- `ops/dashboards/*.json` and the datasources go in the same way, by the same
-  command. The eight dashboards appear in a `repose` folder and the 53 alert
-  rules under Alerting, in a `repose alerts` folder of their own.
+- `ops/dashboards/*.json` go in the same way, by the same command. The eight
+  dashboards appear in a `repose` folder and the 53 alert rules under
+  Alerting, in a `repose alerts` folder of their own. No datasource is
+  created: the push finds that Grafana's own by type and rewrites the uids in
+  the rules and panels to it, so they query the address Grafana already
+  knows.
 - `ops/grafana/verify.py` says whether that Grafana still holds what the
   repository says it should. Nothing reconciles at boot, so a Grafana whose
   database was replaced has no alert rules and says nothing about it.
@@ -485,8 +488,20 @@ Prometheus has not scraped the gateway on the edge for 3 minutes. Users'
 Every scrape that goes through the edge (the gateway, every hostd, `api`
 and `api-grpc`) has failed for 2 minutes. That is the edge VM, its network
 function or the WireGuard tunnel between the edge and the monitoring
-server, not four separate failures, so this one page holds back
-GatewayDown, HostdDown, ApiDown and ApiHostsAbsent.
+server, not four separate failures. Under Alertmanager this one page held
+back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent; Grafana has no
+inhibitions, so those arrive alongside it (DECISIONS I-942).
+
+**Or Grafana cannot query Prometheus at all.** This is the one rule with
+`execErrState: Error` (DECISIONS I-944), so it is also what notifies when the
+query itself fails -- a Prometheus that is down, or a datasource pointing
+somewhere that answers nothing. It then arrives as a DatasourceError whose
+message names the address. Every other rule is `execErrState: OK` and would
+stay green and silent through exactly that failure, which is measured
+Grafana behaviour, not a guess. Grafana itself has to be alive for this to
+reach anyone; nothing covers that case since the heartbeat was dropped
+("Watchdog"). `python3 ops/grafana/verify.py` asks Grafana to test the
+datasource and says so directly.
 
 1. Do users notice? `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from
    woker-1. `certificate required`: the edge serves users and only the

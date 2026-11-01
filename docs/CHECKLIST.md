@@ -283,8 +283,12 @@ entry and this list with it. Counts as of 2026-10-21.
       set as the default, and the 53 alert rules pushed in
       (`ops/README.md` step 3). Evidence: **Test** on that contact point
       arrives; and `GRAFANA_URL=... GRAFANA_TOKEN=... python3
-      ops/grafana/verify.py` exits 0, which means a rule for every alert the
-      generator emits, under its own uid, all healthy in the scheduler.
+      ops/grafana/verify.py --wait 120` exits 0, which means a rule for every
+      alert the generator emits, under its own uid, pointed at a datasource
+      Grafana can actually query, and every one of them evaluated without
+      error. Acceptance is not enough: with `execErrState: OK` a rule whose
+      query fails reads OK, so the datasource test and the health are the
+      check (I-944).
       Until this is closed every page, including the host-down ones, reaches
       nobody: the 2026-10-10 outage paged no one because
       `ntfy.herakraft.co` answered 503 on every path (DECISIONS I-648), and

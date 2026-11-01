@@ -98,11 +98,12 @@ def main():
     wanted = {"prometheus": a.prometheus, "loki": a.loki, "grafana-postgresql-datasource": a.postgres}
     mapping, missing = {}, []
     for uid, kind in DEV_UIDS.items():
-        if uid in a.expect_missing:
-            continue
         ds = pick(datasources, kind, wanted[kind])
         if ds is None:
-            missing.append(kind)
+            # --expect-missing silences the report, not the lookup: a target
+            # that does have one still gets its panels pointed at it.
+            if uid not in a.expect_missing:
+                missing.append(kind)
         else:
             mapping[uid] = ds
             print(f"datasource {uid} -> {ds['name']} ({ds['uid']})")

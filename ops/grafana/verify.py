@@ -25,7 +25,10 @@ datasource file, never against a copy kept here:
     execErrState and query/reduce/threshold pipeline
   * each group's evaluation interval
   * no rule the repository does not have, and none reporting health "error"
-  * the three datasources the rules and the panels name, by uid and type
+  * that the datasource the rules query ANSWERS, with Grafana's own
+    connection test -- the one check that catches a datasource pointing
+    somewhere dead, which rule health cannot (see datasource_answers)
+  * that the one rule allowed to shout about a failed query still is
 
 What it does NOT look at is who gets told. No contact point and no
 notification policy is pushed (DECISIONS I-944): Grafana's own default policy
@@ -44,6 +47,7 @@ import os
 import pathlib
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -59,6 +63,25 @@ def _load(name: str, path: pathlib.Path):
 
 
 GEN = _load("alerts_gen", HERE / "alerts-gen.py")
+# ops/dashboards/push.py already solves "which of the target's datasources is
+# the Prometheus one", for panels. The rules have exactly the same problem, so
+# its `pick` and its uid-to-type table are reused rather than written twice.
+DASH = _load("dash_push", ROOT / "ops" / "dashboards" / "push.py")
+
+# The datasource uid every generated rule is written against. It is not a uid
+# any real Grafana has: the target's own uids are the target's, so the pusher
+# rewrites this to whatever the target calls its Prometheus, and this compares
+# the same way. Written form in the file, resolved form on the wire.
+RULE_DS_UID = "repose-prometheus"
+
+# Which `--flag NAME` names each written uid, for a target with more than one
+# datasource of that type. The same flag names ops/dashboards/push.py takes,
+# because it is the same question.
+NAME_KEY = {
+    "repose-prometheus": "prometheus",
+    "repose-loki": "loki",
+    "repose-postgres": "postgres",
+}
 
 # The folder the alert rules live in. The uid is this repository's, set over
 # the API, which is what keeps a second folder of the same title impossible
@@ -66,20 +89,74 @@ GEN = _load("alerts_gen", HERE / "alerts-gen.py")
 # the push and the drift check cannot disagree about either.
 FOLDER_UID = "repose-alerts"
 
-# Datasources this repository does NOT put into a Grafana, with the reason.
+# NOTHING here creates a datasource. Only the target knows its own addresses:
+# the owner's Grafana reaches its siblings on a Docker network
+# (`http://prometheus-<coolify id>:9090`), and inside that container
+# `127.0.0.1:9090` -- which is what this repository's reference file says --
+# is Grafana itself. A datasource created from that file would reach nothing,
+# every rule that named it would fail its query, and with
+# `execErrState: OK` all 53 would read OK: fifty-three green, silent alerts,
+# the exact failure this tooling exists to prevent (DECISIONS I-944).
 #
-# `repose-postgres` is the control plane's own database, and reaching it needs
-# a password. Nothing here carries one: the push takes GRAFANA_URL and
-# GRAFANA_TOKEN and no third thing (DECISIONS I-944). No alert rule queries
-# it -- all 53 query Prometheus -- so no alert is affected. 21 of the 83
-# dashboard panels do, and they read "no data" until somebody adds that
-# datasource by hand in Grafana, with this exact uid so the committed panels
-# find it. `ops/sql/launch.sql` gets the same figures through psql with no
-# datasource at all.
+# So the datasources are the target's, found by type, and the uids in the
+# generated rules are rewritten to them on the way in. A target with no
+# datasource of a type we need is an error naming what to create, never a
+# datasource invented with a guessed URL.
+#
+# `repose-postgres` is additionally not needed by any rule -- all 53 query
+# Prometheus -- and 21 of the 83 dashboard panels read it. Those say "no data"
+# unless the owner has a Postgres datasource of their own; reaching the
+# control plane's database needs a password, and this tooling takes none.
+# `ops/sql/launch.sql` gets the same figures through psql with no datasource.
 SKIP_DATASOURCES = {
     "repose-postgres": "reaching the control plane's database needs a "
                        "password, and this tooling does not take one",
 }
+
+
+class Unresolved(Exception):
+    """The target has no datasource of a type the rules or panels need, or
+    has several and has not been told which."""
+
+
+def resolve(datasources: list, written_uid: str, want_name: str | None) -> dict:
+    """The target's datasource for one of the uids this repository writes."""
+    kind = DASH.DEV_UIDS[written_uid]
+    try:
+        found = DASH.pick(datasources, kind, want_name)
+    except SystemExit as exc:
+        # pick() names the flag to pass; ops/grafana/push.py takes the same
+        # flag names as ops/dashboards/push.py, so its message is right here.
+        raise Unresolved(str(exc)) from None
+    if found is None:
+        raise Unresolved(
+            f"the target has no {kind} datasource, so the rules have nothing to query. "
+            f"Add one in Grafana (Connections -> Add new connection) pointing at the "
+            f"Prometheus that scrapes repose, then run this again. Nothing here creates "
+            f"it: only the target knows its own address."
+        )
+    return found
+
+
+def rewrite_uids(rules: list, mapping: dict) -> list:
+    """Every `datasourceUid` in a rule's pipeline, mapped to the target's.
+
+    `__expr__` is Grafana's own server-side expression engine and is the same
+    uid everywhere, so reduce and threshold nodes are left alone.
+    """
+    out = []
+    for rule in rules:
+        copy = dict(rule, data=[])
+        for node in rule["data"]:
+            node = json.loads(json.dumps(node))
+            uid = mapping.get(node.get("datasourceUid"))
+            if uid:
+                node["datasourceUid"] = uid
+                if isinstance(node.get("model", {}).get("datasource"), dict):
+                    node["model"]["datasource"]["uid"] = uid
+            copy["data"].append(node)
+        out.append(copy)
+    return out
 
 _UNIT = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
@@ -149,8 +226,8 @@ def rule_differences(have: dict, want: dict) -> list[str]:
 # --- the target -----------------------------------------------------------
 
 
-def get(url: str, token: str | None, path: str):
-    req = urllib.request.Request(url.rstrip("/") + path, headers={
+def get(url: str, token: str | None, path: str, method: str = "GET"):
+    req = urllib.request.Request(url.rstrip("/") + path, method=method, headers={
         "Accept": "application/json", "User-Agent": "repose-grafana-verify/1"})
     if token:
         req.add_header("Authorization", "Bearer " + token)
@@ -159,13 +236,40 @@ def get(url: str, token: str | None, path: str):
         return json.loads(raw) if raw else {}
 
 
+def datasource_answers(url: str, token: str | None, uid: str) -> str | None:
+    """Why the target's datasource cannot be queried, or None if it can.
+
+    Grafana's own connection test, which is the only check that catches the
+    failure mode this file was rewritten for: a datasource whose address
+    answers nothing. Every rule but one is `execErrState: OK`, and measured
+    on Grafana 12.4 that means a rule whose query fails keeps health "ok" and
+    state Normal -- 52 rules green and silent while every evaluation returned
+    "connection refused". Rule health cannot see that. This can.
+    """
+    try:
+        answer = get(url, token, f"/api/datasources/uid/{uid}/health", method="POST")
+    except urllib.error.HTTPError as exc:
+        body = exc.read()[:200].decode(errors="replace")
+        return f"HTTP {exc.code}: {body}"
+    except urllib.error.URLError as exc:
+        return str(exc)
+    if str(answer.get("status", "")).upper() == "OK":
+        return None
+    return str(answer.get("message", answer))[:300]
+
+
+def uid_of(name: str) -> str:
+    return "repose-" + re.sub(r"[^a-z0-9]+", "-", name.lower())
+
+
 def source_alerts() -> list[str]:
     text = (ROOT / "ops" / "alerts.yaml").read_text()
     return [m.group(1) for m in re.finditer(r"^\s+- alert: (\w+)$", text, re.M)]
 
 
-def run(url: str, token: str | None) -> int:
+def run(url: str, token: str | None, names: dict | None = None, wait: int = 0) -> int:
     bad = []
+    names = names or {}
     try:
         rules = get(url, token, "/api/v1/provisioning/alert-rules")
         folders = get(url, token, "/api/folders?limit=1000")
@@ -185,21 +289,36 @@ def run(url: str, token: str | None) -> int:
         bad.append(f"folders titled {GEN.FOLDER!r}: {[f['uid'] for f in named]}, "
                    f"expected exactly [{FOLDER_UID!r}]")
 
-    # --- the datasources the rules and panels name
-    have_ds = {d["uid"]: d for d in datasources}
-    for ds in GEN.read_yaml(HERE / "provisioning" / "datasources" / "repose.yaml")["datasources"]:
-        if ds["uid"] in SKIP_DATASOURCES:
-            continue
-        got = have_ds.get(ds["uid"])
-        if got is None:
-            bad.append(f"datasource {ds['uid']}: not on the target")
-        elif got["type"] != ds["type"]:
-            bad.append(f"datasource {ds['uid']}: type {got['type']}, not {ds['type']}")
+    # --- which of the target's datasources the rules are meant to query
+    #
+    # Not "is `repose-prometheus` there": it is not, and should not be. The
+    # target's Prometheus has the target's uid, the pusher rewrites the rules
+    # to it, and this has to resolve it the same way or every rule would read
+    # as drifted.
+    mapping = {}
+    try:
+        found = resolve(datasources, RULE_DS_UID, names.get(NAME_KEY[RULE_DS_UID]))
+        mapping[RULE_DS_UID] = found["uid"]
+        print(f"  {RULE_DS_UID} -> {found['name']} ({found['uid']}) on the target")
+    except Unresolved as exc:
+        print(f"  {exc}", file=sys.stderr)
+        return 1
+    why = datasource_answers(url, token, found["uid"])
+    if why:
+        bad.append(
+            f"datasource {found['name']} ({found['uid']}) at {found.get('url', '?')} "
+            f"cannot be queried, so every rule that names it is dead: {why}. "
+            "They will not say so: all but one are execErrState: OK, which keeps a "
+            "failed evaluation reading OK."
+        )
+    else:
+        print(f"  it answers queries ({found.get('url', '?')})")
 
-    # --- a rule per alert, as the generator writes it
+    # --- a rule per alert, as the generator writes it, pointed where the
+    #     pusher points it
     want = {}
     for group in GEN.groups():
-        for rule in group["rules"]:
+        for rule in rewrite_uids(group["rules"], mapping):
             want[rule["uid"]] = dict(rule, folderUID=FOLDER_UID, ruleGroup=group["name"])
     have = {r["uid"]: r for r in rules}
     names = source_alerts()
@@ -231,18 +350,29 @@ def run(url: str, token: str | None) -> int:
             bad.append(f"group {group['name']}: interval {got.get('interval')}s, "
                        f"not {group['interval']}")
 
-    # --- nothing the engine cannot evaluate
-    try:
-        groups = get(url, token, "/api/prometheus/grafana/api/v1/rules")["data"]["groups"]
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError):
-        groups = []
-    unhealthy = [(r["name"], r.get("lastError", "")[:120])
-                 for g in groups for r in g["rules"] if r.get("health") == "error"]
-    for name, err in unhealthy:
-        bad.append(f"{name}: the engine cannot evaluate it: {err}")
-    if groups:
-        evaluated = sum(len(g["rules"]) for g in groups)
-        print(f"  {evaluated} rules in the scheduler, {len(unhealthy)} unhealthy")
+    # --- and that the engine can actually evaluate them
+    #
+    # This is the check that matters, and asserting acceptance instead of
+    # health is what let a push of 53 rules at a datasource that answered
+    # nothing look like a success. A rule whose query fails goes to health
+    # "error", and because every rule here is execErrState: OK its STATE
+    # stays OK -- so the state says nothing and only the health does.
+    #
+    # A rule that has not been evaluated yet has no health, so waiting is
+    # part of the check: without it this passes on a rule that is about to
+    # fail. Running out of time to wait is a failure, not a pass.
+    bad += evaluation(url, token, sorted(r["title"] for r in want.values()), wait)
+
+    # The one rule that is allowed to shout when its own query fails. With
+    # every rule on execErrState: OK there would be nothing in Grafana at all
+    # to notice a dead datasource, which is why the generator keeps exactly
+    # one on Error -- and why this fails if that ever stops being true.
+    for name in GEN.EXEC_ERR_ALERTING:
+        rule = have.get(uid_of(name))
+        if rule and rule.get("execErrState") != "Error":
+            bad.append(f"{name}: execErrState is {rule.get('execErrState')!r}, not "
+                       "'Error'. Nothing would then notify when Grafana cannot query "
+                       "Prometheus at all.")
 
     if bad:
         print("\n".join("  " + line for line in bad), file=sys.stderr)
@@ -250,12 +380,56 @@ def run(url: str, token: str | None) -> int:
     return 0
 
 
+def evaluation(url: str, token: str | None, titles: list, wait: int) -> list:
+    unknown = {"", "unknown", "nodata", None}
+    deadline = time.time() + max(0, wait)
+    waited = False
+    while True:
+        try:
+            groups = get(url, token, "/api/prometheus/grafana/api/v1/rules")["data"]["groups"]
+        except (urllib.error.URLError, urllib.error.HTTPError, KeyError):
+            return ["the scheduler's rule list cannot be read, so no rule's health is known"]
+        seen = {r["name"]: r for g in groups for r in g["rules"]}
+        pending = [t for t in titles
+                   if t not in seen or seen[t].get("health") in unknown]
+        if not pending or time.time() >= deadline:
+            break
+        if not waited:
+            print(f"  waiting up to {wait}s for the first evaluation of "
+                  f"{len(pending)} rules")
+            waited = True
+        time.sleep(5)
+    bad = []
+    for title in titles:
+        rule = seen.get(title)
+        if rule is None:
+            bad.append(f"{title}: the scheduler does not have it")
+        elif rule.get("health") == "error":
+            bad.append(f"{title}: the engine cannot evaluate it, so it will never fire "
+                       f"on what it was written for: {rule.get('lastError', '')[:200]}")
+        elif rule.get("health") in unknown:
+            bad.append(f"{title}: not evaluated yet, so its health is unknown. Re-run, "
+                       "or pass a longer --wait")
+    healthy = sum(1 for t in titles
+                  if seen.get(t, {}).get("health") not in unknown | {"error"})
+    print(f"  {healthy} of {len(titles)} rules evaluated healthy in the scheduler")
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default=os.environ.get("GRAFANA_URL", "http://127.0.0.1:3000"))
+    ap.add_argument("--prometheus", metavar="NAME",
+                    help="which of the target's Prometheus datasources the rules query, "
+                         "when it has more than one")
+    ap.add_argument("--loki", metavar="NAME")
+    ap.add_argument("--wait", type=int, default=0, metavar="SECONDS",
+                    help="wait this long for rules that have not been evaluated yet, "
+                         "rather than reporting their health as unknown")
     args = ap.parse_args()
-    return run(args.url, os.environ.get("GRAFANA_TOKEN"))
+    return run(args.url, os.environ.get("GRAFANA_TOKEN"),
+               {"prometheus": args.prometheus, "loki": args.loki}, args.wait)
 
 
 if __name__ == "__main__":

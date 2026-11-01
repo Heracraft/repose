@@ -38,8 +38,11 @@ policy designed without a month of data is a guess.
   Grafana's alerting engine needs no new service. I-944: over the API, rules
   only -- no contact point and no notification policy of ours, so the owner
   configures one contact point in the UI and Grafana's default policy
-  delivers to it, and no secret either, so the Postgres datasource behind 21
-  of the 83 panels is the owner's to add if they want it. I-648, amended by I-848: Chat needed calert beside
+  delivers to it; no secret either, and no datasource created at all -- the
+  push finds the target Grafana's own by type and rewrites the uids in the
+  rules and panels to them, because only the target knows its addresses. The
+  Postgres datasource behind 21 of the 83 panels is the owner's to add if
+  they want it. I-648, amended by I-848: Chat needed calert beside
   Alertmanager to translate the webhook, and nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
@@ -475,8 +478,13 @@ two open rows are the two that need a machine of the owner's.
       `ops/grafana/provisioning/alerting/`, and `ops/check.sh --grafana`
       brings up a real Grafana 12.4, pushes them in with
       `ops/grafana/push.py` over the API, asserts that a second push changes
-      nothing, and runs the drift check: 53 rules for 53, titles and uids
-      unchanged, all 53 healthy in the scheduler (DECISIONS I-942, I-944).
+      nothing, and runs the drift check (DECISIONS I-942, I-944). Also
+      checked against a Grafana whose datasources are NOT this repository's
+      -- the case the owner's server is -- where the push resolved
+      `repose-prometheus` to that Grafana's own uid and all 53 rules
+      evaluated healthy; and against the same Grafana with its datasource
+      pointed at a dead address, where `verify.py` failed and named it, which
+      no rule's own state would have (all but one are `execErrState: OK`).
       Not closed by this: one contact point in the owner's Grafana UI
       (`ops/README.md` step 3), which is a real-host item below.
 - [x] Retention set: Loki 30/90 days, Prometheus 90 days, partition drops

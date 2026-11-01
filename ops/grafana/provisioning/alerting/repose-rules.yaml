@@ -1408,7 +1408,7 @@ groups:
         condition: C
         for: 2m
         noDataState: OK
-        execErrState: OK
+        execErrState: Error
         isPaused: false
         labels:
           severity: page

@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """Put repose's observability config into a running Grafana.
 
-One command, over Grafana's HTTP API: two datasources, the 53 alert rules and
-the eight dashboards. Nothing is mounted into the container, and the only
-things it needs are GRAFANA_URL and GRAFANA_TOKEN (DECISIONS I-944).
+One command, over Grafana's HTTP API: the 53 alert rules and the eight
+dashboards. Nothing is mounted into the container, and the only things it
+needs are GRAFANA_URL and GRAFANA_TOKEN (DECISIONS I-944).
+
+IT CREATES NO DATASOURCE. It finds the target's own and points the rules at
+them. Only the target knows its addresses: the owner's Grafana reaches its
+siblings over a Docker network, where `127.0.0.1:9090` -- what this
+repository's reference file says -- is Grafana itself. Creating a datasource
+from that file would give 53 rules a Prometheus that answers nothing, and
+since every rule is `execErrState: OK` all 53 would read OK. Fifty-three
+green, silent alerts is the failure this whole arrangement exists to prevent,
+so the rules are rewritten from the uid they are written against
+(`repose-prometheus`) to whatever the target calls its Prometheus, exactly as
+`ops/dashboards/push.py` has always done for panels. A target with no
+datasource of a needed type is refused, with what to create.
 
     GRAFANA_URL=https://grafana.example GRAFANA_TOKEN=glsa_... \\
         python3 ops/grafana/push.py [--dry-run]
@@ -24,7 +36,6 @@ the notification tree of the Grafana it is pushed into.
 
 What it reads, and nothing else:
 
-  ops/grafana/provisioning/datasources/repose.yaml   two of its three
   ops/grafana/provisioning/alerting/repose-rules.yaml      GENERATED
   ops/dashboards/*.json                                    GENERATED
 
@@ -36,12 +47,11 @@ dashboards are pushed by `ops/dashboards/push.py`, which this calls; there is
 one implementation of each.
 
 NO SECRETS AT ALL. Two variables, GRAFANA_URL and GRAFANA_TOKEN, and nothing
-else: this never asks for a password and never refuses for want of one. The
-Prometheus and Loki datasources need no credentials, and the third one, the
-control plane's Postgres, is not created here -- see SKIP_DATASOURCES in
-verify.py for why and for what it costs. A datasource entry that still
-carries a `$...` placeholder is refused rather than sent as its own source
-text, because nothing expands them any more.
+else: this never asks for a password and never refuses for want of one. It
+creates no datasource, so it needs none of their credentials -- including the
+control plane's Postgres, which 21 of the 83 dashboard panels read and which
+therefore say "no data" unless the target has a Postgres datasource of its
+own (SKIP_DATASOURCES in verify.py).
 
 THE RISK THIS DESIGN CARRIES. A mounted provisioning directory makes a
 rebuilt Grafana re-provision itself. Over the API it does not: a Grafana that
@@ -83,7 +93,6 @@ def _load(name: str, path: pathlib.Path):
 GEN = _load("alerts_gen", HERE / "alerts-gen.py")
 VERIFY = _load("verify", HERE / "verify.py")
 
-DATASOURCES = HERE / "provisioning" / "datasources" / "repose.yaml"
 
 # The folder the rules go in, with a uid of this repository's choosing. Over
 # the API the uid is ours to set, which file provisioning did not allow: there
@@ -142,90 +151,39 @@ class Grafana:
         return self.call(method, path, body, allow)
 
 
-# --- placeholders, which are no longer expanded ---------------------------
-
-PLACEHOLDER = re.compile(r"\$__env\{[A-Z_][A-Z0-9_]*\}|\$__file\{[^}]*\}|\$\{?[A-Z_][A-Z0-9_]*\}?")
+# --- the two things it pushes ---------------------------------------------
 
 
-def placeholders(node, found=None) -> list[str]:
-    """Every `$__env{...}`, `$__file{...}` or `$VAR` left in a parsed object.
+def resolve_datasources(gf: Grafana, names: dict) -> tuple[dict, list[str]]:
+    """The target's uid for each uid this repository writes rules against.
 
-    Grafana expands those when it reads a provisioning file off disk. Over the
-    API nothing does, and this pusher deliberately holds no values to expand
-    them with, so one that reaches here would be sent as its own source text
-    -- a datasource whose password is the literal string `$REPOSE_PG_PASSWORD`
-    connects to nothing and says nothing about why. So it is refused instead.
+    Creates nothing. Refuses rather than guessing: the only thing worse than
+    no Prometheus datasource is one pointing somewhere that answers nothing,
+    because that failure is silent.
     """
-    found = [] if found is None else found
-    if isinstance(node, dict):
-        for value in node.values():
-            placeholders(value, found)
-    elif isinstance(node, list):
-        for value in node:
-            placeholders(value, found)
-    elif isinstance(node, str):
-        found += PLACEHOLDER.findall(node)
-    return sorted(set(found))
-
-
-# --- the three things it pushes -------------------------------------------
-
-
-def push_datasources(gf: Grafana, doc: dict) -> list[str]:
-    """Prometheus and Loki, of the three in the datasource file.
-
-    By uid, so the dashboards' and the alert rules' `repose-prometheus` means
-    this one. Each is created once and updated in place after that. The third,
-    `repose-postgres`, is skipped: see SKIP_DATASOURCES in verify.py.
-    """
-    have = {d["uid"]: d for d in gf.call("GET", "/api/datasources")}
-    lines = []
-    for ds in doc["datasources"]:
-        uid = ds["uid"]
-        if uid in VERIFY.SKIP_DATASOURCES:
-            # Said once, here, so nobody meets the empty panels without an
-            # explanation: this is the designed state, not a failure.
-            lines.append(
-                f"datasource {uid}: not created, so the panels that read it say "
-                "\"no data\" -- the per-project figures, which are in Postgres because "
-                "project_id is not a metric label. By design (ops/README.md step 3)."
+    datasources = gf.call("GET", "/api/datasources")
+    found = VERIFY.resolve(datasources, VERIFY.RULE_DS_UID,
+                           names.get(VERIFY.NAME_KEY[VERIFY.RULE_DS_UID]))
+    line = (f"datasource {VERIFY.RULE_DS_UID} -> {found['name']} ({found['uid']}) "
+            f"at {found.get('url', '?')}, the target's own; nothing created")
+    # The rest are the panels' and no rule's, and are also never created. Say
+    # which way it fell, because "no data" in 21 panels with no explanation
+    # reads as a broken dashboard.
+    skipped = []
+    for uid in VERIFY.SKIP_DATASOURCES:
+        try:
+            other = VERIFY.resolve(datasources, uid, names.get(VERIFY.NAME_KEY[uid]))
+        except VERIFY.Unresolved:
+            skipped.append(
+                f"datasource {uid}: the target has none and none is created, so the "
+                "panels that read it say \"no data\" -- the per-project figures, which "
+                "are in Postgres because project_id is not a metric label. By design "
+                "(ops/README.md step 3)."
             )
-            continue
-        left = placeholders(ds)
-        if left:
-            raise ApiError(
-                f"datasource {uid} still carries {', '.join(left)}. Placeholders are "
-                "Grafana's file-provisioning syntax and nothing expands them over the "
-                "API; this push takes GRAFANA_URL and GRAFANA_TOKEN and no values of "
-                "its own (DECISIONS I-944)."
-            )
-        body = dict(ds, access=ds.get("access", "proxy"))
-        if uid in have:
-            if have[uid].get("readOnly"):
-                # That Grafana provisions its datasources from a file of its
-                # own, as ops/dev does. The API cannot write over one, and
-                # does not need to: it is already there. Reported, not failed.
-                lines.append(f"datasource {uid} ({ds['type']}): "
-                             "file-provisioned on the target, left alone")
-                continue
-            body["id"] = have[uid]["id"]
-            # Neither of these carries a credential, so everything about them
-            # can be read back and compared, and one that already matches is
-            # not rewritten. That is what lets --dry-run say truthfully that a
-            # second push would change nothing.
-            drift = sorted(k for k, v in body.items()
-                           if k not in ("id", "version")
-                           and not VERIFY.same(v, have[uid].get(k)))
-            if not drift:
-                lines.append(f"datasource {uid} ({ds['type']}): as written")
-                continue
-            gf.write("PUT", f"/api/datasources/uid/{uid}", body)
-            lines.append(f"datasource {uid} ({ds['type']}): rewritten, the target's "
-                         + ", ".join(drift) + " did not match")
         else:
-            gf.write("POST", "/api/datasources", body)
-            lines.append(f"datasource {uid} ({ds['type']}): created")
-    return lines
+            skipped.append(f"datasource {uid} -> {other['name']} ({other['uid']}), the "
+                           "target's own; its panels will have data")
+    return {VERIFY.RULE_DS_UID: found["uid"]}, [line, *skipped]
 
 
 def push_folder(gf: Grafana) -> list[str]:
@@ -252,7 +210,7 @@ def push_folder(gf: Grafana) -> list[str]:
     return [f"folder {FOLDER_UID} ({title!r}): created"]
 
 
-def push_rules(gf: Grafana) -> list[str]:
+def push_rules(gf: Grafana, mapping: dict) -> list[str]:
     """The 54 rules, one PUT per group.
 
     `PUT /api/v1/provisioning/folder/{uid}/rule-groups/{group}` replaces a
@@ -269,7 +227,7 @@ def push_rules(gf: Grafana) -> list[str]:
     pushed = set()
     for group in GEN.groups():
         rules = []
-        for rule in group["rules"]:
+        for rule in VERIFY.rewrite_uids(group["rules"], mapping):
             body = {k: v for k, v in rule.items() if k != "uid"}
             body.update(uid=rule["uid"], orgID=1, folderUID=FOLDER_UID,
                         ruleGroup=group["name"])
@@ -306,10 +264,10 @@ def push_dashboards(gf: Grafana, extra: list[str]) -> list[str]:
     dash = _load("dash_push", ROOT / "ops" / "dashboards" / "push.py")
     argv = sys.argv
     skipped = [arg for uid in VERIFY.SKIP_DATASOURCES for arg in ("--expect-missing", uid)]
-    sys.argv = ["push.py", "--folder", "repose",
-                "--prometheus", "repose-prometheus",
-                "--loki", "repose-loki",
-                "--postgres", "repose-postgres", *skipped, *extra]
+    # No --prometheus/--loki of our own: ops/dashboards/push.py resolves the
+    # target's by type exactly as the rules are resolved, and `extra` carries
+    # the operator's choice through when the target has more than one.
+    sys.argv = ["push.py", "--folder", "repose", *skipped, *extra]
     if gf.dry_run:
         sys.argv.append("--dry-run")
     try:
@@ -330,9 +288,21 @@ def main() -> int:
     ap.add_argument("--url", default=os.environ.get("GRAFANA_URL"),
                     help="default: $GRAFANA_URL")
     ap.add_argument("--skip-dashboards", action="store_true",
-                    help="alerting and datasources only")
+                    help="the alert rules only")
     ap.add_argument("--no-verify", action="store_true",
                     help="do not run ops/grafana/verify.py afterwards")
+    # The same flag names ops/dashboards/push.py takes, because it is the
+    # same question: which of the target's datasources is meant.
+    ap.add_argument("--prometheus", metavar="NAME",
+                    help="which of the target's Prometheus datasources the rules and "
+                         "panels use, when it has more than one")
+    ap.add_argument("--loki", metavar="NAME", help="likewise for the log panels")
+    ap.add_argument("--postgres", metavar="NAME",
+                    help="likewise for the per-project panels, if the target has one")
+    ap.add_argument("--wait", type=int, default=120, metavar="SECONDS",
+                    help="how long the check afterwards waits for the first evaluation "
+                         "of each rule, which is what proves the target's datasource "
+                         "answers them (default 120)")
     args = ap.parse_args()
     if not args.url:
         print("set GRAFANA_URL, or pass --url", file=sys.stderr)
@@ -342,22 +312,27 @@ def main() -> int:
         print("no GRAFANA_TOKEN: sending unauthenticated requests, which only an "
               "anonymous-admin Grafana accepts (ops/dev)", file=sys.stderr)
     os.environ["GRAFANA_URL"] = args.url
+    names = {"prometheus": args.prometheus, "loki": args.loki, "postgres": args.postgres}
 
     gf = Grafana(args.url, token, args.dry_run)
     try:
         health = gf.call("GET", "/api/health")
         print(f"{args.url}: Grafana {health.get('version')}, database {health.get('database')}")
-        out = push_datasources(gf, GEN.read_yaml(DATASOURCES))
+        mapping, out = resolve_datasources(gf, names)
         out += push_folder(gf)
-        out += push_rules(gf)
-    except (ApiError, GEN.YamlError) as exc:
+        out += push_rules(gf, mapping)
+    except (ApiError, VERIFY.Unresolved, GEN.YamlError) as exc:
         print(f"ops/grafana/push.py: {exc}", file=sys.stderr)
         return 1
     for line in out:
         print("  " + line)
     if not args.skip_dashboards:
+        extra = [arg for flag, value in (("--prometheus", args.prometheus),
+                                         ("--loki", args.loki),
+                                         ("--postgres", args.postgres))
+                 if value for arg in (flag, value)]
         try:
-            push_dashboards(gf, [])
+            push_dashboards(gf, extra)
         except SystemExit as exc:
             if exc.code:
                 print(f"dashboards: {exc}", file=sys.stderr)
@@ -369,7 +344,7 @@ def main() -> int:
     if args.no_verify:
         return 0
     print("verifying:")
-    return VERIFY.run(args.url, token)
+    return VERIFY.run(args.url, token, names, args.wait)
 
 
 if __name__ == "__main__":
