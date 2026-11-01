@@ -81,6 +81,15 @@ const (
 	StateNoChannel = "no_channel"
 )
 
+// PushFailed is the only answer a secret question keeps (I-929): the
+// owner set the secret, and the push that carries it to this machine
+// failed.
+const PushFailed = "push_failed"
+
+// SecretTimeout is how long `repose-ask --secret` waits without
+// --timeout: long enough to sign in to a provider on a phone.
+const SecretTimeout = 2 * time.Hour
+
 // Errors.
 var (
 	ErrNotFound = errors.New("questions: no such question")
@@ -219,6 +228,9 @@ func (s *Store) Open(agent, window, proc, text string, options []string, timeout
 func (s *Store) OpenSecret(agent, window, proc, name, text string, timeout time.Duration) (Question, error) {
 	if !ValidSecretName(name) {
 		return Question{}, fmt.Errorf("%w: secret names match [A-Z][A-Z0-9_]{0,63}", ErrInvalid)
+	}
+	if timeout <= 0 {
+		timeout = SecretTimeout
 	}
 	return s.open(agent, window, proc, name, text, nil, timeout)
 }
@@ -389,7 +401,7 @@ func (s *Store) closeLocked(id, state, answer, reason string, guest bool) (*Ques
 		return nil, nil
 	}
 	e.q.State = state
-	if state == StateAnswered && e.q.Secret == "" {
+	if state == StateAnswered && (e.q.Secret == "" || answer == PushFailed) {
 		e.q.Answer = answer
 	}
 	e.q.Reason = reason

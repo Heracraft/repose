@@ -168,7 +168,8 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   dashboard's secret dialog; the email adds that a reply does not set it.
   The value is stored as the project's secret and never in the question;
   the agent's repose-ask prints nothing and returns once the machine has
-  the secret.
+  the secret. It waits 2 hours by default, and a link opened signed out
+  comes back to the dialog after sign-in.
 - Answering in the terminal (I-690): any prompt the owner sends the agent
   that asked closes its open questions; all five agents report the prompt
   through a hook (gemini and pi through the platform's extensions). The

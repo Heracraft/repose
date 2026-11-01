@@ -62,7 +62,7 @@ test('Settings adds and deletes an account secret; a project page shows it', asy
 		['STRIPE_KEY', 'sk_live_hunter2']
 	]) {
 		await add(section, name, value);
-		await dlg(section).getByRole('button', { name: 'Add', exact: true }).click();
+		await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 		await expect(
 			section.getByTestId('account-secrets').getByText(name, { exact: true })
 		).toBeVisible();
@@ -113,10 +113,10 @@ test('an account secret name is checked before it is sent', async ({ page }) => 
 	await page.goto('/settings/secrets');
 	const section = page.locator('#secrets');
 	await add(section, 'BASH_ENV', 'x');
-	await dlg(section).getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(dlg(section).getByText(/BASH_ENV is taken/)).toBeVisible();
 	await dlg(section).getByLabel('Name', { exact: true }).fill('MY-KEY');
-	await dlg(section).getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	// The rule in words, not as a regular expression (Guide B 1.3).
 	await expect(
 		dlg(section).getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
@@ -142,12 +142,12 @@ test('Settings Load from file reads the value from the picked file', async ({ pa
 	const bytes = Buffer.from('{"type":"service_account","k":"hunter2"}\n');
 	await (await chooser).setFiles({ name: 'sa.json', mimeType: 'application/json', buffer: bytes });
 	await expect(section.page().getByTestId('account-secret-file-name')).toHaveText('sa.json');
-	await expect(dlg(section).getByLabel('Value', { exact: true })).toBeDisabled();
+	await expect(dlg(section).getByLabel('Value', { exact: true })).toContainText('sa.json');
 
 	const put = page.waitForRequest(
 		(r) => r.method() === 'PUT' && r.url().endsWith('/me/secrets/GCP_SA_JSON')
 	);
-	await dlg(section).getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	const body = (await put).postDataJSON() as { value: string };
 	expect(body.value).toBe(bytes.toString('base64'));
 	await expect(
@@ -165,7 +165,7 @@ test('Settings Load from file reads the value from the picked file', async ({ pa
 			mimeType: 'application/octet-stream',
 			buffer: Buffer.alloc(64 * 1024 + 1, 7)
 		});
-	await dlg(section).getByRole('button', { name: 'Add', exact: true }).click();
+	await dlg(section).getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(dlg(section).getByText('Secret values are limited to 64 KB.')).toBeVisible();
 	await expect(section.getByText('BIG_ACCOUNT_FILE', { exact: true })).toHaveCount(0);
 

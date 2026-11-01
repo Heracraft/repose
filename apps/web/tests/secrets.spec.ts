@@ -29,7 +29,7 @@ test('add via text, list, and delete; the value never reaches the DOM', async ({
 
 	await page.getByLabel('Name', { exact: true }).fill('DATABASE_URL');
 	await page.getByLabel('Value', { exact: true }).fill('postgres://user:hunter2@db/app');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	const secretRow = page.getByText('DATABASE_URL', { exact: true });
 	await expect(secretRow).toBeVisible({ timeout: 5_000 });
@@ -65,7 +65,7 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 	// a mismatch; a hyphen still is.
 	await page.getByLabel('Name', { exact: true }).fill('MY-KEY');
 	await page.getByLabel('Value', { exact: true }).fill('x');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(
 		page.getByText('Use A-Z, 0-9 and _, starting with a letter, at most 64 characters.')
@@ -74,7 +74,7 @@ test('a name that does not match the allowed pattern is rejected client-side', a
 
 	// Add is never greyed out: an empty name is said under the field.
 	await page.getByLabel('Name', { exact: true }).fill('');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(page.getByText('Name is required.')).toBeVisible();
 });
 
@@ -87,7 +87,7 @@ test('a value over 64 KB is rejected client-side before it reaches the api', asy
 
 	await page.getByLabel('Name', { exact: true }).fill('BIG_VALUE');
 	await page.getByLabel('Value', { exact: true }).fill('x'.repeat(70_000));
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
 	await expect(page.locator('#secrets').getByText('BIG_VALUE')).toHaveCount(0);
@@ -113,7 +113,7 @@ test('add via file stores the bytes, and they never reach the DOM', async ({ pag
 		mimeType: 'application/octet-stream',
 		buffer: bytes
 	});
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('SERVICE_ACCOUNT_KEY', { exact: true })).toBeVisible({
 		timeout: 5_000
@@ -147,7 +147,7 @@ test('a file over 64 KB is rejected client-side', async ({ page }) => {
 		mimeType: 'application/octet-stream',
 		buffer: Buffer.alloc(64 * 1024 + 1, 7)
 	});
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	await expect(page.getByText('Secret values are limited to 64 KB.')).toBeVisible();
 	await expect(page.locator('#secrets').getByText('BIG_FILE', { exact: true })).toHaveCount(0);
@@ -183,12 +183,12 @@ test('Load from file reads the value from the picked file', async ({ page }) => 
 	const bytes = Buffer.from('ssh-ed25519 AAAA picked\n');
 	await (await chooser).setFiles({ name: 'id_deploy', mimeType: 'text/plain', buffer: bytes });
 	await expect(page.getByTestId('secret-file-name')).toHaveText('id_deploy');
-	await expect(page.getByLabel('Value', { exact: true })).toBeDisabled();
+	await expect(page.getByLabel('Value', { exact: true })).toContainText('id_deploy');
 
 	const put = page.waitForRequest(
 		(r) => r.method() === 'PUT' && r.url().endsWith(`/projects/${p.id}/secrets/DEPLOY_KEY`)
 	);
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	const body = (await put).postDataJSON() as { value: string };
 	expect(body.value).toBe(bytes.toString('base64'));
 	await expect(page.getByText('DEPLOY_KEY', { exact: true })).toBeVisible();
@@ -280,7 +280,7 @@ test('on a phone a long name breaks at its underscores and Updated folds under i
 	await openAdd(page, p.id);
 	await page.getByLabel('Name', { exact: true }).fill(name);
 	await page.getByLabel('Value', { exact: true }).fill('whsec_x');
-	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
 	const cell = page.getByText(name, { exact: true });
 	await expect(cell).toBeVisible({ timeout: 5_000 });
 

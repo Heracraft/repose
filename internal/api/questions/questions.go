@@ -80,6 +80,12 @@ const (
 	ExpireGrace = 30 * time.Second
 )
 
+// PushFailed is the answer a secret question's close carries when the
+// UpdateSecrets op its answer queued ended in error (I-929): the secret is
+// stored, and the machine does not have it. guestd keeps no other answer
+// text for a secret question.
+const PushFailed = "push_failed"
+
 // Errors the HTTP layer maps to codes.
 var (
 	ErrClosed    = errors.New("questions: the question is no longer waiting")
@@ -89,6 +95,8 @@ var (
 	// or a secret for one that does not (DECISIONS I-929).
 	ErrSecret   = errors.New("questions: the question asks for a secret")
 	ErrNoSecret = errors.New("questions: the question does not ask for a secret")
+	// ErrBusy: another answer to the same secret question is being saved.
+	ErrBusy = errors.New("questions: another answer is being saved")
 )
 
 // Sender is hostmgr's Send.
@@ -148,9 +156,23 @@ func New(pool *db.Pool, ev *events.Ingest, send Sender, log *slog.Logger) *Servi
 }
 
 // clean trims s and makes it storable (no NUL or other control character
-// but newline and tab, valid UTF-8), at most n bytes.
+// but newline and tab, valid UTF-8), at most n bytes. It also drops the
+// bidi controls and zero-width characters (I-929): a question, a secret
+// question's reason above all, is text an agent wrote for the owner to
+// trust, and those would let it show the owner one thing and say another.
 func clean(s string, n int) string {
-	return store.CleanText(strings.TrimSpace(s), n)
+	return store.CleanText(strings.TrimSpace(strings.Map(dropHidden, s)), n)
+}
+
+// dropHidden removes the Unicode bidi embeddings, overrides and isolates,
+// and the zero-width space and marks. The zero-width joiner stays: emoji
+// sequences use it.
+func dropHidden(r rune) rune {
+	switch {
+	case r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069, r == 0x200b, r == 0x200e, r == 0x200f, r == 0x2060, r == 0xfeff:
+		return -1
+	}
+	return r
 }
 
 // OnQuestion records a guest's question (events.QuestionHandler). A repeat
@@ -259,7 +281,7 @@ func (s *Service) OnQuestion(ctx context.Context, ts time.Time, q *hostdv1.Agent
 			agent = "shell"
 		}
 		var window *string
-		if w := store.CleanText(q.TmuxWindow, events.MaxWindow); w != "" {
+		if w := store.CleanText(strings.Map(dropHidden, q.TmuxWindow), events.MaxWindow); w != "" {
 			window = &w
 		}
 		if _, err := s.pool.Exec(ctx, `insert into questions (id, project_id, guest_id, event_id, agent, tmux_window, text, options, state, expires_at, deliver_next_at, created_at, secret_name)
@@ -435,17 +457,18 @@ func (s *Service) AnswerOption(ctx context.Context, id uuid.UUID, opt int, via s
 }
 
 // SecretPut stores a secret question's value as the project's named
-// secret, inside the transaction that holds the question, and returns the
+// secret, inside the transaction that holds the question and on its
+// connection (Secrets.PutTx), and returns the
 // UpdateSecrets op it queued, nil when the machine is not running. It is
 // the http layer's secrets PUT, so the value takes the one path every
 // named secret takes (DECISIONS I-929).
 type SecretPut func(ctx context.Context, tx db.Tx, projectID uuid.UUID, name string) (*uuid.UUID, error)
 
 // AnswerSecret answers a question that asks for a secret: put stores the
-// value, and the question closes answered with no answer text. The row is
-// locked for the length of the put, so of two answers at once one stores
-// its value and closes the question, and the other is ErrClosed without
-// storing anything. The worker carries the close to the guest once the
+// value, and the question closes answered with no answer text, in one
+// commit. The row is locked for the length of the put, so of two answers
+// at once one stores its value and closes the question, and the other is
+// ErrClosed at once (nowait) without storing anything. The worker carries the close to the guest once the
 // op put returns has finished (Once).
 func (s *Service) AnswerSecret(ctx context.Context, userID uuid.UUID, id uuid.UUID, via string, put SecretPut) (*Question, error) {
 	if via != "cli" {
@@ -459,10 +482,18 @@ func (s *Service) AnswerSecret(ctx context.Context, userID uuid.UUID, id uuid.UU
 		return q, ErrNoSecret
 	}
 	var closed bool
+	var twins []uuid.UUID
 	err = db.InTx(ctx, s.pool, func(tx db.Tx) error {
 		var state string
 		var live bool
-		if err := tx.QueryRow(ctx, "select state, expires_at > now() from questions where id = $1 for update", id).Scan(&state, &live); err != nil {
+		// nowait: a second answer racing the first does not hold a pool
+		// connection while it waits for the lock; it is refused at once.
+		err := tx.QueryRow(ctx, "select state, expires_at > now() from questions where id = $1 for update nowait", id).Scan(&state, &live)
+		if db.IsLockNotAvailable(err) {
+			// The failed statement aborted the transaction: roll it back.
+			return ErrBusy
+		}
+		if err != nil {
 			return err
 		}
 		if state != StatePending || !live {
@@ -475,8 +506,18 @@ func (s *Service) AnswerSecret(ctx context.Context, userID uuid.UUID, id uuid.UU
 		}
 		_, err = tx.Exec(ctx, `update questions set state = 'answered', answer = null, answered_via = $2, answered_at = now(), deliver_next_at = now(), secret_op_id = $3
 			where id = $1`, id, via, op)
+		if err != nil {
+			return err
+		}
+		// Another agent of the project waiting on the same name has it
+		// now too: its question closes with this one, on the same push.
+		twins, err = closedIDs(tx.Query(ctx, `update questions set state = 'answered', answer = null, answered_via = $3, answered_at = now(), deliver_next_at = now(), secret_op_id = $4
+			where project_id = $1 and secret_name = $2 and state = 'pending' and expires_at > now() and id <> $5 returning id`, q.ProjectID, q.Secret, via, op, id))
 		return err
 	})
+	if errors.Is(err, ErrBusy) {
+		return q, ErrBusy
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -489,8 +530,8 @@ func (s *Service) AnswerSecret(ctx context.Context, userID uuid.UUID, id uuid.UU
 		}
 		return q, ErrClosed
 	}
-	s.log.Info("question answered with a secret", "event", "agent_question", "question_id", id.String(), "via", via)
-	s.replyInChat(ctx, "", id)
+	s.log.Info("question answered with a secret", "event", "agent_question", "question_id", id.String(), "via", via, "count", 1+len(twins))
+	s.replyInChat(ctx, "", append([]uuid.UUID{id}, twins...)...)
 	return s.Get(ctx, &userID, id)
 }
 
@@ -558,6 +599,9 @@ type pendingDelivery struct {
 	// resting: the api believes the machine is paused, so the delivery
 	// wakes it first (I-818).
 	resting bool
+	// pushFailed: the UpdateSecrets op a secret answer queued ended in
+	// error (I-929).
+	pushFailed bool
 }
 
 // Once expires overdue questions and sends every due delivery.
@@ -573,7 +617,8 @@ func (s *Service) Once(ctx context.Context) error {
 	}
 	var due []pendingDelivery
 	err = db.InTx(ctx, s.pool, func(tx db.Tx) error {
-		rows, err := tx.Query(ctx, `select q.id, q.project_id, q.guest_id, q.state, q.answer, p.host_id, q.created_at, p.resting_since is not null
+		rows, err := tx.Query(ctx, `select q.id, q.project_id, q.guest_id, q.state, q.answer, p.host_id, q.created_at, p.resting_since is not null,
+			coalesce((select o.state = 'error' from ops o where o.id = q.secret_op_id), false)
 			from questions q join projects p on p.id = q.project_id and p.guest_id = q.guest_id
 			where q.state <> 'pending' and q.delivered_at is null and q.deliver_next_at <= $1
 			and (q.secret_op_id is null or exists (select 1 from ops o where o.id = q.secret_op_id and o.state in ('done', 'error')))
@@ -583,7 +628,7 @@ func (s *Service) Once(ctx context.Context) error {
 		}
 		for rows.Next() {
 			var d pendingDelivery
-			if err := rows.Scan(&d.id, &d.projectID, &d.guestID, &d.state, &d.answer, &d.hostID, &d.created, &d.resting); err != nil {
+			if err := rows.Scan(&d.id, &d.projectID, &d.guestID, &d.state, &d.answer, &d.hostID, &d.created, &d.resting, &d.pushFailed); err != nil {
 				rows.Close()
 				return err
 			}
@@ -631,6 +676,11 @@ func (s *Service) deliver(ctx context.Context, now time.Time, d pendingDelivery)
 	answer := ""
 	if d.answer != nil && d.state == StateAnswered {
 		answer = *d.answer
+	}
+	if d.pushFailed && d.state == StateAnswered {
+		// The secret is stored but did not reach the machine: the one
+		// answer text a secret question carries (I-929).
+		answer = PushFailed
 	}
 	cmd := &hostdv1.Command{CommandId: cmdID.String(), Cmd: &hostdv1.Command_AnswerQuestion{AnswerQuestion: &hostdv1.AnswerQuestion{
 		GuestId: d.guestID.String(), QuestionId: d.id.String(), Status: d.state, Answer: answer,
@@ -683,7 +733,7 @@ func Describe(q *Question) string {
 			return "answered in the terminal"
 		}
 		if q.Secret != "" {
-			return "already answered: " + q.Secret + " is set"
+			return "already answered: " + q.Secret + " is saved"
 		}
 		if q.Answer != nil {
 			return fmt.Sprintf("already answered: %s", *q.Answer)
@@ -736,7 +786,7 @@ func CloseLine(q *Question) string {
 			where = "from " + via
 		}
 		if q.Secret != "" {
-			return "Set " + q.Secret + " " + where
+			return "Saved " + q.Secret + " " + where
 		}
 		if len(q.Options) > 0 {
 			return "Answered " + *q.Answer + " " + where

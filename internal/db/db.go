@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -112,6 +113,13 @@ func TryLock(ctx context.Context, pool *Pool, id int64) (release func(), ok bool
 
 // IsNoRows reports whether err is pgx.ErrNoRows.
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
+// IsLockNotAvailable reports a `for update nowait` that found the row
+// locked (SQLSTATE 55P03).
+func IsLockNotAvailable(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "55P03"
+}
 
 // EnsurePartitions creates the monthly partitions of meter_samples and
 // proc_samples covering ts and the following month, idempotently.

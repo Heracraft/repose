@@ -41,7 +41,11 @@ const config = {
 					'ws://localhost:*'
 				],
 				'object-src': ['none'],
-				'base-uri': ['self']
+				'base-uri': ['self'],
+				// No page is framed: the secret dialog (I-929) must not sit
+				// under another site's overlay. Sent as a header; a page whose
+				// CSP is a meta tag leaves it out, as browsers ignore it there.
+				'frame-ancestors': ['none']
 			}
 		}
 	}

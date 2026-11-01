@@ -78,7 +78,8 @@ with REASON saying what it is for and where they get it. They paste it on
 the dashboard or into ` + "`repose reply`" + `, never into a notification. It
 is stored as the project's secret NAME, and repose-ask returns once the
 machine has it: the next command reads $NAME and
-/run/repose/secrets/NAME. Nothing is printed on stdout.
+/run/repose/secrets/NAME. Nothing is printed on stdout. It waits 2 hours
+without --timeout.
 
 --cancel withdraws this agent's open questions, or the one with ID (printed
 on stderr when it was asked), or with --all every open question on the
@@ -390,6 +391,7 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 		}
 	}
 	short := socketClient(o.socket, Timeout)
+	asked := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	code, body, err := call(ctx, short, http.MethodPost, "/ask", hooks.AskPayload{Agent: o.agent, Window: o.window, Text: text, Options: o.options, TimeoutS: uint32(o.timeout / time.Second), Secret: o.secret})
 	cancel()
@@ -398,6 +400,10 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 		return ExitError
 	}
 	if code != http.StatusCreated {
+		if code == http.StatusConflict && strings.Contains(string(body), "secret_not_relayed") {
+			_, _ = fmt.Fprintf(stderr, "repose-ask: this machine's host cannot carry a secret question yet; ask the owner to run `repose secrets set %s`\n", o.secret)
+			return ExitError
+		}
 		if code == http.StatusBadRequest {
 			_, _ = fmt.Fprintf(stderr, "repose-ask: guestd refused the question: %s\n", strings.TrimSpace(string(body)))
 			return ExitUsage
@@ -498,11 +504,22 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 		switch out.st.State {
 		case "answered":
 			if o.secret != "" {
+				if out.st.Answer == questions.PushFailed {
+					_, _ = fmt.Fprintf(stderr, "repose-ask: the owner set %s, but the push to this machine failed; ask them to run `repose secrets set %s` again\n", o.secret, o.secret)
+					return ExitError
+				}
 				return secretArrived(o.secret, stderr)
 			}
 			_, _ = fmt.Fprintln(stdout, out.st.Answer)
 			return ExitOK
 		case "expired":
+			// The owner may have answered in the last minutes, while the
+			// push was still on its way: a secret file written since the
+			// ask is the answer (I-929).
+			if o.secret != "" && secretWrittenSince(o.secret, asked) {
+				_, _ = fmt.Fprintf(stderr, "repose-ask: %s is set; the next command reads $%s\n", o.secret, o.secret)
+				return ExitOK
+			}
 			_, _ = fmt.Fprintln(stderr, "repose-ask: no answer before the timeout")
 			return ExitTimeout
 		case "no_channel":
@@ -534,6 +551,12 @@ func secretArrived(name string, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintf(stderr, "repose-ask: %s is set; the next command reads $%s\n", name, name)
 	return ExitOK
+}
+
+// secretWrittenSince reports whether guestd wrote the secret name after t.
+func secretWrittenSince(name string, t time.Time) bool {
+	st, err := os.Stat(filepath.Join(secretsDir(), name))
+	return err == nil && !st.ModTime().Before(t)
 }
 
 // runCancel is repose-ask --cancel [ID | --all]: withdraw open questions

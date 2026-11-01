@@ -334,7 +334,7 @@ var readHiddenAnswer = func(e *Env, name string) ([]byte, error) {
 }
 
 // answerSecret answers a question that asks for a secret (DECISIONS
-// I-929): the value comes from a prompt that does not echo, or from
+// I-929): the value comes from a masked prompt (one `*` a character), or from
 // standard input, never from the command line, where it would stay in
 // the shell's history.
 func answerSecret(ctx context.Context, e *Env, q Question, args []string, in io.Reader, interactive bool) error {
@@ -371,7 +371,7 @@ func answerSecret(ctx context.Context, e *Env, q Question, args []string, in io.
 	if e.JSON {
 		return writeJSONOut(e.Out, got)
 	}
-	_, _ = fmt.Fprintf(e.Out, "Set %s in %s for %s.\n", q.Secret, q.Project, questionAsker(q))
+	_, _ = fmt.Fprintf(e.Out, "Set %s on %s for %s.\n", q.Secret, q.Project, questionAsker(q))
 	return nil
 }
 

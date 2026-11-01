@@ -86,6 +86,9 @@ type Server struct {
 	// questions backs /notify and /ask once EnableAsk is called (I-244).
 	questions *questions.Store
 	msgSink   Sink
+	// secretRelay says whether the connected hostd relays a secret
+	// question's name (I-929); nil, or false, refuses `--secret`.
+	secretRelay func() bool
 	// procRoot is where the caller's process tree is read, /proc on a
 	// guest.
 	procRoot string

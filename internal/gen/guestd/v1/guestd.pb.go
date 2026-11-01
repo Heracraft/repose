@@ -183,8 +183,14 @@ func (x *Secret) GetValue() []byte {
 	return nil
 }
 
+// features names what the pinging hostd relays that an older one does
+// not (DECISIONS I-929): "question_secret", AgentQuestion.secret. guestd
+// takes a `repose-ask --secret` only after a hostd has said so, because
+// an older hostd would drop the name and pass the question on as one the
+// owner answers in text.
 type Ping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Features      []string               `protobuf:"bytes,1,rep,name=features,proto3" json:"features,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,6 +223,13 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
 	return file_repose_guestd_v1_guestd_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Ping) GetFeatures() []string {
+	if x != nil {
+		return x.Features
+	}
+	return nil
 }
 
 type Freeze struct {
@@ -2076,8 +2089,9 @@ const file_repose_guestd_v1_guestd_proto_rawDesc = "" +
 	"\x04body\"2\n" +
 	"\x06Secret\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value\"\x06\n" +
-	"\x04Ping\"\b\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\"\"\n" +
+	"\x04Ping\x12\x1a\n" +
+	"\bfeatures\x18\x01 \x03(\tR\bfeatures\"\b\n" +
 	"\x06Freeze\"\x06\n" +
 	"\x04Thaw\"v\n" +
 	"\x06Switch\x12%\n" +

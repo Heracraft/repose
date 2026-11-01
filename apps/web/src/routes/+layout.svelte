@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { Toaster } from 'svelte-sonner';
 	import { authState, initAuth } from '$lib/auth.svelte';
+	import { isAnswerReturn, signinHref } from '$lib/signin';
 	import { reachability } from '$lib/api/reachability.svelte';
 	import { init as initTheme, theme } from '$lib/theme.svelte';
 	import SiteHeader from '$lib/components/SiteHeader.svelte';
@@ -51,7 +52,11 @@
 	$effect(() => {
 		if (authState.authenticated === undefined) return;
 		if (!authState.authenticated && isPrivate(page.url.pathname)) {
-			void goto(resolve('/'));
+			// A notification's link to a secret question signs in and comes
+			// back to it (I-929): the owner tapped it to answer.
+			const here = page.url.pathname + page.url.search;
+			if (isAnswerReturn(here)) location.assign(signinHref(here));
+			else void goto(resolve('/'));
 		}
 	});
 

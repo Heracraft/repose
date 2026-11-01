@@ -32,6 +32,8 @@ type guestSide struct {
 	asked    []questions.Question
 	// herdr resolves herdr pane ids as guestd's watcher would.
 	herdr hooks.HerdrResolver
+	// noRelay: the hostd has not said it relays a secret's name (I-929).
+	noRelay bool
 }
 
 func newGuestSide(t *testing.T) *guestSide {
@@ -64,6 +66,7 @@ func (g *guestSide) start(t *testing.T) {
 	}, log, nil)
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
 	srv.SetHerdrResolver(g.herdr)
+	srv.SetSecretRelay(func() bool { return !g.noRelay })
 	srv.EnableAsk(g.store, func(agent, window, kind, summary string) {
 		g.mu.Lock()
 		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary}, "|"))
@@ -480,6 +483,18 @@ func TestAskSecret(t *testing.T) {
 		_ = g.store.Answer(q.ID, questions.StateAnswered, "")
 		if c := waitExit(t, done); c != ExitError || out.Len() != 0 || !strings.Contains(errb.String(), "has not reached this machine") {
 			t.Fatalf("exit %d stdout %q stderr %q", c, out, errb)
+		}
+	})
+	t.Run("a hostd that drops the name: refused before anyone is asked", func(t *testing.T) {
+		g.noRelay = true
+		defer func() { g.noRelay = false }()
+		n := len(g.asked)
+		done, _, errb := ask([]string{"--secret", "KEY", "why"}, make(chan os.Signal))
+		if c := waitExit(t, done); c != ExitError || !strings.Contains(errb.String(), "repose secrets set KEY") {
+			t.Fatalf("exit %d stderr %q", c, errb)
+		}
+		if len(g.asked) != n {
+			t.Fatal("the question reached hostd")
 		}
 	})
 	t.Run("usage", func(t *testing.T) {

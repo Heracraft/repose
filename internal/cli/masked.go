@@ -17,6 +17,14 @@ import (
 // errMaskedInterrupted is Ctrl-C at a masked prompt.
 var errMaskedInterrupted = errors.New("interrupted")
 
+// errMaskedMultiline is a paste of several lines at a masked prompt.
+var errMaskedMultiline = exitf(ExitUsage, "The pasted value has more than one line, and this prompt takes one. Pipe it in instead: `cat FILE | repose ...`.")
+
+func peekIs(br *bufio.Reader, c byte) bool {
+	b, err := br.Peek(1)
+	return err == nil && b[0] == c
+}
+
 // readMasked reads one line from r, a terminal in raw mode, and writes
 // one `*` to w for every character it takes, so a secret typed or pasted
 // at `repose secrets set` shows that it arrived without showing what it
@@ -46,6 +54,14 @@ func readMasked(r io.Reader, w io.Writer) ([]byte, error) {
 		}
 		switch {
 		case b == '\r' || b == '\n':
+			// More bytes already here after the line ends is a paste of
+			// several lines (a PEM key): keeping the first would store
+			// a value that looks set and is not. The rest is read off,
+			// so it does not reach the shell (I-929).
+			if br.Buffered() > 0 && !(b == '\r' && br.Buffered() == 1 && peekIs(br, '\n')) {
+				_, _ = br.Discard(br.Buffered())
+				return nil, errMaskedMultiline
+			}
 			return line, nil
 		case b == 0x03: // Ctrl-C
 			return nil, errMaskedInterrupted
@@ -118,6 +134,9 @@ func readHiddenLine() ([]byte, error) {
 	_, _ = fmt.Fprintln(os.Stderr)
 	if errors.Is(err, errMaskedInterrupted) {
 		return nil, silent(ExitInterrupted)
+	}
+	if errors.Is(err, errMaskedMultiline) {
+		return nil, err
 	}
 	if err != nil && len(line) == 0 {
 		return nil, exitf(ExitUsage, "No value given.")

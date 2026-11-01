@@ -4,7 +4,7 @@
 // as the project's secret, never as an answer. A notification's link
 // (?answer=<id>) opens the same dialog.
 import { test, expect } from '@playwright/test';
-import { signIn, createProject, apiURLFromEnv, addQuestion } from './helpers';
+import { signIn, createProject, apiURLFromEnv, addQuestion, closeQuestion } from './helpers';
 
 test.beforeEach(async ({ page }) => {
 	await signIn(page);
@@ -35,7 +35,7 @@ test('Enter NAME opens the dialog; the pasted value is stored as the secret', as
 
 	const dialog = page.getByRole('dialog', { name: 'STRIPE_WEBHOOK_SECRET' });
 	await expect(dialog).toBeVisible();
-	await expect(dialog).toContainText('claude asks for a secret on');
+	await expect(dialog).toContainText('claude asks for it on');
 	await expect(dialog).toContainText('Signing secret.');
 	const value = dialog.getByLabel('Value', { exact: true });
 	await expect(value).toBeFocused();
@@ -47,17 +47,19 @@ test('Enter NAME opens the dialog; the pasted value is stored as the secret', as
 		if (r.method() === 'POST' && r.url().endsWith(`/questions/${q.id}/answer`))
 			sent = r.postDataJSON();
 	});
-	await dialog.getByRole('button', { name: 'Save STRIPE_WEBHOOK_SECRET' }).click();
+	await dialog.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect(dialog.getByText('Paste the value.')).toBeVisible();
 
-	// A copied value's trailing newline is dropped; nothing else is.
-	await value.fill(' whsec_test_123 \n');
-	await expect(dialog).toContainText('16 B');
-	await value.press('Control+Enter');
+	// Spaces are kept, and said.
+	await value.fill(' whsec_test_123 ');
+	await expect(dialog).toContainText('16 B, starts and ends with a space');
+	// The field is a password field: a screen reader does not read it out.
+	await expect(value).toHaveAttribute('type', 'password');
+	await value.press('Enter');
 	await expect(dialog).toBeHidden();
 	expect(sent?.answer).toBeUndefined();
 	expect(atob(sent?.value ?? '')).toBe(' whsec_test_123 ');
-	await expect(row).toContainText('Set STRIPE_WEBHOOK_SECRET');
+	await expect(row).toContainText('Saved STRIPE_WEBHOOK_SECRET');
 	expect(await secretsOf(p.id)).toContain('STRIPE_WEBHOOK_SECRET');
 	// The value is nowhere in the page once it is sent.
 	expect(await page.content()).not.toContain('whsec_test_123');
@@ -87,4 +89,43 @@ test('a notification link opens the dialog; Escape closes it without answering',
 	// Reopened, the field is empty: the value did not stay in the page.
 	await page.getByRole('button', { name: 'Enter OPENAI_API_KEY' }).click();
 	await expect(dialog.getByLabel('Value', { exact: true })).toHaveValue('');
+});
+
+test('a pasted PEM goes in whole; a closed question offers Save anyway', async ({ page }) => {
+	const p = await createProject(apiURLFromEnv(), {
+		name: 'ask-pem',
+		remote_url: 'github.com/heracraft/ask-pem'
+	});
+	const q = await addQuestion(p.id, {
+		agent: 'claude',
+		secret: 'DEPLOY_KEY',
+		text: 'The deploy key.'
+	});
+	await page.goto(`/projects/${p.id}`);
+	await page.getByRole('button', { name: 'Enter DEPLOY_KEY' }).click();
+	const dialog = page.getByRole('dialog', { name: 'DEPLOY_KEY' });
+	const pem = '-----BEGIN KEY-----\nMIIE\n-----END KEY-----\n';
+	await dialog.getByLabel('Value', { exact: true }).evaluate((el, text) => {
+		const dt = new DataTransfer();
+		dt.setData('text/plain', text);
+		el.dispatchEvent(
+			new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
+		);
+	}, pem);
+	const area = dialog.getByLabel('Value', { exact: true });
+	await expect(area).toHaveJSProperty('tagName', 'TEXTAREA');
+	await expect(dialog).toContainText('3 lines');
+
+	// The agent stops waiting before the save lands.
+	await closeQuestion(q.id, 'asker_gone');
+	let put: string | undefined;
+	page.on('request', (r) => {
+		if (r.method() === 'PUT' && r.url().endsWith(`/projects/${p.id}/secrets/DEPLOY_KEY`))
+			put = (r.postDataJSON() as { value: string }).value;
+	});
+	await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(dialog).toContainText('The question is closed');
+	await dialog.getByRole('button', { name: 'Save anyway' }).click();
+	await expect(dialog).toBeHidden();
+	expect(atob(put ?? '')).toBe(pem.replace(/\n$/, ''));
 });

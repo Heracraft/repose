@@ -690,8 +690,10 @@
 
 /* A dashboard section: no border, no fill. PageShell owns the space under
    the title, so the first section adds none. */
+/* 3.5rem (I-929): at 2.75rem a section's head read as one more row of the
+   section above it, in dark mode most, where the rules are faintest. */
 .hk .hk-section {
-	margin-top: 2.75rem;
+	margin-top: 3.5rem;
 }
 .hk .hk-section:first-child {
 	margin-top: 0;
@@ -704,7 +706,9 @@
 	gap: 0.5rem 1rem;
 	margin-bottom: 0.875rem;
 }
-.hk .hk-section-head > :not(h2, h3) {
+/* Its notes are quiet; a button there keeps its own ink (I-929: "Add
+   secret" read as disabled). */
+.hk .hk-section-head > :not(h2, h3, button, a.hk-btn, a.hk-btn-secondary) {
 	font-size: 0.8125rem;
 	color: var(--hk-text-3);
 }

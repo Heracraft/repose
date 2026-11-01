@@ -163,7 +163,11 @@
 					>{/if}<span class="qrow-closed-text">{q.text}</span></span
 			>
 			<span class="qrow-closed-outcome" data-testid="question-outcome">
-				{#if closed.answer !== undefined}
+				{#if q.secret && closed.text.startsWith(`Saved ${q.secret}`)}
+					Saved <span class="qrow-answer-word qrow-secret-word">{q.secret}</span>{closed.text.slice(
+						`Saved ${q.secret}`.length
+					)}
+				{:else if closed.answer !== undefined}
 					Answered <span class="qrow-answer-word">{closed.answer}</span>{closed.text.slice(
 						'Answered '.length + closed.answer.length
 					)}
@@ -220,7 +224,8 @@
 						data-testid="question-secret"
 						disabled={busy}
 						onclick={() => onsecret?.()}
-						>Enter <span class="qrow-secret-name">{q.secret}</span></button
+						aria-label={`Enter ${q.secret}`}
+						>Enter&nbsp;<span class="qrow-secret-name">{q.secret}</span></button
 					>
 				{:else if q.options.length > 0}
 					{#if !inline}{@render options()}{/if}
@@ -290,6 +295,10 @@
 	.qrow-answer-word {
 		font-weight: 500;
 		color: var(--hk-text);
+	}
+	.qrow-secret-word {
+		font-family: var(--hk-font-mono);
+		font-size: 0.8125rem;
 	}
 	.qrow-line {
 		display: flex;
@@ -384,8 +393,17 @@
 		resize: none;
 		overflow-y: hidden;
 	}
+	/* A long name gives way, so the button never widens the row. */
+	.qrow-secret {
+		max-width: 100%;
+		min-width: 0;
+		overflow: hidden;
+	}
 	.qrow-secret-name {
-		margin-left: 0.25rem;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		font-family: var(--hk-font-mono);
 		font-size: 0.75rem;
 	}

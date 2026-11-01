@@ -59,7 +59,7 @@
 	}
 
 	function replaces(n: string): string | undefined {
-		return secrets?.some((s) => s.name === n) ? 'It replaces the current value.' : undefined;
+		return secrets?.some((s) => s.name === n) ? `Replaces your account’s current ${n}.` : undefined;
 	}
 
 	function keep(n: string) {

@@ -2025,8 +2025,9 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 			"PROJECT; otherwise every word is the answer, which works while one question is\n" +
 			"waiting. Put -- before an answer that starts with a project's name. With no\n" +
 			"answer, ask for one. When the question has options, the answer is one of them.\n" +
-			"A question that asks for a secret takes its value at a prompt that does not\n" +
-			"echo, or from standard input, and stores it as the project's secret.\n" +
+			"A question that asks for a secret takes its value at a prompt that shows a *\n" +
+			"for each character, or from standard input, and stores it as the project's\n" +
+			"secret. A value of several lines has to come from standard input.\n" +
 			"--dismiss [PROJECT] cancels the question without an answer.",
 		Example: "  repose reply yes\n  repose reply todo-app \"use the staging database\"\n  repose reply --question 7f3a -- todo-app is fine\n  op read op://dev/stripe/key | repose reply todo-app\n  repose reply --dismiss todo-app",
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -98,6 +98,8 @@ func questionErr(q *questions.Question, err error) error {
 		return errf("invalid", "answer is required")
 	case errors.Is(err, questions.ErrSecret):
 		return withDetail(errf("invalid", "this question asks for the secret %s: send its value", q.Secret), map[string]any{"secret": q.Secret})
+	case errors.Is(err, questions.ErrBusy):
+		return errf("conflict", "another answer to this question is being saved")
 	case errors.Is(err, questions.ErrNoSecret):
 		return errf("invalid", "this question takes a written answer, not a secret")
 	}
@@ -162,7 +164,7 @@ func (s *Server) answerSecret(w http.ResponseWriter, r *http.Request, qid uuid.U
 		if projectID != p.ID {
 			return nil, db.ErrNotFound
 		}
-		if err := s.d.Secrets.Put(ctx, u.ID.String(), p.ID.String(), name, value); err != nil {
+		if err := s.d.Secrets.PutTx(ctx, tx, u.ID.String(), p.ID.String(), name, value); err != nil {
 			if errors.Is(err, secrets.ErrInvalidName) || errors.Is(err, secrets.ErrTooLarge) {
 				return nil, errf("invalid", "%v", err)
 			}

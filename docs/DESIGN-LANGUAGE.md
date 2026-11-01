@@ -189,7 +189,7 @@ Guide B 10.1 on repose's frame:
 |---|---|
 | Page top to title | 1.75rem, 2.25rem from 640px (PageShell) |
 | Title block to content | 1.75rem |
-| Between dashboard sections | 2.75rem |
+| Between dashboard sections | 3.5rem (I-929) |
 | Section head to its content | 0.875rem |
 | Row padding | 0.75rem (facts), 0.875rem (kit rows, questions) |
 | Table row, skeleton row | 56px |
@@ -860,7 +860,7 @@ the page tabs sit 1.25rem under the title on a full-width hairline.
 ## Sections
 
 A dashboard page is sections on the page colour: `hk-section` (repose),
-2.75rem apart, a `hk-section-head` row with an `h2.hk-h2-app` and, on the
+3.5rem apart (I-929), a `hk-section-head` row with an `h2.hk-h2-app` and, on the
 right, a 13px `--hk-text-3` caption or one small button. No border, no fill,
 no card. Rows inside are hairlines. A panel (`hk-panel`, 12px corners, a
 1px border on the surface) is only for plan cards; panels are never nested.

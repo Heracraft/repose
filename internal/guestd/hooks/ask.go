@@ -87,6 +87,11 @@ func (s *Server) EnableAsk(q *questions.Store, msg Sink) {
 	s.mux.HandleFunc("DELETE /ask/{id}", s.handleAskCancel)
 }
 
+// SetSecretRelay tells the ask routes whether a `repose-ask --secret` may
+// open now: only while the hostd that last pinged said it relays the
+// secret's name (DECISIONS I-929).
+func (s *Server) SetSecretRelay(relays func() bool) { s.secretRelay = relays }
+
 // callerAgent is the agent a notify or an ask is attributed to: the one the
 // client named if it is one of the five, else "shell".
 func callerAgent(name string) string {
@@ -145,6 +150,10 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	if p.Secret != "" {
 		if len(p.Options) > 0 {
 			s.reject(w, r, http.StatusBadRequest, "invalid_question")
+			return
+		}
+		if s.secretRelay == nil || !s.secretRelay() {
+			s.reject(w, r, http.StatusConflict, "secret_not_relayed")
 			return
 		}
 		q, err = s.questions.OpenSecret(agent, window, s.agentProcOf(r, agent), p.Secret, p.Text, time.Duration(p.TimeoutS)*time.Second)

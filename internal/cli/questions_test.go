@@ -336,7 +336,7 @@ func TestReplySecret(t *testing.T) {
 		t.Fatalf("stored %q %v", v, ok)
 	}
 	got := fake.Questions()[0]
-	if got.State != "answered" || got.Answer != nil || !strings.Contains(out.buf.String(), "Set STRIPE_KEY in todo-app") {
+	if got.State != "answered" || got.Answer != nil || !strings.Contains(out.buf.String(), "Set STRIPE_KEY on todo-app") {
 		t.Fatalf("%+v %q", got, out.buf.String())
 	}
 

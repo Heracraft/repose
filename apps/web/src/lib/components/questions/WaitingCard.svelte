@@ -23,7 +23,8 @@
 		listAccountSecrets,
 		listProjectQuestions,
 		listQuestions,
-		listSecrets
+		listSecrets,
+		putSecret
 	} from '$lib/api/client';
 	import { ApiError } from '$lib/api/errors';
 	import { PollFailure, PollGroup, toastApiError } from '$lib/api/toast';
@@ -131,11 +132,18 @@
 	// The question whose secret the dialog takes (I-929), and what that
 	// name would replace on its project, read when the dialog opens.
 	let asking = $state<Question | undefined>(undefined);
+	/**
+	 * Why the question can no longer take the value (it closed: expired,
+	 * dismissed, the agent stopped): Save then stores it as the project's
+	 * secret without answering, so a pasted value is not lost (I-929).
+	 */
+	let orphaned = $state<string | undefined>(undefined);
 	let ownNames = $state<Set<string>>(new Set());
 	let accountNames = $state<Set<string>>(new Set());
 
-	async function openSecret(q: Question) {
+	async function openSecret(q: Question, closedHow?: string) {
 		asking = q;
+		orphaned = closedHow;
 		ownNames = new Set();
 		accountNames = new Set();
 		try {
@@ -152,9 +160,25 @@
 	}
 
 	function replaces(name: string): string | undefined {
-		if (ownNames.has(name)) return 'It replaces the current value.';
-		if (accountNames.has(name)) return 'This project uses it in place of your account’s.';
+		const p = asking?.project ?? 'the project';
+		if (ownNames.has(name)) return `Replaces ${p}’s current ${name}.`;
+		if (accountNames.has(name)) return `${p} uses it in place of your account’s ${name}.`;
 		return undefined;
+	}
+
+	/** Stores the value as the project's secret, the question being closed. */
+	async function saveOrphan(q: Question, base64: string): Promise<string | undefined> {
+		try {
+			await putSecret(q.project_id, q.secret ?? '', base64);
+			toast.success(`Saved ${q.secret} on ${q.project}.`);
+			asking = undefined;
+			orphaned = undefined;
+			return undefined;
+		} catch (err) {
+			if (err instanceof ApiError && err.code === 'invalid') return err.message;
+			toastApiError(err, 'Could not save the secret.');
+			return 'Could not save the secret. Try again.';
+		}
 	}
 
 	async function saveSecret(q: Question, base64: string): Promise<string | undefined> {
@@ -169,13 +193,14 @@
 			return undefined;
 		} catch (err) {
 			if (err instanceof ApiError && err.code === 'conflict') {
-				// Closed elsewhere first: the row says how, and nothing was stored.
-				asking = undefined;
+				// Closed elsewhere first: nothing was stored. The dialog keeps
+				// the value and offers to save it as the project's secret.
 				const theirs = err.detail?.question as Question | undefined;
 				if (theirs) close(theirs);
-				await refresh();
+				void refresh();
 				if (projectId) void pendingQuestions.refresh();
-				toast.info(`Not saved: ${err.message}.`);
+				if (!theirs) return `Not saved: ${err.message}.`;
+				orphaned = closedLine(theirs).text;
 				return undefined;
 			}
 			if (err instanceof ApiError && err.code === 'invalid') return err.message;
@@ -208,7 +233,7 @@
 						? await listProjectQuestions(projectId, false, { passive: true })
 						: await listQuestions('all', { passive: true });
 					const c = all.find((x) => x.id === want);
-					if (c?.state === 'pending' && c.secret) void openSecret(c);
+					if (c?.secret) void openSecret(c, c.state === 'pending' ? undefined : closedLine(c).text);
 					else if (c) toast.info(`That question is closed: ${closedLine(c).text}.`);
 				} catch {
 					// The card still shows what waits.
@@ -357,14 +382,24 @@
 	open={!!asking}
 	mode="ask"
 	name={asking?.secret ?? ''}
-	agent={asking?.window || asking?.agent || ''}
+	agent={asking?.agent ?? ''}
 	reason={asking?.text ?? ''}
 	target={asking?.project}
 	existing={replaces}
-	onsave={(_, b64) => (asking ? saveSecret(asking, b64) : Promise.resolve(undefined))}
+	notice={orphaned
+		? `The question is closed (${orphaned.toLowerCase()}). Save stores ${asking?.secret} on ${asking?.project} without answering it.`
+		: undefined}
+	saveLabel={orphaned ? 'Save anyway' : 'Save'}
+	onsave={(_, b64) =>
+		asking
+			? orphaned
+				? saveOrphan(asking, b64)
+				: saveSecret(asking, b64)
+			: Promise.resolve(undefined)}
 	onclose={() => {
 		const id = asking?.id;
 		asking = undefined;
+		orphaned = undefined;
 		if (id)
 			void tick().then(() =>
 				section?.querySelector<HTMLElement>(`[data-qid="${id}"] [data-qrow-first]`)?.focus()

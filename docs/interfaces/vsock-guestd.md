@@ -14,7 +14,7 @@ framing; hostd picks by flag.
 
 | Request | Fields | Response | Notes |
 |---|---|---|---|
-| `Ping` | | version, uptime_s, boot_id | also the readiness check after boot; `version` is the guestd *protocol* version (`1` today), which is what hostd compares before sending a request a guest may not know |
+| `Ping` | features (field 1, I-929: what this hostd relays that an older one does not; `question_secret` is `AgentQuestion.secret`, without which guestd refuses `repose-ask --secret`) | version, uptime_s, boot_id | also the readiness check after boot; `version` is the guestd *protocol* version (`1` today), which is what hostd compares before sending a request a guest may not know |
 | `Freeze` | | | `fsfreeze -f /`; guestd sets a 10 s watchdog that thaws if no `Thaw` arrives |
 | `Thaw` | | | |
 | `Switch` | system_closure, force_reboot, registration (bytes, I-67) | rebooted (bool), needs_reboot (bool), output (capped 32 KB) | loads `registration` (a `nix-store --dump-db` of the closure) into the guest's nix database when present, then runs `<closure>/bin/switch-to-configuration switch`; if the closure's kernel or initrd differ from the running one, responds `needs_reboot=true` and does nothing unless `force_reboot`. Before anything, a closure or registered path an overlayfs whiteout in the guest's upper store dir hides is refused with `store_path_hidden` (DECISIONS I-589; an older guestd said `not_found`) |
@@ -26,7 +26,7 @@ framing; hostd picks by flag.
 | `Sample` | | GuestSignals + repeated ProcSample (shapes in grpc-hostd.md) + partial (bool) + cpu_pressure_us_total + mem_used_bytes (I-493: the `/proc/pressure/cpu` "some" total since boot, and MemTotal less MemAvailable; 0 when unreadable, never a reason for `partial`) + root_used_bytes + root_size_bytes (I-567: statfs of `/`, blocks less those available to `dev` and blocks, in bytes; both 0 when statfs fails, and absent, so 0, from a guestd older than I-567, which hostd accepts; never a reason for `partial`) | hostd calls every 60 s. guestd walks `/proc` on the call and serves the tmux and Docker signals from a 5 s background refresh, so a sample costs under 20 ms and never forks (DECISIONS I-31). `partial` is set when a signal is missing rather than zero. The same 5 s refresh sets `oom_score_adj` (I-200): -800 for the tmux server and each agent window's agent process, -800 for the herdr server and each agent in its tree (I-505; by binary name, `node` left out, so Gemini CLI under herdr gets no -800, I-535), -800 for `dev`'s `sshd-session`, every `tmux: client` and every `herdr` process and -900 for `dev`'s user manager (I-576), 0 for any other `dev` process holding a negative value; and nice -5 on each herdr server thread, 0 for any other process in its tree below 0 (I-505). Agents come from both multiplexers' sources, unioned (I-504); `tmux_clients` stays tmux's count and is 0 on a herdr machine |
 | `Exec` | argv, timeout_s, as_user | exit_code, stdout, stderr | operator only; hostd audits every call. hostd's **own** uses are not operator Execs and carry no `audit_id`: the write-back before a freeze or an idle pause (`sync`, and `sync; echo 3 > /proc/sys/vm/drop_caches` for a guest with the balloon), the clock step after a resume or a wake (`date -u -s @<unix>`), and the read of the next systemd timer elapse before a pause (`systemctl show '*.timer' --property=NextElapseUSecRealtime`, and the same through `systemctl --user -M dev@` for `dev`'s manager). The idle pause adds no guestd request for any of it (DECISIONS I-818): a new one would need the version negotiation line 17 promises and the code does not have, and a guest base rebuild on every machine, so the pause reaches machines that are already running |
 | `Shutdown` | timeout_s | | `systemctl poweroff` after flushing |
-| `AnswerQuestion` | question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | | closes a question a `repose-ask` is waiting on (DECISIONS I-244); a repeat for a question already closed is a no-op, an unknown question_id is `not_found` (the guest rebooted, and its questions with it). The answer is tenant text and is never logged |
+| `AnswerQuestion` | question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | | closes a question a `repose-ask` is waiting on (DECISIONS I-244); a repeat for a question already closed is a no-op, an unknown question_id is `not_found` (the guest rebooted, and its questions with it). The answer is tenant text and is never logged. For a secret question (I-929) guestd keeps no answer but `push_failed`: the secret is stored and its push failed |
 
 ## Notifications (guestd → hostd)
 
@@ -84,7 +84,8 @@ or `agent_done` when `kind` is `agent_done` (any other kind is `400 unknown_kind
 open, expires_at, secret?}`, announced as a `Question`; `secret` (I-929) asks
 for that named secret instead of a written answer, takes no `options`
 (`400 invalid_question`), and is echoed so the caller knows guestd took it
-as one; `GET /ask/<id>?wait=<s>` (at
+as one. guestd answers `409 secret_not_relayed` until a hostd's Ping has
+named `question_secret` in `features`; `GET /ask/<id>?wait=<s>` (at
 most 25) → `{id, state, answer?, reason?, expires_at}` once the question closes or
 the wait ends, and records the poll; `DELETE /ask/<id>?reason=interrupted|withdrawn`
 (default `interrupted`) → 204, closes it `cancelled` with that reason, `409

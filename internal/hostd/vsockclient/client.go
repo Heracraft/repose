@@ -145,8 +145,13 @@ func (s *session) call(ctx context.Context, timeout time.Duration, req *guestdv1
 	return s.cl.Call(ctx, req)
 }
 
+// Features is what this hostd relays that an older one does not, told to
+// guestd in every Ping: "question_secret" is AgentQuestion.secret
+// (DECISIONS I-929), without which guestd refuses `repose-ask --secret`.
+var Features = []string{"question_secret"}
+
 func (s *session) Ping(ctx context.Context) (*guestdv1.PingResult, error) {
-	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{}}})
+	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_Ping{Ping: &guestdv1.Ping{Features: Features}}})
 	if err != nil {
 		return nil, err
 	}

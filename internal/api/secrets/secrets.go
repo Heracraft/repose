@@ -253,19 +253,37 @@ func (s *Store) Put(ctx context.Context, userID, projectID, name string, value [
 		return ErrTooLarge
 	}
 	return db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		dek, wrapped, version, err := s.userDEK(ctx, tx, userID)
-		if err != nil {
-			return err
-		}
-		ct, err := Seal(dek, projectID, name, value)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version) values ($1, $2, $3, $4, $5, $6)
-			on conflict (project_id, name) do update set ciphertext = excluded.ciphertext, dek_wrapped = excluded.dek_wrapped, kv_key_version = excluded.kv_key_version`,
-			uuid.Must(uuid.NewV7()), projectID, name, ct, wrapped, version)
-		return err
+		return s.put(ctx, tx, userID, projectID, name, value)
 	})
+}
+
+// PutTx is Put inside the caller's transaction (DECISIONS I-929): a
+// secret question's answer stores the value, its audit row, its push and
+// the question's close in one commit, on the one connection that holds
+// the question's lock. It takes user names only.
+func (s *Store) PutTx(ctx context.Context, tx pgx.Tx, userID, projectID, name string, value []byte) error {
+	if !nameRe.MatchString(name) || reserved[name] || shellNames[name] {
+		return ErrInvalidName
+	}
+	if len(value) > MaxValueBytes {
+		return ErrTooLarge
+	}
+	return s.put(ctx, tx, userID, projectID, name, value)
+}
+
+func (s *Store) put(ctx context.Context, tx pgx.Tx, userID, projectID, name string, value []byte) error {
+	dek, wrapped, version, err := s.userDEK(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	ct, err := Seal(dek, projectID, name, value)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `insert into secrets (id, project_id, name, ciphertext, dek_wrapped, kv_key_version) values ($1, $2, $3, $4, $5, $6)
+		on conflict (project_id, name) do update set ciphertext = excluded.ciphertext, dek_wrapped = excluded.dek_wrapped, kv_key_version = excluded.kv_key_version`,
+		uuid.Must(uuid.NewV7()), projectID, name, ct, wrapped, version)
+	return err
 }
 
 func (s *Store) isPlatform(projectID string) bool { return projectID == PlatformProjectID }

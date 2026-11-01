@@ -78,9 +78,9 @@
 	}
 
 	function replaces(n: string): string | undefined {
-		if (own.has(n)) return 'It replaces the current value.';
-		if (account.some((s) => s.name === n))
-			return 'This project uses it in place of your account’s.';
+		const p = projectName ?? 'This project';
+		if (own.has(n)) return `Replaces ${p}’s current ${n}.`;
+		if (account.some((s) => s.name === n)) return `${p} uses it in place of your account’s ${n}.`;
 		return undefined;
 	}
 
@@ -287,8 +287,9 @@
 		padding-top: 0;
 		border-top: 0;
 	}
+	/* A sub-list of the section, set apart by space rather than a rule. */
 	.acct {
-		margin-top: 1.75rem;
+		margin-top: 2.5rem;
 	}
 	.acct-head {
 		display: flex;

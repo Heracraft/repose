@@ -201,7 +201,7 @@ func describe(q *Question) string {
 	switch q.State {
 	case "answered":
 		if q.Secret != "" && via != "terminal" {
-			return "already answered: " + q.Secret + " is set"
+			return "already answered: " + q.Secret + " is saved"
 		}
 		if via == "terminal" || q.Answer == nil {
 			return "answered in the terminal"

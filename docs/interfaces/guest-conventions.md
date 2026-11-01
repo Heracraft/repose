@@ -802,7 +802,7 @@ shell tool, a script, the user.
 ```
 repose-notify [--done] [--agent NAME] MESSAGE...   # or the message on stdin
 repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
-repose-ask --secret NAME [--timeout 30m] [--agent NAME] REASON...
+repose-ask --secret NAME [--timeout 2h] [--agent NAME] REASON...
 repose-ask --cancel [ID | --all]
 ```
 
@@ -829,12 +829,16 @@ repose-ask --cancel [ID | --all]
   named secret NAME (`[A-Z][A-Z0-9_]{0,63}`, not `BASH_ENV`, `ENV` or
   `REPOSE_ENV_GEN`; exit 2 otherwise, or with `--options`). The owner
   pastes it on the dashboard or into `repose reply`, and the api stores it
-  as the project's secret NAME. Nothing is printed on stdout. The close
-  arrives once the secrets push has finished, so on exit 0
-  `/run/repose/secrets/NAME` exists and the next bash command has `$NAME`;
-  stderr says `NAME is set`. Answered but the file is missing (the push
-  failed): exit 1. A guestd that does not echo `secret` from `POST /ask`
-  predates it; the question is withdrawn at once and the exit is 1.
+  as the project's secret NAME. Nothing is printed on stdout. It waits 2
+  hours without `--timeout`. The close arrives once the secrets push has
+  finished, so on exit 0 `/run/repose/secrets/NAME` exists and the next
+  bash command has `$NAME`; stderr says `NAME is set`. A close whose
+  answer is `push_failed`, or a missing file: exit 1. A timeout with the
+  file written since the ask (the owner answered while the push was on its
+  way): exit 0. guestd refuses it (`409 secret_not_relayed`, exit 1) until
+  a hostd that relays the name has pinged; a guestd that does not echo
+  `secret` from `POST /ask` predates it, and the question is withdrawn at
+  once with exit 1.
 - guestd keys each question to the asker's agent process, `pid:starttime`
   of the nearest of the five agents among the asker's ancestors (by
   `/proc/<pid>/stat` comm, or the exe link's name for Gemini CLI's

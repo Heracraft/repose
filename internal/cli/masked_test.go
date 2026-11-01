@@ -30,6 +30,8 @@ func TestReadMaskedEchoesAStarPerCharacter(t *testing.T) {
 		{"ctrl-d mid-line ignored", "a\x04b\r", "ab", "**", nil},
 		{"eof after text", "abc", "abc", "***", nil},
 		{"eof on nothing", "", "", "", io.EOF},
+		{"crlf is one line end", "abc\r\n", "abc", "***", nil},
+		{"a pasted PEM is refused, not cut", "-----BEGIN KEY-----\rMIIE\r-----END KEY-----\r", "", strings.Repeat("*", 19), errMaskedMultiline},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var echo bytes.Buffer

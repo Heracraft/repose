@@ -74,12 +74,19 @@ func TestSecretQuestion(t *testing.T) {
 	}
 
 	qid := uuid.Must(uuid.NewV7())
-	if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: qid.String(), Agent: "claude", Text: "Stripe dashboard", Secret: "STRIPE_KEY"}); err != nil {
+	// A bidi override in the reason would show the owner one text and
+	// say another; it is dropped.
+	if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: qid.String(), Agent: "claude", TmuxWindow: "w\u202e1", Text: "Stripe\u202e dash\u200bboard", Secret: "STRIPE_KEY"}); err != nil {
 		t.Fatal(err)
 	}
 	q, err := svc.Get(ctx, &uid, qid)
-	if err != nil || q.Secret != "STRIPE_KEY" {
+	if err != nil || q.Secret != "STRIPE_KEY" || q.Text != "Stripe dashboard" || q.Window != "w1" {
 		t.Fatalf("%+v %v", q, err)
+	}
+	// A second agent waiting on the same name closes with the first.
+	twin := uuid.Must(uuid.NewV7())
+	if err := svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: twin.String(), Agent: "codex", Text: "me too", Secret: "STRIPE_KEY"}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := svc.Answer(ctx, &uid, qid, "sk_live_NEVER", "dashboard"); !errors.Is(err, questions.ErrSecret) {
 		t.Fatalf("a written answer: %v", err)
@@ -111,7 +118,8 @@ func TestSecretQuestion(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	close(release)
 	e1, e2 := <-errs, <-errs
-	if (e1 == nil) == (e2 == nil) || (!errors.Is(e1, questions.ErrClosed) && !errors.Is(e2, questions.ErrClosed)) {
+	lost := func(err error) bool { return errors.Is(err, questions.ErrBusy) || errors.Is(err, questions.ErrClosed) }
+	if (e1 == nil) == (e2 == nil) || (!lost(e1) && !lost(e2)) {
 		t.Fatalf("two answers: %v, %v", e1, e2)
 	}
 	if puts != 1 {
@@ -121,8 +129,11 @@ func TestSecretQuestion(t *testing.T) {
 	if q.State != questions.StateAnswered || q.Answer != nil || q.AnsweredVia == nil || *q.AnsweredVia != "dashboard" {
 		t.Fatalf("after: %+v", q)
 	}
-	if line := questions.CloseLine(q); line != "Set STRIPE_KEY from the dashboard" {
+	if line := questions.CloseLine(q); line != "Saved STRIPE_KEY from the dashboard" {
 		t.Fatalf("close line %q", line)
+	}
+	if tq, _ := svc.Get(ctx, &uid, twin); tq.State != questions.StateAnswered || tq.Answer != nil {
+		t.Fatalf("twin: %+v", tq)
 	}
 
 	// Not delivered while the op is pending; delivered once it is done.
@@ -139,8 +150,30 @@ func TestSecretQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := send.all()
-	if len(got) != 1 || got[0].Status != questions.StateAnswered || got[0].Answer != "" || got[0].QuestionId != qid.String() {
+	if len(got) != 2 {
 		t.Fatalf("delivered %+v", got)
+	}
+	for _, d := range got {
+		if d.Status != questions.StateAnswered || d.Answer != "" || (d.QuestionId != qid.String() && d.QuestionId != twin.String()) {
+			t.Fatalf("delivered %+v", d)
+		}
+	}
+
+	// A push that ended in error tells the guest so.
+	failed := uuid.Must(uuid.NewV7())
+	_ = svc.OnQuestion(ctx, time.Now(), &hostdv1.AgentQuestion{GuestId: gid.String(), QuestionId: failed.String(), Text: "x", Secret: "OTHER_KEY"})
+	failOp := store.NewID()
+	if _, err := svc.AnswerSecret(ctx, uid, failed, "dashboard", func(ctx context.Context, tx db.Tx, projectID uuid.UUID, _ string) (*uuid.UUID, error) {
+		_, err := tx.Exec(ctx, `insert into ops (id, project_id, kind, state, params) values ($1, $2, 'update_secrets', 'error', '{}')`, failOp, projectID)
+		return &failOp, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Once(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := send.all(); len(got) != 3 || got[2].QuestionId != failed.String() || got[2].Answer != questions.PushFailed {
+		t.Fatalf("push failed: %+v", got)
 	}
 
 	// A value for a question that takes a written answer is refused.

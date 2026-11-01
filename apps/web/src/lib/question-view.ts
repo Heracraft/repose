@@ -36,7 +36,7 @@ export function closedLine(q: Question): ClosedLine {
 	if (q.state === 'answered') {
 		if (q.secret && via !== 'terminal') {
 			const from = via ? FROM[via] : undefined;
-			return { text: from ? `Set ${q.secret} ${from}` : `Set ${q.secret}`, tone: 'answered' };
+			return { text: from ? `Saved ${q.secret} ${from}` : `Saved ${q.secret}`, tone: 'answered' };
 		}
 		if (via === 'terminal' || q.answer === null) {
 			return { text: 'Answered in the terminal', tone: 'answered' };
