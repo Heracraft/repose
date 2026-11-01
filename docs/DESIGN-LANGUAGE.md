@@ -251,22 +251,27 @@ mark is in every header (I-381):
   link carries the name. The footer shows the `sm` mark with the word at
   every width.
 - One drawing at every size. On a 100 grid the lobes sit on a 45-degree
-  axis, the mother 23 and the daughter 21, and a furrow circle of radius
-  18 tangent to both pinches the outline to a bridge of 7. The geometry
-  is generated: `ops/dev/logo-mitosis.py` prints the two paths the
-  component ships, so the mark can be redrawn at other proportions
-  without guessing (I-779).
-- **The furrow is the mark.** Two overlapping circles make a figure of
-  eight; what reads as division is an outline that curves *inward* at the
-  waist. Redrawing it as two discs, or evening the lobes up, is the
-  change that breaks it: the daughter is smaller because the division has
-  not finished.
-- At 16px the bridge is about one pixel and reads as a tint between the
-  lobes rather than a line; the two lobes carry the mark at that size.
-  That is the price of a bridge thin enough to read as mitosis at 28px
-  and up, and it is deliberate (I-779). The favicon
-  (`static/favicon.svg`, `favicon.png`) is this same drawing, not a
-  heavier cut.
+  axis with their centres 52 apart, the mother 23 and the daughter 21,
+  and a furrow circle of radius 5.6 tangent to both pinches the outline
+  to a bridge of 7. The geometry is generated: `ops/dev/logo-mitosis.py`
+  prints the viewBox, the two paths the component ships and the stage
+  the division plays from, so the mark can be redrawn at other
+  proportions without guessing (I-779, I-936).
+- **The furrow is the mark**, and it is a crease, not a taper. Two
+  overlapping circles make a figure of eight; what reads as division is
+  an outline that curves *inward* at the waist. Redrawing it as two
+  discs, or evening the lobes up, is the change that breaks it: the
+  daughter is smaller because the division has not finished. The furrow's
+  radius sets how much of each lobe it bends: 5.6 bends 19 degrees and
+  leaves the lobes round, I-779's 18 bent 32 and drew the mother out into
+  a teardrop, which read as a dumbbell rather than a cell (I-936).
+- At 16px the bridge is about a pixel and a half and reads as a tint
+  between the lobes rather than a line; the two lobes carry the mark at
+  that size. That is the price of a bridge thin enough to read as mitosis
+  at 28px and up, and it is deliberate (I-779). Shortening the neck in
+  I-936 bought half a pixel of it, because the same bridge sits in a mark
+  that is 82 units wide instead of 92. The favicon (`static/favicon.svg`,
+  `favicon.png`) is this same drawing, not a heavier cut.
 - The mother is `currentColor`, the text's ink in both schemes; the
   daughter is `--hk-accent`, the sixth job of the accent and the one
   brand use of blue ("The accent"). I-779 drew it in the landing's

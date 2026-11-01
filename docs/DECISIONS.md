@@ -27076,3 +27076,63 @@ easy to read as noise and wait out. It is not noise: it is a dependency
 of the build changing without a commit, and it blocks every branch until
 someone owns it. The same week's lesson from I-926 points the other way
 and is the same lesson -- read the failure, do not re-run it.
+
+**I-936. The furrow is a crease, not a taper: the mark's lobes come
+together.** (worktree session, 2026-11-01; amends I-779) The mark keeps
+its two lobes on the 45-degree axis, the mother 23 in the ink, the
+daughter 21 in the accent, and the bridge of 7 that I-779 asked for. Two
+numbers change: the furrow's radius goes from 18 to 5.6, and the lobe
+centres come from 67.5 apart to 52. The drawing is 82 units wide instead
+of 92, so the viewBox is `9 9 82 82`.
+*What the furrow's radius actually decides.* Not the depth of the pinch
+-- the bridge sets that -- but how far around each lobe the furrow
+bends. A radius of 18 is tangent to the mother 32 degrees off the axis,
+so nearly a quarter of the lobe is drawn by the furrow and the mother
+leaves as a teardrop. At 5.6 the tangent sits 19 degrees off the axis,
+the crease is local, and the lobes stay round. A cleavage furrow in a
+dividing cell is a constriction at one place, not a taper over the whole
+body; the teardrop is what the taper cost, and at header size it made
+the mark read as a dumbbell, or a two-atom molecule, rather than a cell.
+*The three numbers are one number.* `neck = 2(sqrt((R + r)^2 - d^2) -
+r)`: a thin bridge with a wide furrow forces the lobes apart, which is
+why I-779's drawing is long. Keeping the bridge and narrowing the furrow
+is the only move that brings them back together. Widening the bridge
+instead is the move this entry does not make: "make the connection btn
+the two much thinner" is the owner's instruction that produced I-779,
+and it stands.
+*What this is not.* Not a fix for 16px. The bridge is still a tint
+between the lobes there, as I-779 records; it goes from about 1.2 to
+about 1.5 pixels only because the same bridge now sits in a narrower
+mark. A favicon with its own heavier bridge is still refused: one
+drawing at every size.
+*The division still plays.* `ops/dev/logo-mitosis.py` now prints the
+viewBox, the resting paths and the stage the keyframes morph from, all
+centred on the resting drawing, so the component carries no hand-copied
+number. The stage it plays from keeps the 34 waist I-779 chose, so the
+900ms morph is unchanged in character: the lobes pull apart and the
+bridge thins.
+*Against this entry.* The 2026-10-18 review judged the taper to be "the
+shape a dividing cell actually has". That is true of the last moment of
+division and not of the middle, which is where the mark sits: the
+daughter is smaller because the division is unfinished. If the teardrop
+is wanted back, the one number to change is the furrow radius, and the
+lobes have to go back out with it.
+
+**I-938. The SVG favicon never parsed, so the tab has always shown the
+PNG.** (worktree session, 2026-11-01, found while redrawing the mark for
+I-936) `static/favicon.svg` carried `--sh-*` inside an XML comment. XML
+forbids a double hyphen there, so the file is not well-formed, every
+browser drops it, and `app.html`'s second `<link>` takes over. The PNG is
+one drawing in the light colours, so the dark-scheme swap the SVG exists
+for has never run: a dark tab bar has been showing the light mark since
+I-779 shipped it.
+*Why nobody saw it.* The fallback is silent and correct-looking. A
+favicon that fails to parse is not an error anyone is shown; the tab just
+keeps the PNG, which is the same mark. Only a renderer that is handed the
+file alone says anything, which is what happened here.
+*The fix and the guard.* The comment says `sh-accent` with no double
+hyphen, and the file parses. Both `<link>`s go to `?v=4`, because the
+drawing changed with I-936 and a cached `v=3` would hold the old one.
+Every SVG under `apps/web/static` and `apps/web/src` now parses as XML;
+that scan is a line in `docs/CHECKLIST.md` so the next hand-written
+comment cannot do this again.
