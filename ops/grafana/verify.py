@@ -31,7 +31,8 @@ What it does NOT look at is who gets told. No contact point and no
 notification policy is pushed (DECISIONS I-944): Grafana's own default policy
 delivers to the default contact point the owner set up in the UI, and that is
 theirs to change. A check on it here would be this repository having an
-opinion it decided not to have.
+opinion it decided not to have. It does not look for the `repose-postgres`
+datasource either, for the reason in SKIP_DATASOURCES.
 """
 
 from __future__ import annotations
@@ -61,8 +62,24 @@ GEN = _load("alerts_gen", HERE / "alerts-gen.py")
 
 # The folder the alert rules live in. The uid is this repository's, set over
 # the API, which is what keeps a second folder of the same title impossible
-# (I-942, I-944). ops/grafana/push.py reads both of these from here.
+# (I-942, I-944). ops/grafana/push.py reads this and the next from here, so
+# the push and the drift check cannot disagree about either.
 FOLDER_UID = "repose-alerts"
+
+# Datasources this repository does NOT put into a Grafana, with the reason.
+#
+# `repose-postgres` is the control plane's own database, and reaching it needs
+# a password. Nothing here carries one: the push takes GRAFANA_URL and
+# GRAFANA_TOKEN and no third thing (DECISIONS I-944). No alert rule queries
+# it -- all 53 query Prometheus -- so no alert is affected. 21 of the 83
+# dashboard panels do, and they read "no data" until somebody adds that
+# datasource by hand in Grafana, with this exact uid so the committed panels
+# find it. `ops/sql/launch.sql` gets the same figures through psql with no
+# datasource at all.
+SKIP_DATASOURCES = {
+    "repose-postgres": "reaching the control plane's database needs a "
+                       "password, and this tooling does not take one",
+}
 
 _UNIT = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
@@ -171,6 +188,8 @@ def run(url: str, token: str | None) -> int:
     # --- the datasources the rules and panels name
     have_ds = {d["uid"]: d for d in datasources}
     for ds in GEN.read_yaml(HERE / "provisioning" / "datasources" / "repose.yaml")["datasources"]:
+        if ds["uid"] in SKIP_DATASOURCES:
+            continue
         got = have_ds.get(ds["uid"])
         if got is None:
             bad.append(f"datasource {ds['uid']}: not on the target")

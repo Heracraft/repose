@@ -26,6 +26,17 @@ datasources:
     jsonData:
       maxLines: 1000
 
+  # NOT PUSHED. `ops/grafana/push.py` creates the two above and skips this
+  # one, because reaching the control plane's database needs a password and
+  # that tooling takes GRAFANA_URL and GRAFANA_TOKEN and nothing else
+  # (DECISIONS I-944, SKIP_DATASOURCES in ops/grafana/verify.py). No alert
+  # rule queries it; 21 of the 83 dashboard panels do, and they read "no
+  # data" without it. This entry is the reference for adding it by hand in
+  # Grafana -- Connections -> Add new connection -> PostgreSQL -- which needs
+  # the uid set to exactly `repose-postgres`, or the committed panels will
+  # not find it. `ops/sql/launch.sql` answers the same questions through psql
+  # with no datasource at all.
+  #
   # Read-only role, because a dashboard that can write to the control plane's
   # database is a dashboard that can destroy a tenant's project row:
   #
@@ -35,8 +46,10 @@ datasources:
   #   grant select on all tables in schema public to grafana_ro;
   #   alter default privileges in schema public grant select on tables to grafana_ro;
   #
-  # The password comes from the environment, never from this file:
-  # GF_SECURITY_* style variables are expanded by Grafana at load time.
+  # The two placeholders below are Grafana's file-provisioning syntax and are
+  # expanded only by a Grafana that reads this file off disk. Nothing expands
+  # them over the API, and the pusher refuses a datasource that still carries
+  # one rather than sending the literal text.
   - name: repose-postgres
     uid: repose-postgres
     type: grafana-postgresql-datasource

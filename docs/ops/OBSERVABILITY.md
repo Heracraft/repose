@@ -12,7 +12,7 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
                        Fluent Bit :2021 /api/v1/metrics/prometheus  ◀─ Prometheus scrape over WireGuard
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
 Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
-Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (Grafana Postgres datasource, read-only role)
+Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
 personal server        Loki, Prometheus, Grafana (evaluates the alerts and notifies the owner)
 ```
 
@@ -349,6 +349,17 @@ quiet system until the incident it was written for.
 
 Four things are different from the Alertmanager routing the rest of these
 docs grew up with.
+
+**The per-project panels are empty, by design.** `ops/grafana/push.py`
+creates the Prometheus and Loki datasources and not the Postgres one, because
+it holds no password and asks for none (I-944). So 21 of the 83 dashboard
+panels read "no data": the per-account and per-project figures, which live in
+Postgres precisely because `project_id` and `user_id` are refused as metric
+labels and cannot be Prometheus series at all. Nothing is broken, and no
+alert is affected -- all 53 rules query Prometheus. `ops/sql/launch.sql`
+answers the same questions through `psql`, and the owner can add the
+datasource by hand with the uid `repose-postgres` if they want the panels
+(`ops/README.md` step 3).
 
 **Who gets told is set up in Grafana, not here.** One contact point, with
 the default notification policy pointed at it, both in the UI. repose

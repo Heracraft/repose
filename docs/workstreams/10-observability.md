@@ -38,7 +38,8 @@ policy designed without a month of data is a guess.
   Grafana's alerting engine needs no new service. I-944: over the API, rules
   only -- no contact point and no notification policy of ours, so the owner
   configures one contact point in the UI and Grafana's default policy
-  delivers to it. I-648, amended by I-848: Chat needed calert beside
+  delivers to it, and no secret either, so the Postgres datasource behind 21
+  of the 83 panels is the owner's to add if they want it. I-648, amended by I-848: Chat needed calert beside
   Alertmanager to translate the webhook, and nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in

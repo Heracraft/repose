@@ -64,17 +64,15 @@ other end of those.
 
    ```
    export GRAFANA_URL=https://grafana.example GRAFANA_TOKEN=glsa_...
-   export REPOSE_PG_HOST=<control plane host:5432> REPOSE_PG_PASSWORD_FILE=/path/to/pw
    python3 ops/grafana/push.py --dry-run     # what it would change
    python3 ops/grafana/push.py
    ```
 
-   `GRAFANA_TOKEN` is a service-account token with the Admin role (Grafana:
-   Administration -> Users and access -> Service accounts). Those four
-   variables are the whole list, and `REPOSE_PG_*` only because the Postgres
-   datasource needs them; `NAME_FILE` is read from a file, so the password
-   need not be in an environment at all. No value is printed, and none is in
-   this repository.
+   **Those two variables are the whole list.** `GRAFANA_TOKEN` is a
+   service-account token with the Admin role (Grafana: Administration ->
+   Users and access -> Service accounts). There is no password to set
+   anywhere: this tooling holds no secret, asks for none, and refuses for
+   want of none.
 
    **One contact point, set up by hand in the UI. That is the whole of it,
    and without it nothing is delivered.** Two steps, both in Grafana:
@@ -98,7 +96,23 @@ other end of those.
    own rather than the dashboards' `repose`, so there is never a second
    folder of one name (I-942).
 
-   Three things to know, none of them hidden:
+   Four things to know, none of them hidden:
+
+   - **21 of the 83 dashboard panels will read "no data", and that is
+     correct.** They are the per-account and per-project figures, which read
+     the control plane's Postgres rather than Prometheus -- `project_id` and
+     `user_id` are refused as metric labels, so those numbers cannot be
+     Prometheus series at all (`docs/ops/OBSERVABILITY.md`). Reaching that
+     database needs a password, and the push takes none, so it does not
+     create that datasource. The dashboards are not broken. Two ways to get
+     those figures when they are wanted: `psql "$DATABASE_URL" -f
+     ops/sql/launch.sql`, which needs no datasource; or add the datasource by
+     hand in Grafana (Connections -> Add new connection -> PostgreSQL) with
+     the uid set to exactly `repose-postgres`, so the committed panels find
+     it. `grafana/provisioning/datasources/repose.yaml` is the reference for
+     what to put in it, including the read-only role to create first. Doing
+     it by hand is the point: no database password passes through this
+     repository's tooling, now or later.
 
    - **A rebuilt Grafana comes back with no alert rules until someone runs
      the push again, and no alert rules is silent.** With a mounted
@@ -124,13 +138,13 @@ other end of those.
      the owner's call, which is why it is not done here.
 4. **Loki.** Merge `loki/retention.yaml`. Retention does nothing without the
    compactor, so check `curl -s localhost:3100/config | grep retention`.
-5. **Grafana.** Nothing to mount: step 3's `grafana/push.py` puts the
+5. **Grafana.** Nothing to mount: step 3's `grafana/push.py` puts the two
    datasources, the alert rules and the dashboards in over the API, and
-   `grafana-data` stays the service's only volume. Create the read-only
-   Postgres role in the datasource file's comment first, or the four
-   Postgres-backed dashboards are empty. This Grafana evaluates the alert
-   rules, so it is in the path of every notification: a Grafana that is down
-   tells nobody anything, and nothing outside it notices (step 3).
+   `grafana-data` stays the service's only volume. This Grafana evaluates the
+   alert rules, so it is in the path of every notification: a Grafana that is
+   down tells nobody anything, and nothing outside it notices (step 3). The
+   21 Postgres-backed panels stay empty unless the owner adds that datasource
+   themselves, which step 3 explains.
 6. **Postgres.** Nothing to install: the api creates and drops the sample
    tables' partitions itself. `sql/partitions.sql` is the same maintenance as
    SQL functions, for an operator whose api is down (`psql -f

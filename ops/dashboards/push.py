@@ -82,6 +82,10 @@ def main():
     ap.add_argument("--loki")
     ap.add_argument("--postgres")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--expect-missing", action="append", default=[], metavar="UID",
+                    help="a dev uid whose datasource the target is not meant to have; "
+                         "its panels are left pointing at it and nothing is reported. "
+                         "ops/grafana/push.py passes repose-postgres (DECISIONS I-944)")
     a = ap.parse_args()
     base, token = os.environ.get("GRAFANA_URL"), os.environ.get("GRAFANA_TOKEN")
     if not base:
@@ -94,6 +98,8 @@ def main():
     wanted = {"prometheus": a.prometheus, "loki": a.loki, "grafana-postgresql-datasource": a.postgres}
     mapping, missing = {}, []
     for uid, kind in DEV_UIDS.items():
+        if uid in a.expect_missing:
+            continue
         ds = pick(datasources, kind, wanted[kind])
         if ds is None:
             missing.append(kind)

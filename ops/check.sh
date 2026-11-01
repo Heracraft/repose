@@ -169,11 +169,11 @@ if [ "${1:-}" = "--grafana" ]; then
   say "the alerting pushes in over the API, as it does on the server"
   # The alerting is not mounted (DECISIONS I-944), so this is the real path:
   # ops/grafana/push.py against a running Grafana, then the drift check.
-  # Dev's Grafana is anonymous admin, so there is no token. Its datasources
-  # come from a file of its own (the dev URLs differ), so the push reports
-  # them as left alone rather than writing them.
+  # GRAFANA_URL is the whole of what it needs here: dev's Grafana is
+  # anonymous admin, so no token, and the push takes no other value at all
+  # (DECISIONS I-944). Dev's datasources come from a file of its own (the dev
+  # URLs differ), so they are reported as left alone rather than written.
   export GRAFANA_URL=http://127.0.0.1:3000
-  export REPOSE_PG_HOST=postgres:5432 REPOSE_PG_PASSWORD=repose
   unset GRAFANA_TOKEN
   python3 "$ops/grafana/push.py" --skip-dashboards 2>&1 | sed 's/^/  /' || fail=1
 

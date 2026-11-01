@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Put repose's observability config into a running Grafana.
 
-One command, over Grafana's HTTP API: the three datasources, the 53 alert
-rules and the eight dashboards. Nothing is mounted into the container
-(DECISIONS I-944).
+One command, over Grafana's HTTP API: two datasources, the 53 alert rules and
+the eight dashboards. Nothing is mounted into the container, and the only
+things it needs are GRAFANA_URL and GRAFANA_TOKEN (DECISIONS I-944).
 
     GRAFANA_URL=https://grafana.example GRAFANA_TOKEN=glsa_... \\
-    REPOSE_PG_HOST=... REPOSE_PG_PASSWORD_FILE=/path/to/pw \\
         python3 ops/grafana/push.py [--dry-run]
 
     python3 ops/grafana/push.py --dry-run    # says what it would change
@@ -25,7 +24,7 @@ the notification tree of the Grafana it is pushed into.
 
 What it reads, and nothing else:
 
-  ops/grafana/provisioning/datasources/repose.yaml   the three datasources
+  ops/grafana/provisioning/datasources/repose.yaml   two of its three
   ops/grafana/provisioning/alerting/repose-rules.yaml      GENERATED
   ops/dashboards/*.json                                    GENERATED
 
@@ -36,13 +35,13 @@ nobody has read is how a fixed alert goes live as the broken one. The
 dashboards are pushed by `ops/dashboards/push.py`, which this calls; there is
 one implementation of each.
 
-THE ONE SECRET LEFT. The datasource file names the control plane's Postgres
-with `$REPOSE_PG_HOST` and `$REPOSE_PG_PASSWORD`, Grafana's own
-file-provisioning placeholders. Over the API nothing expands them, so this
-does, from the environment: the variable NAME, or the file named by NAME_FILE
-when the value should not be in an environment at all. A name with neither is
-an error that lists every missing one at once. No value is printed, logged,
-or written to any file, in --dry-run or out of it.
+NO SECRETS AT ALL. Two variables, GRAFANA_URL and GRAFANA_TOKEN, and nothing
+else: this never asks for a password and never refuses for want of one. The
+Prometheus and Loki datasources need no credentials, and the third one, the
+control plane's Postgres, is not created here -- see SKIP_DATASOURCES in
+verify.py for why and for what it costs. A datasource entry that still
+carries a `$...` placeholder is refused rather than sent as its own source
+text, because nothing expands them any more.
 
 THE RISK THIS DESIGN CARRIES. A mounted provisioning directory makes a
 rebuilt Grafana re-provision itself. Over the API it does not: a Grafana that
@@ -143,60 +142,63 @@ class Grafana:
         return self.call(method, path, body, allow)
 
 
-# --- placeholders ---------------------------------------------------------
+# --- placeholders, which are no longer expanded ---------------------------
 
-PLACEHOLDER = re.compile(r"\$__env\{([A-Z_][A-Z0-9_]*)\}|\$\{([A-Z_][A-Z0-9_]*)\}|\$([A-Z_][A-Z0-9_]*)")
-
-
-class Missing(Exception):
-    pass
+PLACEHOLDER = re.compile(r"\$__env\{[A-Z_][A-Z0-9_]*\}|\$__file\{[^}]*\}|\$\{?[A-Z_][A-Z0-9_]*\}?")
 
 
-def resolve(name: str, wanted: set) -> str:
-    """The value of one placeholder, from NAME or from the file NAME_FILE."""
-    if name in os.environ:
-        return os.environ[name]
-    path = os.environ.get(name + "_FILE")
-    if path:
-        try:
-            # A secret written with `printf '%s'` has no newline; one written
-            # with an editor has. Neither belongs in an address or a URL.
-            return pathlib.Path(path).read_text().strip()
-        except OSError as exc:
-            raise Missing(f"{name}_FILE={path}: {exc.strerror}") from None
-    wanted.add(name)
-    return ""
+def placeholders(node, found=None) -> list[str]:
+    """Every `$__env{...}`, `$__file{...}` or `$VAR` left in a parsed object.
 
-
-def expand(node, wanted: set):
-    """Every placeholder in a parsed provisioning file, substituted."""
+    Grafana expands those when it reads a provisioning file off disk. Over the
+    API nothing does, and this pusher deliberately holds no values to expand
+    them with, so one that reaches here would be sent as its own source text
+    -- a datasource whose password is the literal string `$REPOSE_PG_PASSWORD`
+    connects to nothing and says nothing about why. So it is refused instead.
+    """
+    found = [] if found is None else found
     if isinstance(node, dict):
-        return {k: expand(v, wanted) for k, v in node.items()}
-    if isinstance(node, list):
-        return [expand(v, wanted) for v in node]
-    if isinstance(node, str):
-        def one(m):
-            return resolve(m.group(1) or m.group(2) or m.group(3), wanted)
-
-        return PLACEHOLDER.sub(one, node)
-    return node
+        for value in node.values():
+            placeholders(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            placeholders(value, found)
+    elif isinstance(node, str):
+        found += PLACEHOLDER.findall(node)
+    return sorted(set(found))
 
 
 # --- the three things it pushes -------------------------------------------
 
 
 def push_datasources(gf: Grafana, doc: dict) -> list[str]:
-    """The three of ops/grafana/provisioning/datasources/repose.yaml.
+    """Prometheus and Loki, of the three in the datasource file.
 
     By uid, so the dashboards' and the alert rules' `repose-prometheus` means
-    this one. A datasource is created once and updated in place after that;
-    `secureJsonData` is write-only in Grafana, so the password is sent on
-    every run and never read back.
+    this one. Each is created once and updated in place after that. The third,
+    `repose-postgres`, is skipped: see SKIP_DATASOURCES in verify.py.
     """
     have = {d["uid"]: d for d in gf.call("GET", "/api/datasources")}
     lines = []
     for ds in doc["datasources"]:
         uid = ds["uid"]
+        if uid in VERIFY.SKIP_DATASOURCES:
+            # Said once, here, so nobody meets the empty panels without an
+            # explanation: this is the designed state, not a failure.
+            lines.append(
+                f"datasource {uid}: not created, so the panels that read it say "
+                "\"no data\" -- the per-project figures, which are in Postgres because "
+                "project_id is not a metric label. By design (ops/README.md step 3)."
+            )
+            continue
+        left = placeholders(ds)
+        if left:
+            raise ApiError(
+                f"datasource {uid} still carries {', '.join(left)}. Placeholders are "
+                "Grafana's file-provisioning syntax and nothing expands them over the "
+                "API; this push takes GRAFANA_URL and GRAFANA_TOKEN and no values of "
+                "its own (DECISIONS I-944)."
+            )
         body = dict(ds, access=ds.get("access", "proxy"))
         if uid in have:
             if have[uid].get("readOnly"):
@@ -207,26 +209,19 @@ def push_datasources(gf: Grafana, doc: dict) -> list[str]:
                              "file-provisioned on the target, left alone")
                 continue
             body["id"] = have[uid]["id"]
-            # Its password is write-only: Grafana answers `secureJsonFields:
-            # {password: true}` and never the value, so there is no way to
-            # tell a matching password from a changed one and it is sent on
-            # every run. Everything readable is compared, so --dry-run can
-            # still say whether anything else moved.
-            readable = {k: v for k, v in body.items()
-                        if k not in ("secureJsonData", "id", "version")}
-            drift = sorted(k for k, v in readable.items()
-                           if not VERIFY.same(v, have[uid].get(k)))
-            secret = bool(ds.get("secureJsonData"))
-            if not drift and not secret:
+            # Neither of these carries a credential, so everything about them
+            # can be read back and compared, and one that already matches is
+            # not rewritten. That is what lets --dry-run say truthfully that a
+            # second push would change nothing.
+            drift = sorted(k for k, v in body.items()
+                           if k not in ("id", "version")
+                           and not VERIFY.same(v, have[uid].get(k)))
+            if not drift:
                 lines.append(f"datasource {uid} ({ds['type']}): as written")
                 continue
             gf.write("PUT", f"/api/datasources/uid/{uid}", body)
-            if drift:
-                lines.append(f"datasource {uid} ({ds['type']}): rewritten, the target's "
-                             + ", ".join(drift) + " did not match")
-            else:
-                lines.append(f"datasource {uid} ({ds['type']}): as written, its password "
-                             "sent again")
+            lines.append(f"datasource {uid} ({ds['type']}): rewritten, the target's "
+                         + ", ".join(drift) + " did not match")
         else:
             gf.write("POST", "/api/datasources", body)
             lines.append(f"datasource {uid} ({ds['type']}): created")
@@ -310,10 +305,11 @@ def push_dashboards(gf: Grafana, extra: list[str]) -> list[str]:
     """ops/dashboards/push.py, which already does these."""
     dash = _load("dash_push", ROOT / "ops" / "dashboards" / "push.py")
     argv = sys.argv
+    skipped = [arg for uid in VERIFY.SKIP_DATASOURCES for arg in ("--expect-missing", uid)]
     sys.argv = ["push.py", "--folder", "repose",
                 "--prometheus", "repose-prometheus",
                 "--loki", "repose-loki",
-                "--postgres", "repose-postgres", *extra]
+                "--postgres", "repose-postgres", *skipped, *extra]
     if gf.dry_run:
         sys.argv.append("--dry-run")
     try:
@@ -348,23 +344,13 @@ def main() -> int:
     os.environ["GRAFANA_URL"] = args.url
 
     gf = Grafana(args.url, token, args.dry_run)
-    wanted: set = set()
     try:
         health = gf.call("GET", "/api/health")
         print(f"{args.url}: Grafana {health.get('version')}, database {health.get('database')}")
-        # Every placeholder is resolved before the first write, so a missing
-        # variable leaves the target as it was rather than half pushed.
-        datasources = expand(GEN.read_yaml(DATASOURCES), wanted)
-        if wanted:
-            raise Missing(
-                "no value for " + ", ".join(sorted(wanted))
-                + ". Set each one, or its _FILE naming a file to read it from "
-                  "(ops/README.md step 3)"
-            )
-        out = push_datasources(gf, datasources)
+        out = push_datasources(gf, GEN.read_yaml(DATASOURCES))
         out += push_folder(gf)
         out += push_rules(gf)
-    except (ApiError, Missing, GEN.YamlError) as exc:
+    except (ApiError, GEN.YamlError) as exc:
         print(f"ops/grafana/push.py: {exc}", file=sys.stderr)
         return 1
     for line in out:
