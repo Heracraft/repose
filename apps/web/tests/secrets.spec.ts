@@ -224,6 +224,10 @@ test('Add secret opens the dialog and Cancel closes it', async ({ page }) => {
 	const value = dialog.getByLabel('Value', { exact: true });
 	await expect(name).toBeFocused();
 	// One column: the value under the name, their edges aligned.
+	// Measured once the dialog's opening animation, a slight scale, has ended.
+	await dialog.evaluate((el) =>
+		Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished))
+	);
 	const [n, v] = [await name.boundingBox(), await value.boundingBox()];
 	expect(v!.y).toBeGreaterThan(n!.y + n!.height);
 	expect(Math.abs(n!.x - v!.x)).toBeLessThan(1);
