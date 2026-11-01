@@ -4,6 +4,8 @@
 {{.Quote}}
 {{end}}{{range .Paragraphs}}
 {{.}}
+{{end}}{{if .About}}
+{{.About.Label}}: {{.About.URL}}
 {{end}}{{range .Steps}}
 {{.N}}. {{.Title}}{{if .Command}}
    {{.Command}}{{end}}
@@ -13,10 +15,10 @@
 {{end}}{{if .Buttons}}
 {{.ButtonsLabel}}
 {{range .Buttons}}  {{.Label}}: {{.URL}}
-{{end}}{{end}}{{if .Quiet}}
-{{.Quiet.Label}}: {{.Quiet.URL}}
-{{end}}{{if .Primary}}
+{{end}}{{end}}{{if .Primary}}
 {{.Primary.Label}}: {{.Primary.URL}}
+{{end}}{{if .Quiet}}
+{{.Quiet.Label}}: {{.Quiet.URL}}
 {{end}}{{range .Lines}}
 {{.}}
 {{end}}

@@ -11,9 +11,12 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/net/idna"
 )
 
 // Limits.
@@ -62,15 +65,39 @@ func Check(rawURL, label string) (Link, error) {
 	if u.User != nil {
 		return Link{}, ErrUserInfo
 	}
-	if strings.ContainsAny(u.Hostname(), "%") {
+	// The host as a browser resolves it: lowercase, and an international
+	// name in its ASCII form, so a button shows "xn--pple-43d.com" for
+	// a Cyrillic "аpple.com" and the dashboard and the channels agree.
+	host, err := asciiHost(u.Hostname())
+	if err != nil {
 		return Link{}, ErrURL
 	}
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return Link{}, ErrURL
+		}
+		host = net.JoinHostPort(host, p)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	u.Host = host
 	out := u.String()
+	// Printable ASCII only: url.String leaves a query's raw bytes, and a
+	// byte past ASCII would fail the events insert for ever.
+	for i := 0; i < len(out); i++ {
+		if out[i] <= 0x20 || out[i] >= 0x7f {
+			return Link{}, ErrURL
+		}
+	}
 	if len(out) > MaxURL {
 		return Link{}, ErrTooLong
 	}
 	return Link{URL: out, Label: label}, nil
 }
+
+// dots are the separator a button puts between label and host, and the
+// characters that pass for it: a label cannot draw a second host.
+var dots = map[rune]bool{'·': true, '•': true, '‧': true, '・': true, '･': true, '∙': true, '⋅': true, '\u0387': true, '|': true}
 
 // CleanLabel is a label as Check keeps it.
 func CleanLabel(s string) string {
@@ -78,7 +105,7 @@ func CleanLabel(s string) string {
 	space := false
 	for _, r := range s {
 		switch {
-		case unicode.IsSpace(r):
+		case unicode.IsSpace(r), dots[r]:
 			space = b.Len() > 0
 			continue
 		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
@@ -98,8 +125,23 @@ func CleanLabel(s string) string {
 	return out
 }
 
+// asciiHost is a host as Check keeps it: an IP address as written, a name
+// lowercased in its ASCII (punycode) form; err for a name a browser would
+// not resolve.
+func asciiHost(h string) (string, error) {
+	if ip := net.ParseIP(h); ip != nil {
+		return strings.ToLower(h), nil
+	}
+	a, err := idna.Lookup.ToASCII(strings.TrimSuffix(h, "."))
+	if err != nil || a == "" {
+		return "", ErrURL
+	}
+	return strings.ToLower(a), nil
+}
+
 // Host is where the link goes, as a button names it: the host and its
-// port, the loopback names as localhost, which is where the laptop opens
+// port, an IPv6 address in its brackets, the loopback addresses (an IPv4
+// one mapped into IPv6 too) as localhost, which is where the laptop opens
 // a forwarded port.
 func (l Link) Host() string {
 	u, err := url.Parse(l.URL)
@@ -107,13 +149,44 @@ func (l Link) Host() string {
 		return ""
 	}
 	host, port := u.Hostname(), u.Port()
-	if ip := net.ParseIP(host); (ip != nil && ip.IsLoopback()) || host == "localhost" {
+	ip := net.ParseIP(host)
+	switch {
+	case (ip != nil && ip.IsLoopback()) || host == "localhost":
 		host = "localhost"
+	case ip != nil && strings.Contains(host, ":"):
+		host = "[" + host + "]"
 	}
 	if port != "" {
 		return host + ":" + port
 	}
 	return host
+}
+
+// ButtonFit is Button in at most n bytes: the label gives way, never the
+// host. A host too long for n is the host alone, cut at the end, since a
+// button must still say where it goes before anything else.
+func (l Link) ButtonFit(n int) string {
+	b := l.Button()
+	if len(b) <= n {
+		return b
+	}
+	host := l.Host()
+	room := n - len(" · ") - len(host)
+	if l.Label == "" || room < 4 {
+		return cutBytes(host, n)
+	}
+	return strings.TrimSpace(cutBytes(l.Label, room-len("…"))) + "…" + " · " + host
+}
+
+func cutBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	s = s[:n]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // Button is the button's text: "Compare resumes · localhost:8742", or

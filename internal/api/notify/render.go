@@ -49,9 +49,12 @@ type content struct {
 	Buttons      []link
 	Primary      *link
 	Quiet        *link
-	Lines        []string
-	Dashboard    string
-	Unsubscribe  string
+	// About is a question's link (I-931): what it is about, a plain link
+	// under the question, so the way to answer stays the main button.
+	About       *link
+	Lines       []string
+	Dashboard   string
+	Unsubscribe string
 	// Why is the footer's reason for the email, beside the unsubscribe
 	// link: the partial's `why` block, or the agent sentence.
 	Why string
@@ -400,18 +403,16 @@ func Render(m Message) (Rendered, error) {
 	if len(c.Buttons) == 0 {
 		c.ButtonsLabel = ""
 	}
-	// The agent's link (I-931) is the main button of a message, the way
-	// to the project then a plain link; a question keeps its own way to
-	// answer as the main one.
+	// The agent's link (I-931) is the main button of a message, with the
+	// way to the project a plain link under it; a question shows it under
+	// the question and keeps its own way to answer.
 	if l := m.Link; l.Set() && m.Kind != QuestionClosedKind {
 		lk := &link{Label: l.Button(), URL: l.URL}
 		switch {
+		case m.Question != nil:
+			c.About = lk
 		case c.Primary == nil:
 			c.Primary = lk
-		case m.Question != nil:
-			if c.Quiet == nil {
-				c.Quiet = lk
-			}
 		default:
 			c.Quiet, c.Primary = c.Primary, lk
 		}

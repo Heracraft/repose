@@ -40,4 +40,18 @@ test('the link shows under the event and the question, with its host', async ({ 
 		'href',
 		'https://github.com/acme/app/pull/12'
 	);
+	// Recent activity on /projects, and the Answered list once it is answered.
+	await page.goto('/projects');
+	await expect(
+		page.getByRole('link', { name: 'Compare resumes · localhost:8742' }).first()
+	).toBeVisible();
+	await page.goto(`/projects/${p.id}`);
+	await q.getByRole('button', { name: 'yes', exact: true }).click();
+	await page.goto('/questions');
+	await expect(
+		page
+			.getByTestId('answered-row')
+			.filter({ hasText: 'Merge it?' })
+			.getByRole('link', { name: 'PR 12 · github.com' })
+	).toBeVisible();
 });

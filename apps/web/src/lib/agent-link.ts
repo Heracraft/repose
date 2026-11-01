@@ -11,8 +11,13 @@ export interface AgentLink {
 
 /** The host a link names: with its port, the loopback addresses as localhost. */
 export function linkHost(url: URL): string {
-	const h = url.hostname.replace(/^\[|\]$/g, '');
-	const loop = h === 'localhost' || h === '::1' || /^127\./.test(h);
+	const h = url.hostname;
+	const bare = h.replace(/^\[|\]$/g, '');
+	const loop =
+		h === 'localhost' ||
+		bare === '::1' ||
+		/^127\./.test(bare) ||
+		/^::ffff:(127\.|7f[0-9a-f]{2}:)/i.test(bare);
 	const host = loop ? 'localhost' : h;
 	return url.port ? `${host}:${url.port}` : host;
 }

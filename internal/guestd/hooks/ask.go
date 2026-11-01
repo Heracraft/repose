@@ -86,8 +86,8 @@ type AskClosed struct {
 // LinkSink receives a notify that carries a link (DECISIONS I-931).
 type LinkSink func(agent, window, kind, text string, link msglink.Link)
 
-// SetLinkSink sends a notify with `--link` to sink. Without one, POST
-// /notify refuses a link (400 links_unsupported) rather than drop it.
+// SetLinkSink sends a notify with `--link` to sink; without one, the
+// notify goes to the plain sink and the link is dropped.
 func (s *Server) SetLinkSink(sink LinkSink) { s.linkSink = sink }
 
 func (s *Server) EnableAsk(q *questions.Store, msg Sink) {
@@ -151,11 +151,7 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 	}
 	agent := callerAgent(p.Agent)
 	window := s.callerWindow(r, p.Window, agent)
-	if link.Set() {
-		if s.linkSink == nil {
-			s.reject(w, r, http.StatusBadRequest, "links_unsupported")
-			return
-		}
+	if link.Set() && s.linkSink != nil {
 		s.linkSink(agent, window, kind, text, link)
 	} else {
 		s.msgSink(agent, window, kind, text)

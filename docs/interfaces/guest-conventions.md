@@ -802,7 +802,7 @@ shell tool, a script, the user.
 ```
 repose-notify [--done] [--link URL [--label TEXT]] [--agent NAME] MESSAGE...   # or the message on stdin
 repose-ask [--options A,B,C] [--timeout 30m] [--link URL [--label TEXT]] [--agent NAME] QUESTION...
-repose-ask --secret NAME [--timeout 2h] [--agent NAME] REASON...
+repose-ask --secret NAME [--timeout 2h] [--link URL [--label TEXT]] [--agent NAME] REASON...
 repose-ask --cancel [ID | --all]
 ```
 
@@ -822,7 +822,10 @@ repose-ask --cancel [ID | --all]
   label): http or https, a host, no user or password, at most 2048 bytes;
   the label at most 40 characters, without control, bidi or zero-width
   characters. A link that fails internal/msglink is exit 2; `--label`
-  without `--link` too. A guestd older than it ignores the link.
+  without `--link` too. A guestd older than it ignores the link. The host
+  is kept lowercase and, for an international name, in its ASCII
+  (punycode) form, which is what every channel and the dashboard show; a
+  label cannot hold `·` or a character that passes for it.
 - `repose-ask` POSTs `/ask`, then long-polls `GET /ask/<id>` and prints the
   answer on stdout. `--options` (at most 3, comma-separated, 64 bytes each)
   makes the answer one of them and gives ntfy, email and Google Chat buttons;

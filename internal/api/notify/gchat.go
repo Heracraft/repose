@@ -417,7 +417,7 @@ func gchatButtons(m Message) []gchatButton {
 	}
 	var link []gchatButton
 	if m.Link.Set() {
-		link = []gchatButton{button(gchatPlain(m.Link.Button(), 64), "OUTLINED", m.Link.URL)}
+		link = []gchatButton{button(gchatPlain(m.Link.ButtonFit(64), 64), "OUTLINED", m.Link.URL)}
 	}
 	if m.Question != nil {
 		return append(gchatAnswerButtons(m), link...)

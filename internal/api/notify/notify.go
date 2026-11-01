@@ -923,9 +923,9 @@ func ntfyActions(m Message) string {
 		acts = append(acts, ntfyAction{Action: "view", Label: label, URL: m.AnswerURL()})
 	}
 	// The agent's link (I-931), within ntfy's three actions: a question
-	// with three options keeps them, and its link is in the text.
+	// with three options keeps its answers and shows no link.
 	if m.Link.Set() && m.Kind != QuestionClosedKind && len(acts) < 3 {
-		acts = append(acts, ntfyAction{Action: "view", Label: m.Link.Button(), URL: m.Link.URL})
+		acts = append(acts, ntfyAction{Action: "view", Label: m.Link.ButtonFit(64), URL: m.Link.URL})
 	}
 	if len(acts) == 0 {
 		return ""

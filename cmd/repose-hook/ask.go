@@ -371,10 +371,6 @@ func runNotify(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return ExitError
 	}
 	if code != http.StatusNoContent {
-		if link.Set() && strings.Contains(string(body), "links_unsupported") {
-			_, _ = fmt.Fprintln(stderr, "repose-notify: this machine's guestd does not take --link; send the address in the message")
-			return ExitError
-		}
 		_, _ = fmt.Fprintf(stderr, "repose-notify: guestd refused the message: %s\n", strings.TrimSpace(string(body)))
 		return ExitError
 	}

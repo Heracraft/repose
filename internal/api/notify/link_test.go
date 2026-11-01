@@ -51,8 +51,12 @@ func TestAgentLinkOnEveryChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.Text, "Compare resumes · localhost:8742: "+link.URL) || !strings.Contains(r.Text, "Open job: https://d/projects/"+pid.String()) {
-		t.Fatalf("email text:\n%s", r.Text)
+	btn, proj := strings.Index(r.Text, "Compare resumes · localhost:8742: "+link.URL), strings.Index(r.Text, "Open job: https://d/projects/"+pid.String())
+	if btn < 0 || proj < btn {
+		t.Fatalf("email text, the link first and the project under it:\n%s", r.Text)
+	}
+	if hb, hp := strings.Index(r.HTML, link.URL), strings.Index(r.HTML, "https://d/projects/"+pid.String()); hb < 0 || hp < hb {
+		t.Fatalf("email html order")
 	}
 
 	// No --link: an address in the text stays text.
@@ -83,5 +87,24 @@ func TestAgentLinkOnEveryChannel(t *testing.T) {
 	}
 	if strings.Contains(actions, "localhost") {
 		t.Fatalf("question ntfy actions %q", actions)
+	}
+	// The question's email: its answers stay the buttons, the link is a
+	// plain link under the question.
+	r, err = notify.Render(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	about, answers := strings.Index(r.Text, "Compare resumes · localhost:8742: "), strings.Index(r.Text, "Answer with one click")
+	if about < 0 || answers < about || strings.Contains(r.HTML, ">Compare resumes · localhost:8742</a></td>") {
+		t.Fatalf("question email:\n%s", r.Text)
+	}
+}
+
+// A long label gives way to the host on a Chat button (64 bytes).
+func TestChatButtonKeepsTheHost(t *testing.T) {
+	link, _ := msglink.Check("https://aaaaaaaaaaaaaaaaaaaaaaaaaaaa.evil.example/", "Sign in at the accounts google page now")
+	b, _ := json.Marshal(notify.RenderGChat(notify.Message{Kind: "agent_message", Agent: "claude", Project: "p", Summary: "x", Dashboard: "https://d", ProjectID: uuid.New(), Link: link}))
+	if !strings.Contains(string(b), " · aaaaaaaaaaaaaaaaaaaaaaaaaaaa.evil.example\"") {
+		t.Fatalf("card %s", b)
 	}
 }
