@@ -89,6 +89,8 @@ type Server struct {
 	// secretRelay says whether the connected hostd relays a secret
 	// question's name (I-929); nil, or false, refuses `--secret`.
 	secretRelay func() bool
+	// linkSink takes a notify with a link (I-931).
+	linkSink LinkSink
 	// procRoot is where the caller's process tree is read, /proc on a
 	// guest.
 	procRoot string

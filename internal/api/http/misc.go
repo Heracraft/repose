@@ -102,7 +102,11 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]map[string]any, 0, len(evs))
 	for _, e := range evs {
-		out = append(out, map[string]any{"id": e.ID, "ts": e.TS, "kind": e.Kind, "agent": e.Agent, "window": e.TmuxWindow, "summary": e.Summary, "source": e.Source, "delivered": e.Delivered})
+		ev := map[string]any{"id": e.ID, "ts": e.TS, "kind": e.Kind, "agent": e.Agent, "window": e.TmuxWindow, "summary": e.Summary, "source": e.Source, "delivered": e.Delivered}
+		if l := store.EventLink(e.LinkURL, e.LinkLabel); l != nil {
+			ev["link"] = l
+		}
+		out = append(out, ev)
 	}
 	w.Header().Set(eventCountHeader, strconv.Itoa(total))
 	writeJSON(w, http.StatusOK, out)

@@ -27,6 +27,8 @@ type Question struct {
 	AnsweredAt  *time.Time `json:"answered_at"`
 	// Secret is the named secret the question asks for (DECISIONS I-929).
 	Secret string `json:"secret,omitempty"`
+	// Link is the agent's `--link` (DECISIONS I-931).
+	Link map[string]string `json:"link,omitempty"`
 }
 
 // AddQuestion has the project's guest ask a question, as a repose-ask in

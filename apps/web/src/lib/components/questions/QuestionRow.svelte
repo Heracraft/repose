@@ -14,6 +14,7 @@
 	import { onMount, tick } from 'svelte';
 	import { dateTime } from '$lib/format';
 	import { askedLine, closedLine, expiryLine } from '$lib/question-view';
+	import { agentLink } from '$lib/agent-link';
 	import type { Question } from '$lib/api/types';
 
 	let {
@@ -46,6 +47,7 @@
 	let asked = $derived(askedLine(q, now));
 	let expiry = $derived(expiryLine(q, now));
 	let windowName = $derived(q.window && q.window !== q.agent ? q.window : '');
+	let link = $derived(agentLink(q.link));
 
 	// The question turns "Show all" on only when the clamp cuts it.
 	let open = $state(false);
@@ -195,6 +197,14 @@
 				onclick={toggle}>{open ? 'Show less' : 'Show all'}</button
 			>
 		{/if}
+		{#if link}
+			<!-- What the question is about (I-931), before the answer. -->
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+			<a class="hk-link qrow-link" href={link.href} target="_blank" rel="noopener noreferrer"
+				>{link.text}</a
+			>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		{/if}
 		<div class="qrow-foot">
 			<p class="qrow-meta">
 				{#if projectHref}
@@ -323,6 +333,12 @@
 		-webkit-line-clamp: 3;
 		line-clamp: 3;
 		overflow: hidden;
+	}
+	.qrow-link {
+		display: inline-block;
+		margin-top: 0.25rem;
+		font-size: 0.8125rem;
+		overflow-wrap: anywhere;
 	}
 	.qrow-more {
 		margin: 0.125rem 0 0 -0.625rem;

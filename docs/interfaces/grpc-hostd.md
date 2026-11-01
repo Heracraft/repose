@@ -278,7 +278,9 @@ HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_runn
 agent, kind (completed|needs_input|error|agent_message|agent_done; agent_done
 from `repose-notify --done`, I-688), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
-I-121; a tmux window name or a herdr agent key since I-504)}`,
+I-121; a tmux window name or a herdr agent key since I-504), link_url and
+link_label (fields 6 and 7, I-931: a `repose-notify --link`, which hostd
+checks with internal/msglink and drops, keeping the event, when it fails)}`,
 `agent_question {guest_id, question_id, agent, tmux_window, text (capped 1
 KB), options, timeout_s, state, reason}` (a guest's `Question` notify, relayed;
 DECISIONS I-244: the api stores it by question_id, so a re-announcement
@@ -291,7 +293,9 @@ agent took it back, stored as `cancelled` with `answered_via` `agent`),
 expiry and on an open question; an older hostd drops it and the close is a
 plain cancel; `secret` (field 10, I-929) is the named secret a `repose-ask
 --secret` asks for, `[A-Z][A-Z0-9_]{0,63}`, with no options beside it;
-hostd drops a question whose name breaks that rule or that has both),
+hostd drops a question whose name breaks that rule or that has both;
+`link_url` and `link_label` (fields 11 and 12, I-931) are the ask's
+`--link`, checked as on `agent_event`),
 `guest_resting {guest_id, resting, at, reason}` (DECISIONS I-818: the guest
 was paused or woken, so the api shows the marker within seconds rather than
 at the next minute's sample. It is **not** a `guest_state_changed`: the

@@ -12,6 +12,7 @@
 	import StateDot from '$lib/components/StateDot.svelte';
 	import { eventKind, toneDot as dotFor } from '$lib/events';
 	import { clockTime, dateTime } from '$lib/format';
+	import { agentLink } from '$lib/agent-link';
 	import type { GuestState, ProjectEvent } from '$lib/api/types';
 
 	let { event }: { event: ProjectEvent } = $props();
@@ -36,6 +37,7 @@
 			: undefined
 	);
 	let toneDot = $derived(dotFor(info.tone));
+	let link = $derived(agentLink(event.link));
 
 	// The summary turns into a button only when two lines cut it short; a
 	// button on every row would be a tab stop that does nothing.
@@ -79,6 +81,13 @@
 			>
 		{:else}
 			<span class="line-clamp-2" bind:this={text}>{event.summary}</span>
+		{/if}
+		{#if link}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+			<a class="hk-link elink" href={link.href} target="_blank" rel="noopener noreferrer"
+				>{link.text}</a
+			>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/if}
 	</span>
 </li>
@@ -133,6 +142,12 @@
 		min-width: 0;
 		font-size: 0.875rem;
 		color: var(--hk-text);
+		overflow-wrap: anywhere;
+	}
+	.elink {
+		display: inline-block;
+		margin-top: 0.125rem;
+		font-size: 0.8125rem;
 		overflow-wrap: anywhere;
 	}
 	.more {

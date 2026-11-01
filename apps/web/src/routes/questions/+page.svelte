@@ -4,6 +4,7 @@
 	// 7 days' closed ones, each with its outcome and where it came from.
 	// The pending list is the rail's own (lib/questions.svelte.ts): this
 	// page's 10s poll hands it each answer, so the rail reads nothing more.
+	import { agentLink } from '$lib/agent-link';
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { listQuestions } from '$lib/api/client';
@@ -112,6 +113,7 @@
 				<ol class="answered-list" data-testid="answered">
 					{#each shown as r (r.question.id)}
 						{@const q = r.question}
+						{@const link = agentLink(q.link)}
 						<li class="arow" data-testid="answered-row" data-qid={q.id}>
 							<p class="arow-meta">
 								<time
@@ -127,6 +129,16 @@
 								>
 							</p>
 							<p class="arow-text" title={q.text}>{q.text}</p>
+							{#if link}
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+								<a
+									class="hk-link arow-link"
+									href={link.href}
+									target="_blank"
+									rel="noopener noreferrer">{link.text}</a
+								>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{/if}
 							<p class="arow-outcome">
 								<span data-testid="answered-outcome"
 									>{#if r.answer !== undefined}<span class="arow-answer">{r.answer}</span
@@ -153,6 +165,12 @@
 </PageShell>
 
 <style>
+	.arow-link {
+		display: inline-block;
+		margin-top: 0.125rem;
+		font-size: 0.8125rem;
+		overflow-wrap: anywhere;
+	}
 	.answered-list {
 		margin: 0;
 		padding: 0;

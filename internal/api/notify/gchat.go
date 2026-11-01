@@ -408,8 +408,28 @@ func gchatVerb(kind string) string {
 // question, each to its signed reply link (whose GET shows a confirm page,
 // so a link preview answers nothing); "Answer" to the project for a
 // question without reply links; "Dashboard" for a notice with no project;
-// else "Open project". A close reply has none: its thread holds the card.
+// else "Open project". The agent's link (I-931) comes before "Open
+// project", or after a question's own buttons. A close reply has none: its
+// thread holds the card.
 func gchatButtons(m Message) []gchatButton {
+	if m.Kind == QuestionClosedKind {
+		return nil
+	}
+	var link []gchatButton
+	if m.Link.Set() {
+		link = []gchatButton{button(gchatPlain(m.Link.ButtonFit(64), 64), "OUTLINED", m.Link.URL)}
+	}
+	if m.Question != nil {
+		return append(gchatAnswerButtons(m), link...)
+	}
+	if events.UserNoticeKinds[m.Kind] || m.ProjectID == uuid.Nil {
+		return append(link, button("Dashboard", "OUTLINED", strings.TrimRight(m.Dashboard, "/")+"/projects"))
+	}
+	return append(link, button("Open project", "OUTLINED", m.ProjectURL()))
+}
+
+// gchatAnswerButtons are a question's own buttons.
+func gchatAnswerButtons(m Message) []gchatButton {
 	switch {
 	case m.Kind == QuestionClosedKind:
 		return nil
@@ -421,10 +441,6 @@ func gchatButtons(m Message) []gchatButton {
 		return bs
 	case m.Question != nil && m.Question.Secret != "":
 		return []gchatButton{button(gchatPlain("Enter "+m.Question.Secret, 64), "OUTLINED", m.AnswerURL())}
-	case m.Question != nil:
-		return []gchatButton{button("Answer", "OUTLINED", m.ProjectURL())}
-	case events.UserNoticeKinds[m.Kind] || m.ProjectID == uuid.Nil:
-		return []gchatButton{button("Dashboard", "OUTLINED", strings.TrimRight(m.Dashboard, "/")+"/projects")}
 	}
-	return []gchatButton{button("Open project", "OUTLINED", m.ProjectURL())}
+	return []gchatButton{button("Answer", "OUTLINED", m.ProjectURL())}
 }

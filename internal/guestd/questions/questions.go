@@ -136,6 +136,10 @@ type Question struct {
 	// I-929). Its value never reaches this side through the question:
 	// an answer to it is stored empty.
 	Secret string `json:"secret,omitempty"`
+	// LinkURL and LinkLabel are the ask's `--link` (DECISIONS I-931),
+	// checked by the caller with internal/msglink.
+	LinkURL   string `json:"link_url,omitempty"`
+	LinkLabel string `json:"link_label,omitempty"`
 }
 
 // Open reports whether the question is still waiting.
@@ -218,7 +222,22 @@ func Clean(s string, n int) string {
 // Open starts a question and announces it. proc is the asker's agent
 // process key ("" for none).
 func (s *Store) Open(agent, window, proc, text string, options []string, timeout time.Duration) (Question, error) {
-	return s.open(agent, window, proc, "", text, options, timeout)
+	return s.open(Question{Agent: agent, Window: window, AgentProc: proc, Text: text, Options: options}, timeout)
+}
+
+// OpenAsk starts the question q describes, as POST /ask sends it: its
+// agent, window, process key, text, options or secret, and link. The rest
+// of q is ignored.
+func (s *Store) OpenAsk(q Question, timeout time.Duration) (Question, error) {
+	if q.Secret != "" {
+		if len(q.Options) > 0 || !ValidSecretName(q.Secret) {
+			return Question{}, fmt.Errorf("%w: secret names match [A-Z][A-Z0-9_]{0,63}, with no options", ErrInvalid)
+		}
+		if timeout <= 0 {
+			timeout = SecretTimeout
+		}
+	}
+	return s.open(q, timeout)
 }
 
 // OpenSecret starts a question that asks the owner for the named secret
@@ -232,11 +251,12 @@ func (s *Store) OpenSecret(agent, window, proc, name, text string, timeout time.
 	if timeout <= 0 {
 		timeout = SecretTimeout
 	}
-	return s.open(agent, window, proc, name, text, nil, timeout)
+	return s.open(Question{Agent: agent, Window: window, AgentProc: proc, Secret: name, Text: text}, timeout)
 }
 
-func (s *Store) open(agent, window, proc, secret, text string, options []string, timeout time.Duration) (Question, error) {
-	text = Clean(text, TextCap)
+func (s *Store) open(in Question, timeout time.Duration) (Question, error) {
+	agent, window, proc, secret, options := in.Agent, in.Window, in.AgentProc, in.Secret, in.Options
+	text := Clean(in.Text, TextCap)
 	if text == "" {
 		return Question{}, fmt.Errorf("%w: the question is empty", ErrInvalid)
 	}
@@ -263,7 +283,7 @@ func (s *Store) open(agent, window, proc, secret, text string, options []string,
 	q := Question{
 		ID: uuid.Must(uuid.NewV7()).String(), Agent: agent, Window: window, Text: text, Options: opts,
 		TimeoutS: uint32(timeout / time.Second), Created: now, Expires: now.Add(timeout), State: StateOpen,
-		AgentProc: proc, Secret: secret,
+		AgentProc: proc, Secret: secret, LinkURL: in.LinkURL, LinkLabel: in.LinkLabel,
 	}
 	s.mu.Lock()
 	open := 0

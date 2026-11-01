@@ -64,7 +64,7 @@ func (a *adminServer) Close() error { return a.Server.Close() }
 //	                 "waitlist": {position, invited, hold_hours}, "egress_gb", "invoices"}; every field optional
 //	GET  /polar/checkout/{id} -> f.CompleteCheckout, then 303 to the dashboard's /billing?checkout=done
 //	                 (Polar's hosted checkout, paid, and its webhook; every checkout's URL points here)
-//	POST /question   {"project_id","agent","text","options","timeout_s","secret"} -> f.AddQuestion,
+//	POST /question   {"project_id","agent","text","options","timeout_s","secret","link","link_label"} -> f.AddQuestion,
 //	                 or f.AddSecretQuestion with "secret" (I-929)
 //	POST /question/close {"question_id","state","reason"} -> f.CloseQuestion: the guest closes it;
 //	                 reason terminal answers it in the terminal, withdrawn withdraws it (I-690)
@@ -144,6 +144,8 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Options   []string `json:"options"`
 			TimeoutS  int      `json:"timeout_s"`
 			Secret    string   `json:"secret"`
+			Link      string   `json:"link"`
+			LinkLabel string   `json:"link_label"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -155,6 +157,13 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			q, err = f.AddSecretQuestion(body.ProjectID, body.Agent, body.Secret, body.Text, time.Duration(body.TimeoutS)*time.Second)
 		} else {
 			q, err = f.AddQuestion(body.ProjectID, body.Agent, body.Text, body.Options, time.Duration(body.TimeoutS)*time.Second)
+		}
+		if err == nil && body.Link != "" {
+			f.LinkLast(body.ProjectID, q.ID, body.Link, body.LinkLabel)
+			q.Link = map[string]string{"url": body.Link}
+			if body.LinkLabel != "" {
+				q.Link["label"] = body.LinkLabel
+			}
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -192,6 +201,9 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 			Windows        []string `json:"windows"`
 			Summaries      []string `json:"summaries"`
 			SpacingMinutes int      `json:"spacing_minutes"`
+			// Link and LinkLabel go on the newest of them (I-931).
+			Link      string `json:"link"`
+			LinkLabel string `json:"link_label"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -211,6 +223,7 @@ func newAdminServer(f *api.Fake) (*adminServer, error) {
 				pick(body.Kinds, i, "agent_message"), pick(body.Agents, i, ""), pick(body.Windows, i, ""),
 				pick(body.Summaries, i, fmt.Sprintf("e%03d", i)))
 		}
+		f.LinkLast(body.ProjectID, "", body.Link, body.LinkLabel)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /agents", func(w http.ResponseWriter, r *http.Request) {

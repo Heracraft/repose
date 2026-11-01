@@ -435,6 +435,10 @@ func eventAgent(ev Event) string {
 // (I-631), the way `machine  stopped` reads.
 func eventCells(ev Event) (verb, summary string) {
 	verb, summary = eventVerb(ev.Kind), flatSummary(ev.Summary)
+	// The agent's link ends the row (I-931): a terminal opens it.
+	if ev.Link != nil && ev.Link.URL != "" {
+		summary = strings.TrimSpace(summary + "  " + ev.Link.URL)
+	}
 	noun, _, two := strings.Cut(verb, " ")
 	if two && strings.HasPrefix(strings.ToLower(summary), strings.ToLower(noun)+" ") {
 		return noun, summary[len(noun)+1:]

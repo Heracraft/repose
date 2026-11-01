@@ -115,6 +115,7 @@ events       (id pk, project_id fk null, user_id fk null,  -- one of them is set
               ts timestamptz, ts_second bigint, kind text, agent text null,
               tmux_window text null, summary text, source text,  -- host|http|api
               skew_seconds int null, host_event_id text unique,
+              link_url text null, link_label text null,  -- an agent's --link (0033, I-931); tenant content
               delivered jsonb)  -- {email: ts|"held"|"dropped: resolved"|"error: <why>"|"failed: <why>", ntfy: ..., gchat: ...}; <why> is a few words, never a URL (I-689, I-691, I-692)
               -- unique (project_id, agent, kind, ts_second) for kinds completed|needs_input|error
 

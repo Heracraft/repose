@@ -26,6 +26,7 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/eventverbs"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // Message is one notification to deliver.
@@ -53,6 +54,10 @@ type Message struct {
 	ProjectID uuid.UUID
 	// Question is set on an agent_question (DECISIONS I-245).
 	Question *QuestionLinks
+	// Link is what the agent attached with `--link URL --label TEXT`
+	// (DECISIONS I-931); the zero value is none. Every channel draws it
+	// as a button that names its host.
+	Link msglink.Link
 	// Loc is the user's zone for the times an email prints; nil is UTC.
 	Loc *time.Location
 }
@@ -240,6 +245,8 @@ type row struct {
 	options     []string
 	expires     *time.Time
 	secret      *string // the named secret a question asks for (I-929)
+	linkURL     *string // the agent's --link (I-931)
+	linkLabel   *string
 	delivered   *string // this channel's delivered value, if any
 	tz          *string // the user's zone, for the times an email prints
 }
@@ -269,7 +276,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 	var rows []row
 	err := db.InTx(ctx, o.pool, func(tx db.Tx) error {
 		// An event names its project, or (0007, I-269) only its user.
-		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, q.secret_name, e.delivered ->> o.channel, u.tz
+		rs, err := tx.Query(ctx, `select o.event_id, o.channel, o.attempts, e.kind, e.agent, e.tmux_window, e.summary, e.ts, coalesce(p.slug, ''), u.id, u.email, u.ntfy_url, u.gchat_url, u.gchat_broken_at, u.notify_email, coalesce(p.id, '00000000-0000-0000-0000-000000000000'::uuid), q.id, q.state, q.options, q.expires_at, q.secret_name, e.link_url, e.link_label, e.delivered ->> o.channel, u.tz
 			from events_outbox o join events e on e.id = o.event_id left join projects p on p.id = e.project_id join users u on u.id = coalesce(p.user_id, e.user_id)
 			left join questions q on q.event_id = e.id
 			where o.next_at <= $1 and not (o.event_id::text || '/' || o.channel = any($2::text[]))
@@ -280,7 +287,7 @@ func (o *Outbox) pass(ctx context.Context) (int, error) {
 		defer rs.Close()
 		for rs.Next() {
 			var r row
-			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.secret, &r.delivered, &r.tz); err != nil {
+			if err := rs.Scan(&r.eventID, &r.channel, &r.attempts, &r.kind, &r.agent, &r.window, &r.summary, &r.eventTS, &r.slug, &r.userID, &r.email, &r.ntfy, &r.gchat, &r.gchatBroken, &r.notifyEmail, &r.projectID, &r.questionID, &r.qState, &r.options, &r.expires, &r.secret, &r.linkURL, &r.linkLabel, &r.delivered, &r.tz); err != nil {
 				return err
 			}
 			rows = append(rows, r)
@@ -435,6 +442,17 @@ func (o *Outbox) deliver(ctx context.Context, r row) {
 	}
 	if r.agent != nil {
 		m.Agent = *r.agent
+	}
+	if r.linkURL != nil {
+		label := ""
+		if r.linkLabel != nil {
+			label = *r.linkLabel
+		}
+		// Checked on the way in; checked again, since a button is drawn
+		// from it.
+		if l, err := msglink.Check(*r.linkURL, label); err == nil {
+			m.Link = l
+		}
 	}
 	if r.email != nil {
 		m.Email = *r.email
@@ -832,10 +850,8 @@ func (n *Ntfy) Send(ctx context.Context, m Message) error {
 	// (DECISIONS I-691).
 	req.Header.Set("Priority", ntfyPriority(m.Kind))
 	req.Header.Set("Click", m.AnswerURL())
-	if m.Question != nil {
-		if a := ntfyActions(m); a != "" {
-			req.Header.Set("Actions", a)
-		}
+	if a := ntfyActions(m); a != "" {
+		req.Header.Set("Actions", a)
 	}
 	// The URL is the user's: the default client reaches public addresses
 	// only and follows no redirect (I-444).
@@ -888,21 +904,33 @@ type ntfyAction struct {
 // the Actions header accepts as well as the comma format and which needs no
 // quoting rules for an option containing a comma or a semicolon: an http
 // button per option POSTing its signed reply link, or one view button to
-// the project page when the question takes free text. Non-ASCII is escaped
-// so the header stays ASCII.
+// the project page when the question takes free text; then the agent's
+// link (I-931), while ntfy's three actions last. A message without a link
+// has none. Non-ASCII is escaped so the header stays ASCII.
 func ntfyActions(m Message) string {
 	q := m.Question
 	var acts []ntfyAction
-	if len(q.Options) > 0 && len(q.Replies) == len(q.Options) {
+	switch {
+	case q == nil:
+		// A message: a tap opens the project; the link has its button.
+	case len(q.Options) > 0 && len(q.Replies) == len(q.Options):
 		for i, o := range q.Options {
 			acts = append(acts, ntfyAction{Action: "http", Label: o, URL: q.Replies[i], Method: "POST", Clear: true})
 		}
-	} else {
+	default:
 		label := "Answer"
 		if q.Secret != "" {
 			label = "Enter " + q.Secret
 		}
 		acts = append(acts, ntfyAction{Action: "view", Label: label, URL: m.AnswerURL()})
+	}
+	// The agent's link (I-931), within ntfy's three actions: a question
+	// with three options keeps its answers and shows no link.
+	if m.Link.Set() && m.Kind != QuestionClosedKind && len(acts) < 3 {
+		acts = append(acts, ntfyAction{Action: "view", Label: m.Link.ButtonFit(64), URL: m.Link.URL})
+	}
+	if len(acts) == 0 {
+		return ""
 	}
 	b, err := json.Marshal(acts)
 	if err != nil {

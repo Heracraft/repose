@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-855 entries.
+856 entries.
 
 ## Scope
 
@@ -887,3 +887,4 @@ pointer, not a summary.
 - **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27219
 - **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27237
 - **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27300
+- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27319

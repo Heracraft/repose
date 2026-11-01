@@ -21,6 +21,7 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // Kinds that reach the user's channels. A turn end (completed) is an
@@ -180,6 +181,10 @@ type Incoming struct {
 	Summary     string
 	Source      string
 	HostEventID string
+	// LinkURL and LinkLabel are an agent's `--link` (DECISIONS I-931);
+	// Insert checks them again and drops a link that fails.
+	LinkURL   string
+	LinkLabel string
 }
 
 // Insert stores an event with dedupe and outbox rows. inserted is false
@@ -212,6 +217,13 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 	}
 	if n.Source == "" {
 		n.Source = "host"
+	}
+	var linkURL, linkLabel *string
+	if l, err := msglink.Check(n.LinkURL, n.LinkLabel); err == nil && l.Set() {
+		linkURL = &l.URL
+		if l.Label != "" {
+			linkLabel = &l.Label
+		}
 	}
 	// The edge's hook path is guest-raised too and shares the vsock
 	// path's hourly cap; past it the event is dropped, as on vsock.
@@ -247,8 +259,8 @@ func (i *Ingest) Insert(ctx context.Context, n Incoming) (id uuid.UUID, inserted
 		if id == uuid.Nil {
 			id = store.NewID()
 		}
-		tag, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, agent, tmux_window, summary, source, skew_seconds, host_event_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) on conflict do nothing`,
-			id, n.ProjectID, ts, ts.Unix(), n.Kind, agent, window, n.Summary, n.Source, skew, hostEventID)
+		tag, err := tx.Exec(ctx, `insert into events (id, project_id, ts, ts_second, kind, agent, tmux_window, summary, source, skew_seconds, host_event_id, link_url, link_label) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) on conflict do nothing`,
+			id, n.ProjectID, ts, ts.Unix(), n.Kind, agent, window, n.Summary, n.Source, skew, hostEventID, linkURL, linkLabel)
 		if err != nil {
 			return err
 		}
@@ -451,7 +463,8 @@ func (i *Ingest) OnEvent(ctx context.Context, hostID uuid.UUID, ev *hostdv1.Even
 		} else if capped {
 			return true
 		}
-		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, Agent: GuestAgent(store.CleanText(e.AgentEvent.Agent, MaxAgent)), Window: e.AgentEvent.TmuxWindow, Summary: e.AgentEvent.Summary, Source: "host", HostEventID: ev.EventId})
+		_, _, err = i.Insert(ctx, Incoming{ProjectID: p.ID, TS: ts, Kind: kind, Agent: GuestAgent(store.CleanText(e.AgentEvent.Agent, MaxAgent)), Window: e.AgentEvent.TmuxWindow, Summary: e.AgentEvent.Summary, Source: "host", HostEventID: ev.EventId,
+			LinkURL: e.AgentEvent.GetLinkUrl(), LinkLabel: e.AgentEvent.GetLinkLabel()})
 		if err != nil {
 			i.log.Error("agent event insert", "event", "agent_event", "err", err.Error())
 			return false

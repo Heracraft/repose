@@ -30,6 +30,7 @@ import (
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/guestd/system"
 	"github.com/heracraft/repose/internal/guestd/warn"
+	"github.com/heracraft/repose/internal/msglink"
 	"github.com/heracraft/repose/internal/obs"
 	"github.com/heracraft/repose/internal/vsockrpc"
 )
@@ -193,6 +194,7 @@ func New(cfg Config) (*Server, error) {
 	s.asks = questions.New(paths.QuestionsDir(), s.emitQuestion, log, cfg.Now)
 	s.hooks.EnableAsk(s.asks, s.AgentEvent)
 	s.hooks.SetSecretRelay(s.relaysSecret.Load)
+	s.hooks.SetLinkSink(s.AgentEventLinked)
 	return s, nil
 }
 
@@ -418,6 +420,14 @@ func (s *Server) AgentEvent(agent, window, kind, summary string) {
 	}})
 }
 
+// AgentEventLinked is AgentEvent with the link a `repose-notify --link`
+// attached (DECISIONS I-931).
+func (s *Server) AgentEventLinked(agent, window, kind, summary string, link msglink.Link) {
+	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_AgentEvent{
+		AgentEvent: &guestdv1.AgentEvent{Agent: agent, TmuxWindow: window, Kind: kind, Summary: summary, LinkUrl: link.URL, LinkLabel: link.Label},
+	}})
+}
+
 // emitQuestion queues a Question notification for an ask that opened, is
 // re-announced, or was closed from this side.
 func (s *Server) emitQuestion(q questions.Question) {
@@ -428,6 +438,7 @@ func (s *Server) emitQuestion(q questions.Question) {
 	s.enqueue(&guestdv1.Notify{N: &guestdv1.Notify_Question{Question: &guestdv1.Question{
 		QuestionId: q.ID, Agent: q.Agent, TmuxWindow: q.Window, Text: q.Text,
 		Options: q.Options, TimeoutS: q.TimeoutS, State: state, Reason: q.Reason, Secret: q.Secret,
+		LinkUrl: q.LinkURL, LinkLabel: q.LinkLabel,
 	}}})
 }
 

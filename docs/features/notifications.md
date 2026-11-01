@@ -170,6 +170,13 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   the agent's repose-ask prints nothing and returns once the machine has
   the secret. It waits 2 hours by default, and a link opened signed out
   comes back to the dialog after sign-in.
+- `--link URL [--label TEXT]` on `repose-notify` and `repose-ask` (I-931)
+  attaches one link: a Google Chat button before "Open project" (after a
+  question's own), an ntfy `view` action within its three, the email's
+  main button (a question keeps its way to answer as the main one and the
+  link goes under it), and a link under the message on the dashboard and
+  after it in `repose events`. Its text is "LABEL · HOST". Without
+  `--link` there is no link button; an address in the text is text.
 - Answering in the terminal (I-690): any prompt the owner sends the agent
   that asked closes its open questions; all five agents report the prompt
   through a hook (gemini and pi through the platform's extensions). The

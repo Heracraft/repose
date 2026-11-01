@@ -33,6 +33,8 @@ type Question struct {
 	AnsweredAt  *time.Time `json:"answered_at"`
 	// Secret is the named secret the question asks for (DECISIONS I-929).
 	Secret string `json:"secret,omitempty"`
+	// Link is the agent's `--link URL --label TEXT` (DECISIONS I-931).
+	Link *EventLink `json:"link,omitempty"`
 }
 
 type questionList struct {
@@ -117,6 +119,9 @@ func printQuestion(w io.Writer, q Question, now time.Time) {
 	}
 	if q.Secret != "" {
 		_, _ = fmt.Fprintf(w, "  asks for the secret %s\n", q.Secret)
+	}
+	if q.Link != nil && q.Link.URL != "" {
+		_, _ = fmt.Fprintf(w, "  link: %s\n", q.Link.URL)
 	}
 }
 

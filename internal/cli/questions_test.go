@@ -351,3 +351,21 @@ func TestReplySecret(t *testing.T) {
 		t.Fatalf("prompted value %q", v)
 	}
 }
+
+// TestQuestionAndEventLink (DECISIONS I-931): `repose questions` prints a
+// question's link, and an event's row ends with its address.
+func TestQuestionAndEventLink(t *testing.T) {
+	e, p, fake, out, _ := questionEnv(t)
+	q, _ := fake.AddQuestion(p.ID, "claude", "Merge?", nil, time.Hour)
+	fake.LinkLast(p.ID, q.ID, "https://github.com/h/r/pull/12", "PR 12")
+	if err := QuestionsCmd(context.Background(), e, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.buf.String(), "  link: https://github.com/h/r/pull/12\n") {
+		t.Fatalf("questions:\n%s", out.buf.String())
+	}
+	line := eventLine(Event{TS: time.Now(), Kind: "agent_done", Agent: "claude", Summary: "resume done", Link: &EventLink{URL: "http://localhost:8742/a"}}, eventsWidths{agent: 6, verb: 7})
+	if !strings.HasSuffix(line, "resume done  http://localhost:8742/a") {
+		t.Fatalf("event line %q", line)
+	}
+}

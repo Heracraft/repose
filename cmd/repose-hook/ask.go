@@ -29,6 +29,7 @@ import (
 
 	"github.com/heracraft/repose/internal/guestd/hooks"
 	"github.com/heracraft/repose/internal/guestd/questions"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // Exit codes of repose-notify and repose-ask
@@ -53,17 +54,22 @@ var LostAfter = 2 * time.Minute
 // pollWait is the long-poll length asked of guestd.
 var pollWait = 25
 
-const notifyUsage = `usage: repose-notify [--done] [--agent NAME] MESSAGE...
+const notifyUsage = `usage: repose-notify [--done] [--link URL [--label TEXT]] [--agent NAME] MESSAGE...
 
 Sends MESSAGE to the project owner's notification channels (email, ntfy,
 Google Chat) and returns at once. Without MESSAGE it reads the message
 from stdin. With --done the message says the work they asked for is
 finished. Messages are capped at 1 KB and share the project's notification
 limit of 30 an hour.
+
+--link URL gives the message a button that opens URL (http or https),
+named by --label TEXT (40 characters) and the URL's host: "Compare
+resumes · localhost:8742". Pass the one thing to open there rather than
+in the message.
 `
 
-const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--agent NAME] QUESTION...
-       repose-ask --secret NAME [--timeout 30m] [--agent NAME] REASON...
+const askUsage = `usage: repose-ask [--options A,B,C] [--timeout 30m] [--link URL [--label TEXT]] [--agent NAME] QUESTION...
+       repose-ask --secret NAME [--timeout 2h] [--link URL [--label TEXT]] [--agent NAME] REASON...
        repose-ask --cancel [ID | --all]
 
 Sends QUESTION to the project owner's channels and waits for the reply,
@@ -80,6 +86,9 @@ is stored as the project's secret NAME, and repose-ask returns once the
 machine has it: the next command reads $NAME and
 /run/repose/secrets/NAME. Nothing is printed on stdout. It waits 2 hours
 without --timeout.
+
+--link URL [--label TEXT] gives the question a button to what it is about,
+as repose-notify --link does.
 
 --cancel withdraws this agent's open questions, or the one with ID (printed
 on stderr when it was asked), or with --all every open question on the
@@ -106,6 +115,8 @@ func isSub(argv []string) (string, []string) {
 }
 
 type subOpts struct {
+	link    string
+	label   string
 	secret  string
 	agent   string
 	socket  string
@@ -168,6 +179,10 @@ func parseSub(args []string, ask bool) (subOpts, error) {
 				return o, fmt.Errorf("unknown flag %s", a)
 			}
 			o.secret, err = take()
+		case "link":
+			o.link, err = take()
+		case "label":
+			o.label, err = take()
 		case "agent":
 			o.agent, err = take()
 		case "socket":
@@ -339,13 +354,18 @@ func runNotify(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "repose-notify: no message\n\n%s", notifyUsage)
 		return ExitUsage
 	}
+	link, err := msglink.Check(o.link, o.label)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "repose-notify: %v\n", err)
+		return ExitUsage
+	}
 	kind := ""
 	if o.done {
 		kind = hooks.KindDone
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
-	code, body, err := call(ctx, socketClient(o.socket, Timeout), http.MethodPost, "/notify", hooks.MessagePayload{Agent: o.agent, Window: o.window, Kind: kind, Text: text})
+	code, body, err := call(ctx, socketClient(o.socket, Timeout), http.MethodPost, "/notify", hooks.MessagePayload{Agent: o.agent, Window: o.window, Kind: kind, Text: text, Link: link.URL, LinkLabel: link.Label})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "repose-notify: guestd is not answering on %s: %v\n", o.socket, err)
 		return ExitError
@@ -380,6 +400,11 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 		_, _ = fmt.Fprintf(stderr, "repose-ask: at most 3 --options (ntfy shows three buttons)\n")
 		return ExitUsage
 	}
+	link, err := msglink.Check(o.link, o.label)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "repose-ask: %v\n", err)
+		return ExitUsage
+	}
 	if o.secret != "" {
 		if len(o.options) > 0 {
 			_, _ = fmt.Fprintf(stderr, "repose-ask: --secret takes no --options\n\n%s", askUsage)
@@ -393,7 +418,8 @@ func runAsk(args []string, stdin io.Reader, stdout, stderr io.Writer, sigs <-cha
 	short := socketClient(o.socket, Timeout)
 	asked := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-	code, body, err := call(ctx, short, http.MethodPost, "/ask", hooks.AskPayload{Agent: o.agent, Window: o.window, Text: text, Options: o.options, TimeoutS: uint32(o.timeout / time.Second), Secret: o.secret})
+	code, body, err := call(ctx, short, http.MethodPost, "/ask", hooks.AskPayload{Agent: o.agent, Window: o.window, Text: text, Options: o.options, TimeoutS: uint32(o.timeout / time.Second), Secret: o.secret,
+		Link: link.URL, LinkLabel: link.Label})
 	cancel()
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "repose-ask: guestd is not answering on %s: %v\n", o.socket, err)
@@ -569,8 +595,8 @@ func runCancel(o subOpts, stdout, stderr io.Writer) int {
 	switch {
 	case !o.cancel:
 		return usage("--all goes with --cancel")
-	case len(o.options) > 0 || o.timeout != 0 || o.secret != "":
-		return usage("--cancel takes no --options, --secret or --timeout")
+	case len(o.options) > 0 || o.timeout != 0 || o.secret != "" || o.link != "" || o.label != "":
+		return usage("--cancel takes no --options, --secret, --link or --timeout")
 	case len(o.rest) > 1, o.all && len(o.rest) == 1:
 		return usage("--cancel takes one question ID, or --all")
 	}

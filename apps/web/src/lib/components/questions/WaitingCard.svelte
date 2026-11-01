@@ -384,6 +384,7 @@
 	name={asking?.secret ?? ''}
 	agent={asking?.agent ?? ''}
 	reason={asking?.text ?? ''}
+	link={asking?.link}
 	target={asking?.project}
 	existing={replaces}
 	notice={orphaned

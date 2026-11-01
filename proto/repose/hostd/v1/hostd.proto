@@ -432,6 +432,10 @@ message AgentEvent {
   // `window` of 13-notifications.md §5.1); empty when unknown. I-121.
   // A tmux window name or a herdr agent key, at most 64 bytes (I-504).
   string tmux_window = 5;
+  // The link a `repose-notify --link URL --label TEXT` attached
+  // (DECISIONS I-931), as internal/msglink checked it; tenant content.
+  string link_url = 6;
+  string link_label = 7;
 }
 // AgentQuestion is a guest's Question notify, relayed (DECISIONS I-244).
 // The text is tenant content: delivered to the user's channels, never
@@ -452,6 +456,9 @@ message AgentQuestion {
   // The named secret the question asks for (DECISIONS I-929); empty for
   // a question that takes a written answer.
   string secret = 10;
+  // The `--link URL --label TEXT` of the ask (DECISIONS I-931).
+  string link_url = 11;
+  string link_label = 12;
 }
 // GuestResting is a guest paused or woken (DECISIONS I-818), so the api
 // shows the marker within seconds rather than at the next minute's

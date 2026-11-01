@@ -8,6 +8,7 @@
   not drawn while there is nothing to show.
 -->
 <script lang="ts">
+	import { agentLink } from '$lib/agent-link';
 	import { onMount, untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
@@ -112,6 +113,7 @@
 		<ol class="ra">
 			{#each rows as e (`${e.project.id}-${e.id}`)}
 				{@const k = eventKind(e.kind, e.agent)}
+				{@const link = agentLink(e.link)}
 				<li class="ra-row">
 					<time class="ra-time" datetime={e.ts} title={dateTime(e.ts)}>{when(e.ts)}</time>
 					<span class="ra-kind"
@@ -120,11 +122,20 @@
 					<a href={resolve('/projects/[id]', { id: e.project.id })} class="ra-project"
 						><span class="hk-sr">Project </span>{e.project.name}</a
 					>
-					<span class="ra-summary" title={e.summary}
-						>{#if e.agent}<span class="ra-agent">{e.agent}</span
-							>{/if}{e.summary}{#if e.more > 0}<span class="ra-more">and {e.more} more</span
-							>{/if}</span
-					>
+					<span class="ra-tail">
+						<span class="ra-summary" title={e.summary}
+							>{#if e.agent}<span class="ra-agent">{e.agent}</span
+								>{/if}{e.summary}{#if e.more > 0}<span class="ra-more">and {e.more} more</span
+								>{/if}</span
+						>
+						{#if link}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- the agent's own address, checked by agentLink -->
+							<a class="hk-link ra-link" href={link.href} target="_blank" rel="noopener noreferrer"
+								>{link.text}</a
+							>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{/if}
+					</span>
 				</li>
 			{/each}
 		</ol>
@@ -179,6 +190,21 @@
 	.ra-project:hover {
 		text-decoration-color: currentColor;
 	}
+	/* The summary and the agent's link (I-931), which keeps its words. */
+	.ra-tail {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.ra-link {
+		flex: none;
+		max-width: 45%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.8125rem;
+	}
 	.ra-summary {
 		min-width: 0;
 		overflow: hidden;
@@ -205,9 +231,16 @@
 			grid-template-columns: auto auto minmax(0, 1fr);
 			row-gap: 0.25rem;
 		}
-		.ra-summary {
+		.ra-tail {
 			grid-column: 1 / -1;
+			flex-wrap: wrap;
+			row-gap: 0.25rem;
+		}
+		.ra-summary {
 			white-space: normal;
+		}
+		.ra-link {
+			max-width: 100%;
 		}
 	}
 	/* A thumb's 44px, the row's height unchanged. */

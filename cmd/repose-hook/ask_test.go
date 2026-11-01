@@ -16,6 +16,7 @@ import (
 
 	"github.com/heracraft/repose/internal/guestd/hooks"
 	"github.com/heracraft/repose/internal/guestd/questions"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // guestSide is the real guest half behind the commands: guestd's hook
@@ -67,6 +68,11 @@ func (g *guestSide) start(t *testing.T) {
 	srv := hooks.NewServer(g.socket, -1, func(string, string, string, string) {}, nil, log)
 	srv.SetHerdrResolver(g.herdr)
 	srv.SetSecretRelay(func() bool { return !g.noRelay })
+	srv.SetLinkSink(func(agent, window, kind, summary string, l msglink.Link) {
+		g.mu.Lock()
+		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary, l.URL, l.Label}, "|"))
+		g.mu.Unlock()
+	})
 	srv.EnableAsk(g.store, func(agent, window, kind, summary string) {
 		g.mu.Lock()
 		g.messages = append(g.messages, strings.Join([]string{agent, window, kind, summary}, "|"))
@@ -511,4 +517,62 @@ func TestAskSecret(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestNotifyAndAskLink is `--link URL --label TEXT` (DECISIONS I-931): it
+// travels with the message or the question, and a link the rule refuses
+// is exit 2 before anything is sent.
+func TestNotifyAndAskLink(t *testing.T) {
+	old := pollWait
+	pollWait = 1
+	t.Cleanup(func() { pollWait = old })
+	g := newGuestSide(t)
+	withEnv(t, "REPOSE_HOOK_SOCKET", g.socket, "REPOSE_HOOK_AGENT", "claude", "REPOSE_AGENT_WINDOW", "claude")
+	var out, errb bytes.Buffer
+	if code := runNotify([]string{"--done", "--link", "http://localhost:8742/out/a.html", "--label", "Compare  resumes", "resume", "done"}, strings.NewReader(""), &out, &errb); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	g.mu.Lock()
+	got := strings.Join(g.messages, "\n")
+	g.mu.Unlock()
+	if got != "claude|claude|agent_done|resume done|http://localhost:8742/out/a.html|Compare resumes" {
+		t.Fatalf("messages: %q", got)
+	}
+	for _, args := range [][]string{
+		{"--link", "javascript:alert(1)", "x"},
+		{"--link", "https://bank.example@evil.example/", "x"},
+		{"--label", "no link", "x"},
+		{"--link", "localhost:3000", "x"},
+	} {
+		errb.Reset()
+		if code := runNotify(args, strings.NewReader(""), &out, &errb); code != ExitUsage || errb.Len() == 0 {
+			t.Errorf("%v: exit %d %q", args, code, errb.String())
+		}
+	}
+	g.mu.Lock()
+	n := len(g.messages)
+	g.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("a refused link sent a message: %d", n)
+	}
+
+	done, _, _ := ask([]string{"--link", "https://github.com/h/r/pull/12", "--label", "PR 12", "Merge it?", "--options", "yes,no"}, make(chan os.Signal))
+	q := g.open(t)
+	if q.LinkURL != "https://github.com/h/r/pull/12" || q.LinkLabel != "PR 12" {
+		t.Fatalf("asked %+v", q)
+	}
+	g.mu.Lock()
+	sent := g.asked[len(g.asked)-1]
+	g.mu.Unlock()
+	if sent.LinkURL != q.LinkURL {
+		t.Fatalf("announced %+v", sent)
+	}
+	_ = g.store.Answer(q.ID, questions.StateAnswered, "yes")
+	if c := waitExit(t, done); c != ExitOK {
+		t.Fatalf("exit %d", c)
+	}
+	adone, _, _ := ask([]string{"--link", "ftp://x.example/", "q?"}, make(chan os.Signal))
+	if c := waitExit(t, adone); c != ExitUsage {
+		t.Fatalf("bad link on ask: exit %d", c)
+	}
 }

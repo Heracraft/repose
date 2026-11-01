@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
+	"github.com/heracraft/repose/internal/msglink"
 )
 
 // Everything a guest sends over vsock is written by whoever is root in that
@@ -180,6 +181,17 @@ func cleanQuestion(guestID string, id, agent, window, text string, options []str
 		GuestId: guestID, QuestionId: id, Agent: cleanToken(agent, capAgent), TmuxWindow: cleanLine(window, capWindow),
 		Text: cleanText(text, capText), Options: opts, TimeoutS: timeoutS, State: st, Reason: reason, Secret: secret,
 	}, true
+}
+
+// cleanLink is a guest's `--link` as internal/msglink checks it (DECISIONS
+// I-931); one that fails is dropped, and the event or question goes on
+// without it.
+func cleanLink(rawURL, label string) (string, string) {
+	l, err := msglink.Check(rawURL, label)
+	if err != nil {
+		return "", ""
+	}
+	return l.URL, l.Label
 }
 
 // questionSecret is a secret name a question may ask for: the api's rule.
