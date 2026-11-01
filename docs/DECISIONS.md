@@ -27370,3 +27370,15 @@ the api's series can be pushed instead of scraped.** (edge-remote-write,
   `iifname "wg0" oifname "wg0" ip daddr { 10.255.0.3/32 } tcp dport { 3100, 9090 } accept`.
   The edge switch that applies it is the owner's or the conductor's; this
   branch ships the configuration only.
+**I-954. Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge.** (ci-green, 2026-11-01.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `5bbe3246` (tonight) failed. The causes rotated — `TestHelloRefusedClosesTheStream` first, others after — so nothing looked like one standing break, and each conductor saw their own branch's checks pass and merged. A branch is checked before it is merged; the merge result is not, and nobody was reading it.
+
+The two faults on `5bbe3246`:
+
+- **`internal/testguest/testguest_test.go:173`**, `defer c.Close()` with the error dropped, which `errcheck` refuses. The same file writes `defer func() { _ = c.Close() }()` eighty lines up, which is the repo's form; that is now what line 173 says. Nothing but the lint gate was affected.
+- **`apps/web/tests/billing.spec.ts:191`** asserted the memory meter reads `0 GB of 16 GB` on a plan just bought. The meter changed meaning on 2026-10-21 (owner, I-837 and the `MemoryMeter` header): it reads **memory running now**, not usage billed over the period. Buying a plan does not stop what already runs, so an account with one running `large` correctly reads `8 GB of 16 GB`. The assertion was stale, not the page. What the checkout actually changes is the limit, so that is what the test now asserts.
+
+*Evidence.* `golangci-lint run ./...`: 0 issues. `playwright test billing.spec.ts`: 37 passed. Those are the two jobs that were red; the go job's tests, the nix evaluation, the GoReleaser matrix, buf, the completions, both `install.sh` runs and the alert rules were already green on `5bbe3246`.
+
+**What this asks of the next conductor.** Read `gh run list --workflow ci.yml --branch main` after a merge batch, before the release. The release gate checks the branches; it does not check `main` after they are joined, which is the one state that ships. Whether the gate should refuse a cut over a red `main` is open — it would have caught this on 2026-10-18 and held nine releases, which is why it is the owner's call and not done here.

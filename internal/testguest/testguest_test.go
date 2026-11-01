@@ -170,7 +170,7 @@ func TestTheTmuxSocketFitsWhateverTheTestIsCalled(t *testing.T) {
 	// next, which is what TMUX_TMPDIR pins; prove it rather than trust the
 	// path's length alone.
 	c := dial(t, g, priv)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	sess, err := c.NewSession()
 	if err != nil {
 		t.Fatal(err)
