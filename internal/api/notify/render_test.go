@@ -219,7 +219,7 @@ func TestRenderEscapesTenantText(t *testing.T) {
 }
 
 // One Resend call carries html and text of the same content, and the
-// subject keeps its [repose] prefix.
+// subject is the rendered subject with nothing before it (I-934).
 func TestEmailSendsHTMLAndText(t *testing.T) {
 	var got struct {
 		Subject string `json:"subject"`
@@ -235,7 +235,7 @@ func TestEmailSendsHTMLAndText(t *testing.T) {
 	if err := e.Send(context.Background(), fixtures()["trial_ending"]); err != nil {
 		t.Fatal(err)
 	}
-	if got.Subject != "[repose] Your free week ends soon" {
+	if got.Subject != "Your free week ends soon" {
 		t.Fatalf("subject %q", got.Subject)
 	}
 	if !strings.HasPrefix(got.HTML, "<!doctype html>") || !strings.Contains(got.HTML, "$29.00") || !strings.Contains(got.Text, "$29.00") || !strings.Contains(got.Text, "4 October 2026 at 14:00 UTC") {

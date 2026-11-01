@@ -123,7 +123,7 @@ func TestEmailQuestionHasReplyLinks(t *testing.T) {
 	if err := (&notify.Email{APIKey: "k", URL: srv.URL}).Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	if subject != "[repose] todo-app: claude asks" {
+	if subject != "todo-app: claude asks" {
 		t.Fatalf("subject %q", subject)
 	}
 	for _, want := range []string{"Drop the legacy table?", "yes: https://api/v1/questions/reply?token=a&via=email", "no: https://api/v1/questions/reply?token=b&via=email",
