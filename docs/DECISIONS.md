@@ -27382,3 +27382,16 @@ The two faults on `5bbe3246`:
 *Evidence.* `golangci-lint run ./...`: 0 issues. `playwright test billing.spec.ts`: 37 passed. Those are the two jobs that were red; the go job's tests, the nix evaluation, the GoReleaser matrix, buf, the completions, both `install.sh` runs and the alert rules were already green on `5bbe3246`.
 
 **What this asks of the next conductor.** Read `gh run list --workflow ci.yml --branch main` after a merge batch, before the release. The release gate checks the branches; it does not check `main` after they are joined, which is the one state that ships. Whether the gate should refuse a cut over a red `main` is open — it would have caught this on 2026-10-18 and held nine releases, which is why it is the owner's call and not done here.
+**I-948. The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open.** (vmfix, 2026-11-01.)
+
+I-930 shipped on a check that looked green and was not reached. Three faults lay on top of each other, each hiding the next.
+
+- **Three dead `copy_from_machine` calls.** They copy a file out of the guest to the driver's `/tmp/shared`. repose's guest image does not mount that share, so each call raised `FileNotFoundError` and ended the run where it stood. Nothing read the host-side copy: `magenta_share` runs `convert` inside the guest, and the screenshot assertion uses `stat` there. All three are removed rather than fixed, because there is nothing for them to do.
+- **Then the subtests they had been hiding ran**, including both of I-930's.
+- **The idle check cannot be started eight times in a row.** The subtests start `repose-desktop-idle-check.service` eight times within seconds and systemd refuses the later ones with `start-limit-hit`. Every start now runs `systemctl reset-failed` first, which is what systemd's own error prescribes.
+
+**The subtest was also wrong about its own case.** "CDP that is actually used" drove the browser with one short `curl`, which the check cannot see: it counts `bytes_sent` over *established* sockets on :9225, and a socket that opens and closes between two checks takes its bytes with it. A browser tool (`chrome-devtools-mcp`, playwright MCP) holds one connection for its whole life, which is the case I-930 was written for and is what the subtest now holds, through `systemd-run`.
+
+**This leaves a real gap, recorded and not closed.** A guest reached only by short-lived CDP requests, with no viewer for 30 minutes, has its browser stopped while it is in use. The 9224 proxy starts it again on the next request, so the cost is a lost page, not a wedged machine; before I-930 the browser never stopped at all, which is the defect being fixed. The fix that fits is for the 9224 proxy to stamp `last-cdp` itself, since it already sees every request. That changes a base that is published, so it is the owner's call and the lane's work, not a quiet follow-on here.
+
+*Also found:* CI builds only `fragment-contract`, `fragment-examples` and `guest-keystroke-path` from `nix/guest/tests`, so `guest-desktop` is built at release time and only when something it covers is touched. That is how it rotted unseen. Whether that set is the right one is open.
