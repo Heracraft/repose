@@ -1,16 +1,20 @@
 <script lang="ts">
 	// The wordmark: the mark, then "repose" in Noto Serif 600 (I-837). The
-	// mark is a cell dividing (DECISIONS I-779, which supersedes I-363's
-	// traced cross): two lobes on a 45-degree axis, the mother 23 in the
-	// text's ink and the daughter 21 in the accent, drawn with a cleavage
-	// furrow of radius 18 tangent to both, which pinches the outline inward
-	// to a bridge of 7. The furrow is what makes it a division: two circles
-	// unioned bulge where they meet, a dividing cell pulls in. The daughter
-	// is the smaller one because the division has not finished. Geometry
-	// from ops/dev/logo-mitosis.py, which prints these two paths. The
-	// viewBox is cropped to the drawing. The daughter is the kit's accent,
-	// the one brand use of the blue (I-837); I-779 drew it in the landing's
-	// --sh-accent, which is the same blue before the kit named it.
+	// mark is a cell dividing (DECISIONS I-779, furrow narrowed in I-936):
+	// two lobes on a 45-degree axis with their centres 52 apart, the mother
+	// 23 in the text's ink and the daughter 21 in the accent, drawn with a
+	// cleavage furrow of radius 5.6 tangent to both, which pinches the
+	// outline inward to a bridge of 7. The furrow is what makes it a
+	// division: two circles unioned bulge where they meet, a dividing cell
+	// pulls in. A furrow this size creases the lobes over 19 degrees of
+	// their circumference, so they stay round; I-779's radius of 18 took 32
+	// and drew the mother out into a teardrop. The daughter is the smaller
+	// one because the division has not finished. Geometry from
+	// ops/dev/logo-mitosis.py, which prints the viewBox, these two paths
+	// and the stage the keyframes morph from. The viewBox is cropped to the
+	// drawing. The daughter is the kit's accent, the one brand use of the
+	// blue (I-837); I-779 drew it in the landing's --sh-accent, which is
+	// the same blue before the kit named it.
 	// word=false draws the mark alone, for a header row on a phone that has
 	// no room for both; the link around it carries the name.
 	// divide plays the division once, for the header of a page a visitor
@@ -26,14 +30,14 @@
 </script>
 
 <span class="logo logo--{size}"
-	>{#if mark}<svg viewBox="4 4 92 92" class="mark" class:divide aria-hidden="true"
+	>{#if mark}<svg viewBox="9 9 82 82" class="mark" class:divide aria-hidden="true"
 			><path
 				class="mother"
-				d="M32.5 49.5A23 23 0 1 1 49.5 32.5A18 18 0 0 0 54.3 49.4L49.4 54.3A18 18 0 0 0 32.5 49.5Z"
+				d="M42.7 53.3A23 23 0 1 1 53.3 42.7A5.6 5.6 0 0 0 54.3 49.2L49.2 54.3A5.6 5.6 0 0 0 42.7 53.3Z"
 				fill="currentColor"
 			/><path
 				class="daughter"
-				d="M70.6 54.3A21 21 0 1 1 54.3 70.6A18 18 0 0 0 49.4 54.3L54.3 49.4A18 18 0 0 0 70.6 54.3Z"
+				d="M60.6 50.3A21 21 0 1 1 50.3 60.6A5.6 5.6 0 0 0 49.2 54.3L54.3 49.2A5.6 5.6 0 0 0 60.6 50.3Z"
 			/></svg
 		>{/if}{#if word}<span class="word">repose</span>{/if}</span
 >
@@ -83,14 +87,14 @@
 	@keyframes divide-mother {
 		from {
 			d: path(
-				'M32.0 59.7A23 23 0 1 1 59.7 32.0A18 18 0 0 0 64.5 40.4L40.4 64.5A18 18 0 0 0 32.0 59.7Z'
+				'M37.0 62.5A23 23 0 1 1 62.5 37.0A5.6 5.6 0 0 0 64.1 40.3L40.3 64.1A5.6 5.6 0 0 0 37.0 62.5Z'
 			);
 		}
 	}
 	@keyframes divide-daughter {
 		from {
 			d: path(
-				'M71.4 44.8A21 21 0 1 1 44.8 71.4A18 18 0 0 0 40.4 64.5L64.5 40.4A18 18 0 0 0 71.4 44.8Z'
+				'M66.9 41.8A21 21 0 1 1 41.8 66.9A5.6 5.6 0 0 0 40.3 64.1L64.1 40.3A5.6 5.6 0 0 0 66.9 41.8Z'
 			);
 		}
 	}
@@ -99,14 +103,14 @@
 	@keyframes redivide-mother {
 		from {
 			d: path(
-				'M32.0 59.7A23 23 0 1 1 59.7 32.0A18 18 0 0 0 64.5 40.4L40.4 64.5A18 18 0 0 0 32.0 59.7Z'
+				'M37.0 62.5A23 23 0 1 1 62.5 37.0A5.6 5.6 0 0 0 64.1 40.3L40.3 64.1A5.6 5.6 0 0 0 37.0 62.5Z'
 			);
 		}
 	}
 	@keyframes redivide-daughter {
 		from {
 			d: path(
-				'M71.4 44.8A21 21 0 1 1 44.8 71.4A18 18 0 0 0 40.4 64.5L64.5 40.4A18 18 0 0 0 71.4 44.8Z'
+				'M66.9 41.8A21 21 0 1 1 41.8 66.9A5.6 5.6 0 0 0 40.3 64.1L64.1 40.3A5.6 5.6 0 0 0 66.9 41.8Z'
 			);
 		}
 	}

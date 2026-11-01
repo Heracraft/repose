@@ -2,11 +2,15 @@
 """Geometry for the repose mark (DECISIONS I-779): two lobes joined by a
 cleavage furrow. Run it to print the two paths Logo.svelte ships.
 
-    python3 ops/dev/logo-mitosis.py [R1 R2 d r theta]
+    python3 ops/dev/logo-mitosis.py [R1 R2 d r theta d0]
 
 R1/R2 are the lobe radii, d is half the distance between their centres, r
-is the furrow radius and theta the axis angle. The furrow is what makes
-the outline pinch inward; two overlapping circles give a figure of eight.
+is the furrow radius, theta the axis angle and d0 the half-distance of the
+one-body stage the division plays from. The furrow is what makes the
+outline pinch inward; two overlapping circles give a figure of eight. It
+prints every number Logo.svelte and favicon.svg ship: the viewBox, the
+resting paths and the stage the keyframes morph from, all centred on the
+resting drawing so the lobes travel apart instead of the mark sliding.
 Standard library only.
 """
 import math
@@ -45,13 +49,22 @@ def daughter(g, R2, r):
             f"A{r} {r} 0 0 0 {f(g['T2b'])}Z")
 
 
+def centred(R1, R2, d, r, th):
+    """the geometry with its bounding box centred on the 100 grid"""
+    x0, y0, x1, y1 = geom(R1, R2, d, r, th)['bbox']
+    return geom(R1, R2, d, r, th, 50 + (50 - (x0 + x1) / 2), 50 + (50 - (y0 + y1) / 2))
+
+
 if __name__ == '__main__':
     import sys
     a = sys.argv[1:]
-    R1, R2, d, r, th = (float(x) for x in a) if len(a) == 5 else (23, 21, 27, 13, 45)
-    g0 = geom(R1, R2, d, r, th)
-    x0, y0, x1, y1 = g0['bbox']
-    g = geom(R1, R2, d, r, th, 50 + (50 - (x0 + x1) / 2), 50 + (50 - (y0 + y1) / 2))
-    print('mother  ', mother(g, R1, r))
-    print('daughter', daughter(g, R2, r))
-    print('neck %.1f  box %.1f %.1f %.1f %.1f' % (g['neck'], *g['bbox']))
+    R1, R2, d, r, th, d0 = (float(x) for x in a) if len(a) == 6 else (23, 21, 26, 5.6, 45, 16)
+    g, g0 = centred(R1, R2, d, r, th), centred(R1, R2, d0, r, th)
+    x0, y0, x1, y1 = g['bbox']
+    pad = 0.4
+    print('viewBox  %.0f %.0f %.0f %.0f' % (x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad))
+    print('mother        ', mother(g, R1, r))
+    print('daughter      ', daughter(g, R2, r))
+    print('from-mother   ', mother(g0, R1, r))
+    print('from-daughter ', daughter(g0, R2, r))
+    print('neck %.1f resting, %.1f at the stage the division plays from' % (g['neck'], g0['neck']))

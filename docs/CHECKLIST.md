@@ -121,6 +121,12 @@ entry and this list with it. Counts as of 2026-10-21.
       '*.svelte' --glob '!**/components/landing/**'` prints 0 lines. The
       landing's drawn pictures (`lib/components/landing`) keep their own
       palette, mapped onto the kit in `landing/pictures.css` (I-843).
+- [ ] Every shipped SVG parses as XML. Evidence: `python3 -c "import
+      glob,xml.dom.minidom as m;[m.parse(f) for f in
+      glob.glob('apps/web/static/**/*.svg',recursive=True)+glob.glob('apps/web/src/**/*.svg',recursive=True)]"`
+      exits 0. A hand-written comment with a double hyphen in it is not
+      well-formed, and a favicon that does not parse is dropped for the
+      PNG without an error anywhere (I-938).
 - [ ] Status colour stays in badges, dots and banners. Evidence: `rg -n
       'color:\s*var\(--hk-(ok|warn|err)\)' $W --glob '*.{svelte,css}' --glob
       '!**/lib/hk/**' --glob '!**/routes/design/**'` prints only the outage

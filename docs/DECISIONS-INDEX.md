@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-851 entries.
+853 entries.
 
 ## Scope
 
@@ -817,7 +817,7 @@ pointer, not a summary.
 - **I-771** The api says which kind of "no capacity" it was, and no client adds advice of its own (capacity-cause, 2026-10-17) — L23373
 - **I-769** The console stream is boots only; a failed build's log is served where the docs send you for it (console-stream, 2026-10-17) — L23417
 - **I-772** The landing says the chore it removes, in plain words, and the founding price is a struck number, not a sentence — 2026-10-17; amended by I-837; L23454
-- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; L23537
+- **I-779** The logo is a cell dividing, and the division plays — 2026-10-18; amended by I-936; L23537
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23604
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23630
 - **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23661
@@ -883,3 +883,5 @@ pointer, not a summary.
 - **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27049
 - **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27081
 - **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27135
+- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27178
+- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27219
