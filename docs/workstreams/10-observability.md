@@ -354,7 +354,7 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `BillingWebhookErrors` | `sum(repose_api_billing_webhook_total{result="error"}) > 0` for 5m, absolute and sticky by design (I-800) | page |
 | `BillingGap` | `sum(increase(repose_api_billing_gap_minutes_total[1h])) > 60` for 10m (I-800) | warn |
 | `ControlDiskFull` | control VM filesystem `> 0.85` for 15m, its own `control-node` job (I-800) | warn |
-| `Watchdog` | `vector(1)`, always firing. Kept in `ops/alerts.yaml` for the Alertmanager path that is kept and not deployed; Grafana does not get it and nothing pings Uptime Kuma (I-648, I-944) | heartbeat |
+| `Watchdog` | `vector(1)`, always firing. Kept in `ops/alerts.yaml` as the record of a heartbeat that is deliberately not deployed; Grafana does not get it and nothing pings Uptime Kuma (I-944, I-956) | heartbeat |
 
 ### Traces
 

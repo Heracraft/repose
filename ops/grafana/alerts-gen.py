@@ -158,8 +158,12 @@ EXEC_ERR_ALERTING = {
 # on the same server as Grafana and Prometheus, so the one outage it exists
 # to catch would take Kuma with it. Rather than ship a heartbeat that proves
 # nothing, there is none: no rule here, no webhook contact point, no route
-# (DECISIONS I-944). `ops/alerts.yaml` keeps it, because that file is also
-# the Alertmanager definition, which is kept and not deployed.
+# (DECISIONS I-944). `ops/alerts.yaml` keeps the rule anyway, as the written
+# record of a design that is deliberately not deployed: if a watcher ever
+# lives somewhere this server's failure cannot reach, the expression and its
+# runbook entry are already there. That is the only reason it is still in
+# that file; the Alertmanager definition it used to share the file with is
+# deleted (I-956).
 EXCLUDED = {
     "Watchdog": "a heartbeat is only worth having where the watcher is "
                 "somewhere else, and the owner's Uptime Kuma is on this server",

@@ -567,11 +567,10 @@ HostdDown, not this.
 
 ## Watchdog
 
-**Not deployed.** This alert exists in `ops/alerts.yaml`, which is also the
-definition for the Alertmanager route that is kept and not deployed, and
-Grafana is not given it: `ops/grafana/alerts-gen.py` excludes it (DECISIONS
-I-944). Nothing pings Uptime Kuma, and no Kuma monitor should be waiting for
-a push.
+**Not deployed.** This alert exists in `ops/alerts.yaml` as the record of a
+heartbeat that is deliberately not deployed, and Grafana is not given it:
+`ops/grafana/alerts-gen.py` excludes it (DECISIONS I-944, I-956). Nothing
+pings Uptime Kuma, and no Kuma monitor should be waiting for a push.
 
 Why: a dead-man's switch is only worth having where the watcher sits
 somewhere the failure it watches for cannot reach. The owner's Uptime Kuma
