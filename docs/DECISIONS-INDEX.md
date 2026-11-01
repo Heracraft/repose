@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-856 entries.
+859 entries.
 
 ## Scope
 
@@ -888,5 +888,6 @@ pointer, not a summary.
 - **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27237
 - **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27300
 - **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27319
-- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager — 2026-11-01; L27332
-- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no policy, no heartbeat, no secret, no datasource of our own — 2026-11-01; L27349
+- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27332
+- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27349
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27369

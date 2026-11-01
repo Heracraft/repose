@@ -11,10 +11,9 @@
 # Alertmanager. ops/grafana/alerts-gen.py generates Grafana's own alert rules
 # from this file and ops/grafana/push.py puts them in over Grafana's API
 # (DECISIONS I-942, I-944). Prometheus loads no rule_files. This file stays
-# the single source of truth, and the Alertmanager routing below it
-# (ops/alertmanager/repose-route.yaml, DECISIONS I-648) is kept and not
-# deployed -- which is why `Watchdog` is still here and is the one alert
-# Grafana is not given.
+# the single source of truth. The Alertmanager configuration that used to
+# route it is deleted (DECISIONS I-956); `Watchdog` stays here and is the
+# one alert Grafana is not given (I-944).
 #
 # Severity: `page` wakes someone (tenants are down or data is at risk),
 # `warn` is a notification that can wait for the morning.
@@ -193,7 +192,8 @@ groups:
         # see the second of those (it only counts host-to-api heartbeats
         # over the VNet) and fires late or never for the others; on
         # 2026-10-10 it never fired. This is the page for a host; the
-        # inhibitions in repose-route.yaml keep it to one (DECISIONS I-648).
+        # inhibitions used to keep it to one; Grafana has none, so read
+        # docs/ops/OBSERVABILITY.md's table of which alert causes which.
         expr: up{job="hostd"} == 0
         for: 3m
         labels:
@@ -335,7 +335,8 @@ groups:
         # edge network function (revoked Sep 26, Sep 27, Oct 3) or a dead
         # tunnel fails them all at once. This is the one page for that; it
         # fires a minute before GatewayDown, HostdDown and ApiDown so its
-        # inhibition in repose-route.yaml holds them back (DECISIONS I-648).
+        # inhibition used to hold them back; Grafana has none, so it is
+        # first in OBSERVABILITY.md's cause-and-consequence table.
         expr: sum(up{job=~"gateway|hostd|api|api-grpc"}) == 0
         for: 2m
         labels:

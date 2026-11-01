@@ -27364,3 +27364,33 @@ I-942 generated the alert rules into Grafana's file-provisioning format and had 
 - **The residual risk, which is the real price of this.** A mounted provisioning directory makes a rebuilt Grafana re-provision itself; over the API nothing does. A Grafana that comes back with an empty database has no alert rules until a human runs the push, and no alert rules is silent -- it looks exactly like a quiet system. Grafana's state being in Postgres means recreating the container keeps them, which is what makes this tolerable; replacing that database does not, and nothing watches for it, because the heartbeat that would have is the one above. `ops/grafana/verify.py` is the only thing that can say, and it only says when someone runs it. It is written for that: it compares the target rule by rule against the generator -- uid, title, condition, `for`, labels, annotations, states, the whole query/reduce/threshold pipeline, each group's interval, and the three datasources -- and exits non-zero naming the fields that differ. Proved by deleting a rule on the target (caught), and by editing one's threshold, its `for` and an annotation through the API (caught, all three named).
 
 *Rejected:* a bind mount, which is what the owner said no to. *Rejected:* creating the Postgres datasource behind a flag or an "if the variables are set" branch; a path nobody takes is a path nobody maintains, and the whole point was that no database password goes near this tooling. *Rejected:* creating any datasource from the committed file, which cannot be right in the general case and was wrong in the only case that matters. *Rejected:* `execErrState: Error` on all 53, and `OK` on all 53; the first is noise on every restart, the second is silence on the failure that matters. *Rejected:* "send everything to the first contact point", the owner's own suggestion, which would still have meant provisioning a policy; provisioning none is both less code and strictly less invasive, because Grafana's default already does it. *Rejected:* keeping the Kuma heartbeat pointed at a monitor on the same server. *Rejected:* a cron that re-runs the push, which would hide the staleness this is honest about rather than fix it; the owner runs the push, and `verify.py` is what asks the question.
+
+
+**I-956. The Alertmanager configuration is deleted, and the seven
+inhibition relationships become prose.** (drop-alertmanager, 2026-11-01)
+Owner's call. Retires `ops/alertmanager/`, which I-942 and I-944 had left
+in the tree as "kept, not deployed".
+- *Why it was kept, and why that was not enough.* It was the only written
+  record of the seven `inhibit_rules` Grafana's alerting cannot express,
+  and of the per-severity timings. But it was also dead configuration
+  that `ops/check.sh` still spent an `amtool` run proving, which reads as
+  something that is deployed, and the personal server has no Alertmanager
+  to deploy it to. A file nobody applies is a file that drifts from what
+  is true while still looking authoritative.
+- *What was saved first.* The seven relationships are now a table in
+  `docs/ops/OBSERVABILITY.md` beside the paragraph that already said
+  Grafana has no inhibitions: which alert is the cause, what it used to
+  hold back, and why. That is the part an operator needs at 3am when
+  three pages arrive for one outage, and it is more use as prose than as
+  matchers. The comments in `ops/alerts.yaml` that pointed at the file now
+  point at that table.
+- *What goes with it.* `ops/check.sh` loses the route step and the
+  `amtool` wrapper; `ops/README.md` loses the row. `ops/alerts.yaml`
+  remains the single source of truth and still holds `Watchdog`, the one
+  alert Grafana is not given (I-944).
+- *What this costs.* Adding an Alertmanager later means writing the
+  routing again. The timings are in I-648 and I-848 and the relationships
+  in the table, so it is a rewrite from a record, not from memory.
+- Evidence: `ops/check.sh` green with the step gone, no reference to
+  `repose-route.yaml` left outside `DECISIONS.md` and `STATUS.md`, and
+  53 Grafana rules still generated from the 54 alerts.

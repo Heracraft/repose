@@ -18,7 +18,6 @@
 #   alerts-gen.py --check  committed Grafana rules that no longer match
 #                          ops/alerts.yaml, which is the one source of both
 #                          (DECISIONS I-942)
-#   amtool                 the kept Alertmanager route still parses and routes
 #                          as written. Nothing runs it: the personal server's
 #                          alerting is Grafana's own, and the live routing
 #                          check is verify.py under --grafana
@@ -49,14 +48,6 @@ promtool() {
   fi
 }
 
-# amtool likewise, from nixpkgs#prometheus-alertmanager.
-amtool() {
-  if type -P amtool >/dev/null 2>&1; then
-    command amtool "$@"
-  else
-    nix shell nixpkgs#prometheus-alertmanager -c amtool "$@"
-  fi
-}
 
 say "alert rules parse"
 promtool check rules "$ops/alerts.yaml" || fail=1
@@ -102,29 +93,6 @@ if [ -n "$missing" ]; then
 else
   echo "all alerts have one"
 fi
-
-say "alertmanager route (kept, not deployed)"
-# DECISIONS I-648, amended by I-848: Watchdog only to the Kuma push, pages
-# to the page receiver, the rest to email on the slow timer. I-942 moved the
-# live routing into Grafana's own alerting, because the personal server has
-# no Alertmanager; this file is kept against the day one is added, and the
-# timings below are the ones ops/grafana/provisioning/alerting mirrors.
-route=$ops/alertmanager/repose-route.yaml
-amtool check-config "$route" >/dev/null || fail=1
-while read -r want labels; do
-  # shellcheck disable=SC2086
-  amtool config routes test --config.file="$route" --verify.receivers="$want" $labels >/dev/null \
-    || { echo "$labels should route to $want" >&2; fail=1; }
-done <<'ROUTES'
-repose-watchdog stack=repose alertname=Watchdog severity=heartbeat
-repose-email-page stack=repose alertname=HostdDown severity=page host_id=host-01
-repose-email-page stack=repose alertname=ApiDown severity=page job=api-grpc
-repose-email-page stack=repose alertname=MonitoringPathDown severity=page
-repose-email stack=repose alertname=HostServiceDown severity=warn host_id=host-01
-repose-email stack=repose alertname=GuestWakeFailed severity=warn host_id=host-01 reason=resume
-repose-email stack=repose alertname=BillingStopped severity=info
-ROUTES
-echo "routes as intended"
 
 say "grafana alert rules are what the generator produces"
 python3 "$ops/grafana/alerts-gen.py" --check || fail=1

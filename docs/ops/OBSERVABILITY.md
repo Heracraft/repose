@@ -388,6 +388,20 @@ HostUnreachable and MonitoringPathDown as three notifications, not one. Each
 names its own runbook heading. Grouping the pages into one message is one
 field in the UI (group by `stack`), and is the owner's call to make.
 
+The seven relationships the Alertmanager configuration used to hold, kept
+here because that file is gone (I-956) and because each one is still true
+about which alert is the cause and which the consequence. When several
+arrive at once, read them in this order:
+
+| The cause | Holds back, for the same host | Why |
+|---|---|---|
+| `MonitoringPathDown` | `GatewayDown`, `HostdDown`, `ApiDown`, `ApiHostsAbsent` | every scrape goes through the edge's WireGuard, so a dead edge or tunnel fails them together; this one fires a minute earlier |
+| `HostScrapeDown` | every other `warn` and `page` of that host, except `HostdDown` and `HostUnreachable` | a host Prometheus cannot reach produces all of its alerts at once as the series go stale |
+| `HostdDown` | `HostUnreachable`, and every `warn` of that host | `HostdDown` names the host; `HostUnreachable` is the api's count and names none |
+| `PoolUnavailable` | `PoolHigh`, `PoolFull`, `PoolMetadataHigh`, `PoolUnmonitored` | a pool that is down sets off every pool alert it has (I-644) |
+| `HostUnreachable` | `GuestdLost` | the same loss seen from the api rather than the host |
+| `ApiDown` | `ApiHostsAbsent` | `api-grpc` being down takes `repose_api_hosts` with it |
+
 **There is no heartbeat.** `Watchdog` is the one alert of `ops/alerts.yaml`
 that Grafana does not get (I-944). A dead-man's switch has to be watched from
 somewhere the failure cannot reach, and this server's Uptime Kuma is on this

@@ -380,7 +380,7 @@ tests:
   # --- HostUnreachable ----------------------------------------------------
   # One alert per host, naming it (I-786). On the fleet count this fired
   # once for any number of hosts and named none, so neither the operator
-  # nor the inhibition in repose-route.yaml could tell them apart.
+  # nor the inhibition that then held it back could tell them apart.
   - interval: 1m
     name: HostUnreachable pages after two minutes, for the host that is gone and not the one that is ready
     input_series:

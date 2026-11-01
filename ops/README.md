@@ -17,7 +17,6 @@ other end of those.
 | `grafana/provisioning/alerting/repose-rules.yaml` | The 53 rules as Grafana holds them (54 alerts less `Watchdog`). Generated: edit `alerts.yaml` and re-run the generator. Not mounted anywhere. |
 | `grafana/push.py` | The one command that puts the alert rules and the dashboards into a running Grafana over the HTTP API, pointed at the datasources that Grafana already has. Creates no datasource. `--dry-run` says what would change (DECISIONS I-944). |
 | `grafana/verify.py` | The drift check: what a Grafana holds against what the generator produces, rule by rule, plus Grafana's own test of the datasource the rules query. Nothing reconciles at boot, so this is the only thing that notices. |
-| `alertmanager/repose-route.yaml` | Kept, not deployed. The same routing as an Alertmanager configuration, and the only written record of the seven inhibition rules Grafana cannot express (DECISIONS I-648, I-848, I-942). |
 | `prometheus/prometheus.yml` | Scrape config: hosts (`:9100`, `:9101`, Fluent Bit `:2021`), edge (`:9102`), api (`:9103`), all over WireGuard. |
 | `prometheus/targets/hosts.yml` | The host list, re-read every minute. Adding a host is one edit here. |
 | `prometheus/wireguard-peer.conf` | How the monitoring server joins the edge's WireGuard hub, and how to check it. |
