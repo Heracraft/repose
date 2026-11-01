@@ -30,9 +30,13 @@ policy designed without a month of data is a guess.
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
 - Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, emailed to the owner by the existing Alertmanager
-  (DECISIONS I-648, amended by I-848: Chat needed calert beside
-  Alertmanager to translate the webhook, and nothing watched it).
+  `../CHECKLIST.md`, and the same rules generated into Grafana's own alerting
+  by `ops/grafana/alerts-gen.py`. Grafana evaluates them and emails the owner
+  itself, from `ops/grafana/provisioning/alerting/` (DECISIONS I-942: the
+  personal server has no Alertmanager, and Grafana's alerting engine and its
+  email and webhook contact points need no new service. I-648, amended by
+  I-848: Chat needed calert beside Alertmanager to translate the webhook, and
+  nothing watched it).
 - Retention: Loki 30 days for console logs and 90 days for component logs;
   Prometheus 90 days; `meter_samples` 90 days and `proc_samples` 30 days in
   Postgres (partition drops, see `interfaces/db-schema.md`).
@@ -288,13 +292,18 @@ beyond their project id.
 
 ### Alerts
 
-Each maps to a `../ops/RUNBOOK.md` entry of the same name.
+Each maps to a `../ops/RUNBOOK.md` entry of the same name. The rules are
+written once, as Prometheus rules in `../../ops/alerts.yaml`, and
+`../../ops/grafana/alerts-gen.py` generates them a second time as Grafana's
+own alert rules, which is what actually notifies anyone: the personal server
+has no Alertmanager (DECISIONS I-942). Nothing here is hand-written twice,
+and nothing below is a Grafana concept -- the table is the source file.
 
 | Alert | Rule | Severity |
 |---|---|---|
 | `HostMemory80` | `reserved / (reserved+free) > 0.8` for 10m | warn |
 | `HostCPUSaturated` | `sum by (host_id) (rate(repose_host_guest_cpu_seconds_total[5m])) / sum by (host_id) (repose_host_cpu_cores) > 1` for 15m: busy guest vCPUs per physical core, the quantity the latency measurement is in (I-738) | warn |
-| `HostUnreachable` | `max by (host_id) (repose_api_host_state{state="unreachable"}) == 1` for 2m: one alert per host, which is what lets its inhibition be scoped with `equal: [host_id]` (I-786) | page |
+| `HostUnreachable` | `max by (host_id) (repose_api_host_state{state="unreachable"}) == 1` for 2m: one alert per host, which is what let the Alertmanager inhibition be scoped with `equal: [host_id]` (I-786); Grafana has no inhibitions, so it arrives in the same page email as `HostdDown` (I-942) | page |
 | `SnapshotStale` | `repose_api_snapshot_age_seconds > 36*3600` | warn |
 | `BuildQueueStuck` | `repose_host_builds_running >= 2` and no `build_done` for 45m | warn |
 | `GatewayAuthSpike` | `rate(repose_gateway_auth_fail_total[5m]) > 1` | warn |
@@ -302,7 +311,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `PoolHigh` | `1 - pool_free_bytes / pool_bytes > 0.7` for 15m: no new projects placed there (I-586) | warn |
 | `PoolMetadataHigh` | `repose_lvm_pool_metadata_percent > 80` for 5m (I-586) | page |
 | `PoolFull` | `pool_free_bytes / pool_bytes < 0.1` | page |
-| `PoolUnavailable` | `repose_host_pool_available == 0` for 5m: the guest pool cannot serve volumes, every start on the host is refused (I-644); inhibits the other pool alerts of the host | page |
+| `PoolUnavailable` | `repose_host_pool_available == 0` for 5m: the guest pool cannot serve volumes, every start on the host is refused (I-644); it used to inhibit the other pool alerts of the host, and since I-942 shares a page email with them instead | page |
 | `PoolUnmonitored` | `repose_lvm_pool_monitored == 0` for 30m: dmeventd does not watch the pool, so it will not autoextend (I-643) | warn |
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
@@ -336,7 +345,7 @@ Each maps to a `../ops/RUNBOOK.md` entry of the same name.
 | `BillingWebhookErrors` | `sum(repose_api_billing_webhook_total{result="error"}) > 0` for 5m, absolute and sticky by design (I-800) | page |
 | `BillingGap` | `sum(increase(repose_api_billing_gap_minutes_total[1h])) > 60` for 10m (I-800) | warn |
 | `ControlDiskFull` | control VM filesystem `> 0.85` for 15m, its own `control-node` job (I-800) | warn |
-| `Watchdog` | `vector(1)`, always firing, routed only to an Uptime Kuma push monitor (I-648) | heartbeat |
+| `Watchdog` | `vector(1)`, always firing, routed only to an Uptime Kuma push monitor, once a minute, by Grafana's own notification policy (I-648, I-942) | heartbeat |
 
 ### Traces
 
@@ -365,7 +374,11 @@ backend exists, setting one environment variable turns it on.
   against it (`grafana-cli` lint in CI).
 - On a real host (M1): Fluent Bit ships a guest's console log within 10
   seconds of a `guest_start`, visible in Grafana Explore by `guest_id`.
-- Alert rules: `promtool test rules` with a fixture per alert.
+- Alert rules: `promtool test rules` with a fixture per alert, and
+  `ops/check.sh --grafana` for the Grafana half -- the generated rules load
+  into a real Grafana, which holds one per alert under its own name, and the
+  seven routing cases land on the contact point they should
+  (`ops/grafana/verify.py`).
 
 ## 8. Rollback
 
@@ -450,6 +463,16 @@ two open rows are the two that need a machine of the owner's.
       name is a RUNBOOK heading, and all three pass. Loaded against
       production series they evaluate healthy, none firing and none in
       error.
+- [x] The alerts reach an engine that can notify. Evidence: the personal
+      server has no Alertmanager, so `ops/grafana/alerts-gen.py` generates
+      the 54 rules of `ops/alerts.yaml` into
+      `ops/grafana/provisioning/alerting/`, and `ops/check.sh --grafana`
+      brings up a real Grafana 12.4 and asserts through its provisioning API
+      that it holds 54 rules for the 54 alerts, titles unchanged, with the
+      three contact points and the seven routing cases (DECISIONS I-942).
+      The scheduler reports all 54 healthy. Not closed by this: SMTP, the
+      inbox and the Kuma push URL on the owner's own server
+      (`ops/README.md` step 3), which is a real-host item below.
 - [x] Retention set: Loki 30/90 days, Prometheus 90 days, partition drops
       scheduled and exercised once. Evidence: `ops/loki/retention.yaml`
       with the compactor, the retention flag in

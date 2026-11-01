@@ -1,0 +1,3927 @@
+# Grafana-managed alert rules for repose. GENERATED -- do not edit.
+#
+#   python3 ops/grafana/alerts-gen.py
+#
+# The source is ops/alerts.yaml, which promtool parses and `promtool test
+# rules ops/alerts_test.yaml` exercises rule by rule. Change an alert there
+# and re-run the generator; `ops/check.sh` fails if this file is stale
+# (DECISIONS I-942).
+#
+# Each rule is a Prometheus query (A), a reduce to one number (B) and a
+# threshold (C), because Grafana needs a named condition where Prometheus
+# needs none. The number the annotations quote is B, so `{{ $values.B }}` is
+# what Prometheus wrote as `{{ $value }}`.
+#
+# Who gets told, and how often, is not here: it is the notification policy of
+# repose-notifications.yaml in this directory.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: repose-hosts
+    folder: "repose alerts"
+    interval: 1m
+    rules:
+      - uid: repose-hostmemory80
+        title: HostMemory80
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "host {{ $labels.host_id }} is over 80 percent reserved memory"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }} of usable memory is reserved by running guests. Add a host before the next XL create fails."
+          runbook: "docs/ops/RUNBOOK.md#hostmemory80"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "repose_host_mem_reserved_bytes / (repose_host_mem_reserved_bytes + repose_host_mem_free_bytes)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0.8
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostcpusaturated
+        title: HostCPUSaturated
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "host {{ $labels.host_id }} is running {{ if $values.B }}{{ $values.B.Value | printf \"%.2f\" }}{{ end }} busy guest vCPUs per physical core"
+          description: "Over one busy guest vCPU per core for 15 minutes: typing is laggy in every guest on this host, including guests doing nothing, and sessions take seconds to open. Add a host or move to a larger SKU; nothing on the host itself fixes it."
+          runbook: "docs/ops/RUNBOOK.md#hostcpusaturated"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id) (rate(repose_host_guest_cpu_seconds_total[5m])) / sum by (host_id) (repose_host_cpu_cores)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-poolhigh
+        title: PoolHigh
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "thin pool on {{ $labels.host_id }} is over 70 percent full; no new projects go there"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }} of vg-guests/thin is used. Grow the data disk before it reaches 85, where creates, restores and grows are refused."
+          runbook: "docs/ops/RUNBOOK.md#poolhigh"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "1 - repose_host_pool_free_bytes / repose_host_pool_bytes"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0.7
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-poolmetadatahigh
+        title: PoolMetadataHigh
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "thin pool metadata on {{ $labels.host_id }} is over 80 percent"
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} percent of vg-guests/thin's metadata is used. hostd refuses creates at 85 and starts at 95."
+          runbook: "docs/ops/RUNBOOK.md#poolmetadatahigh"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_lvm_pool_metadata_percent
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 80
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-poolfull
+        title: PoolFull
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "thin pool on {{ $labels.host_id }} is over 90 percent full"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }} of vg-guests/thin is free. Autoextend has run out of PV or the disk needs growing."
+          runbook: "docs/ops/RUNBOOK.md#poolfull"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "repose_host_pool_free_bytes / repose_host_pool_bytes"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: lt
+                    params:
+                      - 0.1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-poolunavailable
+        title: PoolUnavailable
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "the guest pool on {{ $labels.host_id }} is unavailable"
+          description: "vg-guests/thin cannot serve volumes; no machine on this host can start. journalctl -u repose-guest-pool -b says why."
+          runbook: "docs/ops/RUNBOOK.md#poolunavailable"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_host_pool_available
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-poolunmonitored
+        title: PoolUnmonitored
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "dmeventd does not monitor the guest pool on {{ $labels.host_id }}"
+          description: "vg-guests/thin is not monitored, so it will not autoextend at 80 percent."
+          runbook: "docs/ops/RUNBOOK.md#poolunmonitored"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_lvm_pool_monitored
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-storefull
+        title: StoreFull
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "root filesystem on {{ $labels.host_id }} is over 85 percent full"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }} used. The store is the usual cause; check the per-project closure cap before deleting anything."
+          runbook: "docs/ops/RUNBOOK.md#storefull"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "1 - ( node_filesystem_avail_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} / node_filesystem_size_bytes{job=\"hosts\",mountpoint=\"/\",fstype!~\"tmpfs|ramfs\"} )"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0.85
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-guestdlost
+        title: GuestdLost
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} have lost guestd"
+          description: "No vsock connection for over a minute. Snapshots, resize and config apply are blocked for those guests."
+          runbook: "docs/ops/RUNBOOK.md#guestdlost"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_host_guestd_lost
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-buildqueuestuck
+        title: BuildQueueStuck
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "build queue on {{ $labels.host_id }} has not completed a build in 45 minutes"
+          description: "Both build slots are busy and no build has finished. A build past its 30-minute cap is not being killed."
+          runbook: "docs/ops/RUNBOOK.md#buildqueuestuck"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 2700
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "repose_host_builds_running >= 2 unless on (instance) sum by (instance) (increase(repose_host_build_duration_seconds_count[45m])) > 0"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 2700
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 2700
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostddown
+        title: HostdDown
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "Prometheus cannot reach hostd on {{ $labels.host_id }}"
+          description: "No scrape of :9101 over WireGuard for 3 minutes. The host, its network or hostd is down; its guests may be down with it."
+          runbook: "docs/ops/RUNBOOK.md#hostddown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=\"hostd\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostservicedown
+        title: HostServiceDown
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ $labels.name }} is not active on {{ $labels.host_id }}"
+          description: "systemd says {{ $labels.name }} has not been active for 15 minutes. Guests fall back to the public registries while a cache is down; hostd or the pool down means no guest starts."
+          runbook: "docs/ops/RUNBOOK.md#hostservicedown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "node_systemd_unit_state{job=\"hosts\",state=\"active\",name=~\"hostd\\\\.service|repose-guest-pool\\\\.service|repose-cache-volume\\\\.service|repose-npm-cache\\\\.service|docker-registry\\\\.service\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostscrapedown
+        title: HostScrapeDown
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }} on {{ $labels.host_id }}"
+          description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not."
+          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=~\"hosts|hostd\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-fluentbitstuck
+        title: FluentBitStuck
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "Fluent Bit on {{ $labels.host_id }} cannot ship to Loki"
+          description: "Retries have been failing for 30 minutes. Chunks buffer to /var/lib/fluent-bit up to 1 GB, then the oldest are dropped."
+          runbook: "docs/ops/RUNBOOK.md#fluentbitstuck"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "increase(fluentbit_output_retries_failed_total{job=\"fluent-bit\"}[30m])"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-fluentbitlogshipperdown
+        title: FluentBitLogShipperDown
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "No log shipper on {{ $labels.host_id }}"
+          description: "Fluent Bit is not answering. A host with no Loki recorded does not start it at all (repose-admin edge loki); otherwise the unit has failed. Either way this host's journald and guest console logs are going nowhere."
+          runbook: "docs/ops/RUNBOOK.md#fluentbitlogshipperdown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=\"fluent-bit\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+  - orgId: 1
+    name: repose-control-plane
+    folder: "repose alerts"
+    interval: 1m
+    rules:
+      - uid: repose-hostunreachable
+        title: HostUnreachable
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "{{ $labels.host_id }} is unreachable from the api"
+          description: "No heartbeat for over 90 seconds. Placements are already refused; guests on that host cannot be started, stopped or snapshotted."
+          runbook: "docs/ops/RUNBOOK.md#hostunreachable"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) (repose_api_host_state{state=\"unreachable\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-apidown
+        title: ApiDown
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }}"
+          description: "No scrape for 3 minutes. If it is api, users cannot log in, create or start; if api-grpc, hosts have no stream and nothing is placed, started or stopped."
+          runbook: "docs/ops/RUNBOOK.md#apidown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=~\"api|api-grpc\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-gatewaydown
+        title: GatewayDown
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "Prometheus cannot scrape the gateway on the edge"
+          description: "No scrape of the edge's :9102 for 3 minutes. Either the edge, its WireGuard or the gateway is down; users' ssh, run and attach fail while it is."
+          runbook: "docs/ops/RUNBOOK.md#gatewaydown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=\"gateway\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-gatewaycachesstale
+        title: GatewayCachesStale
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "The gateway has not reached the control plane for 15 minutes"
+          description: "The gateway's revocation list is older than 15 minutes. It still relays existing sessions, and at one hour it refuses every new ssh, run, attach and open with 'gateway cannot reach control plane'."
+          runbook: "docs/ops/RUNBOOK.md#gatewaycachesstale"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_gateway_revocation_cache_age_seconds
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 900
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-monitoringpathdown
+        title: MonitoringPathDown
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "Prometheus cannot scrape anything through the edge"
+          description: "The gateway, every hostd and both api processes have failed their scrapes for 2 minutes. The edge VM, its network or the WireGuard tunnel to this server is down; GatewayDown, HostdDown and ApiDown are held back behind this page."
+          runbook: "docs/ops/RUNBOOK.md#monitoringpathdown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(up{job=~\"gateway|hostd|api|api-grpc\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-apihostsabsent
+        title: ApiHostsAbsent
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "the api's host gauges are missing, so no host alert from the api can fire"
+          description: "Prometheus has had no repose_api_hosts or repose_api_host_state series for 5 minutes. HostUnreachable, HostUnregistered and HostNotInTargets are silent until api-grpc is scraped again."
+          runbook: "docs/ops/RUNBOOK.md#apihostsabsent"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "absent(repose_api_hosts) or absent(repose_api_host_state)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostnotintargets
+        title: HostNotInTargets
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ $labels.host_id }} is ready and Prometheus has no hostd target for it"
+          description: "The api has this host ready and no entry in /etc/prometheus/repose/targets/hosts.yml carries its host_id, so PoolFull, StoreFull, HostdDown and every other alert scoped to that file is silent on it, and on the tenants it carries."
+          runbook: "docs/ops/RUNBOOK.md#hostnotintargets"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) (repose_api_host_state{state=\"ready\"}) == 1 unless on (host_id) count by (host_id) (up{job=\"hostd\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostunregistered
+        title: HostUnregistered
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ $labels.host_id }} has not registered"
+          description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
+          runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) (repose_api_host_state{state=\"registering\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-bootslow
+        title: BootSlow
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "most creates and starts on {{ $labels.host_id }} took over 2 minutes"
+          description: "Share of the last 30 minutes' boots over 2 minutes: {{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }}."
+          runbook: "docs/ops/RUNBOOK.md#bootslow"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "( sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~\"CreateGuest|StartGuest\"}[30m])) - sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_bucket{kind=~\"CreateGuest|StartGuest\",le=\"120\"}[30m])) ) / sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~\"CreateGuest|StartGuest\"}[30m])) > 0.5 and sum by (job, instance, host_id) (increase(repose_host_command_duration_seconds_count{kind=~\"CreateGuest|StartGuest\"}[30m])) > 1.5"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-snapshotstale
+        title: SnapshotStale
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "a running project has no snapshot for over 36 hours"
+          description: "Oldest last-snapshot is {{ if $values.B }}{{ $values.B.Value | humanizeDuration }}{{ end }}. A host loss now loses up to that much of a tenant's work."
+          runbook: "docs/ops/RUNBOOK.md#snapshotstale"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_api_snapshot_age_seconds
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 129600
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-gatewayauthspike
+        title: GatewayAuthSpike
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "gateway is refusing over one login a second"
+          description: "Break it down by reason: bad_cert and not_found are a scan, expired and revoked are the CLI's refresh path."
+          runbook: "docs/ops/RUNBOOK.md#gatewayauthspike"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (instance) (rate(repose_gateway_auth_fail_total[5m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-egresshigh
+        title: EgressHigh
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} project(s) sent over 1 TB in 24 hours"
+          description: "Find them on the Abuse dashboard's egress panel, then the runbook's Suspend a user."
+          runbook: "docs/ops/RUNBOOK.md#egresshigh"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_api_egress_alert_projects
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-rolluplag
+        title: RollupLag
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "usage rollup is {{ if $values.B }}{{ $values.B.Value | humanizeDuration }}{{ end }} behind"
+          description: "meter_samples are arriving but usage_hours is not being written. Invoices are built from usage_hours."
+          runbook: "docs/ops/RUNBOOK.md#rolluplag"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_api_rollup_lag_seconds
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 7200
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-partitiondropfail
+        title: PartitionDropFail
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "partition maintenance is failing"
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} failed runs in six hours. meter_samples and proc_samples keep their old partitions; check the disk before it matters."
+          runbook: "docs/ops/RUNBOOK.md#partitiondropfail"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "increase(repose_api_partition_drop_fail_total[6h])"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-billingwebhookrejected
+        title: BillingWebhookRejected
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} Polar webhook deliveries rejected in ten minutes"
+          description: "Check POLAR_WEBHOOK_SECRET against the webhook endpoint's secret in Polar's dashboard. While this fires, subscription and payment events are not being applied."
+          runbook: "docs/ops/RUNBOOK.md#billingwebhookrejected"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(round(increase(repose_api_billing_webhook_total{result=\"bad_signature\"}[10m])))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gte
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-overagechargefailed
+        title: OverageChargeFailed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} egress overage charge(s) failed in the last hour"
+          description: "`repose-admin billing show <handle>` names the line. The next hourly tick sends it again under the same external id; an event Polar receives after the period's end lands on the next renewal order."
+          runbook: "docs/ops/RUNBOOK.md#overagechargefailed"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "increase(repose_api_billing_overage_charges_total{result=\"error\"}[1h])"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-billingstopped
+        title: BillingStopped
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: info
+          stack: repose
+        annotations:
+          summary: "machines stopped for billing ({{ $labels.reason }})"
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} machine(s) stopped in the last hour, reason {{ $labels.reason }}. `repose-admin billing show <handle>` shows the account; nothing is deleted for 30 days."
+          runbook: "docs/ops/RUNBOOK.md#billingstopped"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (reason) (increase(repose_api_billing_stops_total[1h]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-samplesfailing
+        title: SamplesFailing
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "guest samples were not stored as sent ({{ $labels.reason }})"
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} guest sample(s) in 15 minutes. Loki `{component=\"api\"} | json | event=\"samples_fail\"` names the host, the project and the Postgres error."
+          runbook: "docs/ops/RUNBOOK.md#samplesfailing"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (reason) (increase(repose_api_samples_failed_total[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-notifyfailing
+        title: NotifyFailing
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "notifications are failing or not being sent"
+          description: "Failed email sends in each of the last 10 minutes, or a due outbox row older than 5 minutes ({{ if $values.B }}{{ $values.B }}{{ end }}). Loki `{component=\"api\"} | json | event=\"notify_fail\"` names the channel and kind."
+          runbook: "docs/ops/RUNBOOK.md#notifyfailing"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(increase(repose_api_notify_total{result=\"failed\",channel=\"email\"}[10m])) > 0 or max(repose_api_outbox_lag_seconds) > 300"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostreportsrefused
+        title: HostReportsRefused
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the api dropped host reports ({{ $labels.reason }})"
+          description: "{{ if $values.B }}{{ $values.B }}{{ end }} report(s) in 15 minutes. Loki `{component=\"api\"} | json | event=~\"foreign_guest|snapshot_done\"` names the host and the guest."
+          runbook: "docs/ops/RUNBOOK.md#hostreportsrefused"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (reason) (increase(repose_api_host_reports_refused_total{reason=~\"foreign_guest|bad_snapshot\"}[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-resumestalled
+        title: ResumeStalled
+        condition: C
+        for: 20m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} machine(s) stopped by a host restart are still not started"
+          description: "`select p.slug, g.outcome, g.reason, g.created_at from guest_resumes g join projects p on p.id = g.project_id where g.decided_at is null` lists them; Loki `{component=\"api\"} | json | event=\"guest_resume\"` says what each tick did."
+          runbook: "docs/ops/RUNBOOK.md#resumestalled"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max(repose_api_guest_resumes_pending)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-resumenotstarted
+        title: ResumeNotStarted
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were interrupted by a host restart and have not run since"
+          description: "`hostd guests --json | jq '.[] | select(.interrupted_boot_id)'` on the host lists them; compare with guest_resumes for that boot."
+          runbook: "docs/ops/RUNBOOK.md#resumenotstarted"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) (repose_host_guests_interrupted)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-guestleftunfrozen
+        title: GuestLeftUnfrozen
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were left unfrozen ({{ $labels.reason }}) and lost what they were running"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
+          runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-guestimagediscarded
+        title: GuestImageDiscarded
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} lost their frozen memory at the thaw ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
+          runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-apierrors
+        title: ApiErrors
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "api route {{ $labels.route }} is answering {{ if $values.B }}{{ $values.B.Value | humanizePercentage }}{{ end }} 5xx"
+          description: "Loki `{component=\"api\"} | json | status >= 500` has the request_id and the route. /healthz answering 503 is Postgres or a migration, not the route."
+          runbook: "docs/ops/RUNBOOK.md#apierrors"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (route) (rate(repose_api_requests_total{status=~\"5..\"}[10m])) / sum by (route) (rate(repose_api_requests_total[10m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0.05
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-opsfailing
+        title: OpsFailing
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} {{ $labels.kind }} op(s) ended in error"
+          description: "`repose-admin ops list --state error` then `ops log <id>`; the op's error field carries the phase that failed. A create failing after CreateGuest leaves a volume the destroy path reclaims."
+          runbook: "docs/ops/RUNBOOK.md#opsfailing"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (kind) (increase(repose_api_ops_total{state=\"error\"}[30m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-schedulerefused
+        title: ScheduleRefused
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} placement(s) refused: {{ $labels.result }}"
+          description: "A paying user cannot start a machine. `repose-admin seats` says which ceiling the fleet is against and the Host capacity dashboard says which host; the OpenTofu apply for another host is the owner's. Capacity, not a crash: the api answered 503 with capacity, and the op can be retried once a host is ready."
+          runbook: "docs/ops/RUNBOOK.md#schedulerefused"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (result) (increase(repose_api_schedule_total{result=~\"no_capacity|no_cpu|error\"}[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-gatewaydialfailing
+        title: GatewayDialFailing
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          service: gateway
+          stack: repose
+        annotations:
+          summary: "the gateway failed {{ if $values.B }}{{ $values.B }}{{ end }} dials to guest sshd in ten minutes"
+          description: "Loki `{component=\"gateway\"} | json | event=\"dial_fail\"` has the project. All projects at once is the WireGuard path or wgsync (check repose_gateway_wgsync_errors_total); one project is its guest's sshd."
+          runbook: "docs/ops/RUNBOOK.md#gatewaydialfailing"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(increase(repose_gateway_dial_fail_total[10m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 3
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-snapshotfailing
+        title: SnapshotFailing
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} snapshot(s) on {{ $labels.host_id }} failed ({{ $labels.result }})"
+          description: "A stop with no snapshot is a user's work left only on the volume. Loki `{component=\"hostd\"} | json | event=\"snapshot\"` names the guest and the code; `repose-admin ops list --kind snapshot` has the op."
+          runbook: "docs/ops/RUNBOOK.md#snapshotfailing"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id, result) (increase(repose_host_snapshot_duration_seconds_count{result!=\"ok\"}[1h]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-billingwebhookerrors
+        title: BillingWebhookErrors
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} Polar webhook deliver(ies) failed to apply"
+          description: "Loki `{component=\"api\"} | json | event=\"webhook_received\" | result=\"error\"` has the kind, never the body. Reconcile the account against Polar's dashboard with `repose-admin billing show <handle>`, then silence this with a comment: it is absolute and will not clear by itself."
+          runbook: "docs/ops/RUNBOOK.md#billingwebhookerrors"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(repose_api_billing_webhook_total{result=\"error\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-billinggap
+        title: BillingGap
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} project-minutes of the last hour had no meter sample"
+          description: "Loki `{component=\"api\"} | json | event=\"billing_gap\"` names the project and the hour. One project is its guestd (check repose_host_guestd_lost); every project on a host is the host's stream (repose_host_stream_connected)."
+          runbook: "docs/ops/RUNBOOK.md#billinggap"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum(increase(repose_api_billing_gap_minutes_total[1h]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 60
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-controldiskfull
+        title: ControlDiskFull
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the control VM's {{ $labels.mountpoint }} is over 85 percent full"
+          description: "Postgres, the api images and Coolify's build cache share this disk. `docker system prune` and the sample tables' partitions (repose_partitions_maintain) are the two things that free space; the partitions are dropped hourly by the api, so a disk filling with them means PartitionDropFail is also firing."
+          runbook: "docs/ops/RUNBOOK.md#controldiskfull"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "1 - ( node_filesystem_avail_bytes{job=\"control-node\",fstype!~\"tmpfs|ramfs|overlay\"} / node_filesystem_size_bytes{job=\"control-node\",fstype!~\"tmpfs|ramfs|overlay\"} )"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0.85
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-guestwakefailed
+        title: GuestWakeFailed
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} wake(s) of a frozen guest on {{ $labels.host_id }} failed ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_resting\"` names each guest and the phase it failed at. The guests are still running with their memory; `hostd guests --json` on the host lists which are resting."
+          runbook: "docs/ops/RUNBOOK.md#guestwakefailed"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-guestwakeslow
+        title: GuestWakeSlow
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "waking a frozen guest on {{ $labels.host_id }} takes over 5s at p90"
+          description: "{{ if $values.B }}{{ $values.B.Value | humanizeDuration }}{{ end }} at p90. The host's load is the usual cause; compare with repose_host_load1 and the guests resting on it (repose_host_guests_resting)."
+          runbook: "docs/ops/RUNBOOK.md#guestwakeslow"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "histogram_quantile(0.9, sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m])))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-apiwakefailed
+        title: ApiWakeFailed
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the api failed {{ if $values.B }}{{ $values.B }}{{ end }} wake(s) of a frozen machine (asked for by: {{ $labels.reason }})"
+          description: "Loki `{component=\"api\"} | json | event=\"guest_wake_fail\"` names the project and the error. Check the host is connected (repose_api_grpc_streams) before the host's own GuestWakeFailed, which stays quiet when hostd never answered."
+          runbook: "docs/ops/RUNBOOK.md#apiwakefailed"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (reason) (increase(repose_api_resting_wake_total{result=\"failed\"}[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+  - orgId: 1
+    name: repose-abuse
+    folder: "repose alerts"
+    interval: 1m
+    rules:
+      - uid: repose-egressblocked
+        title: EgressBlocked
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} keep hitting the {{ $labels.reason }} block"
+          description: "Blocked and counted, not stopped. Find the guest in hostd's egress_blocked log line, then look at what it runs before deciding on the account."
+          runbook: "docs/ops/RUNBOOK.md#egressblocked"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_host_egress_blocked_guests
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-minerstopped
+        title: MinerStopped
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the api stopped a guest for abuse ({{ $labels.kind }})"
+          description: "`repose-admin abuse list` names the project, owner and process. The third stop in 24 hours holds the project until `repose-admin abuse clear`; suspending the user is `repose-admin users suspend`."
+          runbook: "docs/ops/RUNBOOK.md#minerstopped"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "sum by (kind) (increase(repose_api_abuse_stops_total[15m]))"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-busyunattended
+        title: BusyUnattended
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} project(s) at full CPU for six hours with nobody attached"
+          description: "The Abuse dashboard's full-CPU panel names them; `repose-admin exec <id> -- ps -o comm,pcpu --sort -pcpu` (audited) shows what runs."
+          runbook: "docs/ops/RUNBOOK.md#busyunattended"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max(repose_api_abuse_busy_unattended_projects)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+  - orgId: 1
+    name: repose-meta
+    folder: "repose alerts"
+    interval: 1m
+    rules:
+      - uid: repose-watchdog
+        title: Watchdog
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: heartbeat
+          stack: repose
+        annotations:
+          summary: "the alerting path is working"
+          description: "Always firing. Routed only to the Uptime Kuma push monitor, never to Chat."
+          runbook: "docs/ops/RUNBOOK.md#watchdog"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "vector(1)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []

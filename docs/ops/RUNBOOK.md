@@ -180,13 +180,17 @@ copy-paste version):
   `ops/prometheus/targets/hosts.yml`, which Prometheus re-reads every minute,
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
-- `ops/alerts.yaml` goes in its rule files and
-  `ops/alertmanager/repose-route.yaml` into Alertmanager, which emails the
-  owner itself; its SMTP password is a Resend API key in
-  `/etc/alertmanager/secrets`. Watchdog goes to an Uptime Kuma push
-  monitor (DECISIONS I-648, I-848; `ops/README.md` step 3).
+- `ops/alerts.yaml` goes in Prometheus's rule files. The same rules are
+  evaluated a second time by Grafana, which is what emails the owner:
+  `ops/grafana/provisioning/alerting/` holds them, generated from
+  `ops/alerts.yaml` by `ops/grafana/alerts-gen.py`, with the contact points
+  and the notification policy beside them. The SMTP password is a Resend API
+  key in `/etc/grafana/secrets`, and Watchdog goes to an Uptime Kuma push
+  monitor. There is no Alertmanager (DECISIONS I-648, I-848, I-942;
+  `ops/README.md` step 3).
 - `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
-  provisioning; the eight dashboards appear in a `repose` folder.
+  provisioning; the eight dashboards appear in a `repose` folder and the 54
+  alert rules under Alerting, in a `repose alerts` folder of their own.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
   console logs, and needs the compactor enabled to do anything.
 - The server joins the edge's WireGuard as one more peer:
@@ -545,17 +549,18 @@ HostdDown, not this.
 
 ## Watchdog
 
-Always firing, by design. Alertmanager sends it every minute to an Uptime
+Always firing, by design. Grafana sends it every minute to an Uptime
 Kuma push monitor and to nothing else. When the pushes stop, Kuma posts
-"down" to the Chat space itself: Prometheus, Alertmanager or the
+"down" to the Chat space itself: Prometheus, Grafana or the
 personal server has stopped, and no other alert can reach anyone.
 
 1. Is the server up? `tailscale ping augusti` from woker-1.
-2. On it: `systemctl status prometheus alertmanager` (or their
-   containers), `curl -s localhost:9093/-/healthy`,
-   `amtool alert query alertname=Watchdog`.
+2. On it: `systemctl status prometheus grafana` (or their containers),
+   `curl -s localhost:3000/api/health`, and Grafana's Alerting -> Alert
+   rules, where `Watchdog` should be firing.
 3. Watchdog firing but Kuma reports down: the push URL file
-   (`/etc/alertmanager/secrets/repose-watchdog-url`) or Kuma itself.
+   (`/etc/grafana/secrets/repose-watchdog-url`), or the webhook contact
+   point's own error under Alerting -> Contact points, or Kuma itself.
 4. Until it is fixed, the Azure alert email is the only alert that still
    reaches the owner.
 
@@ -1689,9 +1694,9 @@ believes in a subscription the api does not.
 3. This rule is absolute and will not clear by itself: the first error of a
    kind arrives as a new series at 1, which `increase()` can read as no
    rise, so the expression counts the total. When the account is
-   reconciled, silence it with a reason: `amtool silence add
-   alertname=BillingWebhookErrors --duration 720h --comment "reconciled
-   <handle> 2026-10-19"`. A silence with no comment is deleted nightly.
+   reconciled, silence it with a reason, in Grafana's Alerting -> Silences:
+   matcher `alertname=BillingWebhookErrors`, 720 h, comment "reconciled
+   <handle> 2026-10-19". A silence with no comment is deleted nightly.
 4. `BillingWebhookRejected` is the other failure: the signing secret and
    the endpoint have drifted and nothing is applied at all.
 
@@ -1768,8 +1773,8 @@ Start with the apply, because the most likely answer is that it never
 finished: a `make apply` whose install step is still running, or hung, is
 this alert with nothing wrong on the host at all. A token minted for an
 install nobody has run yet is the same thing: silence it until the apply
-(`amtool silence add alertname=HostUnregistered host_id=<name>
---duration 24h --comment "host-02 install scheduled for <date>"`).
+(Grafana, Alerting -> Silences: `alertname=HostUnregistered`,
+`host_id=<name>`, 24 h, comment "host-02 install scheduled for <date>").
 Otherwise:
 
 1. `ssh -J root@<edge ip>:2222 root@<private ip>`: `journalctl -u hostd`.
@@ -1978,7 +1983,8 @@ power-off, the boot and the restore: about a minute plus the images'
 read, under 6 minutes on host-01 and bounded by the thaw's window
 (DECISIONS I-796). The api marks the host unreachable 90 s after hostd
 stops, so `HostUnreachable` (2m) and `HostdDown` (3m) both page in that
-window. Silence them in Alertmanager for the host before the restart, and
+window. Silence them in Grafana for the host before the restart
+(Alerting -> Silences, matcher `host_id=<name>`), and
 the freeze itself holds the shutdown for as long as it takes, up to
 `repose.host.freeze.deadline`: `az vm restart` waits that out too.
 
@@ -2710,7 +2716,7 @@ its steps bite if they are taken in the wrong order.
 The people told, the evidence captured and the tenant notice (workstream
 14 §5):
 
-- **Told, in this order:** the owner (email from Alertmanager, then
+- **Told, in this order:** the owner (email from Grafana's alerting, then
   the incident file); the
   affected tenants; a third party only if their credentials inside the
   guest could have been read (GitHub, OpenAI, Anthropic) so they can

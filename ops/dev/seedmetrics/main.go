@@ -147,7 +147,7 @@ func main() {
 		api.NotifyTotal.WithLabelValues("email", "ok").Add(float64(rand.N(2)))
 		api.NotifyTotal.WithLabelValues("ntfy", "ok").Add(float64(rand.N(2)))
 		api.BillingWebhookTotal.WithLabelValues("subscription.updated", "ok").Add(float64(rand.N(2)))
-		api.BillingGateRefusedTotal.WithLabelValues("plan_limit").Add(float64(rand.N(2)))
+		api.BillingGateRefusedTotal.WithLabelValues("plan_limit", "small").Add(float64(rand.N(2)))
 		api.EgressAlertProjects.Set(0)
 
 		select {
