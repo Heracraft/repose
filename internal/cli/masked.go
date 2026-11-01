@@ -58,7 +58,8 @@ func readMasked(r io.Reader, w io.Writer) ([]byte, error) {
 			// several lines (a PEM key): keeping the first would store
 			// a value that looks set and is not. The rest is read off,
 			// so it does not reach the shell (I-929).
-			if br.Buffered() > 0 && !(b == '\r' && br.Buffered() == 1 && peekIs(br, '\n')) {
+			crlf := b == '\r' && br.Buffered() == 1 && peekIs(br, '\n')
+			if br.Buffered() > 0 && !crlf {
 				_, _ = br.Discard(br.Buffered())
 				return nil, errMaskedMultiline
 			}
