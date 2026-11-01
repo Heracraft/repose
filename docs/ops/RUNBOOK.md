@@ -180,13 +180,23 @@ copy-paste version):
   `ops/prometheus/targets/hosts.yml`, which Prometheus re-reads every minute,
   so adding a host needs no restart. Run Prometheus with
   `--storage.tsdb.retention.time=90d`.
-- `ops/alerts.yaml` goes in its rule files and
-  `ops/alertmanager/repose-route.yaml` into Alertmanager, which emails the
-  owner itself; its SMTP password is a Resend API key in
-  `/etc/alertmanager/secrets`. Watchdog goes to an Uptime Kuma push
-  monitor (DECISIONS I-648, I-848; `ops/README.md` step 3).
-- `ops/grafana/provisioning/` and `ops/dashboards/*.json` are Grafana's
-  provisioning; the eight dashboards appear in a `repose` folder.
+- `ops/alerts.yaml` is not loaded by Prometheus, which has no `rule_files:`
+  and no `alerting:` block and needs neither. Grafana evaluates the rules, by
+  querying Prometheus, and notifies through its own contact point.
+  `ops/grafana/alerts-gen.py` generates them from `ops/alerts.yaml` into
+  `ops/grafana/provisioning/alerting/`, and `ops/grafana/push.py` puts them
+  into Grafana over its HTTP API; nothing is mounted. There is no
+  Alertmanager, no SMTP password of repose's and no heartbeat (DECISIONS
+  I-648, I-848, I-942, I-944; `ops/README.md` step 3).
+- `ops/dashboards/*.json` go in the same way, by the same command. The eight
+  dashboards appear in a `repose` folder and the 53 alert rules under
+  Alerting, in a `repose alerts` folder of their own. No datasource is
+  created: the push finds that Grafana's own by type and rewrites the uids in
+  the rules and panels to it, so they query the address Grafana already
+  knows.
+- `ops/grafana/verify.py` says whether that Grafana still holds what the
+  repository says it should. Nothing reconciles at boot, so a Grafana whose
+  database was replaced has no alert rules and says nothing about it.
 - `ops/loki/retention.yaml` sets 90 days for component logs and 30 for guest
   console logs, and needs the compactor enabled to do anything.
 - The server joins the edge's WireGuard as one more peer:
@@ -478,8 +488,20 @@ Prometheus has not scraped the gateway on the edge for 3 minutes. Users'
 Every scrape that goes through the edge (the gateway, every hostd, `api`
 and `api-grpc`) has failed for 2 minutes. That is the edge VM, its network
 function or the WireGuard tunnel between the edge and the monitoring
-server, not four separate failures, so this one page holds back
-GatewayDown, HostdDown, ApiDown and ApiHostsAbsent.
+server, not four separate failures. Under Alertmanager this one page held
+back GatewayDown, HostdDown, ApiDown and ApiHostsAbsent; Grafana has no
+inhibitions, so those arrive alongside it (DECISIONS I-942).
+
+**Or Grafana cannot query Prometheus at all.** This is the one rule with
+`execErrState: Error` (DECISIONS I-944), so it is also what notifies when the
+query itself fails -- a Prometheus that is down, or a datasource pointing
+somewhere that answers nothing. It then arrives as a DatasourceError whose
+message names the address. Every other rule is `execErrState: OK` and would
+stay green and silent through exactly that failure, which is measured
+Grafana behaviour, not a guess. Grafana itself has to be alive for this to
+reach anyone; nothing covers that case since the heartbeat was dropped
+("Watchdog"). `python3 ops/grafana/verify.py` asks Grafana to test the
+datasource and says so directly.
 
 1. Do users notice? `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from
    woker-1. `certificate required`: the edge serves users and only the
@@ -545,19 +567,30 @@ HostdDown, not this.
 
 ## Watchdog
 
-Always firing, by design. Alertmanager sends it every minute to an Uptime
-Kuma push monitor and to nothing else. When the pushes stop, Kuma posts
-"down" to the Chat space itself: Prometheus, Alertmanager or the
-personal server has stopped, and no other alert can reach anyone.
+**Not deployed.** This alert exists in `ops/alerts.yaml`, which is also the
+definition for the Alertmanager route that is kept and not deployed, and
+Grafana is not given it: `ops/grafana/alerts-gen.py` excludes it (DECISIONS
+I-944). Nothing pings Uptime Kuma, and no Kuma monitor should be waiting for
+a push.
 
-1. Is the server up? `tailscale ping augusti` from woker-1.
-2. On it: `systemctl status prometheus alertmanager` (or their
-   containers), `curl -s localhost:9093/-/healthy`,
-   `amtool alert query alertname=Watchdog`.
-3. Watchdog firing but Kuma reports down: the push URL file
-   (`/etc/alertmanager/secrets/repose-watchdog-url`) or Kuma itself.
-4. Until it is fixed, the Azure alert email is the only alert that still
-   reaches the owner.
+Why: a dead-man's switch is only worth having where the watcher sits
+somewhere the failure it watches for cannot reach. The owner's Uptime Kuma
+runs on the same server as Prometheus and Grafana, so the one outage this
+alert exists to catch -- that server stopping -- would have stopped Kuma
+with it and the monitor would have reported down for the wrong reason, or
+not at all. A heartbeat that proves nothing is worse than none, because it
+reads as cover.
+
+What is left when the whole personal server goes quiet:
+
+1. Azure Monitor emails about the VM itself (RUNBOOK "Azure alert"). That is
+   the only automatic notice.
+2. Nothing else. No repose alert can reach anyone, and nothing says so.
+3. If this matters enough to fix, the fix is an Uptime Kuma (or any other
+   checker) running somewhere else, watching Grafana's `/api/health`. Then
+   `Watchdog` can be taken out of EXCLUDED in the generator and pointed at
+   it. Until then this heading is here because every alert name in
+   `ops/alerts.yaml` has one, and `ops/check.sh` enforces that.
 
 ## Azure alert
 
@@ -1689,9 +1722,9 @@ believes in a subscription the api does not.
 3. This rule is absolute and will not clear by itself: the first error of a
    kind arrives as a new series at 1, which `increase()` can read as no
    rise, so the expression counts the total. When the account is
-   reconciled, silence it with a reason: `amtool silence add
-   alertname=BillingWebhookErrors --duration 720h --comment "reconciled
-   <handle> 2026-10-19"`. A silence with no comment is deleted nightly.
+   reconciled, silence it with a reason, in Grafana's Alerting -> Silences:
+   matcher `alertname=BillingWebhookErrors`, 720 h, comment "reconciled
+   <handle> 2026-10-19". A silence with no comment is deleted nightly.
 4. `BillingWebhookRejected` is the other failure: the signing secret and
    the endpoint have drifted and nothing is applied at all.
 
@@ -1768,8 +1801,8 @@ Start with the apply, because the most likely answer is that it never
 finished: a `make apply` whose install step is still running, or hung, is
 this alert with nothing wrong on the host at all. A token minted for an
 install nobody has run yet is the same thing: silence it until the apply
-(`amtool silence add alertname=HostUnregistered host_id=<name>
---duration 24h --comment "host-02 install scheduled for <date>"`).
+(Grafana, Alerting -> Silences: `alertname=HostUnregistered`,
+`host_id=<name>`, 24 h, comment "host-02 install scheduled for <date>").
 Otherwise:
 
 1. `ssh -J root@<edge ip>:2222 root@<private ip>`: `journalctl -u hostd`.
@@ -1978,7 +2011,8 @@ power-off, the boot and the restore: about a minute plus the images'
 read, under 6 minutes on host-01 and bounded by the thaw's window
 (DECISIONS I-796). The api marks the host unreachable 90 s after hostd
 stops, so `HostUnreachable` (2m) and `HostdDown` (3m) both page in that
-window. Silence them in Alertmanager for the host before the restart, and
+window. Silence them in Grafana for the host before the restart
+(Alerting -> Silences, matcher `host_id=<name>`), and
 the freeze itself holds the shutdown for as long as it takes, up to
 `repose.host.freeze.deadline`: `az vm restart` waits that out too.
 
@@ -2710,7 +2744,7 @@ its steps bite if they are taken in the wrong order.
 The people told, the evidence captured and the tenant notice (workstream
 14 §5):
 
-- **Told, in this order:** the owner (email from Alertmanager, then
+- **Told, in this order:** the owner (email from Grafana's alerting, then
   the incident file); the
   affected tenants; a third party only if their credentials inside the
   guest could have been read (GitHub, OpenAI, Anthropic) so they can

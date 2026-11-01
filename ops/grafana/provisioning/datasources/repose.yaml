@@ -1,6 +1,19 @@
-# Datasources for the repose dashboards, provisioned on the personal Grafana
-# server. The uids are what every panel in ops/dashboards/ refers to, so they
-# are fixed: renaming one breaks 56 panels.
+# A REFERENCE, not something anything deploys. Nothing creates a datasource
+# from this file (DECISIONS I-944): `ops/grafana/push.py` finds the target
+# Grafana's own datasources by type and rewrites the uids in the rules and
+# panels to them, because only the target knows its addresses. The URLs below
+# are the local-loopback shape and are NOT the owner's server, where Grafana
+# reaches its siblings by Coolify service name on a Docker network -- and
+# where `127.0.0.1:9090` is Grafana itself. A datasource created from this
+# file there would answer nothing, and because every rule but
+# `MonitoringPathDown` is `execErrState: OK`, all 53 would read OK while
+# querying it.
+#
+# What is still true and still fixed is the UIDS. They are what every panel
+# in ops/dashboards/ and every generated alert rule is WRITTEN against, and
+# what the pusher rewrites on the way in; renaming one breaks 80 panels and
+# 53 rules at once. They are also what to set by hand if the owner adds a
+# datasource for panels that would otherwise be empty.
 #
 # Three, because §5 splits the data three ways on purpose: fleet-level series
 # in Prometheus, per-project figures in Postgres (a project_id label would
@@ -26,6 +39,17 @@ datasources:
     jsonData:
       maxLines: 1000
 
+  # NOT PUSHED. `ops/grafana/push.py` creates the two above and skips this
+  # one, because reaching the control plane's database needs a password and
+  # that tooling takes GRAFANA_URL and GRAFANA_TOKEN and nothing else
+  # (DECISIONS I-944, SKIP_DATASOURCES in ops/grafana/verify.py). No alert
+  # rule queries it; 21 of the 83 dashboard panels do, and they read "no
+  # data" without it. This entry is the reference for adding it by hand in
+  # Grafana -- Connections -> Add new connection -> PostgreSQL -- which needs
+  # the uid set to exactly `repose-postgres`, or the committed panels will
+  # not find it. `ops/sql/launch.sql` answers the same questions through psql
+  # with no datasource at all.
+  #
   # Read-only role, because a dashboard that can write to the control plane's
   # database is a dashboard that can destroy a tenant's project row:
   #
@@ -35,8 +59,9 @@ datasources:
   #   grant select on all tables in schema public to grafana_ro;
   #   alter default privileges in schema public grant select on tables to grafana_ro;
   #
-  # The password comes from the environment, never from this file:
-  # GF_SECURITY_* style variables are expanded by Grafana at load time.
+  # The two placeholders below are Grafana's file-provisioning syntax. Nothing
+  # in this repository expands them, because nothing in this repository
+  # creates this datasource.
   - name: repose-postgres
     uid: repose-postgres
     type: grafana-postgresql-datasource

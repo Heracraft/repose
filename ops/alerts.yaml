@@ -5,9 +5,16 @@
 # maintenance that is not running.
 #
 # Every alert name is a heading in docs/ops/RUNBOOK.md, and `promtool test
-# rules ops/alerts_test.yaml` has a case per rule. Alertmanager routes them to
-# the owner by email, and Watchdog to an Uptime Kuma
-# push monitor (ops/alertmanager/repose-route.yaml, DECISIONS I-648).
+# rules ops/alerts_test.yaml` has a case per rule.
+#
+# WHAT ACTUALLY EVALUATES THESE: Grafana, not Prometheus and not an
+# Alertmanager. ops/grafana/alerts-gen.py generates Grafana's own alert rules
+# from this file and ops/grafana/push.py puts them in over Grafana's API
+# (DECISIONS I-942, I-944). Prometheus loads no rule_files. This file stays
+# the single source of truth, and the Alertmanager routing below it
+# (ops/alertmanager/repose-route.yaml, DECISIONS I-648) is kept and not
+# deployed -- which is why `Watchdog` is still here and is the one alert
+# Grafana is not given.
 #
 # Severity: `page` wakes someone (tenants are down or data is at risk),
 # `warn` is a notification that can wait for the morning.

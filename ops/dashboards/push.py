@@ -30,13 +30,16 @@ TYPE_ALIASES = {"grafana-postgresql-datasource": {"grafana-postgresql-datasource
 
 
 def api(base, token, method, path, body=None):
+    headers = {"Content-Type": "application/json", "Accept": "application/json",
+               # Cloudflare (error 1010) refuses Python's default User-Agent.
+               "User-Agent": "repose-dashboards-push/1"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(
         base.rstrip("/") + path,
         method=method,
         data=None if body is None else json.dumps(body).encode(),
-        # Cloudflare (error 1010) refuses Python's default User-Agent.
-        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json", "Accept": "application/json",
-                 "User-Agent": "repose-dashboards-push/1"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -79,10 +82,17 @@ def main():
     ap.add_argument("--loki")
     ap.add_argument("--postgres")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--expect-missing", action="append", default=[], metavar="UID",
+                    help="a dev uid whose datasource the target is not meant to have; "
+                         "its panels are left pointing at it and nothing is reported. "
+                         "ops/grafana/push.py passes repose-postgres (DECISIONS I-944)")
     a = ap.parse_args()
     base, token = os.environ.get("GRAFANA_URL"), os.environ.get("GRAFANA_TOKEN")
-    if not base or not token:
-        raise SystemExit("set GRAFANA_URL and GRAFANA_TOKEN")
+    if not base:
+        raise SystemExit("set GRAFANA_URL")
+    # No token means no Authorization header, which only an anonymous-admin
+    # Grafana accepts (ops/dev). A real one answers 401 and says so.
+    token = token or ""
 
     datasources = api(base, token, "GET", "/api/datasources")
     wanted = {"prometheus": a.prometheus, "loki": a.loki, "grafana-postgresql-datasource": a.postgres}
@@ -90,7 +100,10 @@ def main():
     for uid, kind in DEV_UIDS.items():
         ds = pick(datasources, kind, wanted[kind])
         if ds is None:
-            missing.append(kind)
+            # --expect-missing silences the report, not the lookup: a target
+            # that does have one still gets its panels pointed at it.
+            if uid not in a.expect_missing:
+                missing.append(kind)
         else:
             mapping[uid] = ds
             print(f"datasource {uid} -> {ds['name']} ({ds['uid']})")
@@ -109,8 +122,18 @@ def main():
         if a.dry_run:
             print(f"would import {path.name} ({dash.get('title')})")
             continue
-        res = api(base, token, "POST", "/api/dashboards/db",
-                  {"dashboard": dash, "folderUid": folder_uid, "overwrite": True, "message": "ops/dashboards/push.py"})
+        try:
+            res = api(base, token, "POST", "/api/dashboards/db",
+                      {"dashboard": dash, "folderUid": folder_uid, "overwrite": True, "message": "ops/dashboards/push.py"})
+        except SystemExit as exc:
+            # That Grafana provisions its dashboards from files of its own,
+            # as ops/dev does, and `allowUiUpdates: false` makes the API
+            # refuse to write over one. It is already there, so this is
+            # reported and not an error.
+            if "provisioned" in str(exc):
+                print(f"{path.name}: provisioned from a file on the target, left alone")
+                continue
+            raise
         print(f"imported {path.name}: {base.rstrip('/')}{res.get('url', '')}")
     if missing:
         print(f"no {', '.join(missing)} datasource on the target; those panels read 'no data'", file=sys.stderr)

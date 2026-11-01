@@ -15,11 +15,21 @@
 #   dashboard exprs        a PromQL expression in a panel that does not parse,
 #                          which renders as an empty panel with an error a
 #                          human has to click to see
-#   amtool                 a route that does not parse, or an alert that lands
-#                          on the wrong receiver (a page that waits 12 h, a
-#                          Watchdog that posts to Chat every minute)
+#   alerts-gen.py --check  committed Grafana rules that no longer match
+#                          ops/alerts.yaml, which is the one source of both
+#                          (DECISIONS I-942)
+#   amtool                 the kept Alertmanager route still parses and routes
+#                          as written. Nothing runs it: the personal server's
+#                          alerting is Grafana's own, and the live routing
+#                          check is verify.py under --grafana
 #   gen.py --check         committed JSON that no longer matches the generator
-#   grafana                a provisioning file or a dashboard Grafana refuses
+#   grafana                a provisioning file, a dashboard or an alert rule
+#                          Grafana refuses; an alert that lands on the wrong
+#                          contact point (a page that waits 12 h, a Watchdog
+#                          that emails every 30 s); and, since the alerting
+#                          goes in over the API rather than a mount
+#                          (DECISIONS I-944), that a push followed by a
+#                          second push changes nothing
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -93,9 +103,12 @@ else
   echo "all alerts have one"
 fi
 
-say "alertmanager route"
+say "alertmanager route (kept, not deployed)"
 # DECISIONS I-648, amended by I-848: Watchdog only to the Kuma push, pages
-# to the page receiver, the rest to email on the slow timer.
+# to the page receiver, the rest to email on the slow timer. I-942 moved the
+# live routing into Grafana's own alerting, because the personal server has
+# no Alertmanager; this file is kept against the day one is added, and the
+# timings below are the ones ops/grafana/provisioning/alerting mirrors.
 route=$ops/alertmanager/repose-route.yaml
 amtool check-config "$route" >/dev/null || fail=1
 while read -r want labels; do
@@ -112,6 +125,9 @@ repose-email stack=repose alertname=GuestWakeFailed severity=warn host_id=host-0
 repose-email stack=repose alertname=BillingStopped severity=info
 ROUTES
 echo "routes as intended"
+
+say "grafana alert rules are what the generator produces"
+python3 "$ops/grafana/alerts-gen.py" --check || fail=1
 
 say "dashboards are what the generator produces"
 python3 "$ops/dashboards/gen.py" --check || fail=1
@@ -150,8 +166,43 @@ if [ "${1:-}" = "--grafana" ]; then
       fail=1
     fi
   done
-  say "Grafana logged no provisioning error"
-  if docker compose -f "$ops/dev/docker-compose.yml" logs grafana 2>&1 | grep -iE 'level=error|provisioning.*error'; then
+  say "the alerting pushes in over the API, as it does on the server"
+  # The alerting is not mounted (DECISIONS I-944), so this is the real path:
+  # ops/grafana/push.py against a running Grafana, then the drift check.
+  # GRAFANA_URL is the whole of what it needs here: dev's Grafana is
+  # anonymous admin, so no token, and the push takes no other value at all
+  # (DECISIONS I-944). Dev's datasources come from a file of its own (the dev
+  # URLs differ), so they are reported as left alone rather than written.
+  export GRAFANA_URL=http://127.0.0.1:3000
+  unset GRAFANA_TOKEN
+  python3 "$ops/grafana/push.py" --skip-dashboards 2>&1 | sed 's/^/  /' || fail=1
+
+  say "a second push changes nothing"
+  # Idempotence, said by the thing itself: --dry-run reports what it would
+  # change, and after a push that has to be nothing.
+  out=$(python3 "$ops/grafana/push.py" --skip-dashboards --dry-run 2>&1) || fail=1
+  printf '%s\n' "$out" | sed 's/^/  /'
+  if printf '%s' "$out" | grep -qE ': (created|deleted)|[1-9][0-9]* (new|changed)'; then
+    echo "a second push would still change something" >&2
+    fail=1
+  fi
+
+  say "Grafana holds what the generator produces"
+  # The count against ops/alerts.yaml, rule by rule, not just "no error": a
+  # rule that was pushed once and then edited away in the UI is the drift
+  # nothing else catches now.
+  python3 "$ops/grafana/verify.py" || fail=1
+
+  say "Grafana logged no provisioning or template error"
+  # The dev stack has nowhere to deliver: no GF_SMTP_* and no contact point
+  # of its own, so a firing alert reaching Grafana's default email receiver
+  # fails. That failure is the alerting path working, and is the only error
+  # allowed through. An annotation that will not expand is NOT one of them:
+  # it reaches the reader as its own template source, and is how
+  # `{{ $values.B.Value | ... }}` without its `if` guard was found (I-942).
+  if docker compose -f "$ops/dev/docker-compose.yml" logs grafana 2>&1 \
+     | grep -iE 'level=error|provisioning.*error|alerting.*(failed|invalid)' \
+     | grep -vE 'SMTP not configured'; then
     fail=1
   else
     echo "clean"

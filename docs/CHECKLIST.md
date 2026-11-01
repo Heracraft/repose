@@ -279,15 +279,23 @@ entry and this list with it. Counts as of 2026-10-21.
       (R3-20) stays a fallback; I-39 records the v7 sizes used.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
-- [ ] **Paging reaches a human.** Alertmanager's SMTP password is on the
-      personal server, and its route and rules are loaded (`ops/README.md`
-      step 3). Evidence: a test alert
-      (`amtool alert add alertname=ReposeTest ...`) arrives by email,
-      and an Uptime Kuma Push monitor (180 s) alerts when
-      Alertmanager stops pushing. Until this is closed every Prometheus
-      page, including the host-down ones, reaches nobody: the 2026-10-10
-      outage paged no one because `ntfy.herakraft.co` answered 503 on every
-      path (DECISIONS I-648).
+- [ ] **Paging reaches a human.** One contact point in the owner's Grafana,
+      set as the default, and the 53 alert rules pushed in
+      (`ops/README.md` step 3). Evidence: **Test** on that contact point
+      arrives; and `GRAFANA_URL=... GRAFANA_TOKEN=... python3
+      ops/grafana/verify.py --wait 120` exits 0, which means a rule for every
+      alert the generator emits, under its own uid, pointed at a datasource
+      Grafana can actually query, and every one of them evaluated without
+      error. Acceptance is not enough: with `execErrState: OK` a rule whose
+      query fails reads OK, so the datasource test and the health are the
+      check (I-944).
+      Until this is closed every page, including the host-down ones, reaches
+      nobody: the 2026-10-10 outage paged no one because
+      `ntfy.herakraft.co` answered 503 on every path (DECISIONS I-648), and
+      the routing written after it was for an Alertmanager the server never
+      had (I-942). Not covered, knowingly: a personal server that is wholly
+      down notifies nobody, because the only machine available to watch it
+      from is itself (I-944). Azure's VM email is the one thing left.
 - [ ] **Prometheus scrapes the HTTP api process.** `api-grpc` publishes a
       host port and is scraped directly; `api` publishes none, because a
       published port would stop its rolling deploys (I-2), so its
@@ -389,13 +397,14 @@ entry and this list with it. Counts as of 2026-10-21.
       own; `ops/check.sh` runs all three checks. Loaded against real
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
-      routing them to the owner's Alertmanager is part of the WireGuard
-      peer that `10-observability.md` §9 still has open. There are 52
-      rules, and the route (`ops/alertmanager/repose-route.yaml`) emails
-      pages from Alertmanager itself with a Watchdog heartbeat to Uptime
-      Kuma; `ops/check.sh` proves each receiver with `amtool config routes
-      test`. Delivery is live only once the owner puts the SMTP password
-      and the Kuma push URL on the personal server and merges the route
+      delivery needs the WireGuard peer that `10-observability.md` §9 still
+      has open. There are 54 alerts, 53 of them generated into Grafana's own
+      alerting by `ops/grafana/alerts-gen.py` and pushed in by
+      `ops/grafana/push.py` over the API; `ops/check.sh --grafana` proves
+      every one of them against a running Grafana, twice, and the drift
+      check finds no difference (I-942, I-944). Who gets told is one contact
+      point the owner adds in the UI; repose provisions no notification
+      policy. Delivery is live only once that contact point exists
       (`ops/README.md` step 3) and one test alert arrives.
 - [x] Privacy policy and terms published, containing the process-sample
       boundary verbatim and the Anthropic hosted-use statement (users

@@ -11,14 +11,18 @@ other end of those.
 
 | Path | What it is |
 |---|---|
-| `alerts.yaml` | The 48 Prometheus alert rules. Every name is a heading in `docs/ops/RUNBOOK.md`. |
+| `alerts.yaml` | The 54 alert rules, as Prometheus rules. The source of truth for both Prometheus and Grafana. Every name is a heading in `docs/ops/RUNBOOK.md`. |
 | `alerts_test.yaml` | `promtool test rules` cases: each alert fires on the series it was written for and stays quiet just below it. |
-| `alertmanager/repose-route.yaml` | Route, SMTP and inhibitions: everything emailed by Alertmanager itself, `page` on a faster timer, `Watchdog` only to the Uptime Kuma push monitor (DECISIONS I-648, I-848). |
+| `grafana/alerts-gen.py` | Turns `alerts.yaml` into Grafana's own alert rules. `--check` fails if the YAML is stale (DECISIONS I-942). |
+| `grafana/provisioning/alerting/repose-rules.yaml` | The 53 rules as Grafana holds them (54 alerts less `Watchdog`). Generated: edit `alerts.yaml` and re-run the generator. Not mounted anywhere. |
+| `grafana/push.py` | The one command that puts the alert rules and the dashboards into a running Grafana over the HTTP API, pointed at the datasources that Grafana already has. Creates no datasource. `--dry-run` says what would change (DECISIONS I-944). |
+| `grafana/verify.py` | The drift check: what a Grafana holds against what the generator produces, rule by rule, plus Grafana's own test of the datasource the rules query. Nothing reconciles at boot, so this is the only thing that notices. |
+| `alertmanager/repose-route.yaml` | Kept, not deployed. The same routing as an Alertmanager configuration, and the only written record of the seven inhibition rules Grafana cannot express (DECISIONS I-648, I-848, I-942). |
 | `prometheus/prometheus.yml` | Scrape config: hosts (`:9100`, `:9101`, Fluent Bit `:2021`), edge (`:9102`), api (`:9103`), all over WireGuard. |
 | `prometheus/targets/hosts.yml` | The host list, re-read every minute. Adding a host is one edit here. |
 | `prometheus/wireguard-peer.conf` | How the monitoring server joins the edge's WireGuard hub, and how to check it. |
 | `loki/retention.yaml` | 90 days for component logs, 30 for guest console logs, with the compactor that makes it happen. |
-| `grafana/provisioning/` | Datasources (three fixed uids) and the dashboard provider. |
+| `grafana/provisioning/` | The dashboard provider, the alert rules, and a datasource file that is a REFERENCE only: nothing is mounted into the owner's Grafana and nothing creates a datasource from it, because its URLs are not that server's (DECISIONS I-944). |
 | `dashboards/*.json` | The eight dashboards. Generated: edit `dashboards/gen.py` and re-run it. |
 | `dashboards/gen.py` | The dashboards' source of truth. `--check` fails if the JSON is stale. |
 | `dashboards/push.py` | Imports every dashboard into a real Grafana, in one folder, rewriting the dev datasource uids to the target's. Idempotent; the token comes from `GRAFANA_TOKEN`. |
@@ -33,46 +37,148 @@ other end of those.
    (`prometheus/wireguard-peer.conf`, both halves). Until this works nothing
    else can: hosts have no inbound and no public address.
 2. **Prometheus.** Copy `prometheus/prometheus.yml` to
-   `/etc/prometheus/prometheus.yml`, `alerts.yaml` and `prometheus/targets/`
-   to `/etc/prometheus/repose/`, and run it with
-   `--storage.tsdb.retention.time=90d`. Before `alerts.yaml` is loaded,
-   `up{job=~"hosts|hostd|api|api-grpc|gateway"}` must be 1 for every
-   target: HostdDown, ApiDown and GatewayDown page on any that is 0 and
-   repeat hourly. `api` passes through Traefik's allow-list
-   (`coolify/README.md` "The api's metrics"). After loading it,
-   `curl -s localhost:9090/api/v1/alerts` lists only `Watchdog` firing.
-3. **Alertmanager email and the heartbeat** (DECISIONS I-648, I-848).
-   - Email: Alertmanager sends it itself, so there is nothing to install.
-     Put a Resend API key where it can read it, and set the two `to:`
-     addresses and `smtp_from` in `alertmanager/repose-route.yaml` to the
-     address Azure's alerts already use (`alert_email` in
-     `prod.local.tfvars`):
+   `/etc/prometheus/prometheus.yml` and `prometheus/targets/` to
+   `/etc/prometheus/repose/`, and run it with
+   `--storage.tsdb.retention.time=90d`.
 
-     ```
-     read -rsp 'Resend API key: ' k; install -d -m 0750 /etc/alertmanager/secrets; (umask 077; printf '%s' "$k" > /etc/alertmanager/secrets/repose-smtp-password); unset k
-     ```
+   **Prometheus needs no `rule_files:` and no `alerting:` block**, and the
+   config here has neither (DECISIONS I-944). Grafana evaluates repose's
+   alert rules itself, by querying this Prometheus, and notifies through its
+   own contact point; Prometheus has nothing to evaluate and nowhere to send.
+   An `alerting:` block would point at an Alertmanager this server does not
+   run. `alerts.yaml` is still the source of truth -- promtool tests it and
+   `grafana/alerts-gen.py` generates Grafana's rules from it -- it is simply
+   not loaded here.
 
-     Readable by the user Alertmanager runs as. The domain is verified
-     already (LAUNCH.md step 2), the username is the literal `resend`.
-   - Uptime Kuma: add a monitor of type Push, heartbeat interval 180 s,
-     retries 1, with the Chat space as its notification. Kuma must be 2.0
-     or later (1.x accepts only GET on push URLs; Alertmanager POSTs), and
-     should run somewhere other than this server, or a dead server goes
-     unheard. Put its push URL in Alertmanager's secrets:
-     `read -rsp 'Kuma push URL: ' u; install -d -m 0750 /etc/alertmanager/secrets; (umask 077; printf '%s' "$u" > /etc/alertmanager/secrets/repose-watchdog-url); unset u`,
-     readable by the user Alertmanager runs as.
-   - Merge `alertmanager/repose-route.yaml` into `alertmanager.yml` and
-     reload (`curl -X POST localhost:9093/-/reload`). Check each route with
-     `amtool config routes test --config.file=alertmanager.yml stack=repose
-     alertname=HostdDown severity=page` (and `Watchdog`, `HostServiceDown`),
-     then send one through to Chat: `amtool alert add alertname=ReposeTest
-     severity=warn stack=repose --annotation=summary="test"`.
+   Before the alert rules go in, `up{job=~"hosts|hostd|api|api-grpc|gateway"}`
+   must be 1 for every target: HostdDown, ApiDown and GatewayDown are pages.
+   `api` passes through Traefik's allow-list (`coolify/README.md` "The api's
+   metrics").
+3. **Alerting** (DECISIONS I-942, I-944). Grafana evaluates the rules and
+   sends the notifications. There is no Alertmanager on this server and this
+   adds none.
+
+   Nothing is mounted. `grafana/push.py` puts the 53 alert rules and the
+   eight dashboards into a running Grafana over its HTTP API, and is safe to
+   re-run:
+
+   ```
+   export GRAFANA_URL=https://grafana.example GRAFANA_TOKEN=glsa_...
+   python3 ops/grafana/push.py --dry-run     # what it would change
+   python3 ops/grafana/push.py
+   ```
+
+   **Those two variables are the whole list.** `GRAFANA_TOKEN` is a
+   service-account token with the Admin role (Grafana: Administration ->
+   Users and access -> Service accounts). There is no password to set
+   anywhere: this tooling holds no secret, asks for none, and refuses for
+   want of none.
+
+   **It creates no datasource. That Grafana must already have one for the
+   Prometheus that scrapes repose**, which is the normal case -- a Grafana
+   deployed beside a Prometheus has one. The push finds it by type and
+   rewrites the rules' and panels' datasource uid to it, so what the rules
+   query is the address that Grafana already knows works. It never invents
+   one: only the target knows its own addresses. On this stack they are
+   Coolify service names on the Docker network, and
+   `grafana/provisioning/datasources/repose.yaml` says `127.0.0.1:9090`,
+   which inside the Grafana container is Grafana itself. A datasource
+   created from that file would answer nothing and all 53 rules would read
+   OK while querying it (I-944).
+
+   If that Grafana has more than one Prometheus datasource the push stops and
+   says so; name the one to use with `--prometheus NAME` (and `--loki NAME`,
+   `--postgres NAME` for the panels). If it has none, the push stops and says
+   to add one.
+
+   **One contact point, set up by hand in the UI. That is the whole of it,
+   and without it nothing is delivered.** Two steps, both in Grafana:
+
+   1. Alerting -> Contact points -> **Add contact point**. Email, Google
+      Chat, anything Grafana supports; repose has no opinion. A fresh
+      Grafana has none at all.
+   2. Alerting -> Notification policies -> **Default policy** -> Edit, and
+      set its contact point to the one just made. A fresh Grafana 12.4 ships
+      a default policy whose receiver is `empty`, so step 1 alone delivers
+      nothing.
+
+   Grafana's default policy then carries every repose alert to it. Nothing
+   here provisions a policy or a contact point, which is why this repository
+   holds no address and no SMTP password: if the channel is email, Grafana's
+   own `[smtp]` settings (`GF_SMTP_*` on the service) are the owner's.
+
+   Then check it: **Test** on the contact point arrives; Alerting -> Alert
+   rules lists 53 rules in a `repose alerts` folder; and
+   `python3 ops/grafana/verify.py --wait 120` exits 0. `verify.py` is the
+   thing to re-run later to ask whether that Grafana still holds what this
+   repository says: it compares rule by rule, asks Grafana to test the
+   datasource the rules query, and waits for every rule to have been
+   evaluated rather than trusting that it was accepted. The alerts have a folder of their
+   own rather than the dashboards' `repose`, so there is never a second
+   folder of one name (I-942).
+
+   Five things to know, none of them hidden:
+
+   - **A rule whose query fails reads OK, and only one rule says otherwise.**
+     Every rule is `execErrState: OK` except `MonitoringPathDown`. Measured
+     on Grafana 12.4: with `OK`, a datasource answering "connection refused"
+     on every query left all 53 rules green, state Normal, health "ok" --
+     nothing in the API distinguished them from a quiet fleet. `Error` on all
+     53 would instead send 53 DatasourceError notifications every time
+     Prometheus restarts. So exactly one carries `Error`:
+     `MonitoringPathDown`, which is already the single alert for a broken
+     monitoring path, and is now also what notifies when Grafana cannot query
+     Prometheus at all. It is the narrow remainder of the dead-man's switch
+     this design gave up, and it needs Grafana itself to be alive.
+
+   - **21 of the 83 dashboard panels will read "no data", and that is
+     correct.** They are the per-account and per-project figures, which read
+     the control plane's Postgres rather than Prometheus -- `project_id` and
+     `user_id` are refused as metric labels, so those numbers cannot be
+     Prometheus series at all (`docs/ops/OBSERVABILITY.md`). Reaching that
+     database needs a password, and the push takes none, so it does not
+     create that datasource. The dashboards are not broken. Two ways to get
+     those figures when they are wanted: `psql "$DATABASE_URL" -f
+     ops/sql/launch.sql`, which needs no datasource; or add the datasource by
+     hand in Grafana (Connections -> Add new connection -> PostgreSQL) with
+     the uid set to exactly `repose-postgres`, so the committed panels find
+     it. `grafana/provisioning/datasources/repose.yaml` is the reference for
+     what to put in it, including the read-only role to create first. Doing
+     it by hand is the point: no database password passes through this
+     repository's tooling, now or later.
+
+   - **A rebuilt Grafana comes back with no alert rules until someone runs
+     the push again, and no alert rules is silent.** With a mounted
+     provisioning directory Grafana re-provisions itself at boot; over the
+     API nothing does. Grafana's state is in Postgres
+     (`GF_DATABASE_TYPE=postgres`), so recreating the container keeps the
+     rules; replacing that database loses them. Nothing watches for it.
+     `ops/grafana/verify.py` is the check, and it only runs when someone
+     runs it.
+   - **There is no heartbeat.** `Watchdog` is in `alerts.yaml` and is the one
+     alert Grafana does not get. A dead-man's switch is worth having only
+     where the watcher sits somewhere the failure cannot reach, and this
+     server's Uptime Kuma is on this server. So a Prometheus or a Grafana
+     that is wholly down says nothing; Azure's own alert email about the VM
+     is what is left (RUNBOOK "Azure alert").
+   - **One outage can send several notifications.** Grafana's default policy
+     groups by `grafana_folder` and `alertname`, and the seven Alertmanager
+     `inhibit_rules` that kept one page per outage have no equivalent in
+     Grafana. A host that goes away trips HostdDown, HostUnreachable and
+     MonitoringPathDown, and each is its own notification. If that becomes
+     annoying it is one field in the same dialog as step 2 above: group by
+     `stack` instead of `alertname`, and they arrive as one message. That is
+     the owner's call, which is why it is not done here.
 4. **Loki.** Merge `loki/retention.yaml`. Retention does nothing without the
    compactor, so check `curl -s localhost:3100/config | grep retention`.
-5. **Grafana.** Provisioning from `grafana/provisioning/`, dashboards from
-   `dashboards/` mounted at `/etc/grafana/dashboards/repose`. Create the
-   read-only Postgres role in the datasource file's comment first, or the four
-   Postgres-backed dashboards are empty.
+5. **Grafana.** Nothing to mount and no datasource to provision: step 3's
+   `grafana/push.py` puts the alert rules and the dashboards in over the API
+   and points them at the datasources that Grafana already has, so
+   `grafana-data` stays the service's only volume. This Grafana evaluates the
+   alert rules, so it is in the path of every notification: a Grafana that is
+   down tells nobody anything, and nothing outside it notices (step 3). The
+   21 Postgres-backed panels stay empty unless the owner adds that datasource
+   themselves, which step 3 explains.
 6. **Postgres.** Nothing to install: the api creates and drops the sample
    tables' partitions itself. `sql/partitions.sql` is the same maintenance as
    SQL functions, for an operator whose api is down (`psql -f
@@ -92,9 +198,9 @@ other end of those.
    systemctl daemon-reload && systemctl enable --now repose-digest.timer
    ```
 
-   It needs `psql` on PATH and reads the SMTP password from the file
-   Alertmanager already holds (`SMTP_PASSWORD_FILE` in the unit), so it
-   adds no secret. Put `DIGEST_TO` in `/etc/repose-digest.env`.
+   It needs `psql` on PATH and an SMTP password of its own in
+   `SMTP_PASSWORD_FILE` (the unit reads it from a file). repose's alerting
+   holds no SMTP password any more, so this is the only place one is needed. Put `DIGEST_TO` in `/etc/repose-digest.env`.
    Check it before enabling the timer: `DATABASE_URL=... /opt/repose/ops/digest/digest.py --dry-run`
    prints the message and sends nothing. A source it cannot reach prints
    `?` for its own numbers and the rest still goes, so question marks in
@@ -120,11 +226,16 @@ included.
 ## What is checked, and what only a host can tell you
 
 `ops/check.sh` covers: the rules parse; each alert fires on its own fixture;
-every alert has a runbook heading; the dashboards match the generator; every
+every alert has a runbook heading; the Grafana alert rules and the dashboards
+are both what their generators produce; every
 panel has a title, a description, a provisioned datasource and a query; no
 Prometheus query selects on `project_id`, `guest_id` or `user_id`; every SQL
 query names tables and columns that `db-schema.md` has; every Prometheus
-expression parses. With `--grafana`, that Grafana accepts seven of them (not the overview).
+expression parses. With `--grafana`, that Grafana loads all eight
+dashboards, that `grafana/push.py` puts all 53 rules into a real Grafana
+pointed at that Grafana's own datasource, that a second push changes nothing,
+and that `grafana/verify.py` finds no difference and no rule the engine
+cannot evaluate.
 
 `ops/dev/pgcheck.sh` runs every Postgres panel query against a real
 Postgres and makes one partition drop happen.

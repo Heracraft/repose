@@ -13,6 +13,14 @@
 # The dashboards and their provisioning file are mounted read-only from
 # ops/, so a provisioning mistake shows up here rather than on the server. `ops/check.sh --grafana`
 # brings the stack up, waits for Grafana, and asserts every dashboard loaded.
+#
+# The alerting is NOT mounted, deliberately: the owner's Grafana is a
+# Coolify-managed container that is not to grow another bind mount, so the
+# alert rules, contact points and notification policy go in over the HTTP API
+# (DECISIONS I-944). `ops/check.sh --grafana` runs `ops/grafana/push.py`
+# against this stack and then `ops/grafana/verify.py`, which is the same path
+# the server takes. Dev's Grafana is anonymous admin, so the push needs no
+# token here; a real one needs GRAFANA_TOKEN.
 name: repose-obs-dev
 
 services:
