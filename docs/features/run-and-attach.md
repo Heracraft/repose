@@ -370,10 +370,21 @@ with two exceptions:
   named there too ("copied report.pdf to the machine"), so no file
   leaves the laptop unseen (I-468).
 - Ctrl+V (0x16, CSI u `118;5u`, modifyOtherKeys `27;5;118~`): the
-  clipboard is read as `repose paste` reads it, for up to 2 s. A PNG is
-  copied to `/tmp/repose-paste/<ts>.png` and its path typed as above;
-  anything else sends the key on. A missing clipboard tool on a desktop is
-  said once per session on the tmux status line.
+  clipboard is read as `repose paste` reads it, for up to 2 s, the image
+  first. A PNG is copied to `/tmp/repose-paste/<ts>.png` and its path
+  typed as above. No image but text on it: the text is typed as a
+  bracketed paste, byte for byte what the laptop terminal's own paste key
+  sends (I-940). The text comes from `pbpaste`, `wl-paste --no-newline
+  --type <t>` or `xclip -selection clipboard -t <t> -o` for the first of
+  `text/plain;charset=utf-8`, `UTF8_STRING`, `text/plain`, `STRING`,
+  `TEXT` the clipboard offers. One trailing newline is dropped, and paste
+  markers inside the text are removed. Text that is only paths of files
+  on the laptop, within the 64 KiB the scanner reads, is the drop a paste
+  of those paths is: same copy, limits, refusals and status line. Nothing
+  on the clipboard, a clipboard that cannot be read, or no tool: the key
+  goes on, so vim's block select and readline's quoted insert keep it,
+  and answer to Ctrl+Q where they do not. A missing clipboard tool on a
+  desktop is said once per session on the tmux status line.
 
 Input typed during a copy waits and follows it in order. A copy that
 takes over 0.5 s says so on the status line; nothing is ever written

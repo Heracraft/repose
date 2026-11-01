@@ -35,8 +35,10 @@ func (s *syncBuffer) Write(p []byte) (int, error) {
 // lands in the guest's paste directory and the program receives its guest
 // path as a bracketed paste, before the keys typed after the drop; a file
 // of the checkout arrives as its checkout path with nothing copied;
-// Ctrl+V pastes a clipboard image, and without one reaches the program as
-// Ctrl+V; detaching ends the proxy with ssh's status 0.
+// Ctrl+V pastes a clipboard image, text on the clipboard as the paste the
+// terminal's own key sends and a path on it as a drop, and with an empty
+// clipboard reaches the program as Ctrl+V; detaching ends the proxy with
+// ssh's status 0.
 func TestInputProxyDropReachesTheSession(t *testing.T) {
 	if _, err := exec.LookPath("script"); err != nil {
 		t.Skip("needs script(1) to give the fake guest's tmux client a terminal")
@@ -168,6 +170,31 @@ func TestInputProxyDropReachesTheSession(t *testing.T) {
 	typeIn("\x1b[200~hello there\x1b[201~=")
 	waitPane(t, f, "agent", "^[[200~hello there^[[201~=")
 
+	// Ctrl+V with text on the clipboard pastes the text, as the
+	// terminal's own paste key does, with the paste markers in the text
+	// taken out so none of it arrives as keys (I-940).
+	clip.setText("fix the \x1b[201~ parser")
+	typeIn("\x16@")
+	waitPane(t, f, "agent", "^[[200~fix the  parser^[[201~@")
+
+	// Ctrl+V with a file's path on the clipboard is the drop a paste of
+	// that path is: the file is copied and its guest path pasted.
+	report := filepath.Join(laptop, "report.pdf")
+	if err := os.WriteFile(report, []byte("PDF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clip.setText(report)
+	typeIn("\x16+")
+	pane = waitPane(t, f, "agent", "~+")
+	copies, _ := filepath.Glob(filepath.Join(dir, "*report.pdf"))
+	if len(copies) != 1 {
+		t.Fatalf("the path on the clipboard was not copied: %v\n%s", copies, pane)
+	}
+	if !strings.Contains(strings.ReplaceAll(pane, "\n", ""), "^[[200~"+copies[0]+"^[[201~+") {
+		t.Fatalf("pane does not show the guest path of the clipboard's file:\n%s", pane)
+	}
+	clip.setText("")
+
 	// Detach (Ctrl-b d): ssh exits 0 and so does the proxy.
 	typeIn("\x02d")
 	select {
@@ -186,11 +213,14 @@ func TestInputProxyDropReachesTheSession(t *testing.T) {
 
 // switchClipboard is a clipboard a test changes between keys.
 type switchClipboard struct {
-	mu  sync.Mutex
-	img []byte
+	mu   sync.Mutex
+	img  []byte
+	text string
 }
 
 func (c *switchClipboard) set(img []byte) { c.mu.Lock(); c.img = img; c.mu.Unlock() }
+
+func (c *switchClipboard) setText(text string) { c.mu.Lock(); c.text = text; c.mu.Unlock() }
 
 func (c *switchClipboard) ReadPNG(context.Context) ([]byte, error) {
 	c.mu.Lock()
@@ -199,6 +229,15 @@ func (c *switchClipboard) ReadPNG(context.Context) ([]byte, error) {
 		return nil, errNoImage
 	}
 	return c.img, nil
+}
+
+func (c *switchClipboard) ReadText(context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.text == "" {
+		return "", errNoText
+	}
+	return c.text, nil
 }
 
 func tail(s string, n int) string {

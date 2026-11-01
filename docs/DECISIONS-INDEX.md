@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-853 entries.
+854 entries.
 
 ## Scope
 
@@ -360,7 +360,7 @@ pointer, not a summary.
 - **I-277** `repose secrets import` sets every NAME=VALUE of a .env file — 2026-09-26; L7193
 - **I-281** Every ssh to `<project>.repose` first runs `repose ssh-prepare`, so plain ssh, scp, rsync, git and editors reach every project — 2026-09-26; L7220
 - **I-282** `repose code [PROJECT]` opens the checkout in VS Code, Cursor or Zed over that host — 2026-09-26; L7283
-- **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; amended by I-468; amended by I-509; L7302
+- **I-280** `run` and `attach` proxy the terminal, so a dropped file or a Ctrl+V image reaches the agent in the guest — 2026-09-26; amended by I-468; amended by I-509; partly superseded by I-940; L7302
 - **I-278** One Claude login per user: the login share — 2026-09-26; amended by I-464; amended by I-556; L7401
 - **I-283** No auto-mode offer on a machine in bypass mode — 2026-09-27; L7490
 - **I-284** The nothing-new check trusts the commits the last sync recorded, not the guest's ref tips — 2026-09-27; L7518
@@ -885,3 +885,4 @@ pointer, not a summary.
 - **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27135
 - **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27178
 - **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27219
+- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27237

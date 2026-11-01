@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeFiles is the laptop's file system for scanner tests.
@@ -399,5 +400,52 @@ func TestDropSizeCap(t *testing.T) {
 	want := "dropped files are copied up to 50.0 MB. Use repose cp for larger ones."
 	if !strings.Contains(said(), want) {
 		t.Fatalf("the status line said %q, want %q", said(), want)
+	}
+}
+
+// Ctrl+V with no image on the clipboard pastes the text on it, which is
+// what the terminal's own paste key sends (I-940). An empty clipboard, or
+// one that cannot be read, sends the key on, so vim's block select and
+// readline's quoted insert keep it.
+func TestCtrlVPastesClipboardText(t *testing.T) {
+	ctrlV := []byte{0x16}
+	for name, c := range map[string]struct {
+		clip fakeClipboard
+		want string
+	}{
+		"text":                  {fakeClipboard{err: errNoImage, text: "fix the parser"}, "\x1b[200~fix the parser\x1b[201~"},
+		"several lines":         {fakeClipboard{err: errNoImage, text: "one\ntwo\nthree"}, "\x1b[200~one\ntwo\nthree\x1b[201~"},
+		"one trailing line end": {fakeClipboard{err: errNoImage, text: "one\ntwo\n"}, "\x1b[200~one\ntwo\x1b[201~"},
+		"only a line end":       {fakeClipboard{err: errNoImage, text: "\n"}, "\x16"},
+		"an end marker":         {fakeClipboard{err: errNoImage, text: "a\x1b[201~b"}, "\x1b[200~ab\x1b[201~"},
+		"a start marker":        {fakeClipboard{err: errNoImage, text: "a\x1b[200~b"}, "\x1b[200~ab\x1b[201~"},
+		"only markers":          {fakeClipboard{err: errNoImage, text: "\x1b[201~"}, "\x16"},
+		"nothing on it":         {fakeClipboard{err: errNoImage}, "\x16"},
+		"unreadable":            {fakeClipboard{err: errNoImage, textErr: fmt.Errorf("boom")}, "\x16"},
+		"not a png":             {fakeClipboard{img: []byte("GIF89a"), text: "text instead"}, "\x1b[200~text instead\x1b[201~"},
+		"no clipboard tool":     {fakeClipboard{err: &clipboardToolError{"install xclip"}, textErr: fmt.Errorf("no xclip")}, "\x16"},
+	} {
+		h := &dropHandler{clip: c.clip, isFile: func(string) bool { return false }, notify: func(string) {}, now: time.Now}
+		if got := h.ctrlV(inputAction{kind: actCtrlV, raw: ctrlV}); string(got) != c.want {
+			t.Errorf("%s: Ctrl+V sent %q, want %q", name, got, c.want)
+		}
+	}
+}
+
+// Clipboard text that is only paths of files on this computer is the drop
+// a paste of those paths is, so Ctrl+V copies them too (I-940).
+func TestCtrlVTextOfPathsIsADrop(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "report.pdf")
+	if err := os.WriteFile(file, []byte("PDF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &dropHandler{clip: fakeClipboard{err: errNoImage, text: file}, isFile: fakeFiles(file), notify: func(string) {}, now: time.Now}
+	// files() needs the guest; what is checked here is that the text took
+	// that path at all, which its refusal (the drop as it came, our own
+	// bracketed text) shows just as well as a copy would.
+	got := h.ctrlV(inputAction{kind: actCtrlV, raw: []byte{0x16}})
+	if want := "\x1b[200~" + file + "\x1b[201~"; string(got) != want {
+		t.Errorf("Ctrl+V of a path sent %q, want the drop's own paste %q", got, want)
 	}
 }

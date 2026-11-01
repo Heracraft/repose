@@ -26,8 +26,10 @@ import (
 //     synced checkout is not copied: its path in the guest's checkout is
 //     pasted.
 //   - Ctrl+V with an image on the laptop's clipboard copies the image and
-//     pastes its path, as `repose paste` does (I-252). Without an image the
-//     key goes through, so vim and friends are unaffected.
+//     pastes its path, as `repose paste` does (I-252). With text on it, the
+//     text is pasted, byte for byte what the terminal's own paste key
+//     sends (I-940); the key itself only goes through when the clipboard
+//     holds neither, or cannot be read.
 //
 // On macOS a clipboard watcher (clipwatch.go, I-341) makes Cmd+V with an
 // image a drop too, by giving the clipboard the path of a copy.
@@ -86,7 +88,7 @@ type inputActionKind int
 const (
 	actPass  inputActionKind = iota // write raw to the session
 	actFiles                        // a drop: copy files, paste their guest paths
-	actCtrlV                        // Ctrl+V: paste the clipboard image, else raw
+	actCtrlV                        // Ctrl+V: paste the clipboard's image, else its text, else raw
 )
 
 // inputAction is one thing the proxy does with input, in order.
@@ -513,6 +515,24 @@ func bracketed(paths []string, trail string) []byte {
 	return append(b, pasteEndSeq...)
 }
 
+// bracketedText wraps the clipboard's text in a bracketed paste, which
+// is what the terminal's own paste key sends (I-940). The paste markers
+// are taken out of the text first, as terminals do: text carrying an end
+// marker would otherwise close the paste early and have its rest read as
+// keys.
+func bracketedText(text string) []byte {
+	var b []byte
+	b = append(b, pasteStartSeq...)
+	b = append(b, stripPasteMarkers(text)...)
+	return append(b, pasteEndSeq...)
+}
+
+// stripPasteMarkers removes every paste start and end marker from text.
+func stripPasteMarkers(text string) string {
+	text = strings.ReplaceAll(text, string(pasteStartSeq), "")
+	return strings.ReplaceAll(text, string(pasteEndSeq), "")
+}
+
 // dropMaxFiles bounds one drop. A dropped file is copied whatever its
 // type, up to pasteMaxBytes, the same limit a pasted image has and for
 // the same reason (I-842).
@@ -525,6 +545,10 @@ type dropHandler struct {
 	slug    string
 	repoDir string // the laptop checkout that is the machine's checkout (target.Checkout's, I-480); "" when there is none
 	clip    clipboardReader
+	// isFile reports a regular file on this computer at an absolute
+	// path, as the scanner's does: clipboard text that is only such
+	// paths is the drop a paste of them would be (I-940).
+	isFile func(string) bool
 	// notify shows a message on the tmux status line or as a herdr
 	// notification, without blocking.
 	notify func(msg string)
@@ -534,7 +558,7 @@ type dropHandler struct {
 }
 
 func newDropHandler(t sshTarget, slug, repoDir string) *dropHandler {
-	h := &dropHandler{target: t, slug: slug, repoDir: repoDir, clip: pasteClipboard, now: time.Now}
+	h := &dropHandler{target: t, slug: slug, repoDir: repoDir, clip: pasteClipboard, isFile: localDropFile, now: time.Now}
 	h.notify = func(msg string) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -713,11 +737,11 @@ func (h *dropHandler) checkoutPaths(ctx context.Context, files []string, sizes [
 // goes through.
 const clipboardProbe = 2 * time.Second
 
-// ctrlV pastes the clipboard's image, or passes the key on.
+// ctrlV pastes the clipboard's image, or its text, or passes the key on.
 func (h *dropHandler) ctrlV(a inputAction) []byte {
 	ctx, cancel := context.WithTimeout(context.Background(), clipboardProbe)
+	defer cancel()
 	img, err := h.clip.ReadPNG(ctx)
-	cancel()
 	var te *clipboardToolError
 	if errors.As(err, &te) && (goos() == "darwin" || os.Getenv(envDisplay) != "" || os.Getenv(envWaylandDisplay) != "") {
 		// A desktop without the tool: say so once, then Ctrl+V is only
@@ -725,7 +749,7 @@ func (h *dropHandler) ctrlV(a inputAction) []byte {
 		h.toolOnce.Do(func() { h.notify(te.msg) })
 	}
 	if err != nil || !bytes.HasPrefix(img, pngMagic) {
-		return a.raw
+		return h.ctrlVText(ctx, a)
 	}
 	if len(img) > pasteMaxBytes {
 		h.notify(fmt.Sprintf("the image on the clipboard is %s; images are copied up to %s.", humanBytes(int64(len(img))), humanBytes(pasteMaxBytes)))
@@ -742,6 +766,39 @@ func (h *dropHandler) ctrlV(a inputAction) []byte {
 		return a.raw
 	}
 	return bracketed([]string{guestPath}, "")
+}
+
+// ctrlVText pastes the text on the clipboard, which is what the
+// terminal's own paste key would have sent had the user pressed it
+// (I-940): in a machine's terminal the agent reads the clipboard of the
+// machine, which is not the one the user copied on, so the laptop side
+// is the only place the text can come from. Text that is only paths of
+// files on this computer is the drop that a paste of those paths is, so
+// both keys copy the files. Nothing on the clipboard, or a clipboard
+// that cannot be read: the key goes on, and vim's block select and
+// readline's quoted insert still have it.
+func (h *dropHandler) ctrlVText(ctx context.Context, a inputAction) []byte {
+	text, err := h.clip.ReadText(ctx)
+	if err != nil {
+		return a.raw
+	}
+	// One trailing newline goes: wl-paste --no-newline drops it anyway,
+	// so keeping it elsewhere would make the same clipboard paste
+	// differently on Wayland and X11, and a line that ends in one runs
+	// itself in a shell pane.
+	text = stripPasteMarkers(strings.TrimSuffix(text, "\n"))
+	if text == "" {
+		return a.raw
+	}
+	raw := bracketedText(text)
+	// A paste longer than the scanner looks at is text, as one typed
+	// through the proxy is; shorter, it is a drop when it is only paths.
+	if len(text) <= maxPasteScan {
+		if files, trail, ok := parseDrop(text, h.isFile); ok {
+			return h.files(inputAction{kind: actFiles, raw: raw, files: files, trail: trail})
+		}
+	}
+	return raw
 }
 
 // dropGuestName is where the i-th file of a drop lands: the paste

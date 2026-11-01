@@ -134,6 +134,8 @@ For more detail on any command, add `-v`; its request IDs are what support looks
 - Ctrl+V did nothing on Linux: the status line names the tool to install, `wl-clipboard` or `xclip`. Over SSH there is no desktop clipboard to read, so run `repose` on the computer you copied the image on.
 - Ctrl+V did nothing under WSL: it reads the Linux clipboard, which may not hold an image you copied in Windows.
 
+**`Ctrl+V` pasted text into vim instead of starting a block select.** `Ctrl+V` pastes your clipboard while you are attached. `Ctrl+Q` is the block select, and the shell's quoted insert.
+
 **The browser view shows nothing the agent is doing.** An agent session started before September 25, 2026 has a headless browser of its own that the view can't show; restart the agent to switch it over.
 
 **`this CLI has no complete local package` when you start `codex`.** Codex on bases up to 2026.10.04.1 is missing files its background server needs; base 2026.10.05 ships them. `codex --no-daemon` starts it until the machine gets a newer [base](/docs/config#revisions-and-base-updates).
