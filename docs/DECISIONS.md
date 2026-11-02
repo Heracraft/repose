@@ -28024,3 +28024,48 @@ Matching the Oops and not the panic is load-bearing twice over. Fluent Bit dies 
 *Not done here.* No `kdump` and no `crashkernel` on hosts. `panic=` stays unset in this change and is I-984's to change, so the RUNBOOK step for a host that has already panicked is written to be true either way. This entry buys the 3h49m warning, not the post-mortem: the next panic still leaves a volatile serial blob and a dead process table.
 
 *A correction this entry owes, because it was in its own evidence.* The first reading of the three faults, mine included, was a wild write — "something put a userspace pointer in a dentry hash chain", from the two near-identical `0x790b`/`0x790c` fault addresses. Every one of those Oopses reported `#PF: error_code(0x0000) - not-present page` and `P4D 0`, from a different CR3, at a correct table base. Nothing was overwritten; the table was not mapped where the reader looked, which is I-982. The pointer-shape argument read non-kernel-shaped *values* as evidence of a *writer* while the page-table line that settled it was on screen. Recorded because the pattern — a plausible story from the striking datum, past the dull one that decides it — is the same one that made `host="host-02"` read as "no oops happened" during the same triage.
+
+**I-986. The Docker probe does not cancel its own request before reading
+the answer.** (docker-probe, 2026-11-02.)
+
+`sysdep.SocketDocker.get` took a `context.WithTimeout` and released it
+with `defer cancel()`, under a comment saying "the cancel runs when the
+caller closes the body". It does not. It runs when `get` returns, which is
+before the caller has read a byte. `RunningContainers` decodes the body
+*after* `get` returns, so every count raced that cancel.
+
+It raced and usually won, which is why this lived for weeks. A small
+response is already in the transport's buffered reader by the time the
+decoder asks for it, so it comes out of memory and the dead context is
+never consulted; `/containers/json` with one or three containers is small.
+A longer list has to come off the socket, and then the read fails with
+`decode: context canceled`. The daemon logs the other side of it as
+`status=499 request cancelled by client ... write: broken pipe`, which is
+exactly what host-02 recorded while verista reported `docker_down` for two
+days with Docker running three containers the whole time.
+
+`Ping` never noticed, because it checks the status line and never reads
+the body. That asymmetry is what made the bug legible as "the daemon is up
+and has no containers" rather than as a broken probe, and it is why nobody
+went looking.
+
+The fix is to delete the context and the cancel. `http.Client.Timeout`
+already bounds the whole exchange including the body read, so the
+per-request context added no bound that was not already there -- it only
+added a cancel. The caller's context is still passed, so cancellation from
+above still works, and a test holds that.
+
+Rejected: returning a cleanup func for the caller to defer, which is the
+usual way to keep a per-request context alive across a body read. It is
+more rope than this needs when the client timeout is the real bound
+already, and the next person to add a method would have to remember it.
+Rejected: buffering the body inside `get`. It would work and it hides the
+streaming cost of a call whose response grows with a tenant's container
+count.
+
+The regression test is `TestRunningContainersReadsTheWholeBody`, and the
+size is the whole point of it: 0, 1 and 3 containers pass against the old
+code and 40 fails, which is the shape of the bug rather than a
+reproduction of one instance. `TestPingSurvivesTheSameBug` holds the
+asymmetry and `TestCallerCancellationStillStops` holds that the fix did
+not drop the caller's cancellation while removing the request's own.
