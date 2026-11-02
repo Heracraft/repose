@@ -27757,3 +27757,44 @@ judges' grafts and its named defects were then worked in.
   sets in the serif; the plans sit flush on the frame at 640 to 899px as
   at every other width. The agents' marks stay unnamed (I-287); each
   names itself under the pointer.
+- *Option D.* (landing-refine-d, 2026-11-02) The owner asked for one
+  design that takes the strengths of all three alternatives. It
+  supersedes the column line, the closed grid stages and the stage's
+  floor above, and keeps B's spacing scale, type scale, stage material,
+  `--t-*` palette, bleed hero, gapless band rule, copy and the two
+  command treatments.
+  - From A (Frame): the page is one ruled sheet on a 12-column grid (32px
+    gap). The sheet is the content box outset by `--edge`: the frame's
+    gutter below 1280px, so the sheet is the window, and 16px from
+    1280px, where two rails (`--hk-border`) draw its edges and a 9px
+    cross marks each band rule where it meets a rail, the footer's rule
+    included. Two rule weights: rails and band rules in `--hk-border`,
+    every rule inside a band in `--hk-hairline`, running the sheet's
+    width. A stage is the cell itself, flush from rule to rule with no
+    edge or radius; windows stay closed in it at the one inset. Every
+    picture sits under a 40px figure bar (48px to a coarse pointer)
+    holding its number, `Fig. 0` to `Fig. 3`, and its pause button, which
+    replaces the 48px floor. Heads align their side item to the h2's
+    last baseline. From 1200px the hero sets the h1 on seven columns and
+    the lead on five, on one baseline, with the buttons and the install
+    line in one row under both. The hero field carries a 16px dot grid
+    that fades with its sheen, and the rails stop at it. The questions'
+    list runs from the centre hairline to the rail, with the sticky
+    heading on the first question's baseline.
+  - From C (Editorial): each band after the hero opens on a mono label,
+    `01 Setup` to `06 Questions`. Pricing's heading is "Launch prices",
+    the line that said it goes, and the button and seats line stand
+    beside it; the questions' heading is "Before you try it". Between
+    1024 and 1199px the hero's buttons sit on the lead's last line. The
+    hero's globe is a line globe. Ready's tools have 16px icons in the
+    dim ink at 13px, the everyday tools' line under the list. On a phone
+    a step's number and name share one baseline over the command cell.
+  - New in D: the thirds lines of the same grid hold the plans (three
+    across from 1024px, stacked below, so no plan line wraps at 768px)
+    and Ready's lower row, the tools on one third and the shell on two,
+    flush on `--t-bg`, so its hint row is whole from 1024px. Commands are
+    13px everywhere, 12px under 640px (the hero's install line too, which
+    still scrolls under its fade on a phone, never shrunk). The page's
+    own text uses no blue.
+  - Left open: the hero picture's height on a phone and the Localhost
+    crop, as before.

@@ -1,7 +1,9 @@
 // DECISIONS I-290: the landing page's pricing section shows the three plans
 // and one live line from GET /public/seats, and stands without it. I-656:
 // the page sits on the frame every page shares, under the site header and
-// over the site footer. I-837: the plans are PlanCells' public cards.
+// over the site footer. I-837: the plans are PlanCells' public cards. I-961
+// (option D): the section's head is its label, "05 Pricing", over the h2
+// "Launch prices".
 import { test, expect } from '@playwright/test';
 import { setBilling, resetBilling } from './helpers';
 
@@ -12,8 +14,10 @@ test.afterAll(async () => {
 test('the pricing section shows the three plans and the seats left', async ({ page }) => {
 	await resetBilling();
 	await page.goto('/');
-	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	await expect(pricing.getByText('Launch prices.', { exact: true })).toBeVisible();
+	const pricing = page.locator('section', {
+		has: page.getByRole('heading', { name: 'Launch prices' })
+	});
+	await expect(pricing.locator('.sec-label')).toHaveText('05Pricing');
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveText([
 		'Solo',
 		'Plus',
@@ -42,14 +46,14 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	// The notice period and the 12-month hold left the landing with I-772.
 	// They are kept in terms.md (the site footer's Terms), billing.md and
-	// PRICING.md; "Launch prices" stays, in the section's head.
+	// PRICING.md; "Launch prices" stays, as the section's heading.
 	await expect(pricing.getByText('A change reaches you by email')).toHaveCount(0);
 });
 
 test('with no founding places left, Solo shows $49 and no founding line', async ({ page }) => {
 	await setBilling({ founding_left: 0 });
 	await page.goto('/');
-	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	const pricing = page.locator('#pricing');
 	const solo = pricing.getByTestId('plan-solo');
 	await expect(solo.locator('.p-price .n')).toHaveText('$49');
 	await expect(solo.locator('.p-then')).toHaveCount(0);
@@ -69,7 +73,7 @@ test('one seat free: the line is singular', async ({ page }) => {
 test('when full, the line says so with the number waiting', async ({ page }) => {
 	await setBilling({ seats: { total: 30, held: 30, waiting: 41 } });
 	await page.goto('/');
-	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	const pricing = page.locator('#pricing');
 	// The waitlist and seat copy stays as it is (spec 2.1, owner's call).
 	await expect(pricing.getByRole('link', { name: 'Start a free week' })).toBeVisible();
 	await expect(page.getByTestId('seats-line')).toContainText('Full for now. 41 waiting;');
@@ -183,16 +187,65 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 	for (const width of [1440, 390]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
-		const gaps = await page.locator('main > .band--pic').evaluateAll((bands) =>
+		const gaps = await page.locator('main > .band:has(> .fig)').evaluateAll((bands) =>
 			bands.map((b) => {
-				const stage = b.querySelector(':scope > .stage')!.getBoundingClientRect();
+				const fig = b.querySelector(':scope > .fig')!.getBoundingClientRect();
 				const next = b.nextElementSibling!.getBoundingClientRect();
-				return Math.round(next.top - stage.bottom);
+				return Math.round(next.top - fig.bottom);
 			})
 		);
-		expect(gaps.length, `at ${width}`).toBeGreaterThan(0);
+		expect(gaps.length, `at ${width}`).toBe(3);
 		for (const g of gaps) expect(g, `at ${width}`).toBe(0);
 	}
+});
+
+// I-961 (option D): every band after the hero opens on its numbered
+// label, and every picture sits under a 40px figure bar holding its
+// number; the pause button is centred in that bar at the content edge,
+// never on a floor under the picture.
+test('each band has its label and each picture its figure bar', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	await expect(page.locator('main .sec-label')).toHaveText([
+		'01Setup',
+		'02Machine',
+		'03Agents',
+		'04Install',
+		'05Pricing',
+		'06Questions'
+	]);
+	await expect(page.locator('main .fig-bar')).toHaveText([
+		'Fig. 0',
+		'Fig. 1',
+		'Fig. 2.1',
+		'Fig. 2.2',
+		'Fig. 2.3',
+		'Fig. 2.4',
+		'Fig. 3'
+	]);
+	const bars = await page
+		.locator('main .fig-bar')
+		.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+	for (const h of bars) expect(h).toBe(40);
+	await expect(page.locator('.fig .pic-pause')).toHaveCount(5);
+	const m = await page.locator('.fig .pic-pause').evaluateAll((els) =>
+		els.map((b) => {
+			const r = b.getBoundingClientRect();
+			const bar = b.closest('.fig')!.querySelector('.fig-bar')!.getBoundingClientRect();
+			return { top: r.top - bar.top, bottom: bar.bottom - r.bottom, right: Math.round(r.right) };
+		})
+	);
+	const content = await page.locator('main').evaluate((e) => {
+		const r = e.getBoundingClientRect();
+		return Math.round(r.right - parseFloat(getComputedStyle(e).paddingRight));
+	});
+	for (const b of m) {
+		expect(Math.abs(b.top - b.bottom)).toBeLessThanOrEqual(1);
+		expect(b.top).toBeGreaterThanOrEqual(0);
+	}
+	// The hero's, the setup's and the right cells' buttons end on the
+	// content edge.
+	expect(m.filter((b) => Math.abs(b.right - content) <= 1)).toHaveLength(3);
 });
 
 // The setup picture's rows in flight are measured against the panels; a

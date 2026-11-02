@@ -44,7 +44,7 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 // still comes back to Projects.
 test('Start a free week signs in and comes back to Billing', async ({ page }) => {
 	await page.goto('/');
-	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
+	const pricing = page.locator('#pricing');
 	await pricing.getByRole('link', { name: 'Start a free week' }).click();
 	await page.waitForURL(/\/oidc\/auth/);
 	await page.getByRole('button', { name: 'Continue as heracraft' }).click();

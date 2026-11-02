@@ -94,7 +94,7 @@
 			<ul class="tools">
 				{#each toolMarks as m (m.name)}
 					<li>
-						{@render mark(m, 18)}{toolLabel[m.name] ?? m.name}
+						{@render mark(m, 16)}{toolLabel[m.name] ?? m.name}
 					</li>
 				{/each}
 			</ul>
@@ -103,7 +103,7 @@
 			</p>
 		</div>
 
-		<div class="term shot-win">
+		<div class="term">
 			<WinHead who="machine" />
 			<div class="lines">
 				{#each rows as row, i (i)}
@@ -131,9 +131,11 @@
 </div>
 
 <style>
-	/* Everything sits on the stage's one inset (landing.css): the marks'
-	   band, the hairline under it and the two columns under that share
-	   the same left and right edges. */
+	/* Ready fills its figure from rail to rail (landing.css, .fig): the
+	   five marks on the stage's tone, an inner rule, then two flush cells
+	   on the page's thirds line, the toolchain on the page and the
+	   machine's shell on the terminal's ground. Text in each cell stands
+	   on the page's text lines (--edge out, 16px in from a rule). */
 	.ready {
 		display: grid;
 	}
@@ -142,22 +144,26 @@
 		grid-template-columns: repeat(5, minmax(0, 1fr));
 		gap: 8px;
 		margin: 0;
-		padding: 16px 0 40px;
+		padding: 36px var(--edge, 16px);
 		list-style: none;
+		background:
+			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
+		box-shadow: inset 0 1px 0 var(--stage-top);
 	}
 	.agents li {
 		display: flex;
 		justify-content: center;
 	}
 	.am {
+		display: flex;
 		color: var(--ink);
 	}
 	.below {
 		display: grid;
-		gap: 24px;
-		padding-top: 32px;
-		align-items: start;
-		border-top: 1px solid var(--rule);
+		border-top: 1px solid var(--rule-in, var(--rule));
+	}
+	.kit {
+		padding: 32px var(--edge, 16px);
 	}
 	.tools {
 		display: grid;
@@ -172,37 +178,61 @@
 		align-items: center;
 		gap: 10px;
 		font-size: 13px;
+		line-height: 20px;
 		color: var(--pic-ink);
 	}
-	/* The tools' column is as tall as the shell beside it: the list at
-	   its top, the everyday tools' line at its foot, level with the
-	   shell's bar. */
-	.kit {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
+	.tools li :global(svg) {
+		color: var(--pic-dim);
 	}
 	.more {
-		margin: auto 0 0;
-		padding-top: 16px;
+		margin: 16px 0 0;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 20px;
 		color: var(--ink-faint);
 	}
-	/* Below 1024px the page is one column, and so is this: the tools
-	   over the shell, which keeps the stage's width. */
+	/* From 1024px the two cells split on the thirds line: the tools on
+	   the first third, the shell on the other two. Narrower, the tools
+	   stand over the shell, each the sheet's width. */
 	@media (min-width: 1024px) {
 		.below {
-			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
-			gap: 40px;
-			align-items: stretch;
+			grid-template-columns:
+				calc(var(--edge) + (100% - 2 * var(--edge) + var(--col-gap)) / 3 - var(--col-gap) / 2)
+				minmax(0, 1fr);
+		}
+		.kit {
+			padding-right: var(--in);
+		}
+		.term {
+			border-left: 1px solid var(--rule-in, var(--rule));
+		}
+	}
+	/* One column, the shell runs the window's width and its rows start on
+	   the page's text line; from 640px the tools take one row of four. */
+	@media (max-width: 1023.98px) {
+		.term {
+			border-top: 1px solid var(--rule-in, var(--rule));
+		}
+		.lines,
+		.term > :global(.shot-head),
+		.bar {
+			padding-inline: var(--edge, 16px);
+		}
+	}
+	@media (min-width: 640px) and (max-width: 1023.98px) {
+		.tools {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
 		}
 	}
 
-	/* The shell, a window like every other on the page, in the terminals'
-	   palette (pictures.css). */
+	/* The shell, flush in its cell, in the terminals' palette
+	   (pictures.css): the window's head as a ruled row, the rows, the
+	   tmux bar at the cell's foot. */
 	.term {
+		--shot-head: 32px;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
 		container-type: inline-size;
 		font-family: var(--font-mono);
 		font-size: 12px;
@@ -210,14 +240,21 @@
 		background: var(--t-bg);
 		color: var(--t-fg);
 	}
+	.term > :global(.shot-head) {
+		padding-inline: 16px;
+		border-bottom-color: var(--rule-in, var(--rule));
+		border-radius: 0;
+		background: var(--t-bg-2);
+	}
 	/* A terminal does not re-flow: rows keep white-space: pre and a narrow
-	   frame crops them on the right, as the editor and browser captures
-	   are cropped (I-397). */
+	   cell crops them on the right into a fade, as the editor and browser
+	   captures are cropped (I-397). */
 	.lines {
 		flex: 1;
-		padding: 12px 14px 14px;
+		padding: 16px;
 		overflow: hidden;
 		white-space: pre;
+		mask-image: linear-gradient(to left, transparent 0, #000 32px);
 	}
 	.y {
 		color: var(--t-yellow);
@@ -243,14 +280,10 @@
 		flex: none;
 	}
 	/* A shell narrower than its rows (a phone) drops the bar's host and
-	   date, and its rows run off the right edge into a fade, as a
-	   picture's do, so no row reads as cut mid-word. */
+	   date. */
 	@container (max-width: 560px) {
 		.long {
 			display: none;
-		}
-		.lines {
-			mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
 		}
 	}
 	.b {
@@ -262,8 +295,8 @@
 		display: flex;
 		justify-content: space-between;
 		gap: 2ch;
-		padding: 1px 14px;
-		border-top: 1px solid var(--rule);
+		padding: 2px 16px;
+		border-top: 1px solid var(--rule-in, var(--rule));
 		background: var(--t-bar);
 		color: var(--t-bar-fg);
 		white-space: nowrap;
@@ -275,21 +308,18 @@
 			line-height: 17px;
 		}
 		.lines {
-			padding: 10px 10px 12px;
-		}
-		.bar {
-			padding: 1px 10px;
+			padding-block: 12px 14px;
 		}
 		.agents {
 			gap: 4px;
-			padding: 8px 0 24px;
+			padding: 28px var(--edge, 16px);
 		}
 		.agents :global(svg) {
-			width: 26px;
-			height: 26px;
+			width: 24px;
+			height: 24px;
 		}
-		.below {
-			padding-top: 24px;
+		.kit {
+			padding-block: 24px;
 		}
 	}
 </style>

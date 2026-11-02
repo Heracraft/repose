@@ -986,7 +986,7 @@
 				<i class="link w-net"><b class="lit"></b></i>
 				<span class="globe"
 					><Shape kind="sphere" /><svg viewBox="0 0 24 24" class="meridians" aria-hidden="true"
-						><g fill="none" stroke="currentColor" stroke-width="0.9"
+						><g fill="none" stroke="currentColor" stroke-width="0.6"
 							><ellipse cx="12" cy="12" rx="4.2" ry="11.6" /><path d="M0.4 8h23.2M0.4 16h23.2" /></g
 						></svg
 					></span
@@ -1535,7 +1535,7 @@
 		height: 40px;
 	}
 	/* The internet: a globe in line, as the windows' head icons are drawn,
-	   on the window surface with the windows' hairline (the shape set's
+	   a 1px --pic-dim ring on the window surface (the shape set's
 	   filled sphere stays under it for the footer's row, hidden here). */
 	.globe {
 		position: relative;
@@ -1543,7 +1543,7 @@
 		flex: none;
 		width: 40px;
 		height: 40px;
-		border: 1px solid var(--rule-strong);
+		border: 1px solid var(--pic-dim);
 		border-radius: 50%;
 		background: var(--surface);
 		overflow: hidden;
@@ -1553,7 +1553,7 @@
 	}
 	.meridians {
 		position: absolute;
-		inset: 0;
+		inset: -1px;
 		color: var(--pic-dim);
 	}
 

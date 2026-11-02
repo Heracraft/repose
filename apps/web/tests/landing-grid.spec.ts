@@ -123,11 +123,12 @@ test('the agents section links to the agents and everything installed', async ({
 		'href',
 		'/docs/machine#whats-installed'
 	);
-	// In the head's right column, on the headline's first line.
+	// In the head's right half, on the headline's last line (I-961,
+	// option D: a head's side item stands on the h2's last baseline).
 	const h = (await heading.boundingBox())!;
 	const l = (await all.boundingBox())!;
 	expect(l.x).toBeGreaterThan(h.x + h.width);
-	expect(Math.abs(l.y - h.y)).toBeLessThan(24);
+	expect(Math.abs(l.y + l.height - (h.y + h.height))).toBeLessThan(16);
 });
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {
@@ -135,7 +136,10 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
 	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
 	await page.goto('/');
-	const q = page.locator('section', { has: page.getByRole('heading', { name: 'Questions' }) });
+	const q = page.locator('section', {
+		has: page.getByRole('heading', { name: 'Before you try it' })
+	});
+	await expect(q.locator('.sec-label')).toHaveText('06Questions');
 	await expect(q.locator('summary')).toHaveText([
 		'Why not skip permissions on my laptop?',
 		'Can I close my laptop while the agent works?',
@@ -149,11 +153,12 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	await expect(first.locator('p')).toContainText('can open a connection to your laptop');
 });
 
-// I-961: the cells are ruled like the plans, with no gap between them: a
-// hairline over each, and from 1024px a vertical one between the columns,
-// with the right cells starting on the page's column line (the head's
-// right column). The band ends on its last row, on the next band's rule.
-test('the cells are ruled and gapless, on the column line', async ({ page }) => {
+// I-961 (option D): the cells are flush on the sheet, split by inner
+// rules with no gap and no stage edge or radius: the centre hairline half
+// a gap left of the column line, so the right cells' text starts on it
+// (the head's right half). The band ends on its last row, on the next
+// band's rule.
+test('the cells are flush, ruled and gapless, on the column line', async ({ page }) => {
 	await grid(page, 1440);
 	const css = await page.locator(cells).evaluateAll((els) =>
 		els.map((e) => {
@@ -169,7 +174,7 @@ test('the cells are ruled and gapless, on the column line', async ({ page }) => 
 			};
 		})
 	);
-	for (const c of css) expect(c.top).toBe('1px');
+	expect(css.map((c) => c.top)).toEqual(['0px', '0px', '1px', '1px']);
 	expect(css[0].left).toBe('0px');
 	expect(css[1].left).toBe('1px');
 	// Cells meet: no gap across or down.
@@ -179,13 +184,53 @@ test('the cells are ruled and gapless, on the column line', async ({ page }) => 
 	const next = await page.locator('#features + section').boundingBox();
 	expect(Math.round(css[3].b)).toBe(Math.round(band!.y + band!.height));
 	expect(Math.round(band!.y + band!.height)).toBe(Math.round(next!.y));
-	// The right cells' stages start on the page's column line.
-	const stage = await page.locator(`${cells}:nth-child(2) > .shot`).boundingBox();
-	const links = await page
-		.locator('section', { has: page.getByRole('link', { name: 'All agents' }) })
-		.getByRole('link', { name: 'All agents' })
-		.boundingBox();
-	expect(Math.abs(stage!.x - links!.x)).toBeLessThanOrEqual(1);
+	// A stage is the cell: flush to it, square, with no edge.
+	const shots = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
+		els.map((e) => {
+			const s = getComputedStyle(e);
+			const r = e.getBoundingClientRect();
+			const c = e.parentElement!.getBoundingClientRect();
+			return {
+				radius: s.borderTopLeftRadius,
+				edge: s.borderTopWidth,
+				dl: Math.round(r.left - c.left),
+				dr: Math.round(c.right - r.right)
+			};
+		})
+	);
+	for (const sh of shots) {
+		expect(sh.radius).toBe('0px');
+		expect(sh.edge).toBe('0px');
+		expect(sh.dr).toBe(0);
+		expect(sh.dl).toBeLessThanOrEqual(1);
+	}
+	// The hairline stands 16px left of the column line, where the right
+	// cells' text and the head's links start.
+	const title = await page.locator(`${cells}:nth-child(2) h3`).boundingBox();
+	const links = await page.getByRole('link', { name: 'All agents' }).boundingBox();
+	expect(Math.abs(title!.x - links!.x)).toBeLessThanOrEqual(1);
+	expect(Math.round(title!.x - css[1].x)).toBe(16);
+});
+
+// I-961 (option D): the thirds lines. Ready's shell and the second and
+// third plans start on them, 16px left of a column's text.
+test('the plans and the Ready shell stand on the thirds at 1440', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const m = await page.evaluate(() => {
+		const x = (s: string, i = 0) => document.querySelectorAll(s)[i].getBoundingClientRect().x;
+		return {
+			plans: [0, 1, 2].map((i) => x('.plans--public .plan', i)),
+			names: [0, 1, 2].map((i) => x('.plans--public .p-name', i)),
+			shell: x('.ready .term'),
+			content: x('#setup-h')
+		};
+	});
+	const third = (m.names[2] - m.names[0]) / 2;
+	expect(Math.round(m.names[1] - m.names[0])).toBe(Math.round(third));
+	expect(Math.round(m.names[0])).toBe(Math.round(m.content));
+	for (const i of [1, 2]) expect(Math.round(m.names[i] - m.plans[i])).toBe(16);
+	expect(Math.abs(m.shell - m.plans[1])).toBeLessThanOrEqual(1);
 });
 
 // The Editor's statusline keeps its right segment (position, line and
@@ -202,23 +247,29 @@ for (const width of [1440, 768, 390]) {
 	});
 }
 
-// Review round 2: the plans sit flush on the frame at every width, as the
-// steps do; PlanCells' own 640-899px card padding stays off the landing.
+// The plans run the sheet's width as the steps do, stacked one per row
+// below 1024px, each name on the steps' text line; PlanCells' own
+// 640-899px card padding stays off the landing.
 for (const width of [768, 390]) {
-	test(`the plans start on the steps' line at ${width}`, async ({ page }) => {
+	test(`the plans stack on the steps' line at ${width}`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
-		const [plan, step] = await Promise.all([
-			page.locator('.plans--public .plan').first().boundingBox(),
-			page.locator('.steps > li').first().boundingBox()
+		const plans = await page
+			.locator('.plans--public .plan')
+			.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()));
+		const step = (await page.locator('.steps > li').first().boundingBox())!;
+		expect(plans).toHaveLength(3);
+		for (const p of plans) {
+			expect(Math.round(p.x)).toBe(Math.round(step.x));
+			expect(Math.round(p.width)).toBe(Math.round(step.width));
+		}
+		expect(plans[1].y).toBeGreaterThan(plans[0].y);
+		expect(plans[2].y).toBeGreaterThan(plans[1].y);
+		const [name, num] = await Promise.all([
+			page.locator('.plans--public .plan .p-name').first().boundingBox(),
+			page.locator('.steps .step-title .label').first().boundingBox()
 		]);
-		expect(Math.round(plan!.x)).toBe(Math.round(step!.x));
-		expect(Math.round(plan!.width)).toBe(Math.round(step!.width));
-		const pad = await page
-			.locator('.plans--public .plan .p-name')
-			.first()
-			.evaluate((e) => Math.round(e.getBoundingClientRect().x));
-		expect(pad).toBe(Math.round(step!.x));
+		expect(Math.round(name!.x)).toBe(Math.round(num!.x));
 	});
 }
 

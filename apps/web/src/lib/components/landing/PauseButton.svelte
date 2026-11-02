@@ -1,10 +1,12 @@
 <!--
   The pause button of a looping picture (WCAG 2.2.2, DECISIONS I-666). It
-  stands on the floor under the picture, at its right edge, for every
-  picture (I-673, I-961): in the stage's 48px floor (--stage-y) under
-  the hero and the setup section, and at the right end of a feature
-  cell's title row (landing.css places it there). It is never
-  over a head or a picture's content. It is 28px with an invisible 44px
+  stands in the picture's figure bar, at its right end (I-673, I-961):
+  every picture on the landing sits under a --bar-h bar holding its
+  number, and the frame (the element with `use:picture.frame`) gives up
+  its positioning there, so the button is placed from the figure
+  (landing.css, .fig), centred in the bar, its chip's right edge on the
+  text line (--pause-r, else --edge). It is never over a head or a
+  picture's content. It is 28px with an invisible 44px
   hit area, shows on hover or when anything in the frame (the element
   with `use:picture.frame`) has focus, and is in the tab order throughout.
   aria-pressed is true while the picture is paused. It is rendered only
@@ -50,13 +52,13 @@
 	}
 	/* A picture control: the --rule-strong hairline and surface of the
 	   pictures' tags, with the kit's smallest radius as a button,
-	   --pic-dim at rest. On the floor under the
-	   picture, at its right edge, centred in the floor's height. */
+	   --pic-dim at rest. In the figure bar over the picture, centred in
+	   the bar's height, its chip's right edge on the text line. */
 	.pic-pause {
 		--pp: 28px;
 		position: absolute;
-		right: 0;
-		bottom: calc((var(--stage-y, 40px) + var(--pp)) / -2);
+		top: calc((var(--bar-h, 40px) - var(--pp)) / 2);
+		right: calc(var(--pause-r, var(--edge, 0px)) - (var(--pp) - 28px) / 2);
 		z-index: 5;
 		display: grid;
 		place-items: center;

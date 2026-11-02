@@ -98,6 +98,17 @@
 	{/if}
 {/snippet}
 
+<!-- A band's label: its number and its name, in the mono label. -->
+{#snippet label(n: string, name: string)}
+	<p class="label sec-label"><span class="n">{n}</span>{name}</p>
+{/snippet}
+
+<!-- A picture's figure bar: its number, and the row its pause button
+     stands in (landing.css places the button there). -->
+{#snippet bar(n: string)}
+	<div class="fig-bar"><span class="label">Fig. {n}</span></div>
+{/snippet}
+
 {#snippet plus()}
 	<svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
 		<path d="M8 3v10M3 8h10" />
@@ -105,10 +116,10 @@
 {/snippet}
 
 <main id="main" tabindex="-1" class="frame landing">
-	<section class="band band--pic hero">
-		<p class="label">For solo founders and their agents</p>
-		<h1 class="hk-h1">Your dev environment, replicated in the cloud</h1>
-		<div class="cols hero-row">
+	<section class="band hero" aria-labelledby="hero-h">
+		<div class="hero-copy">
+			<p class="label eyebrow">For solo founders and their agents</p>
+			<h1 class="hk-h1" id="hero-h">Your dev environment, replicated in the cloud</h1>
 			<p class="hk-lead">
 				Your code, tools and logins sit on a machine of its own, where agents run with full
 				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
@@ -125,91 +136,116 @@
 					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
-		<div class="stage hero-stage">
-			<Hero />
+		<div class="fig fig--hero">
+			{@render bar('0')}
+			<div class="stage hero-stage">
+				<Hero />
+			</div>
 		</div>
 	</section>
 
-	<section class="band band--pic">
-		<div class="sec-head">
-			<h2 class="hk-h2">Your laptop's setup, in one command</h2>
-			<p class="copy">
+	<section class="band" aria-labelledby="setup-h">
+		<div class="head">
+			{@render label('01', 'Setup')}
+			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
+			<p class="copy side">
 				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
 				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</p>
 		</div>
-		<div class="stage">
-			<OneCommand animated />
+		<div class="fig">
+			{@render bar('1')}
+			<div class="stage">
+				<OneCommand animated />
+			</div>
 		</div>
 	</section>
 
-	<section class="band band--ruled" id="features">
-		<div class="sec-head">
-			<h2 class="hk-h2">A cloud machine that feels like your own box</h2>
+	<section class="band" id="features" aria-labelledby="features-h">
+		<div class="head">
+			{@render label('02', 'Machine')}
+			<h2 class="hk-h2" id="features-h">A cloud machine that feels like your own box</h2>
 		</div>
 		<ul class="cells">
-			<li>
+			<li class="fig">
+				{@render bar('2.1')}
 				<ComesBack />
-				<h3 class="item-title">Let it break the whole machine</h3>
-				<p class="copy">
-					A restore puts the snapshot's disk back on the stopped machine and starts it. With
-					<code>--as</code> it goes to a new machine and leaves this one as it is.
-				</p>
-				<p class="cmd">repose snapshots restore</p>
+				<div class="cell-copy">
+					<h3 class="item-title">Let it break the whole machine</h3>
+					<p class="copy">
+						A restore puts the snapshot's disk back on the stopped machine and starts it. With
+						<code>--as</code> it goes to a new machine and leaves this one as it is.
+					</p>
+					<p class="cmd">repose snapshots restore</p>
+				</div>
 			</li>
-			<li>
+			<li class="fig">
+				{@render bar('2.2')}
 				<Localhost />
-				<h3 class="item-title">Use its ports on your localhost</h3>
-				<p class="copy">
-					Ports your servers listen on, from 1024 up, appear on your localhost while you're
-					attached, so cookies and OAuth redirects behave as they do locally.
-				</p>
-				<p class="cmd">repose attach</p>
+				<div class="cell-copy">
+					<h3 class="item-title">Use its ports on your localhost</h3>
+					<p class="copy">
+						Ports your servers listen on, from 1024 up, appear on your localhost while you're
+						attached, so cookies and OAuth redirects behave as they do locally.
+					</p>
+					<p class="cmd">repose attach</p>
+				</div>
 			</li>
-			<li>
+			<li class="fig">
+				{@render bar('2.3')}
 				<Browser />
-				<h3 class="item-title">Watch the agent's browser, and take over</h3>
-				<p class="copy">
-					For a site you're logged in to, <code>repose browser bridge</code> lets the agents browse in
-					your laptop's Chrome, with your logins, until you press Ctrl-C.
-				</p>
-				<p class="cmd">repose browser</p>
+				<div class="cell-copy">
+					<h3 class="item-title">Watch the agent's browser, and take over</h3>
+					<p class="copy">
+						For a site you're logged in to, <code>repose browser bridge</code> lets the agents browse
+						in your laptop's Chrome, with your logins, until you press Ctrl-C.
+					</p>
+					<p class="cmd">repose browser</p>
+				</div>
 			</li>
-			<li>
+			<li class="fig">
+				{@render bar('2.4')}
 				<Editor />
-				<h3 class="item-title">Open it in your editor</h3>
-				<p class="copy">
-					Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
-					your laptop.
-				</p>
-				<p class="cmd">ssh your-project.repose</p>
+				<div class="cell-copy">
+					<h3 class="item-title">Open it in your editor</h3>
+					<p class="copy">
+						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
+						your laptop.
+					</p>
+					<p class="cmd">ssh your-project.repose</p>
+				</div>
 			</li>
 		</ul>
 	</section>
 
-	<section class="band band--pic">
-		<div class="sec-head">
-			<h2 class="hk-h2">The agents you use, and the tools they need, on first boot</h2>
-			<p class="links">
-				<a href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
+	<section class="band" aria-labelledby="agents-h">
+		<div class="head">
+			{@render label('03', 'Agents')}
+			<h2 class="hk-h2" id="agents-h">
+				The agents you use, and the tools they need, on first boot
+			</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-				<a href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
 					>Everything installed</a
 				>
 			</p>
 		</div>
-		<div class="stage stage--still">
+		<div class="fig">
+			{@render bar('3')}
 			<Ready />
 		</div>
 	</section>
 
-	<section class="band band--ruled">
-		<div class="sec-head">
-			<h2 class="hk-h2">Start in three commands</h2>
+	<section class="band" aria-labelledby="install-h">
+		<div class="head">
+			{@render label('04', 'Install')}
+			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
 		</div>
 		<ol class="ruled steps">
 			{#each steps as step, i (step.title)}
-				<li class="cols">
+				<li>
 					<h3 class="item-title step-title">
 						<span class="label" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span
 						>{step.title}
@@ -220,83 +256,77 @@
 		</ol>
 	</section>
 
-	<section class="band band--ruled" id="pricing">
-		<div class="sec-head">
-			<h2 class="hk-h2">Pricing</h2>
-			<div class="price-act">
-				<p class="copy">Launch prices.</p>
-				<div class="cta-row">
-					<!-- Signing up here comes back to Billing, where the plans are. -->
-					{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
-					{#if !authState.authenticated && seats}
-						<p class="seats" data-testid="seats-line">
-							{#if seats.free > 0}
-								{seats.free}
-								{seats.free === 1 ? 'seat' : 'seats'} left
-							{:else}
-								Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
-							{/if}
-						</p>
-					{/if}
-				</div>
+	<section class="band" id="pricing" aria-labelledby="pricing-h">
+		<div class="head">
+			{@render label('05', 'Pricing')}
+			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
+			<div class="cta-row side">
+				<!-- Signing up here comes back to Billing, where the plans are. -->
+				{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+				{#if !authState.authenticated && seats}
+					<p class="seats" data-testid="seats-line">
+						{#if seats.free > 0}
+							{seats.free}
+							{seats.free === 1 ? 'seat' : 'seats'} left
+						{:else}
+							Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
+						{/if}
+					</p>
+				{/if}
 			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 	</section>
 
-	<section class="band band--ruled">
-		<div class="cols faq-cols">
-			<h2 class="hk-h2">Questions</h2>
-			<div class="ruled faq">
-				<details>
-					<summary class="item-title"
-						>Why not skip permissions on my laptop?{@render plus()}</summary
-					>
-					<p class="copy">
-						There the agent can read whatever you can, from your SSH keys to the sessions in your
-						browser. On repose it gets a machine holding one project and the logins you chose to
-						copy. Nothing on that machine can open a connection to your laptop, and your other
-						projects are separate machines it can't reach.
-					</p>
-				</details>
-				<details>
-					<summary class="item-title"
-						>Can I close my laptop while the agent works?{@render plus()}</summary
-					>
-					<p class="copy">
-						Yes. Detach and close it; the agent keeps working on the machine, and you attach again
-						to see where it got to.
-					</p>
-				</details>
-				<details>
-					<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary
-					>
-					<p class="copy">
-						You restore a snapshot from before it happened. repose takes one each night the machine
-						runs and at every stop, and you can take your own before something risky.
-					</p>
-				</details>
-				<details>
-					<summary class="item-title"
-						>Can three agents try three approaches at once?{@render plus()}</summary
-					>
-					<p class="copy">
-						<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted
-						changes and installed dependencies included, into three new machines, and
-						<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
-						the rest.
-					</p>
-				</details>
-				<details>
-					<summary class="item-title"
-						>Why not rent a server and set it up myself?{@render plus()}</summary
-					>
-					<p class="copy">
-						You can, and you redo that setup for each project. The nightly snapshots and the port
-						forwards are then yours to build as well.
-					</p>
-				</details>
-			</div>
+	<section class="band faq-band" aria-labelledby="faq-h">
+		{@render label('06', 'Questions')}
+		<h2 class="hk-h2" id="faq-h">Before you try it</h2>
+		<div class="ruled faq">
+			<details>
+				<summary class="item-title">Why not skip permissions on my laptop?{@render plus()}</summary>
+				<p class="copy">
+					There the agent can read whatever you can, from your SSH keys to the sessions in your
+					browser. On repose it gets a machine holding one project and the logins you chose to copy.
+					Nothing on that machine can open a connection to your laptop, and your other projects are
+					separate machines it can't reach.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title"
+					>Can I close my laptop while the agent works?{@render plus()}</summary
+				>
+				<p class="copy">
+					Yes. Detach and close it; the agent keeps working on the machine, and you attach again to
+					see where it got to.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary>
+				<p class="copy">
+					You restore a snapshot from before it happened. repose takes one each night the machine
+					runs and at every stop, and you can take your own before something risky.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title"
+					>Can three agents try three approaches at once?{@render plus()}</summary
+				>
+				<p class="copy">
+					<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted changes
+					and installed dependencies included, into three new machines, and
+					<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
+					the rest.
+				</p>
+			</details>
+			<details>
+				<summary class="item-title"
+					>Why not rent a server and set it up myself?{@render plus()}</summary
+				>
+				<p class="copy">
+					You can, and you redo that setup for each project. The nightly snapshots and the port
+					forwards are then yours to build as well.
+				</p>
+			</details>
 		</div>
 	</section>
 </main>
