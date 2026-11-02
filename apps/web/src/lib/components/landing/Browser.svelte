@@ -499,8 +499,6 @@
 		--chip: var(--pic-accent);
 		/* The log follows the scheme too (the terminals' palette). */
 		--on-log: var(--pic-accent);
-		/* one capture pixel, at the window's inner width (.bw) */
-		--k: calc(100cqw / 574);
 		--pan: 120;
 		position: relative;
 		display: flex;
@@ -514,8 +512,13 @@
 		container-type: inline-size;
 	}
 
-	/* The browser: flush with the frame's top and sides, a crop of the window. */
+	/* The browser: flush with the frame's top and sides, a crop of the
+	   window. The captures are drawn 562 of their 574 pixels wide, so the
+	   page's own scrollbar (its last 12 columns) falls outside the window;
+	   the toolbar's menu at 555 stays in (review round 2, I-961). */
 	.br {
+		/* one capture pixel, at the window's inner width (.bw) */
+		--k: calc(100cqw / 562);
 		position: relative;
 		flex: 1;
 		min-height: 0;
@@ -558,15 +561,15 @@
 	.pg {
 		position: absolute;
 		left: 0;
-		right: 0;
 		top: 0;
+		width: calc(var(--k) * 574);
 		height: calc(var(--k) * 536);
 		translate: 0 calc(var(--k) * var(--pan) * -1);
 	}
 	.layer {
 		position: absolute;
-		inset: 0;
-		width: 100%;
+		inset: 0 auto 0 0;
+		width: calc(var(--k) * 574);
 		max-width: none;
 		height: 100%;
 		opacity: 0;
@@ -700,7 +703,15 @@
 		opacity: 1;
 	}
 
+	/* On a phone the captures keep a size their text reads at (the
+	   address 11px), and the window crops them on the right into a fade,
+	   as the Editor's rows are cropped, instead of shrinking them to fit
+	   (review round 2, I-961). */
 	@container (max-width: 400px) {
+		.br {
+			--k: max(calc(100cqw / 562), 0.8px);
+			mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+		}
 		.term {
 			font-size: 11px;
 			line-height: 14px;

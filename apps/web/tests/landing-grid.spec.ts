@@ -2,8 +2,9 @@
 // paragraph and the command that does it. A visitor without the CLI cannot
 // run a command, so the cells carry no copy button, and no "$": the mono
 // face marks a command, as in the steps. Two columns from 1024px, one
-// below, where a cell keeps its 34rem measure (LANDING.md, I-961). I-843
-// puts a picture over each cell's claim.
+// below, where a cell runs the frame's width and its picture keeps the
+// 2x2's 34rem, centred on its stage (LANDING.md, I-961). I-843 puts a
+// picture over each cell's claim.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,10 +15,10 @@ const DOCS = fileURLToPath(new URL('../src/content/docs/', import.meta.url));
 const cells = '#features .cells > li';
 
 const CELLS: [string, string][] = [
-	['Let it break the whole machine', 'repose snapshots create'],
-	['Use its ports on your localhost', 'repose open 5173'],
+	['Let it break the whole machine', 'repose snapshots restore'],
+	['Use its ports on your localhost', 'repose attach'],
 	["Watch the agent's browser, and take over", 'repose browser'],
-	['Open it in your editor', 'repose code your-project']
+	['Open it in your editor', 'ssh your-project.repose']
 ];
 
 async function grid(page: Page, width: number) {
@@ -34,10 +35,16 @@ test('four cells, each a claim and its command, no copy button', async ({ page }
 	await expect(page.locator(`${cells} button:not(.pic-pause)`)).toHaveCount(0);
 });
 
-// Every command a cell shows is one cli.md documents.
-test("each cell's command is in cli.md", async () => {
+// Every command a cell shows is one the docs give: a repose command is
+// in cli.md, and the SSH host is the one machine.md names.
+test("each cell's command is in the docs", async () => {
 	const cli = readFileSync(join(DOCS, 'cli.md'), 'utf8');
+	const machine = readFileSync(join(DOCS, 'machine.md'), 'utf8');
 	for (const [, cmd] of CELLS) {
+		if (cmd.startsWith('ssh ')) {
+			expect(machine).toContain('`ssh todo-app.repose`');
+			continue;
+		}
 		const words = cmd.split(' ').slice(0, 2).join(' ');
 		expect(cli, words).toContain(words);
 	}
@@ -67,9 +74,27 @@ for (const [width, cols] of [
 			expect(boxes[0].w).toBe(boxes[1].w);
 		}
 		if (cols === 1 && width >= 640) {
-			// One column, a cell's picture keeps the 2x2's size.
-			const stage = await page.locator(`${cells} > .shot`).first().boundingBox();
-			expect(Math.round(stage!.width)).toBe(544);
+			// One column, a cell's stage runs the cell's width, as the
+			// other bands' do, and its picture keeps the 2x2's size, centred.
+			const m = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
+				els.map((e) => {
+					const s = getComputedStyle(e);
+					const r = e.getBoundingClientRect();
+					const cell = e.parentElement!.getBoundingClientRect();
+					return {
+						stage: Math.round(r.width),
+						cell: Math.round(cell.width),
+						pic: Math.round(r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)),
+						pl: s.paddingLeft,
+						pr: s.paddingRight
+					};
+				})
+			);
+			for (const c of m) {
+				expect(c.stage).toBe(c.cell);
+				expect(c.pic).toBe(544);
+				expect(c.pl).toBe(c.pr);
+			}
 		}
 		// A 24px claim runs to three lines at most.
 		const lines = await page
@@ -176,3 +201,44 @@ for (const width of [1440, 768, 390]) {
 		expect(r!.x).toBeGreaterThan(screen!.x);
 	});
 }
+
+// Review round 2: the plans sit flush on the frame at every width, as the
+// steps do; PlanCells' own 640-899px card padding stays off the landing.
+for (const width of [768, 390]) {
+	test(`the plans start on the steps' line at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const [plan, step] = await Promise.all([
+			page.locator('.plans--public .plan').first().boundingBox(),
+			page.locator('.steps > li').first().boundingBox()
+		]);
+		expect(Math.round(plan!.x)).toBe(Math.round(step!.x));
+		expect(Math.round(plan!.width)).toBe(Math.round(step!.width));
+		const pad = await page
+			.locator('.plans--public .plan .p-name')
+			.first()
+			.evaluate((e) => Math.round(e.getBoundingClientRect().x));
+		expect(pad).toBe(Math.round(step!.x));
+	});
+}
+
+// Review round 2: the snapshots window is as tall as its two tiles, with
+// no empty body under them, and centred on the machine.
+test('the snapshots window holds its tiles with no empty foot at 1440', async ({ page }) => {
+	// The still frame: the loop moves the older tile.
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await grid(page, 1440);
+	const m = await page.evaluate(() => {
+		const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+		return {
+			stack: r('#features .stack'),
+			old: r('#features .stack .tile.old'),
+			machine: r('#features .machine')
+		};
+	});
+	// The older tile, folded to its 29px head, ends 8px over the window's
+	// inner edge.
+	expect(Math.round(m.stack.bottom - (m.old.top + 29))).toBe(9);
+	const mid = (b: DOMRect) => b.top + b.height / 2;
+	expect(Math.abs(mid(m.stack) - mid(m.machine))).toBeLessThanOrEqual(1);
+});

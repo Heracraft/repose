@@ -1,7 +1,8 @@
 <!--
   Ready: what is on a machine the moment it boots. The five agents are the
-  hero, as their marks alone (owner, 2026-09-27: no names or commands
-  under them; the aria-label names them);
+  hero, as their marks alone (owner, 2026-09-27, I-287: no names or
+  commands under them; the aria-label names them, and each mark's title
+  names it under the pointer);
   below them the toolchain, and a shell on the machine where a missing
   command prints the real command-not-found hint (nix/guest/base/devtools.nix,
   captured for real on a repose machine).
@@ -59,7 +60,7 @@
 	];
 </script>
 
-{#snippet mark(m: Mark, size: number)}
+{#snippet mark(m: Mark, size: number, named = false)}
 	<svg
 		viewBox="0 0 24 24"
 		width={size}
@@ -67,7 +68,7 @@
 		class="shrink-0"
 		fill="currentColor"
 		aria-hidden="true"
-		>{#each m.paths as d (d)}<path
+		>{#if named}<title>{m.name}</title>{/if}{#each m.paths as d (d)}<path
 				{d}
 				fill-rule={m.evenodd ? 'evenodd' : 'nonzero'}
 				clip-rule={m.evenodd ? 'evenodd' : 'nonzero'}
@@ -83,13 +84,13 @@
 	<ul class="agents" aria-hidden="true">
 		{#each agentMarks as m (m.name)}
 			<li>
-				<span class="am">{@render mark(m, 32)}</span>
+				<span class="am">{@render mark(m, 32, true)}</span>
 			</li>
 		{/each}
 	</ul>
 
 	<div class="below" aria-hidden="true">
-		<div>
+		<div class="kit">
 			<ul class="tools">
 				{#each toolMarks as m (m.name)}
 					<li>
@@ -173,8 +174,17 @@
 		font-size: 13px;
 		color: var(--pic-ink);
 	}
+	/* The tools' column is as tall as the shell beside it: the list at
+	   its top, the everyday tools' line at its foot, level with the
+	   shell's bar. */
+	.kit {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
 	.more {
-		margin: 16px 0 0;
+		margin: auto 0 0;
+		padding-top: 16px;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 20px;
@@ -186,6 +196,7 @@
 		.below {
 			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
 			gap: 40px;
+			align-items: stretch;
 		}
 	}
 

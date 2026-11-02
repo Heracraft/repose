@@ -34,7 +34,13 @@
   Each page's crop ends in the page's white space, whatever the pane's
   width: the pane is a size container, and the image's top is set so a
   chosen row of the capture (between two lines of text) lands on the
-  pane's bottom edge, the row picked by the pane's aspect ratio.
+  pane's bottom edge, the row picked by the pane's aspect ratio. The
+  app's page shows its nav and the ground under it and ends above its
+  headline: drawn at the window's width, that 48px headline set at about
+  34px, louder than the cell's own title, and a smaller drawing would
+  take the nav under 11px. So the page's pane is as tall as that crop
+  (200 capture rows) and the forward's wire takes the rest of the
+  height (review round 2, I-961).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -236,7 +242,7 @@
 <!-- ⇄ drawn one cell wide: several monospace fonts lack the glyph, and the
      fallback is a different width. -->
 {#snippet fw()}<svg class="fw" viewBox="0 0 10 16"
-		><path d="M1 6.5h8M6.5 4l2.5 2.5M9 10.5H1M3.5 13L1 10.5" /></svg
+		><path d="M1 5h8M6.5 2.5L9 5 6.5 7.5M9 11.5H1M3.5 9L1 11.5 3.5 14" /></svg
 	>{/snippet}
 
 {#snippet shot(name: string, alt: string)}
@@ -327,9 +333,22 @@
 		flex: none;
 		font-size: 12px;
 	}
-	.laptop {
-		flex: 1;
-		min-height: 0;
+	/* --min-w: the narrowest the captures are drawn. On a phone that is
+	   wider than the window, so their text keeps 11px or more and the
+	   window crops them on the right into a fade, as the Editor's rows
+	   are cropped (review round 2, I-961). */
+	.lh {
+		--pw: 1440;
+		--min-w: 0px;
+	}
+	@media (max-width: 479px) {
+		.lh {
+			--pw: 1280;
+			--min-w: 480px;
+		}
+		.page {
+			mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+		}
 	}
 
 	/* The laptop's browser on localhost:5173. */
@@ -353,10 +372,12 @@
 	.url.typing {
 		border-color: var(--pic-accent);
 	}
+	/* The page's pane: 200 rows of the capture at the window's width
+	   (the nav, its rule and the ground above the headline). */
 	.page {
 		position: relative;
-		flex: 1;
-		min-height: 0;
+		flex: none;
+		height: calc(max(100cqw - 2 * var(--shot-in) - 2px, var(--min-w)) * 200 / var(--pw));
 		overflow: hidden;
 		container-type: size;
 	}
@@ -397,130 +418,52 @@
 	/* The crop. Capture row --b (in the capture's own pixels, --iw wide)
 	   lands on the pane's bottom edge, so the pane ends in white space
 	   between two lines of text; --cap 0px keeps the capture's top from
-	   coming below the pane's (no extra ground above it). Which row
-	   depends on how many capture rows the pane shows, its aspect ratio.
-	   Rows, from the captures: the app's lines end at 85 (Job Alerts),
-	   306 (the headline), 409 and 467 (the paragraph), 542 (Apply...);
-	   the paragraph's first line starts near 370, so a crop that cannot
-	   hold the paragraph whole ends at 340 to 345, under the headline,
-	   never inside a sentence;
-	   Chromium's at 308 (the title), 385 (refused to connect), 452
-	   (Try:), 555 (the buttons). The phone's (640px) captures share the
-	   app's rows, and Chromium's sit 8 to 24 rows higher. */
+	   coming below the pane's (no extra ground above it). The pane is 200
+	   capture rows tall (.page), so one row serves every width.
+	   Rows, from the captures: the app's nav ends at 85 (Job Alerts) and
+	   its rule at 128, its headline starts near 225, so the app ends at
+	   200, above the headline; Chromium's refused page has its title at
+	   308 and "refused to connect" at 385, so it ends at 405, under them.
+	   The phone's (640px) captures share the app's rows, and Chromium's
+	   sit 8 to 24 rows higher. */
 	.page img {
+		--dw: max(100cqw, var(--min-w));
 		position: absolute;
 		left: 0;
-		top: min(var(--cap), calc(100cqh - var(--b) * 100cqw / var(--iw)));
+		top: min(var(--cap), calc(100cqh - var(--b) * var(--dw) / var(--iw)));
 		display: block;
-		width: 100cqw;
+		width: var(--dw);
 		max-width: none;
 		height: auto;
 	}
 	.home img {
 		--iw: 1440;
-		--b: 548;
+		--b: 200;
 		--cap: 0px;
 	}
 	.err img {
 		--iw: 1440;
-		--b: 575;
+		--b: 405;
 		--cap: 9999px;
-	}
-	@container (min-aspect-ratio: 2667/1000) {
-		.err img {
-			--b: 465;
-		}
-	}
-	@container (min-aspect-ratio: 2835/1000) {
-		.home img {
-			--b: 490;
-		}
-	}
-	/* Too wide for the whole paragraph: the crop ends under the headline,
-	   and the page's ground fills above its nav. */
-	@container (min-aspect-ratio: 3165/1000) {
-		.home img {
-			--b: 345;
-			--cap: 9999px;
-		}
-	}
-	@container (min-aspect-ratio: 2939/1000) {
-		.err img {
-			--b: 405;
-		}
-	}
-	@container (min-aspect-ratio: 3692/1000) {
-		.home img {
-			--b: 340;
-		}
-	}
-	@container (min-aspect-ratio: 4645/1000) {
-		.home img {
-			--b: 320;
-		}
 	}
 	/* The phone's captures, 1280 pixels wide. */
 	@media (max-width: 479px) {
 		.page .home img {
 			--iw: 1280;
-			--b: 548;
-			--cap: 0px;
 		}
 		.page .err img {
 			--iw: 1280;
-			--b: 545;
+			--b: 395;
 		}
 	}
-	@container (min-aspect-ratio: 2462/1000) {
-		@media (max-width: 479px) {
-			.page .err img {
-				--b: 453;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2520/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 490;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2813/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 345;
-				--cap: 9999px;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2723/1000) {
-		@media (max-width: 479px) {
-			.page .err img {
-				--b: 395;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 3282/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 340;
-			}
-		}
-	}
-	@container (max-width: 420px) {
-		/* room under the bar for the chip to start clear of it */
-		.lh .hop {
-			height: 36px;
-		}
-	}
-
-	/* The forward between them. */
+	/* The forward between them: its wire takes what the two windows
+	   leave, the chip at its middle. */
 	.hop {
-		flex: none;
+		flex: 1;
+		min-height: 30px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		height: 30px;
 	}
 	.wire {
 		flex: 1;

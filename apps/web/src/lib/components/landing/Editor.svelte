@@ -34,7 +34,13 @@
   it is out of the tab order, find in page and selection as a screenshot
   would be. Its colours are Tokyo Night's mapped by role onto the
   terminals' one palette (ROLE below, pictures.css --t-*), so the four
-  grid pictures share one ground; the explorer's checkout row reads
+  grid pictures share one ground. The chrome's accents (the explorer's
+  orange frame, its blue and pink tree, the orange current line number,
+  the statusline's filled blue mode and branch) are mapped by role onto
+  the zinc steps, and the folder icons onto the slate blue, so the editor
+  is as quiet as the pictures beside it (review round 2, I-961); the
+  statusline's text runs are split off their separators to take the
+  zinc, their text unchanged; the explorer's checkout row reads
   `your-project`, the pictures' checkout name, in place of the machine's
   internal one (LANDING.md, "Names a stranger understands"). A picture's
   incidental text is outside WCAG 1.4.3, and inert is what tells the a11y
@@ -53,7 +59,7 @@
 		'color:#0db9d7;background:#222436;',
 		'color:#c8d3f5;background:#222436;',
 		'color:#636da6;background:#12131d;',
-		'color:#ff966c;background:#1e2030;',
+		'color:#828bb8;background:#1e2030;',
 		'color:#1b1d2b;background:#222436;font-weight:700;',
 		'color:#3b4261;background:#222436;',
 		'color:#86e1fc;background:#222436;',
@@ -68,13 +74,13 @@
 		'color:#c3e88d;background:#222436;',
 		'color:#ff966c;background:#222436;',
 		'background:#1e2030;',
-		'color:#0db9d7;background:#1e2030;',
 		'color:#82aaff;background:#1e2030;',
+		'color:#c8d3f5;background:#1e2030;',
 		'color:#3b4261;background:#1e2030;',
-		'color:#fca7ea;background:#1e2030;',
-		'color:#ffc777;background:#1e2030;',
+		'color:#82aaff;background:#1e2030;',
+		'color:#c8d3f5;background:#1e2030;',
 		'color:#636da6;background:#222436;font-style:italic;',
-		'color:#ff966c;background:#222436;font-weight:700;',
+		'color:#c8d3f5;background:#222436;font-weight:700;',
 		'color:#65bcff;background:#2f334d;',
 		'color:#c8d3f5;background:#2f334d;',
 		'color:#4fd6be;background:#2f334d;',
@@ -86,10 +92,11 @@
 		'background:#2f334d;',
 		'color:#3b4261;background:#2f334d;',
 		'color:#0db9d7;background:#2f334d;',
-		'color:#1b1d2b;background:#82aaff;',
-		'color:#82aaff;background:#3b4261;',
+		'color:#1b1d2b;background:#828bb8;',
+		'color:#828bb8;background:#3b4261;',
 		'color:#828bb8;background:#1e2030;',
-		'color:#c8d3f5;background:#1e2030;font-weight:700;'
+		'color:#c8d3f5;background:#1e2030;font-weight:700;',
+		'color:#c8d3f5;background:#3b4261;'
 	];
 	const rows: [string, number][][] = [
 		[
@@ -417,14 +424,16 @@
 		],
 		[
 			[' NORMAL ', 42],
-			['\ue0b0 \ue0a0 fetch-timeout ', 43],
+			['\ue0b0', 43],
+			[' \ue0a0 fetch-timeout ', 46],
 			['\ue0b0', 26],
 			[' \udb81\udee6 ', 24],
 			[' apps/\u2026/src/', 44],
 			['config.ts', 45],
 			['    ', 44],
 			['\ue0b2', 26],
-			[' 31%  21:3  \ue0b2', 43],
+			[' 31%  21:3  ', 46],
+			['\ue0b2', 43],
 			[' \uf43a 02:08 ', 42]
 		]
 	];
@@ -571,11 +580,14 @@
 	/* The screen's 20 rows share the window under its head, and its 78
 	   columns fill the window's width: JetBrains Mono's cell is 0.6em, so
 	   78 cells are 46.8em (I-669). */
+	/* 4px over the tabline, as the terminal rows have, so nvim's tabs
+	   stand clear of the window's top edge. */
 	.screen {
-		--lh: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 2px) / 20);
+		--lh: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 2px - 4px) / 20);
+		padding-top: 4px;
 		flex: 1;
 		min-height: 0;
-		background: var(--t-bg);
+		background: linear-gradient(var(--t-bg-2) 4px, var(--t-bg) 4px);
 		font-family: 'Editor Nerd Symbols', var(--font-mono);
 		font-size: 12px;
 		font-variant-ligatures: none;

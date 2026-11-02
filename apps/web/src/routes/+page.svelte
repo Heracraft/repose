@@ -152,26 +152,26 @@
 				<ComesBack />
 				<h3 class="item-title">Let it break the whole machine</h3>
 				<p class="copy">
-					git brings back only the files it tracks. A snapshot puts back the whole disk, your
-					uncommitted edits and the database included.
+					A restore puts the snapshot's disk back on the stopped machine and starts it. With
+					<code>--as</code> it goes to a new machine and leaves this one as it is.
 				</p>
-				<p class="cmd">repose snapshots create</p>
+				<p class="cmd">repose snapshots restore</p>
 			</li>
 			<li>
 				<Localhost />
 				<h3 class="item-title">Use its ports on your localhost</h3>
 				<p class="copy">
-					Ports from 1024 up appear on your localhost while you're attached, so cookies and OAuth
-					redirects behave as they do locally. Detached, you forward one by hand.
+					Ports your servers listen on, from 1024 up, appear on your localhost while you're
+					attached, so cookies and OAuth redirects behave as they do locally.
 				</p>
-				<p class="cmd">repose open 5173</p>
+				<p class="cmd">repose attach</p>
 			</li>
 			<li>
 				<Browser />
 				<h3 class="item-title">Watch the agent's browser, and take over</h3>
 				<p class="copy">
-					Watch each Playwright call land on the page, and type into it yourself where it needs a
-					person, such as a captcha or a passkey.
+					For a site you're logged in to, <code>repose browser bridge</code> lets the agents browse in
+					your laptop's Chrome, with your logins, until you press Ctrl-C.
 				</p>
 				<p class="cmd">repose browser</p>
 			</li>
@@ -182,7 +182,7 @@
 					Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
 					your laptop.
 				</p>
-				<p class="cmd">repose code your-project</p>
+				<p class="cmd">ssh your-project.repose</p>
 			</li>
 		</ul>
 	</section>
@@ -272,8 +272,8 @@
 					<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary
 					>
 					<p class="copy">
-						You restore a snapshot from before it happened. repose takes one every night and at
-						every stop, and you can take your own before something risky.
+						You restore a snapshot from before it happened. repose takes one each night the machine
+						runs and at every stop, and you can take your own before something risky.
 					</p>
 				</details>
 				<details>

@@ -233,10 +233,11 @@
    between them: one column, and from 1024px a 2x2 whose vertical rule
    stands in the middle of the column gap, so the right cells start on
    the page's column line. Each cell is its picture's closed stage, then
-   the title, one paragraph and the command, the commands pinned to the
-   cells' feet so the two in a row stand level. The last row ends on the
-   next band's rule. The pause button stands at the right end of the
-   title's row (--cell-t and --cell-r place it from the cell). */
+   the title, one paragraph and the command under it, set as the hero's
+   install line is (a command to read, not to run here). The last row
+   ends on the next band's rule. The pause button stands at the right
+   end of the title's row (--cell-t and --cell-r place it from the
+   cell). */
 .landing .cells {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -270,15 +271,13 @@
 		border-left: 1px solid var(--hk-hairline);
 	}
 }
-/* One column (below 1024px), a cell keeps the size it has in the 2x2,
-   the copy's 34rem measure, so a picture's windows and captures draw at
-   one scale at every width; its rule still runs the frame's width. */
+/* One column (below 1024px), a cell runs the frame's width like every
+   other band, and its stage does too; the picture inside keeps the 2x2's
+   34rem, centred on the stage, so its windows and captures draw at one
+   scale at every width. The copy keeps its 34rem measure on the left. */
 @media (max-width: 1023.98px) {
-	.landing .cells > li > * {
-		max-width: 34rem;
-	}
-	.landing .cells > li {
-		--cell-r: max(0px, 100% - 34rem);
+	.landing .cells > li > .shot {
+		padding-inline: max(0px, (100% - 34rem) / 2);
 	}
 }
 .landing .cells .item-title {
@@ -299,12 +298,12 @@
 	margin-top: 0.5rem;
 }
 .landing .cmd {
-	align-self: end;
+	align-self: start;
 	margin: 1rem 0 0;
 	font-family: var(--hk-font-mono);
-	font-size: 0.8125rem;
+	font-size: 0.75rem;
 	line-height: 1.25rem;
-	color: var(--hk-text);
+	color: var(--hk-text-3);
 }
 
 /* ---------- Agents ---------- */
@@ -452,7 +451,10 @@
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
-.landing .plans--public .plan {
+/* .plans.plans--public: PlanCells' scoped 640-899px rule (0,4,0) pads a
+   card 20px on every side; the landing's ruled rows sit flush on the
+   frame at every width. */
+.landing .plans.plans--public .plan {
 	padding: 1.5rem 0 2rem;
 	border: 0;
 	border-top: 1px solid var(--hk-hairline);
@@ -460,13 +462,13 @@
 	background: none;
 }
 @media (min-width: 1024px) {
-	.landing .plans--public .plan {
+	.landing .plans.plans--public .plan {
 		padding: 1.75rem 1.5rem 2.5rem;
 	}
-	.landing .plans--public .plan:first-child {
+	.landing .plans.plans--public .plan:first-child {
 		padding-left: 0;
 	}
-	.landing .plans--public .plan:last-child {
+	.landing .plans.plans--public .plan:last-child {
 		padding-right: 0;
 	}
 	.landing .plans--public .plan + .plan {
@@ -475,6 +477,13 @@
 }
 .landing .plans--public .p-top {
 	min-height: 1.75rem;
+}
+/* The struck founding-era price in the price's own face, at the item
+   title's size, so the price line is one face. */
+.landing .plans--public .p-price .was {
+	font-family: var(--hk-font-display);
+	font-size: 1.25rem;
+	line-height: 1.75rem;
 }
 
 /* ---------- Questions ----------
@@ -495,14 +504,25 @@
 		border-top: 0;
 	}
 }
+/* A question's row reaches 12px past its text on each side, so the
+   hover wash and the focus ring (drawn inside it) clear the text and the
+   hairline while the text stays on the column line. */
 .landing .faq summary {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 1.5rem;
-	padding: var(--item-gap) 0;
+	margin-inline: -0.75rem;
+	padding: var(--item-gap) 0.75rem;
 	cursor: pointer;
 	list-style: none;
+	transition: background-color var(--hk-dur-fast) var(--hk-ease);
+}
+.landing .faq summary:hover {
+	background: var(--hk-hover);
+}
+.landing .faq summary:hover .plus {
+	color: var(--hk-text);
 }
 .landing .faq summary::-webkit-details-marker {
 	display: none;
@@ -514,18 +534,21 @@
 	stroke-width: 1.5;
 	stroke-linecap: round;
 	color: var(--hk-text-3);
-	transition: transform var(--hk-dur-fast) var(--hk-ease);
+	transition:
+		transform var(--hk-dur-fast) var(--hk-ease),
+		color var(--hk-dur-fast) var(--hk-ease);
 }
 .landing .faq details[open] .plus {
 	transform: rotate(45deg);
 }
-/* An open question's title sits 16px over its answer, and its focus ring
-   (2px out) stays in that space, clear of the answer's first line. */
+/* An open question's title sits 16px over its answer; the focus ring is
+   drawn 2px inside the row, clear of the hairline over it and of the
+   answer's first line. */
 .landing .faq details[open] > summary {
 	padding-bottom: 1rem;
 }
 .landing .faq summary:focus-visible {
-	outline-offset: 2px;
+	outline-offset: -2px;
 }
 .landing .faq details > p {
 	max-width: 34rem;
@@ -533,7 +556,8 @@
 	padding-bottom: var(--item-gap);
 }
 @media (prefers-reduced-motion: reduce) {
-	.landing .faq .plus {
+	.landing .faq .plus,
+	.landing .faq summary {
 		transition: none;
 	}
 }

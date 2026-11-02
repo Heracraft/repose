@@ -42,24 +42,32 @@ headline starting under the logo. In order:
    line in the right column from 1024px; the install command in mono
    under them on one line at 12px, exactly what the button copies,
    scrolling under a fade where its column is narrower. Under the copy, the hero
-   picture (`landing/Hero.svelte`) on a stage the frame's width: the
-   agent wrecks the cloud machine and a snapshot restores it (I-843).
+   picture (`landing/Hero.svelte`) on the one stage that bleeds to the
+   window's edges, a step deeper in tone than the others, with the
+   windows on the frame: the agent wrecks the cloud machine and a
+   snapshot restores it (I-843, I-961). The still frame (reduced motion,
+   no script) has no globe, since it has no skill to come from it.
 2. **"Your laptop's setup, in one command"** (the owner's I-772 heading
    and paragraph), then the OneCommand picture: `repose run` copying the
    laptop's source control, changes and ignored files to the machine.
 3. **"A cloud machine that feels like your own box"** (`#features`,
    I-961). Four cells, each a picture (ComesBack, Localhost, Browser,
-   Editor) over a serif claim, one paragraph, and the command that does
-   it in mono with no `$` and no copy button, since a visitor without the
-   CLI cannot run it. The cells are ruled like the plans, with no gap: a
-   hairline over each, and from 1024px a 2x2 with a vertical hairline in
-   the middle of the column gap, so the right cells start on the column
-   line. Below 1024px they are one column, each cell at the 2x2's 34rem.
-   The commands sit at the foot of their cells, so the two in a row stand
-   level.
+   Editor) over a serif claim, one paragraph with a fact the picture
+   cannot carry, and the command the picture shows, under the paragraph,
+   set as the hero's install line is (12px mono, the third grey) with no
+   `$` and no copy button, since a visitor without the CLI cannot run
+   it: the page has two command treatments, runnable (the steps, with
+   Copy) and reference (the hero's line, the cells). The cells are ruled
+   like the plans, with no gap: a hairline over each, and from 1024px a
+   2x2 with a vertical hairline in the middle of the column gap, so the
+   right cells start on the column line. Below 1024px they are one
+   column; a cell and its stage run the frame's width, and the picture
+   keeps the 2x2's 34rem, centred on its stage.
 4. **"The agents you use, and the tools they need, on first boot"**, with
    "All agents" and "Everything installed" side by side at the right end
-   of the headline's row (under it on a phone), then the Ready picture.
+   of the headline's row (under it on a phone), then the Ready picture:
+   the five agents' marks alone (I-287), each naming itself under the
+   pointer, and the tools' column as tall as the shell beside it.
 5. **"Start in three commands"**, ruled rows (I-961): the step's number
    (the page's label) and serif name in the left column, its command
    filling the right column flush on the stage's tone from rule to rule,
@@ -132,8 +140,13 @@ window chrome and terminals at 12px mono, 11px on a phone. A capture
 that is wider than its window (the Editor's 78 columns) is cropped on
 the right into a fade, as a terminal is, never shrunk to fit; a
 captured page is cropped in its white space, never inside a sentence.
-ComesBack's snapshots stand in a window as tall as the machine, as the
-hero's rail does. The
+On a phone the Localhost and Browser captures keep a size their text
+reads at and crop on the right into a fade as well; the Browser's own
+scrollbar is drawn outside its window. The Localhost app page ends
+above its headline: drawn at its window's width, that headline outsized
+the cell's title. ComesBack's snapshots stand in a window as tall as
+their two tiles, centred on the machine; on a phone both tiles stand
+whole at every beat. The
 Browser and the Editor have no window head of their own, since their
 captured toolbar and nvim's tab bar are their chrome; "your cloud machine"
 heads the hero's, the setup picture's, ComesBack's, Localhost's and
@@ -164,8 +177,9 @@ first of the three steps: the owner's call (I-843), so a reader who
 scrolled past the hero starts from one list. `repose run` shows in the
 pictures and in the run step; the cells carry other commands. The
 snapshot story has one telling per place: the hero shows the wreck and
-the restore, the ComesBack cell says what a snapshot puts back that git
-cannot, and FAQ 3 gives the schedule (nightly, at each stop, your own). Plan
+the restore, the ComesBack cell says how a restore runs (on the
+stopped machine, or `--as` a new one), and FAQ 3 gives the schedule
+(each night the machine runs, at each stop, your own). Plan
 figures come from `lib/plans.ts`, seat counts from the api; none is typed
 into the page.
 

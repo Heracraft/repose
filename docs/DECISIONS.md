@@ -27702,8 +27702,8 @@ judges' grafts and its named defects were then worked in.
   an h2; at 390px it holds two lines at 32px, since "Your dev
   environment," does not fit a line at 33px or more.
 - *Left as they were.* The hero picture is still about 1000px tall on a
-  phone, and the Localhost capture's headline still reads larger than the
-  cell's title; neither can change without redrawing a picture.
+  phone; that cannot change without redrawing it. (The Localhost
+  headline left with review round 2.)
 - *Review round 1.* The feature grid joins the ruled system: four cells
   split by hairlines like the plans, with no gap, the vertical rule in the
   middle of the column gap so the right cells start on the column line,
@@ -27730,3 +27730,30 @@ judges' grafts and its named defects were then worked in.
   is the one text change a capture takes. Each pause button is named
   after its picture. The hero's install line keeps 12px and scrolls
   under a fade where its column is narrower.
+- *Review round 2.* Below 1024px a feature cell runs the frame's width
+  like every other band, its stage too, and the picture inside keeps the
+  2x2's 34rem, centred on the stage (chosen over a centred 34rem column,
+  which would have shortened the band's rules). ComesBack's snapshots
+  window is as tall as its two tiles and centred on the machine; on a
+  phone both tiles stand whole at every beat. The Localhost app page
+  ends above its headline (the nav and the ground under it), since drawn
+  at the window's width that headline set at about 34px and a smaller
+  drawing took the nav under 11px; the forward's wire takes the height
+  that frees. On a phone the Localhost and Browser captures keep a size
+  their text reads at and crop on the right into a fade, as the Editor
+  does, and the Browser capture is drawn so its own scrollbar falls
+  outside the window. The Editor's chrome accents (the explorer's frame,
+  the tree, the current line number, the statusline's mode and branch)
+  map onto the zinc steps and the folder icons onto the slate blue; the
+  hero's mode line maps onto the muted ink, so red is the wreck's alone.
+  The hero's stage alone bleeds to the window's edges, a step deeper in
+  tone: the page's one tonal moment. Cell commands set as the hero's
+  install line does (12px mono, third grey), under their paragraph,
+  which leaves two command treatments on the page, runnable (the steps,
+  with Copy) and reference. The cells' copy gives a fact the picture
+  cannot carry (the restore and `--as`, the bridge to your Chrome), and
+  the Localhost and Editor cells show the commands their pictures show
+  (`repose attach`, `ssh your-project.repose`). The struck founding price
+  sets in the serif; the plans sit flush on the frame at 640 to 899px as
+  at every other width. The agents' marks stay unnamed (I-287); each
+  names itself under the pointer.

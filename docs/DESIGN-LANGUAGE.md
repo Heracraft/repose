@@ -1050,20 +1050,30 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
 - **Stages**: one material for every picture (`landing/pictures.css`):
   `--stage` with a top-left sheen, a 1px edge, an inner top highlight and
   12px corners. Windows take 6px corners, nothing else is rounded. The
-  terminals share one palette (`--t-*`) that follows the scheme.
+  terminals share one palette (`--t-*`) that follows the scheme. The
+  hero's stage alone bleeds to the window's edges, square, a step deeper
+  (`--stage-hero`): the page's one tonal moment.
 - **Each command once**: the install line under the hero's buttons and as
-  the first step (I-843); the feature cells give their command as one
-  mono line with no `$` (the mono face marks it, as in the steps) and no
-  copy button, since a visitor without the CLI cannot run it. The steps' commands fill their half of the row
-  flush on the stage's tone, with no box of their own.
+  the first step (I-843); the feature cells give their command under
+  their paragraph, set like the hero's install line (Geist Mono 12px,
+  `--hk-text-3`), with no `$` and no copy button, since a visitor without
+  the CLI cannot run it. The steps' commands fill their half of the row
+  flush on the stage's tone, with no box of their own, a step lighter
+  under the pointer. Two command treatments, then: runnable (the steps,
+  with Copy) and reference.
 - **Sections**: the hero; "Your laptop's setup, in one command"; "A cloud
   machine that feels like your own box", four cells split by hairlines
-  like the plans, a 2x2 from 1024px and one column below at 34rem; "The agents you use, and the tools they need, on first boot";
-  "Start in three commands"; "Pricing"; "Questions", five `details` rows
-  between hairlines; the full footer.
+  like the plans, a 2x2 from 1024px and one column below, the cell and
+  its stage the frame's width with the picture at 34rem in the middle;
+  "The agents you use, and the tools they need, on first boot"; "Start
+  in three commands"; "Pricing"; "Questions", five `details` rows
+  between hairlines, each washed with `--hk-hover` under the pointer,
+  its focus ring inside the row and 12px clear of the text; the full
+  footer.
 - **Pricing**: `PlanCells` in its public variant, three cells split by
-  hairlines from 1024px (one column below) with no card edge, the founding price struck when
-  it applies. "Launch prices.", "Start a free week" and the seats line
+  hairlines from 1024px (one column below, flush on the frame at every
+  width) with no card edge, the founding price struck when it applies,
+  in the serif at the item title's size. "Launch prices.", "Start a free week" and the seats line
   stand in the head's right column. Plan figures come from
   `lib/plans.ts`, never typed into markup.
 - **Never on the landing**: isometric or anatomy figures, drawn fake UIs

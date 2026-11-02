@@ -625,8 +625,10 @@
 		position: relative;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
-		/* Each window is as tall as its rows, so neither ends on an empty
-		   band: the machine's is a row shorter, having no node_modules. */
+		/* The two windows stand one height, the laptop's: the machine's
+		   last band is the slot node_modules has on the laptop, where the
+		   machine has none (review round 2, I-961). Stacked, each is as
+		   tall as its rows. */
 		align-items: start;
 		min-width: 0;
 	}
@@ -786,7 +788,7 @@
 	.fname {
 		flex: none;
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 12px;
 	}
 	.dir {
 		flex: 1;
@@ -958,6 +960,7 @@
 	@media (min-width: 1024px) {
 		.pic {
 			grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+			align-items: stretch;
 		}
 		/* Side by side, the two commands stand one over the other in the
 		   middle of the gap, halfway down the panels: repose run, then

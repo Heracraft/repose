@@ -473,8 +473,17 @@
 				.call(() => (fire = true), T.run)
 				.call(() => (fire = false), T.run + 520)
 				.call(() => from.classList.add('lift'), T.fly);
-			if (flight) t.add(c, { opacity: 1, duration: CUT }, T.fly).add(c, flight, T.fly);
-			else
+			// Wide, the copy fades in only once its name is clearing the
+			// laptop's wall, and its empty right end is faded: the bare fill
+			// alone at the wall read as a rendering glitch (review round 2).
+			if (flight) {
+				c.style.maskImage = 'linear-gradient(to right, #000 60%, transparent)';
+				t.add(c, { opacity: [0, 1], duration: 250, ease: 'outQuad' }, T.fly + 300).add(
+					c,
+					flight,
+					T.fly
+				);
+			} else
 				t.add(c, { x: b.l - a.l, y: b.t - a.t - 10, duration: CUT }, T.fly + 200)
 					.add(c, { opacity: [0, 1], duration: 200, ease: 'outQuad' }, T.fly + 240)
 					.add(c, { y: b.t - a.t, duration: 600, ease: 'outCubic' }, T.fly + 240);
@@ -1005,9 +1014,10 @@
 		/* The picture's colours are the --pic-* tokens in layout.css; only
 		   the real tools' own colours are set here. */
 		--claude: #d97757;
-		/* Claude Code's colour 211 (#ff87af) on its dark theme; deepened on
-		   paper so it reads. */
-		--mode: #c2416f;
+		/* The mode line in the muted ink, mapped by role off Claude Code's
+		   pink (colour 211), so red stays the wreck's alone (review round 2,
+		   I-961). */
+		--mode: var(--pic-dim);
 		--rogue: #c0271c;
 		/* The gap between the machine and the right-hand stack, which the
 		   two wires cross. */
@@ -1089,7 +1099,7 @@
 		position: relative;
 		flex: none;
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 12px;
 	}
 	.head .fname {
 		font-weight: 600;
@@ -1244,7 +1254,7 @@
 	}
 
 	/* The agent's row: Claude Code's mark and its footer line for the
-	   permission mode, in its own pink; the skill docks at the row's end. */
+	   permission mode, in the muted ink; the skill docks at the row's end. */
 	.agentrow {
 		position: relative;
 		display: flex;
@@ -1505,7 +1515,17 @@
 	}
 
 	/* The internet: the globe, on the stack's floor, level with the
-	   agent's row. */
+	   agent's row. It is where the skill comes from, so the still frame
+	   (reduced motion, no script), which has no skill, has no globe or
+	   wire either: alone it read as decoration (review round 2). */
+	@media (prefers-reduced-motion: reduce) {
+		.hero-pic:not(:global(.live)) .net {
+			visibility: hidden;
+		}
+	}
+	:global(html:not(.js)) .hero-pic .net {
+		visibility: hidden;
+	}
 	.net {
 		position: relative;
 		display: flex;
@@ -1996,6 +2016,19 @@
 	@media (max-width: 480px) {
 		.hero-pic {
 			--row: 26px;
+			/* The two commands stand as a pair centred under the laptop,
+			   8px apart, at the phone's 11px: in equal halves the snapshot
+			   command ran past the windows and the stage (review round 2). */
+			grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+			grid-template-areas: 'lap lap lap lap' '. hop ask .' 'win win win win' 'side side side side';
+		}
+		.ask {
+			margin-left: 8px;
+		}
+		.hop .pic-chip,
+		.ask .pic-chip {
+			padding: 2px 6px;
+			font-size: 11px;
 		}
 		/* A phone has no room for two columns under the machine: the globe
 		   hangs on its wire at the machine's right corner, and the
@@ -2042,10 +2075,8 @@
 		.fly {
 			font-size: 12px;
 		}
-		.fname {
-			font-size: 11.5px;
-		}
 		.skill,
+		.fname,
 		.mode,
 		.st,
 		.val,
@@ -2056,12 +2087,10 @@
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not(.light):not([data-theme='light'])) .hero-pic {
 			--rogue: #ff4b3e;
-			--mode: #ff87af;
 		}
 	}
 	:global(:root[data-theme='dark']) .hero-pic,
 	:global(:root.dark) .hero-pic {
 		--rogue: #ff4b3e;
-		--mode: #ff87af;
 	}
 </style>
