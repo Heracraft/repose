@@ -1,0 +1,93 @@
+// Alloy on the control VM: the api's metrics, pushed (DECISIONS I-960).
+//
+// The HTTP `api` application publishes no port and cannot -- a published
+// port stops the old and new container coexisting, so Coolify could not
+// roll it (I-2) -- so its ~57 `repose_api_*` series have never been
+// scraped. I-133 answered that with a Traefik router on the app behind an
+// IP allow-list; the owner rejected it because the hostname is in that
+// label block AND in an /etc/hosts line on the monitoring server, Coolify
+// regenerates its own labels from the app's FQDN but would not touch a
+// hand-pasted one, and R4-12 has the domain graduating. A domain change
+// would have left one stale copy and broken metrics silently (I-952).
+//
+// So Alloy sits on the Docker network beside the api, scrapes it there,
+// and writes to Prometheus over WireGuard. Nothing is published to the
+// internet, there is no hostname anywhere in this file, and a domain
+// change touches none of it.
+//
+// It scrapes the HTTP `api` ONLY. `api-grpc` publishes its metrics port on
+// the tunnel (10.255.255.1:9104) and Prometheus scrapes it directly; doing
+// it here as well would write every one of its series twice, from two
+// paths, with different `instance` labels.
+
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Matched on the application uuid inside the container name.
+//
+// Not a Docker label: adding one custom label to a Coolify application
+// hands ALL label handling to you, Coolify's own Traefik routing included,
+// which is a far worse thing to own than a uuid (owner, 2026-11-02). Not a
+// container name either: `docs/ops/coolify.md` fact 1 gives
+// `<service>-<uuid>` for compose SERVICES, and the api is a Dockerfile
+// APPLICATION (fact 6), for which the repo records no naming rule at all.
+// The uuid is the one identifier that survives a redeploy, a rename and a
+// domain change, and Coolify does not rewrite it.
+//
+// 8kpqxzfejbbsgwjhooep2ymc is `api:main`, read from the live Coolify on
+// 2026-11-01. If the application is ever deleted and recreated its uuid
+// changes and this matches nothing -- which is why `ApiMetricsAbsent`
+// exists rather than trusting this line to stay true.
+discovery.relabel "api" {
+  targets = discovery.docker.local.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = ".*8kpqxzfejbbsgwjhooep2ymc.*"
+    action        = "keep"
+  }
+
+  // Docker service discovery builds a target per container, network and
+  // declared port, and the api declares 3000, not 9103. So the address is
+  // rebuilt from the container's IP on this network rather than taken from
+  // the discovered port.
+  rule {
+    source_labels = ["__meta_docker_network_ip"]
+    target_label  = "__address__"
+    replacement    = "$1:9103"
+  }
+
+  // The labels Prometheus would have attached itself, so a series arriving
+  // this way is indistinguishable from a scraped one and
+  // `ops/prometheus/prometheus.yml`'s old `api` job can go.
+  rule {
+    target_label = "job"
+    replacement  = "api"
+  }
+  rule {
+    target_label = "role"
+    replacement  = "control-plane"
+  }
+  rule {
+    target_label = "app"
+    replacement  = "api"
+  }
+}
+
+// 30s to match the scrape_interval Prometheus uses for everything else, so
+// a rate() over these series means what it means over the others.
+prometheus.scrape "api" {
+  targets         = discovery.relabel.api.output
+  forward_to      = [prometheus.remote_write.monitoring.receiver]
+  scrape_interval = "30s"
+}
+
+// 10.255.0.3 is the monitoring server on the edge's hub, and 9090 is open
+// to peers only since I-952. Prometheus answers this path only with
+// --web.enable-remote-write-receiver.
+prometheus.remote_write "monitoring" {
+  endpoint {
+    url = "http://10.255.0.3:9090/api/v1/write"
+  }
+}

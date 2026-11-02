@@ -1,0 +1,55 @@
+# Alloy as a Coolify compose Service on the control VM (DECISIONS I-960).
+# Project `repose`, beside api, api-grpc and web.
+#
+#   Project -> Add resource -> Services -> Docker Compose, paste this file,
+#   add config.alloy as a file mount at /etc/alloy/config.alloy, deploy.
+#
+# Three things in here are not decoration:
+#
+#   * `networks: coolify` with `external: true`. A compose Service gets its
+#     own network and the applications sit on the server's `coolify`
+#     network (coolify.md fact 2). The "Connect to predefined network"
+#     toggle alone is not enough: it registers only the container name and
+#     the first api deploy failed with NXDOMAIN that way (fact 11). The
+#     file has to list the network. Alloy needs it to route to the api
+#     container's IP, which Docker service discovery hands it.
+#
+#   * The Docker socket, read-only. Service discovery is the whole reason
+#     Alloy is here rather than a static target: Coolify's container names
+#     are not stable, so the api has to be found rather than addressed.
+#     Read-only is not a small grant -- it is read access to every
+#     container, image and environment on the control VM, which is the VM
+#     that runs the api. The owner weighed that on 2026-11-02 against
+#     putting the hostname in two places that drift apart.
+#
+#   * The metrics port on the tunnel address only, and nothing else
+#     published. This is what makes a dead collector loud: the series are
+#     pushed, so Prometheus cannot tell a silent Alloy from a quiet fleet,
+#     but it CAN scrape Alloy itself and see `up{job="alloy"}`. Alloy
+#     accepts stop-then-start, so publishing a port costs it nothing --
+#     unlike the api, which is the reason any of this exists.
+#     Docker cannot publish on an address that does not exist yet, so the
+#     VM must start Docker after wg-quick@wg0 (ops/coolify/README.md).
+services:
+  alloy:
+    image: grafana/alloy:v1.10.2
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+      - 'alloy-data:/var/lib/alloy/data'
+    ports:
+      - '10.255.255.1:12345:12345'
+    networks:
+      - coolify
+
+volumes:
+  alloy-data:
+
+networks:
+  coolify:
+    external: true

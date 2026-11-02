@@ -290,6 +290,13 @@ groups:
         # Either api process stops answering its scrape. A dead api-grpc
         # also silences HostUnreachable, which is computed from its gauge
         # (DECISIONS I-648).
+        #
+        # `up{job="api"}` is not this server's scrape since I-960: Alloy on
+        # the control VM scrapes the api container over the Docker network
+        # and forwards the `up` its own scrape generates. So this still
+        # fires when the api is down, and does NOT fire when Alloy is --
+        # the series stops arriving rather than reaching 0, which is
+        # AlloyDown's job and ApiMetricsAbsent's.
         expr: up{job=~"api|api-grpc"} == 0
         for: 3m
         labels:
@@ -298,6 +305,47 @@ groups:
           summary: "Prometheus cannot scrape {{ $labels.job }}"
           description: "No scrape for 3 minutes. If it is api, users cannot log in, create or start; if api-grpc, hosts have no stream and nothing is placed, started or stopped."
           runbook: "docs/ops/RUNBOOK.md#apidown"
+
+      - alert: AlloyDown
+        # The collector that carries the api's ~57 series. It pushes, so
+        # Prometheus cannot tell its silence from a quiet fleet -- which is
+        # exactly why this server scrapes Alloy itself (I-960). While it is
+        # down ApiErrors, the gate-refusal panel and BillingWebhookErrors
+        # have no input and cannot fire, so the loss is of sight, not of
+        # service: tenants are unaffected and nothing is queued or dropped.
+        # Warn, not page, for that reason.
+        expr: up{job="alloy"} == 0
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "the control VM's Alloy is not answering its scrape"
+          description: "The api's metrics stop arriving while this holds; the api itself is unaffected. In Coolify, project repose, the `alloy` service: check it is running and that its port is published on 10.255.255.1 and not elsewhere. `docker logs` on the control VM names a config error."
+          runbook: "docs/ops/RUNBOOK.md#alloydown"
+
+      - alert: ApiMetricsAbsent
+        # Alloy is up and no api series are arriving. The reason worth
+        # writing down: Alloy finds the api container by the application
+        # uuid inside its container name, because Coolify's names are not
+        # stable and a custom Docker label would hand it ALL label handling
+        # (I-960). If that application is deleted and recreated its uuid
+        # changes, the match keeps nothing, and Alloy runs perfectly while
+        # scraping no targets. That failure is silent without this rule --
+        # the same shape as a dead datasource reading healthy (I-944) and
+        # closure-equiv answering "unchanged" (I-958).
+        #
+        # absent(), not == 0: a scrape that fails gives up == 0 and is
+        # ApiDown's. This is the series not being there at all, which also
+        # catches remote_write being refused and the receiver flag being
+        # off.
+        expr: absent(up{job="api"})
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "no api metrics have arrived for 15 minutes"
+          description: "Alloy is scraping nothing, or its writes are refused. Check Alloy's own targets at http://10.255.255.1:12345 (it is scraped as job=alloy); then that the api application's uuid still matches the regex in ops/alloy/config.alloy; then that Prometheus still runs with --web.enable-remote-write-receiver and the edge still allows 9090 (I-952)."
+          runbook: "docs/ops/RUNBOOK.md#apimetricsabsent"
 
       - alert: GatewayDown
         # The edge's gateway stops answering its scrape: nobody can SSH to

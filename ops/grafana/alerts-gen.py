@@ -120,6 +120,7 @@ EVALUATOR = {">": "gt", ">=": "gte", "<": "lt", "<=": "lte", "==": "eq", "!=": "
 # that never fires.
 BOOLEAN_EXPRS = {
     "ApiHostsAbsent": "absent() returns 1",
+    "ApiMetricsAbsent": "absent() returns 1",
     "BuildQueueStuck": "the value is repose_host_builds_running, and the rule needs it >= 2",
     "BootSlow": "the value is the slow-boot share, and the rule needs it > 0.5",
     "HostNotInTargets": "the value is the ready-state gauge, which is 1",
