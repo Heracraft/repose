@@ -2167,6 +2167,24 @@ encrypted memory image when it shuts down and restores them at hostd's
 next start (DECISIONS I-652, I-653). Off by default; turned on for
 host-stg-01, and for host-01 since 2026-10-12 (I-686).
 
+**The thaw is also the host's blind window, and it looks exactly like a
+dead host.** `Reconcile` -- which runs `ThawAll` -- sits ahead of every
+listener in hostd's start, so until it returns there is no api stream, no
+metrics to scrape and no control socket. Expect, after a host reboot with
+frozen guests: the api reporting the host `unreachable`, `HostUnreachable`
+and `HostScrapeDown` arming, and `hostd guests` answering that there is no
+control socket. host-02 on 2026-11-02 was `active` at 21:32:53 and
+listening at 21:36:09 -- 3m16s for two guests and 15.6 GB, and the window
+grows with the memory a thaw reads back, so a full host's is minutes
+longer (DECISIONS I-990).
+
+What tells you a starting hostd from a dead one, in order: `systemctl
+is-active hostd` (a thawing hostd is `active`), then `journalctl -u hostd
+-b` for `frozen guests restored`, which is the line that precedes the
+listeners. Do **not** read "no control socket" as hostd being down, and do
+not restart hostd to fix it -- that discards the images it is in the
+middle of reading, and every guest in them comes back cold.
+
 This is not the idle pause, which shares the user's word for it. A guest
 the idle pause left resting (I-824) is already paused, so the freeze
 snapshots it as it is and the thaw resumes it and clears its marker: a

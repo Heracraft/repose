@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,5 +58,24 @@ func TestOperatorLoginRoundTrip(t *testing.T) {
 	// line is the record then.
 	if err := NewClient(filepath.Join(t.TempDir(), "absent.sock")).OperatorLogin(ctx, rep); err != ErrNotRunning {
 		t.Fatalf("absent socket: %v", err)
+	}
+}
+
+// TestNotRunningDoesNotClaimHostdIsDown holds the one thing the client
+// cannot know. hostd creates the control socket after Reconcile and
+// ThawAll, so an absent socket is equally consistent with a dead hostd
+// and with a healthy one minutes into a post-reboot thaw. On 2026-11-02
+// the old wording -- "hostd is not running (no control socket)" -- was
+// read as a diagnosis and repeated as one while the unit was `active`
+// and one minute into startup (DECISIONS I-990).
+func TestNotRunningDoesNotClaimHostdIsDown(t *testing.T) {
+	msg := ErrNotRunning.Error()
+	if strings.Contains(msg, "hostd is not running") {
+		t.Errorf("the message states as fact the one thing it cannot know:\n%s", msg)
+	}
+	for _, want := range []string{"still starting", "systemctl is-active hostd"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message should name %q so the reader can tell the two apart:\n%s", want, msg)
+		}
 	}
 }
