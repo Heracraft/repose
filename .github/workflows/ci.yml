@@ -40,8 +40,18 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+      # The steps below do not depend on the tests passing, and until
+      # 2026-11-02 they were ordered as if they did: `go test -race` failed
+      # on every run of `main` from 2026-10-17, so each of these was
+      # skipped, and a step that never ran reports as "not failing", which
+      # on the job list looks exactly like passing. `ci-green`'s errcheck
+      # fix was therefore correct and unverified for sixteen days and
+      # nothing in the signal could have said so. `!cancelled()` runs them
+      # anyway: a red suite no longer hides what is behind it, and the job
+      # still fails on the test (DECISIONS I-970).
       # Rollback is exercised on a seeded database: migrate, seed, down 1, up.
       - name: repose-admin db migrate --down 1 on a seeded database
+        if: ${{ !cancelled() }}
         run: |
           go run ./cmd/repose-admin db migrate
           psql "$DATABASE_URL" -c "insert into users (id, handle) values ('00000000-0000-7000-8000-000000000001', 'ci-seed')"
@@ -53,7 +63,9 @@ jobs:
       # action binaries lag the Go release and refuse newer go.mod versions.
       # An exact version, bumped by hand (DECISIONS I-429).
       - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+        if: ${{ !cancelled() }}
       - run: golangci-lint run ./...
+        if: ${{ !cancelled() }}
 
   proto:
     name: buf lint and breaking
