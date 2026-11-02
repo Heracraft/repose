@@ -188,8 +188,14 @@ other end of those.
    `psql "$DATABASE_URL" -f sql/launch.sql`.
 7. **Alloy on the control VM** (DECISIONS I-960). Not on this server. In
    Coolify, project `repose`: Add resource -> Services -> Docker Compose,
-   paste `alloy/docker-compose.yml`, add `alloy/config.alloy` as a file
-   mount at `/etc/alloy/config.alloy`, deploy. Then here, the `alloy`
+   paste `alloy/docker-compose.yml`. The compose's relative bind mount
+   makes Coolify create the file mount itself; what it does NOT do is fill
+   it in, and it guesses **directory** because the file does not exist
+   (`coolify.md` fact 17). So in Storages: turn
+   `/etc/alloy/config.alloy` into a file, paste `alloy/config.alloy` into
+   it, and only then deploy. Deploying first bind-mounts a directory over
+   the path and Alloy exits complaining about its config, which reads as a
+   bad config rather than a bad mount. There is no API for either step. Then here, the `alloy`
    scrape job is already in `prometheus/prometheus.yml`.
 
    Prometheus must run with `--web.enable-remote-write-receiver` or the

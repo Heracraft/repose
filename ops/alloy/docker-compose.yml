@@ -40,6 +40,14 @@ services:
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
     volumes:
+      # A RELATIVE bind mount, which is how Coolify is told to manage a
+      # file: it creates one under the resource's data directory on the VM
+      # and gives it an editable entry in the resource's Storages tab. An
+      # absolute host path would be a plain bind mount to a file nothing
+      # creates, and Alloy would exit because --config names a file that
+      # does not exist. The first version of this compose had no entry for
+      # the config at all, which is exactly that failure (I-960).
+      - './config.alloy:/etc/alloy/config.alloy:ro'
       - '/var/run/docker.sock:/var/run/docker.sock:ro'
       - 'alloy-data:/var/lib/alloy/data'
     ports:
