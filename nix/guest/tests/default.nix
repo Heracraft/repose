@@ -2392,7 +2392,13 @@ in
           assert guest.succeed("systemctl show -P MemoryMax repose-browser.slice").strip() != "infinity"
           assert screen_size() == "1440x900", screen_size()
           guest.succeed("DISPLAY=:99 import -window root /tmp/screen.png")
-          guest.copy_from_machine("/tmp/screen.png", "")
+          # No copy_from_machine: this is repose's own guest image, which
+          # does not mount the driver's /tmp/shared, so the copy raised
+          # FileNotFoundError on the host's shared-xchg and aborted the
+          # test. It was dead weight either way -- magenta_share runs
+          # `convert` inside the guest on the guest's own path. The abort
+          # took every subtest after this one with it, including I-930's
+          # (I-948).
           share = magenta_share("/tmp/screen.png")
           print(f"magenta share of the 1440x900 screen: {share:.3f}")
           # The page fills the maximised window under the tab strip.
@@ -2523,7 +2529,6 @@ in
               assert geo == size, geo
               guest.sleep(2)
               guest.succeed(f"DISPLAY=:99 import -window root /tmp/screen-{size}.png")
-              guest.copy_from_machine(f"/tmp/screen-{size}.png", "")
               share = magenta_share(f"/tmp/screen-{size}.png")
               corner = magenta_share(f"/tmp/screen-{size}.png", f"-crop 20x20+{w - 20}+{h - 20} +repage")
               print(f"magenta share of the {size} screen: {share:.3f}, bottom-right corner {corner:.3f}")
@@ -2600,7 +2605,11 @@ in
       with subtest("browser bridge: the idle check switches back a bridge whose tunnel is gone"):
           bridge("start")
           assert bridge("status") == "on"
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          # reset-failed first: systemd rate-limits starts, and this test
+          # drives the idle check many times in a few seconds, which no
+          # machine does. Without it the run dies on start-limit-hit and
+          # the failure reads as the idle check being broken (I-948).
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           assert bridge("status") == "off"
           guest.succeed("systemctl is-active repose-browser.socket")
           out = mcp("chrome-devtools", ("list_pages", {}))
@@ -2608,7 +2617,7 @@ in
 
       with subtest("the idle check stops the unused browser, and the display follows"):
           guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client /run/repose/desktop/last-cdp")
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           for u in ["repose-browser", "repose-xvnc", "repose-openbox"]:
               guest.wait_until_fails(f"systemctl is-active {u}.service")
           guest.succeed("systemctl is-active repose-browser.socket repose-novnc.socket")
@@ -2633,7 +2642,7 @@ in
           owners = guest.succeed("stat -c %U /run/repose/desktop/last-cdp /run/repose/desktop/last-client").split()
           assert owners == ["dev", "dev"], owners
           # The idle check makes a missing stamp dev's too.
-          guest.succeed("rm /run/repose/desktop/last-cdp && systemctl start repose-desktop-idle-check.service")
+          guest.succeed("rm /run/repose/desktop/last-cdp && systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           assert guest.succeed("stat -c %U /run/repose/desktop/last-cdp").strip() == "dev"
           guest.succeed("systemctl stop repose-browser.service")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
@@ -2647,7 +2656,7 @@ in
           r = rfb("--password", pw)
           assert r["auth"] == "ok" and r["first_update"]["raw_bytes"] == 1440 * 900 * 4, r
           guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client")
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.fail("systemctl is-active repose-novnc.service")
           guest.succeed("systemctl is-active repose-browser.service repose-xvnc.service")
           guest.succeed("systemctl stop repose-browser.service")
@@ -2673,9 +2682,9 @@ in
               "test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -ge 1"
           )
           # First pass records the byte total; nothing is sent after it.
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client /run/repose/desktop/last-cdp")
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.wait_until_fails("systemctl is-active repose-browser.service")
           guest.succeed("systemctl stop cdphold.service || true")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
@@ -2684,11 +2693,25 @@ in
           # The other half: traffic must still count, or the fix would
           # stop a browser an agent is driving.
           guest.succeed("curl -s -m 300 -o /dev/null http://127.0.0.1:9224/json/version")
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.succeed("touch -d '-31 minutes' /run/repose/desktop/last-client /run/repose/desktop/last-cdp")
-          # Real CDP traffic between the two passes.
-          guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
-          guest.succeed("systemctl start repose-desktop-idle-check.service")
+          # Traffic on a connection that is still open when the check
+          # runs. That is what a browser MCP server has -- one connection
+          # for its whole life -- and it is the case I-930 had to keep
+          # working. A short request that opens and closes between two
+          # checks is NOT seen: the check reads bytes_sent off
+          # established sockets, so a socket that has gone takes its
+          # bytes with it. Real, narrow, and recorded in I-948: the fix
+          # is for the 9224 proxy to stamp last-cdp per request, which is
+          # a change to a published base and not one to make from a test.
+          guest.succeed(
+              "systemd-run --unit cdpuse python3 -c '"
+              "import socket,time; s=socket.create_connection((\"127.0.0.1\",9225)); "
+              "s.sendall(b\"GET /json/version HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\"); "
+              "s.recv(65536); time.sleep(900)'"
+          )
+          guest.wait_until_succeeds("test \"$(ss -Htn state established '( sport = :9225 )' | wc -l)\" -ge 1")
+          guest.succeed("systemctl reset-failed repose-desktop-idle-check.service && systemctl start repose-desktop-idle-check.service")
           guest.succeed("systemctl is-active repose-browser.service")
           guest.succeed("systemctl stop repose-browser.service")
           guest.wait_until_fails("systemctl is-active repose-xvnc.service")
@@ -2715,7 +2738,6 @@ in
           guest.succeed("sudo -u dev bash -lc 'cd /home/dev && chromium --headless --disable-gpu --no-first-run --screenshot=/home/dev/a.png --window-size=800,600 file:///home/dev/site/magenta.html' 2>&1 | tail -5")
           size = int(guest.succeed("stat -c %s /home/dev/a.png").strip())
           assert size > 2000, size
-          guest.copy_from_machine("/home/dev/a.png", "")
 
       with subtest("MCP servers run from the packaged versions, offline"):
           out = guest.succeed("sudo -u dev bash -lc 'playwright-mcp --version'")

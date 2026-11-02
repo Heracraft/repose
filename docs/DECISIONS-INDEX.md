@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-859 entries.
+863 entries.
 
 ## Scope
 
@@ -219,7 +219,7 @@ pointer, not a summary.
 - **I-131** The api's service principal gets Storage Blob Data Contributor on the snapshots container — 2026-09-21; L2867
 - **I-132** A base bump that needs a reboot says so in its event — 2026-09-21; L2886
 - **I-134** The build phase takes its base from the revision, not the project — 2026-09-21; L2900
-- **I-133** The api's `/metrics` is a Traefik router on the app, behind an IP allow-list; no collector and no host port — 2026-09-21; L2919
+- **I-133** The api's `/metrics` is a Traefik router on the app, behind an IP allow-list; no collector and no host port — 2026-09-21; partly amended by I-952; L2919
 - **I-136** The api's user listener does not serve `/metrics`; the metrics listener is the only place the registry is served — 2026-09-21; L2973
 - **I-137** hostd writes `host.json` and nothing else at registration; the second `wg0.conf` under its state directory is gone — 2026-09-21; L3004
 - **I-138** A project without a remote syncs its whole tracked tree and commits it in the guest — 2026-09-21; superseded by I-150; L3024
@@ -888,6 +888,10 @@ pointer, not a summary.
 - **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27237
 - **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27300
 - **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27319
-- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27332
-- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27349
-- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27369
+- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27334
+- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27373
+- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27385
+- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27398
+- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27415
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27435
+- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27463

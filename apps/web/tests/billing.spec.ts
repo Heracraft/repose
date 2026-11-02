@@ -188,7 +188,11 @@ test('choosing a plan opens the checkout and, once completed, the plan appears',
 		timeout: 10_000
 	});
 	await expect(page.getByTestId('plan-status')).toContainText('Trial. First charge of $89 on');
-	await expect(page.getByTestId('meter-running-now')).toContainText('0 GB of 16 GB');
+	// The meter reads memory running now, not usage billed this period
+	// (the owner's call, 2026-10-21). A new plan does not zero it: what the
+	// account already runs keeps running. The plan's limit is what the
+	// checkout changed, so that is what this asserts (I-954).
+	await expect(page.getByTestId('meter-running-now')).toContainText('of 16 GB');
 	await expect(page.getByText('No invoices yet.')).toBeVisible();
 });
 

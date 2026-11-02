@@ -90,6 +90,20 @@ written so none of them goes unnoticed again.
       every argument refusal names what it received (DECISIONS I-346).
       Evidence: `go test ./internal/cli -run TestArgErrorsSayWhatTheyGot`
       passes, and the new command was run once with a glob.
+- [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
+      both of its answers. It decides whether a branch touching `nix/` is
+      charged a deploy target, so an "unchanged" it gets wrong ships a host
+      or the edge without a switch, and a "changed" it gets wrong charges a
+      docs commit a deploy. Evidence: `ops/dev/closure-equiv-test` passes
+      (five cases, both directions, no nix needed), and the two answers are
+      confirmed against revisions of this repository — a branch that really
+      changes the target reports it with the derivations between the change
+      and the root, and a docs-only branch against the same target still
+      reports the same system. The failure this prevents: the tool hashed
+      `env` and not `structuredAttrs`, where nixpkgs now puts every
+      generated file's content, so for 2646 of the edge's 4657 derivations
+      it compared nothing at all and answered "unchanged" to opening a port
+      (DECISIONS I-958).
 - [ ] A new or changed guest capability (something installed, a port or
       network rule, a limit, a command agents can run, how secrets, the
       browser or notifications work) updates the agent guide,

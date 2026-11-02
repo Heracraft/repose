@@ -115,7 +115,11 @@ could not reach (DECISIONS I-759):
   system does not change, which takes about three seconds each.
   `REPOSE_QUEUE_FAST=1` skips it and the entry records `exact=no`; a box
   with no nix, which is every repose guest, does the same. A comparison
-  that fails keeps the target.
+  that fails keeps the target. A comparison that answers `none` for a
+  branch that touches `nix/` is the one answer nothing else catches: it
+  drops a deploy silently, and it did, until `structuredAttrs` was read
+  (DECISIONS I-958). `ops/dev/closure-equiv-test` holds that answer in
+  both directions and needs no nix.
 
 `ops/dev/closure-equiv.py <flake attr> <revA> <revB>` also answers the
 question on its own, which is what to run before a switch or a base

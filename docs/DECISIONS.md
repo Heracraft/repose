@@ -27329,6 +27329,72 @@ The owner, looking at a done report in Google Chat: "Simple resume done: open ht
 *Reviewed before hand-off* by a gap hunt over the branch. It found a query of raw non-ASCII bytes that passed the rule and would have failed the events insert for ever, holding the host's event stream; a Chat button cut at 64 bytes through the host; a label that could carry its own " · host"; Unicode hosts; the email drawing the project link above the agent's; two dashboard lists without the link. All fixed above.
 
 *Rejected:* finding addresses in the text (above). *Rejected:* several links per message: one page to open is the case, and a row of buttons named by host reads as a list to choose from.
+
+
+**I-952. The edge lets peers reach Prometheus's remote-write receiver, so
+the api's series can be pushed instead of scraped.** (edge-remote-write,
+2026-11-01) Amends I-133's choice and I-648's port list.
+`repose.edge.monitoring.logPorts` goes from `[ 3100 ]` to
+`[ 3100 9090 ]`.
+- *What could not be scraped.* The HTTP `api` app publishes no port and
+  cannot: a published port stops the old and new container coexisting, so
+  Coolify could not roll it (I-2). Its ~57 series have therefore never
+  been scraped at all. I-133 answered that with a Traefik router on the
+  app behind an IP allow-list, and those labels were never pasted --
+  confirmed against the live Coolify on 2026-11-01, where `api:main`
+  carries only Coolify's own generated routing for
+  `api.repose.herakraft.co` on port 8080 and no `api-metrics` router.
+- *Why not the labels now.* The owner refused them, and the reason holds:
+  the hostname is in the label block and again in an `/etc/hosts` line on
+  the monitoring server, Coolify regenerates its own labels from the app's
+  FQDN but would not touch a hand-pasted one, and R4-12 has the domain
+  graduating off `herakraft.co`. A domain change would leave one stale
+  copy and break metrics silently, with nothing connecting the two.
+- *The direction that was closed.* `scrapePorts` is the monitoring peer
+  reaching out; `logPorts` is peers reaching in, and held only Loki's
+  3100. Alloy on the control VM scraping `api` and `api-grpc` over the
+  Docker network and remote-writing to `10.255.0.3:9090` is the second
+  direction, so without this it fails at the edge and looks like a bug in
+  Alloy. I-133 rejected Alloy partly because the owner's Prometheus
+  exposed no remote-write receiver; the owner is now enabling one
+  deliberately, wanting the push path for their other projects as well,
+  which removes that objection rather than working around it.
+- *What this opens, stated plainly.* A port in `logPorts` is reachable by
+  every peer, hosts included, not only the control VM. That is the bound
+  3100 already had and the reason the list stays short. Prometheus answers
+  the path only with `--web.enable-remote-write-receiver`, which is the
+  owner's to set on the personal server, so until then the open port
+  reaches a closed socket.
+- Evidence: `nix eval` of `nixosConfigurations.edge.config` gives
+  `[ 3100 9090 ]`, and the generated ruleset carries
+  `iifname "wg0" oifname "wg0" ip daddr { 10.255.0.3/32 } tcp dport { 3100, 9090 } accept`.
+  The edge switch that applies it is the owner's or the conductor's; this
+  branch ships the configuration only.
+**I-954. Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge.** (ci-green, 2026-11-01.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `5bbe3246` (tonight) failed. The causes rotated — `TestHelloRefusedClosesTheStream` first, others after — so nothing looked like one standing break, and each conductor saw their own branch's checks pass and merged. A branch is checked before it is merged; the merge result is not, and nobody was reading it.
+
+The two faults on `5bbe3246`:
+
+- **`internal/testguest/testguest_test.go:173`**, `defer c.Close()` with the error dropped, which `errcheck` refuses. The same file writes `defer func() { _ = c.Close() }()` eighty lines up, which is the repo's form; that is now what line 173 says. Nothing but the lint gate was affected.
+- **`apps/web/tests/billing.spec.ts:191`** asserted the memory meter reads `0 GB of 16 GB` on a plan just bought. The meter changed meaning on 2026-10-21 (owner, I-837 and the `MemoryMeter` header): it reads **memory running now**, not usage billed over the period. Buying a plan does not stop what already runs, so an account with one running `large` correctly reads `8 GB of 16 GB`. The assertion was stale, not the page. What the checkout actually changes is the limit, so that is what the test now asserts.
+
+*Evidence.* `golangci-lint run ./...`: 0 issues. `playwright test billing.spec.ts`: 37 passed. Those are the two jobs that were red; the go job's tests, the nix evaluation, the GoReleaser matrix, buf, the completions, both `install.sh` runs and the alert rules were already green on `5bbe3246`.
+
+**What this asks of the next conductor.** Read `gh run list --workflow ci.yml --branch main` after a merge batch, before the release. The release gate checks the branches; it does not check `main` after they are joined, which is the one state that ships. Whether the gate should refuse a cut over a red `main` is open — it would have caught this on 2026-10-18 and held nine releases, which is why it is the owner's call and not done here.
+**I-948. The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open.** (vmfix, 2026-11-01.)
+
+I-930 shipped on a check that looked green and was not reached. Three faults lay on top of each other, each hiding the next.
+
+- **Three dead `copy_from_machine` calls.** They copy a file out of the guest to the driver's `/tmp/shared`. repose's guest image does not mount that share, so each call raised `FileNotFoundError` and ended the run where it stood. Nothing read the host-side copy: `magenta_share` runs `convert` inside the guest, and the screenshot assertion uses `stat` there. All three are removed rather than fixed, because there is nothing for them to do.
+- **Then the subtests they had been hiding ran**, including both of I-930's.
+- **The idle check cannot be started eight times in a row.** The subtests start `repose-desktop-idle-check.service` eight times within seconds and systemd refuses the later ones with `start-limit-hit`. Every start now runs `systemctl reset-failed` first, which is what systemd's own error prescribes.
+
+**The subtest was also wrong about its own case.** "CDP that is actually used" drove the browser with one short `curl`, which the check cannot see: it counts `bytes_sent` over *established* sockets on :9225, and a socket that opens and closes between two checks takes its bytes with it. A browser tool (`chrome-devtools-mcp`, playwright MCP) holds one connection for its whole life, which is the case I-930 was written for and is what the subtest now holds, through `systemd-run`.
+
+**This leaves a real gap, recorded and not closed.** A guest reached only by short-lived CDP requests, with no viewer for 30 minutes, has its browser stopped while it is in use. The 9224 proxy starts it again on the next request, so the cost is a lost page, not a wedged machine; before I-930 the browser never stopped at all, which is the defect being fixed. The fix that fits is for the 9224 proxy to stamp `last-cdp` itself, since it already sees every request. That changes a base that is published, so it is the owner's call and the lane's work, not a quiet follow-on here.
+
+*Also found:* CI builds only `fragment-contract`, `fragment-examples` and `guest-keystroke-path` from `nix/guest/tests`, so `guest-desktop` is built at release time and only when something it covers is touched. That is how it rotted unseen. Whether that set is the right one is open.
 **I-942. The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one.** (grafana-alerts, 2026-11-01.)
 
 I-648 and I-848 wrote the routing as an Alertmanager configuration to merge into "the existing Alertmanager" (`ops/alertmanager/repose-route.yaml`). There is no existing Alertmanager. The personal server runs Grafana, Prometheus, Loki and Postgres in one Docker Compose stack under Coolify, and nothing else; `ops/README.md` install step 3 told the owner to put a Resend key in `/etc/alertmanager/secrets` and reload `localhost:9093`, on a box with no such directory and nothing on that port. So the one thing the whole of workstream 10 is for -- the owner being told -- was the one thing never installed. Grafana has an alerting engine of its own with built-in email and webhook contact points, so this needs no new service, which is the reason it is Grafana and not an Alertmanager added now.
@@ -27394,3 +27460,16 @@ in the tree as "kept, not deployed".
 - Evidence: `ops/check.sh` green with the step gone, no reference to
   `repose-route.yaml` left outside `DECISIONS.md` and `STATUS.md`, and
   53 Grafana rules still generated from the 54 alerts.
+**I-958. The deploy-target check reads `structuredAttrs`, where the content now is.** (closure-attrs, 2026-11-01.)
+
+`ops/dev/closure-equiv.py` answers the question a branch's paths can only ask: `nix/edge/default.nix` changed, but does the edge system change? It hashed each derivation's name, builder, system, args, `env`, output names, sources and the structural hashes of its formal inputs. It never read `structuredAttrs`, and that is where the content is. A derivation built with `__structuredAttrs` — nixpkgs' `writeText`, so every file a NixOS configuration generates — keeps its payload there and leaves `env` holding one key, the output path, which the hash drops as its own. Of the edge's 4657 derivations, **2646 had nothing hashable in `env` at all**.
+
+So the edge's whole nftables ruleset was invisible. `edge-remote-write` opens Prometheus's remote-write port, `tcp dport { 3100 }` becomes `{ 3100, 9090 }` in `structuredAttrs.text`, and the comparison answered "the same system; only the version stamp differs" while the two toplevel `drvPath`s plainly differed. `release-queue add` therefore struck `edge` from the branch's targets and recorded `ships as none` for a change that needs an edge switch. The lane that wrote the branch caught it by hand and said so in a `--note`; nothing in the tooling would have.
+
+- **The fix.** `structuredAttrs` goes into the hashed body, normalised at every depth: `text`, lists of flags and nested maps like `outputChecks` all pass through the same substitution as `env`, so a store path or a version stamp nested under them is not compared raw. Nothing is filtered out by key. A path of the derivation's own is already `@SELF@` by then, and the attribute names vary by derivation, so dropping keys by name would drop content.
+- **Both directions are checked, because the tool exists to prevent the other one.** `edge-remote-write` against main on the edge now reports the whole chain and only it — `nftables-rules`, `unit-nftables.service`, `system-units`, `etc`, `activate`, `nixos-system-repose-edge`: 6 derivations changed, 4651 shared, "the system really changes". A docs-only branch (`release-records`) against main on the edge still reports the same system, and so does `edge-remote-write` against main on **host-01**, which the branch does not touch. A check that charged a deploy for a docs change would be the 37 mischarged commits of I-759 again, in the other direction.
+- **No release shipped short.** Every queue entry was re-read against its own base for a `nix/edge/`, `nix/hosts/` or `nix/guest/` path that `needs` did not carry. Two: `edge-remote-write`, above, still queued and not yet switched; and `pause-default` (I-886, released in r20261031-1), which touched `nix/hosts/default.nix`. The fixed comparison clears `pause-default` — it still reports host-01 unchanged, which is what its own `--live` note says, since it moves only a default that all three hosts set themselves. So the hole was latent and is closed before it cost a deploy. The audit is the thing to re-run, not the conclusion to trust: `needs` is computed once, at `add`, by the tool as it stood then.
+
+The mechanism that hid it is worth more than the bug. A comparison that normalises away a version stamp is a comparison that has been told to ignore something, and the thing it ignores is defined by where the content sits. Nix moved the content and the tool kept hashing the old place; it did not fail, it answered "unchanged", and "unchanged" is the answer that deploys nothing. The guard against the next move of this kind is that both directions are tested from revisions of this repository, which is now what the checklist asks for.
+
+*Noted, not fixed here:* the `docs/workstreams/STATUS.md` line `edge-remote-write` adds credits the change to the `launch` session, and the ids ledger records `I-952 edge-remote-write` against no lane; the `launch` session disowns it and its own ids are elsewhere in this file. Lane attribution in a STATUS line is not evidence of who wrote a branch. That line is the branch's to correct.
