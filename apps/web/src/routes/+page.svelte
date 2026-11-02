@@ -98,6 +98,12 @@
 	{/if}
 {/snippet}
 
+<!-- The page's one numbering: a band's number and name, and a cell's
+     (2.1 to 2.4), in the mono label, the number at a fixed width. -->
+{#snippet label(n: string, name: string)}
+	<p class="label num"><span class="n">{n}</span>{name}</p>
+{/snippet}
+
 {#snippet plus()}
 	<svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
 		<path d="M8 3v10M3 8h10" />
@@ -134,6 +140,7 @@
 
 	<section class="band" aria-labelledby="setup-h">
 		<div class="head">
+			{@render label('01', 'Setup')}
 			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
 			<p class="copy side">
 				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
@@ -149,6 +156,7 @@
 
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
+			{@render label('02', 'Machine')}
 			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
 			<p class="copy side">
 				Each project gets a machine of its own, and you reach it from the tools already on your
@@ -159,6 +167,7 @@
 			<li class="fig">
 				<ComesBack />
 				<div class="cell-copy">
+					{@render label('2.1', 'Snapshots')}
 					<h3 class="item-title">Restore the whole disk</h3>
 					<p class="copy">
 						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
@@ -170,6 +179,7 @@
 			<li class="fig">
 				<Localhost />
 				<div class="cell-copy">
+					{@render label('2.2', 'Ports')}
 					<h3 class="item-title">Use its ports on your localhost</h3>
 					<p class="copy">
 						Ports your servers listen on, from 1024 up, appear on your localhost while you're
@@ -181,6 +191,7 @@
 			<li class="fig">
 				<Browser />
 				<div class="cell-copy">
+					{@render label('2.3', 'Browser')}
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
 						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
@@ -192,6 +203,7 @@
 			<li class="fig">
 				<Editor />
 				<div class="cell-copy">
+					{@render label('2.4', 'Editor')}
 					<h3 class="item-title">Open it in your editor</h3>
 					<p class="copy">
 						Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
@@ -205,6 +217,7 @@
 
 	<section class="band" aria-labelledby="agents-h">
 		<div class="head">
+			{@render label('03', 'Agents')}
 			<h2 class="hk-h2" id="agents-h">
 				The agents you use, and the tools they need, on first boot
 			</h2>
@@ -223,6 +236,7 @@
 
 	<section class="band" aria-labelledby="install-h">
 		<div class="head">
+			{@render label('04', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
@@ -237,8 +251,7 @@
 			{#each steps as step, i (step.title)}
 				<li>
 					<h3 class="item-title step-title">
-						<span class="label" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span
-						>{step.title}
+						<span class="label" aria-hidden="true">4.{i + 1}</span>{step.title}
 					</h3>
 					<CodeCopy command={step.command} what={step.what} labelFrom={1200} />
 				</li>
@@ -248,6 +261,7 @@
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
+			{@render label('05', 'Pricing')}
 			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 			<div class="cta-row side">
 				<!-- Signing up here comes back to Billing, where the plans are. -->
@@ -269,6 +283,7 @@
 
 	<section class="band faq-band" aria-labelledby="faq-h">
 		<div class="head">
+			{@render label('06', 'Questions')}
 			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
 			<p class="links side">
 				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>

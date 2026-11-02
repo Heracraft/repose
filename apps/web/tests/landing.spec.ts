@@ -197,7 +197,8 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 	}
 });
 
-// I-961 (option D): the bands carry no numbered labels and the pictures
+// I-961 (option D, the owner's pick): the page has one numbering, the
+// mono labels over each band's h2 and each cell's title, and the pictures
 // no figure bars. Each of the five pause buttons shows at rest and is the
 // element under its own centre (a clip on the hero's field once cut the
 // hero's away while its box and opacity said it was there). A band
@@ -209,7 +210,7 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 	for (const width of [1440, 1024, 390]) {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto('/');
-		await expect(page.locator('main .sec-label, main .fig-bar')).toHaveCount(0);
+		await expect(page.locator('main .fig-bar')).toHaveCount(0);
 		const buttons = page.locator('main .fig .pic-pause');
 		await expect(buttons).toHaveCount(5);
 		for (let i = 0; i < 5; i++) {
@@ -242,6 +243,54 @@ test('every pause button shows, takes the pointer, and stands where it belongs',
 			if (m.inField !== null) expect(m.inField, `button ${i} at ${width}`).toBe(true);
 		}
 	}
+});
+
+// I-961, the owner's pick (alternative C's labels in D): one numbering
+// on the page. Each band after the hero opens on its number and name over
+// its h2, each cell on 2.1 to 2.4 over its title, and the steps count
+// 4.1 to 4.3 under 04; the label sits on the text line, and its name
+// starts at the number's fixed width, where a step's name does too.
+test('one numbering: the bands, the cells and the steps', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	const heads = page.locator('main .band > .head');
+	await expect(heads.locator(':scope > .num')).toHaveText([
+		'01Setup',
+		'02Machine',
+		'03Agents',
+		'04Install',
+		'05Pricing',
+		'06Questions'
+	]);
+	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
+		'2.1Snapshots',
+		'2.2Ports',
+		'2.3Browser',
+		'2.4Editor'
+	]);
+	await expect(page.locator('.steps .step-title .label')).toHaveText(['4.1', '4.2', '4.3']);
+	const m = await page.evaluate(() => {
+		const box = (e: Element) => e.getBoundingClientRect();
+		const head = document.querySelector('#install-h')!.closest('.head')!;
+		const num = head.querySelector('.num')!;
+		const n = num.querySelector('.n')!;
+		const name = document.createRange();
+		name.selectNodeContents(num.lastChild!);
+		const step = document.querySelector('.steps .step-title')!;
+		const stepName = document.createRange();
+		stepName.selectNodeContents(step.lastChild!);
+		return {
+			num: box(num).left,
+			h2: box(head.querySelector('h2')!).left,
+			n: getComputedStyle(n).color,
+			label: getComputedStyle(num).color,
+			name: name.getBoundingClientRect().left,
+			stepName: stepName.getBoundingClientRect().left
+		};
+	});
+	expect(Math.abs(m.num - m.h2)).toBeLessThanOrEqual(1);
+	expect(m.n).not.toBe(m.label);
+	expect(Math.abs(m.name - m.stepName)).toBeLessThanOrEqual(1);
 });
 
 // The setup picture's rows in flight are measured against the panels; a

@@ -27854,3 +27854,53 @@ judges' grafts and its named defects were then worked in.
       start on the text line below 1024px (the media rule had lost to
       later base rules); the agents' links keep their space before the
       arrow on a phone; Localhost's tmux bar holds one line at 360px.
+  - *Owner's pick.* (landing-refine-d, 2026-11-02) The owner chose D
+    over A, B and C, and asked for two things from C and one fix. D's
+    system (sheet, rails, crosses, flush cells, the dark hero plate,
+    heads on the h2's last baseline) stands as above. What changed:
+    - C's editor: the Editor stands in a closed window under the "your
+      cloud machine" head, inset on its stage, and its Tokyo Night
+      capture maps onto `--t-*` through C's two maps, one for grounds
+      (code and tabs on `--t-bg`; explorer, tabline and statusline on
+      `--t-bar`; the current line on `--t-sel`) and one for text, since
+      one hex is a ground in one run and a text colour in another. Its
+      accents come back from C on the palette's muted hues: the
+      explorer's frame, the tree, the current line number, the filled
+      mode and clock. The Browser takes the same head over its captured
+      toolbar, so the four grid pictures share one treatment, a closed
+      window under a head, and none is a raw capture flush to its cell.
+      The cells' stage grows from 20rem to 22rem so the head costs no
+      rows: the Editor's 20 rows keep 13.7px at 12px type, and the
+      Browser's page keeps its height, its bug beat panned to 20 capture
+      pixels over the page's top so the crop falls between the text
+      box's lines.
+    - C's editorial labels, as the page's one numbering, which reverses
+      the review's "no numbered labels": each band's head opens on its
+      label (`01 Setup`, `02 Machine`, `03 Agents`, `04 Install`,
+      `05 Pricing`, `06 Questions`) on the text line, 16px over the h2;
+      each cell's copy on its own (`2.1 Snapshots` to `2.4 Editor`), 8px
+      over the title; and the steps count `4.1` to `4.3` under 04. A
+      label is Geist Mono 12px, upper case, tracked 0.06em, in
+      `--hk-text-3`, its number in `--hk-text-2` at a fixed 2.75em, so
+      the names start on one line and a step's name starts there too.
+      No figure bar or "Fig." number returns; the pause buttons keep
+      their places (a band picture's field corner, a cell title's line).
+    - The head links: a pair of docs links (agents, install, questions)
+      ends on the right text line, the frame's right content edge, on
+      the h2's last baseline, 16px apart (24px before), and those heads
+      stand as far over what they head as the paragraph heads do: 43px
+      from the h2's last line box to the content at 1440, 1280 and 1024,
+      for every head but pricing, whose button is taller. Paragraphs
+      still start on the column line.
+    - Pricing (owner, 2026-11-02, with a screenshot: the button floated
+      mid-head from the centre column, x=729 at 1440): "Start a free
+      week" ends on the right text line too, its label on the h2's last
+      baseline, the seats line before it on the same baseline and
+      wrapping on the left (20rem at most) when the waitlist line is
+      long, so every head's side action ends on one right edge. Below
+      1024px it stays under the h2, full width on a phone.
+    - Hero (owner): the buttons never stand beside the lead. From 1024
+      to 1199px they had stood in the right half beside it; now from
+      1024px "Get started", "Copy install command" and the install line
+      share one row under the headline and the lead at every width,
+      checked at 1024, 1100, 1280, 1440 and 1920.

@@ -1044,31 +1044,45 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   scale (8, 16, 24, 32, 48, 64, 96): a band opens with 96px from 1024px,
   64 from 768, 48 on a phone, and a head stands 48, 40 or 32 above its
   content (I-961).
-- **Heads**: the h2, and from 1024px the band's one side item in the
-  right half on the h2's last baseline: a paragraph, docs links or the
-  pricing button. Every band has one. No numbered labels or figure
-  numbers: nothing on the page cites them.
+- **Heads**: the band's numbered label ("01 Setup" to "06 Questions"),
+  the h2 16px under it, and from 1024px the band's one side item in the
+  right half on the h2's last baseline: a paragraph from the column
+  line, or an action ending on the right text line, either a pair of
+  docs links 16px apart (`1rem`, the scale's 16) or the pricing button
+  with the seats line before it. Every band has one, and every head
+  stands the same distance over its content (pricing's button box,
+  taller than a line, the head gap over the plans).
+- **Numbering**: one system, from alternative C (I-961, the owner's
+  pick): the bands' labels, the cells' (2.1 to 2.4, over each cell's
+  title) and the steps' (4.1 to 4.3). No figure bars or "Fig." numbers.
 - **Type**: `hk-h1` at `clamp(30px, 0.6rem + 5.7vw, 60px)`, `hk-h2` up to
   40px, both Noto Serif. One item title for cells, steps, plans and
   questions: Noto Serif 20px / 28px. Body 15px / 1.6 in `--hk-text-2`, the
   hero's lead 17px on 34rem. One label: Geist Mono 12px, upper case,
-  tracked 0.08em, `--hk-text-3`, tabular numerals, for the eyebrow and
-  the step numbers. Commands Geist Mono 13px (12px under 640px); a
+  tracked 0.06em, `--hk-text-3`, tabular numerals, for the eyebrow, the
+  numbered labels and the step numbers; a number stands in
+  `--hk-text-2` at a fixed 2.75em. Commands Geist Mono 13px (12px under 640px); a
   command named in a sentence is mono in the sentence's grey, with no
   chip. The page's own text uses no blue.
 - **Hero**: the eyebrow, `h1.hk-h1` on seven columns beside the lead on
   five from 1200px (one baseline), then "Get started" (`hk-btn-lg`), a
   large page-tone "Copy install command" and the install command in one
-  row, exactly what the button copies. Under them the hero picture on its
+  row, exactly what the button copies. From 1024px that row stands under
+  the headline and the lead, never beside the lead (owner, 2026-11-02). Under them the hero picture on its
   field.
 - **Figures and stages**: a looping picture's pause button shows at
   rest: in a band picture's field corner, or at the end of a cell
   title's line. One stage material for every picture
   (`landing/pictures.css`):
   `--stage` with a top-left sheen and an inner top highlight, flush from
-  rule to rule with no edge or radius. Windows and chips take 6px
+  rule to rule with no edge or radius. The four grid pictures are each
+  a closed window under a "your cloud machine" head, inset on a 22rem
+  stage (the Browser's and the Editor's over their own chrome, as in
+  alternative C). Windows and chips take 6px
   corners, the kit's buttons their own; nothing else is rounded. The
-  terminals share one palette (`--t-*`) that follows the scheme. The
+  terminals share one palette (`--t-*`) that follows the scheme; the
+  Editor's Tokyo Night capture maps onto it through separate ground and
+  text maps. The
   hero's field alone bleeds to the window's edges: one dark plate in both
   schemes (`--stage-hero`, a step over the page in dark) with a 16px dot
   grid (`--stage-dot`), the hero picture drawn in its dark palette on it.

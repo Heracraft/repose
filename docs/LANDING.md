@@ -35,15 +35,17 @@ headline starting under the logo, laid out as one ruled sheet on a
 12-column grid (I-961, option D; see "The sheet" below). In order:
 
 1. **Hero.** Eyebrow "For solo founders and their agents" in the page's
-   one label (12px Geist Mono, upper case, tracked 0.08em; the step
-   numbers take it too, and nothing else on the page is numbered); the
+   one label (12px Geist Mono, upper case, tracked 0.06em; the bands'
+   and cells' numbered labels and the step numbers take it too, see
+   "The sheet"), unnumbered; the
    serif headline "Your dev environment, replicated in the cloud"; main's
    lead ("Your code, tools and logins sit on a machine of its own, ...").
    From 1200px the headline (seven columns) and the lead (five) stand
    side by side on one baseline, and "Get started", "Copy install
    command" and the install line share one row under both; from 1024 to
-   1199px the headline runs across, and the buttons stand in the right
-   half with the install line on the lead's last line. The install line
+   1199px the headline runs across, the lead under it on the left, and
+   the same row under the lead. The buttons never stand beside the lead
+   at any width (owner, 2026-11-02). The install line
    is mono, exactly what the button copies, on one line, scrolling under
    a fade where its column is narrower. Under the copy, the hero picture
    (`landing/Hero.svelte`) on the field: the one stage that bleeds to the
@@ -55,15 +57,16 @@ headline starting under the logo, laid out as one ruled sheet on a
    cloud machine and a snapshot restores it (I-843, I-961). The still
    frame (reduced motion, no script) has no globe, since it has no skill
    to come from it; in the loop the globe is drawn in line.
-2. **Setup. "Your laptop's setup, in one command"** (the owner's I-772
+2. **01 Setup. "Your laptop's setup, in one command"** (the owner's I-772
    heading and paragraph, the paragraph on the heading's last line), then
    the OneCommand picture on its field: `repose run` copying the laptop's
    source control, changes and ignored files to the machine.
-3. **Machine. "Work on the machine as you would on your laptop"**
+3. **02 Machine. "Work on the machine as you would on your laptop"**
    (`#features`, I-961), with "Each project gets a machine of its own,
    and you reach it from the tools already on your laptop." on the
    heading's last line. Four cells, each its picture (ComesBack,
-   Localhost, Browser, Editor) over a serif claim, one paragraph with a
+   Localhost, Browser, Editor) over its numbered label (2.1 Snapshots,
+   2.2 Ports, 2.3 Browser, 2.4 Editor), a serif claim, one paragraph with a
    fact the picture cannot carry, and
    the command the picture shows, under the paragraph, set as the hero's
    install line is (13px mono, the second grey) with no `$` and no copy
@@ -79,19 +82,21 @@ headline starting under the logo, laid out as one ruled sheet on a
    `--as` restores it to a new machine, which the hero does not show; the
    Browser cell says what `repose browser` is for (watching, a login or a
    captcha), and the bridge stays in the docs.
-4. **Agents. "The agents you use, and the tools they need, on first
+4. **03 Agents. "The agents you use, and the tools they need, on first
    boot"**, with "All agents" and "Everything installed" (grey, with the
-   kit's arrow) on the heading's last line in the right half (under it
-   below 1024px), then the Ready picture, from rail to rail: the five
+   kit's arrow, 16px apart) on the heading's last line, ending on the
+   right text line (under the heading below 1024px), then the Ready
+   picture, from rail to rail: the five
    agents' marks alone (I-287) on the stage's tone, each naming itself
    under the pointer; an inner rule; then the tools on the first third,
    on the stage's tone too, the everyday tools' line under them, and the
    machine's shell flush on the other two thirds, on the terminals'
    ground.
-5. **Install. "Start in three commands"**, with "Install and sign in"
-   and "Run and attach" (the docs pages, as the Agents links) on the
+5. **04 Install. "Start in three commands"**, with "Install and sign in"
+   and "Run and attach" (the docs pages, set as the Agents links) on the
    heading's last line, then ruled rows (I-961): the
-   step's number (the page's label) and serif name in the left half, its
+   step's number (4.1 to 4.3, in the label's number grey and fixed
+   width) and serif name in the left half, its
    command filling the right half flush on the stage's tone from the
    centre hairline to the rail, Copy at the cell's right end. On a phone
    the number and name share a baseline over the command's cell, which
@@ -100,8 +105,9 @@ headline starting under the logo, laid out as one ruled sheet on a
    shows exactly what its Copy copies, with no `$`, on one line at every
    width (under 640px the install line scrolls under the copy box's
    fade), and it runs on a visitor's laptop.
-6. **Pricing. "Launch prices"** (`#pricing`). On the heading's last
-   line, "Start a free week" and the seats line beside it from
+6. **05 Pricing. "Launch prices"** (`#pricing`). On the heading's last
+   line, "Start a free week" ending on the right text line as the link
+   pairs do, and the seats line before it on the same baseline, from
    `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
    as it is until the owner decides the 2026-10-17 notes). The heading
    says the launch prices and the button the free week, so no line
@@ -109,8 +115,8 @@ headline starting under the logo, laid out as one ruled sheet on a
    variant (the one drawing of the plans, I-663), as flush cells split by
    inner rules with no card edge: three across on the thirds lines from
    1024px, stacked below.
-7. **Questions. "Before you try it"**, with "Limits" and "Billing" on
-   the heading's last line. Five a solo founder asks before trying it,
+7. **06 Questions. "Before you try it"**, with "Limits" and "Billing" on
+   the heading's last line, set as the Agents links. Five a solo founder asks before trying it,
    each one a reason to: why not skip permissions on the laptop (what the
    agent can reach there and here), closing the laptop while the agent
    works (it keeps working; you attach again; no notifications, per "What
@@ -147,13 +153,25 @@ first band's top, so the rails start under it with no cross. The hero
 field breaks the sheet: the rails stop at its top edge, which carries
 its own pair of crosses.
 
-Every band after the hero opens with the same head: the h2, and from
-1024px the band's one side item in the right half on the h2's last
-baseline (under the h2 below 1024px). Every band has one: a paragraph
-(setup, machine), links to the docs (agents, install, questions) or the
-button (pricing). The head's foot is an inner rule across the sheet. No
-band carries a numbered label: no sentence cites one, and the h2 and
-the header's links already name each band.
+Every band after the hero opens with the same head: its numbered label
+on the text line ("01 Setup" to "06 Questions"), the h2 16px under it,
+and from 1024px the band's one side item in the right half on the h2's
+last baseline (under the h2 below 1024px). Every band has one: a
+paragraph (setup, machine), starting on the column line, or an action
+ending on the right text line: a pair of links to the docs (agents,
+install, questions), 16px apart, or the pricing button with the seats
+line before it. Every side action ends on that one right edge. The h2's
+last line stands 43px over what it heads (44 at 1024) whether its side
+item is a paragraph or links; pricing's is 8px more, the button's box
+reaching under the baseline, so the button itself stands the head gap
+over the plans. Its foot is an inner rule across the sheet.
+
+The page has one numbering (I-961, the owner's pick, from alternative
+C): the bands' labels, the cells' labels (2.1 to 2.4, 8px over the
+cell's title) and the steps (4.1 to 4.3). A label is the page's label
+type with its number in the second grey at a fixed 2.75em, so the names
+after the numbers start on one line, and a step's name starts there
+too. Nothing else carries a number: no figure bar, no "Fig.".
 
 Two rule weights: band rules and rails in `--hk-border`, every rule
 inside a band in `--hk-hairline`. The page has no gap between bands. Each
@@ -184,12 +202,12 @@ a step off it (with a sheen at its top-left and a highlight on its top
 edge), a window's head a step up and its body on top.
 
 Every picture stands on one stage (I-961, option D), with no figure bar
-or number over it. The stage is the cell itself, flush from rule to
+over it. The stage is the cell itself, flush from rule to
 rule, with no edge or radius of its own; its windows stand in it closed,
 on the text lines at the sides. A band picture (the hero, the setup)
 stands in a field `--field-y` deep above and below its windows (half a
 band, never under 48px), and ends on the next band's rule. A grid cell's
-stage is 20rem tall, ruled at its foot, its windows 24px (20 from 640 to
+stage is 22rem tall, ruled at its foot, its windows 24px (20 from 640 to
 1023, 12 on a phone) from its top and foot, so no window is cut at the
 stage's edge: the Editor's statusline keeps its right segment whole and
 the Browser's agent log shows whole. The four grid pictures share one
@@ -208,18 +226,25 @@ width, the headline under it outsized the cell's title, and the ground
 above the headline read as a page still loading; the machine's window
 shows Vite's ready line over the Local one. ComesBack's snapshots stand
 in a window as tall as their two tiles, on the machine's top line; on a
-phone both tiles stand whole at every beat. The
-Browser and the Editor have no window head of their own, since their
-captured toolbar and nvim's tab bar are their chrome; "your cloud machine"
-heads the hero's, the setup picture's, ComesBack's, Localhost's and
-Ready's windows, where it tells the machine from the laptop or a snapshot.
+phone both tiles stand whole at every beat. The four grid pictures
+share one treatment (I-961, the owner's pick, from alternative C): each
+is a closed window under a head, inset on its stage, never a raw capture
+flush to the cell. "Your cloud machine" heads the Browser's and the
+Editor's windows over their own chrome (the captured toolbar, nvim's tab
+bar), as it heads the hero's, the setup picture's, ComesBack's,
+Localhost's and Ready's, where it tells the machine from the laptop or a
+snapshot.
 Only the hero's machine carries the running dot, since its stop greys it.
 
 The terminals (Ready, Localhost's tmux, the Browser's agent log, the
 Editor's nvim) draw from one palette, `--t-*` in `pictures.css`, light on
 the light page and dark on the dark one. Their captured colours are mapped
 by role (one-dark and xterm-256 by their ANSI tables, Tokyo Night through
-a role map), never their text. The Browser's captures exist in the light
+two maps, one for grounds and one for text, since one hex is a ground in
+one run and a text colour in another), never their text. The Editor's
+code and tabs sit on `--t-bg`, its explorer, tabline and statusline on
+`--t-bar`, and its accents (the explorer's frame, the tree, the current
+line number, the filled mode and clock) on the palette's muted hues. The Browser's captures exist in the light
 scheme only; in the dark scheme they are drawn inverted with their hues
 turned back (`invert(0.9) hue-rotate(180deg)`), so the app reads as a
 dark page beside the dark windows (I-961).

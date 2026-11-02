@@ -29,7 +29,8 @@ test('a signed-in visitor stays on the landing page, which links to the dashboar
 	await page.goto('/');
 	const nav = page.getByRole('navigation', { name: 'Site' });
 	await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Sign in' })).toHaveCount(0);
+	// exact: the install step's docs link reads "Install and sign in".
+	await expect(page.getByRole('link', { name: 'Sign in', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'Get started' })).toHaveCount(0);
 	// Give a stray redirect time to fire before asserting it did not.
 	await page.waitForTimeout(500);

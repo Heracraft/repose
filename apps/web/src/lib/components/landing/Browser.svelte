@@ -21,8 +21,9 @@
   snapshots, a click that timed out on the hidden radio) are cropped out.
   OSC 8 hyperlink wrappers are dropped; they carry no visible text.
 
-  Both stand in one closed window with no head of its own (I-961): the
-  browser's captured toolbar is its chrome. The browser on top, the log
+  Both stand in one closed window under the head every grid picture has,
+  "your cloud machine" (I-961, the owner's pick), with the browser's
+  captured toolbar under it. The browser on top, the log
   under its viewport, so the page's
   tabs are never under the log and the log's rows crop on the right as a
   terminal's do (F18). The pans stop where the crop's edges fall between
@@ -53,6 +54,7 @@
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
 	import PauseButton from './PauseButton.svelte';
+	import WinHead from './WinHead.svelte';
 
 	const ROWS = [
 		'\u001b[38;5;239m\u001b[48;5;237m❯ \u001b[38;5;231mTest the feedback form at http://localhost:5173/feedback with the playwright browser tools, in the browser window that is already open. Choose Bug, type a one-line bug report into the text box, and\u001b[39m',
@@ -134,10 +136,11 @@
 	// Where the page sits, in capture pixels from its top: each stop puts
 	// the viewport's top edge in the page's white space (nav: under the
 	// app's name, above its links; typed and you: under "Say it your way",
-	// above Write and Record; bug: 12 capture pixels above the page's top,
-	// so the ring round Bug clears the toolbar's line by 8 instead of
-	// sitting on it, over the page's own ground).
-	const PAN = { nav: 0, typed: 120, bug: -12, you: 120 };
+	// above Write and Record; bug: 20 capture pixels above the page's top,
+	// so the ring round Bug clears the toolbar's line instead of sitting on
+	// it, over the page's own ground, and the foot falls under the text
+	// box's first line).
+	const PAN = { nav: 0, typed: 120, bug: -20, you: 120 };
 	// The seam (ms): the beat where the frame equals the still frame, and
 	// where a first cycle starts when the still frame is on screen.
 	const SEAM = 17200;
@@ -381,6 +384,7 @@
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="shot-win bw" aria-hidden="true">
+			<WinHead who="machine" />
 			<div class="br">
 				<div class="tb">
 					<i class="layer tb-blank"></i>

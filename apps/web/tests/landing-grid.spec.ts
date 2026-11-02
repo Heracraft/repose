@@ -128,12 +128,103 @@ test('the agents section links to the agents and everything installed', async ({
 		'/docs/machine#whats-installed'
 	);
 	// In the head's right half, on the headline's last line (I-961,
-	// option D: a head's side item stands on the h2's last baseline).
+	// option D: a head's side item stands on the h2's last baseline), the
+	// pair ending on the right text line, 16px apart (the owner's pick).
 	const h = (await heading.boundingBox())!;
 	const l = (await all.boundingBox())!;
 	expect(l.x).toBeGreaterThan(h.x + h.width);
 	expect(Math.abs(l.y + l.height - (h.y + h.height))).toBeLessThan(16);
 });
+
+// I-961, the owner's pick: every head whose side item is a pair of links
+// ends the pair on the right text line (the frame's right content edge,
+// where the cells' and the steps' text ends), 16px apart, with the link
+// text on the h2's last baseline, and every head stands as far over what
+// it heads as a head with a paragraph does. (The agents test above holds
+// the links on the h2's last line.)
+for (const width of [1440, 1280, 1024]) {
+	test(`the head links end on the right text line at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const m = await page.evaluate(() => {
+			const line = (e: Element) => {
+				const r = document.createRange();
+				r.selectNodeContents(e);
+				const rects = [...r.getClientRects()];
+				return rects[rects.length - 1];
+			};
+			// An element's last baseline: where an empty inline block at its
+			// end stands.
+			const baseline = (e: Element) => {
+				const s = document.createElement('span');
+				s.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+				e.append(s);
+				const y = s.getBoundingClientRect().top;
+				s.remove();
+				return y;
+			};
+			const cell = document.querySelector('#features .cells > li:nth-child(2) .cell-copy')!;
+			const cr = cell.getBoundingClientRect();
+			const right = cr.right - parseFloat(getComputedStyle(cell).paddingRight);
+			const button = document.querySelector('#pricing .head .hk-btn')!;
+			return {
+				right,
+				button: {
+					right: button.getBoundingClientRect().right,
+					base: baseline(button.querySelector('.swap > span')!),
+					h2: baseline(document.querySelector('#pricing-h')!)
+				},
+				heads: [...document.querySelectorAll('main .band > .head')].map((head) => {
+					const h2 = head.querySelector('h2')!;
+					const links = [...head.querySelectorAll('.links a')];
+					const last = line(h2);
+					const next = head.nextElementSibling!.getBoundingClientRect().top;
+					return {
+						id: h2.id,
+						toNext: next - last.bottom,
+						base: baseline(h2),
+						links: links.map((a) => ({ ...a.getBoundingClientRect().toJSON(), base: baseline(a) }))
+					};
+				})
+			};
+		});
+		const paired = m.heads.filter((h) => h.links.length === 2);
+		expect(paired.map((h) => h.id)).toEqual(['agents-h', 'install-h', 'faq-h']);
+		for (const h of paired) {
+			const [a, b] = h.links;
+			expect(Math.abs(b.right - m.right), h.id).toBeLessThanOrEqual(1);
+			expect(Math.round(b.left - a.right), h.id).toBe(16);
+			expect(Math.abs(a.base - h.base), h.id).toBeLessThanOrEqual(1);
+			expect(Math.abs(b.base - h.base), h.id).toBeLessThanOrEqual(1);
+		}
+		// Pricing's button ends on the same right edge, its label on the
+		// h2's last baseline (owner, 2026-11-02: it had started on the
+		// centre column).
+		expect(Math.abs(m.button.right - m.right)).toBeLessThanOrEqual(1);
+		expect(Math.abs(m.button.base - m.button.h2)).toBeLessThanOrEqual(1);
+		// One head-to-content distance for the link heads and the paragraph
+		// heads alike (the pricing button is taller, and stands apart).
+		const gaps = m.heads.filter((h) => h.id !== 'pricing-h').map((h) => Math.round(h.toNext));
+		expect(new Set(gaps).size, gaps.join(',')).toBe(1);
+	});
+}
+
+// The owner, 2026-11-02: the hero's buttons never stand beside the lead
+// (a version had Get started and Copy install command to its right).
+// They share one row under the headline and the lead at every width.
+for (const width of [1024, 1100, 1280, 1440, 1920]) {
+	test(`the hero's buttons stand under the lead at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const lead = (await page.locator('.hero .hk-lead').boundingBox())!;
+		const h1 = (await page.locator('#hero-h').boundingBox())!;
+		const start = (await page.getByRole('link', { name: 'Get started' }).boundingBox())!;
+		const copy = (await page.getByRole('button', { name: 'Copy install command' }).boundingBox())!;
+		expect(start.y).toBeGreaterThan(Math.max(lead.y + lead.height, h1.y + h1.height));
+		expect(Math.abs(copy.y - start.y)).toBeLessThanOrEqual(1);
+		expect(Math.abs(start.x - h1.x)).toBeLessThanOrEqual(1);
+	});
+}
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {
 	// The first answer is secrets.md's "Not your laptop", in its words.
@@ -216,10 +307,10 @@ test('the cells are flush, ruled and gapless, on the column line', async ({ page
 		expect(sh.dl).toBeLessThanOrEqual(1);
 	}
 	// The hairline stands 16px left of the column line, where the right
-	// cells' text and the head's links start.
+	// cells' text and the heads' paragraphs start.
 	const title = await page.locator(`${cells}:nth-child(2) h3`).boundingBox();
-	const links = await page.getByRole('link', { name: 'All agents' }).boundingBox();
-	expect(Math.abs(title!.x - links!.x)).toBeLessThanOrEqual(1);
+	const side = await page.locator('#setup-h + .side').boundingBox();
+	expect(Math.abs(title!.x - side!.x)).toBeLessThanOrEqual(1);
 	expect(Math.round(title!.x - css[1].x)).toBe(16);
 });
 

@@ -207,16 +207,23 @@
 	color: var(--hk-text);
 }
 /* The page's one label: 12px Geist Mono, upper case and tracked, in the
-   third grey. The eyebrow and the step numbers take it. */
+   third grey. The eyebrow, the bands' and cells' numbered labels and the
+   step numbers take it; a number stands in the second grey at a fixed
+   width, so the names after it start on one line. */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
 	font-size: 0.75rem;
 	line-height: 1rem;
-	letter-spacing: 0.08em;
+	letter-spacing: 0.06em;
 	font-variant-numeric: tabular-nums;
 	text-transform: uppercase;
 	color: var(--hk-text-3);
+}
+.landing .label .n {
+	display: inline-block;
+	min-width: 2.75em;
+	color: var(--hk-text-2);
 }
 .landing .copy {
 	margin: 0;
@@ -242,15 +249,21 @@
 
 /* ---------- Heads ----------
 
-   Every band after the hero opens the same way: the h2, and from 1024px
-   the band's one side item in the right half (from the centre column
-   line), standing on the h2's last baseline. Its foot is the inner rule
-   that opens what it heads, across the sheet. */
+   Every band after the hero opens the same way: its numbered label, the
+   h2 under it, and from 1024px the band's one side item in the right
+   half, standing on the h2's last baseline. A paragraph starts on the
+   column line; an action ends on the right text line: a pair of links
+   16px apart, or pricing's button (see Pricing).
+   Its foot is the inner rule that opens what it heads, across the
+   sheet. */
 .landing .head {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
 	row-gap: 0.75rem;
 	padding-bottom: var(--head-gap);
+}
+.landing .head > .num {
+	margin-bottom: 0.25rem;
 }
 .landing .head .side {
 	margin-top: 0.25rem;
@@ -262,12 +275,18 @@
 		align-items: end;
 		align-items: last baseline;
 	}
+	.landing .head > .num {
+		grid-column: 1 / -1;
+	}
 	.landing .head > h2 {
 		grid-column: 1 / 7;
 	}
 	.landing .head > .side {
 		grid-column: 7 / -1;
 		margin-top: 0;
+	}
+	.landing .head > .links {
+		justify-content: flex-end;
 	}
 }
 
@@ -306,9 +325,10 @@
 	flex-wrap: wrap;
 	gap: 0.75rem;
 }
-/* 1024 to 1199px: the headline across, then the lead on the left half
-   and the buttons on the right, the install line level with the lead's
-   last line. */
+/* From 1024px the buttons and the install line share one row under the
+   headline and the lead, at every width: never beside the lead (owner,
+   2026-11-02). 1024 to 1199px: the headline across, the lead on the
+   left half under it. */
 @media (min-width: 1024px) {
 	.landing .hero-copy {
 		grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -319,16 +339,21 @@
 		grid-column: 1 / -1;
 	}
 	.landing .hero .hk-lead {
-		grid-column: 1 / 7;
+		grid-column: 1 / 8;
 	}
 	.landing .hero-act {
-		grid-column: 7 / -1;
-		grid-row: 3;
+		display: flex;
+		align-items: center;
+		grid-column: 1 / -1;
+		margin-top: 2.5rem;
+	}
+	.landing .hero-act > .ctas {
+		flex: none;
 	}
 }
 /* From 1200px the headline (seven columns) and the lead (five) stand side
-   by side on one baseline, and the buttons and the install line share
-   one row under both: the first screen has no empty quarter. */
+   by side on one baseline, the row of buttons under both: the first
+   screen has no empty quarter. */
 @media (min-width: 1200px) {
 	.landing .hero h1 {
 		grid-column: 1 / 8;
@@ -339,14 +364,7 @@
 		margin: 0;
 	}
 	.landing .hero-act {
-		display: flex;
-		align-items: center;
-		grid-column: 1 / -1;
 		grid-row: 3;
-		margin-top: 2.5rem;
-	}
-	.landing .hero-act > .ctas {
-		flex: none;
 	}
 }
 /* On a phone the hero's two buttons take the column's width, one above
@@ -375,7 +393,7 @@
 		font-size: 0.75rem;
 	}
 }
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
 	.landing .hero-act > .install {
 		flex: 0 1 auto;
 		min-width: 0;
@@ -447,7 +465,7 @@
 	border-top: 1px solid var(--rule-in);
 }
 .landing .cells > li {
-	--pause-y: calc(var(--shot-h) + 1px + var(--cell-pt) + (1.75rem - 28px) / 2);
+	--pause-y: calc(var(--shot-h) + 1px + var(--cell-pt) + 1rem + 0.5rem + (1.75rem - 28px) / 2);
 	--shot-l: var(--edge);
 	--shot-r: var(--edge);
 	position: relative;
@@ -467,6 +485,10 @@
 	display: flex;
 	flex-direction: column;
 	padding: var(--cell-pt) var(--edge) 2rem;
+}
+/* The cell's numbered label, 8px over its title. */
+.landing .cell-copy > .num {
+	margin-bottom: 0.5rem;
 }
 /* The title keeps clear of the pause button at its line's end. */
 .landing .cell-copy > .item-title {
@@ -531,7 +553,7 @@
 .landing .links {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0 1.5rem;
+	gap: 0 1rem;
 	margin: 0;
 }
 .landing .links .hk-more {
@@ -578,14 +600,18 @@
 	grid-template-columns: minmax(0, 1fr);
 	border-top: 1px solid var(--rule-in);
 }
+/* A step's number is a numbered label's number (4.1 under 04): the
+   second grey at the label's fixed width, so the step names start where
+   the band label's name does. */
 .landing .step-title {
 	display: flex;
 	align-items: baseline;
-	gap: 0.75rem;
 	padding: 1rem var(--edge);
 }
 .landing .step-title .label {
 	flex: none;
+	min-width: 2.75em;
+	color: var(--hk-text-2);
 }
 .landing .steps .code-copy {
 	width: 100%;
@@ -603,11 +629,7 @@
 	}
 	.landing .step-title {
 		align-items: center;
-		gap: 1rem;
 		padding: 1.5rem var(--in) 1.5rem var(--edge);
-	}
-	.landing .step-title .label {
-		width: 1.5rem;
 	}
 	.landing .steps .code-copy {
 		min-height: 100%;
@@ -650,6 +672,25 @@
 @media (max-width: 479.98px) {
 	.landing .cta-row > .hk-btn {
 		flex: 1 1 100%;
+	}
+}
+/* From 1024px the button ends on the right text line, as the heads' link
+   pairs do, its label on the h2's last baseline, and the seats line
+   stands before it, its last line on the same baseline (owner,
+   2026-11-02). */
+@media (min-width: 1024px) {
+	.landing .head > .cta-row {
+		flex-wrap: nowrap;
+		justify-content: flex-end;
+		align-items: last baseline;
+	}
+	.landing .head > .cta-row > .hk-btn {
+		flex: none;
+	}
+	.landing .head > .cta-row > .seats {
+		order: -1;
+		max-width: 20rem;
+		text-align: right;
 	}
 }
 .landing .seats {
