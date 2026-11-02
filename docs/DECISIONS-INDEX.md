@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-866 entries.
+867 entries.
 
 ## Scope
 
@@ -898,3 +898,4 @@ pointer, not a summary.
 - **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27511
 - **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27569
 - **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27613
+- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L27685

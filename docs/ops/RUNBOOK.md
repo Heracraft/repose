@@ -2764,9 +2764,10 @@ its steps bite if they are taken in the wrong order.
      every project it touched and mailed every owner; a host-01 drain on
      2026-11-02 started all sixteen.
    - **The target needs the project's base closure, and a fresh host has
-     only the current one.** A stopped project still points at whatever
-     base it last ran, so the restore fails on the host with `not_found`
-     naming a `nixos-system-repose-guest-<version>` store path. Either
+     only the current one** (I-974, which says why `move` does not do
+     this for you). A stopped project still points at whatever base it
+     last ran, so the restore fails on the host with `not_found` naming a
+     `nixos-system-repose-guest-<version>` store path. Either
      wait for the 04:00 UTC `basebump` sweep to move it to the current
      base, or copy what the target lacks. The copy is far smaller than it
      looks: on 2026-11-02 the eight stopped projects spanned five bases
