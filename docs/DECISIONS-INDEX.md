@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-863 entries.
+864 entries.
 
 ## Scope
 
@@ -877,21 +877,22 @@ pointer, not a summary.
 - **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26727
 - **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26772
 - **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26816
-- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26895
-- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26941
-- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L26990
-- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27049
-- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27081
-- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27135
-- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27178
-- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27219
-- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27237
-- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27300
-- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27319
-- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27334
-- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27373
-- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27385
-- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27398
-- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27415
-- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27435
-- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27463
+- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26930
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26976
+- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27025
+- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27084
+- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27116
+- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27170
+- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27213
+- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27254
+- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27272
+- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27335
+- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27354
+- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27369
+- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27408
+- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27420
+- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27433
+- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27450
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27470
+- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27498
+- **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27511

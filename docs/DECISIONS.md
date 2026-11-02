@@ -26892,6 +26892,41 @@ a unix socket carries no path either. Only `+E`, which resolves the peer
 of each endpoint, shows the relationship. Grepping for a path finds a
 unix socket only when the fd is the listener.
 
+- *Addendum (stop-asked, 2026-11-01).* The fault stopped, which the
+  evidence above could not show. Counted from
+  `journalctl -u hostd --since "14 days ago" -o cat | grep "wake failed"`
+  on both hosts and parsed whole, not tailed:
+
+  | | |
+  |---|---|
+  | host-01, 14 days | 38 `wake failed` |
+  | by phase | `resume` 37, `guestd` 1 |
+  | by day | 29 Oct 8, 30 Oct 29, 1 Nov 1 |
+  | by error | `status 503` 25, `vm.info ... write` 12, `vsockrpc: EOF` 1 |
+  | distinct guests | 2 |
+  | host-02, 14 days | **zero**, of any phase |
+
+  Every one of the 37 `resume` failures falls on 29 or 30 October: first
+  `2026-10-29T22:24:52Z`, last `2026-10-30T23:39:33Z`. The switch was 31
+  October at 00:52 and 00:53. **No `resume` failure postdates it.** The
+  two error strings are the connection cap by its signature -- an API
+  that answers 503 and then refuses the write -- and they stop dead at
+  the switch.
+
+  This is the claim the entry makes and the evidence above could not
+  reach. A unit test (25 calls, 25 sockets left open, then 0) and one
+  live guest (20 calls, 0 left open) show the *client stopped leaking*.
+  29 failures on 30 October against none in the days since shows the
+  *fault stopped*, which is the part an operator cares about and the
+  only form of the claim that could have been wrong.
+
+  The one line left over is the `guestd`-phase failure of
+  2026-11-01T21:39:07Z, which is not the leak: a VM whose `resume`
+  succeeded and whose guestd was gone (`vsockrpc: EOF`). It is the only
+  one of its kind, the only one after the switch, and the only one the
+  leak does not explain. I-950 makes its consequence cheap; the cause is
+  unreproduced and on the owner's list.
+
 **I-922. Three more places that threw the diagnosis away, and one that
 never checked its input.** (gap hunt after the job incident, 2026-10-30.
 Applies I-912.)
@@ -27473,3 +27508,60 @@ So the edge's whole nftables ruleset was invisible. `edge-remote-write` opens Pr
 The mechanism that hid it is worth more than the bug. A comparison that normalises away a version stamp is a comparison that has been told to ignore something, and the thing it ignores is defined by where the content sits. Nix moved the content and the tool kept hashing the old place; it did not fail, it answered "unchanged", and "unchanged" is the answer that deploys nothing. The guard against the next move of this kind is that both directions are tested from revisions of this repository, which is now what the checklist asks for.
 
 *Noted, not fixed here:* the `docs/workstreams/STATUS.md` line `edge-remote-write` adds credits the change to the `launch` session, and the ids ledger records `I-952 edge-remote-write` against no lane; the `launch` session disowns it and its own ids are elsewhere in this file. Lane attribution in a STATUS line is not evidence of who wrote a branch. That line is the branch's to correct.
+**I-950. A stop does not wait out a grace period for a shutdown request
+nobody took.** (handed over by the conductor, 2026-11-01.)
+
+`stopGuest` asks guestd to shut the system down, then waits
+`timeoutS` (60 s) for the unit to go inactive, then presses the
+hypervisor's ACPI power button, then kills. The wait is right when
+guestd took the request: the guest is shutting down and deserves its
+grace period. It is 60 seconds of nothing when no request was delivered
+at all, and the code did not distinguish the two.
+
+The observation, on host-01:
+
+    21:39:07  wake failed      event=guest_resting phase="guestd" err="vsockrpc: EOF"
+    21:39:07  snapshot failed  code=guest_unresponsive "guestd unreachable"
+    21:39:08  stopping guest   timeout_s=60
+    21:40:08  guest did not power off; asking the hypervisor
+    21:40:09  guest stopped    power_off_ms=61317 escalated="hypervisor"
+
+`stopGuest` now records whether guestd actually took the request and,
+when it did not, goes straight to the power button.
+
+*Two things the handover had wrong, and the evidence that corrects
+them.* The guest was described as resting with no vCPUs to answer the
+power button. It was not: the wake's **`resume` phase succeeded** and
+only its `guestd` phase failed, so the VM was running without guestd.
+And the power button was never the problem — once sent at 21:40:08 it
+stopped the guest by 21:40:09, about a second. The 60 seconds were spent
+before trying it, waiting on a request that had nowhere to go. I had
+endorsed the resting framing before reading the journal, and the fix I
+first proposed (skip the button for a resting guest) would not have
+helped this guest at all. The general form does: **do not wait for an
+answer you never managed to ask for.** It covers a dead guestd, which is
+what happened, and a wake that fails before guestd, which is what was
+feared.
+
+*It postdates I-920.* The leak fix shipped in r20261031-2 and both hosts
+switched on 31 Oct at 00:52 and 00:53; this is 1 Nov at 21:40. So the
+failed wake behind it is not the connection-cap exhaustion and is still
+unexplained — `vsockrpc: EOF` from a guest whose VM had resumed. That
+wants its own look; this entry only stops the 60 seconds being spent on
+it.
+
+*Why it became visible now.* I-918 made a failed wake non-fatal for stop
+and destroy, because the stop was the documented recovery for a guest
+that would not wake and sat behind the wake itself. Before that, this
+stop failed in seconds; after it, the stop proceeds — correctly, the
+owner gets their machine stopped — and spends the grace period doing
+nothing. I-918 is right and stays; this is the other half of it.
+
+*What the test can and cannot show.* The harness's fake hypervisor
+records the power button without powering anything off, so the test
+reaches the kill that follows it where a real host stops at
+`hypervisor`. It asserts the things that are true either way: the grace
+period is not spent, the button is pressed once, and the misleading
+"guest did not power off" line is not printed for a guest that was
+never asked. The counter-test holds the other side — a guestd that
+takes the request still gets its full grace period.

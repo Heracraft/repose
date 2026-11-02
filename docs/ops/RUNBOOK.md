@@ -651,6 +651,14 @@ done"'`: the line carries `format`, `raw_reason`, `journal_replayed`,
   10 s is the guest's user manager waiting on a pane process (I-572);
   the guest's `console.log` shows `A stop job is running for User
   Manager for UID 1000`.
+- `"no shutdown request reached guestd; asking the hypervisor now"`:
+  guestd had no session to take the request, so the stop skipped the
+  grace period and went to the power button (I-950). The stop is fine;
+  the line is a signal about the GUEST, which had no working guestd.
+  Look for a `wake failed` with `phase: "guestd"` beside it. Before
+  I-950 this case read as `power_off_ms` just over the timeout with
+  `escalated: hypervisor`, which looked like a slow stop and was
+  really 60 s of waiting on nothing.
 - `journal_replayed: true`: the guest was killed, not shut down (a
   start that never reached guestd, a stop escalated to `kill`), and hostd
   replayed its journal on the LVM snapshot before reading it, so it still
