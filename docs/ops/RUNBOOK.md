@@ -2802,7 +2802,10 @@ its steps bite if they are taken in the wrong order.
    certificate (I-432), so a host that must come back joins again with
    `hosts add --name host-NN --reissue`.
 4. Remove the name from `hosts` and its `host_shapes` entry from
-   `prod.tfvars`, and apply. The data disk and its attachment carry
+   `prod.tfvars`, and apply. If the host was the one the globals describe,
+   promote them to the remaining fleet's shape in the same edit (I-976):
+   leaving them is how the next host added without a `host_shapes` entry
+   comes up the wrong size without the plan saying so. The data disk and its attachment carry
    `prevent_destroy`, so that plan fails on purpose; `infra/README.md`
    "Draining and destroying a host" has the step that gets past it and
    why it is friction.

@@ -27790,3 +27790,54 @@ Revisit when a host migration is routine rather than once-per-launch, or
 when a host dies with projects on it and there is no 04:00 sweep to wait
 for. The fleet work (I-872 onward) makes more hosts likely, which makes
 this likelier to be worth automating.
+**I-976. When a host leaves the fleet, the fallback shape becomes the
+fleet's real shape, and the host leaves the scrape targets in the same
+change.** (retire-host01, 2026-11-02.)
+
+host-01 was retired on 2026-11-02, its sixteen projects moved to host-02
+(I-964, I-974). Removing it from `hosts` in `prod.tfvars` is the runbook's
+step, but it leaves two things wrong behind it.
+
+The globals -- `host_size`, `host_class`, `host_data_disk_gb` -- were
+host-01's D16s shape, and they are the fallback for any host that names
+nothing in `host_shapes` (I-784). With host-01 gone they described a size
+no host ran, and the next host added without an entry would have come up a
+quarter of the launch host, silently, because nothing in the plan says
+"this is the small shape". So they are promoted to the D64s shape and
+`host_shapes` is emptied. That was free at this moment and only at this
+moment: host-02 named its own `size`, `class`, `data_disk_gb` and
+`os_disk_gb`, so changing the globals it overrode planned nothing against
+it. `host_data_disk_iops` and `host_data_disk_mbps` are *not* promoted --
+host-02 does not name them, so they are the live host's disk settings and
+touching one plans a change on it.
+
+Promoting `host_os_disk_gb` turned out to need a root-module change, and
+finding out why is the reason this was checked rather than reasoned about.
+The root module declared and passed five host globals and not that one, so
+`host_os_disk_gb = 512` in `prod.tfvars` was an undeclared variable that
+OpenTofu warned about and ignored, the fallback stayed the environment
+module's 256, and emptying `host_shapes` would have planned a 512 -> 256 OS
+disk change against the live host. The root module now declares and passes
+it like the rest, defaulting to 512.
+
+The evidence that the whole change is a no-op for host-02 is a resolved
+`local.host_shape` from the real module, before and after, with a
+temporary output and `tofu console` on a copy with the backend stripped:
+host-02's seven attributes are identical and host-01's entry is gone. A
+probe that retypes the `coalesce` chain proves only that the probe matches
+the reasoning, which is the mistake this replaced.
+
+The Prometheus entry goes in the same change, because an entry for a host
+that no longer answers pages `HostScrapeDown` for ever. While editing it,
+host-02's address stopped being a guess: the file said 10.255.0.4 was
+`nextval('host_seq')` arithmetic with .3 skipped for the monitoring server
+and asked for the real value to be read off the host. `wg show wg0
+allowed-ips` on the edge reports .4 against host-02's key and SSH there
+answers `host-02`, so the arithmetic was right and the comment now says so
+as a measurement.
+
+Not done here, on purpose: `nixosConfigurations.host-01` and
+`nix/hosts/host-01.nix` stay. Retiring voids the host's certificate
+(I-432) but a host that must come back joins again with `hosts add --name
+host-01 --reissue`, and that needs its configuration to still exist. They
+are cheap to keep and the one thing that makes a rollback possible.
