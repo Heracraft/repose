@@ -61,7 +61,36 @@ in
     "act_gact"
   ];
 
-  boot.kernelParams = [ "transparent_hugepage=madvise" ];
+  boot.kernelParams = [
+    "transparent_hugepage=madvise"
+    # hashdist=0 keeps the kernel's large system hash tables -- the dentry
+    # and inode caches above all -- in the linear map instead of vmalloc.
+    #
+    # alloc_large_system_hash() defaults hashdist to 1 on any NUMA machine,
+    # which allocates those tables with vmalloc_huge() so they spread over
+    # the nodes. On 2026-11-02 that killed host-02 (DECISIONS I-982). It is
+    # a D64s_v7 with two NUMA nodes and 251 GB, so its dentry table was
+    # "16777216 entries (order: 15, 134217728 bytes, vmalloc hugepage)";
+    # host-01, a D16s_v7 with one node, got "8388608 entries (order: 14,
+    # 67108864 bytes, linear)" and ran the same 6.18.52 and 6.18.57 for two
+    # weeks with no kernel fault at all.
+    #
+    # A vmalloc mapping is per-page-table; the linear map is in every
+    # process's page tables by construction. host-02 took three
+    # `__d_lookup`/`__d_lookup_rcu` page faults in three unrelated
+    # processes -- a virtiofsd vring worker, systemd-udevd, then systemd
+    # itself, which panicked the box -- each one a *read of a not-present
+    # page*, each reporting `P4D 0`, each from a different PGD and CR3,
+    # all at the same intact table base. Nothing was corrupt: the table
+    # was simply not mapped in the faulting process. The third fault read
+    # four bytes below a 4 MB-aligned address, i.e. backwards across a
+    # hugepage boundary.
+    #
+    # So this is not a tuning choice. It returns the fleet to the
+    # allocation path that has never faulted, and it costs only NUMA
+    # locality on a table we read far more than we place.
+    "hashdist=0"
+  ];
 
   boot.kernel.sysctl = {
     "net.ipv4.ip_forward" = 1;
