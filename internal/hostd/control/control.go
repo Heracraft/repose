@@ -149,8 +149,19 @@ func NewClient(path string) *Client {
 	}}}
 }
 
-// ErrNotRunning is returned when the socket is absent.
-var ErrNotRunning = errors.New("hostd is not running (no control socket)")
+// ErrNotRunning is returned when the socket is absent, which is not the
+// same thing as hostd being down and must not claim to be. hostd creates
+// this socket last, after Reconcile and ThawAll, so for the whole of a
+// post-reboot thaw an entirely healthy hostd has no socket: the unit is
+// `active`, `Result=success`, `ExecMainStatus=0`, and this error is the
+// only thing an operator sees. On 2026-11-02 that window was 3m16s and
+// the first read of it was "hostd is down", stated before checking
+// (DECISIONS I-990). The window scales with the frozen memory a thaw has
+// to read back, so a full host's is minutes longer than that.
+//
+// The client cannot tell the two apart -- an absent socket is an absent
+// socket -- so the message names both and points at the thing that can.
+var ErrNotRunning = errors.New("hostd is not answering: no control socket. It is either not running, or still starting -- after a host reboot Reconcile and ThawAll run before the socket is created, which takes minutes on a host with frozen guests. `systemctl is-active hostd` and `journalctl -u hostd -b` tell you which")
 
 func (c *Client) do(ctx context.Context, method, path string, out any) error {
 	return c.doBody(ctx, method, path, nil, out)

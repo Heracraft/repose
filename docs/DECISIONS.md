@@ -28087,3 +28087,58 @@ It is now `boot.kernel.sysctl."kernel.panic_on_oops" = 1`, beside the other host
 *How it was caught, which is the part worth keeping.* Not by review and not by a test — by grepping the booted host's `dmesg` for oops patterns while confirming something else, and reading the four matches instead of trusting the count. Three of them were the command line quoting the parameter back; the fourth was the kernel refusing it. A check of `/proc/cmdline`, which is what the branch and I both ran, says the parameter is there and is silent about whether it means anything. This is I-968's shape in a third costume: `/proc/cmdline` is a proxy for "the kernel honoured this", it was green, and the property was absent. The honest check for any kernel parameter is the behaviour it is supposed to produce — `linear` in the dentry line for I-982, a non-zero sysctl here — and `dmesg | grep "Unknown kernel command line"` is the cheap general guard, now in `docs/CHECKLIST.md`.
 
 *Not fixed here:* nothing asserts this. A test that boots a host configuration and greps its dmesg for the Unknown line would catch the next misspelled parameter, and `nix/hosts/tests` is where it would go.
+
+**I-990. A thaw is also the host's blind window, and nothing said so.**
+(thaw-window, 2026-11-02.)
+
+`Reconcile` is synchronous and sits ahead of every listener in
+`app.Run`: the api stream, the metrics server and the control socket all
+start after it returns, and `ThawAll` runs inside it. So for the whole of
+a post-reboot thaw a healthy host is invisible to **everything that
+watches it at once** -- the api has no stream and reports the host
+unreachable, Prometheus has nothing to scrape, and the control socket
+does not exist. On 2026-11-02 host-02 was `active` at 21:32:53 and
+started its listeners at 21:36:09: **3 minutes 16 seconds** in which the
+api could not see the only host in the fleet, and `HostUnreachable`
+exists to page about precisely that.
+
+The window is bounded -- `UnwrapTimeout + RestoreTimeout +
+atRate(total image bytes, WriteRate)`, I-796's arithmetic -- and that
+bound is right for the thaw. What nobody had noticed is that it is also
+the blind window, and it is sized by how much guest memory was frozen,
+not by anything we would choose for an observability gap. Two guests and
+15.6 GB bought 3m16s. A full host-02 holds an order of magnitude more
+memory than that, and a restore that fails spends its whole budget rather
+than returning early, as verista's did.
+
+What is fixed here is only the lie an operator was told. `ErrNotRunning`
+said "hostd is not running (no control socket)" whenever the socket was
+absent, which during a thaw it always is. On the night, the first reading
+of that message was "hostd is down", stated before checking, while the
+unit was `active`, `Result=success`, `ExecMainStatus=0`, one minute into
+startup. The client genuinely cannot tell the two apart -- an absent
+socket is an absent socket -- so the message now names both and points at
+`systemctl is-active hostd`, which can.
+
+**Deliberately not fixed here: the ordering.** Starting the listeners
+before `Reconcile` is the obvious move and it is not a one-line change,
+because the invariant in the way is a real one: guest state is reconciled
+from `systemctl list-units`, LVM and bbolt at start and *reported in
+Hello*, so a stream that connects before reconcile would tell the api
+guest states we have not yet checked, and that is worse than silence. The
+three listeners are not equal on this point -- metrics and the control
+socket could answer "reconciling, N images to read" without asserting any
+guest's state, while the stream cannot send Hello early at all -- and
+deciding which may come up when is a design question that deserves
+daylight rather than the end of an incident. It should also be measured
+against simply reporting the window: a host that says "I am thawing, for
+up to N seconds" is most of the value, and `HostUnreachable` could hold
+its page for a host whose last word was that.
+
+Rejected: lowering `RestoreTimeout` to shrink the blind window. It would
+trade a tenant's restored memory for an operator's visibility, which is
+the wrong way round -- the whole point of I-652 is that an overnight run
+survives a host restart. Rejected: making `ErrNotRunning` guess by
+stat-ing the unit. The control client is used where systemd may not be
+(tests, the fakes) and a wrong guess reads worse than an honest "one of
+these two".

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-877 entries.
+878 entries.
 
 ## Scope
 
@@ -909,3 +909,4 @@ pointer, not a summary.
 - **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28002
 - **I-986** The Docker probe does not cancel its own request before reading the answer — 2026-11-02; L28028
 - **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28072
+- **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28091
