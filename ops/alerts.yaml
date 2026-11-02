@@ -945,11 +945,15 @@ groups:
           description: "The Abuse dashboard's full-CPU panel names them; `repose-admin exec <id> -- ps -o comm,pcpu --sort -pcpu` (audited) shows what runs."
           runbook: "docs/ops/RUNBOOK.md#busyunattended"
 
-  # The alerting path's own heartbeat (DECISIONS I-648). Watchdog always
-  # fires; Alertmanager sends it to an Uptime Kuma push monitor every
-  # minute, and Kuma posts to Google Chat when the pushes stop. That is the
-  # only way to hear that Prometheus, Alertmanager or the personal
-  # server itself has died: every other alert dies with them.
+  # The alerting path's own heartbeat (DECISIONS I-648), not deployed
+  # (I-944). Watchdog always fires, and the design was that it be sent to
+  # an Uptime Kuma push monitor every minute so Kuma notices when the
+  # pushes stop -- the only way to hear that Prometheus, Grafana or the
+  # personal server itself has died, since every other alert dies with
+  # them. It is not deployed because the owner's Kuma runs on that same
+  # server, so it would have died with the thing it watched. The rule
+  # stays here as the record: if a watcher ever lives elsewhere, this and
+  # its runbook entry are already written.
   - name: repose-meta
     interval: 1m
     rules:
