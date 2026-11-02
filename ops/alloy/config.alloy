@@ -90,4 +90,18 @@ prometheus.remote_write "monitoring" {
   endpoint {
     url = "http://10.255.0.3:9090/api/v1/write"
   }
+
+  // That Prometheus is shared with the owner's other projects, and every
+  // job name in this fleet is generic -- `api`, `hosts`, `gateway`. A
+  // second project pushing its own `job="api"` would land in the same
+  // series as this one and `ApiDown` would fire for somebody else's api.
+  // This stamps every series Alloy forwards, so the data is already
+  // separable when that happens (DECISIONS I-960).
+  //
+  // It does NOT by itself protect the alerts: they match on `job`, not on
+  // this. Making them project-aware, or renaming the jobs, is a change
+  // across all 56 and is deliberately not done here.
+  external_labels = {
+    project = "repose",
+  }
 }
