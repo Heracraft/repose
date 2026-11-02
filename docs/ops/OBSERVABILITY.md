@@ -11,7 +11,9 @@ hosts (NixOS)          journald ─▶ Fluent Bit ─▶ Loki  (labels host, com
                        hostd :9101 /metrics, node_exporter :9100,
                        Fluent Bit :2021 /api/v1/metrics/prometheus  ◀─ Prometheus scrape over WireGuard
 edge (NixOS)           gateway :9102 /metrics; journald ─▶ Fluent Bit ─▶ Loki
-Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki; api :9103 /metrics over WireGuard
+Coolify VM (Ubuntu)    api, web containers: stdout ─▶ Coolify log drain ─▶ Loki
+                       api :9103 /metrics ◀─ Alloy on the Docker network ─▶ remote_write to Prometheus (I-960)
+                       alloy :12345 /metrics, node_exporter :9100  ◀─ Prometheus scrape over WireGuard
 Postgres               meter_samples, proc_samples, usage_hours, events, audit_log (read with psql, or a Grafana datasource the owner adds by hand)
 personal server        Loki, Prometheus, Grafana (evaluates the alerts and notifies the owner)
 ```

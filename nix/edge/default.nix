@@ -137,7 +137,7 @@ in
 
       scrapePorts = lib.mkOption {
         type = lib.types.listOf lib.types.port;
-        default = [ 9100 9101 2021 9104 443 ];
+        default = [ 9100 9101 2021 9104 12345 443 ];
         description = ''
           Ports the monitoring peer may reach on other peers:
           node_exporter (9100), hostd (9101) and Fluent Bit (2021) on a
@@ -146,6 +146,13 @@ in
           `api` application publishes no port of its own and its
           /metrics is served by a router behind an IP allow-list
           (DECISIONS I-133, ops/coolify/README.md "The api's metrics").
+          12345 is Alloy's own HTTP server on the control VM, scraped for
+          the collector's liveness because it pushes the api's series and
+          a collector that dies is silence rather than a failed scrape
+          (DECISIONS I-960). Omitting it was the bug that made Prometheus
+          time out on that target: a port this list does not carry is
+          dropped rather than refused, so it looks like a dead Alloy
+          instead of a closed edge.
           Not 9103: nothing listens on it outside the container.
           Nothing else is forwarded, so the monitoring peer cannot reach
           a host's sshd or a guest.

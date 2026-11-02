@@ -1689,3 +1689,79 @@ tests:
               summary: "the control VM's / is over 85 percent full"
               description: "Postgres, the api images and Coolify's build cache share this disk. `docker system prune` and the sample tables' partitions (repose_partitions_maintain) are the two things that free space; the partitions are dropped hourly by the api, so a disk filling with them means PartitionDropFail is also firing."
               runbook: "docs/ops/RUNBOOK.md#controldiskfull"
+
+  # --- Alloy, the api's collector (I-960) --------------------------------
+  - interval: 1m
+    name: AlloyDown fires when the collector stops answering and not while it answers
+    input_series:
+      - series: 'up{job="alloy",instance="10.255.255.1:12345",role="control-plane",app="alloy"}'
+        values: "1 1 0 0 0 0 0 0 0 0"
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104"}'
+        values: "1+0x10"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AlloyDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: AlloyDown
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: alloy
+              instance: 10.255.255.1:12345
+              role: control-plane
+              app: alloy
+            exp_annotations:
+              summary: "the control VM's Alloy is not answering its scrape"
+              description: "The api's metrics stop arriving while this holds; the api itself is unaffected. In Coolify, project repose, the `alloy` service: check it is running and that its port is published on 10.255.255.1 and not elsewhere. `docker logs` on the control VM names a config error."
+              runbook: "docs/ops/RUNBOOK.md#alloydown"
+
+  - interval: 1m
+    name: ApiMetricsAbsent fires when no api series arrive at all
+    input_series:
+      - series: 'up{job="api-grpc",instance="10.255.255.1:9104"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiMetricsAbsent
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ApiMetricsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: api
+            exp_annotations:
+              summary: "no api metrics have arrived for 15 minutes"
+              description: "Alloy is scraping nothing, or its writes are refused. Check Alloy's own targets at http://10.255.255.1:12345 (it is scraped as job=alloy); then that the api application's uuid still matches the regex in ops/alloy/config.alloy; then that Prometheus still runs with --web.enable-remote-write-receiver and the edge still allows 9090 (I-952)."
+              runbook: "docs/ops/RUNBOOK.md#apimetricsabsent"
+
+  - interval: 1m
+    name: ApiMetricsAbsent stays quiet while Alloy forwards the api's up series
+    input_series:
+      - series: 'up{job="api",instance="10.0.1.7:9103",role="control-plane",app="api"}'
+        values: "1+0x25"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ApiMetricsAbsent
+        exp_alerts: []
+
+  - interval: 1m
+    name: ApiDown still fires for the api when Alloy forwards a failed scrape
+    input_series:
+      - series: 'up{job="api",instance="10.0.1.7:9103",role="control-plane",app="api"}'
+        values: "1 1 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: api
+              instance: 10.0.1.7:9103
+              role: control-plane
+              app: api
+            exp_annotations:
+              summary: "Prometheus cannot scrape api"
+              description: "No scrape for 3 minutes. If it is api, users cannot log in, create or start; if api-grpc, hosts have no stream and nothing is placed, started or stopped."
+              runbook: "docs/ops/RUNBOOK.md#apidown"

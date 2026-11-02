@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-865 entries.
+866 entries.
 
 ## Scope
 
@@ -219,7 +219,7 @@ pointer, not a summary.
 - **I-131** The api's service principal gets Storage Blob Data Contributor on the snapshots container — 2026-09-21; L2867
 - **I-132** A base bump that needs a reboot says so in its event — 2026-09-21; L2886
 - **I-134** The build phase takes its base from the revision, not the project — 2026-09-21; L2900
-- **I-133** The api's `/metrics` is a Traefik router on the app, behind an IP allow-list; no collector and no host port — 2026-09-21; partly amended by I-952; L2919
+- **I-133** The api's `/metrics` is a Traefik router on the app, behind an IP allow-list; no collector and no host port — 2026-09-21; partly amended by I-952; partly superseded by I-960; L2919
 - **I-136** The api's user listener does not serve `/metrics`; the metrics listener is the only place the registry is served — 2026-09-21; L2973
 - **I-137** hostd writes `host.json` and nothing else at registration; the second `wg0.conf` under its state directory is gone — 2026-09-21; L3004
 - **I-138** A project without a remote syncs its whole tracked tree and commits it in the guest — 2026-09-21; superseded by I-150; L3024
@@ -897,3 +897,4 @@ pointer, not a summary.
 - **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27498
 - **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27511
 - **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27569
+- **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27613
