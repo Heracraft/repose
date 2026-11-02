@@ -117,6 +117,17 @@
 	}
 }
 
+/* ---------- The header, on the landing ---------- */
+
+/* The sticky header is opaque here: its translucent blur picked up the
+   hero's dark plate as the page scrolled under it and turned a muddy
+   grey in the light scheme. */
+:root:has(main.landing) .site-header {
+	background: var(--hk-bg);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+
 /* ---------- The footer, on the landing ---------- */
 
 /* The sheet runs on into the footer and closes there: its padding moves
