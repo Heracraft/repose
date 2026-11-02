@@ -27981,6 +27981,14 @@ vmcore is ever written. The whole forensic yield of a long tainted run is
 the serial console text, and the first oops writes that. Everything after
 it is risk with no return.
 
+Read that as an argument *for* kdump, never against this. kdump runs *on*
+panic: `panic_on_oops=1` is what would hand it a crash kernel to capture
+in, so the two compose and the better state is both. Whoever adds
+`crashkernel=` (owed, named in I-980) must not reach for this entry as a
+reason to unset `panic_on_oops` -- that would trade a 30 second reboot for
+the 3 h 48 m window and capture nothing extra, because a host that oopses
+and keeps running never enters the crash kernel at all.
+
 `panic=30` rather than `panic=0`: fluent-bit needs a moment to ship the
 oops to Loki. The panic line itself never arrives, because fluent-bit dies
 with the host -- so any alert on this must match the oops, not the panic
