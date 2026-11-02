@@ -27907,3 +27907,95 @@ This is the same fault as I-968 one level up, which is why it is recorded rather
 *The rollback debt is paid, separately from the fix.* Making the step run again says nothing about the sixteen days in which it did not, and six migrations were added in that window: 0028, 0029 (twice, two files), 0031, 0032, 0033. So the sequence was run by hand before the next release, on a throwaway cluster, and further than CI goes — CI does `down 1`, which only ever exercises the newest migration, while this stepped down through all six one at a time to 27 and re-applied them in one `migrate`. Every one reverted and came back, and `db verify` passed. Nothing broken was hiding. The point of running it is that the first time the step fires again should not also be the first time anyone finds out (the lane that found the skip asked for this; it is the right ask).
 
 *Rejected:* moving lint into its own job. It would also work, and it costs a second checkout, a second Go toolchain install and a second `go install` of golangci-lint built from source (I-429) on every run, to buy a separation the condition already gives. *Rejected:* `always()`, which runs the steps when the job was cancelled too, turning a deliberate cancellation into two misleading failures.
+
+**I-982. Hosts boot with `hashdist=0`, so the kernel's large system hash
+tables stay in the linear map.** (hashdist, 2026-11-02.)
+
+host-02 panicked on 2026-11-02 and took all eighteen projects down. The
+cause was not corruption, a tenant, our code, or a known upstream defect:
+it was where the kernel put the dentry hash table.
+
+`alloc_large_system_hash()` defaults `hashdist` to 1 on any NUMA machine
+and then allocates with `vmalloc_huge()` so the table spreads over the
+nodes. host-02 is a `D64s_v7`: two NUMA nodes, 251 GB, and a dentry table
+of "16777216 entries (order: 15, 134217728 bytes, **vmalloc hugepage**)".
+host-01 was a `D16s_v7`: one node, 62.8 GB, "8388608 entries (order: 14,
+67108864 bytes, **linear**)". host-01 ran 6.18.52 and then 6.18.57 for two
+weeks under the same workload with no kernel fault of any kind; host-02
+faulted three times in its first six days. Fleet-wide over 29 days of Loki,
+every kernel Oops belongs to host-02 and to 2026-11-02.
+
+A vmalloc mapping lives in one set of page tables. The linear map is in
+every process's page tables by construction. All three faults were
+*reads of a not-present page* in `__d_lookup` or `__d_lookup_rcu`, each
+reporting `P4D 0` -- an empty page-table entry -- from a different PGD and
+a different CR3, in three unrelated processes: a virtiofsd vring worker at
+13:51:07, `systemd-udevd` at 17:39:14, and `systemd` itself at 17:39:26,
+which is what turned an Oops into `Kernel panic - not syncing: Attempted
+to kill init!`. The table base in RDX was identical and correct in all
+three. Nothing had been overwritten; the table simply was not mapped where
+the faulting process looked. The third fault read four bytes below a 4 MB
+aligned address, that is, backwards across a hugepage boundary.
+
+So `hashdist=0` is not tuning. It returns every host to the one allocation
+path that has never faulted here, and it is the configuration host-01
+proved over two weeks. The cost is NUMA locality on a table we read far
+more often than we populate, which is not a trade worth a panic.
+
+Rejected: `dhash_entries=8388608` to cap the table at host-01's size. It
+would probably also avoid the fault, by keeping the allocation under the
+threshold that pushes it to vmalloc, but it fixes the symptom by accident.
+`hashdist=0` names the mechanism. Rejected: pinning a different kernel.
+There is no 6.18.57 `__d_lookup_rcu` defect that fits -- CVE-2026-43071
+needs `dhash_entries=1` and was fixed in 6.18.24 -- and nixpkgs#560549,
+the closest reported signature, was closed as faulty hardware. Rejected:
+waiting for an upstream fix while the only host in the fleet carries every
+tenant.
+
+This is worth reporting upstream if it recurs: 6.18.57, two NUMA nodes, a
+128 MB hugepage-backed vmalloc dentry table, three `P4D 0` read faults
+from three address spaces. The serial log is the evidence and the only
+copy; see I-983 on why that is itself a problem.
+
+**I-984. A kernel oops reboots the host: `panic_on_oops=1`, `panic=30`.**
+(hashdist, 2026-11-02.) *Supersedes the "panics are not auto-rebooted"
+sentence in RUNBOOK "Host rebooted".*
+
+The old stance was that a stuck host gets restarted from the Azure portal,
+so `panic=` stayed unset. 2026-11-02 showed what that costs. host-02 took
+its first `__d_lookup_rcu` fault at 13:51:07 and kept running for 3 hours
+48 minutes, serving tenant filesystem traffic through virtiofsd with a
+dentry cache it could not reliably read, with no alert, until a third
+fault hit `systemd` and the kernel panicked on "Attempted to kill init!".
+It then hard-hung, because a panic with `panic=` unset does not reboot,
+and eighteen projects stayed down until somebody restarted the VM by hand.
+
+Rebooting at the first oops would have cost minutes. The recovery path
+already exists and is tested: hostd marks every guest that was running as
+`guest_interrupted` on its next start and the api brings them back three
+per host per minute within six hours (I-645).
+
+Staying up to debug preserves nothing, which is the part that settles it.
+There is no kdump on these hosts and `boot.crashDump` is unset, so no
+vmcore is ever written. The whole forensic yield of a long tainted run is
+the serial console text, and the first oops writes that. Everything after
+it is risk with no return.
+
+Read that as an argument *for* kdump, never against this. kdump runs *on*
+panic: `panic_on_oops=1` is what would hand it a crash kernel to capture
+in, so the two compose and the better state is both. Whoever adds
+`crashkernel=` (owed, named in I-980) must not reach for this entry as a
+reason to unset `panic_on_oops` -- that would trade a 30 second reboot for
+the 3 h 48 m window and capture nothing extra, because a host that oopses
+and keeps running never enters the crash kernel at all.
+
+`panic=30` rather than `panic=0`: fluent-bit needs a moment to ship the
+oops to Loki. The panic line itself never arrives, because fluent-bit dies
+with the host -- so any alert on this must match the oops, not the panic
+(I-983).
+
+Rejected: `panic_on_warn`. A WARN is frequently survivable and we would be
+rebooting hosts over harmless warnings. Rejected: leaving it unset and
+relying on the new alert. An alert pages a human who then does what the
+machine could have done in 30 seconds, and the 3 h 48 m window stays open
+for however long it takes someone to answer at 14:00 on a Monday.

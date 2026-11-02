@@ -61,7 +61,54 @@ in
     "act_gact"
   ];
 
-  boot.kernelParams = [ "transparent_hugepage=madvise" ];
+  boot.kernelParams = [
+    "transparent_hugepage=madvise"
+    # hashdist=0 keeps the kernel's large system hash tables -- the dentry
+    # and inode caches above all -- in the linear map instead of vmalloc.
+    #
+    # alloc_large_system_hash() defaults hashdist to 1 on any NUMA machine,
+    # which allocates those tables with vmalloc_huge() so they spread over
+    # the nodes. On 2026-11-02 that killed host-02 (DECISIONS I-982). It is
+    # a D64s_v7 with two NUMA nodes and 251 GB, so its dentry table was
+    # "16777216 entries (order: 15, 134217728 bytes, vmalloc hugepage)";
+    # host-01, a D16s_v7 with one node, got "8388608 entries (order: 14,
+    # 67108864 bytes, linear)" and ran the same 6.18.52 and 6.18.57 for two
+    # weeks with no kernel fault at all.
+    #
+    # A vmalloc mapping is per-page-table; the linear map is in every
+    # process's page tables by construction. host-02 took three
+    # `__d_lookup`/`__d_lookup_rcu` page faults in three unrelated
+    # processes -- a virtiofsd vring worker, systemd-udevd, then systemd
+    # itself, which panicked the box -- each one a *read of a not-present
+    # page*, each reporting `P4D 0`, each from a different PGD and CR3,
+    # all at the same intact table base. Nothing was corrupt: the table
+    # was simply not mapped in the faulting process. The third fault read
+    # four bytes below a 4 MB-aligned address, i.e. backwards across a
+    # hugepage boundary.
+    #
+    # So this is not a tuning choice. It returns the fleet to the
+    # allocation path that has never faulted, and it costs only NUMA
+    # locality on a table we read far more than we place.
+    "hashdist=0"
+    # An oops is not survivable, so stop pretending it is (DECISIONS
+    # I-984). On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault
+    # at 13:51:07 and kept running for 3 h 48 m, serving tenant filesystem
+    # traffic through virtiofsd with a dentry cache it could not read,
+    # before a third fault hit systemd and the box hard-hung with no way
+    # back but the Azure portal. Rebooting at the first oops would have
+    # cost minutes: hostd marks every interrupted guest on its next start
+    # and the api brings them back three per host per minute (I-645).
+    # Staying up preserves nothing, because we capture no vmcore -- there
+    # is no kdump here and `boot.crashDump` is unset -- so the serial log
+    # is all a long tainted run buys, and it is written by the first oops
+    # anyway.
+    "panic_on_oops=1"
+    # 30 s, not 0: the oops reaches the serial console and fluent-bit
+    # ships it to Loki before the box goes. The panic line itself never
+    # ships -- fluent-bit dies with everything else -- which is why the
+    # alert matches on oops and not on panic.
+    "panic=30"
+  ];
 
   boot.kernel.sysctl = {
     "net.ipv4.ip_forward" = 1;
