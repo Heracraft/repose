@@ -125,12 +125,18 @@ func TestFailuresStillBanAndTheBanIsLogged(t *testing.T) {
 			t.Fatal("a plain key connected")
 		}
 	}
-	if line := firstLine(t, "", h.addr); line != "repose gateway: "+MsgRateLimited {
-		t.Fatalf("after %d failures: first line %q", banFailures, line)
-	}
-	// The ban is set before its line is written, in the connection's own
-	// goroutine, so the refusal above can arrive before the line does (CI on
-	// 5c01ab34; a loaded run needed longer than 2 s). Wait up to 10 s for it.
+	// Wait for the ban to exist before asking whether it is enforced. Both
+	// the ban and its line are written in the failing connection's own
+	// goroutine, after h.dial has already returned to this one, so when the
+	// loop above ends the gateway may still be counting the last failures.
+	// Asserting the refusal first made this test measure a proxy -- the
+	// banner a reconnect happens to get -- instead of the property, and a
+	// proxy fails in both directions: red on a loaded runner with the ban
+	// working (CI 41380209243: "first line SSH-2.0-Go"), and green if a ban
+	// were set after fewer failures than it should be. The auth_ban line is
+	// the ban becoming visible, so it is the precondition, not an
+	// afterthought; ci-red-ban (r20261012-3) waited for it in the wrong
+	// order (DECISIONS I-968).
 	var ban, counted string
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 		ban, counted = "", ""
@@ -148,6 +154,12 @@ func TestFailuresStillBanAndTheBanIsLogged(t *testing.T) {
 	}
 	if ban == "" || !strings.Contains(ban, `"source_prefix":"127.0.0.0/24"`) || !strings.Contains(ban, `"failures":20`) {
 		t.Fatalf("no auth_ban line with the prefix: %q", ban)
+	}
+	// The ban is set: the next connection gets the one-line refusal. This is
+	// what banFailures failures are for, and it is still exactly
+	// banFailures -- waiting on the line adds no connections of its own.
+	if line := firstLine(t, "", h.addr); line != "repose gateway: "+MsgRateLimited {
+		t.Fatalf("after %d failures the ban is logged but not enforced: first line %q", banFailures, line)
 	}
 	if counted == "" || !strings.Contains(counted, `"reason":"no_cert"`) {
 		t.Fatalf("counted failures not logged: %q", counted)
