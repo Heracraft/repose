@@ -28069,3 +28069,21 @@ code and 40 fails, which is the shape of the bug rather than a
 reproduction of one instance. `TestPingSurvivesTheSameBug` holds the
 asymmetry and `TestCallerCancellationStillStops` holds that the fix did
 not drop the caller's cancellation while removing the request's own.
+**I-988. `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect.** (oops-sysctl, 2026-11-02.)
+
+I-984 put `panic_on_oops=1` in `boot.kernelParams` to stop a host running tainted after an oops. It shipped in r20261102-6, host-02 was switched and rebooted for it on 2026-11-02, and the parameter is in `/proc/cmdline`. It does nothing. The kernel takes `panic_on_oops` as a **sysctl** (`kernel.panic_on_oops`) and not as a boot parameter, and it says so out loud:
+
+```
+[    0.545031] Unknown kernel command line parameters "panic_on_oops=1", will be passed to user space.
+```
+
+After the reboot that was supposed to set it, `sysctl kernel.panic_on_oops` read **0**. `panic=30` from the same list *is* a kernel parameter and took: `kernel.panic` read 30. Only the one name appears in the Unknown list, so `hashdist=0` was recognised too — I-982 is unaffected and its dentry table came up `linear` as intended.
+
+It is now `boot.kernel.sysctl."kernel.panic_on_oops" = 1`, beside the other host sysctls, and the kernel parameter is gone.
+
+- **A sysctl is the better home anyway, for two reasons beyond correctness.** It applies during a switch's activation, so it needs no reboot of its own — the fix went out on a switch while the hosts stayed up. And `sysctl kernel.panic_on_oops` answers whether it is really on, which is the question the command line could not: `/proc/cmdline` showed the parameter present and the behaviour absent.
+- **The kernel-parameter spelling that works is `oops=panic`**, and it was rejected: it is one more thing that is right only if spelled exactly, in a place that reports nothing when it is wrong, to buy a setting that applies one reboot earlier than the sysctl does.
+
+*How it was caught, which is the part worth keeping.* Not by review and not by a test — by grepping the booted host's `dmesg` for oops patterns while confirming something else, and reading the four matches instead of trusting the count. Three of them were the command line quoting the parameter back; the fourth was the kernel refusing it. A check of `/proc/cmdline`, which is what the branch and I both ran, says the parameter is there and is silent about whether it means anything. This is I-968's shape in a third costume: `/proc/cmdline` is a proxy for "the kernel honoured this", it was green, and the property was absent. The honest check for any kernel parameter is the behaviour it is supposed to produce — `linear` in the dentry line for I-982, a non-zero sysctl here — and `dmesg | grep "Unknown kernel command line"` is the cheap general guard, now in `docs/CHECKLIST.md`.
+
+*Not fixed here:* nothing asserts this. A test that boots a host configuration and greps its dmesg for the Unknown line would catch the next misspelled parameter, and `nix/hosts/tests` is where it would go.

@@ -90,6 +90,18 @@ written so none of them goes unnoticed again.
       every argument refusal names what it received (DECISIONS I-346).
       Evidence: `go test ./internal/cli -run TestArgErrorsSayWhatTheyGot`
       passes, and the new command was run once with a glob.
+- [ ] A change to `boot.kernelParams` is confirmed by the behaviour it is
+      supposed to produce, never by `/proc/cmdline`. A parameter the
+      kernel does not recognise is accepted silently into the command
+      line and handed to userspace: `panic_on_oops=1` rode a switch and a
+      reboot into `/proc/cmdline` while `kernel.panic_on_oops` stayed 0,
+      because it is a sysctl and not a parameter (DECISIONS I-988).
+      Evidence: `dmesg | grep "Unknown kernel command line"` is empty on
+      the booted host, and the parameter's own effect is read directly —
+      `Dentry cache hash table ... linear` for `hashdist=0` (I-982),
+      a non-zero `sysctl` for anything that is really a sysctl. Prefer
+      `boot.kernel.sysctl` where the knob is one: it applies on a switch
+      with no reboot, and it can be read back.
 - [ ] A new or changed test asserts the property it is named for, not a
       proxy for it, and names the probe that proves it would fail without
       the fix. A proxy fails in both directions: red when the runner is

@@ -91,7 +91,16 @@ in
     # locality on a table we read far more than we place.
     "hashdist=0"
     # An oops is not survivable, so stop pretending it is (DECISIONS
-    # I-984). On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault
+    # I-984). The knob is the sysctl below, NOT a kernel parameter:
+    # `panic_on_oops=1` on the command line is not a kernel parameter at
+    # all, and the kernel says so and hands it to userspace as an
+    # environment variable -- "Unknown kernel command line parameters
+    # "panic_on_oops=1", will be passed to user space" in host-02's dmesg
+    # on 2026-11-02, with `kernel.panic_on_oops` still 0 after the reboot
+    # that was supposed to set it (DECISIONS I-988). `panic=30` below IS a
+    # kernel parameter and did take.
+    #
+    # On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault
     # at 13:51:07 and kept running for 3 h 48 m, serving tenant filesystem
     # traffic through virtiofsd with a dentry cache it could not read,
     # before a third fault hit systemd and the box hard-hung with no way
@@ -102,7 +111,6 @@ in
     # is no kdump here and `boot.crashDump` is unset -- so the serial log
     # is all a long tainted run buys, and it is written by the first oops
     # anyway.
-    "panic_on_oops=1"
     # 30 s, not 0: the oops reaches the serial console and fluent-bit
     # ships it to Loki before the box goes. The panic line itself never
     # ships -- fluent-bit dies with everything else -- which is why the
@@ -111,6 +119,12 @@ in
   ];
 
   boot.kernel.sysctl = {
+    # Panic on an oops rather than running tainted (DECISIONS I-984, and
+    # I-988 for why it is here and not in kernelParams). A sysctl also
+    # takes effect on a switch, so this needs no reboot of its own, and
+    # `sysctl kernel.panic_on_oops` says whether it is really on -- which
+    # the command line could not.
+    "kernel.panic_on_oops" = 1;
     "net.ipv4.ip_forward" = 1;
     "fs.inotify.max_user_instances" = 8192;
     # Cloud Hypervisor mmaps guest RAM; the host must not refuse it.
