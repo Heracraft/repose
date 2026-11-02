@@ -162,8 +162,11 @@
 		display: grid;
 		border-top: 1px solid var(--rule-in, var(--rule));
 	}
+	/* The toolchain stands on the stage's tone with the marks over it, so
+	   the figure is two materials: the stage, and the shell. */
 	.kit {
 		padding: 32px var(--edge, 16px);
+		background: var(--stage);
 	}
 	.tools {
 		display: grid;
@@ -208,14 +211,15 @@
 		}
 	}
 	/* One column, the shell runs the window's width and its rows start on
-	   the page's text line; from 640px the tools take one row of four. */
+	   the page's text line; from 640px the tools take one row of four.
+	   (.ready raises these over the base rules below, which come later.) */
 	@media (max-width: 1023.98px) {
 		.term {
 			border-top: 1px solid var(--rule-in, var(--rule));
 		}
-		.lines,
-		.term > :global(.shot-head),
-		.bar {
+		.ready .lines,
+		.ready .term > :global(.shot-head),
+		.ready .bar {
 			padding-inline: var(--edge, 16px);
 		}
 	}

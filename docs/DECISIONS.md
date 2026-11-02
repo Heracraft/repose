@@ -27798,3 +27798,59 @@ judges' grafts and its named defects were then worked in.
     own text uses no blue.
   - Left open: the hero picture's height on a phone and the Localhost
     crop, as before.
+  - *Option D, review.* (landing-refine-d, 2026-11-02) Three critics
+    (design, anti-pattern, adversarial) read D at 1x. What changed:
+    - No numbered labels or figure bars. The page ran three numbering
+      systems (band labels, `Fig. 0` to `Fig. 3`, step numbers) that no
+      sentence cites, and the labels repeated the h2s and the header's
+      links; seven 40px bars held a number and, on a desktop, nothing
+      else. The step numbers stay, as the one numbering. A looping
+      picture's pause button shows at rest: a band picture's in its
+      field's top right corner (the field is `--field-y`, half a band and
+      never under 48px, above and below its windows), a cell's at the
+      right end of its title's line. The hero's button had been cut away
+      by its field's `clip-path` while its box and opacity said it was
+      there, so a test now hit-tests each button at its centre.
+    - Every head has a side item: the machine's a line of copy, the
+      install and questions heads two docs links, as the agents' head
+      has. The machine's heading is "Work on the machine as you would on
+      your laptop", the claim its cells show. The questions take the
+      same head and run from rail to rail; the sticky heading over an
+      empty half went.
+    - Windows stand on the text lines at every width: band pictures pad
+      by `--edge`, the cells' pictures by `--shot-l` and `--shot-r`, and
+      below 1024px a cell's picture starts on the text line and stops at
+      34rem rather than centring. The rails and `--edge` start at 1200px,
+      where the frame stops growing, so no width shows sheet edges in
+      mid-air (1215 to 1279px did). The header cross, hidden under the
+      sticky header, went; the footer's rule over the theme switch runs
+      rail to rail and closes the rails with a cross pair.
+    - The hero's field is a dark plate in both schemes, the hero picture
+      drawn on it in its dark palette, so the page has one moment of
+      contrast; in the dark scheme the plate is a step over the page
+      with a lit edge and a visible dot grid. This lifts, for the field
+      alone, the "no dark slab on the light page" line above.
+    - One picture scale: the Browser draws a capture pixel at 0.72px, so
+      its page sets at the other cells' 13px, with the toolbar's address
+      bar stretched to the window and the page on its own ground at the
+      left; the nav beat pans to the page's top so the crop falls under
+      the subtitle. Localhost's laptop page ends under its nav's rule,
+      and the machine's window shows Vite's ready line (Vite 8.0.1, from
+      this repository's dev server) over the captured Local line.
+      ComesBack's snapshots stand on the machine's top line. The
+      Editor's rows fade over 56px.
+    - Copy: one name for the product noun ("cloud machine", not "box");
+      a command named in a sentence is mono in the sentence's grey with
+      no chip; the snapshot cell says what a snapshot holds and what
+      `--as` does; the Browser cell says what `repose browser` is for,
+      with the bridge left to the docs; the third question asks how long
+      snapshots are kept (lifecycle.md). The hero's lead, the setup
+      paragraph and "Start in three commands" stay the owner's (I-772,
+      and above).
+    - Smaller: the steps' command cells lose their top highlight and
+      darken by `--hk-active` under the pointer, Copy's hover ending on
+      the text line; a plan's rule over its memory line runs the cell's
+      width; Ready's tools stand on the stage's tone, and its shell rows
+      start on the text line below 1024px (the media rule had lost to
+      later base rules); the agents' links keep their space before the
+      arrow on a phone; Localhost's tmux bar holds one line at 360px.

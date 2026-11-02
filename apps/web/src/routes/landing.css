@@ -5,12 +5,12 @@
  * two rails, the centre hairline, the thirds lines) stands 16px from the
  * text beside it. Bands stack with no gap: each opens on a full-bleed
  * rule and ends on the next one. Every band after the hero opens with the
- * same head (its label, the h2, and its one side item on the h2's last
- * baseline); every picture sits under a 40px figure bar holding its
- * number and its pause button; a stage is the cell itself, flush from
- * rule to rule. The hero's field is the one place the sheet breaks: it
- * runs to the window's edges, carries the dot grid, and the rails stop
- * at it. Type, colour, buttons and the plan cards come from the kit
+ * same head (the h2, and its one side item on the h2's last baseline); a
+ * stage is the cell itself, flush from rule to rule, and a looping
+ * picture's pause button stands at its corner (a band's) or on its
+ * title's line (a cell's). The hero's field is the one place the sheet
+ * breaks: a dark plate that runs to the window's edges, carries the dot
+ * grid, and the rails stop at it. Type, colour, buttons and the plan cards come from the kit
  * (lib/hk) and PlanCells; this file places them. docs/LANDING.md records
  * the rules.
  *
@@ -31,8 +31,8 @@
 	/* How far a sheet element (a figure, the cells, the steps, the plans,
 	   the questions) runs past the content box, and so how far its text
 	   is padded back in on the sheet's outer sides: the frame's gutter, so
-	   the sheet is the window, until the rails show (1280px), and half a
-	   column gap from there. --in pads text off a rule inside the sheet
+	   the sheet is the window, until the rails show (1200px, where the
+	   frame stops growing), and half a column gap from there. --in pads text off a rule inside the sheet
 	   (the centre hairline, the thirds). */
 	--edge: var(--frame-x);
 	--in: calc(var(--col-gap) / 2);
@@ -40,7 +40,10 @@
 	   inside a band. */
 	--rule-band: var(--hk-border);
 	--rule-in: var(--hk-hairline);
-	--bar-h: 2.5rem;
+	/* A band picture's field above and below its windows: half a band,
+	   and never under 48px, so its pause button (28px, 44px to a finger)
+	   stands in the field's top right corner. */
+	--field-y: max(calc(var(--band-y) / 2), 3rem);
 }
 @media (min-width: 768px) {
 	.landing {
@@ -54,15 +57,9 @@
 		--head-gap: 3rem;
 	}
 }
-@media (min-width: 1280px) {
+@media (min-width: 1200px) {
 	.landing {
 		--edge: calc(var(--col-gap) / 2);
-	}
-}
-/* A finger's pause target is 44px; the bar holds it with 2px to spare. */
-@media (pointer: coarse) {
-	.landing {
-		--bar-h: 3rem;
 	}
 }
 
@@ -79,11 +76,13 @@
 	border-top: 1px solid;
 	border-image: linear-gradient(var(--rule-band), var(--rule-band)) 1 / 1px 0 0 / 0 100vw;
 }
-/* The rails: the sheet's two edges, drawn where the window is wide
-   enough to show them, under the band's content so the hero field's
-   spread fill covers them. A 9px cross marks each band rule where it
-   meets a rail, and the header's rule over the first band. */
-@media (min-width: 1280px) {
+/* The rails: the sheet's two edges, drawn from 1200px, where the frame
+   stops growing and page shows beside it, under the band's content so
+   the hero field's spread fill covers them. A 9px cross marks each band
+   rule where it meets a rail, the field's top edge and the footer's
+   last rule. The sticky header covers the first band's top, so the
+   rails start under it with no cross. */
+@media (min-width: 1200px) {
 	.landing .band::before {
 		content: '';
 		position: absolute;
@@ -92,9 +91,10 @@
 		border-inline: 1px solid var(--rule-band);
 		pointer-events: none;
 	}
-	.landing .band::after,
+	.landing .band + .band::after,
 	.landing .fig--hero::after,
-	:root:has(main.landing) .site-footer > .frame::after {
+	:root:has(main.landing) .site-footer > .frame::after,
+	:root:has(main.landing) .site-footer .bottom::before {
 		content: '';
 		position: absolute;
 		top: -5px;
@@ -112,7 +112,6 @@
 	/* The field's top edge: the figure is the sheet, so the cross sits
 	   on its own edges. */
 	.landing .fig--hero::after {
-		top: calc(var(--bar-h) - 4px);
 		left: -5px;
 		right: -5px;
 	}
@@ -120,29 +119,47 @@
 
 /* ---------- The footer, on the landing ---------- */
 
-/* The sheet runs on into the footer: its padding moves inside its frame,
-   so the rails reach the page's foot. The docs and dashboard footers are
-   untouched. */
+/* The sheet runs on into the footer and closes there: its padding moves
+   inside its frame, the rails run down to the rule over the theme
+   switch, and that rule, a band rule from rail to rail (window to window
+   below 1200px), ends them with a cross pair. The docs and dashboard
+   footers are untouched. */
 :root:has(main.landing) .site-footer {
 	padding-block: 0;
 	border-top-color: var(--hk-border);
 }
 :root:has(main.landing) .site-footer > .frame {
-	--edge: calc(2rem / 2);
+	--edge: var(--frame-x);
 	position: relative;
 	padding-block: 3rem 2rem;
 }
-@media (min-width: 1280px) {
-	:root:has(main.landing) .site-footer > .frame::before {
+:root:has(main.landing) .site-footer .bottom {
+	position: relative;
+	margin-inline: calc(-1 * var(--edge));
+	padding-inline: var(--edge);
+	border-top-color: var(--hk-border);
+}
+@media (min-width: 1200px) {
+	:root:has(main.landing) .site-footer > .frame {
+		--edge: calc(2rem / 2);
+	}
+	:root:has(main.landing) .site-footer .grid {
+		position: relative;
+	}
+	:root:has(main.landing) .site-footer .grid::before {
 		content: '';
 		position: absolute;
-		inset: 0 calc(var(--frame-x) - var(--edge) - 1px);
+		inset: -3rem calc(-1 * var(--edge) - 1px) -2.5rem;
 		border-inline: 1px solid var(--hk-border);
 		pointer-events: none;
 	}
 	:root:has(main.landing) .site-footer > .frame::after {
 		left: calc(var(--frame-x) - var(--edge) - 5px);
 		right: calc(var(--frame-x) - var(--edge) - 5px);
+	}
+	:root:has(main.landing) .site-footer .bottom::before {
+		left: -5px;
+		right: -5px;
 	}
 }
 
@@ -179,8 +196,7 @@
 	color: var(--hk-text);
 }
 /* The page's one label: 12px Geist Mono, upper case and tracked, in the
-   third grey. The eyebrow, the bands' labels, the figure numbers and the
-   step numbers take it. */
+   third grey. The eyebrow and the step numbers take it. */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
@@ -191,12 +207,6 @@
 	text-transform: uppercase;
 	color: var(--hk-text-3);
 }
-/* A band's number, a step darker than its name. */
-.landing .sec-label .n {
-	display: inline-block;
-	min-width: 2.75em;
-	color: var(--hk-text-2);
-}
 .landing .copy {
 	margin: 0;
 	max-width: 34rem;
@@ -205,18 +215,26 @@
 	color: var(--hk-text-2);
 	text-wrap: pretty;
 }
+/* A command named in a sentence is set as the commands under the cells
+   are: mono, in the sentence's grey, with no chip, so the page has one
+   inline treatment for a command it names. */
 .landing .copy code,
 .landing .faq code {
+	padding: 0;
+	border: 0;
+	background: none;
+	font-family: var(--hk-font-mono);
+	font-size: 0.875em;
+	color: inherit;
 	white-space: nowrap;
 }
 
 /* ---------- Heads ----------
 
-   Every band after the hero opens the same way: its label, the h2 under
-   it, and from 1024px the band's one side item in the right half (from
-   the centre column line), standing on the h2's last baseline. A head
-   with no side item lets the h2 run across. Its foot is the inner rule
-   that opens what it heads. */
+   Every band after the hero opens the same way: the h2, and from 1024px
+   the band's one side item in the right half (from the centre column
+   line), standing on the h2's last baseline. Its foot is the inner rule
+   that opens what it heads, across the sheet. */
 .landing .head {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -233,14 +251,8 @@
 		align-items: end;
 		align-items: last baseline;
 	}
-	.landing .head > .label {
-		grid-column: 1 / -1;
-	}
 	.landing .head > h2 {
 		grid-column: 1 / 7;
-	}
-	.landing .head > h2:last-child {
-		grid-column: 1 / -1;
 	}
 	.landing .head > .side {
 		grid-column: 7 / -1;
@@ -378,51 +390,27 @@
 
 /* ---------- Figures ----------
 
-   A picture's figure: a 40px bar ruled across the sheet with its number
-   at the text line and its pause button at the right end, then the
-   stage, the cell itself, with the one inset on every side. A band's
-   figure runs the sheet's width and ends on the next band's rule. */
+   A band's picture (the hero's, the setup's) runs the sheet's width and
+   ends on the next band's rule: a field --field-y deep above and below
+   its windows, which stand on the text line. Its pause button stands in
+   the field's top right corner, its chip's right edge on the text line.
+   The frame holding a picture gives up its own positioning, so the
+   button is placed from the figure (PauseButton.svelte: --pause-y is
+   the chip's top, --pause-r its right edge). */
 .landing .band > .fig {
+	--pause-y: calc((var(--field-y) - 28px) / 2);
+	position: relative;
 	margin-inline: calc(-1 * var(--edge));
 }
-.landing .fig {
-	position: relative;
-}
-.landing .fig-bar {
-	display: flex;
-	align-items: center;
-	height: var(--bar-h);
-	padding-inline: var(--edge);
-	border-block: 1px solid var(--rule-in);
-}
-.landing .band > .fig > .stage {
-	padding: var(--shot-in);
-}
-/* Where the sheet is the window (640 to 1279px), a band picture's
-   windows stand on the text line. */
-@media (min-width: 640px) {
-	.landing .band > .fig > .stage {
-		padding-inline: max(var(--shot-in), var(--edge));
-	}
-}
-/* The frame holding the picture gives up its own positioning, so its
-   pause button is placed from the figure: centred in the bar, its chip's
-   right edge on the text line (PauseButton.svelte). */
 .landing .fig :is(.pic-frame, .stage) {
 	position: static;
 }
-/* The bar is part of the figure: pointing at it shows the button too. */
-.landing .fig:hover .pic-pause {
-	opacity: 1;
+.landing .band > .fig > .stage {
+	padding: var(--field-y) var(--edge);
 }
-
-/* The hero's figure: its bar's foot is the field's top edge. The field
-   is half a band deep above and below its windows. */
-.landing .fig--hero > .fig-bar {
-	border-bottom: 0;
-}
-.landing .band > .fig > .stage.hero-stage {
-	padding-block: calc(var(--band-y) / 2);
+/* The setup's field opens on an inner rule under its head. */
+.landing .band > .fig:not(.fig--hero) {
+	border-top: 1px solid var(--rule-in);
 }
 
 /* ---------- The feature grid ----------
@@ -430,10 +418,12 @@
    Four cells flush on the sheet, split by inner rules: one column, and
    from 1024px a 2x2 whose centre hairline stands half a gap left of the
    column line, so the right cells' text starts on it. Each cell is its
-   bar, its picture's stage (ruled at its foot), then the title, one
-   paragraph and the command, set as the hero's install line is (a
-   command to read, not to run here). The last row ends on the next
-   band's rule. */
+   picture's stage (ruled at its foot), then the title, one paragraph and
+   the command, set as the hero's install line is (a command to read,
+   not to run here). A looping picture's pause button stands at the right
+   end of its title's line. The pictures' windows stand on the cell's
+   text lines (--shot-l, --shot-r). The last row ends on the next band's
+   rule. */
 .landing .cells {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -441,19 +431,20 @@
 	padding: 0;
 	list-style: none;
 }
+.landing .cells {
+	--cell-pt: 1.5rem;
+	border-top: 1px solid var(--rule-in);
+}
 .landing .cells > li {
+	--pause-y: calc(var(--shot-h) + 1px + var(--cell-pt) + (1.75rem - 28px) / 2);
+	--shot-l: var(--edge);
+	--shot-r: var(--edge);
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
 }
 .landing .cells > li + li {
-	border-top: 1px solid var(--rule-in);
-}
-.landing .cells .fig-bar {
-	flex: none;
-	border-top: 0;
-}
-.landing .cells > li:first-child .fig-bar {
 	border-top: 1px solid var(--rule-in);
 }
 .landing .cells > li > .shot {
@@ -464,20 +455,22 @@
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	padding: 1.5rem var(--edge) 2rem;
+	padding: var(--cell-pt) var(--edge) 2rem;
+}
+/* The title keeps clear of the pause button at its line's end. */
+.landing .cell-copy > .item-title {
+	padding-right: 2.5rem;
 }
 @media (min-width: 1024px) {
 	.landing .cells {
+		--cell-pt: 2rem;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		border-top: 1px solid var(--rule-in);
 	}
 	.landing .cells > li + li {
 		border-top: 0;
 	}
-	.landing .cells > li:first-child .fig-bar {
-		border-top: 0;
-	}
 	.landing .cells > li:nth-child(even) {
+		--shot-l: calc(var(--in) - 1px);
 		border-left: 1px solid var(--rule-in);
 	}
 	.landing .cells > li:nth-child(n + 3) {
@@ -485,23 +478,25 @@
 	}
 	.landing .cells > li:nth-child(odd) {
 		--pause-r: var(--in);
+		--shot-r: var(--in);
 	}
-	.landing .cells > li:nth-child(odd) > :is(.fig-bar, .cell-copy) {
+	.landing .cells > li:nth-child(odd) > .cell-copy {
 		padding-right: var(--in);
 	}
-	.landing .cells > li:nth-child(even) > :is(.fig-bar, .cell-copy) {
+	.landing .cells > li:nth-child(even) > .cell-copy {
 		padding-left: calc(var(--in) - 1px);
 	}
 	.landing .cell-copy {
-		padding-block: 2rem 2.5rem;
+		padding-bottom: 2.5rem;
 	}
 }
 /* One column (below 1024px), a cell runs the window's width and its
-   stage does too; the picture inside keeps 34rem, centred on the stage,
-   so its windows and captures draw at one scale at every width. */
+   stage does too; the picture inside starts on the text line, as every
+   picture on the page does, and stops at 34rem, so its windows and
+   captures draw at one scale at every width. */
 @media (max-width: 1023.98px) {
 	.landing .cells > li > .shot {
-		padding-inline: max(0px, (100% - 34rem) / 2);
+		padding-right: max(0px, 100% - 34rem - 2 * var(--edge));
 	}
 }
 .landing .cells .copy {
@@ -543,6 +538,7 @@
 	.landing .links .hk-more {
 		display: inline-flex;
 		align-items: center;
+		gap: 0.25em;
 		min-height: 2.75rem;
 	}
 	.landing .head .links {
@@ -585,7 +581,7 @@
 	min-width: 0;
 	max-width: none;
 	min-height: 3rem;
-	padding: 0.375rem calc(var(--edge) - 0.5rem) 0.375rem var(--edge);
+	padding: 0.375rem var(--edge);
 	border: 0;
 	border-top: 1px solid var(--rule-in);
 	border-radius: 0;
@@ -661,10 +657,18 @@
 	border-top: 1px solid var(--rule-in);
 }
 .landing .plans.plans--public .plan {
-	padding: 1.5rem var(--edge) 2rem;
+	--pl: var(--edge);
+	--pr: var(--edge);
+	padding: 1.5rem var(--pr) 2rem var(--pl);
 	border: 0;
 	border-radius: 0;
 	background: none;
+}
+/* The rule over a plan's memory line runs the cell's width, so it meets
+   the rules round the cell, as every inner rule on the sheet does. */
+.landing .plans.plans--public .p-run {
+	margin-inline: calc(-1 * var(--pl)) calc(-1 * var(--pr));
+	padding-inline: var(--pl) var(--pr);
 }
 .landing .plans.plans--public .plan + .plan {
 	border-top: 1px solid var(--rule-in);
@@ -678,13 +682,15 @@
 			minmax(0, 1fr);
 	}
 	.landing .plans.plans--public .plan {
-		padding: 2rem var(--in) 2.5rem calc(var(--in) - 1px);
+		--pl: calc(var(--in) - 1px);
+		--pr: var(--in);
+		padding-block: 2rem 2.5rem;
 	}
 	.landing .plans.plans--public .plan:first-child {
-		padding-left: var(--edge);
+		--pl: var(--edge);
 	}
 	.landing .plans.plans--public .plan:last-child {
-		padding-right: var(--edge);
+		--pr: var(--edge);
 	}
 	.landing .plans.plans--public .plan + .plan {
 		border-top: 0;
@@ -704,48 +710,15 @@
 
 /* ---------- Questions ----------
 
-   The label across, then the heading on the left half and the questions
-   on the right, from the centre hairline to the rail. From 1024px the
-   heading holds in view beside the answers, its baseline on the first
-   question's, and the hairline runs from the first question's rule to
-   the footer's, so the left half reads as a column of the sheet. The
-   last row ends on the footer's rule. */
-.landing .faq-band {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	row-gap: 0.75rem;
-}
-.landing .faq-band > h2 {
-	margin-bottom: calc(var(--head-gap) - 0.75rem);
-}
+   The band's head, as every band's, then the questions as ruled rows
+   across the sheet, from rail to rail: the question at the text line,
+   the plus at the row's right end, the answer under the question at the
+   copy's measure. The last row ends on the footer's rule. */
 .landing .faq {
 	margin-inline: calc(-1 * var(--edge));
 }
 .landing .faq > * {
 	border-top: 1px solid var(--rule-in);
-}
-@media (min-width: 1024px) {
-	.landing .faq-band {
-		grid-template-columns: repeat(12, minmax(0, 1fr));
-		column-gap: var(--col-gap);
-		align-items: first baseline;
-	}
-	.landing .faq-band > .label {
-		grid-column: 1 / -1;
-	}
-	.landing .faq-band > h2 {
-		position: sticky;
-		top: calc(var(--header-h) + 2rem);
-		grid-column: 1 / 7;
-		grid-row: 2;
-		margin: 0;
-	}
-	.landing .faq {
-		grid-column: 7 / -1;
-		grid-row: 2;
-		margin-left: calc(-1 * var(--in));
-		border-left: 1px solid var(--rule-in);
-	}
 }
 /* A question's row: its title at the text line, the plus at the right
    end, the hover wash and the focus ring (drawn inside it) across the
@@ -759,14 +732,6 @@
 	cursor: pointer;
 	list-style: none;
 	transition: background-color var(--hk-dur-fast) var(--hk-ease);
-}
-@media (min-width: 1024px) {
-	.landing .faq summary {
-		padding-left: calc(var(--in) - 1px);
-	}
-	.landing .faq details > p {
-		padding-left: calc(var(--in) - 1px);
-	}
 }
 .landing .faq summary:hover {
 	background: var(--hk-hover);

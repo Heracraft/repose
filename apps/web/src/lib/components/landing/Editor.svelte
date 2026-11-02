@@ -574,7 +574,8 @@
 	}
 	.ed {
 		height: calc(100% - 2 * var(--shot-in));
-		margin: var(--shot-in);
+		margin: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 		container-type: inline-size;
 	}
 	/* The screen's 20 rows share the window under its head, and its 78
@@ -628,7 +629,7 @@
 	   top folders' icons sit in its first columns, and cutting through
 	   them left name fragments. */
 	.ln:not(.sl) {
-		mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+		mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
 	}
 	@media (max-width: 639px) {
 		.screen {

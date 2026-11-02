@@ -35,8 +35,8 @@ headline starting under the logo, laid out as one ruled sheet on a
 12-column grid (I-961, option D; see "The sheet" below). In order:
 
 1. **Hero.** Eyebrow "For solo founders and their agents" in the page's
-   one label (12px Geist Mono, upper case, tracked 0.08em; the bands'
-   labels, the figure numbers and the step numbers take it too); the
+   one label (12px Geist Mono, upper case, tracked 0.08em; the step
+   numbers take it too, and nothing else on the page is numbered); the
    serif headline "Your dev environment, replicated in the cloud"; main's
    lead ("Your code, tools and logins sit on a machine of its own, ...").
    From 1200px the headline (seven columns) and the lead (five) stand
@@ -45,23 +45,26 @@ headline starting under the logo, laid out as one ruled sheet on a
    1199px the headline runs across, and the buttons stand in the right
    half with the install line on the lead's last line. The install line
    is mono, exactly what the button copies, on one line, scrolling under
-   a fade where its column is narrower. Under the copy, the figure bar
-   `Fig. 0`, then the hero picture (`landing/Hero.svelte`) on the field:
-   the one stage that bleeds to the window's edges, a step deeper in tone
-   with a 16px dot grid that fades with its sheen, the windows on the
-   frame. It is the page's one moment of contrast. The agent wrecks the
+   a fade where its column is narrower. Under the copy, the hero picture
+   (`landing/Hero.svelte`) on the field: the one stage that bleeds to the
+   window's edges, a dark plate in both schemes (in the dark scheme a
+   step lighter than the page, with a lit top edge) carrying a 16px dot
+   grid that fades with its sheen, the windows on the frame. The picture
+   draws in its dark palette there. It is the page's one moment of
+   contrast; the rest of the page stays on the page's tones. The agent wrecks the
    cloud machine and a snapshot restores it (I-843, I-961). The still
    frame (reduced motion, no script) has no globe, since it has no skill
    to come from it; in the loop the globe is drawn in line.
-2. **01 Setup. "Your laptop's setup, in one command"** (the owner's
-   I-772 heading and paragraph, the paragraph on the heading's last
-   line), then `Fig. 1`, the OneCommand picture: `repose run` copying
-   the laptop's source control, changes and ignored files to the
-   machine.
-3. **02 Machine. "A cloud machine that feels like your own box"**
-   (`#features`, I-961). Four cells, each its figure bar (`Fig. 2.1` to
-   `2.4`) and picture (ComesBack, Localhost, Browser, Editor) over a
-   serif claim, one paragraph with a fact the picture cannot carry, and
+2. **Setup. "Your laptop's setup, in one command"** (the owner's I-772
+   heading and paragraph, the paragraph on the heading's last line), then
+   the OneCommand picture on its field: `repose run` copying the laptop's
+   source control, changes and ignored files to the machine.
+3. **Machine. "Work on the machine as you would on your laptop"**
+   (`#features`, I-961), with "Each project gets a machine of its own,
+   and you reach it from the tools already on your laptop." on the
+   heading's last line. Four cells, each its picture (ComesBack,
+   Localhost, Browser, Editor) over a serif claim, one paragraph with a
+   fact the picture cannot carry, and
    the command the picture shows, under the paragraph, set as the hero's
    install line is (13px mono, the second grey) with no `$` and no copy
    button, since a visitor without the CLI cannot run it: the page has
@@ -71,17 +74,23 @@ headline starting under the logo, laid out as one ruled sheet on a
    stands half a gap left of the column line, so the right cells' text
    starts on it, and runs unbroken from the head's foot to the next
    band's rule. Below 1024px they are one column; a cell and its stage
-   run the window's width, and the picture keeps 34rem, centred on its
-   stage.
-4. **03 Agents. "The agents you use, and the tools they need, on first
+   run the window's width, and the picture starts on the text line and
+   stops at 34rem. The snapshot cell says what a snapshot holds and that
+   `--as` restores it to a new machine, which the hero does not show; the
+   Browser cell says what `repose browser` is for (watching, a login or a
+   captcha), and the bridge stays in the docs.
+4. **Agents. "The agents you use, and the tools they need, on first
    boot"**, with "All agents" and "Everything installed" (grey, with the
    kit's arrow) on the heading's last line in the right half (under it
-   below 1024px), then `Fig. 3`, the Ready picture, from rail to rail: the
-   five agents' marks alone (I-287) on the stage's tone, each naming
-   itself under the pointer; an inner rule; then the tools on the first
-   third, the everyday tools' line under them, and the machine's shell
-   flush on the other two thirds, on the terminals' ground.
-5. **04 Install. "Start in three commands"**, ruled rows (I-961): the
+   below 1024px), then the Ready picture, from rail to rail: the five
+   agents' marks alone (I-287) on the stage's tone, each naming itself
+   under the pointer; an inner rule; then the tools on the first third,
+   on the stage's tone too, the everyday tools' line under them, and the
+   machine's shell flush on the other two thirds, on the terminals'
+   ground.
+5. **Install. "Start in three commands"**, with "Install and sign in"
+   and "Run and attach" (the docs pages, as the Agents links) on the
+   heading's last line, then ruled rows (I-961): the
    step's number (the page's label) and serif name in the left half, its
    command filling the right half flush on the stage's tone from the
    centre hairline to the rail, Copy at the cell's right end. On a phone
@@ -91,7 +100,7 @@ headline starting under the logo, laid out as one ruled sheet on a
    shows exactly what its Copy copies, with no `$`, on one line at every
    width (under 640px the install line scrolls under the copy box's
    fade), and it runs on a visitor's laptop.
-6. **05 Pricing. "Launch prices"** (`#pricing`). On the heading's last
+6. **Pricing. "Launch prices"** (`#pricing`). On the heading's last
    line, "Start a free week" and the seats line beside it from
    `GET /public/seats` ("18 seats left"; the waitlist and seat copy stays
    as it is until the owner decides the 2026-10-17 notes). The heading
@@ -100,13 +109,15 @@ headline starting under the logo, laid out as one ruled sheet on a
    variant (the one drawing of the plans, I-663), as flush cells split by
    inner rules with no card edge: three across on the thirds lines from
    1024px, stacked below.
-7. **06 Questions. "Before you try it".** Five a solo founder asks before trying it, each one a
-   reason to: why not skip permissions on the laptop (what the agent can
-   reach there and here), closing the laptop while the agent works (it
-   keeps working; you attach again; no notifications, per "What we
-   sell"), the agent wrecking the machine (the snapshot schedule), three
-   agents on three approaches (`repose fork`), and why not set up a
-   server yourself. Every answer is from the docs (secrets, lifecycle,
+7. **Questions. "Before you try it"**, with "Limits" and "Billing" on
+   the heading's last line. Five a solo founder asks before trying it,
+   each one a reason to: why not skip permissions on the laptop (what the
+   agent can reach there and here), closing the laptop while the agent
+   works (it keeps working; you attach again; no notifications, per "What
+   we sell"), how long snapshots are kept (seven days and the newest, and
+   when repose takes them: the wreck itself is the hero's), three agents
+   on three approaches (`repose fork`), and why not set up a server
+   yourself. Every answer is from the docs (secrets, lifecycle,
    sync). No setup trivia (where a
    login lives, Windows, how commits come back, what a stopped machine
    costs): those belong in the docs and give a visitor no reason to try
@@ -121,23 +132,28 @@ quarters its Policies; the thirds hold the plans and Ready's lower row.
 Below 1024px every section is one column.
 
 The sheet is the content box outset by `--edge`: the frame's gutter below
-1280px, so the sheet is the window, and 16px from 1280px. A sheet element
-(a figure, the cells, the steps, the plans, the questions) runs the
-sheet's width and pads its text back onto the content line, and 16px off
-any rule inside it, so every vertical rule stands 16px from the text
-beside it. From 1280px two rails (`--hk-border`) draw the sheet's edges
-from the header into the footer, and a 9px cross in the fourth grey
-marks each band rule, the header's and the footer's where it meets a
-rail. The hero field breaks the sheet: the rails stop at its top edge,
-which carries its own pair of crosses.
+1200px, so the sheet is the window, and 16px from 1200px, where the frame
+stops growing and page shows beside it. A sheet element (a figure, the
+cells, the steps, the plans, the questions) runs the sheet's width and
+pads its text back onto the content line, and 16px off any rule inside
+it, so every vertical rule stands 16px from the text beside it, and so
+does every picture's window: a picture's windows stand on the text
+lines at every width. From 1200px two rails (`--hk-border`) draw the
+sheet's edges from under the header to the footer's last rule (the one
+over the theme switch, which runs rail to rail and closes them), and a
+9px cross in the fourth grey marks each band rule, the footer's top rule
+and that last rule where they meet a rail. The sticky header covers the
+first band's top, so the rails start under it with no cross. The hero
+field breaks the sheet: the rails stop at its top edge, which carries
+its own pair of crosses.
 
-Every band after the hero opens with the same head: its label (`01
-Setup` to `06 Questions`, the number a grey darker than the name), the
-h2 under it, and from 1024px the band's one side item in the right half
-on the h2's last baseline. A band that needs no side item lets its h2 run
-across (features, steps). The questions' heading stands in the left half
-beside the list, on the first question's baseline, sticky; the list runs
-from the centre hairline to the rail.
+Every band after the hero opens with the same head: the h2, and from
+1024px the band's one side item in the right half on the h2's last
+baseline (under the h2 below 1024px). Every band has one: a paragraph
+(setup, machine), links to the docs (agents, install, questions) or the
+button (pricing). The head's foot is an inner rule across the sheet. No
+band carries a numbered label: no sentence cites one, and the h2 and
+the header's links already name each band.
 
 Two rule weights: band rules and rails in `--hk-border`, every rule
 inside a band in `--hk-hairline`. The page has no gap between bands. Each
@@ -167,29 +183,32 @@ nothing else is rounded. One ladder in both schemes: the page, the stage
 a step off it (with a sheen at its top-left and a highlight on its top
 edge), a window's head a step up and its body on top.
 
-Every picture stands under a figure bar and on one stage (I-961, option
-D). The bar is 40px (48px to a coarse pointer), ruled across the sheet,
-with the picture's number (`Fig. 0` to `Fig. 3`) at the text line and the
-pause button at its right end. The stage is the cell itself, flush from
-rule to rule, with no edge or radius of its own; its windows stand in it
-closed, at one inset on four sides: 24px (20 from 640 to 1023, 12 on a
-phone), and between 640 and 1279px a band picture's windows stand on the
-text line. A band's stage ends on the next band's rule. A grid cell's
-stage is 20rem tall, ruled at its foot, with its windows inset alike on
-each side, so no window is cut at the stage's edge: the
-Editor's statusline keeps its right segment whole and the Browser's
-agent log shows whole. The four grid pictures share one type size:
-window chrome and terminals at 12px mono, 11px on a phone. A capture
-that is wider than its window (the Editor's 78 columns) is cropped on
-the right into a fade, as a terminal is, never shrunk to fit; a
-captured page is cropped in its white space, never inside a sentence.
-On a phone the Localhost and Browser captures keep a size their text
-reads at and crop on the right into a fade as well; the Browser's own
-scrollbar is drawn outside its window. The Localhost app page ends
-above its headline: drawn at its window's width, that headline outsized
-the cell's title. ComesBack's snapshots stand in a window as tall as
-their two tiles, centred on the machine; on a phone both tiles stand
-whole at every beat. The
+Every picture stands on one stage (I-961, option D), with no figure bar
+or number over it. The stage is the cell itself, flush from rule to
+rule, with no edge or radius of its own; its windows stand in it closed,
+on the text lines at the sides. A band picture (the hero, the setup)
+stands in a field `--field-y` deep above and below its windows (half a
+band, never under 48px), and ends on the next band's rule. A grid cell's
+stage is 20rem tall, ruled at its foot, its windows 24px (20 from 640 to
+1023, 12 on a phone) from its top and foot, so no window is cut at the
+stage's edge: the Editor's statusline keeps its right segment whole and
+the Browser's agent log shows whole. The four grid pictures share one
+type scale: window chrome and terminals at 12px to 13px mono, 11px on a
+phone, and the Browser's captured page at 13px body type: one capture
+pixel is drawn 0.72px, the page stands at the left of its window on the
+app's ground, and the toolbar's address bar is drawn stretched to the
+window's width. A capture that is wider than its window (the Editor's
+78 columns) is cropped on the right into a fade, as a terminal is, never
+shrunk to fit; a captured page is cropped in its white space, never
+inside a sentence, at every beat of its loop. On a phone the Localhost
+and Browser captures keep a size their text reads at and crop on the
+right into a fade as well; the Browser's own scrollbar is cut off. The
+Localhost app page ends under its nav's rule: drawn at its window's
+width, the headline under it outsized the cell's title, and the ground
+above the headline read as a page still loading; the machine's window
+shows Vite's ready line over the Local one. ComesBack's snapshots stand
+in a window as tall as their two tiles, on the machine's top line; on a
+phone both tiles stand whole at every beat. The
 Browser and the Editor have no window head of their own, since their
 captured toolbar and nvim's tab bar are their chrome; "your cloud machine"
 heads the hero's, the setup picture's, ComesBack's, Localhost's and
@@ -205,13 +224,13 @@ scheme only; in the dark scheme they are drawn inverted with their hues
 turned back (`invert(0.9) hue-rotate(180deg)`), so the app reads as a
 dark page beside the dark windows (I-961).
 
-Each looping picture has a pause button (WCAG 2.2.2) in its figure bar,
-centred in the bar's height with its chip's right edge on the text line,
-named after its picture ("Pause the ports picture"). It shows under the
-pointer anywhere on the figure, and on focus. Ready and the Editor do not
-loop, so their bars hold only the number. On a touch screen the button is
-a 44px target with the 28px chip drawn in its middle, inside the 48px
-bar.
+Each looping picture has a pause button (WCAG 2.2.2), shown at rest in
+the pictures' quiet grey, with its chip's right edge on the text line,
+named after its picture ("Pause the ports picture"). A band picture's
+stands in its field's top right corner; a cell's at the right end of its
+title's line, which keeps clear of it. Ready and the Editor do not loop,
+so they have none, and nothing holds a place for one. On a touch screen
+the button is a 44px target with the 28px chip drawn in its middle.
 
 `landing/Terminal.svelte` is no longer on the landing; `/design` still
 shows it.
@@ -278,11 +297,10 @@ into the page.
   - **Triplets.** Three sentences or three clauses in a row beat like a
     speech. Prefer two.
   - **Choppy fragments** standing in for sentences in prose. A deliberate
-    label is not prose and may be two words ("Launch prices", "06
-    Questions").
+    label is not prose and may be two words ("Launch prices").
   - **Punchy closers.** A last line written to be quoted.
   - **No actor.** Prefer a person doing something ("You spend an hour
-    setting up a cloud box") over a state of the world.
+    setting up a cloud machine") over a state of the world.
   - **Em dashes**, filler adverbs, and "every/always/never" as emphasis
     rather than fact.
 - Never write as if the product were Claude-only: "the agent" drives the
@@ -341,11 +359,10 @@ place of an observer of its own:
 - **Pause.** Each picture has an icon-only pause button
   (`PauseButton.svelte`, WCAG 2.2.2): a 28px picture chip with the
   windows' hairline and `--radius` corners, `aria-pressed` while paused, in the
-  tab order throughout. It shows on hover or when anything in the frame
-  has focus, and stays shown while paused; on a touch screen it is
-  always shown. It stands in its picture's figure bar at the right end,
-  never over a head or content (I-673, I-961): centred in the bar, its
-  chip's right edge on the text line, the same for all five loops. Its
+  tab order throughout, and always shown. It never stands over a head or
+  content (I-673, I-961): a band picture's in its field's top right
+  corner, a cell's at the end of its title's line, its chip's right edge
+  on the text line for all five loops. Its
   name says which picture it pauses. Its hit area is 44px. A paused picture
   stays on its frame through scrolling out and back until play is
   pressed. A pointer moving inside a picture, a press on it, or focus
@@ -505,8 +522,8 @@ place of an observer of its own:
     (I-675).
   - *The pointer's press* in the Browser picture: it scales to 0.86 and
     back in 220ms, `outQuad`, as your click lands.
-  - *The pause button showing* on hover or focus: an opacity fade of
-    150ms, the CSS `ease`, with its colour change (I-666).
+  - *The pause button under the pointer*: its icon and edge darken in
+    150ms, the CSS `ease` (I-666).
   - *Colour as a class changes* (CSS transitions, the CSS `ease` unless
     named): the `repose run` chip filling as it fires, 180ms (Hero,
     OneCommand, Localhost, Browser), OneCommand's `git fetch repose`
@@ -521,7 +538,8 @@ place of an observer of its own:
   - *Hover and press* on the page's links and buttons: the Foundation's
     150ms colour change (`DESIGN-LANGUAGE.md`, "Motion"). A question's
     row takes `--hk-hover` and its plus turns to the first ink, and a
-    step's command cell lightens one step, each in 150ms, the kit's ease,
+    step's command cell darkens by the kit's `--hk-active` wash, each in
+    150ms, the kit's ease,
     with no transition under reduced motion (I-961). An opened question's
     plus turns 45 degrees in the same 150ms.
 
@@ -532,7 +550,7 @@ and easing, or it does not ship.
 
 - Judge the assembled page, not a component in isolation: screenshot it at
   1440×900 and 390px, light and dark, and look before calling anything done.
-  Check 1280, 1024, 768 and 360 for the column changes.
+  Check 1280, 1240, 1024, 768 and 360 for the column changes.
 - Look at captures at their real size. A full-page capture read after
   being scaled to a fifth hides what a visitor sees at once (a lopsided
   hero got through that way, 2026-09-27). Capture the viewport, or crop

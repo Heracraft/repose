@@ -98,17 +98,6 @@
 	{/if}
 {/snippet}
 
-<!-- A band's label: its number and its name, in the mono label. -->
-{#snippet label(n: string, name: string)}
-	<p class="label sec-label"><span class="n">{n}</span>{name}</p>
-{/snippet}
-
-<!-- A picture's figure bar: its number, and the row its pause button
-     stands in (landing.css places the button there). -->
-{#snippet bar(n: string)}
-	<div class="fig-bar"><span class="label">Fig. {n}</span></div>
-{/snippet}
-
 {#snippet plus()}
 	<svg class="plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
 		<path d="M8 3v10M3 8h10" />
@@ -137,7 +126,6 @@
 			</div>
 		</div>
 		<div class="fig fig--hero">
-			{@render bar('0')}
 			<div class="stage hero-stage">
 				<Hero />
 			</div>
@@ -146,15 +134,13 @@
 
 	<section class="band" aria-labelledby="setup-h">
 		<div class="head">
-			{@render label('01', 'Setup')}
 			<h2 class="hk-h2" id="setup-h">Your laptop's setup, in one command</h2>
 			<p class="copy side">
-				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
+				You spend an hour setting up a cloud machine: install the CLIs, log in to GitHub, paste the
 				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</p>
 		</div>
 		<div class="fig">
-			{@render bar('1')}
 			<div class="stage">
 				<OneCommand animated />
 			</div>
@@ -163,24 +149,25 @@
 
 	<section class="band" id="features" aria-labelledby="features-h">
 		<div class="head">
-			{@render label('02', 'Machine')}
-			<h2 class="hk-h2" id="features-h">A cloud machine that feels like your own box</h2>
+			<h2 class="hk-h2" id="features-h">Work on the machine as you would on your laptop</h2>
+			<p class="copy side">
+				Each project gets a machine of its own, and you reach it from the tools already on your
+				laptop.
+			</p>
 		</div>
 		<ul class="cells">
 			<li class="fig">
-				{@render bar('2.1')}
 				<ComesBack />
 				<div class="cell-copy">
-					<h3 class="item-title">Let it break the whole machine</h3>
+					<h3 class="item-title">Restore the whole disk</h3>
 					<p class="copy">
-						A restore puts the snapshot's disk back on the stopped machine and starts it. With
-						<code>--as</code> it goes to a new machine and leaves this one as it is.
+						A snapshot holds the checkout, the installed tools and the logins made on the machine. A
+						restore puts it back on the stopped machine, or on a new one with <code>--as</code>.
 					</p>
 					<p class="cmd">repose snapshots restore</p>
 				</div>
 			</li>
 			<li class="fig">
-				{@render bar('2.2')}
 				<Localhost />
 				<div class="cell-copy">
 					<h3 class="item-title">Use its ports on your localhost</h3>
@@ -192,19 +179,17 @@
 				</div>
 			</li>
 			<li class="fig">
-				{@render bar('2.3')}
 				<Browser />
 				<div class="cell-copy">
 					<h3 class="item-title">Watch the agent's browser, and take over</h3>
 					<p class="copy">
-						For a site you're logged in to, <code>repose browser bridge</code> lets the agents browse
-						in your laptop's Chrome, with your logins, until you press Ctrl-C.
+						The agents' browser runs on the machine. Open it on your laptop to watch, or to do a
+						login or a captcha for them.
 					</p>
 					<p class="cmd">repose browser</p>
 				</div>
 			</li>
 			<li class="fig">
-				{@render bar('2.4')}
 				<Editor />
 				<div class="cell-copy">
 					<h3 class="item-title">Open it in your editor</h3>
@@ -220,7 +205,6 @@
 
 	<section class="band" aria-labelledby="agents-h">
 		<div class="head">
-			{@render label('03', 'Agents')}
 			<h2 class="hk-h2" id="agents-h">
 				The agents you use, and the tools they need, on first boot
 			</h2>
@@ -233,15 +217,21 @@
 			</p>
 		</div>
 		<div class="fig">
-			{@render bar('3')}
 			<Ready />
 		</div>
 	</section>
 
 	<section class="band" aria-labelledby="install-h">
 		<div class="head">
-			{@render label('04', 'Install')}
 			<h2 class="hk-h2" id="install-h">Start in three commands</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'install' })}
+					>Install and sign in</a
+				>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'run-and-attach' })}
+					>Run and attach</a
+				>
+			</p>
 		</div>
 		<ol class="ruled steps">
 			{#each steps as step, i (step.title)}
@@ -258,7 +248,6 @@
 
 	<section class="band" id="pricing" aria-labelledby="pricing-h">
 		<div class="head">
-			{@render label('05', 'Pricing')}
 			<h2 class="hk-h2" id="pricing-h">Launch prices</h2>
 			<div class="cta-row side">
 				<!-- Signing up here comes back to Billing, where the plans are. -->
@@ -279,16 +268,21 @@
 	</section>
 
 	<section class="band faq-band" aria-labelledby="faq-h">
-		{@render label('06', 'Questions')}
-		<h2 class="hk-h2" id="faq-h">Before you try it</h2>
+		<div class="head">
+			<h2 class="hk-h2" id="faq-h">Before you try it</h2>
+			<p class="links side">
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'limits' })}>Limits</a>
+				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'billing' })}>Billing</a>
+			</p>
+		</div>
 		<div class="ruled faq">
 			<details>
 				<summary class="item-title">Why not skip permissions on my laptop?{@render plus()}</summary>
 				<p class="copy">
 					There the agent can read whatever you can, from your SSH keys to the sessions in your
 					browser. On repose it gets a machine holding one project and the logins you chose to copy.
-					Nothing on that machine can open a connection to your laptop, and your other projects are
-					separate machines it can't reach.
+					The machine can't open a connection to your laptop, and your other projects are separate
+					machines it can't reach.
 				</p>
 			</details>
 			<details>
@@ -301,10 +295,10 @@
 				</p>
 			</details>
 			<details>
-				<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary>
+				<summary class="item-title">How long are snapshots kept?{@render plus()}</summary>
 				<p class="copy">
-					You restore a snapshot from before it happened. repose takes one each night the machine
-					runs and at every stop, and you can take your own before something risky.
+					Seven days, and the newest one always. repose takes one each night the machine runs and at
+					every stop, and <code>repose snapshots create</code> takes one before something risky.
 				</p>
 			</details>
 			<details>

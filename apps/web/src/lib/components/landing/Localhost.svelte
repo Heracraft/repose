@@ -5,6 +5,9 @@
   `⇄ 5173` chip on a wire; below, the laptop's browser on localhost:5173
   showing the app the machine serves.
 
+  READY is Vite's own line over it, as Vite 8.0.1 printed it for this
+  repository's web app on the build box (2026-11-02), with the blank row
+  Vite leaves under it; the machine's capture kept the Local row alone.
   LOCAL and BAR are verbatim `tmux capture-pane -p -e` output (2026-09-25):
   LOCAL from the dev window on the machine (its 21-column turbo prefix
   cropped), BAR the last row of the attached client on the laptop, its
@@ -35,12 +38,12 @@
   width: the pane is a size container, and the image's top is set so a
   chosen row of the capture (between two lines of text) lands on the
   pane's bottom edge, the row picked by the pane's aspect ratio. The
-  app's page shows its nav and the ground under it and ends above its
-  headline: drawn at the window's width, that 48px headline set at about
-  34px, louder than the cell's own title, and a smaller drawing would
-  take the nav under 11px. So the page's pane is as tall as that crop
-  (200 capture rows) and the forward's wire takes the rest of the
-  height (review round 2, I-961).
+  app's page shows its nav, cropped under its rule: drawn at the window's
+  width, the 48px headline under it set at about 34px, louder than the
+  cell's own title, and a smaller drawing would take the nav under 11px;
+  an empty strip of ground under the nav read as a page still loading.
+  So the page's pane is as tall as that crop (140 capture rows) and the
+  forward's wire takes the rest of the height (I-961).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -104,6 +107,15 @@
 	}
 	// Without the turbo prefix.
 	const local = parse(LOCAL).slice(1);
+	// Vite's ready line: VITE and its version in bold green, the rest dim
+	// but the time, as Vite colours it.
+	const ready: Seg[] = [
+		{ text: '  VITE', style: 'color:var(--t-green);font-weight:700;' },
+		{ text: ' v8.0.1', style: 'color:var(--t-green);' },
+		{ text: '  ready in ', style: 'color:var(--t-dim);' },
+		{ text: '1494', style: 'font-weight:700;' },
+		{ text: ' ms', style: 'color:var(--t-dim);' }
+	];
 
 	let pic: HTMLDivElement;
 	const picture = new Picture({ group: 'grid' });
@@ -278,6 +290,10 @@
 			<WinHead who="machine" />
 			<div class="term">
 				<div class="tr">
+					{#each ready as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
+				</div>
+				<div class="tr">&nbsp;</div>
+				<div class="tr">
 					{#each local as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
 				</div>
 				<div class="bar">
@@ -325,7 +341,8 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in);
+		padding: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 	}
 
 	/* The two windows, the grid's own (landing.css, WinHead.svelte). */
@@ -372,12 +389,18 @@
 	.url.typing {
 		border-color: var(--pic-accent);
 	}
-	/* The page's pane: 200 rows of the capture at the window's width
-	   (the nav, its rule and the ground above the headline). */
+	/* The page's pane: 140 rows of the capture at the window's width
+	   (the nav and its rule). */
 	.page {
 		position: relative;
 		flex: none;
-		height: calc(max(100cqw - 2 * var(--shot-in) - 2px, var(--min-w)) * 200 / var(--pw));
+		height: calc(
+			max(
+					100cqw - var(--shot-l, var(--shot-in)) - var(--shot-r, var(--shot-in)) - 2px,
+					var(--min-w)
+				) *
+				140 / var(--pw)
+		);
 		overflow: hidden;
 		container-type: size;
 	}
@@ -418,11 +441,10 @@
 	/* The crop. Capture row --b (in the capture's own pixels, --iw wide)
 	   lands on the pane's bottom edge, so the pane ends in white space
 	   between two lines of text; --cap 0px keeps the capture's top from
-	   coming below the pane's (no extra ground above it). The pane is 200
+	   coming below the pane's (no extra ground above it). The pane is 140
 	   capture rows tall (.page), so one row serves every width.
 	   Rows, from the captures: the app's nav ends at 85 (Job Alerts) and
-	   its rule at 128, its headline starts near 225, so the app ends at
-	   200, above the headline; Chromium's refused page has its title at
+	   its rule at 128, so the app ends at 140, under the rule; Chromium's refused page has its title at
 	   308 and "refused to connect" at 385, so it ends at 405, under them.
 	   The phone's (640px) captures share the app's rows, and Chromium's
 	   sit 8 to 24 rows higher. */
@@ -438,7 +460,7 @@
 	}
 	.home img {
 		--iw: 1440;
-		--b: 200;
+		--b: 140;
 		--cap: 0px;
 	}
 	.err img {
@@ -526,6 +548,7 @@
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
+		white-space: nowrap;
 		text-align: right;
 	}
 	.port {

@@ -1,14 +1,12 @@
 <!--
-  The pause button of a looping picture (WCAG 2.2.2, DECISIONS I-666). It
-  stands in the picture's figure bar, at its right end (I-673, I-961):
-  every picture on the landing sits under a --bar-h bar holding its
-  number, and the frame (the element with `use:picture.frame`) gives up
-  its positioning there, so the button is placed from the figure
-  (landing.css, .fig), centred in the bar, its chip's right edge on the
-  text line (--pause-r, else --edge). It is never over a head or a
-  picture's content. It is 28px with an invisible 44px
-  hit area, shows on hover or when anything in the frame (the element
-  with `use:picture.frame`) has focus, and is in the tab order throughout.
+  The pause button of a looping picture (WCAG 2.2.2, DECISIONS I-666). The
+  frame (the element with `use:picture.frame`) gives up its positioning
+  on the landing, so the button is placed from the figure (landing.css,
+  I-673, I-961): its chip's top at --pause-y (a band picture's field
+  corner, or a cell title's line) and its right edge on the text line
+  (--pause-r, else --edge). It is never over a head or a picture's
+  content. It is 28px with an invisible 44px hit area, shown at rest in
+  the pictures' quiet grey, and is in the tab order throughout.
   aria-pressed is true while the picture is paused. It is rendered only
   while the loop runs, so there is none with reduced motion or without
   scripts.
@@ -52,12 +50,12 @@
 	}
 	/* A picture control: the --rule-strong hairline and surface of the
 	   pictures' tags, with the kit's smallest radius as a button,
-	   --pic-dim at rest. In the figure bar over the picture, centred in
-	   the bar's height, its chip's right edge on the text line. */
+	   --pic-dim at rest. Its chip's top at --pause-y, its right edge on
+	   the text line; a 44px button keeps the 28px chip where it was. */
 	.pic-pause {
 		--pp: 28px;
 		position: absolute;
-		top: calc((var(--bar-h, 40px) - var(--pp)) / 2);
+		top: calc(var(--pause-y, 8px) - (var(--pp) - 28px) / 2);
 		right: calc(var(--pause-r, var(--edge, 0px)) - (var(--pp) - 28px) / 2);
 		z-index: 5;
 		display: grid;
@@ -70,9 +68,7 @@
 		background: var(--surface);
 		color: var(--pic-dim);
 		cursor: pointer;
-		opacity: 0;
 		transition:
-			opacity 0.15s,
 			color 0.15s,
 			border-color 0.15s;
 	}
@@ -83,11 +79,6 @@
 		position: absolute;
 		inset: -9px;
 	}
-	:global(:hover) > .pic-pause,
-	:global(:focus-within) > .pic-pause,
-	.pic-pause[aria-pressed='true'] {
-		opacity: 1;
-	}
 	.pic-pause:hover {
 		color: var(--pic-ink);
 		border-color: var(--pic-dim);
@@ -95,12 +86,6 @@
 	.pic-pause[aria-pressed='true'] {
 		color: var(--pic-accent);
 		border-color: var(--pic-accent);
-	}
-	/* No hover on a touch screen: the button is always shown there. */
-	@media (hover: none) {
-		.pic-pause {
-			opacity: 1;
-		}
 	}
 	/* To a finger the button itself is 44px, so it counts as a 44px target;
 	   the chip stays 28px, drawn by ::before in the middle of it. */

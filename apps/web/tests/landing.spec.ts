@@ -2,8 +2,7 @@
 // and one live line from GET /public/seats, and stands without it. I-656:
 // the page sits on the frame every page shares, under the site header and
 // over the site footer. I-837: the plans are PlanCells' public cards. I-961
-// (option D): the section's head is its label, "05 Pricing", over the h2
-// "Launch prices".
+// (option D): the section's head is the h2 "Launch prices".
 import { test, expect } from '@playwright/test';
 import { setBilling, resetBilling } from './helpers';
 
@@ -17,7 +16,6 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	const pricing = page.locator('section', {
 		has: page.getByRole('heading', { name: 'Launch prices' })
 	});
-	await expect(pricing.locator('.sec-label')).toHaveText('05Pricing');
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveText([
 		'Solo',
 		'Plus',
@@ -199,53 +197,51 @@ test("each picture band's stage ends on the next band's rule", async ({ page }) 
 	}
 });
 
-// I-961 (option D): every band after the hero opens on its numbered
-// label, and every picture sits under a 40px figure bar holding its
-// number; the pause button is centred in that bar at the content edge,
-// never on a floor under the picture.
-test('each band has its label and each picture its figure bar', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto('/');
-	await expect(page.locator('main .sec-label')).toHaveText([
-		'01Setup',
-		'02Machine',
-		'03Agents',
-		'04Install',
-		'05Pricing',
-		'06Questions'
-	]);
-	await expect(page.locator('main .fig-bar')).toHaveText([
-		'Fig. 0',
-		'Fig. 1',
-		'Fig. 2.1',
-		'Fig. 2.2',
-		'Fig. 2.3',
-		'Fig. 2.4',
-		'Fig. 3'
-	]);
-	const bars = await page
-		.locator('main .fig-bar')
-		.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
-	for (const h of bars) expect(h).toBe(40);
-	await expect(page.locator('.fig .pic-pause')).toHaveCount(5);
-	const m = await page.locator('.fig .pic-pause').evaluateAll((els) =>
-		els.map((b) => {
-			const r = b.getBoundingClientRect();
-			const bar = b.closest('.fig')!.querySelector('.fig-bar')!.getBoundingClientRect();
-			return { top: r.top - bar.top, bottom: bar.bottom - r.bottom, right: Math.round(r.right) };
-		})
-	);
-	const content = await page.locator('main').evaluate((e) => {
-		const r = e.getBoundingClientRect();
-		return Math.round(r.right - parseFloat(getComputedStyle(e).paddingRight));
-	});
-	for (const b of m) {
-		expect(Math.abs(b.top - b.bottom)).toBeLessThanOrEqual(1);
-		expect(b.top).toBeGreaterThanOrEqual(0);
+// I-961 (option D): the bands carry no numbered labels and the pictures
+// no figure bars. Each of the five pause buttons shows at rest and is the
+// element under its own centre (a clip on the hero's field once cut the
+// hero's away while its box and opacity said it was there). A band
+// picture's button stands in its field's top right corner, its chip's
+// right edge on the text line; a cell's on its title's line.
+test('every pause button shows, takes the pointer, and stands where it belongs', async ({
+	page
+}) => {
+	for (const width of [1440, 1024, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		await expect(page.locator('main .sec-label, main .fig-bar')).toHaveCount(0);
+		const buttons = page.locator('main .fig .pic-pause');
+		await expect(buttons).toHaveCount(5);
+		for (let i = 0; i < 5; i++) {
+			const b = buttons.nth(i);
+			await b.scrollIntoViewIfNeeded();
+			const m = await b.evaluate((el) => {
+				const r = el.getBoundingClientRect();
+				const x = r.left + r.width / 2;
+				const y = r.top + r.height / 2;
+				const hit = document.elementFromPoint(x, y);
+				const fig = el.closest('.fig')!;
+				const title = fig.querySelector('.cell-copy > .item-title');
+				const stage = fig.querySelector(':scope > .stage');
+				const t = title?.getBoundingClientRect();
+				const s = stage?.getBoundingClientRect();
+				return {
+					hit: hit === el || el.contains(hit),
+					opacity: getComputedStyle(el).opacity,
+					// the title line's middle against the button's
+					titleMid: t ? Math.abs(t.top + 14 - y) : null,
+					// the field's top padding holds the button
+					inField: s
+						? r.top >= s.top && r.bottom <= s.top + parseFloat(getComputedStyle(stage!).paddingTop)
+						: null
+				};
+			});
+			expect(m.hit, `button ${i} at ${width}`).toBe(true);
+			expect(m.opacity).toBe('1');
+			if (m.titleMid !== null) expect(m.titleMid, `button ${i} at ${width}`).toBeLessThanOrEqual(1);
+			if (m.inField !== null) expect(m.inField, `button ${i} at ${width}`).toBe(true);
+		}
 	}
-	// The hero's, the setup's and the right cells' buttons end on the
-	// content edge.
-	expect(m.filter((b) => Math.abs(b.right - content) <= 1)).toHaveLength(3);
 });
 
 // The setup picture's rows in flight are measured against the panels; a

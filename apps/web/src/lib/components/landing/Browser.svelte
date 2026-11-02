@@ -137,7 +137,7 @@
 	// above Write and Record; bug: 12 capture pixels above the page's top,
 	// so the ring round Bug clears the toolbar's line by 8 instead of
 	// sitting on it, over the page's own ground).
-	const PAN = { nav: 52, typed: 120, bug: -12, you: 120 };
+	const PAN = { nav: 0, typed: 120, bug: -12, you: 120 };
 	// The seam (ms): the beat where the frame equals the still frame, and
 	// where a first cycle starts when the still frame is on screen.
 	const SEAM = 17200;
@@ -217,11 +217,19 @@
 				// Keep row `last` at the bottom of the terminal.
 				const offset = (last: number) => (rowEls.length - 1 - last) * rowH();
 
+				// The address bar stretches with the window (the toolbar's
+				// middle is drawn stretched, .tb), so its ring does too.
+				const tb = one('.tb');
+				const urlbar = () => ({
+					...URLBAR,
+					w: URLBAR.w + Math.max(0, (tb.clientWidth * 48) / tb.clientHeight - 574)
+				});
+
 				function pre() {
 					utils.set(q('.layer'), { opacity: 0 });
 					utils.set(q('.l-blank, .tb-blank'), { opacity: 1 });
 					utils.set(pic, { '--pan': PAN.nav });
-					utils.set(one('.ring'), { opacity: 0, ...ring(URLBAR, TB) });
+					utils.set(one('.ring'), { opacity: 0, ...ring(urlbar(), TB) });
 					utils.set(one('.pointer'), { opacity: 0 });
 					utils.set(rowEls, { opacity: 0 });
 					utils.set(rowEls[0], { opacity: 1 });
@@ -375,82 +383,72 @@
 		<div class="shot-win bw" aria-hidden="true">
 			<div class="br">
 				<div class="tb">
-					<img
-						class="layer tb-blank"
-						src="/landing/browser-tb-blank.webp"
-						width="574"
-						height="48"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer tb-live on"
-						src="/landing/browser-tb.webp"
-						width="574"
-						height="48"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
+					<i class="layer tb-blank"></i>
+					<i class="layer tb-live on"></i>
 				</div>
 				<div class="vp">
 					<div class="pg">
 						<div class="layer l-blank"></div>
-						<img
-							class="layer l-nav"
-							src="/landing/browser-p-nav.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-typed"
-							src="/landing/browser-p-typed.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-bug"
-							src="/landing/browser-p-bug.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t0"
-							src="/landing/browser-p-t0.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t1"
-							src="/landing/browser-p-t1.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t2 on"
-							src="/landing/browser-p-t2.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
+						<div class="layer l-nav">
+							<img
+								src="/landing/browser-p-nav.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-typed">
+							<img
+								src="/landing/browser-p-typed.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-bug">
+							<img
+								src="/landing/browser-p-bug.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t0">
+							<img
+								src="/landing/browser-p-t0.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t1">
+							<img
+								src="/landing/browser-p-t1.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t2 on">
+							<img
+								src="/landing/browser-p-t2.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
 					</div>
 				</div>
 				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
@@ -504,7 +502,8 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in);
+		padding: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 	}
 	.bw {
 		flex: 1;
@@ -513,12 +512,16 @@
 	}
 
 	/* The browser: flush with the frame's top and sides, a crop of the
-	   window. The captures are drawn 562 of their 574 pixels wide, so the
-	   page's own scrollbar (its last 12 columns) falls outside the window;
-	   the toolbar's menu at 555 stays in (review round 2, I-961). */
+	   window. One capture pixel is drawn 0.72px, so the captured page's
+	   type sets at the other cells' 13px (the captures are at 125% zoom),
+	   and the window is wider than the capture: the toolbar's middle, in
+	   the address bar, is drawn stretched, and the page stands at the
+	   left on its own ground, as a page with a fixed measure does in a
+	   wide window. The page's own scrollbar (its last 12 columns) is cut
+	   off (I-961). */
 	.br {
-		/* one capture pixel, at the window's inner width (.bw) */
-		--k: calc(100cqw / 562);
+		/* one capture pixel */
+		--k: min(0.72px, calc(100cqw / 562));
 		position: relative;
 		flex: 1;
 		min-height: 0;
@@ -533,6 +536,23 @@
 		height: calc(var(--k) * 48);
 		border-bottom: 1px solid #d9dce0;
 		background: #fff;
+	}
+	/* Three slices of the toolbar's capture: the buttons and the address
+	   bar's start, one column of the address bar stretched, then its end,
+	   the profile and the menu at the right edge. */
+	.tb .layer {
+		inset: 0;
+		width: auto;
+		border-style: solid;
+		border-width: 0 calc(var(--k) * 174) 0 calc(var(--k) * 400);
+		border-image-slice: 0 174 0 400 fill;
+		border-image-repeat: stretch;
+	}
+	.tb-blank {
+		border-image-source: url('/landing/browser-tb-blank.webp');
+	}
+	.tb-live {
+		border-image-source: url('/landing/browser-tb.webp');
 	}
 	/* The page's own ground (#fafafa in the captures), so the Bug stop's
 	   12 pixels above the page's top read as the page. */
@@ -562,7 +582,7 @@
 		position: absolute;
 		left: 0;
 		top: 0;
-		width: calc(var(--k) * 574);
+		width: 100%;
 		height: calc(var(--k) * 536);
 		translate: 0 calc(var(--k) * var(--pan) * -1);
 	}
@@ -574,10 +594,33 @@
 		height: 100%;
 		opacity: 0;
 	}
+	/* Each page runs the window's width on the app's ground, its capture
+	   at the left with the page's scrollbar, its last 12 columns, cut
+	   off. The nav page's header rule (capture row 106) runs on to the
+	   window's edge. */
+	.pg > .layer {
+		width: 100%;
+		background: #fafafa;
+	}
+	.pg > .l-nav {
+		background:
+			linear-gradient(#e6e6e6, #e6e6e6) 0 calc(var(--k) * 106) / 100% 1px no-repeat,
+			#fafafa;
+	}
+	.pg > .layer > img {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: calc(var(--k) * 574);
+		max-width: none;
+		height: 100%;
+		clip-path: inset(0 calc(var(--k) * 12) 0 0);
+	}
 	.layer.on {
 		opacity: 1;
 	}
 	.l-blank {
+		width: 100%;
 		background: #fff;
 	}
 

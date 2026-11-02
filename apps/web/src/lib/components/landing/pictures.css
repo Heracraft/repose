@@ -21,12 +21,6 @@
 	--sunken: #fafafa;
 	--stage: #f4f4f5;
 	--stage-edge: #e4e4e7;
-	/* The hero's stage, a step deeper than the others, with its edge a
-	   step darker: the page's one tonal moment (review round 2, I-961). */
-	--stage-hero: #ececef;
-	--stage-hero-edge: #dcdce0;
-	/* The hero field's 16px dot grid, a step off its fill. */
-	--stage-dot: #d4d4d8;
 	/* The stage's top-left sheen and the inner highlight on its top edge. */
 	--stage-sheen: rgb(255 255 255 / 0.7);
 	--stage-top: rgb(255 255 255 / 0.9);
@@ -37,9 +31,11 @@
 	--font-sans: var(--hk-font-sans);
 	--font-display: var(--hk-font-display);
 	--shot-head: 28px;
-	/* The stage's one inset, the same on all four sides of every picture;
-	   the pause button stands in the figure bar over it (landing.css). */
+	/* The stage's one inset above and below every picture; at the sides
+	   the windows stand on the text lines (landing.css). */
 	--shot-in: 24px;
+	/* The four cell pictures' one height. */
+	--shot-h: 20rem;
 	/* The pictures' blue is a muted slate step, quieter than the kit's
 	   link blue (owner, 2026-10-21: "the blue in the figures is too
 	   strong"). 5.9:1 on white light, 7:1 on the dark surface. */
@@ -94,9 +90,6 @@
 	:root:not(.light):not([data-theme='light']) .landing {
 		--stage: #0e0e10;
 		--stage-edge: rgb(255 255 255 / 0.08);
-		--stage-hero: #111114;
-		--stage-hero-edge: rgb(255 255 255 / 0.1);
-		--stage-dot: #232327;
 		--stage-sheen: rgb(147 167 208 / 0.07);
 		--stage-top: rgb(255 255 255 / 0.06);
 		--sunken: #141416;
@@ -128,12 +121,10 @@
 	}
 }
 :root[data-theme='dark'] .landing,
-:root.dark .landing {
+:root.dark .landing,
+.landing .hero-stage {
 	--stage: #0e0e10;
 	--stage-edge: rgb(255 255 255 / 0.08);
-	--stage-hero: #111114;
-	--stage-hero-edge: rgb(255 255 255 / 0.1);
-	--stage-dot: #232327;
 	--stage-sheen: rgb(147 167 208 / 0.07);
 	--stage-top: rgb(255 255 255 / 0.06);
 	--sunken: #141416;
@@ -163,6 +154,53 @@
 	--t-bar: #1e1e22;
 	--t-bar-fg: #a1a1aa;
 }
+/* The hero's field is one dark plate in both schemes, the page's one
+   moment of contrast: under the picture's dark palette (above) it takes
+   the kit's dark text, state and code colours, so the hero picture draws
+   as it does on the dark page. In the dark scheme the plate stands a
+   step lighter than the page, with a lit edge. */
+.landing .hero-stage {
+	color-scheme: dark;
+	--hk-text: #f4f4f5;
+	--hk-text-2: #a1a1aa;
+	--hk-text-3: #8b8b94;
+	--hk-text-4: #5f5f68;
+	--hk-border: #27272a;
+	--hk-border-strong: #3f3f46;
+	--hk-hairline: #1c1c1f;
+	--hk-ok: #34d399;
+	--hk-ok-dot: #34d399;
+	--hk-err: #f87171;
+	--ink: var(--hk-text);
+	--ink-muted: var(--hk-text-2);
+	--ink-faint: var(--hk-text-3);
+	--control-edge: var(--hk-text-4);
+	--pic-faint: var(--hk-text-3);
+	--pic-stop: var(--hk-err);
+	--pic-add: var(--hk-ok);
+	--color-emerald-500: var(--hk-ok-dot);
+	--stage-hero: #101012;
+	--stage-hero-edge: #101012;
+	--stage-dot: #2a2a2f;
+	--stage-sheen: rgb(147 167 208 / 0.1);
+	color: var(--hk-text);
+}
+.landing .hero-stage .hero-pic {
+	--rogue: #ff4b3e;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not(.light):not([data-theme='light']) .landing .hero-stage {
+		--stage-hero: #131316;
+		--stage-hero-edge: #2a2a2f;
+		--stage-dot: #2c2c31;
+	}
+}
+:root[data-theme='dark'] .landing .hero-stage,
+:root.dark .landing .hero-stage {
+	--stage-hero: #131316;
+	--stage-hero-edge: #2a2a2f;
+	--stage-dot: #2c2c31;
+}
 
 /* ---------- The stage ----------
 
@@ -180,16 +218,17 @@
 	background: radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
 	box-shadow: inset 0 1px 0 var(--stage-top);
 }
-/* The steps' command cells (landing.css) stand on the same material,
-   square and edgeless, from rule to rule; under the pointer a step
-   lighter, as a dashboard row is. */
+/* The steps' command cells (landing.css) stand on the stage's fill,
+   square and edgeless, from rule to rule, with no top highlight, so the
+   row's rule reads one weight across both halves; under the pointer the
+   kit's hover wash darkens the fill, as a dashboard row's does. */
 .landing .steps .code-copy {
 	background: var(--stage);
-	box-shadow: inset 0 1px 0 var(--stage-top);
+	box-shadow: none;
 	transition: background-color var(--hk-dur-fast) var(--hk-ease);
 }
 .landing .steps .code-copy:hover {
-	background: color-mix(in oklab, var(--stage), var(--surface) 45%);
+	background: linear-gradient(var(--hk-active), var(--hk-active)) var(--stage);
 }
 @media (prefers-reduced-motion: reduce) {
 	.landing .steps .code-copy {
@@ -197,8 +236,8 @@
 	}
 }
 /* The hero's field alone runs past the sheet to the window's edges: the
-   page's one moment of contrast, a band of the deeper tone carrying a
-   16px dot grid, under its top edge, the windows still on the frame.
+   page's one moment of contrast, the dark plate carrying a 16px dot
+   grid, under its top edge, the windows still on the frame.
    The fill past the frame is a spread shadow and the edge a border-image
    outset, both ink that adds no scroll width (as the bands' rules do);
    the sheen and the dots fade out before the frame's edges, so the flat
@@ -225,9 +264,9 @@
    6px corners, under the --shot-head head that names where it runs
    (WinHead.svelte) where the window's own chrome does not. */
 .landing .shot {
-	--shot-h: 20rem;
 	height: var(--shot-h);
 	overflow: hidden;
+	container-type: inline-size;
 }
 .landing .shot-win {
 	display: flex;

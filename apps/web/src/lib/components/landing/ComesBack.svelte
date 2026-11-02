@@ -664,8 +664,10 @@
 		grid-template-columns: minmax(0, 1fr) 30px var(--rail-w);
 		grid-template-rows: minmax(0, 1fr);
 		align-items: stretch;
-		/* The stage's inset on all four sides. */
-		padding: var(--shot-in);
+		/* The stage's inset above and below, and the cell's text lines at
+		   the sides (landing.css, --shot-l and --shot-r). */
+		padding: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 		font-size: 13px;
 		color: var(--pic-ink);
 	}
@@ -782,7 +784,7 @@
 	   the newest tile's middle. */
 	.hop {
 		position: relative;
-		align-self: center;
+		align-self: start;
 		height: var(--stack-h);
 	}
 	.arr {
@@ -802,10 +804,10 @@
 
 	/* The snapshots (SnapshotTile, the hero's grammar) in their window,
 	   inset 8px: the newest on top, the older one folded to its head 4px
-	   under it. The window is as tall as the two and centred on the
-	   machine. */
+	   under it. The window is as tall as the two and stands on the
+	   machine's top line. */
 	.stack {
-		align-self: center;
+		align-self: start;
 		height: var(--stack-h);
 	}
 	.tiles {

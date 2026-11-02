@@ -3,7 +3,7 @@
 // run a command, so the cells carry no copy button, and no "$": the mono
 // face marks a command, as in the steps. Two columns from 1024px, one
 // below, where a cell runs the frame's width and its picture keeps the
-// 2x2's 34rem, centred on its stage (LANDING.md, I-961). I-843 puts a
+// 2x2's 34rem, starting on the text line (LANDING.md, I-961). I-843 puts a
 // picture over each cell's claim.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,7 +15,7 @@ const DOCS = fileURLToPath(new URL('../src/content/docs/', import.meta.url));
 const cells = '#features .cells > li';
 
 const CELLS: [string, string][] = [
-	['Let it break the whole machine', 'repose snapshots restore'],
+	['Restore the whole disk', 'repose snapshots restore'],
 	['Use its ports on your localhost', 'repose attach'],
 	["Watch the agent's browser, and take over", 'repose browser'],
 	['Open it in your editor', 'ssh your-project.repose']
@@ -75,25 +75,29 @@ for (const [width, cols] of [
 		}
 		if (cols === 1 && width >= 640) {
 			// One column, a cell's stage runs the cell's width, as the
-			// other bands' do, and its picture keeps the 2x2's size, centred.
+			// other bands' do, and its picture keeps the 2x2's size, its
+			// windows starting on the text line as the heading does.
+			const text = await page
+				.locator('#features h2')
+				.evaluate((e) => Math.round(e.getBoundingClientRect().left));
 			const m = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
 				els.map((e) => {
 					const s = getComputedStyle(e);
 					const r = e.getBoundingClientRect();
 					const cell = e.parentElement!.getBoundingClientRect();
+					const win = e.querySelector('.shot-win')!.getBoundingClientRect();
 					return {
 						stage: Math.round(r.width),
 						cell: Math.round(cell.width),
-						pic: Math.round(r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)),
-						pl: s.paddingLeft,
-						pr: s.paddingRight
+						box: Math.round(r.width - parseFloat(s.paddingRight)),
+						win: Math.round(win.left)
 					};
 				})
 			);
 			for (const c of m) {
 				expect(c.stage).toBe(c.cell);
-				expect(c.pic).toBe(544);
-				expect(c.pl).toBe(c.pr);
+				expect(c.box - 2 * text).toBe(544);
+				expect(c.win).toBe(text);
 			}
 		}
 		// A 24px claim runs to three lines at most.
@@ -135,22 +139,29 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	// The first answer is secrets.md's "Not your laptop", in its words.
 	const secrets = readFileSync(join(DOCS, 'secrets.md'), 'utf8');
 	expect(secrets).toContain('Nothing on the machine can open a connection to it.');
+	// The snapshot answer is lifecycle.md's "Snapshots", in its numbers.
+	const lifecycle = readFileSync(join(DOCS, 'lifecycle.md'), 'utf8');
+	expect(lifecycle).toContain(
+		'Snapshots from the last 7 days are kept, and the newest one always.'
+	);
+	expect(lifecycle).toContain(
+		'The disk is snapshotted every night while running, and whenever you stop.'
+	);
 	await page.goto('/');
 	const q = page.locator('section', {
 		has: page.getByRole('heading', { name: 'Before you try it' })
 	});
-	await expect(q.locator('.sec-label')).toHaveText('06Questions');
 	await expect(q.locator('summary')).toHaveText([
 		'Why not skip permissions on my laptop?',
 		'Can I close my laptop while the agent works?',
-		'What if the agent wrecks the machine?',
+		'How long are snapshots kept?',
 		'Can three agents try three approaches at once?',
 		'Why not rent a server and set it up myself?'
 	]);
 	const first = q.locator('details').first();
 	await expect(first.locator('p')).toBeHidden();
 	await first.locator('summary').click();
-	await expect(first.locator('p')).toContainText('can open a connection to your laptop');
+	await expect(first.locator('p')).toContainText("can't open a connection to your laptop");
 });
 
 // I-961 (option D): the cells are flush on the sheet, split by inner
@@ -274,7 +285,8 @@ for (const width of [768, 390]) {
 }
 
 // Review round 2: the snapshots window is as tall as its two tiles, with
-// no empty body under them, and centred on the machine.
+// no empty body under them; option D's review stands it on the machine's
+// top line.
 test('the snapshots window holds its tiles with no empty foot at 1440', async ({ page }) => {
 	// The still frame: the loop moves the older tile.
 	await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -290,6 +302,5 @@ test('the snapshots window holds its tiles with no empty foot at 1440', async ({
 	// The older tile, folded to its 29px head, ends 8px over the window's
 	// inner edge.
 	expect(Math.round(m.stack.bottom - (m.old.top + 29))).toBe(9);
-	const mid = (b: DOMRect) => b.top + b.height / 2;
-	expect(Math.abs(mid(m.stack) - mid(m.machine))).toBeLessThanOrEqual(1);
+	expect(Math.abs(m.stack.top - m.machine.top)).toBeLessThanOrEqual(1);
 });
