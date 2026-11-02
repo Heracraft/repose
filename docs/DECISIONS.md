@@ -27566,6 +27566,49 @@ period is not spent, the button is pressed once, and the misleading
 never asked. The counter-test holds the other side — a guestd that
 takes the request still gets its full grace period.
 
+**I-964. A host move gives a project back in the state it was in, and only
+a project that was running is told about it.** (move-state, 2026-11-02.)
+
+`repose-admin projects move` read `p.State` to decide whether to
+stop-and-snapshot first, then passed `start=true` to the restore
+regardless. So moving a stopped project snapshotted nothing, restored it,
+and started it. Draining host-01 on 2026-11-02 moved sixteen projects and
+started every one of the stopped ones; the account was billing-exempt, so
+the only cost was noise, and that is the whole reason this was cheap to
+find. On a paying account the same move bills hours nobody asked for, and
+because a migration moves *every* project at once it can push an account
+past its plan's running-memory cap (Solo may run one `large`), which
+either fails the move or bills an overage. The move now carries
+`wasRunning` through to the restore.
+
+The `host_moved` notification moves with it, from the restore phase to
+`start_guest`. A stopped machine comes back stopped, on a host the user
+never named and cannot see, so the mail -- "<slug> was restored onto a new
+host from its latest snapshot" -- announces an event with no user-visible
+consequence, and on a machine they deliberately switched off it reads as
+data loss. `start_guest` is the gate because it is in the plan only for a
+restore that starts the guest, so the condition is the thing itself. The
+first fix read `op.Params["start"]`, which the admin move sets and a
+restore enqueued straight from the ops API does not, so it silenced
+`TestRestoreEmitsHostMovedEvent` as well -- an existing test, and right to
+fail. The structured log line stays in the restore phase and stays
+unconditional: it is the operator's record of the migration, which is
+whose business the move is. A running project still gets the mail, because
+its uptime really was interrupted.
+
+Rejected: keeping the notification for every move "for transparency". A
+line the user cannot act on, about a host they do not know exists, is the
+kind that looks kind in its own diff (I-485).
+
+The test is `TestMoveKeepsAStoppedProjectStopped`, and it needed a second
+connected host. `apitest.ConnectHost` *replaces* the harness's one host --
+it stops the old fake and reuses the single `Fake`/`hostCert`/`fakeStop`
+fields -- so calling it for host-02 disconnected the host the project was
+on and the move waited on a dead stream until the 600s test timeout. The
+new `apitest.AddHost` registers and connects an additional fake and leaves
+the primary alone. The second host joins only after the project has
+settled, or placement puts the project there at create time and there is
+nowhere to move it to.
 
 **I-960. The api's metrics are pushed by a Grafana Alloy service on the
 control VM, not scraped; Prometheus scrapes Alloy for liveness.**
@@ -27639,6 +27682,114 @@ was never deployed, and completes I-952.
   `ops/grafana/alerts-gen.py` refused `ApiMetricsAbsent` until it was
   declared in `BOOLEAN_EXPRS`, which is that guard doing its job.
 
+**I-972. The thaw test asserts the deadline the unwraps share, not how
+long the reconcile took — and the old assertion could not fail for the
+reason it was named for.** (CI red on main, 2026-11-02.)
+
+`TestThawWaitsOneUnwrapTimeout` went red on CI run 41379622622 at
+466badf2:
+
+    reconcile took 610.998612ms for 2 images with a 300 ms unwrap timeout
+
+611 ms against a 300 ms timeout reads as two timeouts being spent, one
+per image, which is exactly the regression the test exists to catch. It
+is not that, and it cannot be: `ThawAll` builds **one** `uctx`
+(freeze.go:1164) and hands it to every image's goroutine, with no
+semaphore, so `Concurrency = 1` does not serialise them and the unwrap
+phase is bounded at one timeout by construction.
+
+What the 611 ms was is non-unwrap work crossing a tight wall-clock
+threshold. The test deliberately spends 300 ms of its 550 ms budget
+inside `unwrapWithRetry` — the stubbed sealer fails at once and the
+retry then waits out `ctx.Done()` — leaving 250 ms for
+`sweepImageVolumes`, the record list, the window arithmetic and two
+volume removals, under `-race` on a loaded 2-core runner.
+
+**The old assertion could not catch its own regression.** Giving each
+image its own `context.WithTimeout` and running the test: the unwraps
+are concurrent goroutines, so two per-image timeouts still finish in one
+timeout's wall-clock. The probe run took **0.43 s** — comfortably under
+the 550 ms the test demanded. It would have passed. So the assertion was
+both flaky under load and blind to the fault it was written for: the
+worst of both, and it had been standing.
+
+It now asserts the claim directly. Every Unwrap records its context's
+deadline; one timeout for the whole thaw means both see the **same**
+deadline, one per image means different ones. Timing-free, so no
+machine is too slow for it. Against the same probe it fails with the two
+deadlines 10 microseconds apart — a difference no elapsed-time
+assertion could ever have resolved.
+
+*The general rule, which is this week's three times over.* An assertion
+on how long something took is a proxy for the thing you mean, and a
+proxy fails in both directions: it goes red when the machine is busy and
+green when the fault is present but fast. Where the property is
+observable directly — a shared deadline, a byte counter that moves, a
+socket's owner — assert that instead. I-920 counted sockets that existed
+rather than work in progress; I-930 counted a connection rather than
+traffic; this counted milliseconds rather than a deadline.
+
+*Not fixed here.* The conductor is taking
+`TestAPICallsDoNotLeakConnections`, which is I-920's own regression test
+and mine: "25 connections opened, 2 STILL OPEN" is `ConnState` lagging
+the client's close, not a leak, and its `> 1` threshold is too tight.
+The right shape there is the same — assert the open count does not grow
+with N, which is what a leak does and lag does not. And
+`TestFailuresStillBanAndTheBanIsLogged` in the gateway is red again
+after being fixed as `ci-red-ban` in r20261012-3 on 12 October, which is
+the fact that makes this a class rather than three bugs: fixed one test
+at a time, it has come back inside three weeks.
+**I-968. A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three.** (ci-proxy, 2026-11-02.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `608caa6e` failed, and the cause moved each time, so it never read as one standing break. `ci-green` (I-954) fixed the two that were red on `5bbe3246` — an unchecked `c.Close` and a billing assertion that had gone stale when the memory meter changed meaning — and the next run surfaced two more, and the run after that a third. Three tests, two packages, one shape.
+
+**The shape.** Each asserted a *proxy* for the property it meant, and a proxy fails in both directions: red when the machine is busy, green when the fault is present but fast. That is the whole finding, and it is why retuning thresholds had a sixteen-day record of not working.
+
+- `TestAPICallsDoNotLeakConnections` (`internal/hostd/ch`, I-920's own regression test) read `open > 1` on a counter the *server* decrements from its `ConnState` callback, which runs after the client call has returned. On CI 41379622622 it read "25 connections opened, 2 STILL OPEN" and failed with no leak: two closes were in flight. The property is that nothing is left open, and a leaked connection never drains while a closing one does, so a bounded wait separates them exactly and needs no tolerance. It now calls 5 times, waits for the count to reach zero, calls 20 more, waits again, and requires zero both times. **Probe:** `DisableKeepAlives: false` in `ch.go` reinstates the original leak; the test then reads "5 calls: 5 still open; 25 calls: 25 still open" and fails. It grows with N, which is what the test's comment has always said and what `> 1` could not ask.
+- `TestThawWaitsOneUnwrapTimeout` (`internal/hostd/guest`) asserted that reconcile took under 550 ms, as a stand-in for two unwraps sharing one deadline. It spends 300 ms of that budget deliberately — `unwrapWithRetry` waits out the context when the sealer fails — leaving 250 ms for everything else `ThawAll` does under `-race`. CI measured 611 ms. The lane that owns it proved the assertion was also blind: with a per-image timeout, the unwraps are still concurrent goroutines, so the wall clock stayed at 0.43 s and the test would have passed with the regression in place. It now records each `Unwrap`'s context deadline and requires them equal; against the same probe the deadlines differ by 10 microseconds, which no elapsed-time assertion could resolve. Shipped as `thaw-deadline`.
+- `TestFailuresStillBanAndTheBanIsLogged` (`internal/gateway`) asked for the refusal before the ban existed. The ban and its log line are both written in the failing connection's own goroutine, after `h.dial` has returned to the test's, so after 20 failures the gateway may still be counting. On CI 41380209243 the 21st connection got `SSH-2.0-Go`. `ci-red-ban` (r20261012-3, 2026-10-12) had already waited up to 10 s for the `auth_ban` line — *after* the refusal assertion, where it could not help. The wait is now the precondition: observe the ban, then require the next connection to be refused. Still exactly `banFailures` failures, because waiting on a log line opens no connections. **Probe:** `ok && false` on the ban lookup in `limits.go` logs the ban and never enforces it; the test fails with "after 20 failures the ban is logged but not enforced".
+
+Both of this branch's fixes pass 20 and 8 consecutive `-race` runs with six busy loops pinning all eight cores, which is the condition that produced the CI failures and which neither test survived before.
+
+*Rejected:* widening the thresholds. A number that cannot catch its fault only gets quieter. *Rejected:* `-count=1` retries or marking them flaky, which is the same decision spread over future sessions.
+
+*Not fixed here, and the reason the class is recorded rather than the three bugs.* Nothing stops the next test from asserting a proxy, and `docs/CHECKLIST.md` now asks for the property and for the probe that shows the assertion fails without the fix. Whether the release gate should refuse a cut over a red `main` is still the owner's call: it would have held nine releases, and on this evidence it would also have held them for faults that were never in the product.
+**I-974. Getting a project's base onto the target host before a migration
+is the operator's step, not something `move` does.** (move-state,
+2026-11-02.)
+
+A project keeps the base it last ran until it next stops, so emptying a
+host that has been up for weeks means restoring bases the target has never
+built, and the restore fails on the host with `not_found` naming a
+`nixos-system-repose-guest-<version>` store path. Eight of host-01's
+sixteen were pinned across `2026.10.07`-`2026.10.25` and every move failed
+on the first try.
+
+`move` could fix this itself -- detect the missing closure and either
+build it on the target or stream it from the source. Rejected for now, on
+two counts. The hosts cannot reach each other (the WireGuard mesh is
+hub-and-spoke, by I-782's design), so a host-to-host copy means either a
+new peering rule between hosts or relaying 200 MB through the api, and
+neither belongs in the path of an admin command. And building the base on
+the target instead is a 20-minute nix build inside a step the operator is
+watching, for a problem that disappears on its own: `basebump` sweeps
+every project to the current base at 04:00 UTC, so a migration that can
+wait a day needs none of this.
+
+So the runbook carries the manual copy, with the numbers that make it
+cheap: 141 of 1364 store paths and 202 MB on 2026-11-02, against 49.9 GB
+for the sixteen whole systems, because the bases share nearly everything.
+Two traps are written down with it, both found by hitting them --
+`nix-store --export` wants its arguments with references before referrers,
+which is `nix-store -qR` order and not sorted order; and the copied paths
+are unrooted until a guest uses them, so a GC between the copy and the
+move undoes the work. `cache.nixos.org` is no help: we build guest
+systems, so the target cannot substitute them.
+
+Revisit when a host migration is routine rather than once-per-launch, or
+when a host dies with projects on it and there is no 04:00 sweep to wait
+for. The fleet work (I-872 onward) makes more hosts likely, which makes
+this likelier to be worth automating.
 **I-976. When a host leaves the fleet, the fallback shape becomes the
 fleet's real shape, and the host leaves the scrape targets in the same
 change.** (retire-host01, 2026-11-02.)

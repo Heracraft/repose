@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // An API call must not leave its connection open. Cloud Hypervisor's
@@ -45,15 +46,44 @@ func TestAPICallsDoNotLeakConnections(t *testing.T) {
 	defer func() { _ = srv.Close() }()
 
 	h := &HTTP{}
-	const N = 25
-	for i := 0; i < N; i++ {
-		if _, err := h.get(context.Background(), sock, "vm.info"); err != nil {
-			t.Fatalf("call %d: %v", i, err)
+	call := func(n int) {
+		for i := 0; i < n; i++ {
+			if _, err := h.get(context.Background(), sock, "vm.info"); err != nil {
+				t.Fatalf("call: %v", err)
+			}
 		}
 	}
-	t.Logf("after %d calls: %d connections opened, %d STILL OPEN", N, atomic.LoadInt64(&total), atomic.LoadInt64(&open))
-	// CH's cap is 10, so anything that grows with N exhausts it.
-	if n := atomic.LoadInt64(&open); n > 1 {
-		t.Errorf("%d connections still open after %d calls; CH accepts 10 at once, so this makes a guest unreachable", n, N)
+	// settle waits for the server to finish accounting for the closes, then
+	// reports what is still open. `open` is decremented by the ConnState
+	// callback, which runs after the client call has already returned to
+	// this goroutine, so a reading taken the instant the calls end counts
+	// connections that are closing rather than leaking. The distinction is
+	// not a tolerance to be tuned: a leaked connection never drains, so a
+	// bounded wait separates the two exactly, and a wait that ends early
+	// costs nothing because a leak is still there when it ends.
+	settle := func() int64 {
+		for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+			n := atomic.LoadInt64(&open)
+			if n == 0 || time.Now().After(deadline) {
+				return n
+			}
+		}
+	}
+	// Then the question is whether what is left grows with N, which is what
+	// the comment above has always meant. An absolute threshold could not
+	// ask it: it read red on a loaded runner with no leak (CI 41379622622,
+	// "2 STILL OPEN" of 25) and would read green on a leak that drained
+	// slower than the test looked (DECISIONS I-968).
+	const few, many = 5, 25
+	call(few)
+	o1 := settle()
+	call(many - few)
+	o2 := settle()
+	t.Logf("%d calls: %d still open; %d calls: %d still open (%d opened in all)",
+		few, o1, many, o2, atomic.LoadInt64(&total))
+	if o1 != 0 || o2 != 0 {
+		t.Errorf("connections still open after they drained: %d at %d calls, %d at %d calls; "+
+			"CH accepts 10 at once and reaps none, so anything left makes a guest unreachable",
+			o1, few, o2, many)
 	}
 }

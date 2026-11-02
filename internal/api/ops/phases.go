@@ -1191,8 +1191,10 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 				return err
 			}
 			if moved, _ := op.Params["host_moved"].(bool); moved {
+				// The operator's record of the migration, for every move.
+				// The user hears about it from start_guest, and only if
+				// there is one (DECISIONS I-964).
 				e.log.Info("project restored onto another host", "event", "host_moved", "project_id", p.ID.String(), "host_id", p.HostID.String())
-				e.notifyPlatform(ctx, p.ID, "host_moved", p.Slug+" was restored onto a new host from its latest snapshot")
 			} else {
 				e.log.Info("project restored", "event", "restored", "project_id", p.ID.String(), "host_id", p.HostID.String())
 			}
@@ -1231,6 +1233,20 @@ func (e *Engine) onResult(ctx context.Context, op *store.Op, phase string, res *
 		// taken days).
 		if st := res.GetStart(); st != nil {
 			e.recordGuestAddress(ctx, p, st.GetGuestIp(), st.GetVsockCid(), "start")
+		}
+		// A restore onto another host tells the user here and not in the
+		// restore phase, because only a project that is being started
+		// has a start_guest phase at all. A move of a *stopped* project
+		// gives it back stopped, on a host the user never named and
+		// cannot see, so the mail -- "<slug> was restored onto a new host
+		// from its latest snapshot" -- announces an event with no
+		// user-visible consequence, and on a machine they deliberately
+		// switched off it reads as data loss. Gating on the plan rather
+		// than on a `start` param holds for every caller: the admin move
+		// sets that param, a restore enqueued straight from the ops API
+		// does not (DECISIONS I-964).
+		if moved, _ := op.Params["host_moved"].(bool); moved {
+			e.notifyPlatform(ctx, p.ID, "host_moved", p.Slug+" was restored onto a new host from its latest snapshot")
 		}
 		return e.setState(ctx, p, "running")
 	case PhaseStopGuest:

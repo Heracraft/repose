@@ -90,6 +90,20 @@ written so none of them goes unnoticed again.
       every argument refusal names what it received (DECISIONS I-346).
       Evidence: `go test ./internal/cli -run TestArgErrorsSayWhatTheyGot`
       passes, and the new command was run once with a glob.
+- [ ] A new or changed test asserts the property it is named for, not a
+      proxy for it, and names the probe that proves it would fail without
+      the fix. A proxy fails in both directions: red when the runner is
+      busy and green when the fault is there but fast, which is how
+      `main`'s CI stayed red for sixteen days on three rotating tests
+      while each one was retuned in turn (DECISIONS I-968). Wall-clock
+      budgets, counters another goroutine decrements, and "connect again
+      and see what happens" are the three that have bitten. Evidence: the
+      probe is pasted in the commit message with the assertion's output
+      under it — the leak test reads "5 calls: 5 still open; 25 calls: 25
+      still open" with `DisableKeepAlives: false`, the ban test reads
+      "logged but not enforced" with the ban lookup disabled — and the
+      test passes repeated `-race` runs under load, not once on an idle
+      box.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
