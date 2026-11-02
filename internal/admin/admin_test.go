@@ -22,6 +22,7 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/db/testdb"
+	fakehostd "github.com/heracraft/repose/internal/fakes/hostd"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -408,5 +409,52 @@ func TestAdminSurface(t *testing.T) {
 	_ = h.Pool.QueryRow(ctx, "select count(*) from audit_log where actor = 'admin:test'").Scan(&audits)
 	if audits < 15 {
 		t.Fatalf("admin actions audited: %d", audits)
+	}
+}
+
+// A move gives the project back in the state it was in. The move path
+// read p.State to decide whether to stop-and-snapshot and then passed
+// start=true regardless, so moving a stopped project started it: on
+// 2026-11-02 migrating host-01's sixteen stopped projects left nine
+// guests running. On a billing-exempt account that is noise; on a paying
+// one it bills hours nobody asked for and can breach the plan's
+// running-memory cap, since a host migration moves every project at once
+// (DECISIONS I-964).
+func TestMoveKeepsAStoppedProjectStopped(t *testing.T) {
+	h := apitest.New(t, apitest.Options{})
+	e := &admin.Env{KV: h.KV, Actor: "admin:test"}
+	e.SetPool(h.Pool)
+	u := h.NewUser("mover")
+	p := h.CreateRunning(u, "stays-stopped")
+	pid := p.ID
+
+	if _, err := run(t, e, "projects", "stop", pid.String()); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	h.WaitIdle(pid)
+	// The second host joins only once the project is settled: connecting
+	// it earlier lets placement put the project there and leaves nowhere
+	// to move it to.
+	h.AddHost(t, "host-02", fakehostd.Options{})
+	if got := h.Project(pid).State; got != "stopped" {
+		t.Fatalf("precondition: state %q, want stopped", got)
+	}
+
+	if _, err := run(t, e, "projects", "move", pid.String(), "--to", "host-02"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	h.WaitIdle(pid)
+
+	if got := h.Project(pid).State; got != "stopped" {
+		t.Errorf("after a move of a STOPPED project: state %q, want stopped -- the move started it", got)
+	}
+	// A stopped machine comes back stopped on a host the user never
+	// named, so there is nothing for them to be told (DECISIONS I-964).
+	n, err := store.CountEvents(h.Ctx, h.Pool, pid, "host_moved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("host_moved notifications: %d, want 0 for a stopped project", n)
 	}
 }

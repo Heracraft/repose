@@ -2756,10 +2756,32 @@ its steps bite if they are taken in the wrong order.
      or the pool for it is accepted and fails later, on the host.
      `repose-admin hosts list` and the `host_reservations` view are what
      to read first; move in an order that fits.
-   - **Every moved project emails its owner** that it "was restored onto
+   - **A moved project comes back in the state it was in**, and only a
+     project that was running emails its owner that it "was restored onto
      a new host from its latest snapshot" (`host_moved`). On a planned
-     migration that reads as data loss. Tell the tenants before, or
-     answer the replies after.
+     migration even that reads as data loss, so tell those tenants
+     before, or answer the replies after. Until I-964 the move started
+     every project it touched and mailed every owner; a host-01 drain on
+     2026-11-02 started all sixteen.
+   - **The target needs the project's base closure, and a fresh host has
+     only the current one.** A stopped project still points at whatever
+     base it last ran, so the restore fails on the host with `not_found`
+     naming a `nixos-system-repose-guest-<version>` store path. Either
+     wait for the 04:00 UTC `basebump` sweep to move it to the current
+     base, or copy what the target lacks. The copy is far smaller than it
+     looks: on 2026-11-02 the eight stopped projects spanned five bases
+     from 2026.10.07 to 2026.10.25, 49.9 GB of guest systems, and host-02
+     was missing 141 of their 1364 store paths -- 202 MB, because the
+     closures share nearly everything. cache.nixos.org cannot help; we
+     build these.
+   - **The hosts cannot reach each other**, so that copy relays through
+     the operator's machine. `nix-store -qR` on the source gives the
+     paths in topological order, which `--export` requires (references
+     before referrers) -- do not sort it. Filter to the ones the target
+     has no `/nix/store` entry for, then `ssh <src> nix-store --export
+     $(cat paths)` into `ssh <dst> nix-store --import`. Symlink them
+     under `/nix/var/nix/gcroots/` on the target first, or a GC between
+     the copy and the move deletes them.
    - **A moved project comes up logged out of Claude Code.** The login
      share is one file per user per host (I-278), so each owner types
      `claude` and logs in once on the target host.

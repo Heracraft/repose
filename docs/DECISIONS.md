@@ -27566,6 +27566,49 @@ period is not spent, the button is pressed once, and the misleading
 never asked. The counter-test holds the other side — a guestd that
 takes the request still gets its full grace period.
 
+**I-964. A host move gives a project back in the state it was in, and only
+a project that was running is told about it.** (move-state, 2026-11-02.)
+
+`repose-admin projects move` read `p.State` to decide whether to
+stop-and-snapshot first, then passed `start=true` to the restore
+regardless. So moving a stopped project snapshotted nothing, restored it,
+and started it. Draining host-01 on 2026-11-02 moved sixteen projects and
+started every one of the stopped ones; the account was billing-exempt, so
+the only cost was noise, and that is the whole reason this was cheap to
+find. On a paying account the same move bills hours nobody asked for, and
+because a migration moves *every* project at once it can push an account
+past its plan's running-memory cap (Solo may run one `large`), which
+either fails the move or bills an overage. The move now carries
+`wasRunning` through to the restore.
+
+The `host_moved` notification moves with it, from the restore phase to
+`start_guest`. A stopped machine comes back stopped, on a host the user
+never named and cannot see, so the mail -- "<slug> was restored onto a new
+host from its latest snapshot" -- announces an event with no user-visible
+consequence, and on a machine they deliberately switched off it reads as
+data loss. `start_guest` is the gate because it is in the plan only for a
+restore that starts the guest, so the condition is the thing itself. The
+first fix read `op.Params["start"]`, which the admin move sets and a
+restore enqueued straight from the ops API does not, so it silenced
+`TestRestoreEmitsHostMovedEvent` as well -- an existing test, and right to
+fail. The structured log line stays in the restore phase and stays
+unconditional: it is the operator's record of the migration, which is
+whose business the move is. A running project still gets the mail, because
+its uptime really was interrupted.
+
+Rejected: keeping the notification for every move "for transparency". A
+line the user cannot act on, about a host they do not know exists, is the
+kind that looks kind in its own diff (I-485).
+
+The test is `TestMoveKeepsAStoppedProjectStopped`, and it needed a second
+connected host. `apitest.ConnectHost` *replaces* the harness's one host --
+it stops the old fake and reuses the single `Fake`/`hostCert`/`fakeStop`
+fields -- so calling it for host-02 disconnected the host the project was
+on and the move waited on a dead stream until the 600s test timeout. The
+new `apitest.AddHost` registers and connects an additional fake and leaves
+the primary alone. The second host joins only after the project has
+settled, or placement puts the project there at create time and there is
+nowhere to move it to.
 
 **I-960. The api's metrics are pushed by a Grafana Alloy service on the
 control VM, not scraped; Prometheus scrapes Alloy for liveness.**

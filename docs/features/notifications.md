@@ -65,7 +65,10 @@ Events (see agents.md for how each agent produces them):
   account's machine.nix did not build or switch on that project, which
   keeps its revision), `boot_failed` (I-590: a start or forced reboot
   gave the machine a new system that never reached Ready, and it runs its
-  previous one; title `<project>: new system did not boot`), `host_moved` and
+  previous one; title `<project>: new system did not boot`),
+  `host_moved` (I-964: the machine was restored onto another host from its
+  latest snapshot, and only when it was running, because a move gives a
+  stopped machine back stopped and there is nothing to have missed) and
   `abuse_stopped` (I-239: the guest was stopped because a cryptocurrency
   miner was running; the summary says which process and, on the third
   stop in 24 hours, that the project cannot start until reviewed),

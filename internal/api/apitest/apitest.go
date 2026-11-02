@@ -205,8 +205,9 @@ func (h *Harness) StopEngine() {
 	time.Sleep(50 * time.Millisecond)
 }
 
-// ConnectHost registers a fake host and connects its stream.
-func (h *Harness) ConnectHost(t *testing.T, name string, fo fakehostd.Options) {
+// register mints a join token for name and registers a fake host with it,
+// returning the new host id and the client certificate it must use.
+func (h *Harness) register(t *testing.T, name string) (uuid.UUID, tls.Certificate) {
 	t.Helper()
 	token, err := hostmgr.MintJoinToken(h.Ctx, h.Pool, name, "fake", "fake", "local", false)
 	if err != nil {
@@ -218,14 +219,42 @@ func (h *Harness) ConnectHost(t *testing.T, name string, fo fakehostd.Options) {
 		t.Fatal(err)
 	}
 	_ = conn.Close()
-	h.HostID = uuid.MustParse(resp.HostId)
-	h.hostCert, err = tls.X509KeyPair(resp.ClientCert, resp.ClientKey)
+	cert, err := tls.X509KeyPair(resp.ClientCert, resp.ClientKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fo.HostID = resp.HostId
+	return uuid.MustParse(resp.HostId), cert
+}
+
+// ConnectHost registers a fake host and connects its stream. It replaces
+// the harness's primary host; for a second host alongside it, use AddHost.
+func (h *Harness) ConnectHost(t *testing.T, name string, fo fakehostd.Options) {
+	t.Helper()
+	id, cert := h.register(t, name)
+	h.HostID, h.hostCert = id, cert
+	fo.HostID = id.String()
 	h.Fake = fakehostd.New(fo)
 	h.ReconnectHost(t)
+}
+
+// AddHost registers and connects an additional fake host and leaves the
+// primary host's stream alone. A test that moves a guest between hosts
+// needs both ends connected at once, and ConnectHost would disconnect the
+// guest's current host and leave the move waiting on a dead stream.
+func (h *Harness) AddHost(t *testing.T, name string, fo fakehostd.Options) (uuid.UUID, *fakehostd.Fake) {
+	t.Helper()
+	id, cert := h.register(t, name)
+	fo.HostID = id.String()
+	fake := fakehostd.New(fo)
+	fctx, fcancel := context.WithCancel(h.Ctx)
+	t.Cleanup(fcancel)
+	conn := h.dial(t, &cert)
+	go func() { _ = fake.Run(fctx, conn) }()
+	h.WaitFor("host "+name+" connected", func() bool {
+		hr, err := store.GetHost(h.Ctx, h.Pool, id)
+		return err == nil && (hr.State == "ready" || hr.State == "draining") && hr.LastHeartbeatAt != nil && h.HostMgr.Connected(id)
+	})
+	return id, fake
 }
 
 // ReconnectHost drops the host's stream and opens a new one with the
