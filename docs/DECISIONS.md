@@ -26593,6 +26593,57 @@ reaches the loop and no case had one.
 `TestLoneWaiterIsNotReInvitedByItsOwnExpiry` does; with the filter
 removed it fails with exactly the owner's symptom.
 
+**I-904. `repose snapshots list` with no project lists every snapshot
+the account has, over a new `GET /v1/snapshots`.** (cli triage round 2,
+2026-10-28; owner transcript. Amends I-566. Entry written 2026-11-02,
+see below.)
+
+The owner, from their home folder:
+
+    $ repose snapshots            -> Your home folder is not a project. Name one: ...
+    $ repose snapshots ls         -> the same
+    $ repose snapshots list       -> the same
+    "cant i just list all snapshots??"
+
+`ls` was already an alias of `list` (I-619); the blocker was that every
+path required a project, and no api route could answer the question.
+Snapshots lived only under `GET /v1/projects/:id/snapshots`, which I-566
+had anticipated: "the api finds a snapshot under its project ...
+resolving it from the snapshot id alone would be a new api route."
+
+`GET /v1/snapshots` is that route, built on the shape `GET
+/projects/destroyed` already uses: a join from snapshots to projects
+scoped by `user_id`, newest `taken_at` first, keyset paging on
+`(taken_at, id)` through `limit` and `before`. Each row carries
+`project_id`, `project` and `project_destroyed`. `GET /v1/questions`
+beside `GET /v1/projects/:id/questions` is the same account-wide twin
+precedent.
+
+Destroyed projects' snapshots are included. They are kept 30 days and
+are exactly the set a home folder could not otherwise reach, which is
+most of the question being asked.
+
+The CLI falls back to the account-wide list only when no PROJECT is
+named *and* the folder resolves to none, so naming a project still
+narrows it and the per-project table is unchanged. An older api answers
+404 and the CLI asks for a project as before.
+
+*Rejected:* fanning out `GET /v1/projects` plus one `ListSnapshots` per
+project. It is N+1 requests, it misses destroyed projects unless it also
+walks `/projects/destroyed`, and it would have been this client's first
+fan-out of that kind.
+
+*Why this entry is dated after the work.* The route, the CLI, the tests
+and the docs shipped in r20261031-1 and cite `I-904` in eight places,
+`docs/interfaces/api.md` among them. The id was reserved and the entry
+was never written, so for two days the api contract pointed at a
+decision that did not exist. Nothing was wrong with the code; the record
+was simply missing the reasoning, which is the part that cannot be
+reconstructed from a diff. Found by auditing my own reserved ids before
+this session's context was cleared, which is a poor substitute for
+writing the entry with the change — the rule exists because the author
+is the only one who still knows why.
+
 **I-906. The snapshot sweep skips a live upload, and runs on every
 reconcile.** (hostd triage, 2026-10-28.)
 

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-871 entries.
+872 entries.
 
 ## Scope
 
@@ -632,7 +632,7 @@ pointer, not a summary.
 - **I-574** A guest branch with commits the laptop lacks takes a merge of the laptop's commit when git can make it cleanly — 2026-10-07; L15554
 - **I-575** Ctrl-C after a run or sync created a project leaves no directory link behind and names the project; a sync into a named project links a directory nothing else can find — 2026-10-07; amended by I-601; L15612
 - **I-569** A plan sells no project count; every account may have 100 projects, running or stopped — 2026-10-07; amended by I-585; L15657
-- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; L15767
+- **I-566** The snapshot, secrets-list and config show/edit commands take the project as their first argument — 2026-10-07; amended by I-904; L15767
 - **I-567** `repose status` reads the disk from the guest, says when it is nearly full, and AGENTS counts every agent — 2026-10-07; amended by I-585; L15798
 - **I-568** The dashboard's header links to the docs, and the agent guide says how to hand the user a file — 2026-10-07; amended by I-578; amended by I-655; L15869
 - **I-585** The plan's disk counts the bytes each project's volume holds; a disk's size is only the ceiling it can grow to — 2026-10-07; L15894
@@ -869,37 +869,38 @@ pointer, not a summary.
 - **I-898** The word is freeze, not awake — 2026-10-28; L26490
 - **I-900** A project keeps seven snapshots, which is what the docs have always said — 2026-10-28; L26503
 - **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; L26554
-- **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26596
-- **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26619
-- **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26644
-- **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26665
-- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26704
-- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26727
-- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26772
-- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26816
-- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26930
-- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L26976
-- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27025
-- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27084
-- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27116
-- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27170
-- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27213
-- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27254
-- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27272
-- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27335
-- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27354
-- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27369
-- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27408
-- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27420
-- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27433
-- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27450
-- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27470
-- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27498
-- **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27511
-- **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27569
-- **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27613
-- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L27685
-- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L27742
-- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L27757
-- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L27793
-- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L27844
+- **I-904** `repose snapshots list` with no project lists every snapshot the account has, over a new `GET /v1/snapshots` — 2026-10-28; L26596
+- **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26647
+- **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26670
+- **I-910** A snapshot's blob path carries microseconds, because it is the whole of its uniqueness — 2026-10-28; L26695
+- **I-916** An operator ssh block pins no `HostKeyAlias`; the WireGuard address is the identity — 2026-10-30; L26716
+- **I-912** A failing Cloud Hypervisor call carries the body, because the body is the diagnosis — 2026-10-30; L26755
+- **I-914** A failed wake stands for ten seconds before another is sent — 2026-10-30; L26778
+- **I-918** A stop or a destroy is not blocked by the wake it opens with — 2026-10-30; L26823
+- **I-920** hostd leaked one Cloud Hypervisor API connection per call, which is what made a guest unreachable, and the incident record blamed the hypervisor — 2026-10-30; L26867
+- **I-922** Three more places that threw the diagnosis away, and one that never checked its input — 2026-10-30; L26981
+- **I-924** A project on a host nobody expects back can be destroyed — 2026-10-30; L27027
+- **I-926** The stderr tail cannot be captured inside the primitive, because only the caller knows when its own read is finished — 2026-10-31; L27076
+- **I-928** The dashboard job pins its runner, because `ubuntu-latest` moved out from under Playwright — 2026-10-31; L27135
+- **I-930** A CDP connection counts as use when bytes move on it, not when it is open — 2026-11-01; L27167
+- **I-934** The email subject drops its `[repose]` prefix, because the sender column already said it — 2026-11-01; L27221
+- **I-936** The furrow is a crease, not a taper: the mark's lobes come together — 2026-11-01; L27264
+- **I-938** The SVG favicon never parsed, so the tab has always shown the PNG — 2026-11-01; L27305
+- **I-940** Ctrl+V with text on the clipboard pastes the text, because in a machine's terminal nothing else can — 2026-11-01; L27323
+- **I-929** An agent asks for a named secret with `repose-ask --secret`, and the owner pastes the value into a dialog that stores it as that secret — 2026-10-31; L27386
+- **I-931** An agent attaches the page to open with `--link URL --label TEXT`, and every channel draws it as a button that names its host — 2026-11-01; L27405
+- **I-952** The edge lets peers reach Prometheus's remote-write receiver, so the api's series can be pushed instead of scraped — 2026-11-01; L27420
+- **I-954** Main's CI has been red since 2026-10-17 and nine releases shipped over it. The two faults standing tonight are fixed, and the lesson is that the conductor must read the run, not the merge — 2026-11-01; L27459
+- **I-948** The `guest-desktop` check aborted before most of its subtests, so about fifteen of them had never run; it now runs all 26, and the idle-browser subtest models a real browser tool with a connection it holds open — 2026-11-01; L27471
+- **I-942** The alerts are Grafana's own, provisioned from files generated out of `ops/alerts.yaml`, because the personal server has no Alertmanager and never had one — 2026-11-01; L27484
+- **I-944** The observability config goes into Grafana over its HTTP API, as rules and nothing else: no mount, no contact point, no notification policy, no heartbeat, no secret, and no datasource of our own — 2026-11-01; L27501
+- **I-956** The Alertmanager configuration is deleted, and the seven inhibition relationships become prose — 2026-11-01; L27521
+- **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27549
+- **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27562
+- **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27620
+- **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27664
+- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L27736
+- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L27793
+- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L27808
+- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L27844
+- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L27895
