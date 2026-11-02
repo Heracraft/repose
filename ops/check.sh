@@ -16,8 +16,8 @@
 #                          which renders as an empty panel with an error a
 #                          human has to click to see
 #   alerts-gen.py --check  committed Grafana rules that no longer match
-#                          ops/alerts.yaml, which is the one source of both
-#                          (DECISIONS I-942)
+#                          ops/alerts.yaml or ops/alerts-loki.yaml, which are
+#                          the one source of both (DECISIONS I-942, I-980)
 #                          as written. Nothing runs it: the personal server's
 #                          alerting is Grafana's own, and the live routing
 #                          check is verify.py under --grafana
@@ -62,7 +62,9 @@ say "every alert's runbook anchor resolves"
 # the heading check below still passed (I-800).
 python3 - <<'ANCHORS' || fail=1
 import re, sys
-rules = open("ops/alerts.yaml").read()
+# Both sources: the log rules of ops/alerts-loki.yaml carry a runbook
+# annotation like any other and promtool never reads them (I-980).
+rules = open("ops/alerts.yaml").read() + open("ops/alerts-loki.yaml").read()
 anchors = {re.sub(r"[^a-z0-9 -]", "", line[3:].strip().lower()).replace(" ", "-")
            for line in open("docs/ops/RUNBOOK.md").read().splitlines() if line.startswith("## ")}
 bad, cur = [], None
@@ -84,7 +86,7 @@ say "every alert has a runbook heading"
 # knows what to do with. The heading is the alert name, lowercased by
 # GitHub-style anchors but written out in full in the file.
 missing=""
-for name in $(grep -oE "^[[:space:]]+- alert: [A-Za-z0-9]+" "$ops/alerts.yaml" | awk '{print $3}'); do
+for name in $(grep -hoE "^[[:space:]]+- alert: [A-Za-z0-9]+" "$ops/alerts.yaml" "$ops/alerts-loki.yaml" | awk '{print $3}'); do
   grep -qi "^## $name" docs/ops/RUNBOOK.md || missing="$missing $name"
 done
 if [ -n "$missing" ]; then
@@ -154,6 +156,96 @@ if [ "${1:-}" = "--grafana" ]; then
     echo "a second push would still change something" >&2
     fail=1
   fi
+
+  say "a log rule fires on a pushed line"
+  # The one thing promtool cannot do (DECISIONS I-980): ops/alerts-loki.yaml
+  # is LogQL, so there is no `promtool test rules` case for it and its
+  # firing is otherwise unproven -- which is the failure this very rule was
+  # written about, a condition that reads as a quiet system. So: push one
+  # real kernel-oops line into the dev Loki with the labels
+  # nix/hosts/fluent-bit.nix gives them, ask Grafana's own Loki datasource
+  # the rule's query, and then wait for the rule's own state to turn.
+  python3 - <<'LOGRULE' || fail=1
+import json, sys, time, urllib.error, urllib.request
+
+GRAFANA = "http://127.0.0.1:3000"
+LOKI = "http://127.0.0.1:3100"
+# The line host-02 wrote at 13:51:07 on 2026-11-02, labelled the way a host
+# ships it: `host` is the host_id, `component` is `kernel` for a journal
+# record with no unit.
+HOST_ID = "01a1758b-961b-7d57-a378-f0f38a97c139"
+LINE = "BUG: unable to handle page fault for address: 0000790c8a01b51c"
+
+
+def post(url, payload, headers=None):
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode(), method="POST",
+        headers={"Content-Type": "application/json", **(headers or {})})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        body = r.read().decode()
+    return json.loads(body) if body.strip() else {}
+
+
+def get(url):
+    with urllib.request.urlopen(url, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+
+ds = next((d for d in get(f"{GRAFANA}/api/datasources") if d["type"] == "loki"), None)
+if ds is None:
+    print("dev Grafana has no Loki datasource", file=sys.stderr)
+    sys.exit(1)
+
+post(f"{LOKI}/loki/api/v1/push", {"streams": [{
+    "stream": {"component": "kernel", "host": HOST_ID, "service_name": "kernel"},
+    "values": [[str(time.time_ns()), LINE]]}]})
+
+# The rule's own A query, read out of the generator rather than retyped.
+sys.path.insert(0, "ops/grafana")
+import importlib.util
+spec = importlib.util.spec_from_file_location("gen", "ops/grafana/alerts-gen.py")
+gen = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gen)
+rules = {r["title"]: r for g in gen.groups() for r in g["rules"]}
+log_rules = [r["alert"] for g in gen.read_source(gen.SOURCE_LOKI) for r in g["rules"]]
+if not log_rules:
+    print("no rules in ops/alerts-loki.yaml to check", file=sys.stderr)
+    sys.exit(1)
+name = log_rules[0]
+query = rules[name]["data"][0]["model"]["expr"]
+
+# Through Grafana, not straight to Loki: this is the datasource the rule
+# uses, and a datasource that answers nothing is what leaves a rule green.
+answer = post(f"{GRAFANA}/api/ds/query", {"queries": [{
+    "refId": "A", "datasource": {"type": "loki", "uid": ds["uid"]},
+    "expr": query, "queryType": "instant", "maxDataPoints": 43200}],
+    "from": "now-10m", "to": "now"})
+frames = answer.get("results", {}).get("A", {}).get("frames", [])
+values = [v for f in frames for col in f.get("data", {}).get("values", [])[1:] for v in col]
+if not any(isinstance(v, (int, float)) and v > 0 for v in values):
+    print(f"{name}: the query returned nothing for a pushed oops line: {query}", file=sys.stderr)
+    print(json.dumps(answer)[:800], file=sys.stderr)
+    sys.exit(1)
+print(f"  {name}: the query counts the pushed line")
+
+# And the rule itself. The group's interval is a minute, so this is two
+# evaluations plus slack; a rule that never turns is the whole point.
+deadline = time.time() + 150
+state = None
+while time.time() < deadline:
+    groups = get(f"{GRAFANA}/api/prometheus/grafana/api/v1/rules")["data"]["groups"]
+    for g in groups:
+        for r in g.get("rules", []):
+            if r.get("name") == name:
+                state = r.get("state")
+    if state in ("firing", "pending"):
+        break
+    time.sleep(5)
+if state != "firing":
+    print(f"{name}: state is {state!r} after a pushed oops line, not firing", file=sys.stderr)
+    sys.exit(1)
+print(f"  {name}: firing")
+LOGRULE
 
   say "Grafana holds what the generator produces"
   # The count against ops/alerts.yaml, rule by rule, not just "no error": a

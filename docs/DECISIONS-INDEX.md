@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-872 entries.
+873 entries.
 
 ## Scope
 
@@ -904,3 +904,4 @@ pointer, not a summary.
 - **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L27808
 - **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L27844
 - **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L27895
+- **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L27910

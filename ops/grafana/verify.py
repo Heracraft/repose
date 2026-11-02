@@ -68,11 +68,22 @@ GEN = _load("alerts_gen", HERE / "alerts-gen.py")
 # its `pick` and its uid-to-type table are reused rather than written twice.
 DASH = _load("dash_push", ROOT / "ops" / "dashboards" / "push.py")
 
-# The datasource uid every generated rule is written against. It is not a uid
-# any real Grafana has: the target's own uids are the target's, so the pusher
-# rewrites this to whatever the target calls its Prometheus, and this compares
-# the same way. Written form in the file, resolved form on the wire.
-RULE_DS_UID = "repose-prometheus"
+# The datasource uids the generated rules are written against -- Prometheus
+# for all but one, Loki for the log rules of ops/alerts-loki.yaml (I-980).
+# They are not uids any real Grafana has: the target's own uids are the
+# target's, so the pusher rewrites these to whatever the target calls its
+# Prometheus and its Loki, and this compares the same way. Written form in the
+# file, resolved form on the wire. Read from the rules rather than listed, so
+# a rule pointed at a datasource nothing resolves cannot slip past.
+def rule_datasource_uids() -> list[str]:
+    out = []
+    for group in GEN.groups():
+        for rule in group["rules"]:
+            for node in rule["data"]:
+                uid = node["datasourceUid"]
+                if uid != "__expr__" and uid not in out:
+                    out.append(uid)
+    return out
 
 # Which `--flag NAME` names each written uid, for a target with more than one
 # datasource of that type. The same flag names ops/dashboards/push.py takes,
@@ -95,7 +106,7 @@ FOLDER_UID = "repose-alerts"
 # `127.0.0.1:9090` -- which is what this repository's reference file says --
 # is Grafana itself. A datasource created from that file would reach nothing,
 # every rule that named it would fail its query, and with
-# `execErrState: OK` all 53 would read OK: fifty-three green, silent alerts,
+# `execErrState: OK` all 56 would read OK: fifty-six green, silent alerts,
 # the exact failure this tooling exists to prevent (DECISIONS I-944).
 #
 # So the datasources are the target's, found by type, and the uids in the
@@ -103,8 +114,9 @@ FOLDER_UID = "repose-alerts"
 # datasource of a type we need is an error naming what to create, never a
 # datasource invented with a guessed URL.
 #
-# `repose-postgres` is additionally not needed by any rule -- all 53 query
-# Prometheus -- and 21 of the 83 dashboard panels read it. Those say "no data"
+# `repose-postgres` is additionally not needed by any rule -- 55 query
+# Prometheus and KernelOops queries Loki (I-980) -- and 21 of the 83 dashboard
+# panels read it. Those say "no data"
 # unless the owner has a Postgres datasource of their own; reaching the
 # control plane's database needs a password, and this tooling takes none.
 # `ops/sql/launch.sql` gets the same figures through psql with no datasource.
@@ -243,7 +255,7 @@ def datasource_answers(url: str, token: str | None, uid: str) -> str | None:
     failure mode this file was rewritten for: a datasource whose address
     answers nothing. Every rule but one is `execErrState: OK`, and measured
     on Grafana 12.4 that means a rule whose query fails keeps health "ok" and
-    state Normal -- 52 rules green and silent while every evaluation returned
+    state Normal -- 55 rules green and silent while every evaluation returned
     "connection refused". Rule health cannot see that. This can.
     """
     try:
@@ -263,8 +275,12 @@ def uid_of(name: str) -> str:
 
 
 def source_alerts() -> list[str]:
-    text = (ROOT / "ops" / "alerts.yaml").read_text()
-    return [m.group(1) for m in re.finditer(r"^\s+- alert: (\w+)$", text, re.M)]
+    """Every alert of both source files (ops/alerts-loki.yaml is I-980)."""
+    out = []
+    for name in ("alerts.yaml", "alerts-loki.yaml"):
+        text = (ROOT / "ops" / name).read_text()
+        out += [m.group(1) for m in re.finditer(r"^\s+- alert: (\w+)$", text, re.M)]
+    return out
 
 
 def run(url: str, token: str | None, names: dict | None = None, wait: int = 0) -> int:
@@ -296,23 +312,24 @@ def run(url: str, token: str | None, names: dict | None = None, wait: int = 0) -
     # to it, and this has to resolve it the same way or every rule would read
     # as drifted.
     mapping = {}
-    try:
-        found = resolve(datasources, RULE_DS_UID, names.get(NAME_KEY[RULE_DS_UID]))
-        mapping[RULE_DS_UID] = found["uid"]
-        print(f"  {RULE_DS_UID} -> {found['name']} ({found['uid']}) on the target")
-    except Unresolved as exc:
-        print(f"  {exc}", file=sys.stderr)
-        return 1
-    why = datasource_answers(url, token, found["uid"])
-    if why:
-        bad.append(
-            f"datasource {found['name']} ({found['uid']}) at {found.get('url', '?')} "
-            f"cannot be queried, so every rule that names it is dead: {why}. "
-            "They will not say so: all but one are execErrState: OK, which keeps a "
-            "failed evaluation reading OK."
-        )
-    else:
-        print(f"  it answers queries ({found.get('url', '?')})")
+    for written in rule_datasource_uids():
+        try:
+            found = resolve(datasources, written, names.get(NAME_KEY[written]))
+            mapping[written] = found["uid"]
+            print(f"  {written} -> {found['name']} ({found['uid']}) on the target")
+        except Unresolved as exc:
+            print(f"  {exc}", file=sys.stderr)
+            return 1
+        why = datasource_answers(url, token, found["uid"])
+        if why:
+            bad.append(
+                f"datasource {found['name']} ({found['uid']}) at {found.get('url', '?')} "
+                f"cannot be queried, so every rule that names it is dead: {why}. "
+                "They will not say so: all but one are execErrState: OK, which keeps a "
+                "failed evaluation reading OK."
+            )
+        else:
+            print(f"  it answers queries ({found.get('url', '?')})")
 
     # --- a rule per alert, as the generator writes it, pointed where the
     #     pusher points it
@@ -323,7 +340,8 @@ def run(url: str, token: str | None, names: dict | None = None, wait: int = 0) -
     have = {r["uid"]: r for r in rules}
     names = source_alerts()
     skipped = ", ".join(sorted(GEN.EXCLUDED))
-    print(f"  {len(names)} alerts in ops/alerts.yaml, {len(want)} generated for Grafana "
+    print(f"  {len(names)} alerts in ops/alerts.yaml and ops/alerts-loki.yaml, "
+          f"{len(want)} generated for Grafana "
           f"({skipped} excluded), {len(rules)} on the target")
     for uid, rule in sorted(want.items()):
         got = have.get(uid)
@@ -336,7 +354,7 @@ def run(url: str, token: str | None, names: dict | None = None, wait: int = 0) -
     for uid in sorted(set(have) - set(want)):
         if have[uid].get("folderUID") == FOLDER_UID or uid.startswith("repose-"):
             bad.append(f"{uid} ({have[uid].get('title')}): on the target and not in "
-                       "ops/alerts.yaml")
+                       "ops/alerts.yaml or ops/alerts-loki.yaml")
 
     # --- each group's evaluation interval
     for group in GEN.groups():
