@@ -2809,6 +2809,22 @@ its steps bite if they are taken in the wrong order.
    `prevent_destroy`, so that plan fails on purpose; `infra/README.md`
    "Draining and destroying a host" has the step that gets past it and
    why it is friction.
+5. Then prove the host is gone, four ways, because the apply's own
+   "Destroy complete" line counts resources and not which ones:
+   `tofu state list` has no entry for the name, the `hosts` output does
+   not name it, `az resource list -g repose-prod` matches nothing
+   containing it, and a re-plan with `prevent_destroy` back says "No
+   changes".
+6. **Look for the OS disk by name.** It is declared inline on the VM
+   (`os_disk` in `azure/modules/host/main.tf`), the module sets no
+   `delete_option`, and no plan ever names it -- so nothing in the diff
+   tells you whether it went with the VM or was left behind. A Premium
+   SSD P15 nobody owns is $38 a month, for ever, and the resource group
+   is the only place it shows. `az resource list -g repose-prod --query
+   "[?contains(name,'<name>')].name" -o tsv` must come back empty;
+   `az disk delete -g repose-prod -n osdisk-<name>` if it does not.
+   host-01's went with the VM on 2026-11-02, which is a fact about that
+   apply and not a guarantee about the next one.
 
 ## Suspected cross-tenant access
 
