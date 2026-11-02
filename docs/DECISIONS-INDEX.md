@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-875 entries.
+876 entries.
 
 ## Scope
 
@@ -907,3 +907,4 @@ pointer, not a summary.
 - **I-982** Hosts boot with `hashdist=0`, so the kernel's large system hash tables stay in the linear map — 2026-11-02; L27911
 - **I-984** A kernel oops reboots the host: `panic_on_oops=1`, `panic=30` — 2026-11-02; L27960
 - **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28002
+- **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28027

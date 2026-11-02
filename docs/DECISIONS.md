@@ -28024,3 +28024,21 @@ Matching the Oops and not the panic is load-bearing twice over. Fluent Bit dies 
 *Not done here.* No `kdump` and no `crashkernel` on hosts. `panic=` stays unset in this change and is I-984's to change, so the RUNBOOK step for a host that has already panicked is written to be true either way. This entry buys the 3h49m warning, not the post-mortem: the next panic still leaves a volatile serial blob and a dead process table.
 
 *A correction this entry owes, because it was in its own evidence.* The first reading of the three faults, mine included, was a wild write — "something put a userspace pointer in a dentry hash chain", from the two near-identical `0x790b`/`0x790c` fault addresses. Every one of those Oopses reported `#PF: error_code(0x0000) - not-present page` and `P4D 0`, from a different CR3, at a correct table base. Nothing was overwritten; the table was not mapped where the reader looked, which is I-982. The pointer-shape argument read non-kernel-shaped *values* as evidence of a *writer* while the page-table line that settled it was on screen. Recorded because the pattern — a plausible story from the striking datum, past the dull one that decides it — is the same one that made `host="host-02"` read as "no oops happened" during the same triage.
+**I-988. `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect.** (oops-sysctl, 2026-11-02.)
+
+I-984 put `panic_on_oops=1` in `boot.kernelParams` to stop a host running tainted after an oops. It shipped in r20261102-6, host-02 was switched and rebooted for it on 2026-11-02, and the parameter is in `/proc/cmdline`. It does nothing. The kernel takes `panic_on_oops` as a **sysctl** (`kernel.panic_on_oops`) and not as a boot parameter, and it says so out loud:
+
+```
+[    0.545031] Unknown kernel command line parameters "panic_on_oops=1", will be passed to user space.
+```
+
+After the reboot that was supposed to set it, `sysctl kernel.panic_on_oops` read **0**. `panic=30` from the same list *is* a kernel parameter and took: `kernel.panic` read 30. Only the one name appears in the Unknown list, so `hashdist=0` was recognised too — I-982 is unaffected and its dentry table came up `linear` as intended.
+
+It is now `boot.kernel.sysctl."kernel.panic_on_oops" = 1`, beside the other host sysctls, and the kernel parameter is gone.
+
+- **A sysctl is the better home anyway, for two reasons beyond correctness.** It applies during a switch's activation, so it needs no reboot of its own — the fix went out on a switch while the hosts stayed up. And `sysctl kernel.panic_on_oops` answers whether it is really on, which is the question the command line could not: `/proc/cmdline` showed the parameter present and the behaviour absent.
+- **The kernel-parameter spelling that works is `oops=panic`**, and it was rejected: it is one more thing that is right only if spelled exactly, in a place that reports nothing when it is wrong, to buy a setting that applies one reboot earlier than the sysctl does.
+
+*How it was caught, which is the part worth keeping.* Not by review and not by a test — by grepping the booted host's `dmesg` for oops patterns while confirming something else, and reading the four matches instead of trusting the count. Three of them were the command line quoting the parameter back; the fourth was the kernel refusing it. A check of `/proc/cmdline`, which is what the branch and I both ran, says the parameter is there and is silent about whether it means anything. This is I-968's shape in a third costume: `/proc/cmdline` is a proxy for "the kernel honoured this", it was green, and the property was absent. The honest check for any kernel parameter is the behaviour it is supposed to produce — `linear` in the dentry line for I-982, a non-zero sysctl here — and `dmesg | grep "Unknown kernel command line"` is the cheap general guard, now in `docs/CHECKLIST.md`.
+
+*Not fixed here:* nothing asserts this. A test that boots a host configuration and greps its dmesg for the Unknown line would catch the next misspelled parameter, and `nix/hosts/tests` is where it would go.
