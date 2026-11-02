@@ -27754,3 +27754,39 @@ Both of this branch's fixes pass 20 and 8 consecutive `-race` runs with six busy
 *Rejected:* widening the thresholds. A number that cannot catch its fault only gets quieter. *Rejected:* `-count=1` retries or marking them flaky, which is the same decision spread over future sessions.
 
 *Not fixed here, and the reason the class is recorded rather than the three bugs.* Nothing stops the next test from asserting a proxy, and `docs/CHECKLIST.md` now asks for the property and for the probe that shows the assertion fails without the fix. Whether the release gate should refuse a cut over a red `main` is still the owner's call: it would have held nine releases, and on this evidence it would also have held them for faults that were never in the product.
+**I-974. Getting a project's base onto the target host before a migration
+is the operator's step, not something `move` does.** (move-state,
+2026-11-02.)
+
+A project keeps the base it last ran until it next stops, so emptying a
+host that has been up for weeks means restoring bases the target has never
+built, and the restore fails on the host with `not_found` naming a
+`nixos-system-repose-guest-<version>` store path. Eight of host-01's
+sixteen were pinned across `2026.10.07`-`2026.10.25` and every move failed
+on the first try.
+
+`move` could fix this itself -- detect the missing closure and either
+build it on the target or stream it from the source. Rejected for now, on
+two counts. The hosts cannot reach each other (the WireGuard mesh is
+hub-and-spoke, by I-782's design), so a host-to-host copy means either a
+new peering rule between hosts or relaying 200 MB through the api, and
+neither belongs in the path of an admin command. And building the base on
+the target instead is a 20-minute nix build inside a step the operator is
+watching, for a problem that disappears on its own: `basebump` sweeps
+every project to the current base at 04:00 UTC, so a migration that can
+wait a day needs none of this.
+
+So the runbook carries the manual copy, with the numbers that make it
+cheap: 141 of 1364 store paths and 202 MB on 2026-11-02, against 49.9 GB
+for the sixteen whole systems, because the bases share nearly everything.
+Two traps are written down with it, both found by hitting them --
+`nix-store --export` wants its arguments with references before referrers,
+which is `nix-store -qR` order and not sorted order; and the copied paths
+are unrooted until a guest uses them, so a GC between the copy and the
+move undoes the work. `cache.nixos.org` is no help: we build guest
+systems, so the target cannot substitute them.
+
+Revisit when a host migration is routine rather than once-per-launch, or
+when a host dies with projects on it and there is no 04:00 sweep to wait
+for. The fleet work (I-872 onward) makes more hosts likely, which makes
+this likelier to be worth automating.
