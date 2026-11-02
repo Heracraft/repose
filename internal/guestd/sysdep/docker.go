@@ -75,11 +75,22 @@ func (d *SocketDocker) RunningContainers(ctx context.Context) (int, error) {
 }
 
 func (d *SocketDocker) get(ctx context.Context, url string) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(ctx, d.Timeout)
-	// The cancel runs when the caller closes the body; tying it to the response
-	// would leak, so the timeout on the client is the real bound and this
-	// context only carries cancellation from above.
-	defer cancel()
+	// No per-request timeout context here, and no `defer cancel()`. It used to
+	// take one and the comment said "the cancel runs when the caller closes
+	// the body" -- it does not, it runs when this function returns, which is
+	// before the caller has read a byte. `client.Timeout` already bounds the
+	// whole exchange, the body read included, so the context the caller passes
+	// is the only one needed and it still carries cancellation from above.
+	//
+	// What that cost: `RunningContainers` decodes the body after this returns,
+	// so its read raced the cancel. A small body is already in the transport's
+	// buffered reader and decodes from memory, which is why a project with a
+	// container or three looked fine; a bigger list has to come off the socket
+	// and fails with `decode: context canceled`. guestd then reported
+	// `docker_down` on a daemon that was serving perfectly well, and the
+	// daemon logged the other side of it as `status=499 request cancelled by
+	// client ... broken pipe`. `Ping` never noticed, because it reads the
+	// status and not the body (DECISIONS I-986).
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("docker request: %w", err)
