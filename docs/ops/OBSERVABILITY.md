@@ -359,7 +359,8 @@ addresses (I-944). So 21 of the 83 dashboard panels read "no data" unless
 that Grafana also has a Postgres datasource: the per-account and per-project
 figures, which live in Postgres precisely because `project_id` and `user_id`
 are refused as metric labels and cannot be Prometheus series at all. Nothing
-is broken, and no alert is affected -- all 53 rules query Prometheus.
+is broken, and no alert is affected -- every rule queries Prometheus, except
+`KernelOops`, which queries Loki (I-980).
 `ops/sql/launch.sql` answers the same questions through `psql`, and the owner
 can add the datasource by hand with the uid `repose-postgres` if they want
 the panels (`ops/README.md` step 3).

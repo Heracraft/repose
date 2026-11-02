@@ -426,7 +426,7 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       delivery needs the WireGuard peer that `10-observability.md` §9 still
-      has open. There are 54 alerts, 53 of them generated into Grafana's own
+      has open. There are 57 alerts, 56 of them generated into Grafana's own
       alerting by `ops/grafana/alerts-gen.py` and pushed in by
       `ops/grafana/push.py` over the API; `ops/check.sh --grafana` proves
       every one of them against a running Grafana, twice, and the drift
@@ -466,8 +466,8 @@ entry and this list with it. Counts as of 2026-10-21.
       macOS arm64, macOS x86_64 and Linux arm64 machine (the second human,
       M5 step 3).
 - [x] `ops/RUNBOOK.md` has entries for every alert above. Evidence:
-      `ops/check.sh` fails when an alert in `ops/alerts.yaml` has no
-      RUNBOOK heading and passes on `main` (17 rules, 17 headings,
-      2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
+      `ops/check.sh` fails when an alert in `ops/alerts.yaml` or
+      `ops/alerts-loki.yaml` (I-980) has no RUNBOOK heading and passes on
+      `main` (17 rules, 17 headings, 2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
       BuildQueueStuck, GatewayAuthSpike and EgressHigh are the six the
       row names.

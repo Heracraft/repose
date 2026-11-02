@@ -29,10 +29,12 @@ policy designed without a month of data is a guess.
 - Grafana dashboards as JSON in `ops/dashboards/`, provisioned by the
   personal server's Grafana: host capacity, per-guest resources, builds,
   gateway, snapshots, billing, abuse.
-- Alert rules as Prometheus rules in `ops/alerts.yaml`, one per alert in
-  `../CHECKLIST.md`, and the same rules generated into Grafana's own alerting
-  by `ops/grafana/alerts-gen.py`. Grafana evaluates them, by querying
-  Prometheus, and notifies through its own contact point;
+- Alert rules as Prometheus rules in `ops/alerts.yaml` (and, for the ones
+  that read log lines, as LogQL in `ops/alerts-loki.yaml`, which promtool
+  does not parse -- I-980), one per alert in `../CHECKLIST.md`, and the same
+  rules generated into Grafana's own alerting by
+  `ops/grafana/alerts-gen.py`. Grafana evaluates them, by querying
+  Prometheus and Loki, and notifies through its own contact point;
   `ops/grafana/push.py` puts them in over Grafana's HTTP API and nothing is
   mounted (DECISIONS I-942: the personal server has no Alertmanager, and
   Grafana's alerting engine needs no new service. I-944: over the API, rules
@@ -300,12 +302,13 @@ beyond their project id.
 ### Alerts
 
 Each maps to a `../ops/RUNBOOK.md` entry of the same name. The rules are
-written once, as Prometheus rules in `../../ops/alerts.yaml`, and
+written once, as Prometheus rules in `../../ops/alerts.yaml` and LogQL rules
+in `../../ops/alerts-loki.yaml` (I-980), and
 `../../ops/grafana/alerts-gen.py` generates them a second time as Grafana's
 own alert rules, which is what actually notifies anyone: the personal server
 has no Alertmanager (DECISIONS I-942). Nothing here is hand-written twice,
 and nothing below is a Grafana concept -- the table is the source file.
-Grafana gets 53 of the 54: `Watchdog` is excluded, because the only machine
+Grafana gets 56 of the 57: `Watchdog` is excluded, because the only machine
 to watch the heartbeat from is the one it would be watching (I-944).
 
 | Alert | Rule | Severity |
@@ -324,6 +327,7 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `PoolUnmonitored` | `repose_lvm_pool_monitored == 0` for 30m: dmeventd does not watch the pool, so it will not autoextend (I-643) | warn |
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
+| `KernelOops` | Loki, not Prometheus: `count_over_time({component="kernel"} |~ "Oops:|BUG:|general protection fault|Voluntary context switch within RCU" [10m]) > 0`. The host kernel faulted and has not panicked yet; the source is `ops/alerts-loki.yaml`, which promtool does not parse (I-980) | page |
 | `RollupLag` | `repose_api_rollup_lag_seconds > 2*3600` | warn |
 | `BillingWebhookRejected` | `sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m])) >= 5` | warn |
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |
@@ -475,15 +479,16 @@ two open rows are the two that need a machine of the owner's.
       production series they evaluate healthy, none firing and none in
       error.
 - [x] The alerts reach an engine that can notify. Evidence: the personal
-      server has no Alertmanager, so `ops/grafana/alerts-gen.py` generates 53
-      of the 54 rules of `ops/alerts.yaml` (all but `Watchdog`) into
+      server has no Alertmanager, so `ops/grafana/alerts-gen.py` generates 56
+      of the 57 rules of `ops/alerts.yaml` and `ops/alerts-loki.yaml` (all but
+      `Watchdog`) into
       `ops/grafana/provisioning/alerting/`, and `ops/check.sh --grafana`
       brings up a real Grafana 12.4, pushes them in with
       `ops/grafana/push.py` over the API, asserts that a second push changes
       nothing, and runs the drift check (DECISIONS I-942, I-944). Also
       checked against a Grafana whose datasources are NOT this repository's
       -- the case the owner's server is -- where the push resolved
-      `repose-prometheus` to that Grafana's own uid and all 53 rules
+      `repose-prometheus` to that Grafana's own uid and every rule
       evaluated healthy; and against the same Grafana with its datasource
       pointed at a dead address, where `verify.py` failed and named it, which
       no rule's own state would have (all but one are `execErrState: OK`).

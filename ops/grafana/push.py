@@ -13,7 +13,8 @@ from that file would give 53 rules a Prometheus that answers nothing, and
 since every rule is `execErrState: OK` all 53 would read OK. Fifty-three
 green, silent alerts is the failure this whole arrangement exists to prevent,
 so the rules are rewritten from the uid they are written against
-(`repose-prometheus`) to whatever the target calls its Prometheus, exactly as
+(`repose-prometheus`, and `repose-loki` for the log rules) to whatever the
+target calls its Prometheus and its Loki, exactly as
 `ops/dashboards/push.py` has always done for panels. A target with no
 datasource of a needed type is refused, with what to create.
 
@@ -162,10 +163,16 @@ def resolve_datasources(gf: Grafana, names: dict) -> tuple[dict, list[str]]:
     because that failure is silent.
     """
     datasources = gf.call("GET", "/api/datasources")
-    found = VERIFY.resolve(datasources, VERIFY.RULE_DS_UID,
-                           names.get(VERIFY.NAME_KEY[VERIFY.RULE_DS_UID]))
-    line = (f"datasource {VERIFY.RULE_DS_UID} -> {found['name']} ({found['uid']}) "
-            f"at {found.get('url', '?')}, the target's own; nothing created")
+    # One per datasource the rules query: Prometheus, and Loki for the log
+    # rules of ops/alerts-loki.yaml (I-980). A target with no Loki fails here,
+    # naming what to create, rather than pushing a rule that would read green
+    # for ever.
+    mapping, lines = {}, []
+    for written in VERIFY.rule_datasource_uids():
+        found = VERIFY.resolve(datasources, written, names.get(VERIFY.NAME_KEY[written]))
+        mapping[written] = found["uid"]
+        lines.append(f"datasource {written} -> {found['name']} ({found['uid']}) "
+                     f"at {found.get('url', '?')}, the target's own; nothing created")
     # The rest are the panels' and no rule's, and are also never created. Say
     # which way it fell, because "no data" in 21 panels with no explanation
     # reads as a broken dashboard.
@@ -183,7 +190,7 @@ def resolve_datasources(gf: Grafana, names: dict) -> tuple[dict, list[str]]:
         else:
             skipped.append(f"datasource {uid} -> {other['name']} ({other['uid']}), the "
                            "target's own; its panels will have data")
-    return {VERIFY.RULE_DS_UID: found["uid"]}, [line, *skipped]
+    return mapping, [*lines, *skipped]
 
 
 def push_folder(gf: Grafana) -> list[str]:

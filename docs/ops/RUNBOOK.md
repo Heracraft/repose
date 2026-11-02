@@ -1284,6 +1284,79 @@ Host root filesystem over 85 percent, almost always `/nix/store`.
    projects list --host host-NN --sort closure` and talk to them, or
    lower the closure cap.
 
+## KernelOops
+
+The host's kernel faulted: an `Oops:`, a `BUG:`, a general protection
+fault or an RCU read-side violation reached Loki from `component="kernel"`
+(DECISIONS I-980). The host is still running, which is the only reason this
+alert can exist, and a kernel that has faulted once faults again: whatever
+produced the first one is still there, and the next process to reach it
+gets the same fault in a place that may matter more.
+
+**The clock.** On host-02 on 2026-11-02 the first fault was at 13:51:07 and
+the panic at 17:40:07: 3h49m, and that is one sample, not a budget. Treat
+it as "this host is leaving the fleet today, in whichever order you
+choose".
+
+**The cause this fleet has met.** I-982: the dentry hash table allocated in
+a `vmalloc` hugepage mapping, which `alloc_large_system_hash()` chooses on
+any host with more than one NUMA node, read from processes that did not
+have it mapped. Check the host's own boot line before assuming anything
+else: `journalctl -k -b | grep -i "Dentry cache hash table"` says `vmalloc
+hugepage` or `linear`, and `vmalloc hugepage` on a kernel without I-982's
+`hashdist=0` is this. Faults in that case are `error_code(0x0000) -
+not-present page` with `P4D 0`, from different processes, at the same table
+base -- nothing is corrupt, so do not go looking for a writer.
+
+1. Which host. The `host` label on these lines is the **host_id**, not the
+   name (`host_id` in Prometheus means the name; nothing joins the two).
+   `repose-admin hosts list` is the mapping.
+2. Read every fault, not the one that paged, from the monitoring server or
+   anywhere that reaches Loki:
+
+   ```
+   curl -sG http://10.255.0.3:3100/loki/api/v1/query_range \
+     --data-urlencode 'query={host="<host_id>",component="kernel"} |~ `Oops|BUG: unable to handle|Voluntary context`' \
+     --data-urlencode 'start='$(date -u -d '-24 hours' +%s)000000000
+   ```
+
+   The faulting function and the task are in the lines around each `Oops:`.
+   Repeats in the same function are one damaged structure; faults in
+   unrelated functions are worse.
+3. Is it still serving? `ssh host-0X true`, `hostd guests --json`,
+   `systemctl is-system-running`. A tainted host answers normally until it
+   does not.
+4. **Drain it, do not wait.** `repose-admin hosts drain <name>` stops new
+   placements, then `repose-admin projects move <id> --to <other host>` per
+   project ("Getting a project's base onto the target host", I-974, is the
+   operator's step before a move). A planned stop writes each guest's disk
+   and can keep its memory (I-653); a panic keeps nothing, which is the
+   whole difference between acting on this alert and reading about it in
+   `GuestdLost` four hours later.
+5. If the host has already panicked, what happens next depends on the
+   kernel command line it booted. With `panic=` unset it halts and stays
+   halted: Azure Resource Health says "undergoing a reboot due to a guest
+   OS crash" with the VM still "running", and only `az vm restart -g
+   repose-prod -n <name>` reaches it. With I-984's `panic=30` it reboots
+   itself after 30 seconds. `ssh host-0X cat /proc/cmdline` on the host
+   that comes back says which it was; either way, "Host rebooted" below is
+   the entry for what to check afterwards.
+6. The serial console is the only record of a panic, and it is volatile.
+   `az vm boot-diagnostics get-boot-log -g repose-prod -n <name>` returns a
+   buffer holding **several boots**, oldest first, JSON-encoded with ANSI
+   escapes: decode it to a file first, then read the **last** `Linux
+   version` and `Command line:` in it, or the version tag on the `Oops:`
+   lines. The first banner is the install boot, and reading it as the
+   running kernel sends you looking for upstream bugs in a kernel the host
+   does not run.
+7. What this alert cannot see, so do not read its silence as health: the
+   `Kernel panic` line itself never ships (Fluent Bit dies with the box),
+   and a *guest's* own kernel oops is `component="console"` and is the
+   tenant's machine, not this.
+8. An unplanned host fault with tenants on it is an incident line in
+   `docs/incidents/`. Record the fault times, the faulting function, the
+   uptime at the first fault and what was moved.
+
 ## GuestdLost
 
 hostd cannot talk to a guest's guestd for 5 minutes.
