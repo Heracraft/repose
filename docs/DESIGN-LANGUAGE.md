@@ -1068,7 +1068,7 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   "The agents you use, and the tools they need, on first boot"; "Start
   in three commands"; "Pricing"; "Questions", five `details` rows
   between hairlines, each washed with `--hk-hover` under the pointer,
-  its focus ring inside the row and 12px clear of the text; the full
+  its focus ring inside the row and 10px clear of the text; the full
   footer.
 - **Pricing**: `PlanCells` in its public variant, three cells split by
   hairlines from 1024px (one column below, flush on the frame at every

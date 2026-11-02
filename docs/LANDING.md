@@ -416,7 +416,10 @@ place of an observer of its own:
     copy flies under the laptop's window; wide, it rises into the band
     over the `repose run` chip in 300ms `outQuad`, crosses the gap
     (900ms `inOutCubic`) and settles onto the machine's row (600ms
-    `inOutQuad`); stacked, it appears 10px over the machine's row and
+    `inOutQuad`); wide, it also fades in over 250ms `outQuad` from 300ms
+    into its flight, once its name is clearing the laptop's wall, with
+    its right 40 percent masked, so its bare fill never shows alone at
+    the wall (I-961); stacked, it appears 10px over the machine's row and
     settles, 600ms `outCubic` (I-677).
   - *The hero's wreck values*: postgres counts down from 3,532 to 0 in
     its one value, 600ms `outQuad`, as ComesBack's counts do; node's
@@ -470,12 +473,14 @@ place of an observer of its own:
     a value's colour (250ms), git's mark and the snapshot mark (200ms) and
     the older tile's time greying (400ms).
   - *Hover and press* on the page's links and buttons: the Foundation's
-    150ms colour change (`DESIGN-LANGUAGE.md`, "Motion").
+    150ms colour change (`DESIGN-LANGUAGE.md`, "Motion"). A question's
+    row takes `--hk-hover` and its plus turns to the first ink, and a
+    step's command cell lightens one step, each in 150ms, the kit's ease,
+    with no transition under reduced motion (I-961). An opened question's
+    plus turns 45 degrees in the same 150ms.
 
 Nothing else moves. A new motion is added to this list with its duration
 and easing, or it does not ship.
-
-On the rest of the page only colours move on hover, and the questions' plus turns 45 degrees over 150ms.
 
 ## Process
 
