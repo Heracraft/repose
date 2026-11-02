@@ -27956,3 +27956,38 @@ This is worth reporting upstream if it recurs: 6.18.57, two NUMA nodes, a
 128 MB hugepage-backed vmalloc dentry table, three `P4D 0` read faults
 from three address spaces. The serial log is the evidence and the only
 copy; see I-983 on why that is itself a problem.
+
+**I-984. A kernel oops reboots the host: `panic_on_oops=1`, `panic=30`.**
+(hashdist, 2026-11-02.) *Supersedes the "panics are not auto-rebooted"
+sentence in RUNBOOK "Host rebooted".*
+
+The old stance was that a stuck host gets restarted from the Azure portal,
+so `panic=` stayed unset. 2026-11-02 showed what that costs. host-02 took
+its first `__d_lookup_rcu` fault at 13:51:07 and kept running for 3 hours
+48 minutes, serving tenant filesystem traffic through virtiofsd with a
+dentry cache it could not reliably read, with no alert, until a third
+fault hit `systemd` and the kernel panicked on "Attempted to kill init!".
+It then hard-hung, because a panic with `panic=` unset does not reboot,
+and eighteen projects stayed down until somebody restarted the VM by hand.
+
+Rebooting at the first oops would have cost minutes. The recovery path
+already exists and is tested: hostd marks every guest that was running as
+`guest_interrupted` on its next start and the api brings them back three
+per host per minute within six hours (I-645).
+
+Staying up to debug preserves nothing, which is the part that settles it.
+There is no kdump on these hosts and `boot.crashDump` is unset, so no
+vmcore is ever written. The whole forensic yield of a long tainted run is
+the serial console text, and the first oops writes that. Everything after
+it is risk with no return.
+
+`panic=30` rather than `panic=0`: fluent-bit needs a moment to ship the
+oops to Loki. The panic line itself never arrives, because fluent-bit dies
+with the host -- so any alert on this must match the oops, not the panic
+(I-983).
+
+Rejected: `panic_on_warn`. A WARN is frequently survivable and we would be
+rebooting hosts over harmless warnings. Rejected: leaving it unset and
+relying on the new alert. An alert pages a human who then does what the
+machine could have done in 30 seconds, and the 3 h 48 m window stays open
+for however long it takes someone to answer at 14:00 on a Monday.

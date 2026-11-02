@@ -90,6 +90,24 @@ in
     # allocation path that has never faulted, and it costs only NUMA
     # locality on a table we read far more than we place.
     "hashdist=0"
+    # An oops is not survivable, so stop pretending it is (DECISIONS
+    # I-984). On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault
+    # at 13:51:07 and kept running for 3 h 48 m, serving tenant filesystem
+    # traffic through virtiofsd with a dentry cache it could not read,
+    # before a third fault hit systemd and the box hard-hung with no way
+    # back but the Azure portal. Rebooting at the first oops would have
+    # cost minutes: hostd marks every interrupted guest on its next start
+    # and the api brings them back three per host per minute (I-645).
+    # Staying up preserves nothing, because we capture no vmcore -- there
+    # is no kdump here and `boot.crashDump` is unset -- so the serial log
+    # is all a long tainted run buys, and it is written by the first oops
+    # anyway.
+    "panic_on_oops=1"
+    # 30 s, not 0: the oops reaches the serial console and fluent-bit
+    # ships it to Loki before the box goes. The panic line itself never
+    # ships -- fluent-bit dies with everything else -- which is why the
+    # alert matches on oops and not on panic.
+    "panic=30"
   ];
 
   boot.kernel.sysctl = {

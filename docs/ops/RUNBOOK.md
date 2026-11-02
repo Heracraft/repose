@@ -2009,9 +2009,15 @@ Every guest on the host stopped with it. hostd's first start in the new
 boot marks each guest that was running or starting (`guest_interrupted`,
 with the new `boot_id`), and the api starts those again from the
 `Hello`, three per host per minute, within 6 hours of the restart, and
-tells each user once (DECISIONS I-645). Kernel panics are not
-auto-rebooted (`panic=` is unset on purpose); a stuck host is restarted
-from the Azure portal.
+tells each user once (DECISIONS I-645). A kernel oops now reboots the
+host: `panic_on_oops=1` and `panic=30` (DECISIONS I-984). Until
+2026-11-02 `panic=` was unset on purpose and a stuck host was restarted
+from the Azure portal, which is what host-02 needed after it ran 3 h 48 m
+tainted and then killed init. A host that has oopsed is not stuck, it is
+unreliable, and it is still serving tenants; 30 seconds is there so the
+oops reaches Loki before the reboot. A host that is hung *without* having
+oopsed still needs the portal, and that is the one case the old sentence
+described correctly.
 
 A graceful shutdown (Azure's heal, `systemctl reboot`) presses each
 running guest's ACPI power button and gives it 20 seconds to power off,
