@@ -21,8 +21,9 @@
   snapshots, a click that timed out on the hidden radio) are cropped out.
   OSC 8 hyperlink wrappers are dropped; they carry no visible text.
 
-  Both stand in the grid's window under "your cloud machine" (WinHead,
-  I-669): the browser on top, the log under its viewport, so the page's
+  Both stand in one closed window with no head of its own (I-961): the
+  browser's captured toolbar is its chrome. The browser on top, the log
+  under its viewport, so the page's
   tabs are never under the log and the log's rows crop on the right as a
   terminal's do (F18). The pans stop where the crop's edges fall between
   the page's rows (the Type tabs, Write and Record, the text box's top),
@@ -30,7 +31,8 @@
   The captures are the light scheme's only: they came from the owner's
   machine, which is not reachable from here, so there is no dark set to
   swap in under dark mode (F47, I-669); in the dark scheme the toolbar and
-  page are dimmed (brightness 0.86) to sit beside the dark windows.
+  page are drawn inverted with their hues turned back (I-961), so the
+  app reads as a dark page beside the dark windows.
 
   The loop opens on about:blank for 400ms and ends on it: at the seam the
   page fades to the blank page under it and the toolbar cuts back to
@@ -51,7 +53,6 @@
 	import { watchReducedMotion } from './inview';
 	import { Picture } from './motion.svelte';
 	import PauseButton from './PauseButton.svelte';
-	import WinHead from './WinHead.svelte';
 
 	const ROWS = [
 		'\u001b[38;5;239m\u001b[48;5;237m❯ \u001b[38;5;231mTest the feedback form at http://localhost:5173/feedback with the playwright browser tools, in the browser window that is already open. Choose Bug, type a one-line bug report into the text box, and\u001b[39m',
@@ -379,8 +380,7 @@
 	<PauseButton {picture} />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
-		<div class="shot-win open bw" aria-hidden="true">
-			<WinHead who="machine" />
+		<div class="shot-win bw" aria-hidden="true">
 			<div class="br">
 				<div class="tb">
 					<img
@@ -515,7 +515,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in) var(--shot-in) 0;
+		padding: var(--shot-in);
 	}
 	.bw {
 		flex: 1;

@@ -10,13 +10,13 @@
   so no stray keys show in lualine), so the tree stays shallow and the code
   gets most of the width. The 78x20 tmux pane was captured with
   `tmux capture-pane -p -e -N` and converted to styled runs verbatim; the
-  block cursor is the terminal's own, at the cell tmux reported. It stands
-  in the grid's window under the head that says where it runs, "your
-  cloud machine" (WinHead.svelte, I-669), as Localhost's tmux does: the
-  card's line says Neovim runs on the machine itself. From 640 wide the
-  font is sized so all 78 columns fit, so every line ends where nvim cut
-  it and the statusline keeps its clock (F18); on a phone it stays 8.4px
-  and the screen crops on the right, as a terminal would (I-397).
+  block cursor is the terminal's own, at the cell tmux reported. It fills
+  a closed window of its own, with no head: nvim's tab bar and statusline
+  are its chrome, and the cell's title says where it runs (I-961). From
+  640 wide the font is sized so all 78 columns fit, so every line ends
+  where nvim cut it and the statusline keeps its clock (F18); on a phone
+  it stays 8.4px and the screen crops on the right, as a terminal would
+  (I-397).
   Two explorer rows read "education": two files whose names nvim cut at
   the explorer's 9 columns. The machine is the owner's and not reachable
   from here to recapture with a wider explorer, and a crop cannot drop a
@@ -41,8 +41,6 @@
   gate's contrast check (axe skips inert nodes) that this is a picture.
 -->
 <script lang="ts">
-	import WinHead from './WinHead.svelte';
-
 	// Verbatim capture: one inline style per distinct SGR state, and each row
 	// as [text, style] runs.
 	const styles: string[] = [
@@ -528,11 +526,10 @@
 
 <div class="shot">
 	<div
-		class="shot-win open ed"
+		class="shot-win ed"
 		role="img"
 		aria-label="Neovim with LazyVim running on your cloud machine, full screen: a narrow file explorer of the repo on the left, two of the worker's files open in tabs, and its TypeScript config in the editor."
 	>
-		<WinHead who="machine" />
 		<div class="screen">
 			{#snippet pieces(ps: Piece[])}
 				{#each ps as p, i (i)}<span
@@ -565,15 +562,15 @@
 		font-display: block;
 	}
 	.ed {
-		height: calc(100% - var(--shot-in));
-		margin: var(--shot-in) var(--shot-in) 0;
+		height: calc(100% - 2 * var(--shot-in));
+		margin: var(--shot-in);
 		container-type: inline-size;
 	}
 	/* The screen's 20 rows share the window under its head, and its 78
 	   columns fill the window's width: JetBrains Mono's cell is 0.6em, so
 	   78 cells are 46.8em (I-669). */
 	.screen {
-		--lh: calc((var(--shot-h) - 2px - var(--shot-in) - 1px - var(--shot-head)) / 20);
+		--lh: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 2px) / 20);
 		flex: 1;
 		min-height: 0;
 		background: var(--t-bg);

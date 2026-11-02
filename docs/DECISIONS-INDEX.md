@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-865 entries.
+866 entries.
 
 ## Scope
 
@@ -825,7 +825,7 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23913
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23979
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24210
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24242
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24242
 - **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; L24369
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24718
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24781
@@ -897,3 +897,4 @@ pointer, not a summary.
 - **I-958** The deploy-target check reads `structuredAttrs`, where the content now is — 2026-11-01; L27498
 - **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27511
 - **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27570
+- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; L27642

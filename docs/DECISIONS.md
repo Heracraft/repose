@@ -27638,3 +27638,68 @@ was never deployed, and completes I-952.
   `ops/check.sh` green at 56 alerts and 55 Grafana rules;
   `ops/grafana/alerts-gen.py` refused `ApiMetricsAbsent` until it was
   declared in `BOOLEAN_EXPRS`, which is that guard doing its job.
+
+**I-961. The landing is one quiet, gapless composition: bands that end on
+the next band's rule, one two-column line from 1024px, one stage and one
+terminal palette.**
+(landing-refine, 2026-11-02) Amends I-837 (the landing's layout) and I-843
+(the pictures' stage, the steps, the pricing head), and LANDING.md "Real,
+or not at all" for colour only. The owner asked for a landing that is
+"clean and consistent", with visuals that no longer feel bolted on, after
+voidzero.dev and Linear. Three alternatives were built and judged at real
+size by three critics; the quiet one (B) won all three votes, and the
+judges' grafts and its named defects were then worked in.
+- *Gapless.* Every band after the hero opens with a hairline the window's
+  width and ends on the next one. A band that ends on a picture has no
+  bottom padding and its stage rests on that rule, open and square at its
+  foot. A band that ends on a ruled list (steps, plans, questions) ends on
+  its last row, the questions on the footer's rule. Empty space is padding
+  inside a band. B's first version dissolved each stage into the page
+  over 64px; all three critics read the washed strip and the empty band
+  under it as the gap the owner named, and the fade also erased the
+  Editor's statusline and the Browser's agent log. So the fade is gone.
+- *One column line.* From 1024px (I-837's breakpoint, kept) every head is
+  two equal columns 32px apart, which is the footer's own line. The h2 is
+  on the left and the one line, links or button the section needs is on
+  its first baseline on the right; a section that needs no sentence leaves
+  the right column empty rather than gaining a caption. The hero's lead
+  and buttons, the steps and the questions use the same line, and the
+  questions' heading stays sticky. Between 1024 and 1199px the steps' Copy
+  is its icon and the line 12px, so the install command fits its half
+  (`CodeCopy` gains `labelFrom`).
+- *One stage, closed in the grid.* A grid cell's stage is closed on four
+  sides with its windows inset alike, so no window runs off an edge. The
+  Browser and the Editor lose their "your cloud machine" head, since their
+  captured chrome is the head; the label stayed where it tells the machine
+  from the laptop or a snapshot. Only the hero's machine keeps its running
+  dot.
+- *Steps and pricing as ruled rows.* The steps lose their gauges and `$`:
+  a mono number and the serif name on the left, the command filling the
+  right column flush on the stage's tone, on one line at every width.
+  The plans become cells split by hairlines with no card edge, the one
+  card idiom left on the page. "Launch prices." and "Start a free week"
+  move into the pricing head's right column; "Seven days free." goes,
+  since the button beside it says so.
+- *One terminal palette, mapped by role.* Ready, Localhost's tmux, the
+  Browser's log and the Editor's nvim draw from `--t-*`, light on the
+  light page and dark on the dark one, so no black slab sits on the light
+  page. The captures' colours are mapped by role (one-dark and xterm-256
+  by their ANSI tables, Tokyo Night by a role map); their text and layout
+  are untouched. The Browser's captures exist only in the light scheme,
+  and the owner's machine is not reachable to take a dark set, so in the
+  dark scheme they are drawn with `invert(0.9) hue-rotate(180deg)`, which
+  the critics preferred to a bright block. A real dark capture replaces
+  it when one can be taken.
+- *Copy.* The lead is main's again, snapshot sentence included: B cut it,
+  and the owner's lead is the owner's. The features heading becomes "A
+  cloud machine that feels like your own box", the idea it serves; the
+  Localhost cell is titled "Use its ports on your localhost", says the
+  mechanism first ("Ports from 1024 up appear on your localhost while
+  you're attached") and shows `repose open 5173`, the port its picture
+  forwards. The eyebrow and the step numbers share one label: Geist Mono
+  12px, upper case, tracked. The h1's floor rises so it never sets under
+  an h2; at 390px it holds two lines at 32px, since "Your dev
+  environment," does not fit a line at 33px or more.
+- *Left as they were.* The hero picture is still about 1000px tall on a
+  phone, and the Localhost capture's headline still reads larger than the
+  cell's title; neither can change without redrawing a picture.

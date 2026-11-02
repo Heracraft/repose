@@ -39,10 +39,6 @@
 		}
 	});
 
-	// On a phone the install line breaks at its spaces, never inside the URL
-	// and never between the pipe and its target.
-	const install = INSTALL_COMMAND.split(/(https:\/\/\S+)/);
-
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
 	const steps: { title: string; command: string; what: string }[] = [
@@ -108,17 +104,15 @@
 		<div class="cols hero-row">
 			<p class="hk-lead">
 				Your code, tools and logins sit on a machine of its own, where agents run with full
-				permissions and nobody approves commands one by one.
+				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
+				a wrecked machine back in minutes.
 			</p>
-			<div>
+			<div class="hero-act">
 				<div class="ctas">
 					{@render authAction('Get started', 'Open the dashboard')}
 					<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
 				</div>
-				<p class="install">
-					{install[0]}<span class="nowrap">{install[1]}</span>
-					<span class="nowrap">{install[2].trimStart()}</span>
-				</p>
+				<p class="install">{INSTALL_COMMAND}</p>
 			</div>
 		</div>
 		<div class="stage hero-stage">
@@ -156,8 +150,8 @@
 				<Localhost />
 				<h3 class="item-title">Use its ports on your localhost</h3>
 				<p class="copy">
-					Cookies and OAuth redirects behave as they do locally. When you're not attached, forward a
-					port by hand.
+					Ports from 1024 up appear on your localhost while you're attached, so cookies and OAuth
+					redirects behave as they do locally. Detached, you forward one by hand.
 				</p>
 				<p class="cmd"><span aria-hidden="true">$</span> repose open 5173</p>
 			</li>
@@ -194,7 +188,7 @@
 		</div>
 	</section>
 
-	<section class="band">
+	<section class="band band--ruled">
 		<div class="sec-head">
 			<h2 class="hk-h2">Start in three commands</h2>
 		</div>
@@ -205,35 +199,37 @@
 						<span class="label" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span
 						>{step.title}
 					</h3>
-					<CodeCopy command={step.command} what={step.what} />
+					<CodeCopy command={step.command} what={step.what} labelFrom={1200} />
 				</li>
 			{/each}
 		</ol>
 	</section>
 
-	<section class="band" id="pricing">
+	<section class="band band--ruled" id="pricing">
 		<div class="sec-head">
 			<h2 class="hk-h2">Pricing</h2>
-			<p class="copy">Launch prices.</p>
+			<div class="price-act">
+				<p class="copy">Launch prices.</p>
+				<div class="cta-row">
+					<!-- Signing up here comes back to Billing, where the plans are. -->
+					{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
+					{#if !authState.authenticated && seats}
+						<p class="seats" data-testid="seats-line">
+							{#if seats.free > 0}
+								{seats.free}
+								{seats.free === 1 ? 'seat' : 'seats'} left
+							{:else}
+								Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
+							{/if}
+						</p>
+					{/if}
+				</div>
+			</div>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
-		<div class="cta-row">
-			<!-- Signing up here comes back to Billing, where the plans are. -->
-			{@render authAction('Start a free week', 'Open the dashboard', '/billing')}
-			{#if !authState.authenticated && seats}
-				<p class="seats" data-testid="seats-line">
-					{#if seats.free > 0}
-						{seats.free}
-						{seats.free === 1 ? 'seat' : 'seats'} left
-					{:else}
-						Full for now. {seats.waiting} waiting; join the list and you're emailed when a seat frees.
-					{/if}
-				</p>
-			{/if}
-		</div>
 	</section>
 
-	<section class="band">
+	<section class="band band--ruled">
 		<div class="cols faq-cols">
 			<h2 class="hk-h2">Questions</h2>
 			<div class="ruled faq">

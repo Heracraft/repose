@@ -31,11 +31,10 @@
 	--font-sans: var(--hk-font-sans);
 	--font-display: var(--hk-font-display);
 	--shot-head: 28px;
-	/* The stage's one inset, and its floor: the pause button stands on the
-	   floor, and the stage dissolves into the page across it. */
+	/* The stage's one inset, and its floor under a band's picture: the
+	   pause button stands on the floor, at its right end. */
 	--shot-in: 24px;
-	--stage-y: 64px;
-	--fade: 64px;
+	--stage-y: 48px;
 	/* The pictures' blue is a muted slate step, quieter than the kit's
 	   link blue (owner, 2026-10-21: "the blue in the figures is too
 	   strong"). 5.9:1 on white light, 7:1 on the dark surface. */
@@ -82,8 +81,6 @@
 @media (max-width: 639.98px) {
 	.landing {
 		--shot-in: 12px;
-		--stage-y: 48px;
-		--fade: 48px;
 	}
 }
 /* Dark: the same ladder, each step a little lighter than the one under
@@ -160,54 +157,34 @@
 
    Every picture on the page stands on one stage (.stage for the hero,
    the setup picture and Ready; .shot for the four grid cells): the stage
-   fill with a sheen at its top-left, a hairline and the kit's 12px
-   corners, all drawn by ::before and dissolving into the page over its
-   last --fade pixels, so no picture sits in a closed box. ::after fades
-   whatever runs into that floor (a grid window running off the bottom)
-   into the page the same way. Radii: 12px the stage, 6px a window or a
-   chip, nothing else. */
+   fill with a sheen at its top-left, a 1px --stage-edge, an inner
+   highlight on its top edge and the kit's 12px corners. A stage that
+   ends its band rests on the band's closing rule (landing.css,
+   .band--pic): its foot is that rule, so it is open at the bottom and
+   square there. A grid cell's stage is closed on all four sides, its
+   windows inset alike on each, so nothing in it is cut or faded.
+   Radii: 12px the stage, 6px a window or a chip, nothing else. */
 .landing :is(.stage, .shot) {
 	position: relative;
 	isolation: isolate;
-	border-radius: var(--hk-radius-lg);
-}
-.landing :is(.stage, .shot)::before,
-.landing :is(.stage, .shot)::after {
-	content: '';
-	position: absolute;
-	pointer-events: none;
-}
-.landing :is(.stage, .shot)::before {
-	inset: 0;
-	z-index: -1;
 	border: 1px solid var(--stage-edge);
-	border-radius: inherit;
+	border-radius: var(--hk-radius-lg);
 	background: radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
 	box-shadow: inset 0 1px 0 var(--stage-top);
-	mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
 }
-.landing :is(.stage, .shot)::after {
-	left: 0;
-	right: 0;
-	bottom: 0;
-	z-index: 20;
-	height: var(--fade);
-	background: linear-gradient(to bottom, transparent, var(--hk-bg));
-}
-/* The pause button stands on the floor, over the fade. */
-.landing :is(.stage, .shot) .pic-pause,
-.landing .cells .pic-pause {
-	z-index: 21;
+.landing .band--pic > .stage {
+	border-bottom: 0;
+	border-end-start-radius: 0;
+	border-end-end-radius: 0;
 }
 
 /* ---------- Picture primitives ----------
 
    One frame for the four cell pictures: a fixed height, each picture
-   standing its windows in it at the stage's inset and running them off
-   its bottom edge into the fade. A window is a pane on the stage: the
-   surface fill, a --rule hairline and 6px corners (open at the bottom
-   when it runs off), under the --shot-head head that names where it runs
-   (WinHead.svelte). */
+   standing its windows in it at the stage's inset on all four sides. A
+   window is a pane on the stage: the surface fill, a --rule hairline and
+   6px corners, under the --shot-head head that names where it runs
+   (WinHead.svelte) where the window's own chrome does not. */
 .landing .shot {
 	--shot-h: 20rem;
 	height: var(--shot-h);
@@ -222,10 +199,6 @@
 	background: var(--surface);
 	overflow: hidden;
 	color: var(--pic-ink);
-}
-.landing .shot-win.open {
-	border-bottom: 0;
-	border-radius: 6px 6px 0 0;
 }
 /* The drawn pictures' own windows take the same corners. */
 .landing .stage :is(.win, .rail) {

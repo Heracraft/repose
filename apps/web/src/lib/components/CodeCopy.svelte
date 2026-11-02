@@ -10,12 +10,12 @@
 	// the scroll. On a phone the command wraps, so all of it shows, and
 	// Copy is its icon. Several commands together go in CommandList;
 	// near-black is for code panes, so a page keeps one dark anchor.
-	const phone = new MediaQuery('max-width: 639.98px');
 	let {
 		command,
 		copy,
 		what,
-		prompt = false
+		prompt = false,
+		labelFrom = 640
 	}: {
 		/** The line shown, with no "$ " prompt. */
 		command: string;
@@ -25,7 +25,10 @@
 		what: string;
 		/** Show a muted "$ " before the command. */
 		prompt?: boolean;
+		/** The width (px) from which Copy shows its word; narrower, its icon. */
+		labelFrom?: number;
 	} = $props();
+	const narrow = $derived(new MediaQuery(`max-width: ${labelFrom - 0.02}px`));
 
 	/** A line scrolled to its end shows its last characters unfaded. */
 	function markEnd(e: Event) {
@@ -41,7 +44,7 @@
 			>{/if}{#each command.split(/(?<=\/)/) as part, i (i)}{#if i}<wbr />{/if}{part}{/each}</pre>
 	<CopyButton
 		text={copy ?? command}
-		label={phone.current ? undefined : 'Copy'}
+		label={narrow.current ? undefined : 'Copy'}
 		ariaLabel="Copy {what}"
 		tone="page"
 		size="sm"

@@ -1,14 +1,20 @@
 /*
- * The landing's layout (Guide B 13.1, DECISIONS I-837), refined as one
- * quiet composition: bands stacked edge to edge on the 1200px frame, each
- * opened by a hairline that runs the window's full width, one two-column
- * line that every head, step and question shares, and one stage under
- * every picture (pictures.css). Type, colour, buttons and the plan cards
- * come from the kit (lib/hk) and PlanCells; this file places them.
- * docs/LANDING.md records the rules.
+ * The landing's layout (Guide B 13.1, DECISIONS I-837, I-961): bands
+ * stacked edge to edge on the 1200px frame, each opened by a hairline that
+ * runs the window's full width, one two-column line that every head, step,
+ * plan row and question shares, and one stage under every picture
+ * (pictures.css). Type, colour, buttons and the plan cards come from the
+ * kit (lib/hk) and PlanCells; this file places them. docs/LANDING.md
+ * records the rules.
  *
- * Spacing is one scale, 8 16 24 32 48 64 96: a band is --band-y top and
- * bottom (96 from 1024px, 64 from 768, 48 on a phone), a head is --head-gap
+ * Gapless: a band ends on its next band's rule. A band that ends on a
+ * picture has no bottom padding, and its stage rests on that rule; a band
+ * that ends on a ruled list (the steps, the plans, the questions) has none
+ * either, and its last row's foot is that rule. Empty space is padding
+ * inside a band, never a strip between two.
+ *
+ * Spacing is one scale, 8 16 24 32 48 64 96: a band opens with --band-y
+ * (96 from 1024px, 64 from 768, 48 on a phone), a head is --head-gap
  * above what it heads, and the two columns are --col-gap apart.
  *
  * Imported by routes/+page.svelte alone, unlayered, so every rule is
@@ -37,9 +43,7 @@
 /* ---------- Bands ---------- */
 
 /* A band's hairline runs the window's width from the frame (border-image
-   outset paints past the box without widening the page). A band that
-   ends on a picture has no bottom padding: its stage dissolves into the
-   next band's hairline, so no empty strip sits between them. */
+   outset paints past the box without widening the page). */
 .landing .band {
 	padding-block: var(--band-y);
 }
@@ -47,20 +51,23 @@
 	border-top: 1px solid;
 	border-image: linear-gradient(var(--hk-hairline), var(--hk-hairline)) 1 / 1px 0 0 / 0 100vw;
 }
-.landing .band--pic {
+.landing .band--pic,
+.landing .band--ruled {
 	padding-bottom: 0;
 }
 
 /* ---------- Type ---------- */
 
 /* One display size per level and one title for every item on the page:
-   the cells, the steps, the plans and the questions. */
+   the cells, the steps, the plans and the questions. The h1 never sets
+   smaller than an h2: on a 390px phone it holds two lines at 32px. */
 .landing h1.hk-h1 {
 	max-width: 15em;
 	margin: 0;
-	font-size: clamp(1.875rem, 1rem + 3.9vw, 3.75rem);
+	font-size: clamp(1.875rem, 0.6rem + 5.7vw, 3.75rem);
 	line-height: 1.04;
 	letter-spacing: -0.025em;
+	text-wrap: balance;
 }
 .landing h2.hk-h2 {
 	margin: 0;
@@ -80,12 +87,15 @@
 	text-transform: none;
 	color: var(--hk-text);
 }
-/* The page's one label: 12px mono in the third grey. */
+/* The page's one label: 12px Geist Mono, upper case and tracked, in the
+   third grey. The eyebrow and the step numbers take it. */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
 	font-size: 0.75rem;
 	line-height: 1rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
 	color: var(--hk-text-3);
 }
 .landing .copy {
@@ -103,10 +113,12 @@
 
 /* ---------- The two-column line ----------
 
-   Where the frame is at its full width (1200px), a head is two equal columns: the h2 on the left, its one
-   line (or its links) on the right, on the h2's first baseline. Steps,
-   questions and the hero's lead and buttons share the same line, which
-   is the footer's. Narrower, every one of them is one column. */
+   From 1024px a head is two equal columns: the h2 on the left, its one
+   line (or its links, or pricing's line and button) on the right, on the
+   h2's first baseline. A head whose section needs no sentence leaves the
+   right column empty (LANDING.md, "Copy"). The steps, the plans' rows,
+   the questions and the hero's lead and buttons share the same line,
+   which is the footer's. Narrower, every one of them is one column. */
 .landing .sec-head {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr);
@@ -118,7 +130,7 @@
 	grid-template-columns: minmax(0, 1fr);
 	gap: 1.25rem;
 }
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
 	.landing .sec-head,
 	.landing .cols {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -151,6 +163,13 @@
 	font-size: 1.0625rem;
 	line-height: 1.6;
 	color: var(--hk-text-2);
+	text-wrap: pretty;
+}
+/* The buttons stand level with the lead's first line. */
+@media (min-width: 1024px) {
+	.landing .hero-act {
+		margin-top: -0.375rem;
+	}
 }
 .landing .ctas {
 	display: flex;
@@ -163,16 +182,15 @@
 		flex: 1 1 100%;
 	}
 }
-/* The install command the copy button copies, as it is copied. */
+/* The install command the copy button copies, as it is copied, on one
+   line: on a phone it sets smaller rather than break the URL. */
 .landing .install {
 	margin: 1rem 0 0;
 	font-family: var(--hk-font-mono);
-	font-size: 0.75rem;
+	font-size: min(0.75rem, 2.5vw);
 	line-height: 1.25rem;
-	color: var(--hk-text-3);
-}
-.landing .install .nowrap {
 	white-space: nowrap;
+	color: var(--hk-text-3);
 }
 
 /* Both labels of a sign-in button share one grid cell; the one not shown
@@ -190,17 +208,17 @@
 
 /* ---------- The stage ----------
 
-   The fill, edge and fade are pictures.css's (shared with the grid's
-   .shot); here only its inset: --shot-in on three sides, the floor under
-   it. */
+   The fill and edge are pictures.css's (shared with the grid's .shot);
+   here only its inset: --shot-in on three sides, the floor under it,
+   where the pause button stands. */
 .landing .stage {
 	padding: var(--shot-in) var(--shot-in) var(--stage-y);
 }
 
 /* ---------- The feature grid ----------
 
-   A 2x2 of identical cells from 768px: the picture's stage, then the
-   title, one line and the command, each the same distance from the
+   A 2x2 of identical cells from 768px: the picture's closed stage, then
+   the title, one line and the command, each the same distance from the
    last. The pause button stands at the right end of the title's row. */
 .landing .cells {
 	display: grid;
@@ -229,19 +247,10 @@
 	margin-top: var(--item-gap);
 	padding-right: 2.75rem;
 }
-/* The frame clips, so the pause button is placed from the cell: the
-   frame is static, and its stage (pictures.css) is drawn from the cell
-   at the frame's height. */
+/* The stage clips its windows, so the pause button is placed from the
+   cell: the stage is static, the cell positioned. */
 .landing .cells > li > .shot.pic-frame {
 	position: static;
-}
-.landing .cells > li > .shot::before {
-	inset: 0 0 auto;
-	height: var(--shot-h);
-}
-.landing .cells > li > .shot::after {
-	top: calc(var(--shot-h) - var(--fade));
-	bottom: auto;
 }
 .landing .cells > li > .shot > .pic-pause {
 	top: calc(var(--shot-h) + var(--item-gap));
@@ -298,27 +307,42 @@
 	}
 }
 
-/* ---------- Rows: the steps and the questions ----------
+/* ---------- Ruled rows: the steps, the plans, the questions ----------
 
-   Hairline rows wall to wall. A step's number and title take the left
-   column and its command the right one; a question is its title. */
+   Hairline rows the frame's width. The list opens on a hairline and its
+   last row ends on the next band's rule. */
 .landing .ruled {
 	margin: 0;
 	padding: 0;
 	list-style: none;
-	border-bottom: 1px solid var(--hk-hairline);
 }
 .landing .ruled > * {
 	border-top: 1px solid var(--hk-hairline);
 }
+
+/* A step: its number and name in the left column, its command filling
+   the right one flush, on the stage's tone, from rule to rule, with Copy
+   at the cell's right end. On a phone the name is over the command, and
+   the command's cell runs the row's width to its foot. */
 .landing .steps > li {
-	padding-block: var(--item-gap);
-	align-items: center;
+	gap: 0;
+	align-items: stretch;
+}
+@media (min-width: 1024px) {
+	.landing .steps > li {
+		column-gap: var(--col-gap);
+	}
 }
 .landing .step-title {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 1rem;
+	padding-block: 1rem 0.75rem;
+}
+@media (min-width: 1024px) {
+	.landing .step-title {
+		padding-block: 1.5rem;
+	}
 }
 .landing .step-title .label {
 	flex: none;
@@ -326,45 +350,102 @@
 }
 .landing .steps .code-copy {
 	width: 100%;
+	min-width: 0;
 	max-width: none;
+	min-height: 3rem;
+	padding: 0.375rem 0.5rem 0.375rem 1rem;
+	border: 0;
+	border-radius: 0;
+	background: var(--stage);
+	box-shadow: inset 0 1px 0 var(--stage-top);
 }
-/* The install line wraps at its spaces on a phone, never inside the URL:
-   the kit's break points after each slash are dropped here. */
-@media (max-width: 639.98px) {
+/* The command keeps to one line at every width and scrolls under its
+   fade where the cell is narrower: the kit's break points after each
+   slash are for a wrapping box. */
+.landing .steps .code-copy .line {
+	overflow-x: auto;
+	white-space: pre;
+	overflow-wrap: normal;
+}
+.landing .steps .code-copy wbr {
+	display: none;
+}
+/* Between 1024 and 1199px the install line fits its half at 12px, with
+   Copy as its icon (labelFrom in +page.svelte). */
+@media (max-width: 639.98px), (min-width: 1024px) and (max-width: 1199.98px) {
 	.landing .steps .code-copy .line {
-		overflow-wrap: normal;
-		font-size: min(0.75rem, 3.2vw);
-	}
-	.landing .steps .code-copy wbr {
-		display: none;
+		font-size: 0.75rem;
 	}
 }
 
 /* ---------- Pricing ---------- */
 
-.landing .plans .plan {
-	background: var(--hk-surface);
-}
-.landing .plans .p-top {
-	min-height: 1.75rem;
+/* The head's right column: the price line, then the button and the
+   seats line under it. */
+.landing .price-act {
+	display: grid;
+	gap: 1rem;
+	justify-items: start;
 }
 .landing .cta-row {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.75rem 1.5rem;
-	margin-top: 2rem;
 }
 .landing .seats {
 	margin: 0;
 	font-size: 0.875rem;
 	color: var(--hk-text-3);
 }
+/* The plans as ruled cells, split by hairlines with no card edge, gap or
+   radius: three across from 640px, the first two on the two-column line
+   from 1024 would split a plan, so they keep equal thirds. */
+.landing .plans.plans--public {
+	gap: 0;
+}
+.landing .plans--public .plan {
+	padding: 1.5rem 0 2rem;
+	border: 0;
+	border-top: 1px solid var(--hk-hairline);
+	border-radius: 0;
+	background: none;
+}
+@media (min-width: 640px) {
+	.landing .plans--public .plan {
+		padding: 1.75rem 1.5rem 2.5rem;
+	}
+	.landing .plans--public .plan:first-child {
+		padding-left: 0;
+	}
+	.landing .plans--public .plan:last-child {
+		padding-right: 0;
+	}
+	.landing .plans--public .plan + .plan {
+		border-left: 1px solid var(--hk-hairline);
+	}
+}
+.landing .plans--public .p-top {
+	min-height: 1.75rem;
+}
 
-/* ---------- Questions ---------- */
+/* ---------- Questions ----------
 
+   The heading's column holds it in view beside the answers from 1024px;
+   the first question's title stands on the heading's baseline, and the
+   last row ends on the footer's rule. */
 .landing .faq-cols {
 	align-items: start;
+}
+@media (min-width: 1024px) {
+	.landing .faq-cols > h2 {
+		position: sticky;
+		top: calc(var(--hk-header-h) + 2rem);
+		margin-top: 0.5rem;
+	}
+	.landing .faq > :first-child {
+		border-top: 0;
+	}
 }
 .landing .faq summary {
 	display: flex;

@@ -1,9 +1,9 @@
 <!--
   The pause button of a looping picture (WCAG 2.2.2, DECISIONS I-666). It
   stands on the floor under the picture, at its right edge, for every
-  picture (I-673): in the stage's 40px bottom padding (--stage-y) under
-  the hero and the setup section, and in the 40px between a feature
-  cell's frame and its title (landing.css places it there). It is never
+  picture (I-673, I-961): in the stage's 48px floor (--stage-y) under
+  the hero and the setup section, and at the right end of a feature
+  cell's title row (landing.css places it there). It is never
   over a head or a picture's content. It is 28px with an invisible 44px
   hit area, shows on hover or when anything in the frame (the element
   with `use:picture.frame`) has focus, and is in the tab order throughout.

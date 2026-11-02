@@ -291,7 +291,7 @@
 			<i class="wire arrow"></i>
 		</div>
 
-		<div class="shot-win open laptop" aria-hidden="true">
+		<div class="shot-win laptop" aria-hidden="true">
 			<WinHead who="laptop"><span class="url" class:typing>{ADDR}</span></WinHead>
 			<div class="page">
 				<div class="err">
@@ -319,7 +319,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in) var(--shot-in) 0;
+		padding: var(--shot-in);
 	}
 
 	/* The two windows, the grid's own (landing.css, WinHead.svelte). */

@@ -1026,40 +1026,50 @@ The landing (`routes/+page.svelte`, `routes/landing.css`,
 `lib/components/landing/`) uses this system with no exception: the same
 tokens, type and components. `LANDING.md` covers what it says and shows.
 
-- **Width**: the full 1120px frame. Two-column sections from 1024px,
-  `minmax(0, 0.8fr) minmax(0, 1.2fr)` with a 3.5rem gap, the heading column
-  sticky under the header; one column below.
-- **Hero**: from 1024px `minmax(0, 1fr) minmax(0, 1.05fr)`, 4rem apart,
-  centred. Left: the eyebrow, `h1.hk-h1`, the two-tone lead at 34rem, "Get
-  started" (`hk-btn-lg`) beside a large page-tone "Copy install command",
-  and the install command in Geist Mono 13px under them, exactly what the
-  button copies. Right: the terminal.
-- **The terminal** replays the Quickstart's `repose run -p` session, parsed
-  at build time from `content/docs/index.md`, so the page cannot drift from
-  the docs. A near-black pane with 12px corners, a 1px outer ring, an inset
-  border and `--hk-shadow-terminal`; a 38px bar titled
-  `~/code/your-project`; Geist Mono 12px / 20px. Commands are
-  `--hk-code-text`, `$ ` and output `--hk-code-muted`, ticks `--hk-code-ok`.
-  When 40% in view it plays once, one line every 450ms, each rising 4px and
-  fading in over 240ms, and ends on "Ready in 16s." with a still caret. It
-  has no copy button, no minimum height and no status dot. Without scripts
-  and under reduced motion every line shows at once.
-- **Each command once**: the install line in the hero only; `repose login`
-  and `repose run` as light command lines in "Your laptop's setup"; the
-  feature cells give their command as one mono line with a muted `$` and no
-  copy button, since a visitor without the CLI cannot run it.
-- **Sections**: the hero; "Your laptop's setup, in one command"; "On every
-  machine", four cells in a 2x2 grid from 768px, each with an `hk-h3`, a
-  paragraph and its command; "Agents on first boot", a hairline list read
-  from `content/docs/agents.md`; "Pricing"; "Questions", three `details`
-  rows between hairlines; the full footer.
-- **Pricing**: `PlanCells` in its public variant, three cards from 900px on
-  `hk-panel`-like frames, the founding price struck when it applies, then
-  "Start a free week" and the seats line. Plan figures come from
+- **Width**: the 1200px frame every page shares (I-656). From 1024px
+  every head, the hero's lead and buttons, the steps and the questions
+  are two equal columns 32px apart, the footer's column line; below
+  1024px one column. The questions' heading is sticky beside its list.
+- **Bands**: each section after the hero opens with a hairline
+  (`--hk-hairline`) the window's width. A band ends on the next band's
+  rule: a stage rests on it, or a ruled list's last row ends on it.
+  Spacing is one scale (8, 16, 24, 32, 48, 64, 96): a band opens with 96px
+  from 1024px, 64 from 768, 48 on a phone, and a head stands 48, 40 or 32
+  above its content (I-961).
+- **Type**: `hk-h1` at `clamp(30px, 0.6rem + 5.7vw, 60px)`, `hk-h2` up to
+  40px, both Noto Serif. One item title for cells, steps, plans and
+  questions: Noto Serif 20px / 28px. Body 15px / 1.6 in `--hk-text-2`, the
+  hero's lead 17px on 34rem. One label: Geist Mono 12px, upper case,
+  tracked 0.08em, `--hk-text-3`.
+- **Hero**: the eyebrow, `h1.hk-h1`, then the lead on the left and "Get
+  started" (`hk-btn-lg`) beside a large page-tone "Copy install command"
+  on the right, the install command in Geist Mono 12px (2.5vw on a phone,
+  so it keeps one line) under them,
+  exactly what the button copies. Under them the hero picture on its
+  stage.
+- **Stages**: one material for every picture (`landing/pictures.css`):
+  `--stage` with a top-left sheen, a 1px edge, an inner top highlight and
+  12px corners. Windows take 6px corners, nothing else is rounded. The
+  terminals share one palette (`--t-*`) that follows the scheme.
+- **Each command once**: the install line under the hero's buttons and as
+  the first step (I-843); the feature cells give their command as one
+  mono line with a muted `$` and no copy button, since a visitor without
+  the CLI cannot run it. The steps' commands fill their half of the row
+  flush on the stage's tone, with no box of their own.
+- **Sections**: the hero; "Your laptop's setup, in one command"; "A cloud
+  machine that feels like your own box", four cells in a 2x2 grid from
+  768px; "The agents you use, and the tools they need, on first boot";
+  "Start in three commands"; "Pricing"; "Questions", five `details` rows
+  between hairlines; the full footer.
+- **Pricing**: `PlanCells` in its public variant, three cells split by
+  hairlines from 640px with no card edge, the founding price struck when
+  it applies. "Launch prices.", "Start a free week" and the seats line
+  stand in the head's right column. Plan figures come from
   `lib/plans.ts`, never typed into markup.
-- **Never on the landing**: isometric or anatomy figures, drawn pictures of
-  the product, invented sample output, a stat strip without a source, motion
-  on scroll, or a second dark pane in the first two screens.
+- **Never on the landing**: isometric or anatomy figures, drawn fake UIs
+  standing in for real ones, invented sample output, a stat strip without
+  a source, motion on scroll, or a dark slab on the light page (the
+  terminals follow the scheme).
 
 # Copy
 
