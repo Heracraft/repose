@@ -136,8 +136,8 @@ resource "azurerm_managed_disk" "data" {
   tags                 = local.tags
 
   lifecycle {
-    prevent_destroy = true
-
+    # TEMPORARILY REMOVED to destroy host-01 on 2026-11-02, and put back in
+    # the commit after the apply. prevent_destroy = true
     precondition {
       condition     = var.data_disk_mbps <= local.max_mbps
       error_message = "Host ${var.name}: data_disk_mbps (${var.data_disk_mbps}) exceeds a quarter of data_disk_iops (${var.data_disk_iops}); Azure rejects Premium SSD v2 disks above that ratio."
@@ -154,7 +154,9 @@ resource "azurerm_virtual_machine_data_disk_attachment" "data" {
   lifecycle {
     # Detaching is how a host loses every tenant volume at once. A plan that
     # wants to is a mistake; make it need a reviewed edit of this block.
-    prevent_destroy = true
+    #
+    # TEMPORARILY REMOVED to destroy host-01 on 2026-11-02, and put back in
+    # the commit after the apply. prevent_destroy = true
   }
 }
 
