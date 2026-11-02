@@ -125,7 +125,12 @@ type fakeSealer struct {
 	notReady  error
 	unwrapErr error
 	unwraps   int
-	mu        sync.Mutex
+	// unwrapDeadlines is each Unwrap's ctx deadline. ThawAll gives every
+	// image one shared context, so these are identical when the
+	// UnwrapTimeout is spent once for the whole thaw and differ when it
+	// is spent per image (I-972).
+	unwrapDeadlines []time.Time
+	mu              sync.Mutex
 }
 
 func (s *fakeSealer) Ready() error                  { return s.notReady }
@@ -135,10 +140,13 @@ func (s *fakeSealer) Wrap(key []byte) ([]byte, string, error) {
 	slices.Reverse(w)
 	return w, "v1", nil
 }
-func (s *fakeSealer) Unwrap(_ context.Context, w []byte, id string) ([]byte, error) {
+func (s *fakeSealer) Unwrap(ctx context.Context, w []byte, id string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.unwraps++
+	if dl, ok := ctx.Deadline(); ok {
+		s.unwrapDeadlines = append(s.unwrapDeadlines, dl)
+	}
 	if s.unwrapErr != nil {
 		return nil, s.unwrapErr
 	}
@@ -673,6 +681,23 @@ func TestThawDuringAFreezeWaitsForIt(t *testing.T) {
 
 // With Key Vault down, the start waits one UnwrapTimeout whatever the
 // number of images, not one per image.
+//
+// Asserted on the deadline the unwraps are given, not on how long the
+// reconcile took. ThawAll builds one `uctx` and hands it to every
+// image's goroutine, so one timeout for the whole thaw means every
+// Unwrap sees the SAME deadline, and one timeout per image would mean
+// different ones. That is the claim in the name, and it holds however
+// slow the machine is.
+//
+// It used to assert `elapsed < 550ms` against a 300 ms timeout, which
+// is the same claim only if nothing else in the thaw is slow. The test
+// deliberately spends 300 ms of that budget in `unwrapWithRetry`, which
+// left 250 ms for sweepImageVolumes, the record list, the window
+// arithmetic and two volume removals; on a loaded 2-core CI runner
+// under -race that was not enough and it failed at 611 ms (CI 41379622622
+// on 466badf2). The failure said "2 images, 300 ms timeout" and looked
+// exactly like two timeouts being spent, which is the one thing it was
+// not: a second timeout is impossible by construction here (I-972).
 func TestThawWaitsOneUnwrapTimeout(t *testing.T) {
 	fh := newFreezeHarness(t, func(c *FreezeConfig) { c.Concurrency = 1; c.UnwrapTimeout = 300 * time.Millisecond })
 	fh.create(gid1)
@@ -681,12 +706,18 @@ func TestThawWaitsOneUnwrapTimeout(t *testing.T) {
 		t.Fatalf("freeze: %+v", res)
 	}
 	fh.sealer.unwrapErr = context.DeadlineExceeded
-	start := time.Now()
 	if err := fh.m.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if d := time.Since(start); d >= 550*time.Millisecond {
-		t.Fatalf("reconcile took %v for 2 images with a 300 ms unwrap timeout", d)
+	fh.sealer.mu.Lock()
+	deadlines := slices.Clone(fh.sealer.unwrapDeadlines)
+	fh.sealer.mu.Unlock()
+	if len(deadlines) != 2 {
+		t.Fatalf("%d unwraps with a deadline, want one per image: %v", len(deadlines), deadlines)
+	}
+	if !deadlines[0].Equal(deadlines[1]) {
+		t.Fatalf("the two images were unwrapped against different deadlines (%s and %s), so the timeout is being spent per image",
+			deadlines[0].Format(time.RFC3339Nano), deadlines[1].Format(time.RFC3339Nano))
 	}
 	if fh.img.has(gid1) || fh.img.has(gid2) {
 		t.Fatal("images kept without their key")

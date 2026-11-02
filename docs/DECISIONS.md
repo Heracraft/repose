@@ -27638,3 +27638,61 @@ was never deployed, and completes I-952.
   `ops/check.sh` green at 56 alerts and 55 Grafana rules;
   `ops/grafana/alerts-gen.py` refused `ApiMetricsAbsent` until it was
   declared in `BOOLEAN_EXPRS`, which is that guard doing its job.
+
+**I-972. The thaw test asserts the deadline the unwraps share, not how
+long the reconcile took — and the old assertion could not fail for the
+reason it was named for.** (CI red on main, 2026-11-02.)
+
+`TestThawWaitsOneUnwrapTimeout` went red on CI run 41379622622 at
+466badf2:
+
+    reconcile took 610.998612ms for 2 images with a 300 ms unwrap timeout
+
+611 ms against a 300 ms timeout reads as two timeouts being spent, one
+per image, which is exactly the regression the test exists to catch. It
+is not that, and it cannot be: `ThawAll` builds **one** `uctx`
+(freeze.go:1164) and hands it to every image's goroutine, with no
+semaphore, so `Concurrency = 1` does not serialise them and the unwrap
+phase is bounded at one timeout by construction.
+
+What the 611 ms was is non-unwrap work crossing a tight wall-clock
+threshold. The test deliberately spends 300 ms of its 550 ms budget
+inside `unwrapWithRetry` — the stubbed sealer fails at once and the
+retry then waits out `ctx.Done()` — leaving 250 ms for
+`sweepImageVolumes`, the record list, the window arithmetic and two
+volume removals, under `-race` on a loaded 2-core runner.
+
+**The old assertion could not catch its own regression.** Giving each
+image its own `context.WithTimeout` and running the test: the unwraps
+are concurrent goroutines, so two per-image timeouts still finish in one
+timeout's wall-clock. The probe run took **0.43 s** — comfortably under
+the 550 ms the test demanded. It would have passed. So the assertion was
+both flaky under load and blind to the fault it was written for: the
+worst of both, and it had been standing.
+
+It now asserts the claim directly. Every Unwrap records its context's
+deadline; one timeout for the whole thaw means both see the **same**
+deadline, one per image means different ones. Timing-free, so no
+machine is too slow for it. Against the same probe it fails with the two
+deadlines 10 microseconds apart — a difference no elapsed-time
+assertion could ever have resolved.
+
+*The general rule, which is this week's three times over.* An assertion
+on how long something took is a proxy for the thing you mean, and a
+proxy fails in both directions: it goes red when the machine is busy and
+green when the fault is present but fast. Where the property is
+observable directly — a shared deadline, a byte counter that moves, a
+socket's owner — assert that instead. I-920 counted sockets that existed
+rather than work in progress; I-930 counted a connection rather than
+traffic; this counted milliseconds rather than a deadline.
+
+*Not fixed here.* The conductor is taking
+`TestAPICallsDoNotLeakConnections`, which is I-920's own regression test
+and mine: "25 connections opened, 2 STILL OPEN" is `ConnState` lagging
+the client's close, not a leak, and its `> 1` threshold is too tight.
+The right shape there is the same — assert the open count does not grow
+with N, which is what a leak does and lag does not. And
+`TestFailuresStillBanAndTheBanIsLogged` in the gateway is red again
+after being fixed as `ci-red-ban` in r20261012-3 on 12 October, which is
+the fact that makes this a class rather than three bugs: fixed one test
+at a time, it has come back inside three weeks.
