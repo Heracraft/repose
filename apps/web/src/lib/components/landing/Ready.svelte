@@ -103,28 +103,30 @@
 			</p>
 		</div>
 
-		<div class="term">
-			<WinHead who="machine" />
-			<div class="lines">
-				{#each rows as row, i (i)}
-					{#if row === 'hint'}
-						{#each hint as [cmd, what] (cmd)}
-							<div class="hint">
-								<span>{cmd}</span><span>&nbsp;&nbsp;</span><span>{what}</span>
+		<div class="tcell">
+			<div class="shot-win term">
+				<WinHead who="machine" />
+				<div class="lines">
+					{#each rows as row, i (i)}
+						{#if row === 'hint'}
+							{#each hint as [cmd, what] (cmd)}
+								<div class="hint">
+									<span>{cmd}</span><span>&nbsp;&nbsp;</span><span>{what}</span>
+								</div>
+							{/each}
+						{:else}
+							<div>
+								{#each row as [text, cls], j (j)}<span class={cls}>{text}</span
+									>{/each}{#if row.length === 0}&nbsp;{/if}
 							</div>
-						{/each}
-					{:else}
-						<div>
-							{#each row as [text, cls], j (j)}<span class={cls}>{text}</span
-								>{/each}{#if row.length === 0}&nbsp;{/if}
-						</div>
-					{/if}
-				{/each}
-			</div>
-			<div class="bar">
-				<span class="pre">0:shell- 1:dev&nbsp; 2:ready*</span><span class="clock"
-					><span class="long">{barHost}</span>19:49<span class="long">{barDate}</span></span
-				>
+						{/if}
+					{/each}
+				</div>
+				<div class="bar">
+					<span class="pre">0:shell- 1:dev&nbsp; 2:ready*</span><span class="clock"
+						><span class="long">{barHost}</span>19:49<span class="long">{barDate}</span></span
+					>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -133,9 +135,12 @@
 <style>
 	/* Ready fills its figure from rail to rail (landing.css, .fig): the
 	   five marks on the stage's tone, an inner rule, then two flush cells
-	   on the page's thirds line, the toolchain on the page and the
-	   machine's shell on the terminal's ground. Text in each cell stands
-	   on the page's text lines (--edge out, 16px in from a rule). */
+	   on the page's thirds line, the toolchain, and the machine's shell
+	   in a closed window under the grid's head, inset on the stage as the
+	   Machine cells' windows are: the stage's inset above and below, the
+	   cell's text lines at the sides (pictures.css, I-961). Text in each
+	   cell stands on the page's text lines (--edge out, 16px in from a
+	   rule). */
 	.ready {
 		display: grid;
 	}
@@ -206,21 +211,16 @@
 		.kit {
 			padding-right: var(--in);
 		}
-		.term {
+		.tcell {
+			padding-left: calc(var(--in) - 1px);
 			border-left: 1px solid var(--rule-in, var(--rule));
 		}
 	}
-	/* One column, the shell runs the window's width and its rows start on
-	   the page's text line; from 640px the tools take one row of four.
-	   (.ready raises these over the base rules below, which come later.) */
+	/* One column, the shell's window runs between the page's text lines;
+	   from 640px the tools take one row of four. */
 	@media (max-width: 1023.98px) {
-		.term {
+		.tcell {
 			border-top: 1px solid var(--rule-in, var(--rule));
-		}
-		.ready .lines,
-		.ready .term > :global(.shot-head),
-		.ready .bar {
-			padding-inline: var(--edge, 16px);
 		}
 	}
 	@media (min-width: 640px) and (max-width: 1023.98px) {
@@ -229,11 +229,18 @@
 		}
 	}
 
-	/* The shell, flush in its cell, in the terminals' palette
-	   (pictures.css): the window's head as a ruled row, the rows, the
-	   tmux bar at the cell's foot. */
+	/* The shell's cell: the stage, the window inset on it. */
+	.tcell {
+		display: flex;
+		min-width: 0;
+		padding: var(--shot-in, 24px) var(--edge, 16px);
+		background:
+			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
+	}
+	/* The shell, in the terminals' palette (pictures.css): the window's
+	   head, the rows, the tmux bar at the window's foot. */
 	.term {
-		--shot-head: 32px;
+		flex: 1;
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
@@ -244,20 +251,15 @@
 		background: var(--t-bg);
 		color: var(--t-fg);
 	}
-	.term > :global(.shot-head) {
-		padding-inline: 16px;
-		border-bottom-color: var(--rule-in, var(--rule));
-		border-radius: 0;
-		background: var(--t-bg-2);
-	}
 	/* A terminal does not re-flow: rows keep white-space: pre and a narrow
 	   cell crops them on the right into a fade, as the editor and browser
 	   captures are cropped (I-397). */
 	.lines {
 		flex: 1;
-		padding: 16px;
+		padding: 12px;
 		overflow: hidden;
 		white-space: pre;
+		background: var(--t-bg);
 		mask-image: linear-gradient(to left, transparent 0, #000 32px);
 	}
 	.y {
@@ -299,8 +301,8 @@
 		display: flex;
 		justify-content: space-between;
 		gap: 2ch;
-		padding: 2px 16px;
-		border-top: 1px solid var(--rule-in, var(--rule));
+		padding: 2px 12px;
+		border-top: 1px solid var(--rule);
 		background: var(--t-bar);
 		color: var(--t-bar-fg);
 		white-space: nowrap;

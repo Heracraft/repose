@@ -75,29 +75,28 @@ for (const [width, cols] of [
 		}
 		if (cols === 1 && width >= 640) {
 			// One column, a cell's stage runs the cell's width, as the
-			// other bands' do, and its picture keeps the 2x2's size, its
-			// windows starting on the text line as the heading does.
+			// other bands' do, and its windows run from the text line to
+			// the right one, the same gutter at both sides.
 			const text = await page
 				.locator('#features h2')
 				.evaluate((e) => Math.round(e.getBoundingClientRect().left));
 			const m = await page.locator(`${cells} > .shot`).evaluateAll((els) =>
 				els.map((e) => {
-					const s = getComputedStyle(e);
 					const r = e.getBoundingClientRect();
 					const cell = e.parentElement!.getBoundingClientRect();
-					const win = e.querySelector('.shot-win')!.getBoundingClientRect();
+					const wins = [...e.querySelectorAll('.shot-win')].map((w) => w.getBoundingClientRect());
 					return {
 						stage: Math.round(r.width),
 						cell: Math.round(cell.width),
-						box: Math.round(r.width - parseFloat(s.paddingRight)),
-						win: Math.round(win.left)
+						win: Math.round(Math.min(...wins.map((w) => w.left))),
+						gutter: Math.round(r.right - Math.max(...wins.map((w) => w.right)))
 					};
 				})
 			);
 			for (const c of m) {
 				expect(c.stage).toBe(c.cell);
-				expect(c.box - 2 * text).toBe(544);
 				expect(c.win).toBe(text);
+				expect(Math.abs(c.gutter - text)).toBeLessThanOrEqual(1);
 			}
 		}
 		// A 24px claim runs to three lines at most.
@@ -167,8 +166,13 @@ for (const width of [1440, 1280, 1024]) {
 			const cr = cell.getBoundingClientRect();
 			const right = cr.right - parseFloat(getComputedStyle(cell).paddingRight);
 			const button = document.querySelector('#pricing .head .hk-btn')!;
+			// The steps' Copy labels, where they show (from 1200px).
+			const copies = [...document.querySelectorAll('.steps .hk-copy .layer:not(.off)')].map(
+				(l) => line(l).right
+			);
 			return {
 				right,
+				copies,
 				button: {
 					right: button.getBoundingClientRect().right,
 					base: baseline(button.querySelector('.swap > span')!),
@@ -188,6 +192,9 @@ for (const width of [1440, 1280, 1024]) {
 				})
 			};
 		});
+		// Copy's label ends there too, not its button's padding.
+		if (width >= 1200) expect(m.copies).toHaveLength(3);
+		for (const c of m.copies) expect(Math.abs(c - m.right)).toBeLessThanOrEqual(1);
 		const paired = m.heads.filter((h) => h.links.length === 2);
 		expect(paired.map((h) => h.id)).toEqual(['agents-h', 'install-h', 'faq-h']);
 		for (const h of paired) {
@@ -324,7 +331,8 @@ test('the plans and the Ready shell stand on the thirds at 1440', async ({ page 
 		return {
 			plans: [0, 1, 2].map((i) => x('.plans--public .plan', i)),
 			names: [0, 1, 2].map((i) => x('.plans--public .p-name', i)),
-			shell: x('.ready .term'),
+			shell: x('.ready .tcell'),
+			term: x('.ready .term'),
 			content: x('#setup-h')
 		};
 	});
@@ -333,7 +341,50 @@ test('the plans and the Ready shell stand on the thirds at 1440', async ({ page 
 	expect(Math.round(m.names[0])).toBe(Math.round(m.content));
 	for (const i of [1, 2]) expect(Math.round(m.names[i] - m.plans[i])).toBe(16);
 	expect(Math.abs(m.shell - m.plans[1])).toBeLessThanOrEqual(1);
+	// The shell's window stands on the cell's text line, as a plan's name.
+	expect(Math.abs(m.term - m.names[1])).toBeLessThanOrEqual(1);
 });
+
+// Every picture's windows are inset on their stage, the Ready shell's
+// too: the cell's text lines at the sides, the stage's inset above and
+// below. Below 1024px the windows run the cell's width, the same gutter
+// at both sides (the 34rem cap left a 164px strip at 768).
+for (const width of [1440, 768, 390]) {
+	test(`the windows stand inset on their stages at ${width}`, async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+		await grid(page, width);
+		const m = await page.evaluate(() => {
+			const r = (e: Element) => e.getBoundingClientRect();
+			const cells = [...document.querySelectorAll('#features .cells > li')].map((li) => {
+				const shot = r(li.querySelector('.shot')!);
+				const wins = [...li.querySelectorAll('.shot .shot-win')].map(r);
+				return {
+					left: Math.min(...wins.map((w) => w.left)) - shot.left,
+					right: shot.right - Math.max(...wins.map((w) => w.right)),
+					top: Math.min(...wins.map((w) => w.top)) - shot.top
+				};
+			});
+			const cell = r(document.querySelector('.ready .tcell')!);
+			const term = r(document.querySelector('.ready .term')!);
+			return {
+				cells,
+				ready: {
+					top: term.top - cell.top,
+					bottom: cell.bottom - term.bottom,
+					right: cell.right - term.right
+				}
+			};
+		});
+		for (const c of m.cells) expect(c.top).toBeGreaterThanOrEqual(12);
+		if (width < 1024) {
+			for (const c of m.cells) expect(Math.abs(c.left - c.right)).toBeLessThanOrEqual(1);
+		}
+		// (Below 1024px the cell's top rule is inside it.)
+		expect(Math.abs(m.ready.top - m.ready.bottom)).toBeLessThanOrEqual(1);
+		expect(m.ready.top).toBeGreaterThanOrEqual(12);
+		expect(m.ready.right).toBeGreaterThanOrEqual(15);
+	});
+}
 
 // The Editor's statusline keeps its right segment (position, line and
 // column, clock) whole inside the screen at every width.
@@ -375,10 +426,10 @@ for (const width of [768, 390]) {
 	});
 }
 
-// Review round 2: the snapshots window is as tall as its two tiles, with
-// no empty body under them; option D's review stands it on the machine's
-// top line.
-test('the snapshots window holds its tiles with no empty foot at 1440', async ({ page }) => {
+// The snapshots window runs the machine's height, so both end on the
+// stage's inset; the older tile, folded to its head, stands 4px under
+// the newest one at the window's top (review of the owner's pick).
+test("the snapshots window runs the machine's height at 1440", async ({ page }) => {
 	// The still frame: the loop moves the older tile.
 	await page.emulateMedia({ reducedMotion: 'reduce' });
 	await grid(page, 1440);
@@ -390,8 +441,7 @@ test('the snapshots window holds its tiles with no empty foot at 1440', async ({
 			machine: r('#features .machine')
 		};
 	});
-	// The older tile, folded to its 29px head, ends 8px over the window's
-	// inner edge.
-	expect(Math.round(m.stack.bottom - (m.old.top + 29))).toBe(9);
 	expect(Math.abs(m.stack.top - m.machine.top)).toBeLessThanOrEqual(1);
+	expect(Math.abs(m.stack.bottom - m.machine.bottom)).toBeLessThanOrEqual(1);
+	expect(m.old.top + 29).toBeLessThan(m.stack.bottom - 8);
 });

@@ -17,7 +17,8 @@
   picture size, and crops on the right where the window is narrower than
   its 78 columns, as a terminal would, while the statusline's right
   segment (position, line and column, clock) stays whole at the right
-  edge (F18, I-397, I-961).
+  edge (F18, I-397, I-961). On a phone (under 640px) the explorer
+  is cropped off whole, so the code keeps the width.
   Two explorer rows read "education": two files whose names nvim cut at
   the explorer's 9 columns. The machine is the owner's and not reachable
   from here to recapture with a wider explorer, and a crop cannot drop a
@@ -640,13 +641,22 @@
 	}
 	/* Where the window is narrower than 78 columns, the rows nvim drew
 	   past its edge run into a fade, as Ready's do, so none reads as cut
-	   mid-word; the statusline keeps its right segment whole instead. On
-	   a phone the capture sets at 11px. A crop from the left was tried
-	   and dropped: no crop leaves only the explorer's icons, since the
-	   top folders' icons sit in its first columns, and cutting through
-	   them left name fragments. */
+	   mid-word; the statusline keeps its right segment whole instead.
+	   A crop through the explorer was tried and dropped: no crop leaves
+	   only the explorer's icons, since the top folders' icons sit in its
+	   first columns, and cutting through them left name fragments. */
 	.ln:not(.sl) {
 		mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+	}
+	/* On a phone the explorer goes whole: its 20 columns and the split's
+	   rule (21 cells, 1ch each) slide out past the window's left edge, so
+	   the rows start at the tabline and the line numbers and the code
+	   gets the window's width (about 50 columns at 390px, where the
+	   explorer left it 15). The statusline keeps its full width. */
+	@media (max-width: 639.98px) {
+		.ln:not(.sl) {
+			margin-left: -21ch;
+		}
 	}
 	/* One terminal cell: keeps the grid whatever font draws the glyph. */
 	.c {

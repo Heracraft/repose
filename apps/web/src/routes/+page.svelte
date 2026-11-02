@@ -99,9 +99,11 @@
 {/snippet}
 
 <!-- The page's one numbering: a band's number and name, and a cell's
-     (2.1 to 2.4), in the mono label, the number at a fixed width. -->
+     (2.1 to 2.4), in the mono label, the number at a fixed width. The
+     space after the number is text, so a screen reader and a copy read
+     "01 Setup"; it hangs at the span's end inside the fixed width. -->
 {#snippet label(n: string, name: string)}
-	<p class="label num"><span class="n">{n}</span>{name}</p>
+	<p class="label num"><span class="n">{n + ' '}</span>{name}</p>
 {/snippet}
 
 {#snippet plus()}

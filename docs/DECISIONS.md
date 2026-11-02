@@ -27904,3 +27904,18 @@ judges' grafts and its named defects were then worked in.
       1024px "Get started", "Copy install command" and the install line
       share one row under the headline and the lead at every width,
       checked at 1024, 1100, 1280, 1440 and 1920.
+    - Review of the pick (2026-11-02): Ready's shell under 03 Agents
+      takes the grid's window too (24px above and below, the text lines
+      at the sides, the same head), as C has it; it was the one picture
+      still flush to its cell after a band of inset windows. Below
+      1024px the grid's windows run between the text lines (the 34rem
+      cap left a 164px strip at 768). ComesBack's snapshots window runs
+      the machine's height. On a phone the Editor's explorer is cropped
+      off whole, so the code gets the window (15 columns of code at
+      390 before). Copy's label in the steps ends on the right text
+      line. A link pair that wraps on a phone stands its second line
+      32px under the first. The labels read "01 Setup" to a screen
+      reader and a copy (a space inside the number's fixed width). The
+      eyebrow is in the second grey. The Browser's address-bar ring
+      follows a resize. Pricing's button keeps its label on the h2's
+      baseline, its box hanging under it.

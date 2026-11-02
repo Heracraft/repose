@@ -804,11 +804,10 @@
 
 	/* The snapshots (SnapshotTile, the hero's grammar) in their window,
 	   inset 8px: the newest on top, the older one folded to its head 4px
-	   under it. The window is as tall as the two and stands on the
-	   machine's top line. */
+	   under it. The window runs the machine's height, top line to
+	   bottom line, so both end on the stage's inset. */
 	.stack {
-		align-self: start;
-		height: var(--stack-h);
+		align-self: stretch;
 	}
 	.tiles {
 		position: relative;

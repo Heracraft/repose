@@ -181,6 +181,9 @@
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
+		// Follows the toolbar's width while the ring is on the address bar,
+		// which stretches with the window (a resize, without a reload).
+		let ro: ResizeObserver | null = null;
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
 		const one = (s: string) => pic.querySelector<HTMLElement>(s)!;
@@ -227,12 +230,19 @@
 					...URLBAR,
 					w: URLBAR.w + Math.max(0, (tb.clientWidth * 48) / tb.clientHeight - 574)
 				});
+				let onUrlbar = false;
+				ro?.disconnect();
+				ro = new ResizeObserver(() => {
+					if (onUrlbar && !dead && me === run) utils.set(one('.ring'), ring(urlbar(), TB));
+				});
+				ro.observe(tb);
 
 				function pre() {
 					utils.set(q('.layer'), { opacity: 0 });
 					utils.set(q('.l-blank, .tb-blank'), { opacity: 1 });
 					utils.set(pic, { '--pan': PAN.nav });
 					utils.set(one('.ring'), { opacity: 0, ...ring(urlbar(), TB) });
+					onUrlbar = true;
 					utils.set(one('.pointer'), { opacity: 0 });
 					utils.set(rowEls, { opacity: 0 });
 					utils.set(rowEls[0], { opacity: 1 });
@@ -284,6 +294,7 @@
 					// 2. Type into the text box (the page scrolled it into view,
 					// and the pan moves with the ring).
 					log(3, 2900);
+					t.call(() => (onUrlbar = false), 3000);
 					box(TEXTBOX, PAN.typed, 3000);
 					pan(PAN.typed, 3000, 700);
 					swap('.l-typed', 3100);
@@ -372,6 +383,7 @@
 
 		return () => {
 			dead = true;
+			ro?.disconnect();
 			unwatch();
 			picture.stop();
 			tl?.pause();

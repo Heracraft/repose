@@ -77,8 +77,8 @@ headline starting under the logo, laid out as one ruled sheet on a
    stands half a gap left of the column line, so the right cells' text
    starts on it, and runs unbroken from the head's foot to the next
    band's rule. Below 1024px they are one column; a cell and its stage
-   run the window's width, and the picture starts on the text line and
-   stops at 34rem. The snapshot cell says what a snapshot holds and that
+   run the window's width, and the picture's windows run between the
+   text lines, the same inset at both sides at every width. The snapshot cell says what a snapshot holds and that
    `--as` restores it to a new machine, which the hero does not show; the
    Browser cell says what `repose browser` is for (watching, a login or a
    captcha), and the bridge stays in the docs.
@@ -90,15 +90,18 @@ headline starting under the logo, laid out as one ruled sheet on a
    agents' marks alone (I-287) on the stage's tone, each naming itself
    under the pointer; an inner rule; then the tools on the first third,
    on the stage's tone too, the everyday tools' line under them, and the
-   machine's shell flush on the other two thirds, on the terminals'
-   ground.
+   machine's shell on the other two thirds: a closed window under the
+   "your cloud machine" head on the terminals' ground, inset on the
+   stage as the grid's windows are (24px above and below, the text
+   lines at the sides).
 5. **04 Install. "Start in three commands"**, with "Install and sign in"
    and "Run and attach" (the docs pages, set as the Agents links) on the
    heading's last line, then ruled rows (I-961): the
    step's number (4.1 to 4.3, in the label's number grey and fixed
    width) and serif name in the left half, its
    command filling the right half flush on the stage's tone from the
-   centre hairline to the rail, Copy at the cell's right end. On a phone
+   centre hairline to the rail, Copy at the cell's right end, its label
+   ending on the right text line as the head's links do. On a phone
    the number and name share a baseline over the command's cell, which
    runs the window's width under its own rule. Install the CLI, Sign in
    (`repose login`) and Run in any checkout (`repose run`). Each row
@@ -156,7 +159,9 @@ its own pair of crosses.
 Every band after the hero opens with the same head: its numbered label
 on the text line ("01 Setup" to "06 Questions"), the h2 16px under it,
 and from 1024px the band's one side item in the right half on the h2's
-last baseline (under the h2 below 1024px). Every band has one: a
+last baseline (under the h2 below 1024px). Under 640px each link is a
+44px target, and a pair that wraps (the install pair at 320px) stands
+its second line 32px under the first, the targets overlapping. Every band has one: a
 paragraph (setup, machine), starting on the column line, or an action
 ending on the right text line: a pair of links to the docs (agents,
 install, questions), 16px apart, or the pricing button with the seats
@@ -171,7 +176,12 @@ C): the bands' labels, the cells' labels (2.1 to 2.4, 8px over the
 cell's title) and the steps (4.1 to 4.3). A label is the page's label
 type with its number in the second grey at a fixed 2.75em, so the names
 after the numbers start on one line, and a step's name starts there
-too. Nothing else carries a number: no figure bar, no "Fig.".
+too. Nothing else carries a number: no figure bar, no "Fig.". A band's
+or cell's label is read out and copied as "01 Setup": the space after
+the number is text inside the fixed width; a step's number is
+aria-hidden, since its row is the band's list. The hero's eyebrow takes
+the label type in the second grey, with no number, as the page's title
+line.
 
 Two rule weights: band rules and rails in `--hk-border`, every rule
 inside a band in `--hk-hairline`. The page has no gap between bands. Each
@@ -217,7 +227,9 @@ pixel is drawn 0.72px, the page stands at the left of its window on the
 app's ground, and the toolbar's address bar is drawn stretched to the
 window's width. A capture that is wider than its window (the Editor's
 78 columns) is cropped on the right into a fade, as a terminal is, never
-shrunk to fit; a captured page is cropped in its white space, never
+shrunk to fit; on a phone the Editor's explorer (its 20 columns and the
+split) is cropped off whole, so the rows start at the tabline and the
+code gets the window; a captured page is cropped in its white space, never
 inside a sentence, at every beat of its loop. On a phone the Localhost
 and Browser captures keep a size their text reads at and crop on the
 right into a fade as well; the Browser's own scrollbar is cut off. The
@@ -225,11 +237,13 @@ Localhost app page ends under its nav's rule: drawn at its window's
 width, the headline under it outsized the cell's title, and the ground
 above the headline read as a page still loading; the machine's window
 shows Vite's ready line over the Local one. ComesBack's snapshots stand
-in a window as tall as their two tiles, on the machine's top line; on a
-phone both tiles stand whole at every beat. The four grid pictures
+in a window as tall as the machine's, so both end on the stage's
+inset, the two tiles at its top; on a phone both tiles stand whole at
+every beat. The four grid pictures
 share one treatment (I-961, the owner's pick, from alternative C): each
 is a closed window under a head, inset on its stage, never a raw capture
-flush to the cell. "Your cloud machine" heads the Browser's and the
+flush to the cell, and Ready's shell under 03 Agents takes the same
+window. "Your cloud machine" heads the Browser's and the
 Editor's windows over their own chrome (the captured toolbar, nvim's tab
 bar), as it heads the hero's, the setup picture's, ComesBack's,
 Localhost's and Ready's, where it tells the machine from the laptop or a

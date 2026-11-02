@@ -255,18 +255,18 @@ test('one numbering: the bands, the cells and the steps', async ({ page }) => {
 	await page.goto('/');
 	const heads = page.locator('main .band > .head');
 	await expect(heads.locator(':scope > .num')).toHaveText([
-		'01Setup',
-		'02Machine',
-		'03Agents',
-		'04Install',
-		'05Pricing',
-		'06Questions'
+		'01 Setup',
+		'02 Machine',
+		'03 Agents',
+		'04 Install',
+		'05 Pricing',
+		'06 Questions'
 	]);
 	await expect(page.locator('#features .cell-copy > .num')).toHaveText([
-		'2.1Snapshots',
-		'2.2Ports',
-		'2.3Browser',
-		'2.4Editor'
+		'2.1 Snapshots',
+		'2.2 Ports',
+		'2.3 Browser',
+		'2.4 Editor'
 	]);
 	await expect(page.locator('.steps .step-title .label')).toHaveText(['4.1', '4.2', '4.3']);
 	const m = await page.evaluate(() => {

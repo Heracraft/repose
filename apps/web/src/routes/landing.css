@@ -209,7 +209,9 @@
 /* The page's one label: 12px Geist Mono, upper case and tracked, in the
    third grey. The eyebrow, the bands' and cells' numbered labels and the
    step numbers take it; a number stands in the second grey at a fixed
-   width, so the names after it start on one line. */
+   width, so the names after it start on one line. The eyebrow, the
+   page's title line with no number, is in the second grey whole, so it
+   does not read as a label missing its number. */
 .landing .label {
 	margin: 0;
 	font-family: var(--hk-font-mono);
@@ -307,6 +309,7 @@
 }
 .landing .hero .eyebrow {
 	margin-bottom: 1.5rem;
+	color: var(--hk-text-2);
 }
 .landing .hero .hk-lead {
 	max-width: 34rem;
@@ -524,14 +527,8 @@
 	}
 }
 /* One column (below 1024px), a cell runs the window's width and its
-   stage does too; the picture inside starts on the text line, as every
-   picture on the page does, and stops at 34rem, so its windows and
-   captures draw at one scale at every width. */
-@media (max-width: 1023.98px) {
-	.landing .cells > li > .shot {
-		padding-right: max(0px, 100% - 34rem - 2 * var(--edge));
-	}
-}
+   stage does too; the picture's windows run between the cell's text
+   lines, the same inset at both sides, as at 1440 and on a phone. */
 .landing .cells .copy {
 	margin-top: 0.5rem;
 }
@@ -574,8 +571,15 @@
 		gap: 0.25em;
 		min-height: 2.75rem;
 	}
+	/* The targets overhang the text's line by 0.75rem above and below.
+	   Each link gives up 0.75rem at its foot, so a pair that wraps (the
+	   install pair at 320px) stands its second line 2rem under the first,
+	   the targets overlapping, instead of a whole target lower. */
 	.landing .head .links {
-		margin-block: -0.75rem;
+		margin-block: -0.75rem 0;
+	}
+	.landing .head .links .hk-more {
+		margin-bottom: -0.75rem;
 	}
 }
 
@@ -646,6 +650,16 @@
 	scrollbar-width: none;
 	white-space: pre;
 	overflow-wrap: normal;
+}
+/* Copy's label ends on the right text line, as the link pairs and
+   pricing's button do: the ghost button gives up its padding and edge
+   there, its hover ground overhanging the line, and its two faces (Copy,
+   Copied, which keeps the width) end on the right. */
+.landing .steps .code-copy .hk-copy--labelled {
+	margin-right: calc(-0.5rem - 1px);
+}
+.landing .steps .code-copy .hk-copy--labelled .text > .layer {
+	justify-content: flex-end;
 }
 .landing .steps .code-copy wbr {
 	display: none;

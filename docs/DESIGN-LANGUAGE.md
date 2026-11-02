@@ -1059,9 +1059,10 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   40px, both Noto Serif. One item title for cells, steps, plans and
   questions: Noto Serif 20px / 28px. Body 15px / 1.6 in `--hk-text-2`, the
   hero's lead 17px on 34rem. One label: Geist Mono 12px, upper case,
-  tracked 0.06em, `--hk-text-3`, tabular numerals, for the eyebrow, the
-  numbered labels and the step numbers; a number stands in
-  `--hk-text-2` at a fixed 2.75em. Commands Geist Mono 13px (12px under 640px); a
+  tracked 0.06em, `--hk-text-3`, tabular numerals, for the eyebrow (in
+  `--hk-text-2`, the title line with no number), the numbered labels
+  and the step numbers; a number stands in `--hk-text-2` at a fixed
+  2.75em. Commands Geist Mono 13px (12px under 640px); a
   command named in a sentence is mono in the sentence's grey, with no
   chip. The page's own text uses no blue.
 - **Hero**: the eyebrow, `h1.hk-h1` on seven columns beside the lead on
@@ -1078,7 +1079,8 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   rule to rule with no edge or radius. The four grid pictures are each
   a closed window under a "your cloud machine" head, inset on a 22rem
   stage (the Browser's and the Editor's over their own chrome, as in
-  alternative C). Windows and chips take 6px
+  alternative C), and Ready's shell takes the same window, inset on its
+  cell. Windows and chips take 6px
   corners, the kit's buttons their own; nothing else is rounded. The
   terminals share one palette (`--t-*`) that follows the scheme; the
   Editor's Tokyo Night capture maps onto it through separate ground and
@@ -1098,8 +1100,8 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
 - **Sections**: the hero; "Your laptop's setup, in one command"; "Work
   on the machine as you would on your laptop", four flush cells split by
   inner rules, a 2x2 from 1024px and one column below, the cell and its
-  stage the window's width with the picture on the text line, at most
-  34rem; "The agents you use, and the tools they need, on first boot",
+  stage the window's width with the picture's windows between the text
+  lines; "The agents you use, and the tools they need, on first boot",
   Ready from rail to rail; "Start in three commands"; "Launch prices";
   "Before you try it", five `details` rows from rail to rail between
   inner rules, each washed with `--hk-hover` under the pointer, its focus
