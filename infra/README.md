@@ -774,7 +774,15 @@ order:
 3. `repose-admin hosts retire host-02`. It refuses while the host holds
    **any** project, stopped ones included (`host-02 still holds N
    project(s); move them first`).
-4. Remove the name from `hosts` in `prod.tfvars`.
+4. Remove the name from `hosts` in `prod.tfvars`, and its `host_shapes`
+   entry if it has one. If the host you are removing is the one the globals
+   above `host_shapes` describe -- `host_size`, `host_class`,
+   `host_data_disk_gb`, `host_os_disk_gb` -- promote them to the shape the
+   remaining fleet actually runs, or the next host added without a
+   `host_shapes` entry comes up the old size, silently (I-976). That edit is
+   free only while every remaining host names its own values; check it with
+   a resolved `local.host_shape` before and after, not by reading the
+   `coalesce` chain.
 5. The data disk and its attachment carry `prevent_destroy`, so the plan
    fails, as intended. Delete the `prevent_destroy = true` lines in
    `azure/modules/host/main.tf` in a commit somebody reads, apply, and put
