@@ -272,6 +272,33 @@ the live instance, not taken from the docs. Each one changed a file here.
    comes with it. And the drop of fact 13 happens on **every merge**,
    not only on deliberate deploys, which makes it worth a decision.
 
+17. **A file mount comes out as a directory until you say otherwise, and
+   the API cannot set its content** (4.5.3, 2026-11-02). A relative bind
+   mount in a compose Service -- `./config.alloy:/etc/alloy/config.alloy`
+   -- is how Coolify is told to manage a file: it resolves the left side
+   to `/data/coolify/services/<uuid>/<name>` and makes an entry in the
+   resource's Storages tab. But `GET /api/v1/services/<uuid>/storages`
+   returns that entry with **`is_directory: true` and `content: null`**,
+   because the file does not exist yet, and deploying in that state
+   bind-mounts a *directory* over the path. The program then fails on its
+   own config being unreadable, which reads as a bad config rather than a
+   bad mount. Turn it into a file and paste the content in the Storages
+   tab: there is no endpoint for either. `PATCH` and `PUT` on
+   `/api/v1/services/<uuid>/storages/<id>` and `/api/v1/storages/<id>`
+   all answer 404. An *absolute* host path avoids the guess but mounts a
+   file nothing creates, which fails the same way.
+
+18. **`docker_compose_raw` must be base64 over the API**, and says so:
+   `POST /api/v1/services` with raw YAML answers 422, "The
+   docker_compose_raw should be base64 encoded." Creating a service needs
+   `project_uuid`, `environment_uuid`, `server_uuid` and that field;
+   `instant_deploy: false` creates it without starting it and the resource
+   then reads `status: exited`, which is created-not-deployed rather than a
+   failure. `GET /api/v1/servers` carries `uuid` and no `id`, so a
+   `destination_id` off an application record does not find the server.
+   There is no OpenAPI document served: `/openapi.json` and
+   `/docs/openapi.json` redirect to HTML and `/api/v1/openapi.json` is 404.
+
 ## The instance's .env is half any backup
 
 Backups are Coolify's and the destination is the owner's (`DECISIONS.md`

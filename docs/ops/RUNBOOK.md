@@ -452,6 +452,47 @@ minutes.
 4. `hostd` or `repose-guest-pool` down means no guest starts: "Host
    rebooted".
 
+## AlloyDown
+
+The control VM's Alloy is not answering its scrape. The api's ~57 series
+stop arriving. The api itself is unaffected and no tenant notices.
+
+1. Coolify, project `repose`, the `alloy` service: is it running? `docker
+   logs` on the control VM names a config error on the first line.
+2. `ss -tlnp | grep 12345` on the control VM must show
+   `10.255.255.1:12345`. If it shows `*:12345` the port is published on
+   every interface, which is a regression to fix rather than leave.
+3. Docker cannot publish on an address that does not exist yet, so after a
+   VM reboot check that Docker started after `wg-quick@wg0`
+   (`/etc/systemd/system/docker.service.d/10-repose-wg.conf`,
+   `ops/coolify/README.md`).
+4. What is blind while this holds: `ApiErrors`, the gate-refusal panel and
+   `BillingWebhookErrors`. Those three are the only things that read the
+   HTTP api's series. `ApiDown` still covers `api-grpc`.
+
+## ApiMetricsAbsent
+
+Alloy is up and no api series are arriving for 15 minutes.
+
+1. Alloy's own view first: it is scraped as `job=alloy`, and its UI at
+   `http://10.255.255.1:12345` over the tunnel lists its components and
+   their targets. Zero targets on `prometheus.scrape "api"` is the common
+   case and means the next step.
+2. **The uuid.** `ops/alloy/config.alloy` keeps the api container by the
+   application uuid inside its name. If the application was deleted and
+   recreated, its uuid changed and the match now keeps nothing. Read the
+   current one from Coolify (the application's URL, or the API's
+   `/api/v1/applications`) and correct the regex. This is the expected
+   cause and the reason this alert exists.
+3. **The write path.** Prometheus answers remote-write only with
+   `--web.enable-remote-write-receiver`; the edge allows 9090 to peers
+   only since I-952. From the control VM:
+   `curl -sS -o /dev/null -w '%{http_code}' -X POST --data-binary @/dev/null http://10.255.0.3:9090/api/v1/write`
+   — 204 is both in place, 400 or 405 is reachable and refusing, a hang is
+   the edge.
+4. `ApiDown` is not this: a scrape that fails gives `up == 0`, and this is
+   the series not arriving at all.
+
 ## ApiDown
 
 Prometheus has not scraped `api` or `api-grpc` for 3 minutes.

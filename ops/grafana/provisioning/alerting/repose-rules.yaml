@@ -1259,6 +1259,150 @@ groups:
                   reducer:
                     type: last
                     params: []
+      - uid: repose-alloydown
+        title: AlloyDown
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "the control VM's Alloy is not answering its scrape"
+          description: "The api's metrics stop arriving while this holds; the api itself is unaffected. In Coolify, project repose, the `alloy` service: check it is running and that its port is published on 10.255.255.1 and not elsewhere. `docker logs` on the control VM names a config error."
+          runbook: "docs/ops/RUNBOOK.md#alloydown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "up{job=\"alloy\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-apimetricsabsent
+        title: ApiMetricsAbsent
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "no api metrics have arrived for 15 minutes"
+          description: "Alloy is scraping nothing, or its writes are refused. Check Alloy's own targets at http://10.255.255.1:12345 (it is scraped as job=alloy); then that the api application's uuid still matches the regex in ops/alloy/config.alloy; then that Prometheus still runs with --web.enable-remote-write-receiver and the edge still allows 9090 (I-952)."
+          runbook: "docs/ops/RUNBOOK.md#apimetricsabsent"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "absent(up{job=\"api\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
       - uid: repose-gatewaydown
         title: GatewayDown
         condition: C
