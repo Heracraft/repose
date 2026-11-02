@@ -1284,6 +1284,79 @@ Host root filesystem over 85 percent, almost always `/nix/store`.
    projects list --host host-NN --sort closure` and talk to them, or
    lower the closure cap.
 
+## KernelOops
+
+The host's kernel faulted: an `Oops:`, a `BUG:`, a general protection
+fault or an RCU read-side violation reached Loki from `component="kernel"`
+(DECISIONS I-980). The host is still running, which is the only reason this
+alert can exist, and a kernel that has faulted once faults again: whatever
+produced the first one is still there, and the next process to reach it
+gets the same fault in a place that may matter more.
+
+**The clock.** On host-02 on 2026-11-02 the first fault was at 13:51:07 and
+the panic at 17:40:07: 3h49m, and that is one sample, not a budget. Treat
+it as "this host is leaving the fleet today, in whichever order you
+choose".
+
+**The cause this fleet has met.** I-982: the dentry hash table allocated in
+a `vmalloc` hugepage mapping, which `alloc_large_system_hash()` chooses on
+any host with more than one NUMA node, read from processes that did not
+have it mapped. Check the host's own boot line before assuming anything
+else: `journalctl -k -b | grep -i "Dentry cache hash table"` says `vmalloc
+hugepage` or `linear`, and `vmalloc hugepage` on a kernel without I-982's
+`hashdist=0` is this. Faults in that case are `error_code(0x0000) -
+not-present page` with `P4D 0`, from different processes, at the same table
+base -- nothing is corrupt, so do not go looking for a writer.
+
+1. Which host. The `host` label on these lines is the **host_id**, not the
+   name (`host_id` in Prometheus means the name; nothing joins the two).
+   `repose-admin hosts list` is the mapping.
+2. Read every fault, not the one that paged, from the monitoring server or
+   anywhere that reaches Loki:
+
+   ```
+   curl -sG http://10.255.0.3:3100/loki/api/v1/query_range \
+     --data-urlencode 'query={host="<host_id>",component="kernel"} |~ `Oops|BUG: unable to handle|Voluntary context`' \
+     --data-urlencode 'start='$(date -u -d '-24 hours' +%s)000000000
+   ```
+
+   The faulting function and the task are in the lines around each `Oops:`.
+   Repeats in the same function are one damaged structure; faults in
+   unrelated functions are worse.
+3. Is it still serving? `ssh host-0X true`, `hostd guests --json`,
+   `systemctl is-system-running`. A tainted host answers normally until it
+   does not.
+4. **Drain it, do not wait.** `repose-admin hosts drain <name>` stops new
+   placements, then `repose-admin projects move <id> --to <other host>` per
+   project ("Getting a project's base onto the target host", I-974, is the
+   operator's step before a move). A planned stop writes each guest's disk
+   and can keep its memory (I-653); a panic keeps nothing, which is the
+   whole difference between acting on this alert and reading about it in
+   `GuestdLost` four hours later.
+5. If the host has already panicked, what happens next depends on the
+   kernel command line it booted. With `panic=` unset it halts and stays
+   halted: Azure Resource Health says "undergoing a reboot due to a guest
+   OS crash" with the VM still "running", and only `az vm restart -g
+   repose-prod -n <name>` reaches it. With I-984's `panic=30` it reboots
+   itself after 30 seconds. `ssh host-0X cat /proc/cmdline` on the host
+   that comes back says which it was; either way, "Host rebooted" below is
+   the entry for what to check afterwards.
+6. The serial console is the only record of a panic, and it is volatile.
+   `az vm boot-diagnostics get-boot-log -g repose-prod -n <name>` returns a
+   buffer holding **several boots**, oldest first, JSON-encoded with ANSI
+   escapes: decode it to a file first, then read the **last** `Linux
+   version` and `Command line:` in it, or the version tag on the `Oops:`
+   lines. The first banner is the install boot, and reading it as the
+   running kernel sends you looking for upstream bugs in a kernel the host
+   does not run.
+7. What this alert cannot see, so do not read its silence as health: the
+   `Kernel panic` line itself never ships (Fluent Bit dies with the box),
+   and a *guest's* own kernel oops is `component="console"` and is the
+   tenant's machine, not this.
+8. An unplanned host fault with tenants on it is an incident line in
+   `docs/incidents/`. Record the fault times, the faulting function, the
+   uptime at the first fault and what was moved.
+
 ## GuestdLost
 
 hostd cannot talk to a guest's guestd for 5 minutes.
@@ -2009,9 +2082,15 @@ Every guest on the host stopped with it. hostd's first start in the new
 boot marks each guest that was running or starting (`guest_interrupted`,
 with the new `boot_id`), and the api starts those again from the
 `Hello`, three per host per minute, within 6 hours of the restart, and
-tells each user once (DECISIONS I-645). Kernel panics are not
-auto-rebooted (`panic=` is unset on purpose); a stuck host is restarted
-from the Azure portal.
+tells each user once (DECISIONS I-645). A kernel oops now reboots the
+host: `panic_on_oops=1` and `panic=30` (DECISIONS I-984). Until
+2026-11-02 `panic=` was unset on purpose and a stuck host was restarted
+from the Azure portal, which is what host-02 needed after it ran 3 h 48 m
+tainted and then killed init. A host that has oopsed is not stuck, it is
+unreliable, and it is still serving tenants; 30 seconds is there so the
+oops reaches Loki before the reboot. A host that is hung *without* having
+oopsed still needs the portal, and that is the one case the old sentence
+described correctly.
 
 A graceful shutdown (Azure's heal, `systemctl reboot`) presses each
 running guest's ACPI power button and gives it 20 seconds to power off,
@@ -2087,6 +2166,24 @@ With `repose.host.freeze.enable` a host freezes its running guests to an
 encrypted memory image when it shuts down and restores them at hostd's
 next start (DECISIONS I-652, I-653). Off by default; turned on for
 host-stg-01, and for host-01 since 2026-10-12 (I-686).
+
+**The thaw is also the host's blind window, and it looks exactly like a
+dead host.** `Reconcile` -- which runs `ThawAll` -- sits ahead of every
+listener in hostd's start, so until it returns there is no api stream, no
+metrics to scrape and no control socket. Expect, after a host reboot with
+frozen guests: the api reporting the host `unreachable`, `HostUnreachable`
+and `HostScrapeDown` arming, and `hostd guests` answering that there is no
+control socket. host-02 on 2026-11-02 was `active` at 21:32:53 and
+listening at 21:36:09 -- 3m16s for two guests and 15.6 GB, and the window
+grows with the memory a thaw reads back, so a full host's is minutes
+longer (DECISIONS I-990).
+
+What tells you a starting hostd from a dead one, in order: `systemctl
+is-active hostd` (a thawing hostd is `active`), then `journalctl -u hostd
+-b` for `frozen guests restored`, which is the line that precedes the
+listeners. Do **not** read "no control socket" as hostd being down, and do
+not restart hostd to fix it -- that discards the images it is in the
+middle of reading, and every guest in them comes back cold.
 
 This is not the idle pause, which shares the user's word for it. A guest
 the idle pause left resting (I-824) is already paused, so the freeze
@@ -2750,16 +2847,49 @@ its steps bite if they are taken in the wrong order.
      already exists**, which may be 24 hours old. `move` takes a fresh
      snapshot only when the project is `running`, by stopping it with
      `snapshot: true` first. So start it, or `repose-admin projects
-     snapshot <id>`, before moving a stopped one.
+     snapshot <id>`, before moving a stopped one. A stop snapshots by
+     default, so a project stopped on purpose has a snapshot from the
+     second it stopped; the one to check is a project that reached
+     `stopped` *without* a stop op -- `guest_state_changed: stopped` in
+     its events and no `stop` in `ops` -- because then the newest
+     snapshot is the last nightly and anything after it is not in any
+     snapshot. `izma` was one of the eight on 2026-11-02: stopped
+     2026-10-10 05:46 with no stop op, restored from the 03:02 nightly,
+     and nothing was lost only because its last recorded activity was
+     six hours before that snapshot. Read the project's events before
+     moving it, not after.
    - **`--to` is not capacity-checked.** A named target short-circuits
      the scheduler, so a move onto a host without the memory, the cores
      or the pool for it is accepted and fails later, on the host.
      `repose-admin hosts list` and the `host_reservations` view are what
      to read first; move in an order that fits.
-   - **Every moved project emails its owner** that it "was restored onto
+   - **A moved project comes back in the state it was in**, and only a
+     project that was running emails its owner that it "was restored onto
      a new host from its latest snapshot" (`host_moved`). On a planned
-     migration that reads as data loss. Tell the tenants before, or
-     answer the replies after.
+     migration even that reads as data loss, so tell those tenants
+     before, or answer the replies after. Until I-964 the move started
+     every project it touched and mailed every owner; a host-01 drain on
+     2026-11-02 started all sixteen.
+   - **The target needs the project's base closure, and a fresh host has
+     only the current one** (I-974, which says why `move` does not do
+     this for you). A stopped project still points at whatever base it
+     last ran, so the restore fails on the host with `not_found` naming a
+     `nixos-system-repose-guest-<version>` store path. Either
+     wait for the 04:00 UTC `basebump` sweep to move it to the current
+     base, or copy what the target lacks. The copy is far smaller than it
+     looks: on 2026-11-02 the eight stopped projects spanned five bases
+     from 2026.10.07 to 2026.10.25, 49.9 GB of guest systems, and host-02
+     was missing 141 of their 1364 store paths -- 202 MB, because the
+     closures share nearly everything. cache.nixos.org cannot help; we
+     build these.
+   - **The hosts cannot reach each other**, so that copy relays through
+     the operator's machine. `nix-store -qR` on the source gives the
+     paths in topological order, which `--export` requires (references
+     before referrers) -- do not sort it. Filter to the ones the target
+     has no `/nix/store` entry for, then `ssh <src> nix-store --export
+     $(cat paths)` into `ssh <dst> nix-store --import`. Symlink them
+     under `/nix/var/nix/gcroots/` on the target first, or a GC between
+     the copy and the move deletes them.
    - **A moved project comes up logged out of Claude Code.** The login
      share is one file per user per host (I-278), so each owner types
      `claude` and logs in once on the target host.
@@ -2769,10 +2899,29 @@ its steps bite if they are taken in the wrong order.
    certificate (I-432), so a host that must come back joins again with
    `hosts add --name host-NN --reissue`.
 4. Remove the name from `hosts` and its `host_shapes` entry from
-   `prod.tfvars`, and apply. The data disk and its attachment carry
+   `prod.tfvars`, and apply. If the host was the one the globals describe,
+   promote them to the remaining fleet's shape in the same edit (I-976):
+   leaving them is how the next host added without a `host_shapes` entry
+   comes up the wrong size without the plan saying so. The data disk and its attachment carry
    `prevent_destroy`, so that plan fails on purpose; `infra/README.md`
    "Draining and destroying a host" has the step that gets past it and
    why it is friction.
+5. Then prove the host is gone, four ways, because the apply's own
+   "Destroy complete" line counts resources and not which ones:
+   `tofu state list` has no entry for the name, the `hosts` output does
+   not name it, `az resource list -g repose-prod` matches nothing
+   containing it, and a re-plan with `prevent_destroy` back says "No
+   changes".
+6. **Look for the OS disk by name.** It is declared inline on the VM
+   (`os_disk` in `azure/modules/host/main.tf`), the module sets no
+   `delete_option`, and no plan ever names it -- so nothing in the diff
+   tells you whether it went with the VM or was left behind. A Premium
+   SSD P15 nobody owns is $38 a month, for ever, and the resource group
+   is the only place it shows. `az resource list -g repose-prod --query
+   "[?contains(name,'<name>')].name" -o tsv` must come back empty;
+   `az disk delete -g repose-prod -n osdisk-<name>` if it does not.
+   host-01's went with the VM on 2026-11-02, which is a fact about that
+   apply and not a guarantee about the next one.
 
 ## Suspected cross-tenant access
 

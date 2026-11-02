@@ -22,7 +22,9 @@
 # owner sets up in the UI. The `severity` label is on every rule for whoever
 # wants to add a route.
 #
-# 53 rules for 54 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
+# 56 rules for 57 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
+# One of them, KernelOops, queries Loki rather than Prometheus; its source is
+# ops/alerts-loki.yaml (DECISIONS I-980).
 apiVersion: 1
 groups:
   - orgId: 1
@@ -3958,6 +3960,82 @@ groups:
               expr: "max(repose_api_abuse_busy_unattended_projects)"
               instant: true
               range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+  - orgId: 1
+    name: repose-host-logs
+    folder: "repose alerts"
+    interval: 1m
+    rules:
+      - uid: repose-kerneloops
+        title: KernelOops
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "kernel fault on host {{ $labels.host }}"
+          description: "The host kernel faulted and may panic. `repose-admin hosts list` maps the id to a host name. Drain it before the next fault takes the guests with it."
+          runbook: "docs/ops/RUNBOOK.md#kerneloops"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-loki
+            model:
+              refId: A
+              datasource:
+                type: loki
+                uid: repose-loki
+              editorMode: code
+              expr: "count_over_time( {component=\"kernel\"} |~ `Oops:|BUG:|general protection fault|Voluntary context switch within RCU` [10m] )"
+              queryType: instant
               intervalMs: 1000
               maxDataPoints: 43200
           - refId: B

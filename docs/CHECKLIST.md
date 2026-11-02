@@ -90,6 +90,32 @@ written so none of them goes unnoticed again.
       every argument refusal names what it received (DECISIONS I-346).
       Evidence: `go test ./internal/cli -run TestArgErrorsSayWhatTheyGot`
       passes, and the new command was run once with a glob.
+- [ ] A change to `boot.kernelParams` is confirmed by the behaviour it is
+      supposed to produce, never by `/proc/cmdline`. A parameter the
+      kernel does not recognise is accepted silently into the command
+      line and handed to userspace: `panic_on_oops=1` rode a switch and a
+      reboot into `/proc/cmdline` while `kernel.panic_on_oops` stayed 0,
+      because it is a sysctl and not a parameter (DECISIONS I-988).
+      Evidence: `dmesg | grep "Unknown kernel command line"` is empty on
+      the booted host, and the parameter's own effect is read directly —
+      `Dentry cache hash table ... linear` for `hashdist=0` (I-982),
+      a non-zero `sysctl` for anything that is really a sysctl. Prefer
+      `boot.kernel.sysctl` where the knob is one: it applies on a switch
+      with no reboot, and it can be read back.
+- [ ] A new or changed test asserts the property it is named for, not a
+      proxy for it, and names the probe that proves it would fail without
+      the fix. A proxy fails in both directions: red when the runner is
+      busy and green when the fault is there but fast, which is how
+      `main`'s CI stayed red for sixteen days on three rotating tests
+      while each one was retuned in turn (DECISIONS I-968). Wall-clock
+      budgets, counters another goroutine decrements, and "connect again
+      and see what happens" are the three that have bitten. Evidence: the
+      probe is pasted in the commit message with the assertion's output
+      under it — the leak test reads "5 calls: 5 still open; 25 calls: 25
+      still open" with `DisableKeepAlives: false`, the ban test reads
+      "logged but not enforced" with the ban lookup disabled — and the
+      test passes repeated `-race` runs under load, not once on an idle
+      box.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
@@ -412,7 +438,7 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       delivery needs the WireGuard peer that `10-observability.md` §9 still
-      has open. There are 54 alerts, 53 of them generated into Grafana's own
+      has open. There are 57 alerts, 56 of them generated into Grafana's own
       alerting by `ops/grafana/alerts-gen.py` and pushed in by
       `ops/grafana/push.py` over the API; `ops/check.sh --grafana` proves
       every one of them against a running Grafana, twice, and the drift
@@ -452,8 +478,8 @@ entry and this list with it. Counts as of 2026-10-21.
       macOS arm64, macOS x86_64 and Linux arm64 machine (the second human,
       M5 step 3).
 - [x] `ops/RUNBOOK.md` has entries for every alert above. Evidence:
-      `ops/check.sh` fails when an alert in `ops/alerts.yaml` has no
-      RUNBOOK heading and passes on `main` (17 rules, 17 headings,
-      2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
+      `ops/check.sh` fails when an alert in `ops/alerts.yaml` or
+      `ops/alerts-loki.yaml` (I-980) has no RUNBOOK heading and passes on
+      `main` (17 rules, 17 headings, 2026-09-21); HostMemory80, HostUnreachable, SnapshotStale,
       BuildQueueStuck, GatewayAuthSpike and EgressHigh are the six the
       row names.

@@ -116,6 +116,20 @@ variable "host_data_disk_gb" {
   default     = 512
 }
 
+variable "host_os_disk_gb" {
+  type        = number
+  description = <<-EOT
+    Host OS disk, which holds /nix/store and is shared by every guest on the
+    host over virtio-fs. The root module has to declare and pass this one
+    like the other host globals: until host-01 was retired it did not, so the
+    fallback was the environment module's 256 and the only way to a bigger OS
+    disk was a host_shapes entry (DECISIONS I-976). A new host on 256 runs its
+    store past 80 percent and hostd then refuses Build with
+    `insufficient_capacity: host store full` for every tenant on it.
+  EOT
+  default     = 512
+}
+
 variable "host_data_disk_iops" {
   type        = number
   description = "Provisioned IOPS on each host's data disk. The first 3,000 are free."

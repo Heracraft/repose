@@ -93,6 +93,7 @@ module "environment" {
   host_size           = var.host_size
   host_class          = var.host_class
   host_data_disk_gb   = var.host_data_disk_gb
+  host_os_disk_gb     = var.host_os_disk_gb
   host_data_disk_iops = var.host_data_disk_iops
   host_data_disk_mbps = var.host_data_disk_mbps
   host_shapes         = var.host_shapes

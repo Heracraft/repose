@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """Generate the repose Grafana-managed alert rules.
 
-The rules of `ops/alerts.yaml`, turned into the provisioning file Grafana's
-own alerting engine reads
-(`ops/grafana/provisioning/alerting/repose-rules.yaml`). 54 alerts in, 53
+The rules of `ops/alerts.yaml` and `ops/alerts-loki.yaml`, turned into the
+provisioning file Grafana's own alerting engine reads
+(`ops/grafana/provisioning/alerting/repose-rules.yaml`). 57 alerts in, 56
 out: `Watchdog` is left behind on purpose, see EXCLUDED.
 
-Why a generator and not 53 hand-written Grafana rules: a Grafana rule is 40
+Two sources because one of them is not PromQL. `ops/alerts.yaml` is what
+promtool parses and `promtool test rules` exercises, so a LogQL expression
+in it fails the whole file; the log rules live in `ops/alerts-loki.yaml` and
+query the Loki datasource instead (DECISIONS I-980). Everything after the
+expression -- the uid, the reduce, the threshold, the runbook heading
+ops/check.sh insists on -- is the same for both.
+
+Why a generator and not 56 hand-written Grafana rules: a Grafana rule is 40
 lines of query, reduce and threshold nodes of which the name, the expression
 and one number matter, and the alert itself is already written down once in
-`ops/alerts.yaml` -- which promtool parses, which `promtool test rules`
+the source files -- which promtool parses, which `promtool test rules`
 exercises per rule, and whose names `ops/check.sh` matches against the
 headings of `docs/ops/RUNBOOK.md`. Two hand-kept copies would drift, and the
-copy that drifts is the one that pages. So `ops/alerts.yaml` stays the single
+copy that drifts is the one that pages. So the source files stay the single
 source of truth and this file is the only thing that knows Grafana's shape.
 The YAML next to it is generated and committed, because Grafana's
 provisioning reads files, not scripts, and `ops/check.sh` fails if the two
@@ -35,7 +42,7 @@ Prometheus needs no condition: a rule fires for every series its expression
 returns. Grafana needs one named node that comes out non-zero. Each rule
 therefore becomes three nodes:
 
-    A  the Prometheus query, instant
+    A  the datasource query, instant (Prometheus, or Loki for a log rule)
     B  reduce(last, A)        -- the number the annotations quote
     C  threshold(B)           -- the condition
 
@@ -44,7 +51,7 @@ and `condition: C`.
 What goes in A depends on the shape of the expression:
 
 * A *threshold* expression -- anything ending in a top-level comparison
-  against a number, which is 48 of the 53 -- is split. `a / b > 0.8` becomes
+  against a number, which is 50 of the 56 -- is split. `a / b > 0.8` becomes
   A = `a / b` and C = `is above 0.8`. Splitting, rather than passing the
   whole expression and asking for "above 0", is not tidiness: the value of
   `up{job="hostd"} == 0` *is* zero, so "above 0" would never fire for the
@@ -57,17 +64,16 @@ What goes in A depends on the shape of the expression:
   firing value is always above zero, which is true of all six but is not
   something a generator can prove, so they are named in BOOLEAN_EXPRS with
   the reason. A new rule of that shape fails this generator rather than
-  getting a condition that silently never fires. Five of them reach Grafana;
-  the sixth was `Watchdog`.
+  getting a condition that silently never fires. All six reach Grafana.
 
 `noDataState: OK` matches Prometheus, where a rule whose series are absent
 does not fire -- absence has its own rules, `ApiHostsAbsent` and
 `HostNotInTargets`.
 
 `execErrState` is `OK` on every rule but one. `Error` on all of them would
-send a DatasourceError notification per rule on every Prometheus restart, 53
+send a DatasourceError notification per rule on every Prometheus restart, 56
 for one planned event; `OK` on all of them is worse, because a datasource
-that answers nothing then leaves 53 rules green and silent, which is measured
+that answers nothing then leaves 56 rules green and silent, which is measured
 behaviour and not a guess. So exactly one rule carries `Error` --
 EXEC_ERR_ALERTING, and `ops/grafana/verify.py` fails if it does not.
 """
@@ -84,11 +90,20 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SOURCE = ROOT / "ops" / "alerts.yaml"
+SOURCE_LOKI = ROOT / "ops" / "alerts-loki.yaml"
 OUT = HERE / "provisioning" / "alerting" / "repose-rules.yaml"
 
-# The uid of ops/grafana/provisioning/datasources/repose.yaml. Fixed: every
-# dashboard panel and now every alert rule names it.
+# The uids of ops/grafana/provisioning/datasources/repose.yaml. Fixed: every
+# dashboard panel and every alert rule names one of them, and
+# ops/grafana/push.py rewrites them to the target's own by TYPE on the way in.
+# A target with no datasource of a type a rule needs fails the push naming
+# what to create; it is never invented with a guessed URL (I-944).
 PROM_UID = "repose-prometheus"
+LOKI_UID = "repose-loki"
+
+# Which datasource a source file's rules query: (type, uid). The type is what
+# push.py matches on.
+DATASOURCES = {SOURCE: ("prometheus", PROM_UID), SOURCE_LOKI: ("loki", LOKI_UID)}
 
 # The folder the rules go in, by TITLE: the alerting provisioning file has no
 # field for a folder uid, and Grafana 12.4 refuses to start without `folder`
@@ -519,8 +534,38 @@ def annotations(rule: dict) -> dict:
     return out
 
 
-def grafana_rule(rule: dict) -> dict:
+def query_model(kind: str, uid_: str, query: str) -> dict:
+    """The A node's model for one datasource type.
+
+    A Prometheus query says `instant`/`range` with booleans; a Loki query
+    says `queryType` instead, and ignores the booleans. Sending a Loki
+    query with Prometheus's two fields and no `queryType` is accepted by
+    Grafana and evaluated as a RANGE query, which returns a series per
+    point and makes `reduce(last)` the count in the last interval rather
+    than the window -- a rule that fires a minute late and clears a minute
+    early. So the field is chosen by type, not shared.
+    """
+    model = {
+        "refId": "A",
+        "datasource": {"type": kind, "uid": uid_},
+        "editorMode": "code",
+        "expr": query,
+    }
+    # In the same slot the Prometheus pair held, so adding this did not
+    # rewrite the other 55 rules' models in the committed file.
+    if kind == "loki":
+        model["queryType"] = "instant"
+    else:
+        model["instant"] = True
+        model["range"] = False
+    model["intervalMs"] = 1000
+    model["maxDataPoints"] = 43200
+    return model
+
+
+def grafana_rule(rule: dict, datasource: tuple[str, str] = ("prometheus", PROM_UID)) -> dict:
     name = rule["alert"]
+    ds_kind, ds_uid = datasource
     query, evaluator, threshold = split(name, rule["expr"])
     window = {"from": lookback(rule["expr"]), "to": 0}
     expr_ds = {"type": "__expr__", "uid": "__expr__"}
@@ -538,17 +583,8 @@ def grafana_rule(rule: dict) -> dict:
             {
                 "refId": "A",
                 "relativeTimeRange": window,
-                "datasourceUid": PROM_UID,
-                "model": {
-                    "refId": "A",
-                    "datasource": {"type": "prometheus", "uid": PROM_UID},
-                    "editorMode": "code",
-                    "expr": query,
-                    "instant": True,
-                    "range": False,
-                    "intervalMs": 1000,
-                    "maxDataPoints": 43200,
-                },
+                "datasourceUid": ds_uid,
+                "model": query_model(ds_kind, ds_uid, query),
             },
             {
                 "refId": "B",
@@ -616,7 +652,9 @@ HEADER = """\
 # owner sets up in the UI. The `severity` label is on every rule for whoever
 # wants to add a route.
 #
-# 53 rules for 54 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
+# 56 rules for 57 alerts: `Watchdog` is excluded (EXCLUDED in the generator).
+# One of them, KernelOops, queries Loki rather than Prometheus; its source is
+# ops/alerts-loki.yaml (DECISIONS I-980).
 """
 
 _BARE = re.compile(r"[A-Za-z0-9_.:/@-]+")
@@ -679,29 +717,40 @@ def groups() -> list[dict]:
     out = []
     seen = {}
     names = set()
-    for group in read_source(SOURCE):
-        rules = []
-        for rule in group["rules"]:
-            names.add(rule["alert"])
-            if rule["alert"] in EXCLUDED:
-                continue
-            built = grafana_rule(rule)
-            if built["uid"] in seen:
-                raise YamlError(f"{rule['alert']} and {seen[built['uid']]} share a uid")
-            seen[built["uid"]] = rule["alert"]
-            rules.append(built)
-        # A group whose every rule is excluded is left out rather than emitted
-        # empty: `repose-meta` held only Watchdog.
-        if rules:
-            out.append(
-                {
-                    "orgId": 1,
-                    "name": group["name"],
-                    "folder": FOLDER,
-                    "interval": group["interval"],
-                    "rules": rules,
-                }
-            )
+    group_names = {}
+    for source, datasource in DATASOURCES.items():
+        for group in read_source(source):
+            # One folder, so a group name repeated across the two files would
+            # be two groups with one name in Grafana -- and the second push
+            # of it rewrites the first's interval.
+            if group["name"] in group_names:
+                raise YamlError(
+                    f"group {group['name']!r} is in both {group_names[group['name']]} and "
+                    f"{source.name}; give the log rules a group of their own"
+                )
+            group_names[group["name"]] = source.name
+            rules = []
+            for rule in group["rules"]:
+                names.add(rule["alert"])
+                if rule["alert"] in EXCLUDED:
+                    continue
+                built = grafana_rule(rule, datasource)
+                if built["uid"] in seen:
+                    raise YamlError(f"{rule['alert']} and {seen[built['uid']]} share a uid")
+                seen[built["uid"]] = rule["alert"]
+                rules.append(built)
+            # A group whose every rule is excluded is left out rather than
+            # emitted empty: `repose-meta` held only Watchdog.
+            if rules:
+                out.append(
+                    {
+                        "orgId": 1,
+                        "name": group["name"],
+                        "folder": FOLDER,
+                        "interval": group["interval"],
+                        "rules": rules,
+                    }
+                )
     for name in sorted(set(EXCLUDED) | set(BOOLEAN_EXPRS) | set(EXEC_ERR_ALERTING)):
         if name not in names:
             raise YamlError(

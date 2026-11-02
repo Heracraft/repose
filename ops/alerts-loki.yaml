@@ -1,0 +1,92 @@
+# Alert rules for repose that read LOG LINES instead of series. Same shape
+# as ops/alerts.yaml -- `ops/grafana/alerts-gen.py` reads both and generates
+# one provisioning file -- but the expression is LogQL against Loki, so these
+# rules live in a file of their own: `promtool check rules` and `promtool
+# test rules` parse ops/alerts.yaml, and a LogQL expression there fails the
+# whole file rather than one rule (DECISIONS I-980).
+#
+# Every alert name here is a heading in docs/ops/RUNBOOK.md and is checked by
+# ops/check.sh exactly as the ones next door. What these rules do NOT have is
+# a promtool unit test: promtool evaluates PromQL over a synthetic series, and
+# there is no equivalent for LogQL. The evidence that one of these fires is a
+# line pushed into the dev stack's Loki and the rule's own state read back
+# from Grafana (ops/check.sh, "a log rule fires on a pushed line").
+#
+# One thing to know before adding a rule here: a Grafana that has no Loki
+# datasource makes `ops/grafana/push.py` FAIL, naming what to create, because
+# the pusher resolves datasources by type and never invents one (I-944). That
+# is the loud failure and it is the right one; the quiet one it replaces is a
+# rule pointed at a datasource that answers nothing.
+groups:
+  - name: repose-host-logs
+    interval: 1m
+    rules:
+      - alert: KernelOops
+        # A host kernel that faults once faults again. host-02 on
+        # 2026-11-02 read a dentry hash table that was not mapped in the
+        # faulting process at 13:51:07, ran tainted for 3h49m, and panicked
+        # at 17:40:07 when the third fault landed on systemd itself:
+        # `Attempted to kill init!`. 18 projects were on it and the 3 that
+        # were running went with it. The first alert anyone saw was
+        # GuestdLost at 17:38, nine minutes before the end and about one
+        # guest, because nothing in this repository watched for an Oops.
+        # That window -- first fault to panic -- is what this rule sells: it
+        # is long enough to drain the host.
+        #
+        # `page`, not `warn`: the action that saves the tenants is draining
+        # the host before the next fault, and after the panic there is
+        # nothing left to drain. Not because it is freakish -- the cause
+        # (I-982) is the dentry hash table in a vmalloc hugepage mapping,
+        # which every host with more than one NUMA node is exposed to, so
+        # the next host of that shape is exposed the day it joins.
+        #
+        # Why these four patterns and not `WARNING` or `soft lockup`: these
+        # four are the hard-fault family, the one a kernel does not recover
+        # from and the one that precedes a panic -- a bad memory access,
+        # whatever put it there. A soft lockup or a hung task is load, which
+        # HostCPUSaturated already covers, and a kernel WARNING is a
+        # condition the kernel recovered from. `Oops:` matches the
+        # `Oops: Oops: 0000 [#1]` line, `BUG:` the page faults and the
+        # NULL dereferences, and the RCU line is the violation that
+        # preceded host-02's second and third faults.
+        #
+        # `Kernel panic` is deliberately NOT matched. Fluent Bit dies with
+        # the box, so the panic line never ships -- it exists only on the
+        # serial console. Every pattern here is one that arrives while the
+        # host still lives, which is the only kind this rule can see. That
+        # stays true under I-984's `panic_on_oops=1 panic=30`: the delay is
+        # there so the Oops reaches Loki before the host reboots, which
+        # makes matching the Oops rather than the panic load-bearing.
+        #
+        # `{component="kernel"}` is the HOST's kernel: fluent-bit's lua
+        # labels a journal record with no `_SYSTEMD_UNIT` as `kernel`
+        # (nix/hosts/fluent-bit.nix) and a guest's console with
+        # `component="console"`. So a tenant's own guest oops does not page
+        # the operator, which is right -- that is the tenant's machine and
+        # `repose start` is their fix.
+        #
+        # The generator folds this expression's whitespace to single spaces
+        # before it reaches Grafana, so no pattern here may depend on a
+        # newline or a run of spaces.
+        expr: |
+          count_over_time(
+            {component="kernel"}
+            |~ `Oops:|BUG:|general protection fault|Voluntary context switch within RCU`
+            [10m]
+          ) > 0
+        # No `for`: one line is the whole signal. The 10-minute window is
+        # what holds the alert up long enough to be delivered, and it clears
+        # 10 minutes after the last fault line.
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          # `$labels.host` is a UUID, and there is no label anywhere in Loki
+          # carrying the name. Worse, the word is overloaded: `host` in Loki
+          # is the host_id (`01a1758b-...`), while `host_id` in Prometheus
+          # (`repose_api_host_state`) is the NAME (`host-02`). Nothing joins
+          # them, so the mapping command is in the description instead of a
+          # cleverer query that would silently return nothing.
+          summary: "kernel fault on host {{ $labels.host }}"
+          description: "The host kernel faulted and may panic. `repose-admin hosts list` maps the id to a host name. Drain it before the next fault takes the guests with it."
+          runbook: "docs/ops/RUNBOOK.md#kerneloops"

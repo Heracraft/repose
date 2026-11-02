@@ -26593,6 +26593,57 @@ reaches the loop and no case had one.
 `TestLoneWaiterIsNotReInvitedByItsOwnExpiry` does; with the filter
 removed it fails with exactly the owner's symptom.
 
+**I-904. `repose snapshots list` with no project lists every snapshot
+the account has, over a new `GET /v1/snapshots`.** (cli triage round 2,
+2026-10-28; owner transcript. Amends I-566. Entry written 2026-11-02,
+see below.)
+
+The owner, from their home folder:
+
+    $ repose snapshots            -> Your home folder is not a project. Name one: ...
+    $ repose snapshots ls         -> the same
+    $ repose snapshots list       -> the same
+    "cant i just list all snapshots??"
+
+`ls` was already an alias of `list` (I-619); the blocker was that every
+path required a project, and no api route could answer the question.
+Snapshots lived only under `GET /v1/projects/:id/snapshots`, which I-566
+had anticipated: "the api finds a snapshot under its project ...
+resolving it from the snapshot id alone would be a new api route."
+
+`GET /v1/snapshots` is that route, built on the shape `GET
+/projects/destroyed` already uses: a join from snapshots to projects
+scoped by `user_id`, newest `taken_at` first, keyset paging on
+`(taken_at, id)` through `limit` and `before`. Each row carries
+`project_id`, `project` and `project_destroyed`. `GET /v1/questions`
+beside `GET /v1/projects/:id/questions` is the same account-wide twin
+precedent.
+
+Destroyed projects' snapshots are included. They are kept 30 days and
+are exactly the set a home folder could not otherwise reach, which is
+most of the question being asked.
+
+The CLI falls back to the account-wide list only when no PROJECT is
+named *and* the folder resolves to none, so naming a project still
+narrows it and the per-project table is unchanged. An older api answers
+404 and the CLI asks for a project as before.
+
+*Rejected:* fanning out `GET /v1/projects` plus one `ListSnapshots` per
+project. It is N+1 requests, it misses destroyed projects unless it also
+walks `/projects/destroyed`, and it would have been this client's first
+fan-out of that kind.
+
+*Why this entry is dated after the work.* The route, the CLI, the tests
+and the docs shipped in r20261031-1 and cite `I-904` in eight places,
+`docs/interfaces/api.md` among them. The id was reserved and the entry
+was never written, so for two days the api contract pointed at a
+decision that did not exist. Nothing was wrong with the code; the record
+was simply missing the reasoning, which is the part that cannot be
+reconstructed from a diff. Found by auditing my own reserved ids before
+this session's context was cleared, which is a poor substitute for
+writing the entry with the change — the rule exists because the author
+is the only one who still knows why.
+
 **I-906. The snapshot sweep skips a live upload, and runs on every
 reconcile.** (hostd triage, 2026-10-28.)
 
@@ -27566,6 +27617,49 @@ period is not spent, the button is pressed once, and the misleading
 never asked. The counter-test holds the other side — a guestd that
 takes the request still gets its full grace period.
 
+**I-964. A host move gives a project back in the state it was in, and only
+a project that was running is told about it.** (move-state, 2026-11-02.)
+
+`repose-admin projects move` read `p.State` to decide whether to
+stop-and-snapshot first, then passed `start=true` to the restore
+regardless. So moving a stopped project snapshotted nothing, restored it,
+and started it. Draining host-01 on 2026-11-02 moved sixteen projects and
+started every one of the stopped ones; the account was billing-exempt, so
+the only cost was noise, and that is the whole reason this was cheap to
+find. On a paying account the same move bills hours nobody asked for, and
+because a migration moves *every* project at once it can push an account
+past its plan's running-memory cap (Solo may run one `large`), which
+either fails the move or bills an overage. The move now carries
+`wasRunning` through to the restore.
+
+The `host_moved` notification moves with it, from the restore phase to
+`start_guest`. A stopped machine comes back stopped, on a host the user
+never named and cannot see, so the mail -- "<slug> was restored onto a new
+host from its latest snapshot" -- announces an event with no user-visible
+consequence, and on a machine they deliberately switched off it reads as
+data loss. `start_guest` is the gate because it is in the plan only for a
+restore that starts the guest, so the condition is the thing itself. The
+first fix read `op.Params["start"]`, which the admin move sets and a
+restore enqueued straight from the ops API does not, so it silenced
+`TestRestoreEmitsHostMovedEvent` as well -- an existing test, and right to
+fail. The structured log line stays in the restore phase and stays
+unconditional: it is the operator's record of the migration, which is
+whose business the move is. A running project still gets the mail, because
+its uptime really was interrupted.
+
+Rejected: keeping the notification for every move "for transparency". A
+line the user cannot act on, about a host they do not know exists, is the
+kind that looks kind in its own diff (I-485).
+
+The test is `TestMoveKeepsAStoppedProjectStopped`, and it needed a second
+connected host. `apitest.ConnectHost` *replaces* the harness's one host --
+it stops the old fake and reuses the single `Fake`/`hostCert`/`fakeStop`
+fields -- so calling it for host-02 disconnected the host the project was
+on and the move waited on a dead stream until the 600s test timeout. The
+new `apitest.AddHost` registers and connects an additional fake and leaves
+the primary alone. The second host joins only after the project has
+settled, or placement puts the project there at create time and there is
+nowhere to move it to.
 
 **I-960. The api's metrics are pushed by a Grafana Alloy service on the
 control VM, not scraped; Prometheus scrapes Alloy for liveness.**
@@ -27919,3 +28013,412 @@ judges' grafts and its named defects were then worked in.
       eyebrow is in the second grey. The Browser's address-bar ring
       follows a resize. Pricing's button keeps its label on the h2's
       baseline, its box hanging under it.
+**I-972. The thaw test asserts the deadline the unwraps share, not how
+long the reconcile took — and the old assertion could not fail for the
+reason it was named for.** (CI red on main, 2026-11-02.)
+
+`TestThawWaitsOneUnwrapTimeout` went red on CI run 41379622622 at
+466badf2:
+
+    reconcile took 610.998612ms for 2 images with a 300 ms unwrap timeout
+
+611 ms against a 300 ms timeout reads as two timeouts being spent, one
+per image, which is exactly the regression the test exists to catch. It
+is not that, and it cannot be: `ThawAll` builds **one** `uctx`
+(freeze.go:1164) and hands it to every image's goroutine, with no
+semaphore, so `Concurrency = 1` does not serialise them and the unwrap
+phase is bounded at one timeout by construction.
+
+What the 611 ms was is non-unwrap work crossing a tight wall-clock
+threshold. The test deliberately spends 300 ms of its 550 ms budget
+inside `unwrapWithRetry` — the stubbed sealer fails at once and the
+retry then waits out `ctx.Done()` — leaving 250 ms for
+`sweepImageVolumes`, the record list, the window arithmetic and two
+volume removals, under `-race` on a loaded 2-core runner.
+
+**The old assertion could not catch its own regression.** Giving each
+image its own `context.WithTimeout` and running the test: the unwraps
+are concurrent goroutines, so two per-image timeouts still finish in one
+timeout's wall-clock. The probe run took **0.43 s** — comfortably under
+the 550 ms the test demanded. It would have passed. So the assertion was
+both flaky under load and blind to the fault it was written for: the
+worst of both, and it had been standing.
+
+It now asserts the claim directly. Every Unwrap records its context's
+deadline; one timeout for the whole thaw means both see the **same**
+deadline, one per image means different ones. Timing-free, so no
+machine is too slow for it. Against the same probe it fails with the two
+deadlines 10 microseconds apart — a difference no elapsed-time
+assertion could ever have resolved.
+
+*The general rule, which is this week's three times over.* An assertion
+on how long something took is a proxy for the thing you mean, and a
+proxy fails in both directions: it goes red when the machine is busy and
+green when the fault is present but fast. Where the property is
+observable directly — a shared deadline, a byte counter that moves, a
+socket's owner — assert that instead. I-920 counted sockets that existed
+rather than work in progress; I-930 counted a connection rather than
+traffic; this counted milliseconds rather than a deadline.
+
+*Not fixed here.* The conductor is taking
+`TestAPICallsDoNotLeakConnections`, which is I-920's own regression test
+and mine: "25 connections opened, 2 STILL OPEN" is `ConnState` lagging
+the client's close, not a leak, and its `> 1` threshold is too tight.
+The right shape there is the same — assert the open count does not grow
+with N, which is what a leak does and lag does not. And
+`TestFailuresStillBanAndTheBanIsLogged` in the gateway is red again
+after being fixed as `ci-red-ban` in r20261012-3 on 12 October, which is
+the fact that makes this a class rather than three bugs: fixed one test
+at a time, it has come back inside three weeks.
+**I-968. A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three.** (ci-proxy, 2026-11-02.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `608caa6e` failed, and the cause moved each time, so it never read as one standing break. `ci-green` (I-954) fixed the two that were red on `5bbe3246` — an unchecked `c.Close` and a billing assertion that had gone stale when the memory meter changed meaning — and the next run surfaced two more, and the run after that a third. Three tests, two packages, one shape.
+
+**The shape.** Each asserted a *proxy* for the property it meant, and a proxy fails in both directions: red when the machine is busy, green when the fault is present but fast. That is the whole finding, and it is why retuning thresholds had a sixteen-day record of not working.
+
+- `TestAPICallsDoNotLeakConnections` (`internal/hostd/ch`, I-920's own regression test) read `open > 1` on a counter the *server* decrements from its `ConnState` callback, which runs after the client call has returned. On CI 41379622622 it read "25 connections opened, 2 STILL OPEN" and failed with no leak: two closes were in flight. The property is that nothing is left open, and a leaked connection never drains while a closing one does, so a bounded wait separates them exactly and needs no tolerance. It now calls 5 times, waits for the count to reach zero, calls 20 more, waits again, and requires zero both times. **Probe:** `DisableKeepAlives: false` in `ch.go` reinstates the original leak; the test then reads "5 calls: 5 still open; 25 calls: 25 still open" and fails. It grows with N, which is what the test's comment has always said and what `> 1` could not ask.
+- `TestThawWaitsOneUnwrapTimeout` (`internal/hostd/guest`) asserted that reconcile took under 550 ms, as a stand-in for two unwraps sharing one deadline. It spends 300 ms of that budget deliberately — `unwrapWithRetry` waits out the context when the sealer fails — leaving 250 ms for everything else `ThawAll` does under `-race`. CI measured 611 ms. The lane that owns it proved the assertion was also blind: with a per-image timeout, the unwraps are still concurrent goroutines, so the wall clock stayed at 0.43 s and the test would have passed with the regression in place. It now records each `Unwrap`'s context deadline and requires them equal; against the same probe the deadlines differ by 10 microseconds, which no elapsed-time assertion could resolve. Shipped as `thaw-deadline`.
+- `TestFailuresStillBanAndTheBanIsLogged` (`internal/gateway`) asked for the refusal before the ban existed. The ban and its log line are both written in the failing connection's own goroutine, after `h.dial` has returned to the test's, so after 20 failures the gateway may still be counting. On CI 41380209243 the 21st connection got `SSH-2.0-Go`. `ci-red-ban` (r20261012-3, 2026-10-12) had already waited up to 10 s for the `auth_ban` line — *after* the refusal assertion, where it could not help. The wait is now the precondition: observe the ban, then require the next connection to be refused. Still exactly `banFailures` failures, because waiting on a log line opens no connections. **Probe:** `ok && false` on the ban lookup in `limits.go` logs the ban and never enforces it; the test fails with "after 20 failures the ban is logged but not enforced".
+
+Both of this branch's fixes pass 20 and 8 consecutive `-race` runs with six busy loops pinning all eight cores, which is the condition that produced the CI failures and which neither test survived before.
+
+*Rejected:* widening the thresholds. A number that cannot catch its fault only gets quieter. *Rejected:* `-count=1` retries or marking them flaky, which is the same decision spread over future sessions.
+
+*Not fixed here, and the reason the class is recorded rather than the three bugs.* Nothing stops the next test from asserting a proxy, and `docs/CHECKLIST.md` now asks for the property and for the probe that shows the assertion fails without the fix. Whether the release gate should refuse a cut over a red `main` is still the owner's call: it would have held nine releases, and on this evidence it would also have held them for faults that were never in the product.
+**I-974. Getting a project's base onto the target host before a migration
+is the operator's step, not something `move` does.** (move-state,
+2026-11-02.)
+
+A project keeps the base it last ran until it next stops, so emptying a
+host that has been up for weeks means restoring bases the target has never
+built, and the restore fails on the host with `not_found` naming a
+`nixos-system-repose-guest-<version>` store path. Eight of host-01's
+sixteen were pinned across `2026.10.07`-`2026.10.25` and every move failed
+on the first try.
+
+`move` could fix this itself -- detect the missing closure and either
+build it on the target or stream it from the source. Rejected for now, on
+two counts. The hosts cannot reach each other (the WireGuard mesh is
+hub-and-spoke, by I-782's design), so a host-to-host copy means either a
+new peering rule between hosts or relaying 200 MB through the api, and
+neither belongs in the path of an admin command. And building the base on
+the target instead is a 20-minute nix build inside a step the operator is
+watching, for a problem that disappears on its own: `basebump` sweeps
+every project to the current base at 04:00 UTC, so a migration that can
+wait a day needs none of this.
+
+So the runbook carries the manual copy, with the numbers that make it
+cheap: 141 of 1364 store paths and 202 MB on 2026-11-02, against 49.9 GB
+for the sixteen whole systems, because the bases share nearly everything.
+Two traps are written down with it, both found by hitting them --
+`nix-store --export` wants its arguments with references before referrers,
+which is `nix-store -qR` order and not sorted order; and the copied paths
+are unrooted until a guest uses them, so a GC between the copy and the
+move undoes the work. `cache.nixos.org` is no help: we build guest
+systems, so the target cannot substitute them.
+
+Revisit when a host migration is routine rather than once-per-launch, or
+when a host dies with projects on it and there is no 04:00 sweep to wait
+for. The fleet work (I-872 onward) makes more hosts likely, which makes
+this likelier to be worth automating.
+**I-976. When a host leaves the fleet, the fallback shape becomes the
+fleet's real shape, and the host leaves the scrape targets in the same
+change.** (retire-host01, 2026-11-02.)
+
+host-01 was retired on 2026-11-02, its sixteen projects moved to host-02
+(I-964, I-974). Removing it from `hosts` in `prod.tfvars` is the runbook's
+step, but it leaves two things wrong behind it.
+
+The globals -- `host_size`, `host_class`, `host_data_disk_gb` -- were
+host-01's D16s shape, and they are the fallback for any host that names
+nothing in `host_shapes` (I-784). With host-01 gone they described a size
+no host ran, and the next host added without an entry would have come up a
+quarter of the launch host, silently, because nothing in the plan says
+"this is the small shape". So they are promoted to the D64s shape and
+`host_shapes` is emptied. That was free at this moment and only at this
+moment: host-02 named its own `size`, `class`, `data_disk_gb` and
+`os_disk_gb`, so changing the globals it overrode planned nothing against
+it. `host_data_disk_iops` and `host_data_disk_mbps` are *not* promoted --
+host-02 does not name them, so they are the live host's disk settings and
+touching one plans a change on it.
+
+Promoting `host_os_disk_gb` turned out to need a root-module change, and
+finding out why is the reason this was checked rather than reasoned about.
+The root module declared and passed five host globals and not that one, so
+`host_os_disk_gb = 512` in `prod.tfvars` was an undeclared variable that
+OpenTofu warned about and ignored, the fallback stayed the environment
+module's 256, and emptying `host_shapes` would have planned a 512 -> 256 OS
+disk change against the live host. The root module now declares and passes
+it like the rest, defaulting to 512.
+
+The evidence that the whole change is a no-op for host-02 is a resolved
+`local.host_shape` from the real module, before and after, with a
+temporary output and `tofu console` on a copy with the backend stripped:
+host-02's seven attributes are identical and host-01's entry is gone. A
+probe that retypes the `coalesce` chain proves only that the probe matches
+the reasoning, which is the mistake this replaced.
+
+The Prometheus entry goes in the same change, because an entry for a host
+that no longer answers pages `HostScrapeDown` for ever. While editing it,
+host-02's address stopped being a guess: the file said 10.255.0.4 was
+`nextval('host_seq')` arithmetic with .3 skipped for the monitoring server
+and asked for the real value to be read off the host. `wg show wg0
+allowed-ips` on the edge reports .4 against host-02's key and SSH there
+answers `host-02`, so the arithmetic was right and the comment now says so
+as a measurement.
+
+Not done here, on purpose: `nixosConfigurations.host-01` and
+`nix/hosts/host-01.nix` stay. Retiring voids the host's certificate
+(I-432) but a host that must come back joins again with `hosts add --name
+host-01 --reissue`, and that needs its configuration to still exist. They
+are cheap to keep and the one thing that makes a rollback possible.
+**I-970. A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite.** (ci-steps, 2026-11-02.)
+
+I-968's three tests are why `main`'s CI was red for sixteen days. This is why nobody could see what the redness was hiding. In the `go` job, `go test -race ./...` ran before the migrate-rollback check and before `golangci-lint`, and GitHub skips the rest of a job's steps once one fails. So from 2026-10-17 every run of `main` skipped all three, and **a step that never ran has no failure to report, which on the job list is indistinguishable from one that ran and passed.**
+
+The cost was exact and invisible: `ci-green` (I-954) fixed an unchecked `c.Close` that `errcheck` refuses, and that fix could not be exercised on CI at all until the tests went green on 2026-11-02 — sixteen days in which it was correct, unverified, and reported as neither. The rollback check, which is the only thing that proves a migration can go `down 1` on a seeded database, was skipped the same way and for the same length of time.
+
+The three steps now carry `if: ${{ !cancelled() }}`. None of them depends on the tests passing: the rollback check needs a built binary, which `go build` has already provided, and lint reads source. The job still fails on the failing test, so nothing is excused; what changes is that a red suite stops hiding what is behind it.
+
+This is the same fault as I-968 one level up, which is why it is recorded rather than quietly fixed. There the assertion read a proxy for the property; here the *reader* does — "the step did not report a failure" stood in for "the step ran and passed", and the proxy was green while the property was unknown. The lane that found it put it best: a job's steps must be read as "ran and passed", never as "did not fail".
+
+*Not verified by its own push, and deliberately so.* The change is visible only when a step before it fails, and the tests are green now. It is verified by inspection — the YAML parses and the conditions are on the three steps — and it will demonstrate itself on the next red test run, which is the first time it can. Claiming otherwise would be the same error this entry is about.
+
+*The rollback debt is paid, separately from the fix.* Making the step run again says nothing about the sixteen days in which it did not, and six migrations were added in that window: 0028, 0029 (twice, two files), 0031, 0032, 0033. So the sequence was run by hand before the next release, on a throwaway cluster, and further than CI goes — CI does `down 1`, which only ever exercises the newest migration, while this stepped down through all six one at a time to 27 and re-applied them in one `migrate`. Every one reverted and came back, and `db verify` passed. Nothing broken was hiding. The point of running it is that the first time the step fires again should not also be the first time anyone finds out (the lane that found the skip asked for this; it is the right ask).
+
+*Rejected:* moving lint into its own job. It would also work, and it costs a second checkout, a second Go toolchain install and a second `go install` of golangci-lint built from source (I-429) on every run, to buy a separation the condition already gives. *Rejected:* `always()`, which runs the steps when the job was cancelled too, turning a deliberate cancellation into two misleading failures.
+
+**I-982. Hosts boot with `hashdist=0`, so the kernel's large system hash
+tables stay in the linear map.** (hashdist, 2026-11-02.)
+
+host-02 panicked on 2026-11-02 and took all eighteen projects down. The
+cause was not corruption, a tenant, our code, or a known upstream defect:
+it was where the kernel put the dentry hash table.
+
+`alloc_large_system_hash()` defaults `hashdist` to 1 on any NUMA machine
+and then allocates with `vmalloc_huge()` so the table spreads over the
+nodes. host-02 is a `D64s_v7`: two NUMA nodes, 251 GB, and a dentry table
+of "16777216 entries (order: 15, 134217728 bytes, **vmalloc hugepage**)".
+host-01 was a `D16s_v7`: one node, 62.8 GB, "8388608 entries (order: 14,
+67108864 bytes, **linear**)". host-01 ran 6.18.52 and then 6.18.57 for two
+weeks under the same workload with no kernel fault of any kind; host-02
+faulted three times in its first six days. Fleet-wide over 29 days of Loki,
+every kernel Oops belongs to host-02 and to 2026-11-02.
+
+A vmalloc mapping lives in one set of page tables. The linear map is in
+every process's page tables by construction. All three faults were
+*reads of a not-present page* in `__d_lookup` or `__d_lookup_rcu`, each
+reporting `P4D 0` -- an empty page-table entry -- from a different PGD and
+a different CR3, in three unrelated processes: a virtiofsd vring worker at
+13:51:07, `systemd-udevd` at 17:39:14, and `systemd` itself at 17:39:26,
+which is what turned an Oops into `Kernel panic - not syncing: Attempted
+to kill init!`. The table base in RDX was identical and correct in all
+three. Nothing had been overwritten; the table simply was not mapped where
+the faulting process looked. The third fault read four bytes below a 4 MB
+aligned address, that is, backwards across a hugepage boundary.
+
+So `hashdist=0` is not tuning. It returns every host to the one allocation
+path that has never faulted here, and it is the configuration host-01
+proved over two weeks. The cost is NUMA locality on a table we read far
+more often than we populate, which is not a trade worth a panic.
+
+Rejected: `dhash_entries=8388608` to cap the table at host-01's size. It
+would probably also avoid the fault, by keeping the allocation under the
+threshold that pushes it to vmalloc, but it fixes the symptom by accident.
+`hashdist=0` names the mechanism. Rejected: pinning a different kernel.
+There is no 6.18.57 `__d_lookup_rcu` defect that fits -- CVE-2026-43071
+needs `dhash_entries=1` and was fixed in 6.18.24 -- and nixpkgs#560549,
+the closest reported signature, was closed as faulty hardware. Rejected:
+waiting for an upstream fix while the only host in the fleet carries every
+tenant.
+
+This is worth reporting upstream if it recurs: 6.18.57, two NUMA nodes, a
+128 MB hugepage-backed vmalloc dentry table, three `P4D 0` read faults
+from three address spaces. The serial log is the evidence and the only
+copy; see I-983 on why that is itself a problem.
+
+**I-984. A kernel oops reboots the host: `panic_on_oops=1`, `panic=30`.**
+(hashdist, 2026-11-02.) *Supersedes the "panics are not auto-rebooted"
+sentence in RUNBOOK "Host rebooted".*
+
+The old stance was that a stuck host gets restarted from the Azure portal,
+so `panic=` stayed unset. 2026-11-02 showed what that costs. host-02 took
+its first `__d_lookup_rcu` fault at 13:51:07 and kept running for 3 hours
+48 minutes, serving tenant filesystem traffic through virtiofsd with a
+dentry cache it could not reliably read, with no alert, until a third
+fault hit `systemd` and the kernel panicked on "Attempted to kill init!".
+It then hard-hung, because a panic with `panic=` unset does not reboot,
+and eighteen projects stayed down until somebody restarted the VM by hand.
+
+Rebooting at the first oops would have cost minutes. The recovery path
+already exists and is tested: hostd marks every guest that was running as
+`guest_interrupted` on its next start and the api brings them back three
+per host per minute within six hours (I-645).
+
+Staying up to debug preserves nothing, which is the part that settles it.
+There is no kdump on these hosts and `boot.crashDump` is unset, so no
+vmcore is ever written. The whole forensic yield of a long tainted run is
+the serial console text, and the first oops writes that. Everything after
+it is risk with no return.
+
+Read that as an argument *for* kdump, never against this. kdump runs *on*
+panic: `panic_on_oops=1` is what would hand it a crash kernel to capture
+in, so the two compose and the better state is both. Whoever adds
+`crashkernel=` (owed, named in I-980) must not reach for this entry as a
+reason to unset `panic_on_oops` -- that would trade a 30 second reboot for
+the 3 h 48 m window and capture nothing extra, because a host that oopses
+and keeps running never enters the crash kernel at all.
+
+`panic=30` rather than `panic=0`: fluent-bit needs a moment to ship the
+oops to Loki. The panic line itself never arrives, because fluent-bit dies
+with the host -- so any alert on this must match the oops, not the panic
+(I-983).
+
+Rejected: `panic_on_warn`. A WARN is frequently survivable and we would be
+rebooting hosts over harmless warnings. Rejected: leaving it unset and
+relying on the new alert. An alert pages a human who then does what the
+machine could have done in 30 seconds, and the 3 h 48 m window stays open
+for however long it takes someone to answer at 14:00 on a Monday.
+**I-980. A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse.** (oops-alert, 2026-11-02.)
+
+host-02 faulted in the kernel's dentry cache at 13:51:07, ran tainted for 3h49m, and panicked at 17:40:07 when the third fault landed on `systemd` itself (`Attempted to kill init! exitcode=0x00000009`). Eighteen projects were on it and the three that were running died with it. The first alert anyone saw was `GuestdLost` at 17:38 — nine minutes before the end, and about one guest, because what it measures is a vsock connection. Nothing in this repository watched for an Oops.
+
+The fault itself is I-982: the dentry hash table in a `vmalloc` hugepage mapping on a multi-NUMA-node host, read from processes whose page tables did not have it. That matters here only for how this rule is scoped — the exposure follows the host's *shape*, so the next 2-node host is exposed the day it joins, and a rule written as if this were a freak event would be the wrong rule.
+
+The line was not missing. `nix/hosts/fluent-bit.nix` ships the whole host journal, kernel records included, and the lua labels a record with no `_SYSTEMD_UNIT` as `component="kernel"`; all three Oopses were in Loki, at 13:51:07, 17:39:14 and 17:39:26, while nothing was looking at them. Sixty alert rules and not one read a log line.
+
+`KernelOops` is that rule. `count_over_time({component="kernel"} |~ "Oops:|BUG:|general protection fault|Voluntary context switch within RCU" [10m]) > 0`, severity `page`, no `for`. The window between the first fault and the panic was 3h49m, which is long enough to drain the host; after the panic there is nothing left to drain, which is why it pages rather than waiting for the morning. Noise is not the risk: 29 days of Loki hold six kernel Oops lines for the whole fleet, all of them host-02 on this one day.
+
+Matching the Oops and not the panic is load-bearing twice over. Fluent Bit dies with the box, so the panic line never ships at all; and under I-984's `panic_on_oops=1 panic=30` the 30 seconds exist so the Oops reaches Loki before the host reboots itself. Either way the line this rule reads is the only one that leaves the machine.
+
+*Why a second source file.* `ops/alerts.yaml` is parsed by `promtool check rules` and exercised by `promtool test rules`, and a LogQL expression in it fails the whole file, not one rule. So log rules live in `ops/alerts-loki.yaml`: same shape, same uid derivation, same RUNBOOK heading check in `ops/check.sh`, read by the same generator, which now carries a `(type, uid)` per source file and emits a Loki query node (`queryType: instant`) instead of Prometheus's `instant`/`range` booleans. Sending a Loki query with the Prometheus fields is *accepted* by Grafana and evaluated as a range query, which makes `reduce(last)` the count in the last interval rather than the window — a rule that fires a minute late and clears a minute early. The two files are disjoint sets of alerts, not two copies of anything, which is the distinction the single-source-of-truth rule in `alerts-gen.py` is about.
+
+*What this costs on the live Grafana, and the reason that is right.* `ops/grafana/push.py` resolves datasources by type and never invents one (I-944), so a Grafana with no Loki datasource now **fails the push**, naming what to create, where before the rules needed only Prometheus. That is the loud failure. The quiet one it replaces is a rule pointed at a datasource that answers nothing: with `execErrState: OK` it would read green for ever, which is the exact shape of this incident. `ops/grafana/verify.py` resolves and health-checks every datasource the rules query, read out of the generated rules rather than listed, so a rule pointed somewhere unresolvable cannot slip past.
+
+*The one alert with no promtool test, and what replaces it.* promtool evaluates PromQL over a synthetic series and there is no equivalent for LogQL, so this rule's firing is proven end to end instead: `ops/check.sh --grafana` pushes host-02's real `BUG: unable to handle page fault` line into the dev stack's Loki with the labels a host gives it, asks Grafana's own Loki datasource the rule's query, and waits for the rule's state to turn `firing`. An untested log rule would be the thing this entry is about.
+
+*The label trap, recorded because it silently produces nothing.* `host` in Loki is the host_id (`01a1758b-…`); `host_id` in Prometheus (`repose_api_host_state`) is the *name* (`host-02`). The same word, two meanings, and no series anywhere carries both, so there is no join. A selector written as `host="host-02"` matches zero streams and returns `totalLinesProcessed: 0`, which reads exactly like "no oops happened" — it nearly buried this finding during triage. The annotation therefore names `repose-admin hosts list` as the mapping rather than a cleverer query.
+
+*Rejected: a host-side metric.* A textfile-collector counter grepping the journal would fit the existing machinery and be promtool-testable, and it needs a host switch to take effect and duplicates lines already shipped. *Rejected: a Loki-native ruler rule.* The ruler is up and its Prometheus-compatible endpoint answers, but I-956 deleted the Alertmanager, so a Loki rule would have nowhere to send. Grafana does the routing here. *Rejected: matching `Kernel panic`.* Fluent Bit dies with the box, so the panic line never ships; it exists only on the serial console. Every pattern in the rule is one that arrives while the host still lives, which is the only kind it can see. *Rejected: `soft lockup` and `hung_task`.* Usually load, which `HostCPUSaturated` covers; these four patterns are the memory-corruption family, the one that precedes a panic. *Rejected: `execErrState: Error` on this rule.* The absent-datasource case is now a failed push and the answering case is checked by `verify.py`, so the second shouting rule would only add noise on a Loki restart.
+
+*Not done here.* No `kdump` and no `crashkernel` on hosts. `panic=` stays unset in this change and is I-984's to change, so the RUNBOOK step for a host that has already panicked is written to be true either way. This entry buys the 3h49m warning, not the post-mortem: the next panic still leaves a volatile serial blob and a dead process table.
+
+*A correction this entry owes, because it was in its own evidence.* The first reading of the three faults, mine included, was a wild write — "something put a userspace pointer in a dentry hash chain", from the two near-identical `0x790b`/`0x790c` fault addresses. Every one of those Oopses reported `#PF: error_code(0x0000) - not-present page` and `P4D 0`, from a different CR3, at a correct table base. Nothing was overwritten; the table was not mapped where the reader looked, which is I-982. The pointer-shape argument read non-kernel-shaped *values* as evidence of a *writer* while the page-table line that settled it was on screen. Recorded because the pattern — a plausible story from the striking datum, past the dull one that decides it — is the same one that made `host="host-02"` read as "no oops happened" during the same triage.
+
+**I-986. The Docker probe does not cancel its own request before reading
+the answer.** (docker-probe, 2026-11-02.)
+
+`sysdep.SocketDocker.get` took a `context.WithTimeout` and released it
+with `defer cancel()`, under a comment saying "the cancel runs when the
+caller closes the body". It does not. It runs when `get` returns, which is
+before the caller has read a byte. `RunningContainers` decodes the body
+*after* `get` returns, so every count raced that cancel.
+
+It raced and usually won, which is why this lived for weeks. A small
+response is already in the transport's buffered reader by the time the
+decoder asks for it, so it comes out of memory and the dead context is
+never consulted; `/containers/json` with one or three containers is small.
+A longer list has to come off the socket, and then the read fails with
+`decode: context canceled`. The daemon logs the other side of it as
+`status=499 request cancelled by client ... write: broken pipe`, which is
+exactly what host-02 recorded while verista reported `docker_down` for two
+days with Docker running three containers the whole time.
+
+`Ping` never noticed, because it checks the status line and never reads
+the body. That asymmetry is what made the bug legible as "the daemon is up
+and has no containers" rather than as a broken probe, and it is why nobody
+went looking.
+
+The fix is to delete the context and the cancel. `http.Client.Timeout`
+already bounds the whole exchange including the body read, so the
+per-request context added no bound that was not already there -- it only
+added a cancel. The caller's context is still passed, so cancellation from
+above still works, and a test holds that.
+
+Rejected: returning a cleanup func for the caller to defer, which is the
+usual way to keep a per-request context alive across a body read. It is
+more rope than this needs when the client timeout is the real bound
+already, and the next person to add a method would have to remember it.
+Rejected: buffering the body inside `get`. It would work and it hides the
+streaming cost of a call whose response grows with a tenant's container
+count.
+
+The regression test is `TestRunningContainersReadsTheWholeBody`, and the
+size is the whole point of it: 0, 1 and 3 containers pass against the old
+code and 40 fails, which is the shape of the bug rather than a
+reproduction of one instance. `TestPingSurvivesTheSameBug` holds the
+asymmetry and `TestCallerCancellationStillStops` holds that the fix did
+not drop the caller's cancellation while removing the request's own.
+**I-988. `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect.** (oops-sysctl, 2026-11-02.)
+
+I-984 put `panic_on_oops=1` in `boot.kernelParams` to stop a host running tainted after an oops. It shipped in r20261102-6, host-02 was switched and rebooted for it on 2026-11-02, and the parameter is in `/proc/cmdline`. It does nothing. The kernel takes `panic_on_oops` as a **sysctl** (`kernel.panic_on_oops`) and not as a boot parameter, and it says so out loud:
+
+```
+[    0.545031] Unknown kernel command line parameters "panic_on_oops=1", will be passed to user space.
+```
+
+After the reboot that was supposed to set it, `sysctl kernel.panic_on_oops` read **0**. `panic=30` from the same list *is* a kernel parameter and took: `kernel.panic` read 30. Only the one name appears in the Unknown list, so `hashdist=0` was recognised too — I-982 is unaffected and its dentry table came up `linear` as intended.
+
+It is now `boot.kernel.sysctl."kernel.panic_on_oops" = 1`, beside the other host sysctls, and the kernel parameter is gone.
+
+- **A sysctl is the better home anyway, for two reasons beyond correctness.** It applies during a switch's activation, so it needs no reboot of its own — the fix went out on a switch while the hosts stayed up. And `sysctl kernel.panic_on_oops` answers whether it is really on, which is the question the command line could not: `/proc/cmdline` showed the parameter present and the behaviour absent.
+- **The kernel-parameter spelling that works is `oops=panic`**, and it was rejected: it is one more thing that is right only if spelled exactly, in a place that reports nothing when it is wrong, to buy a setting that applies one reboot earlier than the sysctl does.
+
+*How it was caught, which is the part worth keeping.* Not by review and not by a test — by grepping the booted host's `dmesg` for oops patterns while confirming something else, and reading the four matches instead of trusting the count. Three of them were the command line quoting the parameter back; the fourth was the kernel refusing it. A check of `/proc/cmdline`, which is what the branch and I both ran, says the parameter is there and is silent about whether it means anything. This is I-968's shape in a third costume: `/proc/cmdline` is a proxy for "the kernel honoured this", it was green, and the property was absent. The honest check for any kernel parameter is the behaviour it is supposed to produce — `linear` in the dentry line for I-982, a non-zero sysctl here — and `dmesg | grep "Unknown kernel command line"` is the cheap general guard, now in `docs/CHECKLIST.md`.
+
+*Not fixed here:* nothing asserts this. A test that boots a host configuration and greps its dmesg for the Unknown line would catch the next misspelled parameter, and `nix/hosts/tests` is where it would go.
+
+**I-990. A thaw is also the host's blind window, and nothing said so.**
+(thaw-window, 2026-11-02.)
+
+`Reconcile` is synchronous and sits ahead of every listener in
+`app.Run`: the api stream, the metrics server and the control socket all
+start after it returns, and `ThawAll` runs inside it. So for the whole of
+a post-reboot thaw a healthy host is invisible to **everything that
+watches it at once** -- the api has no stream and reports the host
+unreachable, Prometheus has nothing to scrape, and the control socket
+does not exist. On 2026-11-02 host-02 was `active` at 21:32:53 and
+started its listeners at 21:36:09: **3 minutes 16 seconds** in which the
+api could not see the only host in the fleet, and `HostUnreachable`
+exists to page about precisely that.
+
+The window is bounded -- `UnwrapTimeout + RestoreTimeout +
+atRate(total image bytes, WriteRate)`, I-796's arithmetic -- and that
+bound is right for the thaw. What nobody had noticed is that it is also
+the blind window, and it is sized by how much guest memory was frozen,
+not by anything we would choose for an observability gap. Two guests and
+15.6 GB bought 3m16s. A full host-02 holds an order of magnitude more
+memory than that, and a restore that fails spends its whole budget rather
+than returning early, as verista's did.
+
+What is fixed here is only the lie an operator was told. `ErrNotRunning`
+said "hostd is not running (no control socket)" whenever the socket was
+absent, which during a thaw it always is. On the night, the first reading
+of that message was "hostd is down", stated before checking, while the
+unit was `active`, `Result=success`, `ExecMainStatus=0`, one minute into
+startup. The client genuinely cannot tell the two apart -- an absent
+socket is an absent socket -- so the message now names both and points at
+`systemctl is-active hostd`, which can.
+
+**Deliberately not fixed here: the ordering.** Starting the listeners
+before `Reconcile` is the obvious move and it is not a one-line change,
+because the invariant in the way is a real one: guest state is reconciled
+from `systemctl list-units`, LVM and bbolt at start and *reported in
+Hello*, so a stream that connects before reconcile would tell the api
+guest states we have not yet checked, and that is worse than silence. The
+three listeners are not equal on this point -- metrics and the control
+socket could answer "reconciling, N images to read" without asserting any
+guest's state, while the stream cannot send Hello early at all -- and
+deciding which may come up when is a design question that deserves
+daylight rather than the end of an incident. It should also be measured
+against simply reporting the window: a host that says "I am thawing, for
+up to N seconds" is most of the value, and `HostUnreachable` could hold
+its page for a host whose last word was that.
+
+Rejected: lowering `RestoreTimeout` to shrink the blind window. It would
+trade a tenant's restored memory for an operator's visibility, which is
+the wrong way round -- the whole point of I-652 is that an overnight run
+survives a host restart. Rejected: making `ErrNotRunning` guess by
+stat-ing the unit. The control client is used where systemd may not be
+(tests, the fakes) and a wrong guess reads worse than an honest "one of
+these two".

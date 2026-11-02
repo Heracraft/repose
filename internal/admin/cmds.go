@@ -717,12 +717,21 @@ func (e *Env) projects(ctx context.Context, args []string) error {
 		if _, err := e.audited(ctx, "project_move", pid.String(), map[string]any{"to": h.Name}); err != nil {
 			return err
 		}
-		if p.State == "running" {
+		// A move must give the project back in the state it was in. The
+		// old code read p.State to decide whether to stop-and-snapshot
+		// and then passed start=true regardless, so moving a stopped
+		// project started it. On an exempt account that is twenty
+		// minutes of noise; on a paying one it bills hours nobody asked
+		// for and can breach the plan's running-memory cap, because a
+		// host migration moves every project and Solo may run one `large`
+		// (DECISIONS I-964, found moving host-01's sixteen on 2026-11-02).
+		wasRunning := p.State == "running"
+		if wasRunning {
 			if _, err := e.enqueue(ctx, ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Params: map[string]any{"snapshot": true}, Phases: ops.PlanStop()}, true); err != nil {
 				return err
 			}
 		}
-		return e.restore(ctx, p, uuid.Nil, &h.ID, true)
+		return e.restore(ctx, p, uuid.Nil, &h.ID, wasRunning)
 	case "restore":
 		fs, err := flagsFor("restore", args[1:], func(fs *flag.FlagSet) {
 			fs.String("snapshot", "", "snapshot id")
