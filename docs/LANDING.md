@@ -40,7 +40,8 @@ headline starting under the logo. In order:
    ("Your code, tools and logins sit on a machine of its own, ...");
    "Get started" and "Copy install command" level with the lead's first
    line in the right column from 1024px; the install command in mono
-   under them on one line, exactly what the button copies. Under the copy, the hero
+   under them on one line at 12px, exactly what the button copies,
+   scrolling under a fade where its column is narrower. Under the copy, the hero
    picture (`landing/Hero.svelte`) on a stage the frame's width: the
    agent wrecks the cloud machine and a snapshot restores it (I-843).
 2. **"Your laptop's setup, in one command"** (the owner's I-772 heading
@@ -49,9 +50,13 @@ headline starting under the logo. In order:
 3. **"A cloud machine that feels like your own box"** (`#features`,
    I-961). Four cells, each a picture (ComesBack, Localhost, Browser,
    Editor) over a serif claim, one paragraph, and the command that does
-   it in mono with no copy button, since a visitor without the CLI cannot
-   run it. The commands sit at the foot of their cells, so the two in a
-   row stand level.
+   it in mono with no `$` and no copy button, since a visitor without the
+   CLI cannot run it. The cells are ruled like the plans, with no gap: a
+   hairline over each, and from 1024px a 2x2 with a vertical hairline in
+   the middle of the column gap, so the right cells start on the column
+   line. Below 1024px they are one column, each cell at the 2x2's 34rem.
+   The commands sit at the foot of their cells, so the two in a row stand
+   level.
 4. **"The agents you use, and the tools they need, on first boot"**, with
    "All agents" and "Everything installed" side by side at the right end
    of the headline's row (under it on a phone), then the Ready picture.
@@ -72,11 +77,12 @@ headline starting under the logo. In order:
    I-663), as cells split by hairlines with no card edge.
 7. **Questions.** Five a solo founder asks before trying it, each one a
    reason to: why not skip permissions on the laptop (what the agent can
-   reach there and here), closing the laptop while the agent works
-   (notifications, answering from the phone), the agent wrecking the
-   machine (snapshots), three agents on three approaches (`repose fork`),
-   and why not set up a server yourself. Every answer is from the docs
-   (secrets, notifications, lifecycle, sync). No setup trivia (where a
+   reach there and here), closing the laptop while the agent works (it
+   keeps working; you attach again; no notifications, per "What we
+   sell"), the agent wrecking the machine (the snapshot schedule), three
+   agents on three approaches (`repose fork`), and why not set up a
+   server yourself. Every answer is from the docs (secrets, lifecycle,
+   sync). No setup trivia (where a
    login lives, Windows, how commits come back, what a stopped machine
    costs): those belong in the docs and give a visitor no reason to try
    it (owner, 2026-10-21).
@@ -119,8 +125,15 @@ Every picture stands on one stage (I-961). A stage that ends its band
 rests on the band's rule (see "The page"), its picture inset 24px (20 from
 640 to 1023, 12 on a phone) with a 48px floor for the pause button. A grid
 cell's stage is closed on all four sides, 20rem tall, with its windows
-inset alike on each side, so nothing in it is cut at the edge or faded:
-the Editor's statusline and the Browser's agent log show whole. The
+inset alike on each side, so no window is cut at the stage's edge: the
+Editor's statusline keeps its right segment whole and the Browser's
+agent log shows whole. The four grid pictures share one type size:
+window chrome and terminals at 12px mono, 11px on a phone. A capture
+that is wider than its window (the Editor's 78 columns) is cropped on
+the right into a fade, as a terminal is, never shrunk to fit; a
+captured page is cropped in its white space, never inside a sentence.
+ComesBack's snapshots stand in a window as tall as the machine, as the
+hero's rail does. The
 Browser and the Editor have no window head of their own, since their
 captured toolbar and nvim's tab bar are their chrome; "your cloud machine"
 heads the hero's, the setup picture's, ComesBack's, Localhost's and
@@ -137,7 +150,8 @@ turned back (`invert(0.9) hue-rotate(180deg)`), so the app reads as a
 dark page beside the dark windows (I-961).
 
 Each looping picture has a pause button (WCAG 2.2.2) on the floor under
-it. On a touch screen the button is a 44px target with the 28px chip
+it, named after its picture ("Pause the ports picture"). Ready does not
+loop, so its stage has no floor: its inset is the same on four sides. On a touch screen the button is a 44px target with the 28px chip
 drawn in its middle.
 
 `landing/Terminal.svelte` is no longer on the landing; `/design` still
@@ -148,7 +162,10 @@ shows it.
 The install command shows twice, under the hero's buttons and as the
 first of the three steps: the owner's call (I-843), so a reader who
 scrolled past the hero starts from one list. `repose run` shows in the
-pictures and in the run step; the cells carry other commands. Plan
+pictures and in the run step; the cells carry other commands. The
+snapshot story has one telling per place: the hero shows the wreck and
+the restore, the ComesBack cell says what a snapshot puts back that git
+cannot, and FAQ 3 gives the schedule (nightly, at each stop, your own). Plan
 figures come from `lib/plans.ts`, seat counts from the api; none is typed
 into the page.
 
@@ -168,7 +185,9 @@ into the page.
   or, in a picture, from a capture or the CLI source. Crop, never retype
   or invent. A capture's colours may be mapped by role onto the
   terminals' palette, and the Browser's inverted in the dark scheme
-  (I-961); its text and layout never change.
+  (I-961); its text and layout never change, with one exception: an
+  internal checkout or session name in a capture reads `your-project`,
+  the pictures' checkout, at the same column width (I-961).
 - Real apps and real projects, captured from real runs. No invented
   sample apps (`todo-app`), no drawn fake UIs standing in for real ones.
 - A partial imitation of a real tool is worse than none: show the real
@@ -214,8 +233,8 @@ into the page.
 
 ## Where terminals are allowed
 
-Terminal UIs appear only in the "On every machine" grid and in the agents
-picture (I-843, restoring main's rule). The hero and the setup picture
+Terminal UIs appear only in the feature grid (`#features`) and in the
+agents picture (I-843, restoring main's rule). The hero and the setup picture
 draw windows, not terminal output; the commands section uses light
 command rows.
 
@@ -267,7 +286,7 @@ place of an observer of its own:
   always shown. It stands on the floor under its picture at the right
   edge, never over a head or content (I-673, I-961): in the stage's 48px
   floor under the hero and OneCommand, and at the right end of a grid
-  cell's title row. Its hit area is 44px. A paused picture
+  cell's title row. Its name says which picture it pauses. Its hit area is 44px. A paused picture
   stays on its frame through scrolling out and back until play is
   pressed. A pointer moving inside a picture, a press on it, or focus
   inside it holds the frame too, and the loop resumes 2s after they

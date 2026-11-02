@@ -217,7 +217,10 @@
 				tl.pause();
 				tl = null;
 				fresh = true;
+				// Off screen the loop waits, but the wires' box is measured
+				// now, so the old width never widens the page.
 				if (visible) cycle();
+				else measure();
 			});
 		});
 
@@ -911,7 +914,7 @@
 {/snippet}
 
 <div class="hero-frame" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="wreck and restore" />
 	<div class="hero-pic" role="img" aria-label={label} aria-describedby="hero-story" bind:this={pic}>
 		<p id="hero-story" hidden>{story}</p>
 
@@ -1179,17 +1182,23 @@
 	.sys {
 		padding-left: 12px;
 	}
+	/* As wide as its longest value ("3,532 rows"), in tabular figures, so
+	   the count's changing width moves no box (no layout shift). */
 	.val {
 		position: relative;
 		display: grid;
 		justify-items: end;
+		min-width: calc(10ch + 8px);
 		margin-left: auto;
 		padding-left: 8px;
 		font-family: var(--font-mono);
 		font-size: 12px;
+		font-variant-numeric: tabular-nums;
 	}
 	.val > span {
 		grid-area: 1 / 1;
+		justify-self: stretch;
+		text-align: right;
 	}
 	/* The still frame is the restored machine: the wreck's values are
 	   drawn only by the timeline, which sets them inline. */
@@ -1258,11 +1267,13 @@
 		display: flex;
 		flex: none;
 	}
+	/* The agent's mark in ink, as Ready draws the agents: red is the
+	   wreck's alone. */
 	.agent {
 		position: relative;
 		display: grid;
 		flex: none;
-		color: var(--claude);
+		color: var(--pic-ink);
 	}
 	.agent svg {
 		grid-area: 1 / 1;
@@ -1860,8 +1871,14 @@
 			flex: 1;
 			height: auto;
 		}
+		/* The globe is smaller than the row, so it clears the rail's foot
+		   above it by 10px and stays centred on the wire. */
 		.net {
 			height: calc(var(--agent) + 2px);
+		}
+		.globe {
+			width: 24px;
+			height: 24px;
 		}
 		/* Each command's wire lands on the machine's wall at a row: repose
 		   run at the repo row (the laptop's first row), yours at the

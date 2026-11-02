@@ -261,7 +261,7 @@
 {/snippet}
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="ports" />
 	<div
 		class="lh"
 		bind:this={pic}
@@ -401,6 +401,9 @@
 	   depends on how many capture rows the pane shows, its aspect ratio.
 	   Rows, from the captures: the app's lines end at 85 (Job Alerts),
 	   306 (the headline), 409 and 467 (the paragraph), 542 (Apply...);
+	   the paragraph's first line starts near 370, so a crop that cannot
+	   hold the paragraph whole ends at 340 to 345, under the headline,
+	   never inside a sentence;
 	   Chromium's at 308 (the title), 385 (refused to connect), 452
 	   (Try:), 555 (the buttons). The phone's (640px) captures share the
 	   app's rows, and Chromium's sit 8 to 24 rows higher. */
@@ -433,9 +436,11 @@
 			--b: 490;
 		}
 	}
+	/* Too wide for the whole paragraph: the crop ends under the headline,
+	   and the page's ground fills above its nav. */
 	@container (min-aspect-ratio: 3165/1000) {
 		.home img {
-			--b: 430;
+			--b: 345;
 			--cap: 9999px;
 		}
 	}
@@ -446,7 +451,7 @@
 	}
 	@container (min-aspect-ratio: 3692/1000) {
 		.home img {
-			--b: 350;
+			--b: 340;
 		}
 	}
 	@container (min-aspect-ratio: 4645/1000) {
@@ -483,7 +488,7 @@
 	@container (min-aspect-ratio: 2813/1000) {
 		@media (max-width: 479px) {
 			.page .home img {
-				--b: 430;
+				--b: 345;
 				--cap: 9999px;
 			}
 		}
@@ -498,7 +503,7 @@
 	@container (min-aspect-ratio: 3282/1000) {
 		@media (max-width: 479px) {
 			.page .home img {
-				--b: 350;
+				--b: 340;
 			}
 		}
 	}
@@ -546,7 +551,7 @@
 		background: var(--t-bg);
 		color: var(--t-fg);
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 12px;
 		font-variant-ligatures: none;
 		line-height: 16px;
 	}

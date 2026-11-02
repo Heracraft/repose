@@ -12,11 +12,11 @@
   `tmux capture-pane -p -e -N` and converted to styled runs verbatim; the
   block cursor is the terminal's own, at the cell tmux reported. It fills
   a closed window of its own, with no head: nvim's tab bar and statusline
-  are its chrome, and the cell's title says where it runs (I-961). From
-  640 wide the font is sized so all 78 columns fit, so every line ends
-  where nvim cut it and the statusline keeps its clock (F18); on a phone
-  it stays 8.4px and the screen crops on the right, as a terminal would
-  (I-397).
+  are its chrome, and the cell's title says where it runs (I-961). It is
+  set at 12px, the grid's one picture size (11px on a phone), and crops
+  on the right where the window is narrower than its 78 columns, as a
+  terminal would, while the statusline's right segment (position, line
+  and column, clock) stays whole at the right edge (F18, I-397, I-961).
   Two explorer rows read "education": two files whose names nvim cut at
   the explorer's 9 columns. The machine is the owner's and not reachable
   from here to recapture with a wider explorer, and a crop cannot drop a
@@ -477,7 +477,9 @@
 		'╰': 'ur r',
 		'╯': 'ul',
 		'▎': 'q',
-		'▕': 'e'
+		'▕': 'e',
+		'\ue0b0': 'pr',
+		'\ue0b2': 'pl'
 	};
 	type Piece = { t: string; s: number; cell: boolean; cursor: boolean; box?: string };
 	// The statusline's right segment (from its first \ue0b2 separator: the
@@ -575,7 +577,7 @@
 		min-height: 0;
 		background: var(--t-bg);
 		font-family: 'Editor Nerd Symbols', var(--font-mono);
-		font-size: min(11px, calc(100cqw / 46.8));
+		font-size: 12px;
 		font-variant-ligatures: none;
 		color: var(--t-fg);
 	}
@@ -597,18 +599,28 @@
 		min-width: 0;
 		overflow: hidden;
 	}
+	/* Where the left part gives way, it fades out before the right one. */
+	@container (max-width: 560px) {
+		.sl-l {
+			mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+		}
+	}
 	.sl-r {
 		flex: none;
 	}
-	/* On a phone, 78 columns would be 7px. Below sm the whole capture is
-	   drawn at 8.4px instead and crops on the right, so the code keeps
-	   about 40 columns (I-397). A crop from the left was tried and
-	   dropped: no crop leaves only the explorer's icons, since the top
-	   folders' icons sit in its first columns, and cutting through them
-	   left name fragments. */
+	/* Where the window is narrower than 78 columns, the rows nvim drew
+	   past its edge run into a fade, as Ready's do, so none reads as cut
+	   mid-word; the statusline keeps its right segment whole instead. On
+	   a phone the capture sets at 11px. A crop from the left was tried
+	   and dropped: no crop leaves only the explorer's icons, since the
+	   top folders' icons sit in its first columns, and cutting through
+	   them left name fragments. */
+	.ln:not(.sl) {
+		mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+	}
 	@media (max-width: 639px) {
 		.screen {
-			font-size: 8.4px;
+			font-size: 11px;
 		}
 	}
 	/* One terminal cell: keeps the grid whatever font draws the glyph. */
@@ -708,6 +720,21 @@
 		bottom: 0;
 		width: 12.5%;
 		background: currentColor;
+	}
+	/* The statusline's powerline separators, drawn in CSS as the box
+	   drawing is: a triangle filling its one cell in the glyph's colour,
+	   on the cell's ground, so no font's own advance spills them over
+	   the next segment. */
+	.pr::before,
+	.pl::before {
+		inset: 0;
+		background: currentColor;
+	}
+	.pr::before {
+		clip-path: polygon(0 0, 100% 50%, 0 100%);
+	}
+	.pl::before {
+		clip-path: polygon(100% 0, 0 50%, 100% 100%);
 	}
 	.cur {
 		background: var(--t-fg) !important;

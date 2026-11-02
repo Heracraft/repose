@@ -36,6 +36,7 @@ test('every looping picture has a pause button the keyboard reaches', async ({ p
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await load(page);
 	const seen = new Set<string>();
+	const names = new Set<string>();
 	for (let i = 0; i < 400 && seen.size < 5; i++) {
 		await page.keyboard.press('Tab');
 		const frame = await page.evaluate(() => {
@@ -47,7 +48,11 @@ test('every looping picture has a pause button the keyboard reaches', async ({ p
 		if (frame === null || seen.has(frame)) continue;
 		seen.add(frame);
 		const button = page.locator('button.pic-pause:focus');
-		await expect(button).toHaveAccessibleName('Pause animation');
+		// Each names its picture, so five buttons are told apart.
+		const name = await button.getAttribute('aria-label');
+		expect(name).toMatch(/^Pause the .+ picture$/);
+		expect(names.has(name!), name!).toBe(false);
+		names.add(name!);
 		await expect(button).toHaveCSS('opacity', '1');
 		await expect(button).toHaveAttribute('aria-pressed', 'false');
 		await page.keyboard.press('Space');

@@ -8,6 +8,7 @@
 	import { signinHref, type ReturnPath } from '$lib/signin';
 	import { INSTALL_COMMAND } from '$lib/links';
 	import { publicSeats } from '$lib/api/client';
+	import { tabStopWhenScrolls } from '$lib/scroller';
 	import type { PublicSeats } from '$lib/api/types';
 	import { PLANS } from '$lib/plans';
 	import PlanCells from '$lib/components/PlanCells.svelte';
@@ -38,6 +39,12 @@
 			history.replaceState(null, '', location.pathname);
 		}
 	});
+
+	/** The hero's install line, scrolled to its end, shows its last characters unfaded. */
+	function markEnd(e: Event) {
+		const el = e.currentTarget as HTMLElement;
+		el.dataset.end = String(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+	}
 
 	// Each row shows exactly what its Copy puts on the clipboard, and that
 	// runs on a visitor's laptop: the row's title names the folder.
@@ -112,7 +119,10 @@
 					{@render authAction('Get started', 'Open the dashboard')}
 					<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
 				</div>
-				<p class="install">{INSTALL_COMMAND}</p>
+				<pre
+					class="install"
+					use:tabStopWhenScrolls={'Install command'}
+					onscroll={markEnd}>{INSTALL_COMMAND}</pre>
 			</div>
 		</div>
 		<div class="stage hero-stage">
@@ -133,7 +143,7 @@
 		</div>
 	</section>
 
-	<section class="band" id="features">
+	<section class="band band--ruled" id="features">
 		<div class="sec-head">
 			<h2 class="hk-h2">A cloud machine that feels like your own box</h2>
 		</div>
@@ -142,9 +152,10 @@
 				<ComesBack />
 				<h3 class="item-title">Let it break the whole machine</h3>
 				<p class="copy">
-					repose snapshots the machine nightly, and you can take one yourself any time.
+					git brings back only the files it tracks. A snapshot puts back the whole disk, your
+					uncommitted edits and the database included.
 				</p>
-				<p class="cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
+				<p class="cmd">repose snapshots create</p>
 			</li>
 			<li>
 				<Localhost />
@@ -153,21 +164,25 @@
 					Ports from 1024 up appear on your localhost while you're attached, so cookies and OAuth
 					redirects behave as they do locally. Detached, you forward one by hand.
 				</p>
-				<p class="cmd"><span aria-hidden="true">$</span> repose open 5173</p>
+				<p class="cmd">repose open 5173</p>
 			</li>
 			<li>
 				<Browser />
 				<h3 class="item-title">Watch the agent's browser, and take over</h3>
-				<p class="copy">Step in for a captcha or a passkey in the browser the agent is driving.</p>
-				<p class="cmd"><span aria-hidden="true">$</span> repose browser</p>
+				<p class="copy">
+					Watch each Playwright call land on the page, and type into it yourself where it needs a
+					person, such as a captcha or a passkey.
+				</p>
+				<p class="cmd">repose browser</p>
 			</li>
 			<li>
 				<Editor />
 				<h3 class="item-title">Open it in your editor</h3>
 				<p class="copy">
-					Each machine is an SSH host, so VS Code, Cursor and Zed open it over SSH.
+					Each machine is an SSH host. Neovim runs on it, and VS Code, Cursor and Zed open it from
+					your laptop.
 				</p>
-				<p class="cmd"><span aria-hidden="true">$</span> repose code your-project</p>
+				<p class="cmd">repose code your-project</p>
 			</li>
 		</ul>
 	</section>
@@ -183,7 +198,7 @@
 				>
 			</p>
 		</div>
-		<div class="stage">
+		<div class="stage stage--still">
 			<Ready />
 		</div>
 	</section>
@@ -238,10 +253,10 @@
 						>Why not skip permissions on my laptop?{@render plus()}</summary
 					>
 					<p class="copy">
-						There the agent can read whatever you can: your SSH keys, your other repositories, the
-						sessions in your browser. On repose it gets a machine holding one project and the logins
-						you chose to copy. Nothing on that machine can open a connection to your laptop, and
-						your other projects are separate machines it can't reach.
+						There the agent can read whatever you can, from your SSH keys to the sessions in your
+						browser. On repose it gets a machine holding one project and the logins you chose to
+						copy. Nothing on that machine can open a connection to your laptop, and your other
+						projects are separate machines it can't reach.
 					</p>
 				</details>
 				<details>
@@ -249,18 +264,16 @@
 						>Can I close my laptop while the agent works?{@render plus()}</summary
 					>
 					<p class="copy">
-						Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
-						wants a decision from you, you get an email, a push on your phone through ntfy, or a
-						Google Chat card, and you can answer its question from there.
+						Yes. Detach and close it; the agent keeps working on the machine, and you attach again
+						to see where it got to.
 					</p>
 				</details>
 				<details>
 					<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary
 					>
 					<p class="copy">
-						You restore a snapshot. repose takes one every night and at every stop, and
-						<code>repose snapshots create</code> takes one before something risky. A restore brings back
-						the disk whole: code, databases, installed tools and logins made on the machine.
+						You restore a snapshot from before it happened. repose takes one every night and at
+						every stop, and you can take your own before something risky.
 					</p>
 				</details>
 				<details>
@@ -279,9 +292,8 @@
 						>Why not rent a server and set it up myself?{@render plus()}</summary
 					>
 					<p class="copy">
-						You can, and you redo its setup for each project: the CLIs, the GitHub login, the
-						<code>.env</code> files. The nightly snapshots and the port forwards are yours to build as
-						well.
+						You can, and you redo that setup for each project. The nightly snapshots and the port
+						forwards are then yours to build as well.
 					</p>
 				</details>
 			</div>

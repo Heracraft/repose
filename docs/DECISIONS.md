@@ -27685,8 +27685,9 @@ judges' grafts and its named defects were then worked in.
   light page and dark on the dark one, so no black slab sits on the light
   page. The captures' colours are mapped by role (one-dark and xterm-256
   by their ANSI tables, Tokyo Night by a role map); their text and layout
-  are untouched. The Browser's captures exist only in the light scheme,
-  and the owner's machine is not reachable to take a dark set, so in the
+  are untouched, but for the checkout name (see "Review round 1"). The
+  Browser's captures exist only in the light scheme, and the owner's
+  machine is not reachable to take a dark set, so in the
   dark scheme they are drawn with `invert(0.9) hue-rotate(180deg)`, which
   the critics preferred to a bright block. A real dark capture replaces
   it when one can be taken.
@@ -27703,3 +27704,29 @@ judges' grafts and its named defects were then worked in.
 - *Left as they were.* The hero picture is still about 1000px tall on a
   phone, and the Localhost capture's headline still reads larger than the
   cell's title; neither can change without redrawing a picture.
+- *Review round 1.* The feature grid joins the ruled system: four cells
+  split by hairlines like the plans, with no gap, the vertical rule in the
+  middle of the column gap so the right cells start on the column line,
+  and the band ends on its last row. Below 1024px the grid and the plans
+  are one column, as every other section is; a one-column cell keeps the
+  2x2's 34rem, so the pictures draw at one size at every width. The grid
+  pictures share one type size: their chrome and terminals at 12px mono
+  (11px on a phone), the Editor's capture at 12px cropped on the right
+  into a fade instead of shrunk to fit its 78 columns, its powerline
+  separators drawn in CSS like its box drawing. The Browser loses its
+  `repose browser` chip, which the cell's command line already names.
+  ComesBack's snapshots stand in a window as tall as the machine, as the
+  hero's rail does, and on a phone the two tiles share the row under it.
+  The Localhost crop ends under the headline where the paragraph cannot
+  show whole. The cells' commands lose their `$`, as the steps did. The
+  copy tells each fact once: the ComesBack cell says what a snapshot
+  restores that git cannot, and FAQ 3 the schedule (nightly, at each
+  stop, your own). FAQ 2 no longer names notifications, which LANDING.md
+  "What we sell" rules out. The OneCommand capture is cropped to the
+  branch's two commits: master's base commit was a note about the app's
+  own UI and told a stranger nothing. A capture's internal checkout name
+  may read `your-project`, the pictures' checkout, at the same column
+  width (the Editor's explorer, Localhost's and Ready's tmux bars); this
+  is the one text change a capture takes. Each pause button is named
+  after its picture. The hero's install line keeps 12px and scrolls
+  under a fade where its column is narrower.

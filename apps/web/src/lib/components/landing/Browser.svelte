@@ -41,8 +41,8 @@
   frame instead of crossfading. The still frame is the loop's last beat
   before the seam, so a first cycle starting from it begins at the seam.
 
-  The pan of the page, the blue focus box, the command chip and the pointer
-  are the illustration; everything inside the page and terminal is captured.
+  The pan of the page, the blue focus box and the pointer are the
+  illustration; everything inside the page and terminal is captured.
   anime.js plays it when the card is on screen; without JS, or under
   prefers-reduced-motion, the last beat is shown still, and turning reduced
   motion on while the page is open stops the loop there. Everything moves
@@ -127,13 +127,16 @@
 	// Where the pointer is drawn: in the text box, under the text (the real
 	// click, at y 350, sits below the frame's crop).
 	const POINTER = { x: 330, y: 296 };
+	// Where your pointer enters, from the page's top right (capture pixels
+	// under the toolbar): the command that opens this view is the cell's
+	// own line, so the picture draws no chip for it.
+	const YOU = { x: 520, y: 30 };
 	// Where the page sits, in capture pixels from its top: each stop puts
 	// the viewport's top edge in the page's white space (nav: under the
 	// app's name, above its links; typed and you: under "Say it your way",
 	// above Write and Record; bug: 12 capture pixels above the page's top,
 	// so the ring round Bug clears the toolbar's line by 8 instead of
-	// sitting on it, over the page's own ground), and at typed and you
-	// the chip lands on the page's empty right side, over no text.
+	// sitting on it, over the page's own ground).
 	const PAN = { nav: 52, typed: 120, bug: -12, you: 120 };
 	// The seam (ms): the beat where the frame equals the still frame, and
 	// where a first cycle starts when the still frame is on screen.
@@ -178,7 +181,7 @@
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
 		const one = (s: string) => pic.querySelector<HTMLElement>(s)!;
-		const moved = () => [pic, ...q('.layer, .ring, .pic-chip, .pointer, .rows, .tr')];
+		const moved = () => [pic, ...q('.layer, .ring, .pointer, .rows, .tr')];
 		// The style attributes the markup gave them (a row's captured
 		// background), so a stop puts back exactly those.
 		const markup = new Map(moved().map((el) => [el, el.getAttribute('style')]));
@@ -200,7 +203,6 @@
 				if (style === null) el.removeAttribute('style');
 				else el.setAttribute('style', style);
 			}
-			one('.pic-chip').classList.remove('fire');
 			q('.tr').forEach((r) => r.classList.remove('new'));
 		}
 
@@ -220,8 +222,6 @@
 					utils.set(q('.l-blank, .tb-blank'), { opacity: 1 });
 					utils.set(pic, { '--pan': PAN.nav });
 					utils.set(one('.ring'), { opacity: 0, ...ring(URLBAR, TB) });
-					utils.set(one('.pic-chip'), { opacity: 0, scale: 0.85 });
-					one('.pic-chip').classList.remove('fire');
 					utils.set(one('.pointer'), { opacity: 0 });
 					utils.set(rowEls, { opacity: 0 });
 					utils.set(rowEls[0], { opacity: 1 });
@@ -296,20 +296,12 @@
 					t.add(one('.ring'), { opacity: 0, duration: 300, ease: 'inQuad' }, 8800);
 					rowEls.forEach((r) => t.call(() => r.classList.remove('new'), 8800));
 					t.add(rowEls, { opacity: REST, duration: 500, ease: 'outQuad' }, 8800);
-					t.add(
-						one('.pic-chip'),
-						{ opacity: [0, 1], scale: [0.85, 1], duration: 320, ease: 'outBack' },
-						9000
-					);
-					t.call(() => one('.pic-chip').classList.add('fire'), 9450);
-					t.call(() => one('.pic-chip').classList.remove('fire'), 9950);
 					pan(PAN.you, 9300, 900);
 
-					const k = pic.querySelector('.br')!.getBoundingClientRect().width / 574;
-					const c = one('.pic-chip').getBoundingClientRect();
-					const b = pic.querySelector('.br')!.getBoundingClientRect();
-					const sx = (c.left - b.left + c.width * 0.3) / k;
-					const sy = (c.bottom - b.top - 4) / k;
+					// Your pointer comes in from the page's empty right side,
+					// under the toolbar, over no text (capture pixels).
+					const sx = YOU.x;
+					const sy = TB + YOU.y;
 					const ex = POINTER.x;
 					const ey = TB + POINTER.y - PAN.you;
 					t.add(one('.pointer'), { '--px': sx, '--py': sy, duration: SWAP }, 0)
@@ -335,11 +327,11 @@
 					// the first tick).
 					t.call(() => at || picture.looped(), SEAM - 1);
 					swap('.l-nav, .l-typed, .l-bug, .l-t0, .l-t1', SEAM, 0);
-					t.add(
-						q('.l-t2, .pic-chip, .pointer'),
+					t.add(q('.l-t2, .pointer'), { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM).add(
+						rowEls,
 						{ opacity: 0, duration: 450, ease: 'inQuad' },
 						SEAM
-					).add(rowEls, { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM);
+					);
 					swap('.tb-live', SEAM + 450, 0);
 					t.add(list, { y: offset(0), duration: SWAP }, SEAM + 450).add(
 						rowEls[0],
@@ -377,7 +369,7 @@
 </script>
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="browser" />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="shot-win bw" aria-hidden="true">
@@ -462,7 +454,6 @@
 					</div>
 				</div>
 				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
-				<span class="pic-chip">repose browser</span>
 				<svg
 					class="pointer"
 					viewBox="0 0 12 18"
@@ -503,8 +494,8 @@
 	/* Not named `stage`: landing.css gives .landing .stage a hairline and
 	   a 12px radius, which would ring this picture inside its cell. */
 	.bstage {
-		/* The chip and the ring sit on the captured page, which follows the
-		   page's scheme (see the filter below), so they take its accent. */
+		/* The ring sits on the captured page, which follows the page's
+		   scheme (see the filter below), so it takes its accent. */
 		--chip: var(--pic-accent);
 		/* The log follows the scheme too (the terminals' palette). */
 		--on-log: var(--pic-accent);
@@ -551,7 +542,7 @@
 	/* The captures are the light scheme's only (I-669). In the dark
 	   scheme they are drawn inverted with their hues turned back, so the
 	   app reads as its own dark theme beside the dark windows instead of a
-	   white block; the ring, the chip and the pointer are drawn over them
+	   white block; the ring and the pointer are drawn over them
 	   untouched. */
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not(.light):not([data-theme='light'])) :is(.tb, .vp) {
@@ -639,20 +630,6 @@
 		}
 	}
 
-	/* You: the command, and your pointer in the same window. The grid's
-	   chip (landing.css), in --chip on the white page. */
-	.bstage .pic-chip {
-		position: absolute;
-		right: 10px;
-		top: calc(var(--k) * 48 + 10px);
-		border-color: var(--chip);
-		background: var(--surface);
-		color: var(--chip);
-	}
-	.bstage .pic-chip:global(.fire) {
-		background: var(--chip);
-		color: var(--surface);
-	}
 	/* Placed with translate, so anime.js's scale (the click) composes with
 	   it and the pointer's travel moves no layout box. */
 	.pointer {
@@ -669,14 +646,14 @@
 	.term {
 		position: relative;
 		flex: none;
-		height: 52px;
+		height: 55px;
 		overflow: hidden;
 		border-top: 1px solid var(--rule);
 		background: var(--t-bg);
 		color: var(--t-fg);
 		font-family: var(--font-mono);
-		font-size: 11px;
-		line-height: 14px;
+		font-size: 12px;
+		line-height: 15px;
 		font-variant-ligatures: none;
 	}
 	.clip {
@@ -684,7 +661,7 @@
 		left: 0;
 		right: 0;
 		bottom: 5px;
-		height: 42px;
+		height: 45px;
 		overflow: hidden;
 	}
 	.rows {
@@ -725,12 +702,12 @@
 
 	@container (max-width: 400px) {
 		.term {
-			font-size: 10px;
-			line-height: 13px;
-			height: 49px;
+			font-size: 11px;
+			line-height: 14px;
+			height: 52px;
 		}
 		.clip {
-			height: 39px;
+			height: 42px;
 		}
 		.tr {
 			padding: 0 10px;

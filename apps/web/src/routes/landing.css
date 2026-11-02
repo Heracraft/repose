@@ -146,7 +146,7 @@
 }
 @media (min-width: 1024px) {
 	.landing .hero {
-		padding-top: 5rem;
+		padding-top: 4rem;
 	}
 }
 .landing .hero .label {
@@ -176,21 +176,28 @@
 	flex-wrap: wrap;
 	gap: 0.75rem;
 }
-/* On a phone both hero buttons take the column's width, one above the other. */
+/* On a phone the hero's two buttons take the column's width, one above
+   the other; pricing's does too (see Pricing). */
 @media (max-width: 479.98px) {
 	.landing .hero .ctas > * {
 		flex: 1 1 100%;
 	}
 }
 /* The install command the copy button copies, as it is copied, on one
-   line: on a phone it sets smaller rather than break the URL. */
+   line at 12px. Where the column is narrower (a phone) it scrolls under
+   the steps' fade, as CodeCopy's line does, and takes a tab stop. */
 .landing .install {
 	margin: 1rem 0 0;
+	overflow-x: auto;
+	scrollbar-width: none;
 	font-family: var(--hk-font-mono);
-	font-size: min(0.75rem, 2.5vw);
+	font-size: 0.75rem;
 	line-height: 1.25rem;
-	white-space: nowrap;
+	white-space: pre;
 	color: var(--hk-text-3);
+}
+.landing .install[data-scrolls='true']:not([data-end='true']) {
+	mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
 }
 
 /* Both labels of a sign-in button share one grid cell; the one not shown
@@ -214,34 +221,65 @@
 .landing .stage {
 	padding: var(--shot-in) var(--shot-in) var(--stage-y);
 }
+/* A picture that does not loop has no pause button, so no floor: its
+   inset is the same on all four sides (Ready). */
+.landing .stage.stage--still {
+	padding-bottom: var(--shot-in);
+}
 
 /* ---------- The feature grid ----------
 
-   A 2x2 of identical cells from 768px: the picture's closed stage, then
-   the title, one line and the command, each the same distance from the
-   last. The pause button stands at the right end of the title's row. */
+   Four ruled cells, split by hairlines as the plans are, with no gap
+   between them: one column, and from 1024px a 2x2 whose vertical rule
+   stands in the middle of the column gap, so the right cells start on
+   the page's column line. Each cell is its picture's closed stage, then
+   the title, one paragraph and the command, the commands pinned to the
+   cells' feet so the two in a row stand level. The last row ends on the
+   next band's rule. The pause button stands at the right end of the
+   title's row (--cell-t and --cell-r place it from the cell). */
 .landing .cells {
 	display: grid;
-	gap: var(--band-y) var(--col-gap);
+	grid-template-columns: minmax(0, 1fr);
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
-@media (min-width: 768px) and (max-width: 1023.98px) {
-	.landing .cells {
-		column-gap: 1.5rem;
-	}
-}
-@media (min-width: 768px) {
-	.landing .cells {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-}
 .landing .cells > li {
+	--cell-t: 1.5rem;
+	--cell-r: 0px;
 	position: relative;
 	display: grid;
 	grid-template-rows: auto auto auto 1fr;
 	min-width: 0;
+	padding: var(--cell-t) var(--cell-r) 2rem 0;
+	border-top: 1px solid var(--hk-hairline);
+}
+@media (min-width: 1024px) {
+	.landing .cells {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.landing .cells > li {
+		--cell-t: 2rem;
+		padding-bottom: 2.5rem;
+	}
+	.landing .cells > li:nth-child(odd) {
+		--cell-r: calc(var(--col-gap) / 2);
+	}
+	.landing .cells > li:nth-child(even) {
+		padding-left: calc(var(--col-gap) / 2 - 1px);
+		border-left: 1px solid var(--hk-hairline);
+	}
+}
+/* One column (below 1024px), a cell keeps the size it has in the 2x2,
+   the copy's 34rem measure, so a picture's windows and captures draw at
+   one scale at every width; its rule still runs the frame's width. */
+@media (max-width: 1023.98px) {
+	.landing .cells > li > * {
+		max-width: 34rem;
+	}
+	.landing .cells > li {
+		--cell-r: max(0px, 100% - 34rem);
+	}
 }
 .landing .cells .item-title {
 	margin-top: var(--item-gap);
@@ -253,8 +291,8 @@
 	position: static;
 }
 .landing .cells > li > .shot > .pic-pause {
-	top: calc(var(--shot-h) + var(--item-gap));
-	right: 0;
+	top: calc(var(--cell-t) + var(--shot-h) + var(--item-gap));
+	right: var(--cell-r);
 	bottom: auto;
 }
 .landing .cells .copy {
@@ -267,10 +305,6 @@
 	font-size: 0.8125rem;
 	line-height: 1.25rem;
 	color: var(--hk-text);
-}
-.landing .cmd > span {
-	color: var(--hk-text-3);
-	user-select: none;
 }
 
 /* ---------- Agents ---------- */
@@ -356,14 +390,13 @@
 	padding: 0.375rem 0.5rem 0.375rem 1rem;
 	border: 0;
 	border-radius: 0;
-	background: var(--stage);
-	box-shadow: inset 0 1px 0 var(--stage-top);
 }
 /* The command keeps to one line at every width and scrolls under its
    fade where the cell is narrower: the kit's break points after each
    slash are for a wrapping box. */
 .landing .steps .code-copy .line {
 	overflow-x: auto;
+	scrollbar-width: none;
 	white-space: pre;
 	overflow-wrap: normal;
 }
@@ -393,16 +426,31 @@
 	align-items: center;
 	gap: 0.75rem 1.5rem;
 }
+/* On a phone the button takes the column's width, as the hero's do. */
+@media (max-width: 479.98px) {
+	.landing .price-act {
+		justify-items: stretch;
+	}
+	.landing .cta-row > .hk-btn {
+		flex: 1 1 100%;
+	}
+}
 .landing .seats {
 	margin: 0;
 	font-size: 0.875rem;
 	color: var(--hk-text-3);
 }
 /* The plans as ruled cells, split by hairlines with no card edge, gap or
-   radius: three across from 640px, the first two on the two-column line
-   from 1024 would split a plan, so they keep equal thirds. */
+   radius: one column, and three across from 1024px (the two-column line
+   would split a plan, so they keep equal thirds). */
 .landing .plans.plans--public {
+	grid-template-columns: minmax(0, 1fr);
 	gap: 0;
+}
+@media (min-width: 1024px) {
+	.landing .plans.plans--public {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
 }
 .landing .plans--public .plan {
 	padding: 1.5rem 0 2rem;
@@ -411,7 +459,7 @@
 	border-radius: 0;
 	background: none;
 }
-@media (min-width: 640px) {
+@media (min-width: 1024px) {
 	.landing .plans--public .plan {
 		padding: 1.75rem 1.5rem 2.5rem;
 	}
@@ -471,9 +519,17 @@
 .landing .faq details[open] .plus {
 	transform: rotate(45deg);
 }
+/* An open question's title sits 16px over its answer, and its focus ring
+   (2px out) stays in that space, clear of the answer's first line. */
+.landing .faq details[open] > summary {
+	padding-bottom: 1rem;
+}
+.landing .faq summary:focus-visible {
+	outline-offset: 2px;
+}
 .landing .faq details > p {
 	max-width: 34rem;
-	margin: -0.5rem 0 0;
+	margin: 0;
 	padding-bottom: var(--item-gap);
 }
 @media (prefers-reduced-motion: reduce) {

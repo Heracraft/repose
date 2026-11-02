@@ -29,9 +29,10 @@
   DESIGN.md §6: the root overlay's upper dir and /home).
 
   The picture is the grid's (I-669): the machine a window under "your
-  cloud machine", closed and inset alike on all sides (I-675), the
-  snapshots stacked beside it on the same top line, or in a row under it
-  where the picture is under 410px wide.
+  cloud machine", closed and inset alike on all sides (I-675), and beside
+  it the snapshots in a window of their own, as tall as the machine, as
+  the hero's rail is drawn; where the picture is under 410px wide the
+  two tiles share a row under the machine, half its width each.
 
   The loop, with anime.js: the machine is whole and 03:00 is its only
   snapshot. 21:25 is taken (the rows shrink into a small tile) and 03:00
@@ -533,7 +534,14 @@
 	<li class="fr m-row" data-k={r.k}>
 		{@render icon(r.k)}
 		<span class="nm">{r.name}</span>
-		<span class="val"><span class="vt">{r.val}</span><i class="strike"></i></span>
+		<span class="val"
+			><span
+				class="vt"
+				style:min-width={r.n === undefined && !r.lost
+					? undefined
+					: `${Math.max(r.val.length, r.lost?.length ?? 0)}ch`}>{r.val}</span
+			><i class="strike"></i></span
+		>
 		<span class="mark">
 			<svg class="bad" viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"
 				><path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.6" /></svg
@@ -570,7 +578,7 @@
 
 <p id={descId} class="sr-only">{story}</p>
 <div class="shot" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="snapshot restore" />
 	<div
 		class="pic"
 		bind:this={pic}
@@ -605,9 +613,12 @@
 			>
 		</div>
 
-		<div class="stack">
-			<SnapshotTile time="03:00" cause="nightly" class="tile old">{@render mini()}</SnapshotTile>
-			<SnapshotTile time="21:25" cause="user" class="tile new" lit>{@render mini()}</SnapshotTile>
+		<div class="shot-win stack">
+			<WinHead who="snapshots" />
+			<div class="tiles">
+				<SnapshotTile time="03:00" cause="nightly" class="tile old">{@render mini()}</SnapshotTile>
+				<SnapshotTile time="21:25" cause="user" class="tile new" lit>{@render mini()}</SnapshotTile>
+			</div>
 		</div>
 
 		<div class="fly" bind:this={fly}></div>
@@ -635,16 +646,17 @@
 		--pad: 8px;
 		--rows-h: calc(var(--shot-h) - 2px - 2 * var(--shot-in) - 30px);
 		--row: calc((var(--rows-h) - 2 * var(--pad)) / 6);
-		/* 120px where the machine keeps 270px for its rows, down to 96px */
-		--tile-w: clamp(96px, 100cqw - 325px, 120px);
+		/* The snapshots' window: 136px where the machine keeps 200px for
+		   its rows, down to 104px */
+		--rail-w: clamp(104px, 100cqw - 340px, 136px);
 		/* the newest tile, whole: its edges, head, rule and miniature */
 		--full: calc(var(--shot-head) + 1px + var(--rows-h) * var(--s) + 1px);
 		position: relative;
 		height: 100%;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 30px var(--tile-w);
+		grid-template-columns: minmax(0, 1fr) 30px var(--rail-w);
 		grid-template-rows: minmax(0, 1fr);
-		align-items: start;
+		align-items: stretch;
 		/* The stage's inset on all four sides. */
 		padding: var(--shot-in);
 		font-size: 13px;
@@ -698,7 +710,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 12px;
 	}
 	.val {
 		position: relative;
@@ -709,6 +721,13 @@
 		color: var(--pic-dim);
 		font-variant-numeric: tabular-nums;
 		transition: color 0.25s;
+	}
+	/* A value the loop rewrites (a count, pnpm's "not found") keeps the
+	   width of its longest text, so its changing width moves no box (no
+	   layout shift). */
+	.vt {
+		display: inline-block;
+		text-align: right;
 	}
 	.fr:global(.hit) {
 		background: color-mix(in oklab, var(--pic-stop) 9%, var(--surface));
@@ -756,6 +775,8 @@
 	   the newest tile's middle. */
 	.hop {
 		position: relative;
+		align-self: start;
+		margin-top: calc(var(--shot-head) + 1px + 8px);
 		height: var(--full);
 	}
 	.arr {
@@ -773,12 +794,16 @@
 		color: var(--pic-accent);
 	}
 
-	/* The snapshots (SnapshotTile, the hero's grammar): the newest on top,
-	   level with the machine's top edge, its head as tall as the machine's;
-	   the older one folded to its head 4px under it. */
+	/* The snapshots (SnapshotTile, the hero's grammar) in their window,
+	   inset 8px: the newest on top, the older one folded to its head 4px
+	   under it. */
 	.stack {
+		height: 100%;
+	}
+	.tiles {
 		position: relative;
-		height: calc(var(--full) + 4px + var(--shot-head));
+		flex: 1;
+		margin: 8px;
 	}
 	.stack :global(.tile) {
 		position: absolute;
@@ -882,13 +907,12 @@
 	@container (max-width: 410px) {
 		.pic {
 			--pad: 4px;
-			--tile-w: 92px;
 			/* frame, edges, two insets, the machine's and the tile's head
-			   and edges (60px) and the 8px between them */
-			--rows-h: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 68px) / (1 + var(--s)));
-			grid-template-columns: 18px minmax(0, 1fr);
-			grid-template-rows: auto auto;
-			gap: 8px 4px;
+			   and edges (60px) and the 16px row of the arrow between them */
+			--rows-h: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 76px) / (1 + var(--s)));
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: auto 16px auto;
+			align-items: start;
 			font-size: 12px;
 		}
 		.machine {
@@ -903,21 +927,39 @@
 		.val {
 			font-size: 11px;
 		}
+		/* The arrow stands over the newest tile's middle. */
+		.hop {
+			width: calc(50% - 3px);
+			height: 16px;
+			margin: 0;
+		}
 		.arr {
 			width: 14px;
 			transform: rotate(90deg);
 		}
+		/* No window here: the two tiles share the row, flush with the
+		   machine's edges, half its width each. */
 		.stack {
 			height: var(--full);
+			border: 0;
+			border-radius: 0;
+			background: none;
+			overflow: visible;
+		}
+		.stack > :global(.shot-head) {
+			display: none;
+		}
+		.tiles {
+			margin: 0;
 		}
 		.stack :global(.tile) {
 			right: auto;
-			width: var(--tile-w);
+			width: calc(50% - 3px);
 		}
 		/* Folded, the older tile is its head beside the newest one. */
 		.stack :global(.tile.old) {
 			top: 0;
-			left: calc(var(--tile-w) + 6px);
+			left: calc(50% + 3px);
 		}
 	}
 </style>

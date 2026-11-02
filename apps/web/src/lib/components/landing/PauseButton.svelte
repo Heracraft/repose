@@ -14,14 +14,17 @@
 <script lang="ts">
 	import type { Picture } from './motion.svelte';
 
-	let { picture }: { picture: Picture } = $props();
+	// `name` says which picture the button pauses, so five buttons in a
+	// screen reader's list or the tab order are told apart:
+	// "Pause the ports picture". aria-pressed carries the state.
+	let { picture, name }: { picture: Picture; name: string } = $props();
 </script>
 
 {#if picture.moving}
 	<button
 		type="button"
 		class="pic-pause"
-		aria-label="Pause animation"
+		aria-label="Pause the {name} picture"
 		aria-pressed={picture.paused}
 		onclick={() => picture.toggle()}
 	>

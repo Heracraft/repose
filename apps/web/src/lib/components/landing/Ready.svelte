@@ -180,7 +180,9 @@
 		line-height: 20px;
 		color: var(--ink-faint);
 	}
-	@media (min-width: 768px) {
+	/* Below 1024px the page is one column, and so is this: the tools
+	   over the shell, which keeps the stage's width. */
+	@media (min-width: 1024px) {
 		.below {
 			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
 			gap: 40px;
@@ -190,6 +192,7 @@
 	/* The shell, a window like every other on the page, in the terminals'
 	   palette (pictures.css). */
 	.term {
+		container-type: inline-size;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 19px;
@@ -221,13 +224,33 @@
 	.clock span {
 		white-space: pre;
 	}
+	.pre {
+		min-width: 0;
+		overflow: hidden;
+	}
+	.clock {
+		flex: none;
+	}
+	/* A shell narrower than its rows (a phone) drops the bar's host and
+	   date, and its rows run off the right edge into a fade, as a
+	   picture's do, so no row reads as cut mid-word. */
+	@container (max-width: 560px) {
+		.long {
+			display: none;
+		}
+		.lines {
+			mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+		}
+	}
 	.b {
 		font-weight: 700;
 	}
+	/* The window list gives way before the clock: the right part keeps
+	   its width, the left one crops. */
 	.bar {
 		display: flex;
 		justify-content: space-between;
-		gap: 1ch;
+		gap: 2ch;
 		padding: 1px 14px;
 		border-top: 1px solid var(--rule);
 		background: var(--t-bar);
@@ -236,18 +259,12 @@
 		overflow: hidden;
 	}
 	@media (max-width: 639px) {
-		.long {
-			display: none;
-		}
 		.term {
 			font-size: 11px;
 			line-height: 17px;
 		}
-		/* The rows the phone crops run off the right edge into a fade,
-		   as a picture does, so no row reads as cut mid-word. */
 		.lines {
 			padding: 10px 10px 12px;
-			mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
 		}
 		.bar {
 			padding: 1px 10px;

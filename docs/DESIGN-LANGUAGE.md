@@ -1053,16 +1053,16 @@ tokens, type and components. `LANDING.md` covers what it says and shows.
   terminals share one palette (`--t-*`) that follows the scheme.
 - **Each command once**: the install line under the hero's buttons and as
   the first step (I-843); the feature cells give their command as one
-  mono line with a muted `$` and no copy button, since a visitor without
-  the CLI cannot run it. The steps' commands fill their half of the row
+  mono line with no `$` (the mono face marks it, as in the steps) and no
+  copy button, since a visitor without the CLI cannot run it. The steps' commands fill their half of the row
   flush on the stage's tone, with no box of their own.
 - **Sections**: the hero; "Your laptop's setup, in one command"; "A cloud
-  machine that feels like your own box", four cells in a 2x2 grid from
-  768px; "The agents you use, and the tools they need, on first boot";
+  machine that feels like your own box", four cells split by hairlines
+  like the plans, a 2x2 from 1024px and one column below at 34rem; "The agents you use, and the tools they need, on first boot";
   "Start in three commands"; "Pricing"; "Questions", five `details` rows
   between hairlines; the full footer.
 - **Pricing**: `PlanCells` in its public variant, three cells split by
-  hairlines from 640px with no card edge, the founding price struck when
+  hairlines from 1024px (one column below) with no card edge, the founding price struck when
   it applies. "Launch prices.", "Start a free week" and the seats line
   stand in the head's right column. Plan figures come from
   `lib/plans.ts`, never typed into markup.

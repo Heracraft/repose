@@ -155,6 +155,64 @@ test('the page never scrolls sideways', async ({ page }) => {
 	}
 });
 
+// The hero's install line is the command as copied, on one line at 12px
+// (never shrunk to fit), and where the column is narrower it scrolls
+// inside its own box, so the page never widens.
+test('the hero install line stays readable and inside the page on a phone', async ({ page }) => {
+	for (const width of [360, 390]) {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto('/');
+		const install = page.locator('.hero .install');
+		await expect(install).toHaveCSS('font-size', '12px');
+		const box = await install.evaluate((e) => ({
+			lines: Math.round(e.clientHeight / parseFloat(getComputedStyle(e).lineHeight)),
+			right: e.getBoundingClientRect().right
+		}));
+		expect(box.lines, `at ${width}`).toBe(1);
+		expect(box.right, `at ${width}`).toBeLessThanOrEqual(width);
+		const over = await page.evaluate(
+			() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+		);
+		expect(over, `at ${width}`).toBeLessThanOrEqual(0);
+	}
+});
+
+// I-961: a band that ends on a picture rests its stage on the next band's
+// rule, with no strip between them.
+test("each picture band's stage ends on the next band's rule", async ({ page }) => {
+	for (const width of [1440, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/');
+		const gaps = await page.locator('main > .band--pic').evaluateAll((bands) =>
+			bands.map((b) => {
+				const stage = b.querySelector(':scope > .stage')!.getBoundingClientRect();
+				const next = b.nextElementSibling!.getBoundingClientRect();
+				return Math.round(next.top - stage.bottom);
+			})
+		);
+		expect(gaps.length, `at ${width}`).toBeGreaterThan(0);
+		for (const g of gaps) expect(g, `at ${width}`).toBe(0);
+	}
+});
+
+// The setup picture's rows in flight are measured against the panels; a
+// window narrowed after load must not leave one parked past the page's
+// edge (review round 1).
+test('narrowing the window after load adds no sideways scroll', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/');
+	await page.locator('.oc').scrollIntoViewIfNeeded();
+	await page.waitForTimeout(2500);
+	for (const width of [1024, 768, 390]) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.waitForTimeout(600);
+		const over = await page.evaluate(
+			() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+		);
+		expect(over, `at ${width}`).toBeLessThanOrEqual(0);
+	}
+});
+
 test('the footer links to the refund policy', async ({ page }) => {
 	await page.goto('/');
 	await expect(page.getByRole('contentinfo')).toHaveCount(1);

@@ -1,7 +1,9 @@
 // DECISIONS I-837: the feature grid is four cells, each a claim, one
 // paragraph and the command that does it. A visitor without the CLI cannot
-// run a command, so the cells carry no copy button. Two columns from 768px,
-// one below. I-843 puts a picture over each cell's claim.
+// run a command, so the cells carry no copy button, and no "$": the mono
+// face marks a command, as in the steps. Two columns from 1024px, one
+// below, where a cell keeps its 34rem measure (LANDING.md, I-961). I-843
+// puts a picture over each cell's claim.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,10 +14,10 @@ const DOCS = fileURLToPath(new URL('../src/content/docs/', import.meta.url));
 const cells = '#features .cells > li';
 
 const CELLS: [string, string][] = [
-	['Let it break the whole machine', '$ repose snapshots create'],
-	['Use its ports on your localhost', '$ repose open 5173'],
-	["Watch the agent's browser, and take over", '$ repose browser'],
-	['Open it in your editor', '$ repose code your-project']
+	['Let it break the whole machine', 'repose snapshots create'],
+	['Use its ports on your localhost', 'repose open 5173'],
+	["Watch the agent's browser, and take over", 'repose browser'],
+	['Open it in your editor', 'repose code your-project']
 ];
 
 async function grid(page: Page, width: number) {
@@ -36,7 +38,7 @@ test('four cells, each a claim and its command, no copy button', async ({ page }
 test("each cell's command is in cli.md", async () => {
 	const cli = readFileSync(join(DOCS, 'cli.md'), 'utf8');
 	for (const [, cmd] of CELLS) {
-		const words = cmd.replace(/^\$ /, '').split(' ').slice(0, 2).join(' ');
+		const words = cmd.split(' ').slice(0, 2).join(' ');
 		expect(cli, words).toContain(words);
 	}
 });
@@ -44,7 +46,7 @@ test("each cell's command is in cli.md", async () => {
 for (const [width, cols] of [
 	[1440, 2],
 	[1024, 2],
-	[768, 2],
+	[768, 1],
 	[390, 1]
 ] as const) {
 	test(`the cells run in ${cols} column(s) at ${width}`, async ({ page }) => {
@@ -63,6 +65,11 @@ for (const [width, cols] of [
 			expect(boxes[0].y).toBe(boxes[1].y);
 			expect(boxes[2].y).toBe(boxes[3].y);
 			expect(boxes[0].w).toBe(boxes[1].w);
+		}
+		if (cols === 1 && width >= 640) {
+			// One column, a cell's picture keeps the 2x2's size.
+			const stage = await page.locator(`${cells} > .shot`).first().boundingBox();
+			expect(Math.round(stage!.width)).toBe(544);
 		}
 		// A 24px claim runs to three lines at most.
 		const lines = await page
@@ -116,3 +123,56 @@ test('the questions open, one answer at a time as asked', async ({ page }) => {
 	await first.locator('summary').click();
 	await expect(first.locator('p')).toContainText('can open a connection to your laptop');
 });
+
+// I-961: the cells are ruled like the plans, with no gap between them: a
+// hairline over each, and from 1024px a vertical one between the columns,
+// with the right cells starting on the page's column line (the head's
+// right column). The band ends on its last row, on the next band's rule.
+test('the cells are ruled and gapless, on the column line', async ({ page }) => {
+	await grid(page, 1440);
+	const css = await page.locator(cells).evaluateAll((els) =>
+		els.map((e) => {
+			const s = getComputedStyle(e);
+			const r = e.getBoundingClientRect();
+			return {
+				top: s.borderTopWidth,
+				left: s.borderLeftWidth,
+				x: r.x,
+				y: r.y,
+				b: r.bottom,
+				w: r.width
+			};
+		})
+	);
+	for (const c of css) expect(c.top).toBe('1px');
+	expect(css[0].left).toBe('0px');
+	expect(css[1].left).toBe('1px');
+	// Cells meet: no gap across or down.
+	expect(Math.round(css[0].x + css[0].w)).toBe(Math.round(css[1].x));
+	expect(Math.round(css[0].b)).toBe(Math.round(css[2].y));
+	const band = await page.locator('#features').boundingBox();
+	const next = await page.locator('#features + section').boundingBox();
+	expect(Math.round(css[3].b)).toBe(Math.round(band!.y + band!.height));
+	expect(Math.round(band!.y + band!.height)).toBe(Math.round(next!.y));
+	// The right cells' stages start on the page's column line.
+	const stage = await page.locator(`${cells}:nth-child(2) > .shot`).boundingBox();
+	const links = await page
+		.locator('section', { has: page.getByRole('link', { name: 'All agents' }) })
+		.getByRole('link', { name: 'All agents' })
+		.boundingBox();
+	expect(Math.abs(stage!.x - links!.x)).toBeLessThanOrEqual(1);
+});
+
+// The Editor's statusline keeps its right segment (position, line and
+// column, clock) whole inside the screen at every width.
+for (const width of [1440, 768, 390]) {
+	test(`the Editor's statusline stays whole at ${width}`, async ({ page }) => {
+		await grid(page, width);
+		const [r, screen] = await Promise.all([
+			page.locator('#features .ed .sl-r').boundingBox(),
+			page.locator('#features .ed .screen').boundingBox()
+		]);
+		expect(r!.x + r!.width).toBeLessThanOrEqual(screen!.x + screen!.width + 0.5);
+		expect(r!.x).toBeGreaterThan(screen!.x);
+	});
+}

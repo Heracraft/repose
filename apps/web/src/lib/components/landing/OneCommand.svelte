@@ -4,8 +4,9 @@
   of the owner's job-alerts app (git -C .../landing/recruiting log/status)
   and the machine `repose run` creates for it. Since I-367 run syncs only
   into a machine with no commit yet, so the picture is that first run: the
-  machine starts empty and every commit travels, master's 7ea43a8 with the
-  branch's two, and the machine's title reads the quickstart's
+  machine starts empty and every commit travels. The graph is cropped to
+  the branch's two commits; master's base commit under them, a note about
+  the app's own UI, told a stranger nothing (I-961). The machine's title reads the quickstart's
   "Ready in 16s" (docs index.md, held there by OneCommand.test.ts), the
   time of a run that creates the machine (I-397, I-400). On the machine
   the edits sit under Changes exactly as on the laptop: the sync sends
@@ -41,7 +42,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { watchReducedMotion } from './inview';
-	import { Picture } from './motion.svelte';
+	import { Picture, watchWidth } from './motion.svelte';
 	import PauseButton from './PauseButton.svelte';
 	import WinHead from './WinHead.svelte';
 
@@ -53,12 +54,7 @@
 	const agent: Commit = { msg: 'Retry fetchBoard once', hash: 'e41b9c2' };
 	const commits: Commit[] = [
 		{ msg: 'Let fetchBoard take a timeout instead of the fixed 20 seconds', hash: 'a1dd18e' },
-		{ msg: 'Make the board fetch timeout a worker setting', hash: 'cc300c3' },
-		{
-			msg: 'Drop the helper line under the audience switch; no hand-holding in the UI',
-			hash: '7ea43a8',
-			base: true
-		}
+		{ msg: 'Make the board fetch timeout a worker setting', hash: 'cc300c3' }
 	];
 	const envExample: File = { name: '.env.example', st: 'M' };
 	const poller: File = { name: 'poller.ts', dir: 'apps/worker/src/ingest', st: 'M' };
@@ -90,6 +86,16 @@
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
+		// Set once the loop is built: drops the rows in flight and builds
+		// the loop again from where the panels now are.
+		let rebuild: (() => void) | null = null;
+		let raf = 0;
+		// Only a change of the picture's own width moves the panels, and
+		// the copies in flight were measured against the old ones.
+		const unwidth = watchWidth(pic, () => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(() => rebuild?.());
+		});
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
 		const arrivals = () => q('[data-to]');
@@ -411,6 +417,20 @@
 					t.play();
 				}
 
+				rebuild = () => {
+					if (dead || me !== run || !tl) return;
+					tl.pause();
+					tl = null;
+					// eslint-disable-next-line svelte/no-dom-manipulating
+					fly.replaceChildren();
+					fly.style.removeProperty('clip-path');
+					for (const el of moved()) el.removeAttribute('style');
+					for (const el of q('.lift, .cut')) el.classList.remove('lift', 'cut');
+					fire = false;
+					fetchFire = false;
+					if (visible) cycle();
+				};
+
 				// Start when the machine's panel (the destination) is in view; on a
 				// phone it sits below the laptop's.
 				picture.start(pic.querySelectorAll('.side')[1], (m) => {
@@ -429,6 +449,8 @@
 
 		return () => {
 			dead = true;
+			cancelAnimationFrame(raf);
+			unwidth();
 			unwatch();
 			picture.stop();
 			tl?.pause();
@@ -566,7 +588,7 @@
 {/snippet}
 
 <div class="oc" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="setup" />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="pic" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
 		<div class="side" aria-hidden="true">{@render panel('laptop')}</div>
@@ -910,10 +932,13 @@
 	   as a row in transit and never as bare text over the rows it passes;
 	   under the chips (.hop is above), clipped by the script to the panel
 	   they land in. */
+	/* overflow: hidden keeps a copy parked outside the picture (measured
+	   before a resize) from widening the page. */
 	.fly {
 		position: absolute;
 		inset: 0;
 		z-index: 1;
+		overflow: hidden;
 		pointer-events: none;
 		font-size: 13px;
 		color: var(--pic-ink);
