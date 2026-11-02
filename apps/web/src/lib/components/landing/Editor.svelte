@@ -32,12 +32,13 @@
   The rows are the picture's pixels, not text to read: the screen is one
   role="img" with its own label, and each row is aria-hidden and inert, so
   it is out of the tab order, find in page and selection as a screenshot
-  would be. Tokyo Night's comment grey, explorer grey and statusline blue
-  sit under 4.5:1 on its grounds (2.46 to 4.27); a picture's incidental
-  text is outside WCAG 1.4.3, and inert is what tells the a11y gate's
-  contrast check (axe skips inert nodes) that this is a picture. The
-  colours stay the tool's own (LANDING.md, "Real, and whole, or not at
-  all"; I-400).
+  would be. Its colours are Tokyo Night's mapped by role onto the
+  terminals' one palette (ROLE below, pictures.css --t-*), so the four
+  grid pictures share one ground; the explorer's checkout row reads
+  `your-project`, the pictures' checkout name, in place of the machine's
+  internal one (LANDING.md, "Names a stranger understands"). A picture's
+  incidental text is outside WCAG 1.4.3, and inert is what tells the a11y
+  gate's contrast check (axe skips inert nodes) that this is a picture.
 -->
 <script lang="ts">
 	import WinHead from './WinHead.svelte';
@@ -165,8 +166,8 @@
 		[
 			[' ', 23],
 			['\udb81\udf70 ', 24],
-			['recruiting', 25],
-			['       ', 0],
+			['your-project', 25],
+			['     ', 0],
 			['\u2502', 10],
 			['   6   ', 11],
 			['\u2502', 18],
@@ -437,6 +438,36 @@
 	// and mark the cursor's cell.
 	// Box drawing is drawn in CSS to fill the cell, as terminals draw it, so
 	// the explorer's frame and tree lines join whatever the font.
+	// The capture's Tokyo Night colours, mapped by role onto the
+	// terminals' one palette (pictures.css, --t-*), so nvim shares the
+	// page's ground and the other terminals' colours in both schemes.
+	const ROLE: Record<string, string> = {
+		'#222436': 't-bg',
+		'#1e2030': 't-bg-2',
+		'#191b28': 't-bg-2',
+		'#1b1d2b': 't-bg-2',
+		'#12131d': 't-bg-2',
+		'#2f334d': 't-sel',
+		'#c8d3f5': 't-fg',
+		'#828bb8': 't-dim',
+		'#636da6': 't-dim',
+		'#545c7e': 't-faint',
+		'#3b4261': 't-faint',
+		'#0db9d7': 't-cyan',
+		'#86e1fc': 't-cyan',
+		'#89ddff': 't-cyan',
+		'#4fd6be': 't-cyan',
+		'#82aaff': 't-blue',
+		'#65bcff': 't-blue',
+		'#7ca1f2': 't-blue',
+		'#ff966c': 't-orange',
+		'#ffc777': 't-yellow',
+		'#fca7ea': 't-magenta',
+		'#c3e88d': 't-green'
+	};
+	const themed = styles.map((st) =>
+		st.replace(/#[0-9a-f]{6}/g, (hex) => (ROLE[hex] ? `var(--${ROLE[hex]})` : hex))
+	);
 	const BOX: Record<string, string> = {
 		'─': 'h',
 		'│': 'v',
@@ -508,7 +539,7 @@
 						class:c={p.cell}
 						class:cur={p.cursor}
 						class={p.box ? `bx ${p.box}` : undefined}
-						style={styles[p.s]}>{p.t}</span
+						style={themed[p.s]}>{p.t}</span
 					>{/each}
 			{/snippet}
 			{#each lines as line, y (y)}
@@ -545,11 +576,11 @@
 		--lh: calc((var(--shot-h) - 2px - var(--shot-in) - 1px - var(--shot-head)) / 20);
 		flex: 1;
 		min-height: 0;
-		background: #222436;
+		background: var(--t-bg);
 		font-family: 'Editor Nerd Symbols', var(--font-mono);
-		font-size: min(10px, calc(100cqw / 46.8));
+		font-size: min(11px, calc(100cqw / 46.8));
 		font-variant-ligatures: none;
-		color: #c8d3f5;
+		color: var(--t-fg);
 	}
 	.ln {
 		height: var(--lh);
@@ -562,7 +593,7 @@
 	   Where all 78 columns fit, the two meet as nvim drew them. */
 	.sl {
 		display: flex;
-		background: #1e2030;
+		background: var(--t-bg-2);
 	}
 	.sl-l {
 		flex: 1 1 auto;
@@ -682,7 +713,7 @@
 		background: currentColor;
 	}
 	.cur {
-		background: #c8d3f5 !important;
-		color: #222436 !important;
+		background: var(--t-fg) !important;
+		color: var(--t-bg) !important;
 	}
 </style>

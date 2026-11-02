@@ -854,7 +854,7 @@
 
 {#snippet machineWin(live: boolean)}
 	<div class="win" class:lw={live}>
-		<WinHead who="machine" />
+		<WinHead who="machine" dot />
 		<ul class="rows">
 			<li class="fr head" class:m-proj={live} data-to={live ? 'repo' : undefined}>
 				<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true" class="chev">
@@ -1503,22 +1503,27 @@
 		justify-content: center;
 		height: 40px;
 	}
-	/* The internet is the sphere of the shape set, with a globe's meridians
-	   drawn over it in paper so it reads as the world and not a stone. */
+	/* The internet: a globe in line, as the windows' head icons are drawn,
+	   on the window surface with the windows' hairline (the shape set's
+	   filled sphere stays under it for the footer's row, hidden here). */
 	.globe {
 		position: relative;
 		z-index: 1;
 		flex: none;
 		width: 40px;
 		height: 40px;
+		border: 1px solid var(--rule-strong);
 		border-radius: 50%;
+		background: var(--surface);
 		overflow: hidden;
+	}
+	.globe > :global(svg:not(.meridians)) {
+		visibility: hidden;
 	}
 	.meridians {
 		position: absolute;
 		inset: 0;
-		color: var(--sh-paper);
-		opacity: 0.8;
+		color: var(--pic-dim);
 	}
 
 	/* The permanent wires: a --pic-dim hairline with a dot on each end;

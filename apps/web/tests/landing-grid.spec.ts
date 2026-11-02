@@ -1,4 +1,4 @@
-// DECISIONS I-837: "On every machine" is four cells, each a claim, one
+// DECISIONS I-837: the feature grid is four cells, each a claim, one
 // paragraph and the command that does it. A visitor without the CLI cannot
 // run a command, so the cells carry no copy button. Two columns from 768px,
 // one below. I-843 puts a picture over each cell's claim.
@@ -13,7 +13,7 @@ const cells = '#features .cells > li';
 
 const CELLS: [string, string][] = [
 	['Let it break the whole machine', '$ repose snapshots create'],
-	["The machine's ports on your localhost", '$ repose open 3000'],
+	['Use its ports on your localhost', '$ repose open 5173'],
 	["Watch the agent's browser, and take over", '$ repose browser'],
 	['Open it in your editor', '$ repose code your-project']
 ];
@@ -27,7 +27,7 @@ async function grid(page: Page, width: number) {
 test('four cells, each a claim and its command, no copy button', async ({ page }) => {
 	await grid(page, 1440);
 	await expect(page.locator(`${cells} h3`)).toHaveText(CELLS.map(([h]) => h));
-	await expect(page.locator(`${cells} .cell-cmd`)).toHaveText(CELLS.map(([, c]) => c));
+	await expect(page.locator(`${cells} .cmd`)).toHaveText(CELLS.map(([, c]) => c));
 	// The pictures' pause buttons are the only buttons in the cells.
 	await expect(page.locator(`${cells} button:not(.pic-pause)`)).toHaveCount(0);
 });
@@ -91,11 +91,11 @@ test('the agents section links to the agents and everything installed', async ({
 		'href',
 		'/docs/machine#whats-installed'
 	);
-	// Beside the headline, its bottom on the headline's last line.
+	// In the head's right column, on the headline's first line.
 	const h = (await heading.boundingBox())!;
 	const l = (await all.boundingBox())!;
 	expect(l.x).toBeGreaterThan(h.x + h.width);
-	expect(Math.abs(l.y + l.height - (h.y + h.height))).toBeLessThan(12);
+	expect(Math.abs(l.y - h.y)).toBeLessThan(24);
 });
 
 test('the questions open, one answer at a time as asked', async ({ page }) => {

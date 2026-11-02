@@ -633,7 +633,7 @@
 	}
 	.pic {
 		--pad: 8px;
-		--rows-h: calc(var(--shot-h) - 2px - 2 * var(--shot-in) - 30px);
+		--rows-h: calc(var(--shot-h) - 2px - var(--shot-in) - var(--fade) - 30px);
 		--row: calc((var(--rows-h) - 2 * var(--pad)) / 6);
 		/* 120px where the machine keeps 270px for its rows, down to 96px */
 		--tile-w: clamp(96px, 100cqw - 325px, 120px);
@@ -645,7 +645,9 @@
 		grid-template-columns: minmax(0, 1fr) 30px var(--tile-w);
 		grid-template-rows: minmax(0, 1fr);
 		align-items: start;
-		padding: var(--shot-in);
+		/* The stage's inset on three sides, and its floor under the
+		   machine, so the closed window ends where the stage dissolves. */
+		padding: var(--shot-in) var(--shot-in) var(--fade);
 		font-size: 13px;
 		color: var(--pic-ink);
 	}
@@ -884,7 +886,7 @@
 			--tile-w: 92px;
 			/* frame, edges, two insets, the machine's and the tile's head
 			   and edges (60px) and the 8px between them */
-			--rows-h: calc((var(--shot-h) - 2px - 2 * var(--shot-in) - 68px) / (1 + var(--s)));
+			--rows-h: calc((var(--shot-h) - 2px - var(--shot-in) - var(--fade) - 68px) / (1 + var(--s)));
 			grid-template-columns: 18px minmax(0, 1fr);
 			grid-template-rows: auto auto;
 			gap: 8px 4px;

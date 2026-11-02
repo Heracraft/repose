@@ -67,13 +67,13 @@
 
 	// The xterm-256 and bright colours this capture uses.
 	const X256: Record<number, string> = {
-		114: '#87d787',
-		231: '#ffffff',
-		237: '#3a3a3a',
-		239: '#8a8a8a',
-		246: '#949494'
+		114: 'var(--t-green)',
+		231: 'var(--t-fg)',
+		237: 'var(--t-sel)',
+		239: 'var(--t-dim)',
+		246: 'var(--t-dim)'
 	};
-	const BRIGHT_BLUE = '#8fb3ff';
+	const BRIGHT_BLUE = 'var(--t-blue)';
 
 	// An SGR escape: ESC [ params m.
 	const SGR = new RegExp(`${String.fromCharCode(27)}\\[([0-9;]*)m`, 'g');
@@ -89,7 +89,7 @@
 		const push = (text: string) => {
 			if (!text) return;
 			let style = fg ? `color:${fg};` : '';
-			if (bold) style += 'font-weight:700;color:' + (fg || '#f2f2ef') + ';';
+			if (bold) style += 'font-weight:700;color:' + (fg || 'var(--t-fg)') + ';';
 			segs.push({ text, style });
 		};
 		for (const m of line.matchAll(SGR)) {
@@ -503,15 +503,11 @@
 	/* Not named `stage`: landing.css gives .landing .stage a hairline and
 	   a 12px radius, which would ring this picture inside its cell. */
 	.bstage {
-		/* The chip sits on the captured page, which is white in either
-		   scheme, so it keeps the light scheme's --pic-accent value: the
-		   dark scheme's is 2.5:1 on #fff. */
-		--chip: var(--color-blue-600);
-		/* The log is dark in either scheme, so its acting row's bar keeps
-		   the dark scheme's --pic-accent value; the ring, on the white
-		   page, takes --chip's. A mark over a capture follows the
-		   capture's ground, not the page's scheme. */
-		--on-log: var(--color-blue-400);
+		/* The chip and the ring sit on the captured page, which follows the
+		   page's scheme (see the filter below), so they take its accent. */
+		--chip: var(--pic-accent);
+		/* The log follows the scheme too (the terminals' palette). */
+		--on-log: var(--pic-accent);
 		/* one capture pixel, at the window's inner width (.bw) */
 		--k: calc(100cqw / 574);
 		--pan: 120;
@@ -552,18 +548,19 @@
 		overflow: hidden;
 		background: #fafafa;
 	}
-	/* The captures are the light scheme's only (I-669), so in the dark
-	   scheme the page and toolbar are dimmed to sit beside the dark
-	   windows instead of glaring white; the ring, the chip and the pointer
-	   are drawn over them undimmed. */
+	/* The captures are the light scheme's only (I-669). In the dark
+	   scheme they are drawn inverted with their hues turned back, so the
+	   app reads as its own dark theme beside the dark windows instead of a
+	   white block; the ring, the chip and the pointer are drawn over them
+	   untouched. */
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not(.light):not([data-theme='light'])) :is(.tb, .vp) {
-			filter: brightness(0.86);
+			filter: invert(0.9) hue-rotate(180deg) saturate(0.8);
 		}
 	}
 	:global(:root[data-theme='dark']) :is(.tb, .vp),
 	:global(:root.dark) :is(.tb, .vp) {
-		filter: brightness(0.86);
+		filter: invert(0.9) hue-rotate(180deg) saturate(0.8);
 	}
 	/* Panned with translate, not top: a pan moves no layout box, so it
 	   counts for nothing in CLS (I-397). */
@@ -649,12 +646,12 @@
 		right: 10px;
 		top: calc(var(--k) * 48 + 10px);
 		border-color: var(--chip);
-		background: #fff;
+		background: var(--surface);
 		color: var(--chip);
 	}
 	.bstage .pic-chip:global(.fire) {
 		background: var(--chip);
-		color: #fff;
+		color: var(--surface);
 	}
 	/* Placed with translate, so anime.js's scale (the click) composes with
 	   it and the pointer's travel moves no layout box. */
@@ -674,9 +671,9 @@
 		flex: none;
 		height: 52px;
 		overflow: hidden;
-		border-top: 1px solid #2a2a28;
-		background: #0d0d0c;
-		color: #d4d4d0;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bg);
+		color: var(--t-fg);
 		font-family: var(--font-mono);
 		font-size: 11px;
 		line-height: 14px;
