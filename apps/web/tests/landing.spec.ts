@@ -13,7 +13,7 @@ test('the pricing section shows the three plans and the seats left', async ({ pa
 	await resetBilling();
 	await page.goto('/');
 	const pricing = page.locator('section', { has: page.getByRole('heading', { name: 'Pricing' }) });
-	await expect(pricing.getByText('Launch prices. Seven days free.')).toBeVisible();
+	await expect(pricing.getByText('Launch prices.', { exact: true })).toBeVisible();
 	await expect(pricing.locator('[data-testid^="plan-"] h3.p-name')).toHaveText([
 		'Solo',
 		'Plus',

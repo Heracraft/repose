@@ -57,14 +57,14 @@
 
 	// The capture's colours, mapped as the hero maps them (ops/dev/hero/convert.py).
 	const BASE = [
-		'#1c1c1c',
-		'#e06c75',
-		'#98c379',
-		'#e5c07b',
-		'#61afef',
-		'#c678dd',
-		'#56b6c2',
-		'#dcdfe4'
+		'var(--t-bg-2)',
+		'var(--t-red)',
+		'var(--t-green)',
+		'var(--t-yellow)',
+		'var(--t-blue)',
+		'var(--t-magenta)',
+		'var(--t-cyan)',
+		'var(--t-fg)'
 	];
 
 	// An SGR escape: ESC [ params m.
@@ -543,8 +543,8 @@
 
 	/* The machine's terminal: its tmux, as in the hero. */
 	.term {
-		background: #0d0d0c;
-		color: #d4d4d0;
+		background: var(--t-bg);
+		color: var(--t-fg);
 		font-family: var(--font-mono);
 		font-size: 11px;
 		font-variant-ligatures: none;
@@ -567,8 +567,9 @@
 		display: flex;
 		gap: 1ch;
 		padding: 0 8px;
-		background: #1f9d55;
-		color: #0b0b0b;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bar);
+		color: var(--t-bar-fg);
 	}
 	.bar .left {
 		flex: none;

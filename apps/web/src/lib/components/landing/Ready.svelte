@@ -7,6 +7,7 @@
   captured for real on a repose machine).
 -->
 <script lang="ts">
+	import WinHead from './WinHead.svelte';
 	import { agentMarks, toolMarks, type Mark } from '$lib/components/illustrations/marks';
 
 	// Labels from docs/machine.md "What's installed".
@@ -82,7 +83,7 @@
 	<ul class="agents" aria-hidden="true">
 		{#each agentMarks as m (m.name)}
 			<li>
-				<span class="am">{@render mark(m, 44)}</span>
+				<span class="am">{@render mark(m, 32)}</span>
 			</li>
 		{/each}
 	</ul>
@@ -101,7 +102,8 @@
 			</p>
 		</div>
 
-		<div class="term">
+		<div class="term shot-win">
+			<WinHead who="machine" />
 			<div class="lines">
 				{#each rows as row, i (i)}
 					{#if row === 'hint'}
@@ -128,27 +130,31 @@
 </div>
 
 <style>
+	/* Everything sits on the stage's one inset (landing.css): the marks'
+	   band, the hairline under it and the two columns under that share
+	   the same left and right edges. */
+	.ready {
+		display: grid;
+	}
 	.agents {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 28px 8px;
-		padding: 32px 12px;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		gap: 8px;
+		margin: 0;
+		padding: 16px 0 40px;
+		list-style: none;
 	}
 	.agents li {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
+		justify-content: center;
 	}
-	/* The landing's own chrome around the capture: text tokens, so the
-	   two schemes are paired once in layout.css, not here. */
 	.am {
 		color: var(--ink);
 	}
 	.below {
 		display: grid;
 		gap: 24px;
-		padding: 16px;
+		padding-top: 32px;
 		align-items: start;
 		border-top: 1px solid var(--rule);
 	}
@@ -156,47 +162,39 @@
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px 16px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 	.tools li {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		font-size: 14px;
+		font-size: 13px;
 		color: var(--pic-ink);
 	}
 	.more {
-		margin-top: 16px;
+		margin: 16px 0 0;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 20px;
 		color: var(--ink-faint);
 	}
-	@media (min-width: 640px) {
-		.agents {
-			grid-template-columns: repeat(5, minmax(0, 1fr));
-			padding: 40px 32px;
-		}
-		.below {
-			padding: 32px;
-		}
-	}
 	@media (min-width: 768px) {
 		.below {
 			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
-			gap: 32px;
+			gap: 40px;
 		}
 	}
 
+	/* The shell, a window like every other on the page, in the terminals'
+	   palette (pictures.css). */
 	.term {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		border: 1px solid #2a2a28;
-		background: #0d0d0c;
-		color: #d4d4d0;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 19px;
+		background: var(--t-bg);
+		color: var(--t-fg);
 	}
 	/* A terminal does not re-flow: rows keep white-space: pre and a narrow
 	   frame crops them on the right, as the editor and browser captures
@@ -208,16 +206,16 @@
 		white-space: pre;
 	}
 	.y {
-		color: #e5c07b;
+		color: var(--t-yellow);
 	}
 	.g {
-		color: #98c379;
+		color: var(--t-green);
 	}
 	.c {
-		color: #56b6c2;
+		color: var(--t-cyan);
 	}
 	.r {
-		color: #e06c75;
+		color: var(--t-red);
 	}
 	.pre,
 	.clock span {
@@ -231,8 +229,9 @@
 		justify-content: space-between;
 		gap: 1ch;
 		padding: 1px 14px;
-		background: #1f9d55;
-		color: #0d0d0c;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bar);
+		color: var(--t-bar-fg);
 		white-space: nowrap;
 		overflow: hidden;
 	}
@@ -241,22 +240,28 @@
 			display: none;
 		}
 		.term {
-			font-size: 10.5px;
-			line-height: 16px;
+			font-size: 11px;
+			line-height: 17px;
 		}
+		/* The rows the phone crops run off the right edge into a fade,
+		   as a picture does, so no row reads as cut mid-word. */
 		.lines {
 			padding: 10px 10px 12px;
+			mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
 		}
 		.bar {
 			padding: 1px 10px;
 		}
 		.agents {
-			display: flex;
-			flex-wrap: wrap;
-			justify-content: center;
+			gap: 4px;
+			padding: 8px 0 24px;
 		}
-		.agents li {
-			width: calc((100% - 16px) / 3);
+		.agents :global(svg) {
+			width: 26px;
+			height: 26px;
+		}
+		.below {
+			padding-top: 24px;
 		}
 	}
 </style>

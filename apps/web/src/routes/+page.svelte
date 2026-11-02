@@ -20,7 +20,6 @@
 	import Browser from '$lib/components/landing/Browser.svelte';
 	import Editor from '$lib/components/landing/Editor.svelte';
 	import Ready from '$lib/components/landing/Ready.svelte';
-	import Gauge from '$lib/components/landing/Gauge.svelte';
 
 	/** GET /public/seats (I-290); undefined until it answers, and if it never does. */
 	let seats = $state<PublicSeats | undefined>(undefined);
@@ -90,8 +89,7 @@
 		<a
 			href={signinHref(returnTo)}
 			class="hk-btn hk-btn-lg hk-btn--touch"
-			onclick={(e) => onSignInLinkClick(e, returnTo)}
-			>{@render authLabel(signedOut, signedIn)}</a
+			onclick={(e) => onSignInLinkClick(e, returnTo)}>{@render authLabel(signedOut, signedIn)}</a
 		>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{/if}
@@ -104,33 +102,34 @@
 {/snippet}
 
 <main id="main" tabindex="-1" class="frame landing">
-	<section class="hero">
-		<div class="hero-copy">
-			<p class="hk-eyebrow">For solo founders and their agents</p>
-			<h1 class="hk-h1">Your dev environment, replicated in the cloud</h1>
+	<section class="band band--pic hero">
+		<p class="label">For solo founders and their agents</p>
+		<h1 class="hk-h1">Your dev environment, replicated in the cloud</h1>
+		<div class="cols hero-row">
 			<p class="hk-lead">
 				Your code, tools and logins sit on a machine of its own, where agents run with full
-				permissions and nobody approves commands one by one. Snapshot it as you go, and you can put
-				a wrecked machine back in minutes.
+				permissions and nobody approves commands one by one.
 			</p>
-			<div class="ctas">
-				{@render authAction('Get started', 'Open the dashboard')}
-				<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
+			<div>
+				<div class="ctas">
+					{@render authAction('Get started', 'Open the dashboard')}
+					<CopyButton text={INSTALL_COMMAND} label="Copy install command" size="lg" tone="page" />
+				</div>
+				<p class="install">
+					{install[0]}<span class="nowrap">{install[1]}</span>
+					<span class="nowrap">{install[2].trimStart()}</span>
+				</p>
 			</div>
-			<p class="install">
-				{install[0]}<span class="nowrap">{install[1]}</span>
-				<span class="nowrap">{install[2].trimStart()}</span>
-			</p>
 		</div>
 		<div class="stage hero-stage">
 			<Hero />
 		</div>
 	</section>
 
-	<section class="sec">
+	<section class="band band--pic">
 		<div class="sec-head">
 			<h2 class="hk-h2">Your laptop's setup, in one command</h2>
-			<p class="side-text">
+			<p class="copy">
 				You spend an hour setting up a cloud box: install the CLIs, log in to GitHub, paste the
 				<code>.env</code> files. <code>repose run</code> copies all of it from your laptop.
 			</p>
@@ -140,51 +139,52 @@
 		</div>
 	</section>
 
-	<section class="sec" id="features">
+	<section class="band" id="features">
 		<div class="sec-head">
-			<h2 class="hk-h2">On every machine</h2>
+			<h2 class="hk-h2">A cloud machine that feels like your own box</h2>
 		</div>
 		<ul class="cells">
 			<li>
 				<ComesBack />
-				<h3 class="hk-h3">Let it break the whole machine</h3>
-				<p>
-					repose snapshots the machine nightly, and you can take one yourself any time. Restoring it
-					brings back the databases, logins and uncommitted work in minutes.
+				<h3 class="item-title">Let it break the whole machine</h3>
+				<p class="copy">
+					repose snapshots the machine nightly, and you can take one yourself any time.
 				</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
+				<p class="cmd"><span aria-hidden="true">$</span> repose snapshots create</p>
 			</li>
 			<li>
 				<Localhost />
-				<h3 class="hk-h3">The machine's ports on your localhost</h3>
-				<p>
-					Ports from 1024 up appear on your localhost while you're attached. When you're not,
-					forward one by hand. Cookies and OAuth redirects behave as they do locally.
+				<h3 class="item-title">Use its ports on your localhost</h3>
+				<p class="copy">
+					Cookies and OAuth redirects behave as they do locally. When you're not attached, forward a
+					port by hand.
 				</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose open 3000</p>
+				<p class="cmd"><span aria-hidden="true">$</span> repose open 5173</p>
 			</li>
 			<li>
 				<Browser />
-				<h3 class="hk-h3">Watch the agent's browser, and take over</h3>
-				<p>The agent's Chromium, on your laptop. Click in it to take over.</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose browser</p>
+				<h3 class="item-title">Watch the agent's browser, and take over</h3>
+				<p class="copy">Step in for a captcha or a passkey in the browser the agent is driving.</p>
+				<p class="cmd"><span aria-hidden="true">$</span> repose browser</p>
 			</li>
 			<li>
 				<Editor />
-				<h3 class="hk-h3">Open it in your editor</h3>
-				<p>Every machine is an SSH host. Neovim on it, VS Code, Cursor or Zed over SSH.</p>
-				<p class="cell-cmd"><span aria-hidden="true">$</span> repose code your-project</p>
+				<h3 class="item-title">Open it in your editor</h3>
+				<p class="copy">
+					Each machine is an SSH host, so VS Code, Cursor and Zed open it over SSH.
+				</p>
+				<p class="cmd"><span aria-hidden="true">$</span> repose code your-project</p>
 			</li>
 		</ul>
 	</section>
 
-	<section class="sec">
-		<div class="sec-head sec-head--links">
+	<section class="band band--pic">
+		<div class="sec-head">
 			<h2 class="hk-h2">The agents you use, and the tools they need, on first boot</h2>
-			<p class="more">
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
+			<p class="links">
+				<a href={resolve('/docs/[slug]', { slug: 'agents' })}>All agents</a>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve() with a fragment appended -->
-				<a class="hk-more" href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
+				<a href={resolve('/docs/[slug]', { slug: 'machine' }) + '#whats-installed'}
 					>Everything installed</a
 				>
 			</p>
@@ -194,33 +194,27 @@
 		</div>
 	</section>
 
-	<section class="sec">
+	<section class="band">
 		<div class="sec-head">
 			<h2 class="hk-h2">Start in three commands</h2>
 		</div>
-		<!-- The gauge counts the steps up, a third at a time; the last, done,
-		     takes the pictures' blue. -->
-		<ol class="steps steps--rows">
+		<ol class="ruled steps">
 			{#each steps as step, i (step.title)}
-				<li>
-					<h3 class="hk-h4 step-title">
-						<span class="step-mark" aria-hidden="true"
-							><Gauge
-								fraction={(i + 1) / steps.length}
-								tone={i === steps.length - 1 ? 'accent' : 'neutral'}
-							/></span
+				<li class="cols">
+					<h3 class="item-title step-title">
+						<span class="label" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span
 						>{step.title}
 					</h3>
-					<CodeCopy command={step.command} what={step.what} prompt />
+					<CodeCopy command={step.command} what={step.what} />
 				</li>
 			{/each}
 		</ol>
 	</section>
 
-	<section class="sec" id="pricing">
-		<div class="pricing-head">
+	<section class="band" id="pricing">
+		<div class="sec-head">
 			<h2 class="hk-h2">Pricing</h2>
-			<p>Launch prices. Seven days free.</p>
+			<p class="copy">Launch prices.</p>
 		</div>
 		<PlanCells plans={PLANS} {introEligible} variant="public" level={3} />
 		<div class="cta-row">
@@ -239,54 +233,62 @@
 		</div>
 	</section>
 
-	<section class="sec split">
-		<div class="side">
+	<section class="band">
+		<div class="cols faq-cols">
 			<h2 class="hk-h2">Questions</h2>
-		</div>
-		<div class="faq">
-			<details>
-				<summary>Why not skip permissions on my laptop?{@render plus()}</summary>
-				<p>
-					There the agent can read whatever you can: your SSH keys, your other repositories, the
-					sessions in your browser. On repose it gets a machine holding one project and the logins
-					you chose to copy. Nothing on that machine can open a connection to your laptop, and your
-					other projects are separate machines it can't reach.
-				</p>
-			</details>
-			<details>
-				<summary>Can I close my laptop while the agent works?{@render plus()}</summary>
-				<p>
-					Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
-					wants a decision from you, you get an email, a push on your phone through ntfy, or a
-					Google Chat card, and you can answer its question from there.
-				</p>
-			</details>
-			<details>
-				<summary>What if the agent wrecks the machine?{@render plus()}</summary>
-				<p>
-					You restore a snapshot. repose takes one every night and at every stop, and
-					<code>repose snapshots create</code> takes one before something risky. A restore brings back
-					the disk whole: code, databases, installed tools and logins made on the machine.
-				</p>
-			</details>
-			<details>
-				<summary>Can three agents try three approaches at once?{@render plus()}</summary>
-				<p>
-					<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted changes
-					and installed dependencies included, into three new machines, and
-					<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
-					the rest.
-				</p>
-			</details>
-			<details>
-				<summary>Why not rent a server and set it up myself?{@render plus()}</summary>
-				<p>
-					You can, and spend the first hour installing CLIs, logging in to GitHub and copying
-					<code>.env</code> files, then again for the next project. <code>repose run</code> copies your
-					tools, logins and uncommitted work from your laptop, and each machine comes with nightly snapshots,
-					forks and its ports on your localhost.
-				</p>
-			</details>
+			<div class="ruled faq">
+				<details>
+					<summary class="item-title"
+						>Why not skip permissions on my laptop?{@render plus()}</summary
+					>
+					<p class="copy">
+						There the agent can read whatever you can: your SSH keys, your other repositories, the
+						sessions in your browser. On repose it gets a machine holding one project and the logins
+						you chose to copy. Nothing on that machine can open a connection to your laptop, and
+						your other projects are separate machines it can't reach.
+					</p>
+				</details>
+				<details>
+					<summary class="item-title"
+						>Can I close my laptop while the agent works?{@render plus()}</summary
+					>
+					<p class="copy">
+						Yes. Detach and close it; the agent keeps working on the machine. When it finishes, or
+						wants a decision from you, you get an email, a push on your phone through ntfy, or a
+						Google Chat card, and you can answer its question from there.
+					</p>
+				</details>
+				<details>
+					<summary class="item-title">What if the agent wrecks the machine?{@render plus()}</summary
+					>
+					<p class="copy">
+						You restore a snapshot. repose takes one every night and at every stop, and
+						<code>repose snapshots create</code> takes one before something risky. A restore brings back
+						the disk whole: code, databases, installed tools and logins made on the machine.
+					</p>
+				</details>
+				<details>
+					<summary class="item-title"
+						>Can three agents try three approaches at once?{@render plus()}</summary
+					>
+					<p class="copy">
+						<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted
+						changes and installed dependencies included, into three new machines, and
+						<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
+						the rest.
+					</p>
+				</details>
+				<details>
+					<summary class="item-title"
+						>Why not rent a server and set it up myself?{@render plus()}</summary
+					>
+					<p class="copy">
+						You can, and you redo its setup for each project: the CLIs, the GitHub login, the
+						<code>.env</code> files. The nightly snapshots and the port forwards are yours to build as
+						well.
+					</p>
+				</details>
+			</div>
 		</div>
 	</section>
 </main>
