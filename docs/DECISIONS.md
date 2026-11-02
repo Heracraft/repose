@@ -27841,3 +27841,18 @@ Not done here, on purpose: `nixosConfigurations.host-01` and
 (I-432) but a host that must come back joins again with `hosts add --name
 host-01 --reissue`, and that needs its configuration to still exist. They
 are cheap to keep and the one thing that makes a rollback possible.
+**I-970. A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite.** (ci-steps, 2026-11-02.)
+
+I-968's three tests are why `main`'s CI was red for sixteen days. This is why nobody could see what the redness was hiding. In the `go` job, `go test -race ./...` ran before the migrate-rollback check and before `golangci-lint`, and GitHub skips the rest of a job's steps once one fails. So from 2026-10-17 every run of `main` skipped all three, and **a step that never ran has no failure to report, which on the job list is indistinguishable from one that ran and passed.**
+
+The cost was exact and invisible: `ci-green` (I-954) fixed an unchecked `c.Close` that `errcheck` refuses, and that fix could not be exercised on CI at all until the tests went green on 2026-11-02 — sixteen days in which it was correct, unverified, and reported as neither. The rollback check, which is the only thing that proves a migration can go `down 1` on a seeded database, was skipped the same way and for the same length of time.
+
+The three steps now carry `if: ${{ !cancelled() }}`. None of them depends on the tests passing: the rollback check needs a built binary, which `go build` has already provided, and lint reads source. The job still fails on the failing test, so nothing is excused; what changes is that a red suite stops hiding what is behind it.
+
+This is the same fault as I-968 one level up, which is why it is recorded rather than quietly fixed. There the assertion read a proxy for the property; here the *reader* does — "the step did not report a failure" stood in for "the step ran and passed", and the proxy was green while the property was unknown. The lane that found it put it best: a job's steps must be read as "ran and passed", never as "did not fail".
+
+*Not verified by its own push, and deliberately so.* The change is visible only when a step before it fails, and the tests are green now. It is verified by inspection — the YAML parses and the conditions are on the three steps — and it will demonstrate itself on the next red test run, which is the first time it can. Claiming otherwise would be the same error this entry is about.
+
+*The rollback debt is paid, separately from the fix.* Making the step run again says nothing about the sixteen days in which it did not, and six migrations were added in that window: 0028, 0029 (twice, two files), 0031, 0032, 0033. So the sequence was run by hand before the next release, on a throwaway cluster, and further than CI goes — CI does `down 1`, which only ever exercises the newest migration, while this stepped down through all six one at a time to 27 and re-applied them in one `migrate`. Every one reverted and came back, and `db verify` passed. Nothing broken was hiding. The point of running it is that the first time the step fires again should not also be the first time anyone finds out (the lane that found the skip asked for this; it is the right ask).
+
+*Rejected:* moving lint into its own job. It would also work, and it costs a second checkout, a second Go toolchain install and a second `go install` of golangci-lint built from source (I-429) on every run, to buy a separation the condition already gives. *Rejected:* `always()`, which runs the steps when the job was cancelled too, turning a deliberate cancellation into two misleading failures.
