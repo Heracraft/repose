@@ -2750,7 +2750,17 @@ its steps bite if they are taken in the wrong order.
      already exists**, which may be 24 hours old. `move` takes a fresh
      snapshot only when the project is `running`, by stopping it with
      `snapshot: true` first. So start it, or `repose-admin projects
-     snapshot <id>`, before moving a stopped one.
+     snapshot <id>`, before moving a stopped one. A stop snapshots by
+     default, so a project stopped on purpose has a snapshot from the
+     second it stopped; the one to check is a project that reached
+     `stopped` *without* a stop op -- `guest_state_changed: stopped` in
+     its events and no `stop` in `ops` -- because then the newest
+     snapshot is the last nightly and anything after it is not in any
+     snapshot. `izma` was one of the eight on 2026-11-02: stopped
+     2026-10-10 05:46 with no stop op, restored from the 03:02 nightly,
+     and nothing was lost only because its last recorded activity was
+     six hours before that snapshot. Read the project's events before
+     moving it, not after.
    - **`--to` is not capacity-checked.** A named target short-circuits
      the scheduler, so a move onto a host without the memory, the cores
      or the pool for it is accepted and fails later, on the host.
