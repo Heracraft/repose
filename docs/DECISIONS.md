@@ -28142,3 +28142,21 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+**I-1008. A cut is refused while `main`'s CI is red, with a named override.** (red-gate, 2026-11-03.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `5bbe3246` (2026-11-01) failed, and nine releases were cut over them. The mechanism is worth more than the count: **a branch is checked before it is merged, and the merged result is checked by nobody.** Each conductor saw their own branch green and nothing asked about the branch they were merging into.
+
+`cut` now reads GitHub's newest `ci.yml` run on `main` and refuses on `failure`, `timed_out` or `startup_failure`, printing the run's URL.
+
+**The override is the owner's rule, not an escape hatch.** A red `main` holds a cut *unless the red is a mechanical fault in the tests themselves* — which is what 2026-11-02 and 2026-11-03 both turned out to be: three tests asserting a proxy (I-968), a lint step skipped behind them (I-970), a test racing a heartbeat it had provoked (I-1014), and a Playwright fixture outliving its page (I-1016). So `REPOSE_QUEUE_RED_MAIN` takes a **reason**, refuses a bare `1`, and the reason is written into the release's own state file as `red_main=`, so the record says a cut was taken over a red main and why. A gate whose override leaves no trace is a gate that gets used by habit.
+
+**It fails closed.** No `gh`, no auth, no network, or an answer this gate does not understand all refuse, because "the check could not run" reading as "the check passed" is the fault this gate belongs to. The override clears those too.
+
+*Two faults were found in the gate by testing it, both of which it exists to prevent.*
+
+- **`gh run list --limit 1` is not the newest run.** Asked for one, it returned a run from 2026-10-31 while two from 2026-11-02 existed; its ordering is not documented as newest-first. The gate would have held a cut on a stale red. It now takes twenty and picks by `createdAt`.
+- **The first version passed a red `main` in silence.** It read the conclusion out of JSON with `sed`, which matched nothing because `json.dumps` writes `"conclusion": "failure"` *with a space*, and the `case` treated an empty conclusion as success. So the gate answered "fine" having read nothing — exactly its own subject. python now prints the two fields directly, and an unrecognised conclusion refuses instead of passing.
+
+*Known limit, stated rather than hidden:* a run still in progress is not a failure, so pushing and cutting immediately passes this gate. It is aimed at the standing red nobody was told about, not at a race. The other half — a job skipped by a condition, a `needs:` chain on a failure, a path-filtered workflow, the 88 `t.Skip` calls — is untouched and still reports green (I-1000's gaps).
+
+*Found by:* running the gate as a live `cut` instead of calling the function, which cut a real batch that then had to be `abandon`ed. `abandon` did its job; the lesson is that a gate on `cut` is testable only by sourcing it, and the fixture escape `REPOSE_QUEUE_SKIP_RED_MAIN=1` exists so `ops/dev/release-queue-test` never reaches GitHub.
