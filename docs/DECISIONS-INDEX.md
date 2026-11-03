@@ -926,6 +926,6 @@ pointer, not a summary.
 - **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28908
 - **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28922
 - **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L29041
-- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29105
-- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29163
-- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29203
+- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29129
+- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29187
+- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29227
