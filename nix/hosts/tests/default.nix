@@ -819,10 +819,39 @@ in
           print(lvm)
           assert "dmeventd" in lvm, f"lvm on PATH is {lvm}"
 
-      with subtest("I-649: mana_ib blacklisted, NVMe io_timeout 240 s, ethtool"):
-          host.succeed("grep -q 'nvme_core.io_timeout=240' /proc/cmdline")
+      with subtest("the kernel honoured what it was given (I-649, I-988)"):
+          # This used to grep /proc/cmdline, which says a parameter was
+          # passed and nothing about whether the kernel knew the name.
+          # `panic_on_oops=1` rode a switch and a reboot into host-02's
+          # cmdline on 2026-11-02 while `kernel.panic_on_oops` stayed 0: it
+          # is a sysctl, not a parameter at all, and the kernel said so in a
+          # dmesg line nobody read (DECISIONS I-988, I-1012).
+          #
+          # So: the kernel recognised every name we passed, and the setting
+          # reads back on. NOT "the kernel printed no Unknown line" -- in a
+          # test VM that line always carries the driver's own `regInfo=`, so
+          # that form is red on a correct configuration and would have to be
+          # loosened, which is how a guard becomes the next proxy. Names are
+          # read back out of the line rather than matched as substrings, and
+          # dotted ones are left out: those are module parameters, which the
+          # kernel hands to the module instead of refusing.
+          ours = ${builtins.toJSON (builtins.filter (n: !(lib.hasInfix "." n))
+            (map (p: builtins.head (lib.splitString "=" p)) nodes.host.boot.kernelParams))}
+          line = host.execute("journalctl -k -b 0 --grep 'Unknown kernel command line parameters' || true")[1]
+          refused = set()
+          for chunk in line.split('"')[1::2]:
+              for tok in chunk.split():
+                  refused.add(tok.split("=")[0])
+          bad = sorted(set(ours) & refused)
+          assert not bad, f"the kernel did not recognise {bad}; its line: {line.strip()}"
+          assert host.succeed("sysctl -n kernel.panic_on_oops").strip() == "1"
           host.succeed("modprobe --showconfig | grep -q '^blacklist mana_ib$'")
           host.succeed("ethtool --version")
+          # The NVMe io_timeout has no cmdline assertion because this unit
+          # is the parameter's effect (vm-hardening.nix): it writes every
+          # running disk's queue at a switch, and the sysfs path it writes
+          # does not exist on a virtio VM, so the unit is what there is to
+          # read here.
           host.succeed("systemctl is-active repose-nvme-timeout.service")
 
       with subtest("I-654: root is locked without the console file, and takes its hash with it"):

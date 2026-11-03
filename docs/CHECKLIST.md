@@ -101,7 +101,14 @@ written so none of them goes unnoticed again.
       `Dentry cache hash table ... linear` for `hashdist=0` (I-982),
       a non-zero `sysctl` for anything that is really a sysctl. Prefer
       `boot.kernel.sysctl` where the knob is one: it applies on a switch
-      with no reboot, and it can be read back.
+      with no reboot, and it can be read back. `nix/hosts/tests`' "the
+      kernel honoured what it was given" subtest holds the general form —
+      no name the node passed appears in the kernel's Unknown-parameter
+      line, and `kernel.panic_on_oops` reads back 1 — and `ci.yml` asserts
+      the sysctl is still 1 in host-02's *config*. Neither retires this
+      item: the test speaks for a VM's kernel and the eval for a config
+      file, and the thing that bit us was a real host whose config was
+      already right (DECISIONS I-1012).
 - [ ] A new or changed test asserts the property it is named for, not a
       proxy for it, and names the probe that proves it would fail without
       the fix. A proxy fails in both directions: red when the runner is

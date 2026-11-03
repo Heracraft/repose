@@ -28142,3 +28142,93 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+
+**I-1012. A test asserts the kernel honoured a parameter, not that it was
+passed.** (oops-guard, 2026-11-03.)
+
+I-988 closed with "nothing asserts this", and named `nix/hosts/tests` as
+where a guard would go. This is that guard. The fault it is for: a name
+the kernel does not recognise is accepted silently into the command line
+and handed to userspace, so `/proc/cmdline` shows it present while the
+setting is absent. `panic_on_oops=1` rode a switch *and* a reboot into
+host-02's cmdline on 2026-11-02 with `kernel.panic_on_oops` still 0. The
+branch that shipped it verified `nix eval ...boot.kernelParams`, which is
+two steps from the kernel.
+
+`host-reboot`'s I-649 subtest is renamed "the kernel honoured what it was
+given" and its `grep -q 'nvme_core.io_timeout=240' /proc/cmdline` is
+replaced by two assertions: no name this node passed appears in the
+kernel's Unknown-parameter line, and `sysctl -n kernel.panic_on_oops`
+reads 1. `systemctl is-active repose-nvme-timeout.service` **stays**,
+because that unit is the io_timeout parameter's effect
+(`nix/hosts/vm-hardening.nix`): it writes every running NVMe queue at a
+switch, and the sysfs path a naive check would read does not exist on a
+virtio VM.
+
+**The obvious form of the first assertion is wrong, and it is wrong in
+the direction that matters.** `host.fail("journalctl -k -b 0 --grep
+'Unknown kernel command line parameters'")` -- no Unknown line at all --
+is **red on a correct configuration**: a NixOS test VM always carries the
+driver's own `regInfo=<closure-info>/registration`, which the kernel
+refuses exactly as it refused `panic_on_oops`. Measured, not reasoned:
+with the tree correct, the line reads `Unknown kernel command line
+parameters "regInfo=/nix/store/...-closure-info/registration"`. A guard
+that is red when nothing is wrong gets loosened, and a loosened grep is
+the next proxy. So the assertion is "no name **we** passed is in that
+line": the refused names are read back out of the line and intersected
+with this node's own `boot.kernelParams`, dotted names excluded because
+those are module parameters, which the kernel hands to the module rather
+than refusing (`nvme_core.io_timeout` is one). If it ever trips on a name
+we did pass and should not have to, the fix is to stop passing that name.
+Never widen the grep.
+
+Rejected: `dmesg | grep 'Dentry cache hash table.*linear'` for
+`hashdist=0` (I-982). It asserts nothing here. The test node is 3072 MB,
+2 cores, **one NUMA node**, and `alloc_large_system_hash()` only defaults
+`hashdist=1` on a NUMA machine, so that line reads `linear` with
+`hashdist=0` deleted. It is a proxy wearing an effect's clothes, which is
+the thing `docs/CHECKLIST.md` forbids two lines above where it would have
+gone.
+
+**The CI half asserts strictly less, on purpose.** `ci.yml` gains one
+`nix eval` of `host-02`'s
+`boot.kernel.sysctl."kernel.panic_on_oops"` asserting 1. That is a
+**config** assertion and is deliberately blind to I-988 itself, where the
+config was right and the kernel ignored the name; it is there to catch a
+future edit or an `mkForce` deleting the sysctl. It is the only half that
+can run on GitHub: `ci.yml` runs `nix flake check --no-build ./nix`
+because hosted runners have no KVM, so the booted-VM half gates on
+woker-1 only. The step carries `if: ${{ !cancelled() }}` (I-970: a
+skipped step reads exactly like a passing one), and it does **not** use
+`nix eval --raw`, which fails with "cannot coerce an integer to a string"
+and would make the step fail for a reason unrelated to the setting.
+
+*Evidence, from a scratch worktree with the subtest's own two assertions
+on a node with the same `hostModules`.* Correct tree: the Unknown line
+holds `regInfo=` alone, the intersection with our names is empty, `sysctl
+kernel.panic_on_oops = 1`, green. Then I-984's shipped shape put back --
+the sysctl removed and `"panic_on_oops=1"` returned to `boot.kernelParams`
+-- red, with `AssertionError: the kernel did not recognise
+['panic_on_oops']; its line: ... Unknown kernel command line parameters
+"panic_on_oops=1 regInfo=..."` and `sysctl kernel.panic_on_oops = 0`.
+That is I-988 reproduced and caught on a branch in minutes, which the
+`nix eval` of `boot.kernelParams` could not do at all.
+
+**What it does not cover.** A real host's kernel: this is a VM, and the
+thing that bit us was a D64s_v7. `docs/CHECKLIST.md`'s I-988 item
+therefore **stays** rather than being closed by this test. Parameters
+gated on the provider in `nix/hosts/azure.nix`, because every test node
+sets `provider = "none"`. And `hashdist=0`'s own effect, for the NUMA
+reason above; the real-host gauge for that belongs to the triage lane.
+
+*A limit found while verifying it, which is not this branch's to fix.*
+`host-reboot` is **red on `main`** (b55d17dd), independently of anything
+here: in its subtest 1, `hostd.service` starts and exits 1 about 15 ms
+later with no log line of its own, so `systemctl is-active hostd.service`
+fails. The subtest's premise, and
+`docs/interfaces/host-conventions.md`, say hostd comes up regardless of
+an unavailable pool -- the pool unit is `wants`, not `requires`. So the
+new subtest is in a test that does not currently reach it, and the VM
+half of this guard gates nothing until that is fixed. Reproduced on a
+clean `main` checkout before concluding it was pre-existing, which is why
+the evidence above comes from a standalone node instead.
