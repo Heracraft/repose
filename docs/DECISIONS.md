@@ -29003,3 +29003,62 @@ than `failed`, which reads like a slow start and is a crash loop. hostd's
 own reason is in the journal, which this VM test does not dump. The live
 hosts are registered and have their pool, which is why this is invisible
 in production.
+
+**I-1022. A throwaway Postgres cluster is owned by a process, and the
+kernel is what reports that process's death.** (testdb-reaper,
+2026-11-03.)
+
+I-998 closed half of this: every package that starts a cluster now has a
+`TestMain`, so the **orderly** exit stops it. The other half is that most
+leaks are not orderly. Of the twenty-five clusters alive on the dev box on
+2026-11-03 -- 2.3 GB, data dirs back to 2026-10-28, on a machine that had
+just killed two background tasks for want of memory -- most were from a
+`go test` that was cancelled, killed or OOM-killed, where `Stop` and every
+`defer` above it never ran.
+
+Ownership rather than age, as I-998 specified. `testdb` holds an exclusive
+`flock` on `owner.lock` inside the cluster's own directory for the life of
+the process, and never closes it; the kernel releases it on exit, panic,
+`SIGKILL` and OOM-kill alike. `start` reaps before it allocates: any
+`repose-pg-*` directory whose lock can be taken is a corpse, and the
+process about to spend a gigabyte is the one with an interest in the disk.
+No goroutine, no timer, nothing racing a suite that is shutting down.
+
+Three things this cost that the specification did not foresee:
+
+A cluster killed inside its first four seconds is still in `initdb`, whose
+bootstrap runs `postgres --single` -- a standalone backend, for which
+PostgreSQL writes the **negated** pid in `postmaster.pid` and which
+`pg_ctl stop` cannot stop. Measured: first line `-4111094` with pid
+4111094 alive. Reading the sign as part of the number makes every such
+cluster read as live for ever, so the magnitude is what is read, and the
+pid file is the fallback after `pg_ctl`.
+
+Killing by a recorded pid is the one dangerous thing here: a pid from days
+ago belongs to somebody else by now. So it is killed only when the kernel
+agrees it is this cluster -- `/proc/<pid>/cmdline` names this data
+directory -- and both directions of that check are tested with a real
+child process.
+
+`os.RemoveAll` once is not enough while a postmaster is still writing: the
+walk removes the files and the final `rmdir` finds the directory not
+empty. Measured on a 23 MB cluster, which left an empty directory behind.
+It runs twice, 200 ms apart.
+
+Clusters that predate this have no lock file and are judged by the
+postmaster instead, under a 30-minute floor on the directory's mtime --
+not a policy, a floor under the seconds the *old* code spends between
+`MkdirTemp` and `pg_ctl`, where there is no pid file yet and nothing
+distinguishes a cluster being born from one that never was. It goes when
+no unlocked cluster is left.
+
+*Evidence:* a real cluster, 40 MB with its postmaster up, `kill -9` on the
+`go test` process holding it (so no `Stop`, no `defer`): the directory and
+the orphaned postmaster both survive, the lock reads free. The next run in
+the same `TMPDIR` leaves the sandbox empty at 4 KB with the postmaster
+gone. Eleven unit tests cover the decisions without Postgres: a held lock
+is left alone, a free one is taken, a stranger sharing the recorded pid is
+not killed, a directory not named `repose-pg-*` is never touched, and
+`reapDirs` ascends out of `nix-shell.*` -- which is where two of the
+twenty-five were, invisible from the next dev shell because TMPDIR itself
+goes away with the one that leaked them.
