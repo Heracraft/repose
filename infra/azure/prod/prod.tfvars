@@ -80,6 +80,17 @@ host_flake_attrs = {
 # month at the P15 to P20 step.
 host_shapes = {}
 
+# repose-prod holds the fleet and nothing else, so the inventory check in
+# modules/environment/inventory.tf speaks on every plan here (DECISIONS
+# I-1004). It names any virtual machine, disk, network interface or public IP
+# in the group that no resource here creates -- the case it exists for is a
+# host's OS disk, which is inline on the VM, which no plan ever names, and
+# which is therefore invisible to a diff whether it survived a destroy or not.
+#
+# Staging leaves this false: its hosts are named in a git-ignored local
+# tfvars, so the check could not tell a host it cannot see from a stray.
+resource_group_is_exclusive = true
+
 snapshots_account_name = "reposesnapshots3912"
 keyvault_name          = "repose-kv-3912"
 # The guest freeze's image-wrapping key, in a vault of its own because access

@@ -28142,3 +28142,66 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+
+**I-1004. Prod's plan names anything machine-shaped in the resource group
+that the configuration does not create.** (rg-inventory, 2026-11-03.)
+
+A host's OS disk is declared inline on its VM, the host module sets no
+`delete_option`, and **no plan ever names it**. So when host-01 was
+destroyed on 2026-11-02, whether `osdisk-host-01` survived as an unowned
+Premium SSD P15 at about $38 a month was invisible to the diff, invisible
+to `tofu plan`, and answerable only by asking Azure by hand afterwards. It
+went with the VM that time. That is a fact about one apply, not a property
+of the configuration, and the check is there because the next one is a
+different apply.
+
+`check "resource_group_is_exclusive"` compares four resource types in the
+group -- `virtualMachines`, `disks`, `networkInterfaces`,
+`publicIPAddresses` -- against the names the modules themselves produce,
+and names the difference with the `az disk delete` to fix it.
+
+Three things about how, each of which the obvious version gets wrong.
+
+*The ARM read is at module scope, not inside the check.* A data source
+that fails **inside** a check block has its error demoted to a warning
+under a different heading and every assertion in that block is skipped.
+So an expired credential or a lost Reader role would read as a clean
+group and pass any `grep "Check block assertion failed"` gate. Outside,
+a failed or unauthorised read is a hard plan error, which is the only
+honest answer to "we could not look".
+
+*It fails closed as well as open.* `inventory_missing` holds the names no
+environment can be without -- the edge, its NIC, every host in `hosts` --
+and the assertion requires that set to be found. A read that comes back
+empty, or filtered to nothing because Azure renamed a type string, is a
+check that has stopped looking, and without this clause it would pass the
+stray test for ever.
+
+*Expected names are derived per role, not as a cross-product.* Hosts have
+no public IP, edge and control have no data disk, and control is absent
+when `coolify_count` is 0. An all-pairs set would expect `pip-host-02`,
+which nothing creates, and would therefore have to tolerate absences --
+and a check that tolerates absences cannot see a stray. The NAT gateway's
+`pip-natgw-hosts` belongs to no VM and is read from a new
+`network.nat_public_ip_name` output rather than retyped, because a
+hardcoded copy is how the fleet's own egress address gets reported as a
+stray.
+
+Gated on `resource_group_is_exclusive`, default false, true only in
+`prod.tfvars`. Staging's hosts are named in a git-ignored local tfvars, so
+there it could not tell a host it cannot see from a stray and would warn
+on every plan for ever. `infra/README.md` already teaches the reader to
+scroll past `dns_is_managed_or_manual`; one such habit is enough, and the
+RUNBOOK step now names both expected warnings rather than implying prod
+plans are clean.
+
+**What this does not cover, so nobody infers otherwise.** Four hardcoded
+types. Snapshots, blob containers, Key Vault keys, managed identities and
+the NAT gateway resource itself are not checked, so a quiet check is not
+an empty group. And there is no staging or CI win in it: it cannot know
+host-stg-01's resources, which is the same reason it is off there.
+
+Rejected: asserting on resource *types* rather than instances, which the
+first sketch of this claimed to do. With four type strings hardcoded, the
+scope is the instances of those four types and nothing broader, and saying
+otherwise would promise coverage that does not exist.
