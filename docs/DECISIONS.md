@@ -29141,3 +29141,51 @@ number. It skips comment lines because its first draft failed on the
 comment explaining this bug -- the third guard in one day to fire on its
 own prose, after the decision-citation check on its examples (I-994) and
 the VM-wording check on the line naming the old wording (I-1024).
+
+**I-1030. hostd knew its own version and did not tell the metric that
+publishes it.** (hostd-version, 2026-11-03.)
+
+`repose_build_info{component="hostd"}` read `version="dev"` on host-02 on
+2026-11-03 while `hostd status` on that same binary, in the same second,
+printed `4e98597`. Both read `Options.Version`. Only one was given it:
+`internal/hostd/app` called `metrics.New()`, whose doc comment says it
+hardcodes `"dev"`, where `metrics.NewVersion(o.Version)` existed for
+exactly this and was already used by the api and the gateway.
+
+The consequence is small and constant: the one series that answers "what
+is running on this host" answers "dev" whatever is running, so a switch
+cannot be confirmed from the dashboard. It is how I found it -- checking
+that today's switch had landed, from the owner's Prometheus, and getting
+`dev` from a host I had just watched switch.
+
+`internal/obs/metrics` has had `TestBuildInfo` throughout and it passed
+on every run, because it asserts that `NewVersion` labels the version it
+is **handed**. Nothing asserted that hostd hands it anything. A test one
+layer up from the wiring is not a test of the wiring, which is the same
+shape as everything else found today: `host-services` asserting a message
+nothing printed, a gate asserting a run had finished when it had not, and
+three VM tests standing a daemon up without ever asking whether it was
+running (I-1020, I-1024, I-1026).
+
+So the fix comes with a seam: `newMetrics(o Options)` is a function
+rather than a line inside `Run`, and `TestBuildInfoCarriesTheBinary-
+Version` scrapes the handler it returns. `TestBuildInfoFallsBackToDev`
+keeps the other half honest -- an unset version really should read `dev`,
+because that is what a local `go build` with no ldflags is.
+
+*Still "dev", and not this branch's to fix:* the **api**. It passes
+`version` to `NewVersion` correctly, but `cmd/api/Dockerfile` takes
+`ARG VERSION=dev` and Coolify does not pass a build argument, so the
+binary is built with the default. That is a setting in the owner's
+dashboard, not a change here. The gateway is right already (`608caa6`),
+which is what makes the other two visible as wrong rather than as a
+convention.
+
+*Evidence:* on host-02, `hostd status` reads `"version": "4e98597"` and
+`curl 10.255.0.4:9101/metrics` reads
+`repose_build_info{component="hostd",version="dev"} 1` -- the same
+binary, the same moment, two answers. After the fix,
+`newMetrics(Options{Version: "4e98597"})` scrapes
+`repose_build_info{component="hostd",version="4e98597"} 1`, and the old
+`TestBuildInfo` passes on the unfixed tree, which is the gap stated as a
+test.

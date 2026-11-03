@@ -112,6 +112,19 @@ var registerRetry = 30 * time.Second
 
 // EnsureIdentity loads the identity or registers with the join token,
 // retrying every 30 s while the token is missing or the api unreachable.
+// newMetrics builds the daemon's registry from the options. It is a
+// function rather than a line inside Run so that something can test it:
+// the line it replaces was `metrics.New()`, which hardcodes "dev", and
+// `repose_build_info{component="hostd"}` therefore read version="dev" on
+// every host while `hostd status` on the same binary at the same moment
+// printed the real revision -- 4e98597 on host-02 on 2026-11-03. Both
+// read o.Version; only one of them was given it.
+//
+// internal/obs/metrics already had TestBuildInfo and it passed throughout,
+// because it tests that NewVersion labels what it is handed. Nothing
+// tested that hostd hands it anything (DECISIONS I-1030).
+func newMetrics(o Options) *metrics.M { return metrics.NewVersion(o.Version) }
+
 func EnsureIdentity(ctx context.Context, o Options, log *slog.Logger, r shell.Runner, l lvm.LVM) (*register.Identity, error) {
 	if id, err := register.Load(o.StateDir); err == nil {
 		return id, nil
@@ -225,7 +238,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	m := metrics.New()
+	m := newMetrics(o)
 	total, _, _ := hostinfo.MemInfo() // an unreadable meminfo means no memory accounting; Defaults() copes with zero
 	d := &Daemon{o: o, log: log, st: st, metrics: m, id: id, start: time.Now()}
 	d.dialer = &rotatingDialer{inner: stream.GRPCDialer{Addr: o.APIAddr, TLS: id.TLSConfig(roots, o.APIServerName)}}
