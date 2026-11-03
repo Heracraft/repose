@@ -912,20 +912,20 @@ pointer, not a summary.
 - **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28352
 - **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28371
 - **I-1020** The hostd stub died on a value-less flag, and three tests did not notice — 2026-11-03; L28426
-- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28502
-- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28518
-- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28537
-- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28553
-- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28566
-- **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28578
-- **I-1004** Prod's plan names anything machine-shaped in the resource group that the configuration does not create — 2026-11-03; L28693
-- **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28755
-- **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28774
-- **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28863
-- **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28876
-- **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28887
-- **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28901
-- **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L29020
-- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29084
-- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29142
-- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29182
+- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28523
+- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28539
+- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28558
+- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28574
+- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28587
+- **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28599
+- **I-1004** Prod's plan names anything machine-shaped in the resource group that the configuration does not create — 2026-11-03; L28714
+- **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28776
+- **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28795
+- **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28884
+- **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28897
+- **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28908
+- **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28922
+- **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L29041
+- **I-1022** A throwaway Postgres cluster is owned by a process, and the kernel is what reports that process's death — 2026-11-03; L29105
+- **I-1026** "Not finished" is not "passed", and a table that runs none of its rows is not a test — 2026-11-03; L29163
+- **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29203

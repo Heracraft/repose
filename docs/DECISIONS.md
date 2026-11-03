@@ -28497,8 +28497,29 @@ valued flag, and `--flag=value`. Then `nix build
 1's `systemctl is-active hostd.service` finishing in 0.02 s where it had
 failed with exit code 3. `nix flake check --no-build ./nix` passes.
 
-This is what I-1012's "the VM half gates nothing until `host-reboot` is
-fixed" was waiting for: with this merged, that guard is live.
+**This supersedes three sentences in I-1012, which are wrong as of now
+rather than when this lands.** That entry, its STATUS line and its queue
+note all say its VM half "gates nothing until `host-reboot` is fixed".
+I-1012 shipped in r20261103-1 and is on `main`, and this is that fix, so
+once this lands the guard is live and those three sentences read as a
+standing limitation that no longer exists. They were true when they were
+written; they are false because of this change, not because I-1012 was
+wrong about anything.
+
+*Found while verifying this, pre-existing, and not this branch's.*
+`host-network` is red at "hostd's shape limits what a guest sends out and
+what it receives from outside the host": `internet -> shaped guest at
+6691 Mbit/s, cap 20`. Not load, and not this change. The conductor
+session hit the same assertion independently on `main` at 6301 Mbit/s,
+the egress half of the same subtest passes moments earlier inside
+0.6-1.3x of its 20 Mbit cap, and the download-filter count assertion
+passes before that -- a loaded box would depress both directions and make
+a cap easier to satisfy, not harder. Two trees reading 6.3 and 6.7 Gbit/s
+against a 20 Mbit cap is no ingress shaping at all rather than a noisy
+measurement. Both readings are post-I-1024: before 84ea8f6a this test
+died ~300 lines earlier on an nft uid literal, so any older claim that
+`host-network` was green never exercised the ingress cap. It needs its own
+branch and an id.
 **I-992. `record` stamps the release's own date and main, not today's.** (record-stamp, 2026-11-03.)
 
 `release-queue record` built the STATUS line with `date -u +%Y-%m-%d` and the record file with `git rev-parse --short main`. Both are right only on the day of the release, and wrong by exactly as much as the record is late. So the two faults compound: a record is written late *because* nobody got to it, and the lateness is what makes it wrong, and nothing in the output says so.
