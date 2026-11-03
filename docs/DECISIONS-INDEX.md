@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-879 entries.
+883 entries.
 
 ## Scope
 
@@ -911,3 +911,7 @@ pointer, not a summary.
 - **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28072
 - **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28091
 - **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28145
+- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28161
+- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28180
+- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28196
+- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28209

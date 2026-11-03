@@ -17,6 +17,7 @@ cross-reference lands on the wrong entry.
 Standard library only; run from anywhere.
 """
 import collections
+import subprocess
 import re
 import sys
 from pathlib import Path
@@ -161,6 +162,89 @@ def render(entries):
 KNOWN_DUPLICATES = {"I-642", "I-647"}
 
 
+# KNOWN_ORPHANS are ids that code or docs cite with no entry behind them, each
+# waived with the reason it cannot simply be written. A fifth line here is a
+# confession, not a configuration: the check exists because I-904 was cited in
+# eight shipped places -- docs/interfaces/api.md among them, a contract doc --
+# for two days with no entry at all, and was found by accident while someone
+# asked an unrelated question about reservations (DECISIONS I-994).
+KNOWN_ORPHANS = {
+    # internal/ca/sshca/sshca.go:18 and docs/ops/RUNBOOK.md:3790. An
+    # interview-round id used as a cross-reference and never written as an
+    # entry, like the R-series ids DECISIONS.md records only in prose.
+    "R3-9": "interview-round id used as a cross-reference, never an entry",
+    "R4-1": "same, docs/features/config.md",
+    "R4-18": "same, docs/features/run-and-attach.md",
+}
+
+# Citations are matched with their own pattern, not the heading one. ID above
+# allows a trailing letter because a heading may read "I-12a"; no entry does,
+# and allowing it here would let "I-7xx" in a comment read as a citation of
+# I-7. The negative lookahead is what rejects it, and it is PCRE -- `git grep
+# -E` matches nothing at all with it, silently, which is the same class of
+# fault this check is for.
+CITE = r"(?:R[0-9]+|I)-[0-9]+(?![0-9A-Za-z_-])"
+
+# Where a bare id is a claim about an entry. Deliberately out: DECISIONS.md
+# itself, which records reserved-and-unused ids in prose (two of them at
+# DECISIONS.md:21249 and :22637 -- named by line and not by number, because a
+# number written here would itself be a citation in an enforced path, which is
+# how this comment first failed its own check); and STATUS.md,
+# status-archive/, releases/ and research/,
+# which are logs of claimed, abandoned and superseded work where a dead id is
+# the history rather than a mistake.
+ENFORCED = [
+    "internal/", "cmd/", "apps/", "nix/", "ops/", "scripts/", "test/",
+    ".github/", "docs/interfaces/", "docs/features/", "docs/ops/",
+    "docs/DESIGN.md", "docs/ARCHITECTURE.md", "docs/CHECKLIST.md",
+    "docs/MILESTONES.md", "docs/README.md", "install.sh", "justfile",
+]
+
+
+def declared(entries):
+    """Every id an entry declares, with `..` ranges expanded numerically."""
+    out = set()
+    for e in entries:
+        for a in e["aliases"]:
+            if ".." not in a:
+                out.add(a)
+                continue
+            lo, hi = a.split("..", 1)
+            m, n = re.match(r"(.*?)(\d+)[a-z]?$", lo), re.match(r"(.*?)(\d+)[a-z]?$", hi)
+            if not m or not n or m.group(1) != n.group(1):
+                out.add(a)
+                continue
+            for i in range(int(m.group(2)), int(n.group(2)) + 1):
+                out.add(f"{m.group(1)}{i}")
+    return out
+
+
+def orphans(entries):
+    """Cited ids with no entry: an existence check on the number, and nothing
+    more -- it cannot tell whether the id cited was the one meant."""
+    have = declared(entries)
+    out = subprocess.run(
+        ["git", "grep", "-nI", "-P", "-o", CITE, "--", *ENFORCED],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout
+    hits, files = [], set()
+    for line in out.splitlines():
+        path, _, rest = line.partition(":")
+        lineno, _, cited = rest.partition(":")
+        files.add(path)
+        if cited not in have and cited not in KNOWN_ORPHANS:
+            hits.append((path, lineno, cited))
+    # A scan that matched no FILES is a broken scan, not a clean tree: run
+    # outside a work tree, or with a bad pathspec, git grep says nothing and
+    # silence would read as success. That is the fault this check is for.
+    if not files:
+        return None, hits
+    for i in sorted(KNOWN_ORPHANS):
+        if i in have:
+            hits.append(("KNOWN_ORPHANS", "-", i))
+    return len(files), hits
+
+
 def duplicates(entries):
     """ids declared by more than one entry, as {id: [line, ...]}."""
     where = collections.defaultdict(list)
@@ -184,6 +268,31 @@ def main(argv):
             "the index would keep the first and hide the rest",
             file=sys.stderr,
         )
+        return 1
+    # Only under --check. Regenerating the index is a formatter and must
+    # always succeed: `cut` regenerates it to settle an index conflict, and
+    # ops/dev/release-queue-test drives that path in a scratch repository
+    # whose tree is the real one's shape with a fixture DECISIONS.md of two
+    # entries -- there every real citation is an orphan, correctly and
+    # uselessly. The gate is --check, which is what CI runs and what
+    # docs/ops/RELEASE.md's integrate step runs (DECISIONS I-994).
+    nfiles, ghosts = orphans(entries) if check else (1, [])
+    if nfiles is None:
+        print("decisions-index: git grep matched no files at all; the orphan scan "
+              "cannot run here, and silence is not a clean tree", file=sys.stderr)
+        return 1
+    if ghosts:
+        src = SRC.relative_to(ROOT)
+        for path, lineno, cited in ghosts:
+            if path == "KNOWN_ORPHANS":
+                print(f"KNOWN_ORPHANS: {cited} now has an entry in {src}; "
+                      f"remove its waiver", file=sys.stderr)
+            else:
+                print(f"{path}:{lineno}: {cited} is cited and has no entry in {src}",
+                      file=sys.stderr)
+        print("reserve ids with `ops/dev/release-queue id` and write the entry before "
+              "citing it; a citation with no entry points a reader at nothing "
+              "(DECISIONS I-994)", file=sys.stderr)
         return 1
     statuses(entries)
     text = render(entries)

@@ -125,6 +125,20 @@ echo "VERDICT: the system really changes"; exit 1
 EOF
   chmod +x "$root/bin/equiv-stub"
 
+  # A `nix` that exists and is never run. release-queue gates the closure
+  # comparison on `command -v nix` (:275) and on nothing else -- it never
+  # executes nix, it executes REPOSE_QUEUE_EQUIV -- so without this the
+  # comparison is skipped on any machine with no nix and
+  # t_needs_drops_a_target_whose_system_is_unchanged asserts nothing while
+  # still passing. The harness has to carry its own answer rather than borrow
+  # the host's PATH (DECISIONS I-996).
+  cat > "$root/bin/nix" <<'EOF'
+#!/usr/bin/env bash
+echo "release-queue-test: nix was executed, which this fixture does not expect: $*" >&2
+exit 97
+EOF
+  chmod +x "$root/bin/nix"
+
   local src=$root/src
   mkdir -p "$src"
   ( cd "$src" && seed_repo )

@@ -41,9 +41,14 @@ const Retention = 7 * 24 * time.Hour
 // LIMIT anywhere, so the number a project held was however many times
 // it had been stopped in seven days: `stop` is the one snapshot a user
 // can fire at will, and ten stops a day kept seventy full images
-// instead of seven (I-900). I-809 found the same missing cap on the
+// instead of seven (I-900). The same missing cap was found on the
 // destroy path, where a destroy kept up to seven snapshots against a
-// promise of one; this is that bug on the hot path.
+// promise of one; this is that bug on the hot path. (That finding was
+// cited here as a decision id that no entry ever backed. The id is
+// struck rather than guessed: the citing commit carried I-900 and
+// I-902, no STATUS line names a third, so which decision was meant is
+// not recoverable, and a number pointing at nothing is worse than no
+// number -- the owner's call, DECISIONS I-994.)
 //
 // Fork snapshots are not counted: they expire on their own expires_at
 // (I-703) and are not a project's dailies.

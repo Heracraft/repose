@@ -1,11 +1,16 @@
 // Package supplychain checks the CI workflows, the agent-bump scripts and
 // install.sh against the rules in DECISIONS I-428..I-430: actions pinned by
 // commit, no write token where downloaded code runs, and a CLI release that
-// install.sh trusts only when its checksums are signed.
+// install.sh trusts only when its checksums are signed. It also holds the
+// checks on CI's own honesty -- that the steps which must run when something
+// above them fails still carry their condition (I-1000), and that the
+// conductor's dev-tool harnesses are executed rather than merely present
+// (I-996).
 package supplychain
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -24,6 +29,8 @@ func repoRoot(t *testing.T) string {
 }
 
 type step struct {
+	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
 	Uses string            `yaml:"uses"`
 	Run  string            `yaml:"run"`
 	With map[string]any    `yaml:"with"`
@@ -31,6 +38,7 @@ type step struct {
 }
 
 type job struct {
+	If          string `yaml:"if"`
 	Permissions any    `yaml:"permissions"`
 	Environment any    `yaml:"environment"`
 	Steps       []step `yaml:"steps"`
@@ -43,7 +51,7 @@ type workflow struct {
 
 func loadWorkflows(t *testing.T) map[string]workflow {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(repoRoot(t), ".github/workflows/*.yml"))
+	files, err := filepath.Glob(filepath.Join(repoRoot(t), ".github/workflows/*.y*ml"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no workflows found: %v", err)
 	}
@@ -229,5 +237,164 @@ func TestReleaseIsSignedBeforePublishing(t *testing.T) {
 	}
 	if !g.Release.Draft {
 		t.Error(".goreleaser.yaml publishes directly; want release.draft: true")
+	}
+}
+
+// ALWAYS_RUN are the steps that must keep running when an earlier step in
+// their job has failed, keyed "<workflow> <job> <step name or run>". Each one
+// is here because it was SKIPPED for sixteen days and nobody could see it:
+// `go test -race` failed on every run of main from 2026-10-17, GitHub skips a
+// job's remaining steps once one fails, and a step that never ran reports as
+// "not failing" -- which on the job list is indistinguishable from one that
+// ran and passed. ci-green's errcheck fix was correct and unverifiable the
+// whole time, and the migration rollback, the only thing proving a migration
+// can go `down 1` on a seeded database, was not running either (DECISIONS
+// I-970, I-1000).
+var ALWAYS_RUN = map[string]string{
+	"ci.yml go repose-admin db migrate --down 1 on a seeded database":                     "the only proof a migration can roll back; skipped 2026-10-17..2026-11-02",
+	"ci.yml go go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0": "lint cannot run without it",
+	"ci.yml go golangci-lint run ./...":                                                   "ci-green's errcheck fix was unverifiable for sixteen days",
+	"ci.yml ops the decisions index is current and no id is cited without an entry":       "has never run in CI; must not be hidden by a failure above it",
+}
+
+func stepKey(wf, jobName string, s step) string {
+	label := s.Name
+	if label == "" {
+		label = strings.TrimSpace(s.Run)
+	}
+	return wf + " " + jobName + " " + label
+}
+
+// TestAlwaysRunStepsStayUnconditioned is a regression lock on the steps in
+// ALWAYS_RUN, and a rule that nothing unconditioned may sit behind them. It is
+// NOT a guard on the class: it cannot see a whole job skipped by a condition,
+// a `needs:` chain on a failed job, a path-filtered workflow that never fires,
+// or a `t.Skip` in the suite -- all of which still report green. "The run was
+// green" does not mean every check ran (DECISIONS I-1000).
+func TestAlwaysRunStepsStayUnconditioned(t *testing.T) {
+	const want = "${{ !cancelled() }}"
+	wfs := loadWorkflows(t)
+	seen := map[string]bool{}
+
+	for wf, w := range wfs {
+		for jobName, j := range w.Jobs {
+			gated := false
+			for i, s := range j.Steps {
+				key := stepKey(wf, jobName, s)
+				if reason, ok := ALWAYS_RUN[key]; ok {
+					seen[key] = true
+					switch {
+					case s.If == "":
+						t.Errorf("%s job %s: step %q carries no condition; it must be %s, or a failure above it hides the step entirely (%s)", wf, jobName, key, want, reason)
+					case strings.Contains(s.If, "always()"):
+						t.Errorf("%s job %s: step %q uses always(); I-970 rejected it, because it runs on a deliberate cancellation too and turns one cancel into two misleading failures", wf, jobName, key)
+					case strings.TrimSpace(s.If) != want:
+						t.Errorf("%s job %s: step %q has if: %q, want exactly %s", wf, jobName, key, s.If, want)
+					}
+				}
+				if strings.Contains(s.If, "!cancelled()") {
+					gated = true
+					continue
+				}
+				// The fault: a step appended behind a conditioned one with no
+				// condition of its own. Any value passes -- failure(), always()
+				// and bump-agents' own conditions are not what this is about.
+				if gated && strings.TrimSpace(s.If) == "" {
+					t.Errorf("%s job %s: step %d (%q) follows a `!cancelled()` step with no condition of its own, so a failure above it skips it silently; condition it or move it ahead of the gated steps (DECISIONS I-1000)", wf, jobName, i, stepKey(wf, jobName, s))
+				}
+			}
+		}
+	}
+
+	// A key that names no step must fail: otherwise renaming a step silences
+	// its own lock, which is the shape of fault this file exists to refuse.
+	for key, reason := range ALWAYS_RUN {
+		if !seen[key] {
+			t.Errorf("ALWAYS_RUN names %q and no such step exists; it was renamed or removed, and its lock is now vacuous (%s)", key, reason)
+		}
+	}
+}
+
+// UNRUN waives a harness this test will not execute, path to reason. It ships
+// empty on purpose: a line here is the thing being guarded against. An entry
+// whose harness now passes also fails, so a stale waiver cannot sit in it --
+// the same shape as KNOWN_BAD in ops/dev/release-queue-test.
+var UNRUN = map[string]string{
+	// Fails 6 of 45 on PRISTINE main (b55d17dd), with none of this branch's
+	// changes: add_runs_cli_guards, needs_against_stale_local_main,
+	// needs_cli_only, needs_embedded_file, needs_go_shared_package and
+	// record_prints_the_line_and_the_detail. Surfaced within minutes of this
+	// test existing, which is the test working -- nothing had run this
+	// harness, so nobody knew. Not diagnosed here and deliberately not
+	// papered over: the five `needs_*`/guards failures all run `go list` in
+	// the fixture's scratch module, and `record_prints_the_line_and_the_detail`
+	// is the one whose stamps changed when `record` stopped using today's
+	// date and today's main, so a stale fixture expectation is the first place
+	// to look. Remove this line with the fix, not before; the loop below
+	// fails if a waived harness starts passing, so it cannot outlive the bug.
+	"ops/dev/release-queue-test": "6 of 45 fail on pristine main b55d17dd, undiagnosed (DECISIONS I-996)",
+}
+
+// TestDevToolHarnessesRun executes the conductor's own test harnesses. They
+// existed and passed and nothing ran them: `git grep` for either name across
+// .github/workflows, ops/check.sh and the justfile returned nothing on
+// 2026-11-03. ops/dev/closure-equiv.py decides whether a branch touching
+// nix/ is charged a deploy target, so the blindness fixed as I-958 shipped
+// unnoticed for as long as the file existed, and `ops/dev/closure-equiv-test`
+// was written the same night it was found (DECISIONS I-996).
+//
+// It globs by convention rather than listing, so a harness added later is
+// picked up without anyone remembering to register it -- and it deliberately
+// does NOT skip when bash, python3 or git is missing. A guard that skips
+// reports as a pass, which is the fault this whole branch is about.
+func TestDevToolHarnessesRun(t *testing.T) {
+	root := repoRoot(t)
+	var found []string
+	for _, pat := range []string{"ops/dev/*-test", "ops/dev/*-test.sh", "ops/dev/*_test.py", "scripts/*-test*"} {
+		m, err := filepath.Glob(filepath.Join(root, pat))
+		if err != nil {
+			t.Fatalf("glob %s: %v", pat, err)
+		}
+		found = append(found, m...)
+	}
+	if len(found) == 0 {
+		t.Fatal("no dev-tool harnesses found at all; the globs are wrong, and an empty scan is not a clean tree")
+	}
+
+	ran := map[string]bool{}
+	for _, path := range found {
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info, err := os.Stat(path); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		ran[rel] = true
+		if reason, ok := UNRUN[rel]; ok {
+			t.Logf("%s: not executed (%s)", rel, reason)
+			continue
+		}
+		t.Run(rel, func(t *testing.T) {
+			cmd := exec.Command(path)
+			cmd.Dir = root
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s failed (%v); it is a harness nothing else runs, so this is the only place it speaks:\n%s", rel, err, out)
+			}
+		})
+	}
+
+	for rel, reason := range UNRUN {
+		if !ran[rel] {
+			t.Errorf("UNRUN names %q and no such executable harness exists; the waiver is stale (%s)", rel, reason)
+			continue
+		}
+		cmd := exec.Command(filepath.Join(root, rel))
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("UNRUN waives %q (%s) and it passes; remove the waiver:\n%s", rel, reason, out)
+		}
 	}
 }
