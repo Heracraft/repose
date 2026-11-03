@@ -177,6 +177,21 @@ integration_ref() {
 #   host  a switch of every host (the owner's, ORCHESTRATION.md)
 #   edge  a switch of the edge (the owner's)
 #   infra tofu apply (the owner's)
+# Does this directory hold a Go file? Not `compgen -G`: compgen is a
+# programmable-completion builtin, and the bash in `nix develop` -- the
+# shell this repository tells everyone to work in -- is built without it.
+# It answered "command not found", 127, which `!` reads as "no Go files
+# here", so the walk below climbed past every real package to `internal`
+# or `cmd`, nothing matched a binary's dependency list, and every Go-only
+# change was charged `none` inside the dev shell and the right target
+# outside it. Same tool, same branch, two answers, and the quiet one is
+# the one a conductor gets (DECISIONS I-1028).
+has_go() {
+  local f
+  for f in "$1"/*.go; do [ -e "$f" ] && return 0; done
+  return 1
+}
+
 needs_of() {
   local range=$1 files t=() pkgs cmd target all
   all=$(git diff --name-only "$range")
@@ -208,7 +223,7 @@ needs_of() {
         go.mod | go.sum) echo "$p" ;;
         cmd/* | internal/*)
           local d=${p%/*}
-          while [ "$d" != cmd ] && [ "$d" != internal ] && ! compgen -G "$d/*.go" >/dev/null; do d=${d%/*}; done
+          while [ "$d" != cmd ] && [ "$d" != internal ] && ! has_go "$d"; do d=${d%/*}; done
           echo "$d" ;;
       esac
     done <<<"$files" | sort -u
@@ -818,20 +833,36 @@ red_main() {
   # to catch, inside the gate, found by testing it rather than trusting it
   # (DECISIONS I-1008). An unreadable answer now refuses.
   if ! out=$(gh run list --workflow ci.yml --branch main --limit 20 \
-      --json conclusion,url,createdAt 2>&1 \
+      --json conclusion,status,url,createdAt 2>&1 \
       | python3 -c 'import json,sys
 rs = json.load(sys.stdin)
 if not rs:
     print("none none"); raise SystemExit
 r = max(rs, key=lambda x: x.get("createdAt") or "")
-print((r.get("conclusion") or "pending"), (r.get("url") or "-"))' 2>&1); then
+# status, then conclusion: a run that has not finished has no conclusion
+# at all, and reading that absence as anything but "unknown" is how this
+# gate passed a red main on 2026-11-03 (I-1026).
+if (r.get("status") or "") != "completed":
+    print("running", (r.get("url") or "-")); raise SystemExit
+print((r.get("conclusion") or "unknown"), (r.get("url") or "-"))' 2>&1); then
     [ -n "$why" ] && { echo "release-queue: main's CI could not be read; cutting anyway: $why" >&2; return 0; }
     die "cut: cannot read main's CI ($(printf '%s' "$out" | tail -1)). A check that could not run is not a check that passed. Fix it, or cut with REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\"."
   fi
   concl=${out%% *}
   url=${out##* }
   case $concl in
-    success | none | pending) return 0 ;;
+    success | none) return 0 ;;
+    running)
+      # Not a pass. The first version of this gate listed `pending` beside
+      # `success`, and on 2026-11-03 a cut went through over a main whose
+      # `go` job had already failed, because a newer run was still going
+      # and its conclusion was null. Waiting is cheap; the whole point of
+      # the gate is that nobody checks the merged result (I-1026).
+      [ -n "$why" ] && { echo "release-queue: main's CI is still running ($url); cutting anyway: $why" >&2; RED_MAIN_WHY=$why; return 0; }
+      die "cut: main's CI is still running -- $url
+Not knowing yet is not a pass. Wait for it (gh run watch), then cut.
+If the wait is not worth it, say why:
+  REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\" ops/dev/release-queue cut" ;;
     failure | timed_out | startup_failure)
       [ -n "$why" ] && { echo "release-queue: main's CI is $concl ($url); cutting anyway: $why" >&2; RED_MAIN_WHY=$why; return 0; }
       die "cut: main's CI is $concl -- $url
@@ -842,6 +873,16 @@ Fix main first, as its own small batch. If the red is a mechanical fault in the 
       [ -n "$why" ] && { echo "release-queue: main's CI reads \"$concl\"; cutting anyway: $why" >&2; return 0; }
       die "cut: cannot tell whether main's CI passed -- it reads \"$concl\" ($url). An answer this gate does not understand is not a pass. Fix it, or cut with REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\"." ;;
   esac
+}
+
+# Ask the same question `cut` asks, and change nothing. A gate that can
+# only be exercised by cutting a real release is a gate nobody tests: the
+# first version of this one was tested that way, which cut batch
+# r20261103-1 by accident, and the second was not tested at all and passed
+# a red main (I-1008, I-1026).
+cmd_ci() {
+  red_main
+  echo "main's CI allows a cut${RED_MAIN_WHY:+ (overridden: $RED_MAIN_WHY)}"
 }
 
 cmd_cut() {
@@ -958,9 +999,10 @@ case $sub in
   inbox) cmd_inbox "$@" ;;
   record) cmd_record "$@" ;;
   worktrees) cmd_worktrees ;;
+  ci) cmd_ci ;;
   cut) cmd_cut ;;
   resume) cmd_resume "$@" ;;
   done) cmd_done "$@" ;;
   abandon) cmd_abandon "$@" ;;
-  *) die "unknown command $sub (add, ls, id, band, where, worktrees, live, record, say, inbox, drop, cut, resume, done, abandon)" ;;
+  *) die "unknown command $sub (add, ls, id, band, where, worktrees, live, record, say, inbox, drop, ci, cut, resume, done, abandon)" ;;
 esac

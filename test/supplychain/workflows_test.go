@@ -320,19 +320,15 @@ func TestAlwaysRunStepsStayUnconditioned(t *testing.T) {
 // whose harness now passes also fails, so a stale waiver cannot sit in it --
 // the same shape as KNOWN_BAD in ops/dev/release-queue-test.
 var UNRUN = map[string]string{
-	// Fails 6 of 45 on PRISTINE main (b55d17dd), with none of this branch's
-	// changes: add_runs_cli_guards, needs_against_stale_local_main,
-	// needs_cli_only, needs_embedded_file, needs_go_shared_package and
-	// record_prints_the_line_and_the_detail. Surfaced within minutes of this
-	// test existing, which is the test working -- nothing had run this
-	// harness, so nobody knew. Not diagnosed here and deliberately not
-	// papered over: the five `needs_*`/guards failures all run `go list` in
-	// the fixture's scratch module, and `record_prints_the_line_and_the_detail`
-	// is the one whose stamps changed when `record` stopped using today's
-	// date and today's main, so a stale fixture expectation is the first place
-	// to look. Remove this line with the fix, not before; the loop below
-	// fails if a waived harness starts passing, so it cannot outlive the bug.
-	"ops/dev/release-queue-test": "6 of 45 fail on pristine main b55d17dd, undiagnosed (DECISIONS I-996)",
+	// Empty, and it stayed empty for less than a day. The one entry it
+	// ever held waived ops/dev/release-queue-test for "6 of 45 fail on
+	// pristine main, undiagnosed". The six were nothing to do with main:
+	// they fail only when the harness runs inside `nix develop`, whose
+	// bash has no `compgen` (DECISIONS I-1028). CI has no nix in that job,
+	// so the harness passed there, the loop below reported a waiver whose
+	// harness passes, and main went red until the waiver came out. That
+	// is the mechanism working: a waiver written from one environment's
+	// symptoms could not survive contact with another's.
 }
 
 // TestDevToolHarnessesRun executes the conductor's own test harnesses. They
