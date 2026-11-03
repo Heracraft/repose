@@ -28994,15 +28994,39 @@ survive a re-apply, which the subtest checks 25 lines earlier, so either
 a tenant's download is not capped at all or 20 MB crosses in 25 ms and
 the number is not a measurement. Both readings are worth the same branch.
 
-`host-reboot`, subtest 1: hostd exits 1 seven milliseconds after start on
-a boot with no volume group, where the test asserts it stays up. The
-design asks for the test's behaviour -- a host that cannot find its pool
-should say so and keep reconciling, not die -- and `Restart=always` with
-`RestartSec=2` is why `systemctl is-active` answers `activating` rather
-than `failed`, which reads like a slow start and is a crash loop. hostd's
-own reason is in the journal, which this VM test does not dump. The live
-hosts are registered and have their pool, which is why this is invisible
-in production.
+`host-reboot`, subtest 1: something exits 1 seven milliseconds after
+start on a boot with no volume group, where the test asserts hostd stays
+up. `Restart=always` with `RestartSec=2` is why `systemctl is-active`
+answers `activating` rather than `failed`, which reads like a slow start
+and is a crash loop.
+
+*Corrected the same day, and the correction is the useful part:* this is
+not hostd. I wrote "a hostd bug, not a stale literal" here, and the peer
+working on it read the same silence as a daemon failing early; both of us
+were reading a journal that had nothing in it yet. These test nodes
+replace hostd with `nix/hosts/hostd-stub.nix`, a 2 KB shell script, and
+that script parsed flags by naming the value-less ones and doing `shift 2`
+for everything else. `repose.host.pauseIdle` defaults to true, so
+`--pause-idle` sits at the end of every host unit's argv; it is not in
+the list, `shift 2` ran with one argument left, `shift` fails when its
+count exceeds `$#`, and `writeShellApplication`'s `set -o errexit` killed
+the script before its own first `echo`. The silence we were both reading
+as diagnostic was a script dying before it could speak. Measured by the
+peer, not argued: the stub with that exact argv exits 1 and prints
+nothing, and with the trailing `--pause-idle` removed it logs
+`stub_start` and sleeps. The fix is one rule rather than a list -- a flag
+takes the next argument only when there is one and it does not itself
+begin with `-` -- on branch `stub-boolean`, where `host-reboot` is green,
+12 of 12.
+
+Production was never exposed: `hostModules` sets
+`repose.host.hostdPackage = goPkgs.hostd`, and host-02's evaluates to the
+`hostd-<rev>` derivation, not the script. What is worth keeping is the
+shape: `host-network`, `host-storage` and `host-caches` use the same stub
+node, so hostd was crash-looping in those three for exactly as long, and
+all three were green -- they use the `hostd` user and the state directory
+and never ask whether the daemon is running. `host-reboot` found it
+because it is the only one that asks.
 
 **I-1022. A throwaway Postgres cluster is owned by a process, and the
 kernel is what reports that process's death.** (testdb-reaper,
