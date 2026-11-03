@@ -169,11 +169,6 @@ KNOWN_DUPLICATES = {"I-642", "I-647"}
 # for two days with no entry at all, and was found by accident while someone
 # asked an unrelated question about reservations (DECISIONS I-994).
 KNOWN_ORPHANS = {
-    # internal/api/snapshots/expiry.go:44. No entry, and the intent is not
-    # recoverable: the citing commit 73997333 carried I-900 and I-902, and no
-    # STATUS line names I-809. Whoever wrote that comment should say what they
-    # meant. Do not invent an entry for it.
-    "I-809": "cited in expiry.go; intent unrecoverable, see I-994",
     # internal/ca/sshca/sshca.go:18 and docs/ops/RUNBOOK.md:3790. An
     # interview-round id used as a cross-reference and never written as an
     # entry, like the R-series ids DECISIONS.md records only in prose.
