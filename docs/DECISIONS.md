@@ -28422,6 +28422,104 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+
+**I-1020. The hostd stub died on a value-less flag, and three tests did
+not notice.** (stub-boolean, 2026-11-03.)
+
+`host-reboot` has been red on `main` since `repose.host.pauseIdle`
+defaulted to true. Its subtest 1 asserts `systemctl is-active
+hostd.service` and hostd was inactive, having started and exited 1 about
+15 ms later with no log line of its own.
+
+The cause is the stub, not hostd. `nix/hosts/hostd-stub.nix` parsed flags
+by naming the value-less ones and doing `shift 2` for every other `--*`:
+
+    --no-wg|--guestd-unix) shift ;;
+    --*) shift 2 ;;
+
+`pauseIdle` defaulting to true put `--pause-idle` at the end of every
+host unit's argv (`hostd.nix`'s `pauseFlags`). It is not in that list, so
+the stub ran `shift 2` with one argument left. `shift` fails when its
+count exceeds `$#`, `writeShellApplication` sets `set -o errexit`, and
+the stub exited 1 before reaching its own first `echo`. Hence the
+silence: there was nothing to log yet.
+
+It is now one rule instead of a list. A flag takes its next argument only
+when there is one and it is not itself a flag:
+
+    --*) if [ $# -ge 2 ] && [ "${2#-}" = "$2" ]; then shift 2; else shift; fi ;;
+
+The enumeration was the fault, not an incomplete entry in it: a list of
+booleans kept in the stub falls out of date the moment a boolean is added
+to a host unit, and it fails closed with no message. Every value these
+flags take is a path, an address or a user name, so none begins with `-`.
+`--state` and `--join-token` keep their explicit cases because the stub
+reads their values.
+
+**Two readings were offered before anyone measured, and both were
+wrong.** Mine: hostd had regressed against I-644, which says hostd must
+come up and report a pool it cannot use -- the pool unit is `wants`, not
+`requires`. The conductor's: `EnsureIdentity` returning early from
+`register.LoadRoots(o.APICA)` with no api CA in a test node. Neither.
+The real hostd is not in these nodes at all -- `stubNode` forces
+`hostdPackage` to the stub -- and `LoadRoots("")` returns `(nil, nil)`
+anyway, so a missing `--api-ca` is not an error. What made both readings
+plausible is that the expected `repose-guest-pool` failure (no VG in a
+test node) sits two journal lines above hostd's exit and reads like its
+cause.
+
+**Nothing in production was affected.** `hostModules` sets
+`repose.host.hostdPackage = goPkgs.hostd`, so every real host runs the Go
+binary; the stub reaches a node only through `stubNode`'s `mkForce`.
+Confirmed by evaluating it: host-02's `hostdPackage` is the `hostd-<rev>`
+derivation, not the 2 KB script.
+
+**The part worth keeping: three tests stayed green with a dead daemon.**
+`host-network`, `host-storage` and `host-caches` import the same
+`stubNode` and so had hostd crash-looping throughout, and all three
+passed, because none of them asserts hostd is up -- they use the `hostd`
+user and the state directory only. They are not wrong, and they are not
+what found this; `host-reboot` found it because it is the only one that
+asks. A VM test that stands a daemon up and never asks whether it is
+running will report a healthy system around a dead process for as long as
+nobody looks.
+
+*Evidence.* The stub binary from main, run with the unit's exact argv,
+exits 1 and prints nothing:
+`hostd --state ... --api-addr ... --snapshot-dir ... --build-user nixbuild
+--pause-idle` -> `exit=1`, no output. The same argv with the trailing
+`--pause-idle` removed logs `{"event":"stub_start",...}` and reaches
+`sleep infinity`. The new rule parses all six shapes the host units
+produce: the trailing boolean, a boolean in the middle, two trailing
+booleans (the park flags' shape), a bare subcommand, a subcommand after a
+valued flag, and `--flag=value`. Then `nix build
+.#checks.x86_64-linux.host-reboot`: **green, 12 of 12 subtests**, subtest
+1's `systemctl is-active hostd.service` finishing in 0.02 s where it had
+failed with exit code 3. `nix flake check --no-build ./nix` passes.
+
+**This supersedes three sentences in I-1012, which are wrong as of now
+rather than when this lands.** That entry, its STATUS line and its queue
+note all say its VM half "gates nothing until `host-reboot` is fixed".
+I-1012 shipped in r20261103-1 and is on `main`, and this is that fix, so
+once this lands the guard is live and those three sentences read as a
+standing limitation that no longer exists. They were true when they were
+written; they are false because of this change, not because I-1012 was
+wrong about anything.
+
+*Found while verifying this, pre-existing, and not this branch's.*
+`host-network` is red at "hostd's shape limits what a guest sends out and
+what it receives from outside the host": `internet -> shaped guest at
+6691 Mbit/s, cap 20`. Not load, and not this change. The conductor
+session hit the same assertion independently on `main` at 6301 Mbit/s,
+the egress half of the same subtest passes moments earlier inside
+0.6-1.3x of its 20 Mbit cap, and the download-filter count assertion
+passes before that -- a loaded box would depress both directions and make
+a cap easier to satisfy, not harder. Two trees reading 6.3 and 6.7 Gbit/s
+against a 20 Mbit cap is no ingress shaping at all rather than a noisy
+measurement. Both readings are post-I-1024: before 84ea8f6a this test
+died ~300 lines earlier on an nft uid literal, so any older claim that
+`host-network` was green never exercised the ingress cap. It needs its own
+branch and an id.
 **I-992. `record` stamps the release's own date and main, not today's.** (record-stamp, 2026-11-03.)
 
 `release-queue record` built the STATUS line with `date -u +%Y-%m-%d` and the record file with `git rev-parse --short main`. Both are right only on the day of the release, and wrong by exactly as much as the record is late. So the two faults compound: a record is written late *because* nobody got to it, and the lateness is what makes it wrong, and nothing in the output says so.

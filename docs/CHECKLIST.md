@@ -128,6 +128,17 @@ written so none of them goes unnoticed again.
       "logged but not enforced" with the ban lookup disabled — and the
       test passes repeated `-race` runs under load, not once on an idle
       box.
+- [ ] A test that configures a daemon asserts it is running, or says why
+      it does not care. `host-network`, `host-storage` and `host-caches`
+      stand up the hostd stub and were green for as long as `host-reboot`
+      was red, with that stub crash-looping in all four nodes: they use
+      the `hostd` user and the state directory and never ask whether the
+      daemon is up, so they reported a healthy system around a dead
+      process until the one test that does ask went red (DECISIONS
+      I-1020). A check that is green in precisely the situation it exists
+      for is worth less than no check, because it is read as evidence.
+      Evidence: the test names the unit it waits for, or a comment says
+      which part of the system it is deliberately not exercising.
 - [ ] A test that forces state in the database first stops whatever else
       writes it. A connected fake host reverts `hosts.state` 50-75 ms after
       a test sets it, so an assertion that races the next heartbeat is green

@@ -19,16 +19,25 @@ writeShellApplication {
     state=/var/lib/repose/hostd
     token=/run/repose/join-token
     cmd=serve
-    # Every flag the host units pass takes a value (--api-addr, --api-ca,
-    # --snapshot-dir, --build-user, --join-token, ...) except the booleans
-    # named here; a value left behind would be read as the command word.
+    # Flags are skipped, with or without a value. A flag takes its next
+    # argument only when there is one and it is not itself a flag: a value
+    # left behind would be read as the command word, and a `shift 2` on a
+    # value-less flag is worse still. This used to name the boolean flags
+    # instead, and when `--pause-idle` was added to the host unit and
+    # `repose.host.pauseIdle` defaulted to true (I-818, and the release
+    # that flipped it), every host unit ended its argv with a boolean this
+    # list did not have. `shift 2` with one argument left fails, and under
+    # `set -o errexit` -- which writeShellApplication sets -- the stub
+    # exited 1 in about 15 ms having logged nothing at all, which read
+    # from outside exactly like a daemon that will not start (I-1020).
     while [ $# -gt 0 ]; do
       case "$1" in
         --state) state="$2"; shift 2 ;;
         --token|--join-token) token="$2"; shift 2 ;;
-        --no-wg|--guestd-unix) shift ;;
         --*=*) shift ;;
-        --*) shift 2 ;;
+        --*)
+          if [ $# -ge 2 ] && [ "''${2#-}" = "$2" ]; then shift 2; else shift; fi
+          ;;
         *) cmd="$1"; shift ;;
       esac
     done
