@@ -31,6 +31,18 @@ func TestStartUnreachableText(t *testing.T) {
 	e.h.WaitOp(createOp)
 	e.h.WaitIdle(pid)
 	e.h.WaitOp(e.h.Enqueue(ops.NewOp{Kind: ops.KindStop, ProjectID: &pid, Phases: ops.PlanStop()}))
+	// Stop the host's stream before forcing its state, or this test races
+	// the thing it is testing. A connected fake host writes its own state
+	// back: measured on 2026-11-03, `update hosts set state =
+	// 'unreachable'` is reverted to `ready` 50 to 75 ms later by the
+	// heartbeat, so the POST below is a footrace -- it wins on an idle
+	// machine and loses on a loaded one, which is why this passed here and
+	// failed CI on main at 1df94164 with `202 {"restart":false}`: the
+	// refusal at internal/api/lifecycle/lifecycle.go:180 read `ready` and
+	// let the start through. Disconnecting first removes the race instead
+	// of widening the window, and DisconnectHost waits for HostMgr to
+	// notice (DECISIONS I-1010).
+	e.h.DisconnectHost()
 	if _, err := e.h.Pool.Exec(ctx, "update hosts set state = 'unreachable'"); err != nil {
 		t.Fatal(err)
 	}

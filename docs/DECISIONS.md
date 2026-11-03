@@ -28783,3 +28783,16 @@ new subtest is in a test that does not currently reach it, and the VM
 half of this guard gates nothing until that is fixed. Reproduced on a
 clean `main` checkout before concluding it was pre-existing, which is why
 the evidence above comes from a standalone node instead.
+**I-1014. A test that forces a host's state must stop the host that writes it.** (unreachable-race, 2026-11-03.)
+
+`TestStartUnreachableText` set `hosts.state = 'unreachable'` straight in the database and immediately asked the api to start a project there, expecting the refusal at `internal/api/lifecycle/lifecycle.go:180`. It failed CI on `main` at `1df94164` with `202 {"op_id":…,"restart":false}` — the start was accepted.
+
+**The host writes that column back.** Measured on 2026-11-03: with the fake host's stream still connected, the row reverts from `unreachable` to `ready` **50 to 75 ms** after the test sets it. So the POST was a footrace against the next heartbeat: it wins on an idle machine and loses on a loaded one, and the refusal then read `ready` and let the start through. The test passed here and failed on a shared runner for that reason alone, and the batch it reddened (`hashdist`, `oops-alert`) touches nothing in `internal/api`.
+
+The fix is `e.h.DisconnectHost()` before the update: it stops the stream and waits for `HostMgr` to notice, so nothing is left writing the column. `internal/api/resume/resume_test.go:412` already did this; this test did not.
+
+*Evidence.* Reproduced locally before the fix — six runs under six busy loops, failing with the same `202 {"restart":false}`. After: 6/6 idle, and **10/10 under the same load that reproduced it**. The mechanism was measured rather than inferred: a probe polling the row every 25 ms printed `unreachable, unreachable, unreachable, ready` at 75 ms and `unreachable, unreachable, ready` at 50 ms on two runs.
+
+*This is the fourth instance of I-968's class and the first one found after that entry was written.* The assertion read a database column as a proxy for "the api considers this host unreachable", while a live writer owned the column — green when the race was won, red when it was lost, and in both cases silent about which. Widening the window or retrying would have been the wrong fix for the same reason it was wrong three times before: it tunes the proxy. Removing the writer asserts the property.
+
+*Not fixed here:* nothing stops the next test from forcing a column some live component owns. The general form — "a test that writes state a running component also writes must first stop that component" — is a checklist line at best, because the set of such columns is not enumerable from the code. It is named in `docs/CHECKLIST.md` beside the proxy item rather than pretended to be mechanical.

@@ -123,6 +123,13 @@ written so none of them goes unnoticed again.
       "logged but not enforced" with the ban lookup disabled — and the
       test passes repeated `-race` runs under load, not once on an idle
       box.
+- [ ] A test that forces state in the database first stops whatever else
+      writes it. A connected fake host reverts `hosts.state` 50-75 ms after
+      a test sets it, so an assertion that races the next heartbeat is green
+      on an idle machine and red on a shared runner, and says nothing about
+      which (DECISIONS I-1014). Evidence: the test passes repeatedly under
+      load, not once on an idle box, and the commit names what was stopped
+      (`DisconnectHost`, `StopEngine`) and why.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
