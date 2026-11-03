@@ -1,9 +1,9 @@
-// Package freeze holds the host-side pieces of a guest freeze (DECISIONS
-// I-652, I-653): the key that encrypts a frozen guest's memory image, the
+// Package park holds the host-side pieces of a guest park (DECISIONS
+// I-652, I-653): the key that encrypts a parked guest's memory image, the
 // encrypted volume the image is written to, and the record that says what
 // the image is and whether it is complete. The state machine that pauses,
-// snapshots and restores a guest is internal/hostd/guest/freeze.go.
-package freeze
+// snapshots and restores a guest is internal/hostd/guest/park.go.
+package park
 
 import (
 	"context"
@@ -211,7 +211,7 @@ func (f *FileKey) Unwrap(_ context.Context, wrapped []byte, _ string) ([]byte, e
 }
 
 // GenerateFileKey writes a new 3072-bit RSA key to path (mode 0600), for
-// tests and the freeze experiments.
+// tests and the park experiments.
 func GenerateFileKey(path string) error {
 	k, err := rsa.GenerateKey(rand.Reader, 3072)
 	if err != nil {

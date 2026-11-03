@@ -317,9 +317,9 @@ const (
 // VMState is the `state` field of a vm.info body: "Running", "Paused",
 // "Created", "Shutdown" or "" when the body cannot be read. It is what
 // tells an idle pause (DECISIONS I-818) from a guest whose vCPUs run, and
-// the freeze reads it before pausing a guest that may be paused already:
+// the park reads it before pausing a guest that may be paused already:
 // Cloud Hypervisor refuses a second vm.pause, and that refusal once
-// discarded a freeze image and cost a guest its memory (I-796).
+// discarded a park image and cost a guest its memory (I-796).
 func VMState(info json.RawMessage) string {
 	var v struct {
 		State string `json:"state"`
@@ -360,7 +360,7 @@ func (f *Fake) Shutdown(_ context.Context, sock string) error {
 
 // Pause refuses a VM that is paused already, as Cloud Hypervisor does
 // (vm.pause answers 404 for a VM that is not running): without that a
-// unit test of a freeze over an idle pause passes while the host loses
+// unit test of a park over an idle pause passes while the host loses
 // the guest's memory (DECISIONS I-818, I-796).
 func (f *Fake) Pause(_ context.Context, sock string) error {
 	if err := f.record("pause", sock); err != nil {

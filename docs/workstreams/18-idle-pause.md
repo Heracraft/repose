@@ -52,7 +52,7 @@ floor by `ops/engine.go`'s Hello reconcile.
 
 **S3. The word a user reads is "frozen".** The owner chose it with the
 look (I-683), and it is free: "frozen" appears in CLI code only in
-comments about the host-restart freeze and in no user-visible string.
+comments about the host-restart park and in no user-visible string.
 The wire and the column keep the name I-683 already shipped, `resting`.
 "At rest" is not available: `apps/web/src/lib/projectList.ts` spends it
 on a stopped machine.
@@ -69,8 +69,8 @@ page, and `cli/status.go`'s "the environment's agent is not answering".
 
 **S5. No new guestd RPC.** The prepare (`sync`, and the cache drop when
 the guest has the balloon) and the clock step (`date -u -s @<unix>`) reuse
-`Exec`, which is what the I-652 freeze already does
-(`guest/freeze.go:316-345`, `:1618-1622`). A new request would need the
+`Exec`, which is what the I-652 park already does
+(`guest/park.go:316-345`, `:1618-1622`). A new request would need the
 version negotiation `vsock-guestd.md:17` promises and the code does not
 have, and a guest base rebuild on every machine. Nothing in the guest
 changes, so this feature reaches machines that are already running.
@@ -80,12 +80,12 @@ line on `run` or `attach`. The marker in the state cell is the whole
 surface (I-484, I-485). A failed wake is the exception: that is a failure,
 and it alerts the operator and shows the user why.
 
-**S7. Nothing may pause a guest the freeze is about to take.** This is
-the feature's own worst failure: `guest/freeze.go` admits any guest whose
+**S7. Nothing may pause a guest the park is about to take.** This is
+the feature's own worst failure: `guest/park.go` admits any guest whose
 bbolt state is `running` with an active unit and then calls `vm.pause`;
-CH refuses a second pause, the freeze fails, the image is discarded, and
+CH refuses a second pause, the park fails, the image is discarded, and
 that guest **cold-boots and loses its memory at the next host restart** --
-I-796's incident, re-created by this feature. The freeze must treat an
+I-796's incident, re-created by this feature. The park must treat an
 already-paused guest as paused and snapshot it as it is, and `ch.Fake`
 must refuse a second pause so a test can see it.
 
@@ -113,7 +113,7 @@ A running project may rest when all of these hold:
 
 hostd refuses a pause it must not take, and says why rather than failing:
 a command in flight for that guest, the host going down, the guest not
-running or already resting, a freeze record on it, no guestd session, or
+running or already resting, a park record on it, no guestd session, or
 a timer due inside the hold.
 
 A container does not block a rest on its own: CPU and network already
@@ -132,7 +132,7 @@ unbuilt. An item's row names the entries its code cites.
 | Item | What | Decisions | Owner |
 |---|---|---|---|
 | P1 | The contract: `PauseGuest`/`WakeGuest`, `GuestStatus.resting_at`, `GuestSample.resting`, the `GuestResting` event, the `pause` feature, migration 0030 | I-818 | cut already |
-| P2 | hostd: pause, wake, the bbolt marker, reconcile, the sampler, the freeze interaction, the timer wake, metrics | I-818, I-822, I-824 | builder |
+| P2 | hostd: pause, wake, the bbolt marker, reconcile, the sampler, the park interaction, the timer wake, metrics | I-818, I-822, I-824 | builder |
 | P3 | api: the rule, the resting service, the wake before every guest-bound path, the marker on the Project, `keep_awake` | I-818, I-820, I-822, I-824 | builder |
 | P4 | gateway: the wake at `dialGuest`, the route flag | I-818, I-822 | builder |
 | P5 | CLI: the marker in the `ls` state cell and the `status` header, `--json`, `cli.md` | I-820, I-824, I-826 | builder |
@@ -157,7 +157,7 @@ is `pause`; migration `0030_resting` adds `projects.resting_since`,
   drop when it has the balloon), read the next timer elapse, `CH.Pause`,
   write the marker, arm the timer wake, raise `GuestResting`.
 - `WakeGuest`: idempotent. `CH.Resume` confirmed against `vm.info`, the
-  retry shape of `freeze.go:1012-1038`; then the clock step; then
+  retry shape of `park.go:1012-1038`; then the clock step; then
   guestd's ping; clear the marker; raise `GuestResting`; answer with
   `wake_ms`. It must be a `noSlot` job on the guest's own queue
   (`manager.go:405`, `:1125`) or a wake queues behind that guest's build.
@@ -175,18 +175,18 @@ is `pause`; migration `0030_resting` adds `projects.resting_since`,
 - Reconcile reads `vm.info`: a guest whose unit is active and whose
   hypervisor says `Paused` with a marker in bbolt stays resting and is
   reported so; one that says `Paused` with no marker is the leftover of a
-  freeze that did not finish, which `ThawAll` already owns.
+  park that did not finish, which `UnparkAll` already owns.
 - The monitor: `checkUnits` stays right (a paused guest's unit is
   active). `checkLost` runs only after the vsock session drops, and a
   paused guest's session stays open, so nothing there needs suppressing
   -- but a wake must not be mistaken for a reconnect.
-- The freeze (S7), and `SyncClocks`, must both read the marker.
+- The park (S7), and `SyncClocks`, must both read the marker.
 - Metrics: `repose_host_guests_resting` (gauge),
   `repose_host_guest_pause_total{reason,outcome}`,
   `repose_host_guest_wake_seconds` (histogram),
   `repose_host_guest_wake_failed_total{reason}`.
 - `hostd pause|wake` on the control socket, the shape of `hostd
-  freeze|thaw` (`hostd/control`, `app/freeze.go:119`).
+  park|unpark` (`hostd/control`, `app/park.go:119`).
 
 ### P3, api
 
@@ -269,12 +269,12 @@ otherwise) and `ops/alerts.yaml` the wake alert.
       silent; the commits carry `grpc-hostd.md`, `api.md`,
       `db-schema.md`, `host-conventions.md`, `vsock-guestd.md`,
       `ssh-gateway.md` and `interfaces/README.md`.
-- [x] A pause of a guest the freeze then takes does not lose its memory.
-      Evidence: `TestFreezeOfARestingGuestKeepsItsMemory`, shown red with
-      the `pausedAlready` guard removed ("freeze of a resting guest:
+- [x] A pause of a guest the park then takes does not lose its memory.
+      Evidence: `TestParkOfARestingGuestKeepsItsMemory`, shown red with
+      the `pausedAlready` guard removed ("park of a resting guest:
       pause failed", the image discarded); `ch.Fake` now refuses a second
       pause as Cloud Hypervisor does, so the test can see it. Also
-      `TestFreezeDoesNotWaitOnARestingGuest`: the pre-freeze write-back
+      `TestParkDoesNotWaitOnARestingGuest`: the pre-park write-back
       no longer spends 10 s of the deadline on a guest that cannot
       answer, which is what made a later guest lose its image.
 - [x] `repose start` and the dashboard's Start on a frozen machine do not
@@ -361,11 +361,11 @@ otherwise) and `ops/alerts.yaml` the wake alert.
       `hostd wake` answers `woken in 114 ms`, and a guest paused by the
       previous hostd -- which writes no record -- was ADOPTED by the new
       one rather than left for a `repose start` to cold-boot.
-- [x] A freeze of a guest the idle pause already left resting does not
-      lose its memory. Evidence (§7): `frozen`, 3,501 ms, an 803 MB
-      image, `unfrozen{reason="failed"} 0`, then `thawed` in 1,543 ms
+- [x] A park of a guest the idle pause already left resting does not
+      lose its memory. Evidence (§7): `parked`, 3,501 ms, an 803 MB
+      image, `skipped{reason="failed"} 0`, then `unparked` in 1,543 ms
       with the marker cleared -- and the guest kept the same boot id and
-      both tmux sessions through the pause, the freeze and the restore.
+      both tmux sessions through the pause, the park and the restore.
 - [ ] The rule itself, the marker on the Project, the gateway's wake, the
       CLI and the dashboard on a real deployment. **Not provable on
       staging by design** (`../../infra/README.md`: "Not proven here:
@@ -465,9 +465,9 @@ what happened. The switch took 1.4 s.
 | **`hostd pause` on a real control socket** | `paused`, with `resting_at` on the record |
 | **The sampler's S4 rule** | `repose_host_guestd_lost 0` with a guest resting, so `GuestdLost` cannot page for a frozen machine |
 | `repose_host_guest_wake_seconds_count` | 1 after the one wake; the pause counter carries the corrected reason enum (`connect`, `op`, `answer` present) |
-| **A freeze of an already-resting guest** (S7, I-824) | `frozen`, 3,501 ms, an 802,750,464-byte image, and `repose_host_guest_freeze_unfrozen_total{reason="failed"} 0`. This is the path that, before the fix, met Cloud Hypervisor's refusal of a second `vm.pause`, discarded the image and left the guest to cold-boot at the next host restart -- I-796's own incident |
-| The thaw after it | `thawed`, 1,543 ms, `resting: false`, state `running` with reason `restored from a frozen image` |
-| **What the guest kept through all of it** | The same boot id it had before the first pause, after an idle pause AND a freeze to an encrypted image AND a restore; both tmux sessions; the counting loop still running, its largest gap still the 35 minute pause |
+| **A park of an already-resting guest** (S7, I-824) | `parked`, 3,501 ms, an 802,750,464-byte image, and `repose_host_guest_park_skipped_total{reason="failed"} 0`. This is the path that, before the fix, met Cloud Hypervisor's refusal of a second `vm.pause`, discarded the image and left the guest to cold-boot at the next host restart -- I-796's own incident |
+| The unpark after it | `unparked`, 1,543 ms, `resting: false`, state `running` with reason `restored from a parked image` |
+| **What the guest kept through all of it** | The same boot id it had before the first pause, after an idle pause AND a park to an encrypted image AND a restore; both tmux sessions; the counting loop still running, its largest gap still the 35 minute pause |
 
 The host is left switched to this branch with the pause on. To put it back
 on main: build `nixosConfigurations.host-stg-01` from a main checkout and

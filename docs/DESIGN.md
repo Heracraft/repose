@@ -617,7 +617,7 @@ when it becomes in scope.
   exists for this.
 - Cloud Hypervisor's virtio-fs snapshot/restore matured only in v52. Stops,
   starts and backups do not use it: we stop and start guests and snapshot
-  the volume. The one use is the guest freeze across a host restart
+  the volume. The one use is the guest park across a host restart
   (DECISIONS I-652, I-653, off until turned on per host): an encrypted
   memory image per guest, restored at hostd's next start and removed, with
   a cold start whenever the restore cannot happen.

@@ -181,9 +181,9 @@ variable "keyvault_name" {
   description = "Key Vault holding the DEK-wrapping key."
 }
 
-variable "freeze_keyvault_name" {
+variable "park_keyvault_name" {
   type        = string
-  description = "Key Vault for the guest freeze's image-wrapping key (DECISIONS I-653); null creates none."
+  description = "Key Vault for the guest park's image-wrapping key (DECISIONS I-653); null creates none."
   default     = null
 }
 

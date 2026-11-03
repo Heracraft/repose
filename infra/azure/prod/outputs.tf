@@ -43,7 +43,7 @@ output "fqdns" {
   value       = module.environment.fqdns
 }
 
-output "freeze_keyvault" {
-  description = "The guest freeze's vault URI and key name (DECISIONS I-653)."
-  value       = module.environment.freeze_keyvault
+output "park_keyvault" {
+  description = "The guest park's vault URI and key name (DECISIONS I-653)."
+  value       = module.environment.park_keyvault
 }

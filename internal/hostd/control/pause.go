@@ -9,7 +9,7 @@ import (
 )
 
 // PauseBackend is the daemon's idle pause (DECISIONS I-818). It is
-// separate from Backend, as FreezeBackend is, so a backend without it
+// separate from Backend, as ParkBackend is, so a backend without it
 // (the tests' fakes) needs nothing new.
 type PauseBackend interface {
 	// PauseOne stops one guest's vCPUs, its memory left resident. A

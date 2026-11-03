@@ -1,4 +1,4 @@
-package freeze
+package park
 
 import (
 	"bytes"
@@ -18,7 +18,15 @@ import (
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
 
-// LVName is the thin volume a guest's frozen image lives on (I-653).
+// LVName is the thin volume a guest's parked image lives on (I-653).
+//
+// The `frz-` prefix is deliberately NOT renamed to park (I-1002). It is
+// what sweepImages matches on to find images no record claims, so a host
+// carrying volumes written before the rename would stop matching them:
+// they would never be discarded and the thin pool would leak for ever,
+// which is the one resource whose exhaustion takes tenants down. Same for
+// MapperName and the btrfs label below. Do not tidy these for consistency
+// with the package name.
 func LVName(guestID string) string { return "frz-" + guestID }
 
 // MapperName is the dm-crypt mapping of that volume.
@@ -28,7 +36,7 @@ func MapperName(guestID string) string { return "repose-frz-" + guestID }
 func MapperPath(guestID string) string { return "/dev/mapper/" + MapperName(guestID) }
 
 // Image filesystems. The image is btrfs with zstd compression forced on
-// (I-685): the guest's memory is what a freeze writes and a restore reads,
+// (I-685): the guest's memory is what a park writes and a restore reads,
 // and compressing it is the one change that makes both faster, because
 // both are bounded by the host's data disk (600 MB/s on host-01). Measured
 // on woker-1, one large guest: 3.99 GB of image bytes on disk became 0.33
@@ -72,7 +80,7 @@ type Image struct {
 func (i *Image) FS() string { return FSBtrfs }
 
 func (i *Image) cryptOpen(ctx context.Context, guestID string, key []byte) error {
-	// A mapping left by a hostd that died mid-freeze is closed first; its
+	// A mapping left by a hostd that died mid-park is closed first; its
 	// key may not be this one.
 	_ = i.cryptClose(ctx, guestID) // absent is the usual case
 	p, err := i.R.Start(ctx, bytes.NewReader(key), "cryptsetup", "open", "--type", "plain",
@@ -161,8 +169,8 @@ func (i *Image) Open(ctx context.Context, guestID string, key []byte, dir, fs st
 		fs = FSExt4
 	}
 	// Read-only would be enough for a restore, but the mount is also where
-	// the hypervisor is snapshotted again when a freeze was cut short
-	// (freeze.go, refreezePaused), so it is writable and compressed.
+	// the hypervisor is snapshotted again when a park was cut short
+	// (park.go, reparkPaused), so it is writable and compressed.
 	opts := ""
 	if fs == FSBtrfs {
 		opts = "noatime," + CompressOpt
@@ -201,8 +209,8 @@ func KeyCheck(key []byte) string {
 // Fingerprint hashes the first 4 KiB of a guest volume, read past the
 // host page cache: ext4's superblock, whose mount count, mount and write
 // times and state change with any mount or fsck. Recorded when a guest
-// freezes and compared at the restore, it catches the one thing that makes
-// a frozen guest's memory a lie: its disk written by anything since.
+// parks and compared at the restore, it catches the one thing that makes
+// a parked guest's memory a lie: its disk written by anything since.
 func Fingerprint(dev string) (string, error) {
 	f, err := os.OpenFile(dev, os.O_RDONLY|unix.O_DIRECT, 0)
 	if err != nil {

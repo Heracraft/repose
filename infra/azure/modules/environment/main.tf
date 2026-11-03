@@ -212,7 +212,7 @@ check "host_shapes_name_real_hosts" {
 # `api.repose.herakraft.co:443` (nix/hosts/default.nix), where nothing gRPC
 # answers: api-grpc's mTLS listeners are 8443 and 8444, and with
 # manage_dns = false that name is Cloudflare's proxied wildcard. It also
-# ships no freeze key vault and no pauseIdle. The apply succeeds, the VM is
+# ships no park key vault and no pauseIdle. The apply succeeds, the VM is
 # healthy, and the host never appears in `repose-admin hosts list` --
 # RUNBOOK's "Host never registered", cause 4. It warns rather than fails
 # because host_flake_attr_default is a supported value: an environment can
@@ -221,7 +221,7 @@ check "every_host_has_a_flake_attr" {
   assert {
     condition = length(setsubtract(toset(var.hosts), toset(keys(var.host_flake_attrs)))) == 0
     error_message = format(
-      "No host_flake_attrs entry for %s, so it installs `%s`, the generic configuration, whose api address is port 443 where nothing gRPC answers: the apply succeeds and the host never registers (RUNBOOK, \"Host never registered\", cause 4). It would also run without the freeze key vault and without pauseIdle. Add nix/hosts/<name>.nix and name it in host_flake_attrs.",
+      "No host_flake_attrs entry for %s, so it installs `%s`, the generic configuration, whose api address is port 443 where nothing gRPC answers: the apply succeeds and the host never registers (RUNBOOK, \"Host never registered\", cause 4). It would also run without the park key vault and without pauseIdle. Add nix/hosts/<name>.nix and name it in host_flake_attrs.",
       join(", ", setsubtract(toset(var.hosts), toset(keys(var.host_flake_attrs)))),
       var.host_flake_attr_default,
     )
@@ -278,15 +278,19 @@ module "keyvault" {
   tags = local.tags
 }
 
-# The guest freeze's wrapping key (DECISIONS I-653): RSA, the hosts' identity
+# The guest park's wrapping key (DECISIONS I-653): RSA, the hosts' identity
 # may read its public half and unwrap with it. Hosts wrap image keys with the
-# public half they fetched ahead of time, so a freeze at shutdown needs no
+# public half they fetched ahead of time, so a park at shutdown needs no
 # network; a restore needs the vault.
+# The block keeps its pre-I-1002 name, and so do the key and the vault:
+# a module block name is a state address, so renaming it plans a destroy
+# and create of the Key Vault and makes every park image on a host
+# unreadable. The variable and the output are park_*; this is not.
 module "freeze_keyvault" {
   source = "../keyvault"
-  count  = var.freeze_keyvault_name == null ? 0 : 1
+  count  = var.park_keyvault_name == null ? 0 : 1
 
-  name                = var.freeze_keyvault_name
+  name                = var.park_keyvault_name
   resource_group_name = data.azurerm_resource_group.main.name
   location            = local.location
   tenant_id           = data.azurerm_client_config.current.tenant_id

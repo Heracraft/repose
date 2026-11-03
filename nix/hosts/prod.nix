@@ -4,20 +4,20 @@
 # stripped, and the next host was going to be a third copy of the same
 # twelve values. They are the fleet's values, not one machine's: the
 # control plane's address, the platform CA, the base repository, the
-# operator key, the idle pause, the freeze vault, the Blob account. None of
+# operator key, the idle pause, the park vault, the Blob account. None of
 # it is secret -- the CA and the key are public material and the rest are
 # addresses and names -- so all of it can sit in the store.
 #
 # What stays in a host's own file, and why:
 #
-#   freeze.writeRateMBs   Measured on that host's own pool device. Disks
+#   park.writeRateMBs   Measured on that host's own pool device. Disks
 #                         differ in size and in provisioned throughput, so
 #                         one host's figure predicts nothing about
 #                         another's (DECISIONS I-796). Deliberately not set
 #                         here: a host that names no figure takes
-#                         freeze.nix's floor of 100 and skips guests, which
+#                         park.nix's floor of 100 and skips guests, which
 #                         costs what those guests were running; a host that
-#                         inherited a neighbour's 400 would start freezes
+#                         inherited a neighbour's 400 would start parks
 #                         its disk cannot finish, and lose the same guests
 #                         while believing it saved them. The floor is the
 #                         safer default to forget.
@@ -26,7 +26,7 @@
 # sets from the attribute name (`lib.mkHost`), and nothing else. A host
 # whose file holds only its write rate is the normal shape; a host file
 # that would be empty means its write rate is still unmeasured, which is
-# `ops/RUNBOOK.md` "Guest freeze" step 3, not a reason to delete the file.
+# `ops/RUNBOOK.md` "Guest park" step 3, not a reason to delete the file.
 #
 # Staging does not import this. host-stg-01 answers to `hostdev` rather
 # than the api, on its own address, with its own CA, vault and Blob
@@ -88,11 +88,11 @@
     # before the host it sits on is switched.
     pauseIdle = true;
 
-    # Guests are frozen to an encrypted image of their memory when a host
+    # Guests are parked to an encrypted image of their memory when a host
     # restarts and restored where they were (DECISIONS I-652, I-653, the
     # owner's exception to the secrets rule, signed off 2026-10-12 and
     # first on for host-01 as I-686). The vault is prod's
-    # `freeze_keyvault_name` (`make output ENV=prod`, freeze_keyvault); the
+    # `park_keyvault_name` (`make output ENV=prod`, park_keyvault); the
     # key wraps per-image keys only, and the user-assigned host identity
     # below, which every production host shares, holds Get and UnwrapKey on
     # it and nothing else. Azure Scheduled Events stay off: turning that
@@ -100,9 +100,13 @@
     # own decision per host (I-652).
     #
     # writeRateMBs is per host; see the header.
-    freeze = {
+    park = {
       enable = true;
       keyVaultUrl = "https://repose-frz-3912.vault.azure.net/";
+      # The Azure key name stays `freeze-wrap` on purpose (I-1002): the
+      # rename to park never touched it, because renaming a Key Vault key
+      # is a destroy-and-create that makes every park image already on a
+      # host unreadable. Do not "fix" it for consistency.
       keyName = "freeze-wrap";
     };
 
