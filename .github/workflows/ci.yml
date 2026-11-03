@@ -104,6 +104,24 @@ jobs:
             system-features = kvm
       - name: evaluate every output
         run: nix flake check --no-build ./nix
+      # panic_on_oops must stay a sysctl, not a kernel parameter (DECISIONS
+      # I-988, I-1012). This asserts the CONFIG only, and is deliberately
+      # blind to the fault I-988 actually was: there the config was right
+      # and the kernel ignored the name. It catches an edit or an mkForce
+      # deleting the sysctl, and nothing more. The assertion that the
+      # kernel honoured it needs a booted VM, which needs KVM, which a
+      # hosted runner does not have -- that half runs in host-reboot under
+      # `nix flake check ./nix` on woker-1. `!cancelled()` because a
+      # skipped step reads exactly like a passing one (I-970).
+      - name: panic_on_oops is a sysctl and is 1
+        if: ${{ !cancelled() }}
+        run: |
+          # Not --raw: the value is an integer and `nix eval --raw` fails
+          # with "cannot coerce an integer to a string", which would make
+          # this step fail for a reason that has nothing to do with the
+          # setting.
+          v=$(nix eval './nix#nixosConfigurations.host-02.config.boot.kernel.sysctl."kernel.panic_on_oops"')
+          [ "$v" = "1" ] || { echo "kernel.panic_on_oops evaluates to '$v', want 1"; exit 1; }
       - name: build the Go binaries through the flake
         run: nix build --no-link "git+file://$GITHUB_WORKSPACE?dir=nix#guestd" "git+file://$GITHUB_WORKSPACE?dir=nix#hostd"
       # The fragment pipeline's real-Nix corpus (docs/interfaces/nix-build-contract.md
