@@ -209,7 +209,13 @@ in
 
       with subtest("Nix build accounts reach the internet and nothing of the host's (I-439)"):
           host.succeed("nft list chain inet repose output | grep -q 'meta skgid 30000 jump build_out'")
-          host.succeed("nft list chain inet repose output | grep -q 'meta skuid \"nixbuild\" jump build_out'")
+          # The ruleset is written with the account's name; this nft prints
+          # the uid back (`meta skuid 997`), the way it already prints the
+          # gid as 30000 on the line above. So accept either rendering and
+          # resolve the uid on the host rather than pinning 997, which is
+          # an allocation and not a contract (I-1024).
+          uid = host.succeed("id -u nixbuild").strip()
+          host.succeed(f"nft list chain inet repose output | grep -qE 'meta skuid (\"nixbuild\"|{uid}) jump build_out'")
           host.succeed("systemd-run --unit lo-probe ${pkgs.python3}/bin/python3 -m http.server 8999 --bind 127.0.0.1")
           host.wait_for_open_port(8999)
           # A nixbld user is what a fixed-output builder runs as, in the
@@ -1151,7 +1157,14 @@ in
           # runbook quotes. It runs for real once the host is registered,
           # a few subtests below.
           host.fail("systemctl start repose-snapshot.service")
-          host.succeed("journalctl -u repose-snapshot --no-pager | grep -q 'hostd is not running'")
+          # `no control socket`, not the old `hostd is not running`: I-990
+          # removed that wording from the message, because an absent socket
+          # is equally a hostd minutes into a post-reboot thaw, and this
+          # line kept grepping for it -- red from the moment thaw-window
+          # landed (I-1024). The literal is a substring of
+          # control.ErrNotRunning, and TestVMTestGrepsWordingWeStillPrint
+          # fails in Go if it ever stops being one.
+          host.succeed("journalctl -u repose-snapshot --no-pager | grep -q 'no control socket'")
 
       hostdev = "hostdev --state-dir ${hostdevDir}"
 

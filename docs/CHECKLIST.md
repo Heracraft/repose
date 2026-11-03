@@ -116,6 +116,17 @@ written so none of them goes unnoticed again.
       "logged but not enforced" with the ban lookup disabled — and the
       test passes repeated `-race` runs under load, not once on an idle
       box.
+- [ ] A message a user or an operator reads has one owner, and a test
+      that quotes it greps a substring of that owner. A VM test or a
+      runbook retyping the words is a second spelling of them, and the
+      release that reworded `control.ErrNotRunning` shipped a Go test
+      forbidding the old words beside a VM test requiring them -- two host
+      VM tests red on `main` for a day, unseen, because the VM tests need
+      KVM and CI has no job for them (DECISIONS I-1024). The same goes for
+      a *rendering* nobody here owns: nftables decides whether it prints
+      `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
+      literal out of the other file rather than restating it, and reverting
+      the quoted side fails it in seconds without a VM.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
