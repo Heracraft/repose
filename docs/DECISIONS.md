@@ -29311,3 +29311,84 @@ binary, the same moment, two answers. After the fix,
 `repose_build_info{component="hostd",version="4e98597"} 1`, and the old
 `TestBuildInfo` passes on the unfixed tree, which is the gap stated as a
 test.
+
+**I-1032. Six checks in one day were green in exactly the situation they
+existed for, and the ones with the best names survived longest.**
+(fault-family, 2026-11-03.)
+
+This entry adds no code. It names a family, because the six found on
+2026-11-03 were found separately, by two sessions, and each was written
+up as its own small mistake. They are one mistake:
+
+| what it checked | what it actually asked | I- |
+|---|---|---|
+| that a decision id is cited from a live path | including the ids in its own comment | I-994 |
+| that the snapshot unit says why it failed | a wording deleted in the same release | I-1024 |
+| that nft publishes the build-user rule | a rendering nftables chooses | I-1024 |
+| that `main`'s CI is not red | a run that had not finished | I-1026 |
+| that a directory holds a Go file | a builtin the dev shell's bash lacks | I-1028 |
+| that `repose_build_info` carries a version | that the labeller labels what it is handed | I-1030 |
+
+and beside them, from the other session, three VM tests that stood hostd
+up and never asked whether it was running, so all three were green for a
+day around a crash-looping daemon (I-1020).
+
+Four of them carry a `docs/CHECKLIST.md` line of their own (I-1020,
+I-1024, I-1026, I-1028), I-994's case is named inside I-1026's line
+without its id, and I-1030's rule is added to that file by this entry
+because it is the one the set argues for hardest. What is worth saying
+once, here, is the two things the set shows that no single case does.
+
+**A check that matched nothing is indistinguishable from a check that
+matched everything and was content.** The gate's own test ran eleven rows
+and asserted nothing, because the name column split on spaces and the
+`case` fell through for every row; it reported `ok` against the very gate
+it was written to catch. The same shape, three times in a day, with a
+guard firing on its own prose. So: count what you walked and assert the
+count. `assert_eq "every row of the table ran" "$ran" "11"` is the
+cheapest line in this repository.
+
+**A name that overstates a test's scope is what lets it survive.**
+`TestBuildInfo` passed on every run for as long as
+`repose_build_info{component="hostd"}` read `version="dev"` on every
+host, because it tests that `NewVersion` labels the version it is
+*handed*. Nobody greps for "is build info covered?" and reads the body.
+The three stubNode tests never claimed to exercise hostd and were
+therefore honest; this one claimed the whole subject and tested one layer
+of it. Of the six, it is the one that would have lasted longest, and it
+is the argument for naming a test after the property rather than the
+subject -- `TestBuildInfoCarriesTheBinaryVersion`, not `TestBuildInfo`.
+
+*The best evidence for this class is that writing this entry produced
+another instance of it.* The paragraph above began as "the rule each of
+them already carries is on `docs/CHECKLIST.md`" -- a claim of
+completeness, in an entry about checks that claim more than they verify,
+written without looking. Looking took one `grep`: four of the six had a
+line, I-994's case was described inside another's without its id, and
+I-1030 had none at all. Six found by exercising tools, and the seventh
+found by checking a sentence against the file it describes, which is the
+same act at a smaller scale.
+
+*A near relative, because it cost more time today than any of the six.*
+Three sessions' worth of reasoning went into `host-reboot`'s red before
+anyone ran the cheap measurement. I read "exits 1 at seven milliseconds
+with no log line" as a daemon failing early and named a code path with a
+line number; the peer read it against a documented contract. Neither
+reading was careless, and that is exactly the problem: a plausible
+reading is what stops people reaching for the measurement. The
+measurement was "run the stub with the unit's argv, then again with one
+flag removed", it cost about ninety seconds, and it was available from
+the first minute. The habit worth taking from the day is not "distrust
+your reading" -- it is that when a cheap measurement exists, the reading
+is not evidence and should not be reported as one.
+
+*One thing settled in passing, because the two cases look alike.*
+Correcting a decision entry in place versus superseding it from a later
+one is not a question of whether the entry has shipped. It is whose
+conclusion it is. I-1024 said "it is a hostd bug" -- my own reasoning,
+withdrawn by me, corrected in place, because a reader who finds I-1024
+should not have to find I-1020 to learn the sentence was wrong. I-1012's
+sentences were *true when written* and became false through a later
+change, so they were superseded from the entry that caused the change and
+left standing where they are. Edit your own conclusion; supersede a fact
+that the world moved under.

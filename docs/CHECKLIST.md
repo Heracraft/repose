@@ -157,6 +157,17 @@ written so none of them goes unnoticed again.
       `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
       literal out of the other file rather than restating it, and reverting
       the quoted side fails it in seconds without a VM.
+- [ ] A test is named for the property it asserts, not for the subject it
+      touches. `TestBuildInfo` passed on every run while
+      `repose_build_info{component="hostd"}` read `version="dev"` on every
+      host, because it asserted that the labeller labels what it is handed
+      and nothing asserted that hostd hands it anything (DECISIONS
+      I-1030). A name that claims the subject is read as coverage of the
+      subject by everyone who greps for it, which is how such a test
+      survives: the three VM tests that stood a daemon up without asking
+      whether it ran never claimed otherwise and were caught sooner.
+      Evidence: the name says what would have to be false for the test to
+      fail — `TestBuildInfoCarriesTheBinaryVersion`, not `TestBuildInfo`.
 - [ ] A test that walks a table, a directory or a list asserts how many
       items it walked. A guard that matches nothing passes, and it reads
       exactly like a guard that matched everything and was happy: eleven
