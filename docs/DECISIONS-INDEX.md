@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-889 entries.
+890 entries.
 
 ## Scope
 
@@ -921,3 +921,4 @@ pointer, not a summary.
 - **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28678
 - **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28697
 - **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28786
+- **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28799

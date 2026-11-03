@@ -361,10 +361,26 @@ test('a short question with options answers on its own line at 1440', async ({ p
 /** Narrows the account's pending list to these questions; the suite shares one account. */
 async function onlyPending(page: Page, ids: string[]) {
 	await page.route(/\/questions\?state=pending$/, async (route) => {
-		const res = await route.fetch();
-		const body = (await res.json()) as { questions: { id: string }[] };
-		body.questions = body.questions.filter((q) => ids.includes(q.id));
-		await route.fulfill({ response: res, json: body });
+		// The handler outlives the assertions. A pending-list request still
+		// in flight as the test ends arrives here after the page has closed,
+		// and route.fetch() then throws `Target page, context or browser has
+		// been closed`, which reds the whole run from a fixture rather than
+		// an assertion (CI 41534860432 on main at b55d17dd, this line).
+		// Nothing is asserted here -- the handler only narrows a shared
+		// account's pending list -- so a closed page means there is nothing
+		// left to narrow. The rethrow matters: the error is swallowed ONLY
+		// when the page is actually gone, so a genuine route failure during
+		// a live test still fails (DECISIONS I-1016).
+		if (page.isClosed()) return;
+		try {
+			const res = await route.fetch();
+			const body = (await res.json()) as { questions: { id: string }[] };
+			body.questions = body.questions.filter((q) => ids.includes(q.id));
+			await route.fulfill({ response: res, json: body });
+		} catch (err) {
+			if (page.isClosed()) return;
+			throw err;
+		}
 	});
 }
 
