@@ -48,8 +48,8 @@ var PauseHold = 15 * time.Minute
 var TimerWakeLead = time.Minute
 
 // PrepareTimeout bounds each of the pause's two Execs in the guest (the
-// write-back and the timer read), as the freeze's write-back is bounded
-// (freeze.go).
+// write-back and the timer read), as the park's write-back is bounded
+// (park.go).
 var PrepareTimeout = 10 * time.Second
 
 // WakeResumeWait is how long vm.resume is retried until vm.info says the
@@ -72,12 +72,12 @@ const (
 	whyAlreadyResting  = "already_resting"
 	whyCommandInFlight = "command_in_flight"
 	whyHostStopping    = "host_stopping"
-	// whyFrozen is the host-restart freeze (I-652), not the idle pause: a
-	// guest with a freeze record is mid-freeze or waiting for a thaw. The
+	// whyParked is the host-restart park (I-652), not the idle pause: a
+	// guest with a park record is mid-park or waiting for an unpark. The
 	// word a USER reads for an idle pause is "frozen" (I-826); these are
 	// hostd's own log and metric words, and `already_resting` is the one
 	// that means "this feature has it".
-	whyFrozen           = "frozen"
+	whyParked           = "parked"
 	whyTimerDue         = "timer_due"
 	whyGuestUnreachable = "guest_unreachable"
 	// whyInUse: a session or a tmux client appeared between the api's
@@ -210,11 +210,11 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 	case m.commandInFlight(g.GuestID, commandID):
 		return refuse(whyCommandInFlight)
 	}
-	// A guest with a freeze record is mid-freeze or waiting for a thaw;
-	// its hypervisor is paused or gone and the freeze owns it (S7).
+	// A guest with a park record is mid-park or waiting for an unpark;
+	// its hypervisor is paused or gone and the park owns it (S7).
 	if m.fcfg().RecordDir != "" {
 		if r, _ := m.records().Get(g.GuestID); r != nil {
-			return refuse(whyFrozen)
+			return refuse(whyParked)
 		}
 	}
 	sess, serr := m.session(g.GuestID)
@@ -241,8 +241,8 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 			return refuse(whyInUse)
 		}
 	}
-	// The write-back the freeze already does before it pauses
-	// (freeze.go): every dirty page reaches the volume while the guest
+	// The write-back the park already does before it pauses
+	// (park.go): every dirty page reaches the volume while the guest
 	// still runs, and a guest with the balloon also drops its page cache
 	// so free page reporting hands those pages back to the host instead
 	// of holding them for the whole rest.
@@ -254,14 +254,14 @@ func (m *Manager) pause(ctx context.Context, commandID string, c *hostdv1.PauseG
 	r, err := sess.Exec(dctx, []string{"/bin/sh", "-c", script}, uint32(PrepareTimeout/time.Second), "")
 	dcancel()
 	if err != nil || r.GetExitCode() != 0 {
-		// The same treatment the freeze gives it: the pause is worth
+		// The same treatment the park gives it: the pause is worth
 		// having without the write-back, since nothing is written to
 		// disk and the guest keeps running.
 		m.log(g).Warn("guest cache write-back failed before the pause", "event", "guest_resting")
 	}
 	sock := ch.APISocket(m.guestDir(g.GuestID))
-	// The record goes down BEFORE the pause, the way the freeze writes
-	// its own record before it pauses (freeze.go) and for the same
+	// The record goes down BEFORE the pause, the way the park writes
+	// its own record before it pauses (park.go) and for the same
 	// reason: a hostd that dies between the two leaves a guest whose
 	// vCPUs are stopped, and the recoverable direction is a mark with no
 	// pause, not a pause with no mark. Reconcile reads vm.info for a
@@ -456,7 +456,7 @@ func (m *Manager) wakeByID(ctx context.Context, id, reason string) (*hostdv1.Wak
 	// CLOCK_REALTIME stayed inside a host bracket and its uptime advanced
 	// by the full wall time. I-233's 10 s of lag is a snapshot and
 	// restore, where the clock comes back with the image; that is the
-	// freeze's path, not this one.
+	// park's path, not this one.
 	// From here the vCPUs are running, so the guest is not resting
 	// whatever guestd does. The mark goes now rather than at the end:
 	// left behind, it makes the sampler repeat the pre-pause signals for

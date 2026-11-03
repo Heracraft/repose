@@ -369,12 +369,12 @@ entry and this list with it. Counts as of 2026-10-21.
       menu waits 10 s so an older generation can be chosen (I-649, I-654).
 - [ ] **A planned host-01 restart has been ridden out.** It is the only
       proof of the new initrd pool activation (I-643), the restart of
-      machines that were running (I-645) and the guest freeze on prod
+      machines that were running (I-645) and the guest park on prod
       (I-652, I-685, I-686), none of which a switch exercises. Evidence:
-      `journalctl -u hostd` shows `guest_freeze` before the shutdown and
-      `guest_thaw` after the boot, every guest back `running` with its
+      `journalctl -u hostd` shows `guest_park` before the shutdown and
+      `guest_unpark` after the boot, every guest back `running` with its
       earlier pids, `lvs -o seg_monitor` says `monitored`, and the pool
-      unit logged `pool_activated`. `hostd freeze` is all-or-nothing, so
+      unit logged `pool_activated`. `hostd park` is all-or-nothing, so
       this cannot be rehearsed on one guest while others must keep
       running (I-696).
 - [ ] **The herdr laptop checks** from release r20261008-1 have been run on

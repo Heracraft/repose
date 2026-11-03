@@ -25,14 +25,14 @@ let
   # The idle pause (DECISIONS I-818); nothing when it is off, and then
   # this host reports no `pause` feature and rests nothing.
   pauseFlags = lib.optionalString cfg.pauseIdle "--pause-idle";
-  # The guest freeze (freeze.nix, DECISIONS I-652); nothing when it is off.
-  freezeFlags = lib.optionalString cfg.freeze.enable (
-    "--freeze --freeze-deadline ${toString cfg.freeze.deadline}s --freeze-write-rate ${toString cfg.freeze.writeRateMBs}"
-    + " --freeze-restore-timeout ${toString cfg.freeze.restoreTimeout}s"
-    + (if cfg.freeze.keyFile != "" then " --freeze-key-file ${lib.escapeShellArg cfg.freeze.keyFile}"
-       else " --freeze-key-vault ${lib.escapeShellArg cfg.freeze.keyVaultUrl} --freeze-key-name ${lib.escapeShellArg cfg.freeze.keyName}")
-    + lib.optionalString cfg.freeze.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")
-    + lib.optionalString cfg.freeze.freePageReporting " --free-page-reporting";
+  # The guest park (park.nix, DECISIONS I-652); nothing when it is off.
+  parkFlags = lib.optionalString cfg.park.enable (
+    "--park --park-deadline ${toString cfg.park.deadline}s --park-write-rate ${toString cfg.park.writeRateMBs}"
+    + " --park-restore-timeout ${toString cfg.park.restoreTimeout}s"
+    + (if cfg.park.keyFile != "" then " --park-key-file ${lib.escapeShellArg cfg.park.keyFile}"
+       else " --park-key-vault ${lib.escapeShellArg cfg.park.keyVaultUrl} --park-key-name ${lib.escapeShellArg cfg.park.keyName}")
+    + lib.optionalString cfg.park.scheduledEvents " --scheduled-events --vm-name ${lib.escapeShellArg cfg.hostName}")
+    + lib.optionalString cfg.park.freePageReporting " --free-page-reporting";
 
   # guests.slice gets everything but the host reserve: 8 GiB below 128 GiB
   # of RAM, 16 GiB above (DESIGN §4). Computed at boot; the slice cap is the
@@ -86,8 +86,8 @@ let
       # systemd would SIGKILL the hypervisor -- taking the guest's disk
       # down without a flush. Resume it first. vm.resume on a running VM
       # is refused and harmless, and this runs before every guest stop,
-      # so it needs no record of which guests rest. With the freeze on
-      # (freeze.nix) hostd has already snapshotted and stopped them by
+      # so it needs no record of which guests rest. With the park on
+      # (park.nix) hostd has already snapshotted and stopped them by
       # the time this unit runs, and there is nothing here to resume.
       curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.resume >/dev/null || true
       curl -s -m 2 --unix-socket "$sock" -X PUT http://localhost/api/v1/vm.power-button >/dev/null || exit 0
@@ -107,17 +107,17 @@ in
 {
   # The clean stop above, for every guest@ unit. After= on the guest's
   # virtiofsd units makes a shutdown stop the guest first: it needs its
-  # store share to power off. With the guest freeze on (freeze.nix,
-  # I-652), the same drop-in orders each guest before the freeze unit, so
-  # a shutdown freezes guests before it stops them: a unit takes one text
-  # drop-in, so freeze.nix cannot add its own for guest@.
+  # store share to power off. With the guest park on (park.nix,
+  # I-652), the same drop-in orders each guest before the park unit, so
+  # a shutdown parks guests before it stops them: a unit takes one text
+  # drop-in, so park.nix cannot add its own for guest@.
   systemd.units."guest@.service" = {
     overrideStrategy = "asDropin";
     text = ''
       [Unit]
       After=virtiofsd@%i.service virtiofsd-auth@%i.service
-    '' + lib.optionalString cfg.freeze.enable ''
-      Before=repose-guest-freeze.service
+    '' + lib.optionalString cfg.park.enable ''
+      Before=repose-guest-park.service
     '' + ''
 
       [Service]
@@ -185,7 +185,7 @@ in
       coreutils
     ];
     serviceConfig = {
-      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${freezeFlags} ${pauseFlags}";
+      ExecStart = "${hostd}/bin/hostd --state ${stateDir} ${apiFlags} ${snapshotFlags} ${buildFlags} ${parkFlags} ${pauseFlags}";
       Restart = "always";
       RestartSec = 2;
       # A join token that has been used is not retried (03-hostd §6).

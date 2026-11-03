@@ -1,4 +1,4 @@
-package freeze
+package park
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ const (
 	// (synced); the hypervisor may still run, paused, and the guest
 	// volume's fingerprint is not taken yet. Found at start with the
 	// hypervisor gone (hostd killed between the snapshot and the close),
-	// the freeze is finished there and the image restored; with the
+	// the park is finished there and the image restored; with the
 	// hypervisor still there, the guest is resumed instead.
 	StateWritten = "written"
 	// StateComplete: the snapshot finished, the hypervisor is gone and the
@@ -28,7 +28,7 @@ const (
 	StateComplete = "complete"
 )
 
-// Record is what hostd knows about one guest's frozen image, kept in its
+// Record is what hostd knows about one guest's parked image, kept in its
 // own state directory (root only), never in the guest directory the
 // hypervisor can write. The wrapped key is safe on disk (I-653); nothing
 // in it is tenant data.
@@ -70,7 +70,7 @@ func (s Store) path(id string) string { return filepath.Join(s.Dir, id+".json") 
 // the new one.
 func (s Store) Put(r *Record) error {
 	if r.GuestID == "" || strings.ContainsAny(r.GuestID, "/\x00") {
-		return fmt.Errorf("freeze record: bad guest id %q", r.GuestID)
+		return fmt.Errorf("park record: bad guest id %q", r.GuestID)
 	}
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return err
@@ -118,10 +118,10 @@ func (s Store) Get(id string) (*Record, error) {
 	}
 	r := &Record{}
 	if err := json.Unmarshal(b, r); err != nil {
-		return nil, fmt.Errorf("freeze record %s: %w", id, err)
+		return nil, fmt.Errorf("park record %s: %w", id, err)
 	}
 	if r.GuestID != id {
-		return nil, fmt.Errorf("freeze record %s names guest %s", id, r.GuestID)
+		return nil, fmt.Errorf("park record %s names guest %s", id, r.GuestID)
 	}
 	return r, nil
 }

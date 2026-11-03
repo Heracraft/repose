@@ -58,7 +58,7 @@ variable "api_identity_object_id" {
 }
 
 variable "api_key_permissions" {
-  description = "Key permissions for api_identity_object_id. The api wraps and unwraps users' DEKs; the guest freeze's hosts only read the public half and unwrap (I-653)."
+  description = "Key permissions for api_identity_object_id. The api wraps and unwraps users' DEKs; the guest park's hosts only read the public half and unwrap (I-653)."
   type        = list(string)
   default     = ["Get", "WrapKey", "UnwrapKey"]
 }

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-884 entries.
+885 entries.
 
 ## Scope
 
@@ -916,3 +916,4 @@ pointer, not a summary.
 - **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28460
 - **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28476
 - **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28489
+- **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28501

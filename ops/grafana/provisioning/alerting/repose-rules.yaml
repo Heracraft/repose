@@ -2845,8 +2845,8 @@ groups:
                   reducer:
                     type: last
                     params: []
-      - uid: repose-guestleftunfrozen
-        title: GuestLeftUnfrozen
+      - uid: repose-guestnotparked
+        title: GuestNotParked
         condition: C
         for: 5m
         noDataState: OK
@@ -2856,9 +2856,9 @@ groups:
           severity: warn
           stack: repose
         annotations:
-          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were left unfrozen ({{ $labels.reason }}) and lost what they were running"
-          description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
-          runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were not parked ({{ $labels.reason }}) and lost what they were running"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_park\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-park -u hostd` has the park that did it. Compare the park's duration with repose.host.park.deadline before raising it."
+          runbook: "docs/ops/RUNBOOK.md#guestnotparked"
         data:
           - refId: A
             relativeTimeRange:
@@ -2871,7 +2871,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h]))"
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_park_skipped_total[6h]))"
               instant: true
               range: false
               intervalMs: 1000
@@ -2928,8 +2928,8 @@ groups:
           severity: warn
           stack: repose
         annotations:
-          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} lost their frozen memory at the thaw ({{ $labels.reason }})"
-          description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} lost their parked memory at the unpark ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_unpark\"` names each guest and what its image ran into; `parked guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
           runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
         data:
           - refId: A
@@ -2943,7 +2943,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h]))"
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_unpark_discarded_total[6h]))"
               instant: true
               range: false
               intervalMs: 1000

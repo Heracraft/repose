@@ -102,8 +102,8 @@ component must emit:
   carries the `reason` it was asked for and, when hostd refuses, the
   `why_not`; a wake carries `wake_ms`, and a wake that failed logs at
   Error with the step as `phase`). `guest_resting` is a literal beside
-  the constants in `internal/obs/events.go`, as `guest_freeze` and
-  `guest_thaw` are.
+  the constants in `internal/obs/events.go`, as `guest_park` and
+  `guest_unpark` are.
 - guestd: `ready`, `freeze`, `thaw`, `freeze_timeout`, `switch`,
   `agent_event`, `agent_state`, `oom_priority` (I-200, counts only),
   `hook_bad_payload`, `agent_question` (I-244: ids, states, counts and
@@ -175,14 +175,14 @@ Families:
   not forwarded: `rate_limited`, `invalid`, `queue_full`; I-445),
   `repose_host_guests_interrupted` (gauge, guests a host restart took down
   in the last 6 h that have not run since; I-645),
-  `repose_host_guest_freeze_unfrozen_total{reason}` (running guests a
-  freeze left without their memory: `no_room`, `estimate`, `deadline`,
+  `repose_host_guest_park_skipped_total{reason}` (running guests a
+  park left without their memory: `no_room`, `estimate`, `deadline`,
   `failed`, `no_key`, `busy`; I-796),
-  `repose_host_guest_thaw_discarded_total{reason}` (frozen guests whose
-  image a thaw discarded, so they started cold: `incomplete`, `too_old`,
+  `repose_host_guest_unpark_discarded_total{reason}` (parked guests whose
+  image an unpark discarded, so they started cold: `incomplete`, `too_old`,
   `changed`, `no_key`, `failed`, `window`; I-796). Both are running
-  totals kept beside the freeze records and published at each start: a
-  shutdown freeze's counter is never scraped and a thaw's is raised
+  totals kept beside the park records and published at each start: a
+  shutdown park's counter is never scraped and an unpark's is raised
   before the listener is up, so a per-process count reads the same after
   every reboot and `increase()` sees no rise.
   The idle pause (I-818) adds `repose_host_guests_resting` (gauge, guests
@@ -333,8 +333,8 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |
 | `BillingStopped` | `sum by (reason) (increase(repose_api_billing_stops_total[1h])) > 0` | info |
 | `EgressBlocked` | `repose_host_egress_blocked_guests > 0` for 2m (I-238..I-240) | warn |
-| `GuestLeftUnfrozen` | `sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h])) > 0` for 5m (I-796) | warn |
-| `GuestImageDiscarded` | `sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h])) > 0` for 5m (I-796) | warn |
+| `GuestNotParked` | `sum by (host_id, reason) (increase(repose_host_guest_park_skipped_total[6h])) > 0` for 5m (I-796) | warn |
+| `GuestImageDiscarded` | `sum by (host_id, reason) (increase(repose_host_guest_unpark_discarded_total[6h])) > 0` for 5m (I-796) | warn |
 | `GuestWakeFailed` | `sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0` for 5m: a frozen guest that would not resume, its memory and processes still intact (I-818) | warn |
 | `GuestWakeSlow` | `histogram_quantile(0.9, sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5` for 15m: past the gateway's 10 s dial budget, so the next wake is a failed ssh (I-818) | warn |
 | `SamplesFailing` | `sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0` (I-446) | warn |

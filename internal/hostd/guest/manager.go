@@ -94,7 +94,7 @@ type Class struct {
 // R3-2). The disk caps are each at most a quarter of a host data disk's
 // 16,000 IOPS and 600 MB/s. A running guest keeps the vCPUs it was
 // started with: VCPUs reaches the hypervisor only through create.go's
-// ch.Spec (--cpus boot=), and a freeze/restore does not carry it --
+// ch.Spec (--cpus boot=), and a park/restore does not carry it --
 // ch.RestoreArgs has no --cpus and the count comes from the saved VM
 // state -- so after a host restart a guest kept from before I-784 runs
 // its old vCPU threads inside the new, halved CPUQuota until its first
@@ -238,10 +238,10 @@ type Config struct {
 	UnitPoll        time.Duration
 	// FailAtStep injects a failure into CreateGuest at that step (tests).
 	FailAtStep int
-	// Freeze turns on freezing guests across host restarts (I-652).
-	Freeze FreezeConfig
+	// Park turns on parking guests across host restarts (I-652).
+	Park ParkConfig
 	// FreePageReporting starts guests with a balloon that hands the pages
-	// they free back to the host (I-652): smaller frozen images, and the
+	// they free back to the host (I-652): smaller parked images, and the
 	// unit holds what the guest uses. Guests started before keep their
 	// devices until their next start.
 	FreePageReporting bool
@@ -251,7 +251,7 @@ type Config struct {
 	// vm.pause and vm.resume of a guest with two vhost-user devices is
 	// measured on no repose host yet -- I-652 records that a
 	// *snapshotted* VM must not be resumed at all, its virtio-fs stops
-	// answering -- so a host opts in the way it opts into the freeze.
+	// answering -- so a host opts in the way it opts into the park.
 	PauseIdle bool
 }
 
@@ -405,9 +405,9 @@ type Deps struct {
 	// interrupted (tests that do not exercise it).
 	BootID   func() (string, error)
 	BootTime func() (time.Time, error)
-	// Freeze is the guest freeze's key, image volume and fingerprint
-	// (I-652, I-653); empty when the freeze is off.
-	Freeze FreezeDeps
+	// Park is the guest park's key, image volume and fingerprint
+	// (I-652, I-653); empty when the park is off.
+	Park ParkDeps
 }
 
 type job struct {
@@ -430,14 +430,14 @@ type worker struct {
 type Manager struct {
 	cfg Config
 	d   Deps
-	// cutFreeze, in tests, ends a freeze as a hostd killed at that point
+	// cutPark, in tests, ends a park as a hostd killed at that point
 	// would: at "snapshot" (the snapshot written, the VM still paused) or
 	// "stopped" (the hypervisor gone, the image not closed). Nil outside
 	// tests.
-	cutFreeze func(guestID, at string) bool
-	ctx       context.Context
-	stop      context.CancelFunc
-	wg        sync.WaitGroup
+	cutPark func(guestID, at string) bool
+	ctx     context.Context
+	stop    context.CancelFunc
+	wg      sync.WaitGroup
 
 	// curMu guards the sample cursors and the last sample timestamp; a
 	// tap's counters are read under it (advanceNet).
@@ -486,7 +486,7 @@ type Manager struct {
 	// the sweep's "at start no snapshot is in flight" assumption was
 	// read as true on every reconcile, and Reconcile is reachable while
 	// one is: the operator's `POST /reconcile`, and the one after a
-	// thaw, which hostd runs with its own upload goroutines still
+	// unpark, which hostd runs with its own upload goroutines still
 	// streaming.
 	snapInFlight map[string]bool
 
@@ -523,14 +523,14 @@ type Manager struct {
 	shuttingDown atomic.Bool
 	// hostDown is set once systemd says the host is stopping (HostStopping).
 	hostDown atomic.Bool
-	// freezeMu (a one-slot semaphore, so a wait can end with its context)
-	// lets one FreezeAll, ThawAll or SyncClocks run at a time (freeze.go,
+	// parkMu (a one-slot semaphore, so a wait can end with its context)
+	// lets one ParkAll, UnparkAll or SyncClocks run at a time (park.go,
 	// I-652).
-	freezeMu chan struct{}
-	// tallyOnce publishes the host's freeze and thaw totals at the first
-	// thaw of this process, which is hostd's start: adding them again at
-	// a later `hostd thaw` would count what this process has already
-	// counted (freeze.go, I-796).
+	parkMu chan struct{}
+	// tallyOnce publishes the host's park and unpark totals at the first
+	// unpark of this process, which is hostd's start: adding them again at
+	// a later `hostd unpark` would count what this process has already
+	// counted (park.go, I-796).
 	tallyOnce sync.Once
 }
 
@@ -554,7 +554,7 @@ func New(cfg Config, d Deps) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, d: d,
-		workers: map[string]*worker{}, inflight: map[string]bool{}, inflightTarget: map[string]string{}, freezeMu: make(chan struct{}, 1),
+		workers: map[string]*worker{}, inflight: map[string]bool{}, inflightTarget: map[string]string{}, parkMu: make(chan struct{}, 1),
 		restingNow: map[string]*state.Resting{}, timerWakes: map[string]*time.Timer{},
 		snapInFlight: map[string]bool{},
 		secrets:      map[string][]*guestdv1.Secret{}, monitors: map[string]*monitor{}, boots: map[string]*hostdv1.BootTimings{},
@@ -690,7 +690,7 @@ func (m *Manager) setState(g *state.Guest, st, reason string) error {
 		g.Interrupted = nil
 	}
 	// A guest whose state changes is not resting (I-818): whatever moved
-	// it -- a stop, a restore, a reconcile, a thaw's resume -- left its
+	// it -- a stop, a restore, a reconcile, an unpark's resume -- left its
 	// vCPUs running or gone. The mark goes, and the api is told it went,
 	// because a mark nothing cleared would silence that guest's samples.
 	wasResting := g.Resting != nil

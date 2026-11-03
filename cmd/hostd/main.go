@@ -44,8 +44,8 @@ commands:
   drain          stop accepting placements
   undrain        accept placements again
   reconcile      re-read units and volumes; --rebuild rebuilds a lost state.db
-  freeze         freeze every running guest to its encrypted image (--shutdown: from the shutdown unit)
-  thaw           restore every frozen guest now
+  park           park every running guest to its encrypted image (--shutdown: from the shutdown unit)
+  unpark         restore every parked guest now
   pause          stop one guest's vCPUs, its memory left resident (hostd pause <guest_id>)
   wake           resume one paused guest (hostd wake <guest_id>)
   state export   print the state as JSON (daemon running or not)
@@ -88,16 +88,16 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.Substituters, "substituters", "", "nix substituters for builds, space separated (default cache.nixos.org; the host module adds the overlay cache)")
 	fs.StringVar(&o.LogLevel, "log-level", "info", "log level: debug, info, notice, warn, error")
 	fs.BoolVar(&o.PauseIdle, "pause-idle", false, "rest a guest nobody is using: its vCPUs stop and its memory stays resident, and anything that reaches the machine wakes it (DECISIONS I-818). Off until a host is measured: a plain vm.pause and vm.resume of a guest with two vhost-user devices has not been")
-	fs.BoolVar(&o.Freeze.Enabled, "freeze", false, "freeze running guests to an encrypted image when the host shuts down, and restore them at the next start (DECISIONS I-652)")
-	fs.StringVar(&o.Freeze.KeyVaultURL, "freeze-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
-	fs.StringVar(&o.Freeze.KeyName, "freeze-key-name", "", "name of that key")
-	fs.StringVar(&o.Freeze.KeyFile, "freeze-key-file", "", "RSA private key (PEM) to wrap image keys with instead of Key Vault (staging, tests)")
-	fs.DurationVar(&o.Freeze.Deadline, "freeze-deadline", 240*time.Second, "longest a freeze of all guests may take; with the write rate it is how much guest memory a host restart can save")
-	fs.Uint64Var(&o.Freeze.WriteRateMBs, "freeze-write-rate", 100, "MB/s the snapshots are assumed to write guest memory at, until this freeze's first finished one shows the real rate; measure the disk the guest thin pool is on (a scratch thin volume, dd oflag=direct)")
-	fs.DurationVar(&o.Freeze.RestoreTimeout, "freeze-restore-timeout", 180*time.Second, "longest one restore's surroundings may take at the next start; the image's own read is added from the write rate")
-	fs.BoolVar(&o.Freeze.FreePageReporting, "free-page-reporting", false, "start guests with a balloon that returns freed pages to the host")
-	fs.BoolVar(&o.Freeze.ScheduledEvents, "scheduled-events", false, "freeze guests on Azure Scheduled Events reboot notices and approve them")
-	fs.StringVar(&o.Freeze.VMName, "vm-name", "", "this VM's name in Scheduled Events (default: hostname)")
+	fs.BoolVar(&o.Park.Enabled, "park", false, "park running guests to an encrypted image when the host shuts down, and restore them at the next start (DECISIONS I-652)")
+	fs.StringVar(&o.Park.KeyVaultURL, "park-key-vault", "", "Key Vault URL holding the RSA key that wraps image keys")
+	fs.StringVar(&o.Park.KeyName, "park-key-name", "", "name of that key")
+	fs.StringVar(&o.Park.KeyFile, "park-key-file", "", "RSA private key (PEM) to wrap image keys with instead of Key Vault (staging, tests)")
+	fs.DurationVar(&o.Park.Deadline, "park-deadline", 240*time.Second, "longest a park of all guests may take; with the write rate it is how much guest memory a host restart can save")
+	fs.Uint64Var(&o.Park.WriteRateMBs, "park-write-rate", 100, "MB/s the snapshots are assumed to write guest memory at, until this park's first finished one shows the real rate; measure the disk the guest thin pool is on (a scratch thin volume, dd oflag=direct)")
+	fs.DurationVar(&o.Park.RestoreTimeout, "park-restore-timeout", 180*time.Second, "longest one restore's surroundings may take at the next start; the image's own read is added from the write rate")
+	fs.BoolVar(&o.Park.FreePageReporting, "free-page-reporting", false, "start guests with a balloon that returns freed pages to the host")
+	fs.BoolVar(&o.Park.ScheduledEvents, "scheduled-events", false, "park guests on Azure Scheduled Events reboot notices and approve them")
+	fs.StringVar(&o.Park.VMName, "vm-name", "", "this VM's name in Scheduled Events (default: hostname)")
 	return o
 }
 
@@ -312,28 +312,28 @@ func dispatch(cmd string, args []string, o *app.Options) int {
 			return failIf(st.Import(r))
 		}
 		return fail(errors.New("state export|import <file>"))
-	case "freeze", "thaw":
-		var res []guest.FreezeResult
+	case "park", "unpark":
+		var res []guest.ParkResult
 		var err error
-		if cmd == "freeze" {
+		if cmd == "park" {
 			ffs := flag.NewFlagSet(cmd, flag.ExitOnError)
-			shutdown := ffs.Bool("shutdown", false, "the host is shutting down (repose-guest-freeze.service); quiet when the freeze is off")
+			shutdown := ffs.Bool("shutdown", false, "the host is shutting down (repose-guest-park.service); quiet when the park is off")
 			if err := ffs.Parse(args); err != nil {
 				return 2
 			}
-			reason := guest.FreezeOperator
+			reason := guest.ParkOperator
 			if *shutdown {
 				// The unit's ExecStop also runs when a switch restarts or
-				// removes it; only a host on its way down freezes.
+				// removes it; only a host on its way down parks.
 				if !systemStopping(ctx) {
-					fmt.Println("the system is not shutting down; nothing frozen")
+					fmt.Println("the system is not shutting down; nothing parked")
 					return 0
 				}
-				reason = guest.FreezeShutdown
+				reason = guest.ParkShutdown
 			}
-			res, err = cc.Freeze(ctx, reason)
+			res, err = cc.Park(ctx, reason)
 		} else {
-			res, err = cc.Thaw(ctx)
+			res, err = cc.Unpark(ctx)
 		}
 		if err != nil {
 			return fail(err)

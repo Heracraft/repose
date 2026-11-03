@@ -20,7 +20,7 @@ zone                = "1"
 # the live host's disk settings and changing one plans a change on it. A 2048
 # GB disk under four times the guests may want more; provisioned IOPS and
 # throughput are billed, so raising them is the owner's call. Raising mbps is
-# also the only lever on the guest freeze's budget (DECISIONS I-786).
+# also the only lever on the guest park's budget (DECISIONS I-786).
 host_size           = "Standard_D64s_v7"
 host_class          = "azure-d64s-v7"
 host_data_disk_gb   = 2048
@@ -82,11 +82,11 @@ host_shapes = {}
 
 snapshots_account_name = "reposesnapshots3912"
 keyvault_name          = "repose-kv-3912"
-# The guest freeze's image-wrapping key, in a vault of its own because access
+# The guest park's image-wrapping key, in a vault of its own because access
 # policies are vault-wide: the hosts get Get and UnwrapKey here and nothing on
 # the vault that wraps users' secret keys (DECISIONS I-653, I-686). The name is
 # not secret, so it lives here; nix/hosts/host-01.nix names the same vault.
-freeze_keyvault_name = "repose-frz-3912"
+park_keyvault_name = "repose-frz-3912"
 
 dns_zone = "herakraft.co"
 

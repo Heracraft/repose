@@ -55,7 +55,7 @@ func TestSnapshotRequest(t *testing.T) {
 	})}
 	go func() { _ = srv.Serve(ln) }()
 	defer func() { _ = srv.Close() }()
-	var f Freezer = &HTTP{}
+	var f Parker = &HTTP{}
 	if err := f.Snapshot(context.Background(), sock, "/var/lib/repose/guests/g1/freeze/snap"); err != nil {
 		t.Fatal(err)
 	}

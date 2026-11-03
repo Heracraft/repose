@@ -28497,3 +28497,118 @@ The line is added, and `TestEveryTestdbPackageStopsItsCluster` in `internal/db/t
 *The reaper is deliberately not in this change, and the leak is therefore only half fixed.* What ships here stops the **normal-exit** leak, which is what `internal/api/resting` had. A cluster whose `go test` was killed, crashed or OOM-killed still survives, because `Stop()` never runs — and that is how most of the twenty-five got there. The designed fix is ownership rather than age: hold an exclusive `flock` on a lock file inside the cluster's own directory for the life of the process, so the kernel releases it on exit, panic, `SIGKILL` and OOM-kill alike, and reap at allocation any cluster whose lock can be taken. It also has to ascend out of `nix-shell.*` when resolving where to look, because inside `nix develop` `os.TempDir()` is itself a `nix-shell.*` directory and two of the twenty-five were nested in one while twenty-three sat in its parent.
 
 That is a janitor which calls `os.RemoveAll` on paths under `TMPDIR`, where the failure mode is deleting a live cluster and redding somebody else's suite. It wants its own branch and a fresh reading, not the end of a long session — so it is specified here and left, rather than half-built. Until it lands, the standing cleanup is the one in the handover: kill the clusters whose data dir is hours old and remove their directories; `ppid=1` does not identify them, because `pg_ctl` daemonizes a live cluster too, and `pgrep -f "go test"` matches the shell asking the question.
+
+**I-1002. The host-restart memory image is a park, not a freeze.**
+(park, 2026-11-03.)
+
+`freeze` meant three unrelated things in this repository, and on
+2026-11-02 that cost the owner a real misreading: they asked whether
+guest freeze/thaw had ever run in production, having watched idle
+machines "freeze" and come back on `ssh` in milliseconds for weeks. They
+were right that something froze routinely and right that it was a
+different mechanism, and nothing in the names could have told them.
+
+The three were: (1) the idle pause, whose vCPUs stop with memory left
+resident, and whose **user-visible word is "frozen"** (I-683); (2) the
+encrypted dm-crypt image of a guest's memory written before a host
+restart and read back on boot (I-652, I-653, I-686, I-796); (3) the
+filesystem freeze of a volume snapshot, `FIFREEZE` by its literal name.
+(1) is the owner's word and cannot move. (3) is literal and stays. (2)
+has no user-visible surface at all -- a tenant's machine simply survives
+a host restart -- so (2) is the one that moved, and it is now
+**park**/**unpark**.
+
+`park` was free (`git grep -ciIw park` matched nothing), it is plain
+English in this repo's register, it implies temporary and deliberate and
+coming back to the same place, and it reads correctly in the sentence
+that matters: the host parks every running guest before it restarts, and
+unparks them on the way back. Rejected: `stash` (29 files, and `git
+stash` is already a documented trap here); `suspend` (28 files);
+`hibernate`, free and the most recognisable, but `wake` belongs to the
+idle pause and `resume` to Cloud Hypervisor's resume-from-pause, leaving
+no return verb; `checkpoint`, precise with CRIU prior art, but `restore`
+already means snapshot restore; `shelve`, OpenStack prior art and more
+jargon than this repo uses.
+
+**The alert is `GuestNotParked`, not `GuestLeftUnparked`, and the metric
+is `repose_host_guest_park_skipped_total`.** `GuestLeftUnfrozen` was
+unambiguous only because the reverse verb was "thaw", so "unfrozen"
+could only mean "never got frozen". With park/unpark the negation of
+"parked" and the name of the reverse operation are the same word, and
+`GuestLeftUnparked` reads as "we failed to unpark them" -- a different
+and real failure. Do not helpfully restore the symmetric form. The other
+half stays `GuestImageDiscarded`, reading
+`repose_host_guest_unpark_discarded_total`.
+
+**Pre-rename metric history does not carry over and no alias is kept.**
+Both counters are host-published running totals read from the tally at
+each start, so a Grafana panel or an `increase()` over a window spanning
+the switch sees the old series end and a new one begin at the host's
+current total. An alias would have to be published from the same tally
+under two names for ever, since nothing expires it; the owner's panels
+are the only reader and they are re-pointed in the same change.
+
+**Three names deliberately keep `freeze`/`frz`. Do not tidy them, and
+here is what happens if you do.**
+
+- `frz-<guest_id>`, `repose-frz-<guest_id>` and the `repose-frz` btrfs
+  label. `sweepImages` finds images no record claims with a literal
+  `strings.CutPrefix(v, "frz-")`. Rename the prefix and every volume
+  written before the rename stops matching: it is never discarded, and
+  the thin pool leaks for ever. Pool exhaustion is the one resource
+  failure that takes tenants down.
+- `/var/lib/repose/hostd/freeze/` (the records and `.tally.json`) and
+  `<guest dir>/freeze` (the image mountpoint). The upgrade sequence is
+  `nix-env -p system --set` and then a reboot, so guests are parked by
+  the **old** hostd that is still running and unparked by the **new**
+  one that boots. A renamed directory reads as "no records" on exactly
+  the restart that ships the rename, and every guest comes back cold.
+  Read-both was considered and rejected: a compatibility path we must
+  remember to delete is itself a thing that gets forgotten, and keeping
+  the name costs one machine-facing inconsistency.
+- The Azure Key Vault key `freeze-wrap`, and the `module
+  "freeze_keyvault"` block that creates it. A module block name is a
+  state address, so renaming it plans a destroy and create of the Key
+  Vault, which makes every park image already on a host unreadable; and
+  it is a `tofu apply`, which is the owner's. The tofu *variable* and
+  *output* are `park_keyvault_name` and `park_keyvault`, which are not
+  state addresses and are safe.
+
+Each of those sites carries the same warning in a comment where a reader
+meets it. An inconsistency that is explained survives; one that is
+merely present gets tidied.
+
+**The control socket accepts the old shape for one release.** `park` and
+`unpark` are the commands and `POST /park` and `POST /unpark` the
+routes; `POST /freeze` and `POST /thaw` are still registered, to the same
+handlers, because `docs/interfaces/host-conventions.md` is this socket's
+contract and the rule is one release of overlap. Nothing in the tree
+calls them -- the only client is `internal/hostd/control`'s own `Client`,
+which a switch replaces together with the daemon -- so they can be
+deleted in the release after this one ships. On the gRPC side the only
+affected value is `PauseResult.why_not`, `frozen` becoming `parked`; the
+api logs that word and never branches on it, so both read the same to it.
+
+**What is still called freeze, on purpose.** Every "frozen" a user
+reads (`repose ls`, the dashboard, `/docs/lifecycle`); everything
+`guestd` does with `FIFREEZE`, including `proto` `Freeze`/`Thaw`,
+`obs.EventFreeze`/`EventThaw`, `freeze_timeout`,
+`repose_host_snapshot_freeze_seconds` and the RUNBOOK's "Freeze timeout"
+and "hostd: freeze without thaw"; and **Azure Scheduled Events' own
+`Freeze` event type**, which is an external API value and was the fourth
+meaning nobody had counted. `docs/releases/`, `docs/research/` and every
+DECISIONS entry before this one keep the old word: they record what
+happened under the name it happened under. Workstream checklists were
+renamed, because a checklist that cites a metric nobody can find is
+worse than one that cites a renamed one.
+
+*On scoping it.* The brief named 35 files from a grep for nine
+identifiers. The real closure was about 60, and the gap was not noise: it
+held the whole `internal/hostd/freeze` package, the Cloud Hypervisor
+`Freezer` interface, the control socket's routes, the Scheduled Events
+listener, the `repose.host.freeze.*` nix option path with its six host
+configs, the `--freeze-*` daemon flags, the bench tool and the tofu
+variables. A path list standing in for a closure is I-968's shape
+again -- the artefact that looks like the answer, checked instead of the
+property -- and the property here is "no reader meets the word in this
+meaning", which only a vocabulary grep over the tree can answer.

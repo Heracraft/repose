@@ -30,9 +30,9 @@ import (
 // guests when it runs again; the first Reconcile that records one marks
 // nothing.
 func (m *Manager) Reconcile(ctx context.Context) error {
-	// Frozen guests come back first, so the units listed below include
+	// Parked guests come back first, so the units listed below include
 	// them and the Hello after this says they run (I-652).
-	m.ThawAll(ctx)
+	m.UnparkAll(ctx)
 	units, err := m.d.Systemd.ListUnits(ctx, "guest@*")
 	if err != nil {
 		return err
@@ -249,7 +249,7 @@ func (m *Manager) flagWholeStore(ctx context.Context) {
 // The rule used to be "at start no snapshot is in flight, so every
 // `snap-*` volume is an orphan", which was read as true on every
 // reconcile; Reconcile is reachable while one is in flight, from the
-// operator's `POST /reconcile` and from the one after a thaw, and the
+// operator's `POST /reconcile` and from the one after an unpark, and the
 // sweep would have pulled a live snapshot out from under its own
 // upload. A mark cannot outlive the process that holds it, so after a
 // hostd that died there is nothing marked and the sweep still takes
@@ -334,7 +334,7 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 // hypervisor at hostd's start (I-818), so a guest that was resting is
 // still reported resting in Hello and its timer wake is armed again.
 // vm.info is read for a guest the record says rests: one whose vCPUs run
-// lost its pause (a freeze resumed it, or a `hostd thaw` did), and the
+// lost its pause (a park resumed it, or a `hostd unpark` did), and the
 // mark goes, because a mark nothing cleared would silence that guest's
 // samples for good.
 //
@@ -342,11 +342,11 @@ func (m *Manager) reconcileGuest(ctx context.Context, g *state.Guest, unitActive
 // rather than left. Two ways it happens, and both are a tenant's
 // processes: hostd killed between vm.pause returning and the record being
 // written (a host switch's `systemctl restart hostd`, an OOM kill, a
-// panic), and the leftover of a freeze that did not finish. ThawAll runs
+// panic), and the leftover of a park that did not finish. UnparkAll runs
 // at the top of Reconcile and owns the second, so by here it has had its
 // turn; what is left is a paused guest nothing would ever resume, which
 // reported as plain `running` ends as a `repose start` that cold-boots
-// it. Adopting it costs nothing if it was the freeze's: the next thaw or
+// it. Adopting it costs nothing if it was the park's: the next unpark or
 // wake clears the mark either way.
 func (m *Manager) reconcileResting(ctx context.Context, g *state.Guest) {
 	if g.State != StateRunning {

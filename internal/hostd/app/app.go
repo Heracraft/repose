@@ -78,8 +78,8 @@ type Options struct {
 	NoWG             bool
 	Substituters     string
 	LogLevel         string
-	// Freeze is the guest freeze across host restarts (freeze.go, I-652).
-	Freeze FreezeOptions
+	// Park is the guest park across host restarts (park.go, I-652).
+	Park ParkOptions
 	// PauseIdle lets this host rest an idle guest (DECISIONS I-818). It
 	// is what puts `pause` in Hello.features, so an api asks this host
 	// for no pause and no wake without it.
@@ -256,11 +256,11 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		VirtiofsSocketWait: 10 * time.Second,
 		GuestUser:          o.GuestUser,
 		NoAuthShare:        !o.ClaudeLoginShare,
-		FreePageReporting:  o.Freeze.FreePageReporting,
+		FreePageReporting:  o.Park.FreePageReporting,
 		PauseIdle:          o.PauseIdle,
 	}
-	fcfg, fdeps := freezeSetup(o, r, l, log)
-	cfg.Freeze = fcfg
+	fcfg, fdeps := parkSetup(o, r, l, log)
+	cfg.Park = fcfg
 	if os.Getenv("REPOSE_HOSTD_TESTING") == "1" {
 		cfg.FailAtStep = o.FailAtStep
 		// The hostd and virtiofsd accounts exist on hosts only; under the
@@ -275,7 +275,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 		MemInfo: hostinfo.MemInfo, Load1: hostinfo.Load1, CgroupCPUPressure: hostinfo.CgroupCPUPressure, StoreStat: hostinfo.StoreStat, ConsoleStart: consoles.start,
 		SystemStopping: systemStopping(r),
 		BootID:         hostinfo.BootID, BootTime: hostinfo.BootTime,
-		Freeze: fdeps,
+		Park: fdeps,
 	})
 	if err != nil {
 		return err
@@ -307,7 +307,7 @@ func Run(ctx context.Context, o Options, log *slog.Logger) error {
 	run("prune", func() { d.pruneLoop(ctx) })
 	run("metrics", func() { d.serveMetrics(ctx) })
 	if fdeps.Sealer != nil && fcfg.Enabled {
-		run("freeze-key", func() { freezeKeyLoop(ctx, fdeps.Sealer, log) })
+		run("park-key", func() { parkKeyLoop(ctx, fdeps.Sealer, log) })
 	}
 	if se := scheduledEvents(o, mgr, log); se != nil {
 		run("scheduled-events", func() { se.Run(ctx) })

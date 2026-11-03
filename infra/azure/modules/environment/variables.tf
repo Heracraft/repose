@@ -359,13 +359,13 @@ variable "keyvault_name" {
   description = "Globally unique Key Vault name."
 }
 
-variable "freeze_keyvault_name" {
+variable "park_keyvault_name" {
   type        = string
   description = <<-EOT
-    Key Vault for the guest freeze's image-wrapping key (DECISIONS I-653),
+    Key Vault for the guest park's image-wrapping key (DECISIONS I-653),
     a vault of its own because access policies are vault-wide: the hosts
     get Get and UnwrapKey here, and nothing on the vault that wraps users'
-    secret keys. Null creates nothing; hosts then cannot freeze guests.
+    secret keys. Null creates nothing; hosts then cannot park guests.
   EOT
   default     = null
 }

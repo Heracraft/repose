@@ -753,7 +753,7 @@ reads leaves them out (DECISIONS I-707).
   guestd and hostd give it (I-705); before I-705 that was 30 s.
 - `/var/lib/repose/guests/<id>/console.log` shows which unit the guest
   waited on.
-- To measure a boot without a tenant, `ops/dev/freeze-bench.sh hup`
+- To measure a boot without a tenant, `ops/dev/park-bench.sh hup`
   boots a host closure on a `bench-*` volume the way hostd's create does
   and prints the same steps (memory note benchmarking-on-host-01). Each
   bench boot is one more busy guest on the host: on 2026-10-13, three
@@ -956,9 +956,9 @@ pass.
    Hello: check the api-grpc app and the host's stream (`hostd status`
    shows `connected`).
 
-## GuestLeftUnfrozen
+## GuestNotParked
 
-A freeze left a running guest's memory unsaved (DECISIONS I-652, I-796).
+A park left a running guest's memory unsaved (DECISIONS I-652, I-796).
 A host restart then boots that machine cold: its agents, tmux windows and
 open files are gone, and its owner sees the machine come back empty. The
 loss has already happened by the time this fires; what is left is to stop
@@ -966,30 +966,30 @@ it happening again.
 
 1. `reason` on the alert says which path left the guest:
    - `estimate`: the snapshots already running, plus this one, would
-     have outlasted `repose.host.freeze.deadline`. The usual cause is a
+     have outlasted `repose.host.park.deadline`. The usual cause is a
      host holding more resident guest memory than the deadline can write
-     at `repose.host.freeze.writeRateMBs`; the other is a rate measured
+     at `repose.host.park.writeRateMBs`; the other is a rate measured
      on the wrong disk, which is what cost host-01 its xl guest on
      2026-10-18. Check the rate against the pool's disk (the recipe in
-     "Guest freeze" step 3) before the deadline: an understated rate is
+     "Guest park" step 3) before the deadline: an understated rate is
      what skips a guest whose snapshot would have fitted.
-   - `deadline`: the freeze ran out of time before this guest's snapshot
-     started. Same arithmetic; the `guests frozen` line's `duration_ms`
-     says how long the freeze took.
+   - `deadline`: the park ran out of time before this guest's snapshot
+     started. Same arithmetic; the `guests parked` line's `duration_ms`
+     says how long the park took.
    - `no_room`: the thin pool had no room for the image. See PoolHigh.
-   - `failed`: the snapshot or the image failed. The `freeze failed` line
+   - `failed`: the snapshot or the image failed. The `park failed` line
      has the error; the guest kept running.
-   - `no_key`: hostd had no image key (Key Vault). See "Guest freeze".
-   - `busy`: another freeze or thaw held the lock past the deadline.
+   - `no_key`: hostd had no image key (Key Vault). See "Guest park".
+   - `busy`: another park or unpark held the lock past the deadline.
 2. The journal of the boot that did it: `journalctl -b -1 -u
-   repose-guest-freeze -u hostd | grep '"event":"guest_freeze"'`. The
-   `guest left unfrozen` and `guest not frozen` lines name each guest;
-   `guests frozen` carries `frozen`, `unfrozen`, `guests` and
+   repose-guest-park -u hostd | grep '"event":"guest_park"'`. The
+   `guest skipped` and `guest not parked` lines name each guest;
+   `guests parked` carries `parked`, `skipped`, `guests` and
    `duration_ms`.
 3. Raising the deadline is a host config change
-   (`repose.host.freeze.deadline`, at most 300 s) and a switch. It costs
-   shutdown time: the freeze unit holds the shutdown for as long as the
-   freeze takes, and systemd cuts its ExecStop at the deadline plus
+   (`repose.host.park.deadline`, at most 300 s) and a switch. It costs
+   shutdown time: the park unit holds the shutdown for as long as the
+   park takes, and systemd cuts its ExecStop at the deadline plus
    150 s, which has to leave the rest of the shutdown its share of the
    about 600 s Azure waits for a graceful shutdown.
 4. A host holding more guest memory than the deadline can write will keep
@@ -999,23 +999,23 @@ it happening again.
 
 ## GuestImageDiscarded
 
-A guest the freeze *did* save lost its memory on the way back (DECISIONS
-I-652, I-796): the image was there and the thaw could not use it, so the
+A guest the park *did* save lost its memory on the way back (DECISIONS
+I-652, I-796): the image was there and the unpark could not use it, so the
 api started that machine cold and its agents, tmux windows and open files
-are gone. The loss is the same as GuestLeftUnfrozen's; what differs is
+are gone. The loss is the same as GuestNotParked's; what differs is
 where to look.
 
 1. `reason` says what the image ran into:
-   - `window`: the thaw ran out of time before this image was read. The
-     `frozen guests restored` line's `duration_ms` against
-     `repose.host.freeze.restoreTimeout` plus the images' own read time
+   - `window`: the unpark ran out of time before this image was read. The
+     `parked guests restored` line's `duration_ms` against
+     `repose.host.park.restoreTimeout` plus the images' own read time
      at `writeRateMBs` is the arithmetic; raise `restoreTimeout` if the
      surroundings (the shares, guestd's first answer) are what took the
      time, and re-measure the rate if the reads were.
    - `incomplete`: the image was never finished, so hostd was killed
-     mid-snapshot at the previous shutdown. Check GuestLeftUnfrozen and
-     the freeze unit's `TimeoutStopSec` for that boot
-     (`journalctl -b -1 -u repose-guest-freeze`): a freeze systemd cuts
+     mid-snapshot at the previous shutdown. Check GuestNotParked and
+     the park unit's `TimeoutStopSec` for that boot
+     (`journalctl -b -1 -u repose-guest-park`): a park systemd cuts
      is the one failure that leaves a guest with neither its memory nor a
      count.
    - `changed`: the guest's closure, class, volume or the hypervisor
@@ -1026,12 +1026,12 @@ where to look.
    - `too_old`: the host was down longer than the 6 h window (I-645).
      Nothing to do: the image is deliberately not kept longer.
    - `no_key`: Key Vault did not answer within
-     `repose.host.freeze.UnwrapTimeout`. See "Guest freeze".
+     `repose.host.park.UnwrapTimeout`. See "Guest park".
    - `failed`: the restore itself. The `restore failed` line has the
      error.
-2. `journalctl -b -u hostd | grep '"event":"guest_thaw"'` has a line per
-   image: `frozen guest not restored` names each one and its cause, and
-   `frozen guests restored` carries `restored`, `images` and
+2. `journalctl -b -u hostd | grep '"event":"guest_unpark"'` has a line per
+   image: `parked guest not restored` names each one and its cause, and
+   `parked guests restored` carries `restored`, `images` and
    `duration_ms`.
 3. Every image of a boot discarded at once is the host, not the guests:
    look at `incomplete` (the last shutdown) and `window` (this start)
@@ -1078,8 +1078,8 @@ machine.
      are what to look at, and its memory is intact until something stops
      the machine.
    - `state`: the guest is no longer one that can be woken (it stopped,
-     or a freeze holds it). Read the state in `hostd guests --json`
-     before anything else; `Guest freeze` covers the frozen-image case,
+     or a park holds it). Read the state in `hostd guests --json`
+     before anything else; `Guest park` covers the parked-image case,
      which shares the word and is a different mechanism.
    - A clock that was not stepped is logged (`guest clock not set after
      the wake`) and is not a failed wake: the machine works, with its
@@ -1946,7 +1946,7 @@ Otherwise:
    address in its configuration: the host installed the generic `host`
    configuration because its name is missing from `host_flake_attrs` in
    `prod.tfvars`. That configuration knows no api address, CA, Blob
-   account or freeze vault, so the host comes up healthy and never
+   account or park vault, so the host comes up healthy and never
    registers, and nothing says why. The tell is `hostname`: the generic
    configuration sets `repose-host`, not the host's own name. Add
    `<name> = "<name>"` to `host_flake_attrs`, check that
@@ -2131,76 +2131,76 @@ clean stop.
    an unplanned reboot with tenants on the host is an incident line in
    `docs/incidents/`.
 
-**A planned restart of a host with the freeze on pages unless it is
-silenced.** The host answers for the whole freeze (hostd and the pool
-stop *after* the freeze unit), so the silence it needs covers the
+**A planned restart of a host with the park on pages unless it is
+silenced.** The host answers for the whole park (hostd and the pool
+stop *after* the park unit), so the silence it needs covers the
 power-off, the boot and the restore: about a minute plus the images'
-read, under 6 minutes on host-01 and bounded by the thaw's window
+read, under 6 minutes on host-01 and bounded by the unpark's window
 (DECISIONS I-796). The api marks the host unreachable 90 s after hostd
 stops, so `HostUnreachable` (2m) and `HostdDown` (3m) both page in that
 window. Silence them in Grafana for the host before the restart
 (Alerting -> Silences, matcher `host_id=<name>`), and
-the freeze itself holds the shutdown for as long as it takes, up to
-`repose.host.freeze.deadline`: `az vm restart` waits that out too.
+the park itself holds the shutdown for as long as it takes, up to
+`repose.host.park.deadline`: `az vm restart` waits that out too.
 
-**On a host bigger than host-01 the freeze does not save all of its
+**On a host bigger than host-01 the park does not save all of its
 memory.** What it saves is `writeRateMBs` times `deadline`, and the
-deadline is capped at 300 s (`nix/hosts/freeze.nix`); snapshots are
+deadline is capped at 300 s (`nix/hosts/park.nix`); snapshots are
 admitted while they fit in that, and the guests that do not fit are
 stopped by the shutdown and lose what they were running
-(`GuestLeftUnfrozen` counts them). At host-01's measured 400 MB/s the
+(`GuestNotParked` counts them). At host-01's measured 400 MB/s the
 240 s default is 96 GB and the 300 s cap 120 GB; the data disk's
 provisioned 600 MB/s would be 180 GB at the cap. host-01 holds at most
 56 GB of guest memory (64 GB less its 8 GB reserve), so it has never met
 this. **host-02 holds up to
 192 GB** (24 seats of 8 GB), so a restart of a full host-02 saves some
-guests' memory and loses the rest. Measure its own rate ("Guest freeze"
+guests' memory and loses the rest. Measure its own rate ("Guest park"
 step 3) rather than trusting the 400 it inherited, and know that the
 only lever that raises the ceiling is the disk's provisioned MB/s, which
 is billed. Before a planned restart of a loaded host, either stop or
 move the guests you are not prepared to lose, or accept the arithmetic.
 
-## Guest freeze
+## Guest park
 
-With `repose.host.freeze.enable` a host freezes its running guests to an
+With `repose.host.park.enable` a host parks its running guests to an
 encrypted memory image when it shuts down and restores them at hostd's
 next start (DECISIONS I-652, I-653). Off by default; turned on for
 host-stg-01, and for host-01 since 2026-10-12 (I-686).
 
-**The thaw is also the host's blind window, and it looks exactly like a
-dead host.** `Reconcile` -- which runs `ThawAll` -- sits ahead of every
+**The unpark is also the host's blind window, and it looks exactly like a
+dead host.** `Reconcile` -- which runs `UnparkAll` -- sits ahead of every
 listener in hostd's start, so until it returns there is no api stream, no
 metrics to scrape and no control socket. Expect, after a host reboot with
-frozen guests: the api reporting the host `unreachable`, `HostUnreachable`
+parked guests: the api reporting the host `unreachable`, `HostUnreachable`
 and `HostScrapeDown` arming, and `hostd guests` answering that there is no
 control socket. host-02 on 2026-11-02 was `active` at 21:32:53 and
 listening at 21:36:09 -- 3m16s for two guests and 15.6 GB, and the window
-grows with the memory a thaw reads back, so a full host's is minutes
+grows with the memory an unpark reads back, so a full host's is minutes
 longer (DECISIONS I-990).
 
 What tells you a starting hostd from a dead one, in order: `systemctl
-is-active hostd` (a thawing hostd is `active`), then `journalctl -u hostd
--b` for `frozen guests restored`, which is the line that precedes the
+is-active hostd` (an unparking hostd is `active`), then `journalctl -u hostd
+-b` for `parked guests restored`, which is the line that precedes the
 listeners. Do **not** read "no control socket" as hostd being down, and do
 not restart hostd to fix it -- that discards the images it is in the
 middle of reading, and every guest in them comes back cold.
 
 This is not the idle pause, which shares the user's word for it. A guest
-the idle pause left resting (I-824) is already paused, so the freeze
-snapshots it as it is and the thaw resumes it and clears its marker: a
+the idle pause left resting (I-824) is already paused, so the park
+snapshots it as it is and the unpark resumes it and clears its marker: a
 host restart brings every guest back awake, and
 `repose_host_guests_resting` reads 0 until the rule rests them again.
 
 Turning it on for a host:
-1. tofu: set `freeze_keyvault_name` for the environment and apply (a Key
+1. tofu: set `park_keyvault_name` for the environment and apply (a Key
    Vault with the `freeze-wrap` key; the host identity gets Get and
-   UnwrapKey). `tofu output freeze_keyvault` gives the URL.
-2. The host's nix config: `repose.host.freeze.enable = true;`
-   `repose.host.freeze.keyVaultUrl = "<vault_uri>";` (keyName defaults to
+   UnwrapKey). `tofu output park_keyvault` gives the URL.
+2. The host's nix config: `repose.host.park.enable = true;`
+   `repose.host.park.keyVaultUrl = "<vault_uri>";` (keyName defaults to
    `freeze-wrap`). Switch (RUNBOOK "Switch a host to main"). The journal
-   shows `image key fetched; guests can be frozen` (event `guest_freeze`); until
-   it does, a shutdown freezes nothing.
-3. `repose.host.freeze.writeRateMBs`: it decides whether a guest's
+   shows `image key fetched; guests can be parked` (event `guest_park`); until
+   it does, a shutdown parks nothing.
+3. `repose.host.park.writeRateMBs`: it decides whether a guest's
    snapshot is started at all, and the default (100) is a floor for a
    host nobody has measured, not a safe guess -- understating the rate is
    what skips a guest and loses what it was running (I-796). An image is
@@ -2217,42 +2217,42 @@ Turning it on for a host:
    disk does 126 MB/s, which is where an earlier figure came from and is
    not where any image goes.
 4. Guests get free page reporting at their next start; running ones are
-   frozen without it (bigger images).
+   parked without it (bigger images).
 5. Add the user docs the I-652 entry lists in the same commit.
 
 Checks:
-- `hostd freeze` freezes every running guest now and prints each one's
-  outcome, time and image size; `hostd thaw` brings them back. Use it on a
+- `hostd park` parks every running guest now and prints each one's
+  outcome, time and image size; `hostd unpark` brings them back. Use it on a
   canary before trusting a reboot, or before a planned window.
-- After a reboot: `journalctl -u hostd -b | grep -E '"event":"(guest_thaw|freeze_discard)"'`.
-  `guest restored from its frozen image` with `duration_ms` and
-  `frozen_s` per guest, and a `restore phases` line beside it
+- After a reboot: `journalctl -u hostd -b | grep -E '"event":"(guest_unpark|park_discard)"'`.
+  `guest restored from its parked image` with `duration_ms` and
+  `parked_s` per guest, and a `restore phases` line beside it
   (`net_ms`, `virtiofsd_ms`, `store_view_ms`, `image_ms`, `resume_ms`,
-  `guestd_ms`) saying which part of a slow restore was slow; `frozen image discarded` with a fixed `reason`
+  `guestd_ms`) saying which part of a slow restore was slow; `parked image discarded` with a fixed `reason`
   for each one that started cold instead (closure changed, volume changed,
   key unavailable, restore failed, ...). Those go on as after any reboot
   ("Host rebooted").
-- Shutdown side: `journalctl -b -1 -u repose-guest-freeze -u hostd | grep
-  '"event":"guest_freeze"'`: `guests frozen` with `frozen`, `unfrozen`,
+- Shutdown side: `journalctl -b -1 -u repose-guest-park -u hostd | grep
+  '"event":"guest_park"'`: `guests parked` with `parked`, `skipped`,
   `guests` and `duration_ms`. A guest left out (`skipped`: deadline
   passed, its snapshot would outlast the deadline, or the pool had no
   room) was stopped by the shutdown as before and lost everything it was
   running; each one is an Error line and a count in
-  `repose_host_guest_freeze_unfrozen_total`, which GuestLeftUnfrozen
-  alerts on (DECISIONS I-796). The freeze unit holds the shutdown for at
+  `repose_host_guest_park_skipped_total`, which GuestNotParked
+  alerts on (DECISIONS I-796). The park unit holds the shutdown for at
   most `deadline` plus 150 s (550 s at the default 400).
-- A guest still paused after a freeze that did not finish (hostd killed
-  mid-freeze, or `freeze failed and the guest did not resume` in the
-  journal): the image and its `writing` record are kept; `hostd thaw`, or
+- A guest still paused after a park that did not finish (hostd killed
+  mid-park, or `park failed and the guest did not resume` in the
+  journal): the image and its `writing` record are kept; `hostd unpark`, or
   hostd's next start, resumes the guest and then removes them. hostd
   killed after a guest's snapshot, with its hypervisor already stopped,
-  leaves a `written` record: the next start finishes the freeze and
-  restores the guest (`freeze finished after hostd restarted`). A paused
+  leaves a `written` record: the next start finishes the park and
+  restores the guest (`park finished after hostd restarted`). A paused
   VM found at the start is snapshotted again and restored rather than
-  resumed (`paused guest frozen again after hostd restarted`): a VM
+  resumed (`paused guest parked again after hostd restarted`): a VM
   resumed after a snapshot loses its virtio-fs. If a guest was resumed
-  anyway (`guest resumed after a freeze that did not finish`) and its
-  commands hang, `hostd freeze` then `hostd thaw` brings it back.
+  anyway (`guest resumed after a park that did not finish`) and its
+  commands hang, `hostd park` then `hostd unpark` brings it back.
 - Never run `nix-store --optimise` on a host with running guests: it
   replaces store files the guests have open, and their next restore
   fails (`Migration source has lost inode` in the virtiofsd journal);
@@ -2267,7 +2267,7 @@ Checks:
   freeze-fast-restore.md).
 - Leftovers: `lvs vg-guests | grep frz-` and `ls /var/lib/repose/hostd/freeze`
   are empty once hostd has started; it removes any image it cannot
-  restore. `dmsetup ls | grep repose-frz` is empty except during a freeze
+  restore. `dmsetup ls | grep repose-frz` is empty except during a park
   or restore.
 
 Key Vault unreachable at start: hostd unwraps every image's key at once
@@ -2279,9 +2279,9 @@ reach the vault (`curl -sS -H Metadata:true
 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://vault.azure.net'`
 should return a token).
 
-Scheduled Events (`repose.host.freeze.scheduledEvents`): while it is on,
+Scheduled Events (`repose.host.park.scheduledEvents`): while it is on,
 Azure holds every reboot of the VM, an operator's `az vm restart`
-included, until hostd approves it (it freezes first, then approves) or 15
+included, until hostd approves it (it parks first, then approves) or 15
 minutes pass. If hostd or the network is down, the wait is the full 15
 minutes: use `az vm deallocate` then `az vm start`, which the listener
 does not hold, or turn the option off and wait 24 h for Azure to stop

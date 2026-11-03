@@ -1,17 +1,17 @@
 // Package schedev listens to Azure Scheduled Events (IMDS) for the guest
-// freeze (DECISIONS I-652). A Reboot or Redeploy notice gives at least 10
-// to 15 minutes: the listener freezes the guests, approves the event so
+// park (DECISIONS I-652). A Reboot or Redeploy notice gives at least 10
+// to 15 minutes: the listener parks the guests, approves the event so
 // Azure need not wait out NotBefore, and the guests are restored when the
 // host is back. A Freeze notice (a pause of a few seconds for a
-// memory-preserving update or live migration) needs no freeze: the guests
+// memory-preserving update or live migration) needs no park: the guests
 // are paused with the host; once it is over their clocks are set. An event
-// that disappears without the host restarting (cancelled) thaws what was
-// frozen for it.
+// that disappears without the host restarting (cancelled) unparks what was
+// parked for it.
 //
 // Turning the listener on turns Scheduled Events on for the VM: from then
 // on Azure holds every reboot, the owner's own `az vm restart` included,
 // until it is approved or NotBefore passes. The listener approves User
-// events at once (after freezing), and the RUNBOOK says what to do while
+// events at once (after parking), and the RUNBOOK says what to do while
 // IMDS cannot be reached.
 package schedev
 
@@ -50,10 +50,10 @@ type Document struct {
 
 // Host is what the listener acts on.
 type Host interface {
-	// FreezeForEvent freezes every running guest; it returns when done.
-	FreezeForEvent(ctx context.Context)
-	// ThawNow restores guests frozen for an event that did not happen.
-	ThawNow(ctx context.Context)
+	// ParkForEvent parks every running guest; it returns when done.
+	ParkForEvent(ctx context.Context)
+	// UnparkNow restores guests parked for an event that did not happen.
+	UnparkNow(ctx context.Context)
 	// SyncClocks sets every guest's clock after the host was paused.
 	SyncClocks(ctx context.Context)
 }
@@ -67,8 +67,8 @@ type Listener struct {
 	Host     Host
 	Log      *slog.Logger
 
-	// frozenFor is the event id the guests were frozen for, if any.
-	frozenFor string
+	// parkedFor is the event id the guests were parked for, if any.
+	parkedFor string
 	// paused holds Freeze events in progress, by id.
 	paused map[string]bool
 	// logged holds Preempt and Terminate events already logged, by id.
@@ -219,11 +219,11 @@ func (l *Listener) Step(ctx context.Context, d *Document) {
 		seen[e.EventID] = true
 		switch {
 		case impact(e.EventType):
-			if l.frozenFor == "" {
-				l.Log.Warn("host restart scheduled; freezing guests", "event", "scheduled_event",
+			if l.parkedFor == "" {
+				l.Log.Warn("host restart scheduled; parking guests", "event", "scheduled_event",
 					"event_type", e.EventType, "event_status", e.EventStatus, "source", e.EventSource, "not_before", e.NotBefore)
-				l.Host.FreezeForEvent(ctx)
-				l.frozenFor = e.EventID
+				l.Host.ParkForEvent(ctx)
+				l.parkedFor = e.EventID
 			}
 			if e.EventStatus == "Scheduled" {
 				if err := l.Approve(ctx, e.EventID); err != nil {
@@ -234,7 +234,7 @@ func (l *Listener) Step(ctx context.Context, d *Document) {
 			}
 		case gone(e.EventType):
 			if !l.logged[e.EventID] {
-				l.Log.Warn("host VM to be deleted; guests not frozen", "event", "scheduled_event",
+				l.Log.Warn("host VM to be deleted; guests not parked", "event", "scheduled_event",
 					"event_type", e.EventType, "event_status", e.EventStatus, "source", e.EventSource, "not_before", e.NotBefore)
 				l.logged[e.EventID] = true
 			}
@@ -253,11 +253,11 @@ func (l *Listener) Step(ctx context.Context, d *Document) {
 			l.Host.SyncClocks(ctx)
 		}
 	}
-	if l.frozenFor != "" && !seen[l.frozenFor] {
+	if l.parkedFor != "" && !seen[l.parkedFor] {
 		// Still running after the event left the list: it was cancelled or
 		// was a pause after all. The guests come back here.
 		l.Log.Warn("scheduled restart did not happen; restoring guests", "event", "scheduled_event")
-		l.frozenFor = ""
-		l.Host.ThawNow(ctx)
+		l.parkedFor = ""
+		l.Host.UnparkNow(ctx)
 	}
 }

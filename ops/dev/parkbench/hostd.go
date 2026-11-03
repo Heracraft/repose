@@ -13,46 +13,46 @@ import (
 	"time"
 
 	"github.com/heracraft/repose/internal/hostd/ch"
-	"github.com/heracraft/repose/internal/hostd/freeze"
 	"github.com/heracraft/repose/internal/hostd/lvm"
 	"github.com/heracraft/repose/internal/hostd/mount"
+	"github.com/heracraft/repose/internal/hostd/park"
 	"github.com/heracraft/repose/internal/hostd/shell"
 )
 
 // The guest id is the bench directory's base name; the volume is vol.img.
-func benchImage(vg string) *freeze.Image {
+func benchImage(vg string) *park.Image {
 	r := shell.Exec{}
-	return &freeze.Image{R: r, LVM: &lvm.Real{VG: vg, Pool: "thin", R: r}, Mount: &mount.Real{R: r}}
+	return &park.Image{R: r, LVM: &lvm.Real{VG: vg, Pool: "thin", R: r}, Mount: &mount.Real{R: r}}
 }
 
 var classMiB = map[string]uint64{"small": 4096, "large": 8192, "xl": 16384}
 
 // img0 is an Image only for FS(), which needs nothing of it.
-func img0(vg string) *freeze.Image { return benchImage(vg) }
+func img0(vg string) *park.Image { return benchImage(vg) }
 
 func ms(t time.Time) int64 { return time.Since(t).Milliseconds() }
 
-func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) error {
+func hostdPark(ctx context.Context, dir, class, keyPEM, recDir, vg string) error {
 	t0 := time.Now()
 	id := "gf" + filepath.Base(dir)
-	sealer := &freeze.FileKey{Path: keyPEM}
-	key, err := freeze.NewKey()
+	sealer := &park.FileKey{Path: keyPEM}
+	key, err := park.NewKey()
 	if err != nil {
 		return err
 	}
-	defer freeze.Wipe(key)
+	defer park.Wipe(key)
 	wrapped, kid, err := sealer.Wrap(key)
 	if err != nil {
 		return err
 	}
-	recs := freeze.Store{Dir: recDir}
-	rec := &freeze.Record{GuestID: id, State: freeze.StateWriting, Class: class, KeyID: kid, WrappedKey: wrapped,
-		KeyCheck: freeze.KeyCheck(key), CreatedAt: time.Now().UTC(), FS: img0(vg).FS()}
+	recs := park.Store{Dir: recDir}
+	rec := &park.Record{GuestID: id, State: park.StateWriting, Class: class, KeyID: kid, WrappedKey: wrapped,
+		KeyCheck: park.KeyCheck(key), CreatedAt: time.Now().UTC(), FS: img0(vg).FS()}
 	if err := recs.Put(rec); err != nil {
 		return err
 	}
 	img := benchImage(vg)
-	mnt := filepath.Join(dir, "freeze")
+	mnt := filepath.Join(dir, "park")
 	// The same headroom hostd gives an image volume (guest.imageVolumeBytes).
 	if err := img.Create(ctx, id, (classMiB[class]+1536)<<20, key, mnt, 0, 0); err != nil {
 		return fmt.Errorf("image: %w", err)
@@ -64,7 +64,7 @@ func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) err
 	}
 	c := &ch.HTTP{Timeout: 10 * time.Minute}
 	sock := ch.APISocket(dir)
-	var fz ch.Freezer = c
+	var fz ch.Parker = c
 	if err := c.Pause(ctx, sock); err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) err
 	}
 	snapMs := ms(t1)
 	_ = c.Shutdown(ctx, sock) // the caller kills what is left
-	fp, err := freeze.Fingerprint(filepath.Join(dir, "vol.img"))
+	fp, err := park.Fingerprint(filepath.Join(dir, "vol.img"))
 	if err != nil {
 		return err
 	}
@@ -89,41 +89,41 @@ func hostdFreeze(ctx context.Context, dir, class, keyPEM, recDir, vg string) err
 	if err := img.Close(ctx, id, mnt); err != nil {
 		return fmt.Errorf("close: %w", err)
 	}
-	rec.State, rec.DoneAt, rec.Fingerprint, rec.ImageBytes = freeze.StateComplete, time.Now().UTC(), fp, bytes
+	rec.State, rec.DoneAt, rec.Fingerprint, rec.ImageBytes = park.StateComplete, time.Now().UTC(), fp, bytes
 	if err := recs.Put(rec); err != nil {
 		return err
 	}
-	disk, _ := shell.Exec{}.Run(ctx, "lvs", "--noheadings", "-o", "data_percent", vg+"/"+freeze.LVName(id))
+	disk, _ := shell.Exec{}.Run(ctx, "lvs", "--noheadings", "-o", "data_percent", vg+"/"+park.LVName(id))
 	fmt.Printf("image_ms=%d snapshot_ms=%d total_ms=%d image_bytes=%d volume_pct=%s\n",
 		tImg, snapMs, ms(t0), bytes, strings.TrimSpace(string(disk.Stdout)))
 	return nil
 }
 
-func hostdThaw(ctx context.Context, dir, keyPEM, recDir, vg string) error {
+func hostdUnpark(ctx context.Context, dir, keyPEM, recDir, vg string) error {
 	t0 := time.Now()
 	id := "gf" + filepath.Base(dir)
-	recs := freeze.Store{Dir: recDir}
+	recs := park.Store{Dir: recDir}
 	rec, err := recs.Get(id)
 	if err != nil || rec == nil {
 		return fmt.Errorf("no record: %v", err)
 	}
-	if rec.State != freeze.StateComplete {
+	if rec.State != park.StateComplete {
 		return errors.New("image incomplete")
 	}
-	fp, err := freeze.Fingerprint(filepath.Join(dir, "vol.img"))
+	fp, err := park.Fingerprint(filepath.Join(dir, "vol.img"))
 	if err != nil || fp != rec.Fingerprint {
-		return fmt.Errorf("volume changed since the freeze (%v)", err)
+		return fmt.Errorf("volume changed since the park (%v)", err)
 	}
-	key, err := (&freeze.FileKey{Path: keyPEM}).Unwrap(ctx, rec.WrappedKey, rec.KeyID)
+	key, err := (&park.FileKey{Path: keyPEM}).Unwrap(ctx, rec.WrappedKey, rec.KeyID)
 	if err != nil {
 		return err
 	}
-	defer freeze.Wipe(key)
-	if freeze.KeyCheck(key) != rec.KeyCheck {
+	defer park.Wipe(key)
+	if park.KeyCheck(key) != rec.KeyCheck {
 		return errors.New("key check failed")
 	}
 	img := benchImage(vg)
-	mnt := filepath.Join(dir, "freeze")
+	mnt := filepath.Join(dir, "park")
 	if err := img.Open(ctx, id, key, mnt, rec.FS); err != nil {
 		return err
 	}
