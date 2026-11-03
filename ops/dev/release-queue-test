@@ -98,6 +98,29 @@ q() { # dir args...
       ops/dev/release-queue "$@" 2>&1 )
 }
 
+# qgh runs release-queue with the red-main gate LIVE and `gh` stubbed, so
+# the gate's own answers can be tested without cutting anything.
+qgh() { # dir args...
+  local d=$1; shift
+  ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      ops/dev/release-queue "$@" 2>&1 )
+}
+
+# gh_runs prints a run list as `gh run list --json conclusion,status,url,createdAt`
+# does: newest LAST, so a test that passes them in order also proves the
+# gate is not reading the first element.
+gh_runs() { # status:conclusion:date ...
+  local out="[" first=1 r st cn dt
+  for r in "$@"; do
+    IFS=: read -r st cn dt <<<"$r"
+    [ $first = 1 ] || out="$out,"
+    first=0
+    local cj=null; [ -z "$cn" ] || cj="\"$cn\""
+    out="$out{\"status\":\"$st\",\"conclusion\":$cj,\"url\":\"https://example/$dt\",\"createdAt\":\"$dt\"}"
+  done
+  printf '%s]' "$out"
+}
+
 # ------------------------------------------------------------------ the world
 
 # world builds origin.git, woker and kanali from scratch. Keep it cheap:
@@ -144,6 +167,21 @@ echo "release-queue-test: nix was executed, which this fixture does not expect: 
 exit 97
 EOF
   chmod +x "$root/bin/nix"
+
+  # A `gh` whose answer the test plants in REPOSE_FIXTURE_GH. The red-main
+  # gate is the one piece of release-queue that asks the network, and the
+  # only way it was ever exercised before I-1026 was by cutting a real
+  # release -- which is how batch r20261103-1 got cut by accident, and how
+  # a gate that read a running run as a pass survived its own release.
+  cat > "$root/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+# fixture stub: prints what REPOSE_FIXTURE_GH says, as `gh run list --json`
+# would. REPOSE_FIXTURE_GH_FAIL makes the call itself fail, which is the
+# "cannot read main's CI" path.
+[ -z "${REPOSE_FIXTURE_GH_FAIL:-}" ] || { echo "gh: fixture failure" >&2; exit 1; }
+printf '%s' "${REPOSE_FIXTURE_GH:-[]}"
+EOF
+  chmod +x "$root/bin/gh"
 
   local src=$root/src
   mkdir -p "$src"
@@ -770,6 +808,106 @@ t_abandon_requeues() {
 # P6. 44 of the 52 worktrees on woker-1 carried an older
 # ops/dev/release-queue on 2026-10-15, the main checkout among them, and
 # running one said nothing.
+# ------------------------------------------------------- the red-main gate
+#
+# One table, every answer GitHub can give. The case this exists for is the
+# fourth: on 2026-11-03 a cut went through over a main whose `go` job had
+# already failed, because a newer run was still going and `conclusion` was
+# null -- the gate read that as a pass (I-1026).
+
+# The dev shell's bash is not the system's. nixpkgs builds bash without
+# programmable completion, so `compgen` and `complete` are not there --
+# and a missing builtin does not announce itself inside `!`, it just
+# answers 127 and reads as "no". needs_of walked past every Go package on
+# that answer for as long as the line existed, charging `none` to Go-only
+# changes inside `nix develop` and the right target outside it (I-1028).
+#
+# This is a grep, and a grep is usually the weak form. Here it is the
+# right one: the thing to forbid is a primitive that does not exist in a
+# shell this repository tells people to use, and no amount of running the
+# tool in *this* shell can tell you that.
+t_no_builtins_the_dev_shell_lacks() {
+  local wt; wt=$(branch woker builtins)
+  # Comment lines are dropped first. The first draft of this test failed
+  # on the comment that explains the bug, and on the word "complete" in a
+  # sentence about entries -- the third guard in one day to fire on its
+  # own prose (the decision-citation check on its examples, the VM-wording
+  # check on the line that names the old wording). A guard that reads
+  # prose as evidence has the fault it is looking for.
+  local hits
+  hits=$(grep -vE '^[[:space:]]*#' "$wt/ops/dev/release-queue" \
+    | grep -nE '(^|[^-[:alnum:]_])(compgen|complete)([[:space:]]|$)' || true)
+  assert_eq "release-queue uses no builtin nixpkgs' bash lacks" "$hits" ""
+}
+
+t_ci_gate_answers() {
+  local wt; wt=$(branch woker gate-probe)
+  local name runs want out rc=0 ran=0
+  # `|`, not whitespace: the first draft split on spaces, so `name` took
+  # one word, `want` took the next, and the case below matched neither
+  # allow nor refuse for any row. Eleven rows ran and asserted nothing,
+  # and the test reported ok -- which is how it passed against the very
+  # gate it was written to catch. The count and the `*)` arm are what
+  # made it visible.
+  while IFS='"'"'|'"'"' read -r name want runs; do
+    [ -n "$name" ] || continue
+    ran=$((ran + 1))
+    # $runs unquoted on purpose: a row may hold several runs, and each
+    # is one argument to gh_runs. The values are this file's own and hold
+    # no globs.
+    # shellcheck disable=SC2086
+    out=$(REPOSE_FIXTURE_GH="$(gh_runs $runs)" qgh "$wt" ci)
+    case $want in
+      allow) assert_has "$name: a cut is allowed" "$out" "allows a cut" || rc=1 ;;
+      refuse) assert_not "$name: a cut is refused" "$out" "allows a cut" || rc=1 ;;
+      *) note "$name: the table says '$want', which is neither allow nor refuse"; rc=1 ;;
+    esac
+  done <<'TABLE'
+a green run|allow|completed:success:2026-11-03T10:00:00Z
+a failed run|refuse|completed:failure:2026-11-03T10:00:00Z
+a timed-out run|refuse|completed:timed_out:2026-11-03T10:00:00Z
+a run still going|refuse|in_progress::2026-11-03T10:00:00Z
+a run queued|refuse|queued::2026-11-03T10:00:00Z
+green, then a run still going|refuse|completed:success:2026-11-03T09:00:00Z in_progress::2026-11-03T10:00:00Z
+red, then a run still going|refuse|completed:failure:2026-11-03T09:00:00Z in_progress::2026-11-03T10:00:00Z
+a run still going, then green|allow|in_progress::2026-11-03T09:00:00Z completed:success:2026-11-03T10:00:00Z
+red, then green|allow|completed:failure:2026-11-03T09:00:00Z completed:success:2026-11-03T10:00:00Z
+green, then red|refuse|completed:success:2026-11-03T10:00:00Z completed:failure:2026-11-03T11:00:00Z
+an answer with no name|refuse|completed:something_new:2026-11-03T10:00:00Z
+TABLE
+  # A table-driven test that runs none of its table passes, which is the
+  # fault this whole file is about. The count is written out.
+  assert_eq "every row of the table ran" "$ran" "11" || rc=1
+  return $rc
+}
+
+# The newest run is picked by createdAt, not by position: `gh run list`
+# returned a 31 October run when asked for one, which is what sent the
+# first version of this gate looking at the wrong run (I-1008).
+t_ci_gate_ignores_list_order() {
+  local wt; wt=$(branch woker gate-order)
+  local out
+  out=$(REPOSE_FIXTURE_GH="$(gh_runs completed:failure:2026-11-03T11:00:00Z completed:success:2026-10-31T01:00:00Z)" qgh "$wt" ci)
+  assert_not "the newest run decides, not the last element" "$out" "allows a cut"
+}
+
+t_ci_gate_refuses_when_github_cannot_be_read() {
+  local wt; wt=$(branch woker gate-unreadable)
+  local out; out=$(REPOSE_FIXTURE_GH_FAIL=1 qgh "$wt" ci)
+  assert_has "an unreadable answer refuses" "$out" "cannot read main's CI"
+}
+
+t_ci_gate_override_needs_a_reason() {
+  local wt; wt=$(branch woker gate-override)
+  local out
+  out=$(REPOSE_FIXTURE_GH="$(gh_runs completed:failure:2026-11-03T10:00:00Z)" REPOSE_QUEUE_RED_MAIN=1 qgh "$wt" ci)
+  assert_has "a bare 1 is refused" "$out" "needs a reason"
+  out=$(REPOSE_FIXTURE_GH="$(gh_runs completed:failure:2026-11-03T10:00:00Z)" REPOSE_QUEUE_RED_MAIN="the red is in the test harness itself" qgh "$wt" ci)
+  assert_has "a reason lets it through" "$out" "allows a cut"
+  out=$(REPOSE_FIXTURE_GH="$(gh_runs in_progress::2026-11-03T10:00:00Z)" REPOSE_QUEUE_RED_MAIN="not waiting for this one" qgh "$wt" ci)
+  assert_has "a reason lets a running run through too" "$out" "allows a cut"
+}
+
 t_stale_script_warns() {
   local wt; wt=$(branch woker old-copy)
   # an older copy, as a worktree cut from an older main has
