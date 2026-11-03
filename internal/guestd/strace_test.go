@@ -128,6 +128,17 @@ func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookS
 	t.Helper()
 	strace, err := exec.LookPath("strace")
 	if err != nil {
+		// The skip is for a developer's laptop. In CI it is a failure,
+		// because the comment above said "this test must run on the Linux
+		// CI runner" while a silent skip there would report ok having
+		// tested nothing, and `ci.yml` installs strace nowhere -- so
+		// whether this guard has ever run in CI was not knowable from the
+		// outside. A skip that reads as a pass in the one place the test
+		// claims to belong is the family named in DECISIONS I-1032
+		// (I-1036).
+		if os.Getenv("CI") != "" {
+			t.Fatalf("strace is not on PATH in CI, so this test would report ok having tested nothing: install it in the job, or change the sentence above that says this test must run there")
+		}
 		t.Skip("strace is not installed; this test must run on the Linux CI runner")
 	}
 

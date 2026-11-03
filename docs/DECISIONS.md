@@ -29392,3 +29392,43 @@ sentences were *true when written* and became false through a later
 change, so they were superseded from the entry that caused the change and
 left standing where they are. Edit your own conclusion; supersede a fact
 that the world moved under.
+
+**I-1036. A test that skips when its tool is missing must not skip in
+the one place it says it belongs.** (strace-ci, 2026-11-03.)
+
+`internal/guestd`'s strace tests call `exec.LookPath("strace")` and
+`t.Skip` when it is absent, with the message "this test must run on the
+Linux CI runner". `ci.yml` installed strace nowhere. So whether that
+guard had ever run in CI was not knowable from outside the runner: a
+skipped test prints nothing without `-v`, and `go test ./...` reports
+`ok` for the package either way.
+
+I could not settle it by looking, either. The package takes 8.2 s in CI
+against 4.9 s here with strace present and the tests really running,
+which is consistent with the tests running on a slower shared runner and
+equally consistent with them skipping on a slower shared runner. Timing
+is not evidence at that margin, and saying "it probably runs" is how a
+guard stays unexamined.
+
+So the unknowable is made known from both ends. The test **fails** rather
+than skips when `CI` is set, naming what to do; and the `go` job installs
+strace, so it has no reason to. Either alone would be worse: the check
+without the install reds `main` the moment the runner image drops a tool,
+which after a day spent unredding `main` is a poor trade; the install
+without the check is a line somebody deletes in a year with nothing to
+say so.
+
+The skip stays for a laptop, which is what it was always for. What
+changes is that it no longer applies in the one environment the test's
+own comment names (DECISIONS I-1032 names the family).
+
+*Found by the launch lane*, while chasing why these tests failed 2 of 3
+there and passed here. That turned out to be load — a 30 s wait for
+`hooks.sock`, generous idle and tight on a box running host closure
+builds, `nix eval`s and tofu plans at once — and not the trapdoor. They
+reported the trapdoor anyway rather than only the answer they went
+looking for, which is the reason it is fixed.
+
+*Evidence:* with strace hidden from `PATH` and `CI=1`, the tests fail
+naming the missing tool; with strace hidden and `CI` unset, they skip as
+before; with strace present they pass.
