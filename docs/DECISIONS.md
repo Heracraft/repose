@@ -28820,3 +28820,122 @@ Also corrected: `docs/ops/RUNBOOK.md` and `ops/README.md` both handed an operato
 I-952's `9090` in the edge's `logPorts` is **left alone**. It costs nothing, it is the path if the port is ever published, and removing it would be a second edge switch for no gain.
 
 *Not closed by this, and the reason it is not in this branch:* that write endpoint is public HTTPS with `--web.enable-remote-write-receiver` on, and remote-write is unauthenticated, so whether anyone who guesses the hostname can inject series into the owner's Prometheus is unanswered. An empty-body POST from outside the tunnel settles it and injects nothing. That is a question for the owner about their own server, not a change to this repo.
+
+**I-1010. Nothing in the fleet read the kernel's own verdict on a
+host.** (kernel-taint, 2026-11-03.)
+On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault at 13:51:07 and
+kept serving tenant filesystem traffic through virtiofsd for 3 h 48 m with a
+dentry cache it could not read, then hard-hung (I-982). Nobody was paged; the
+owner noticed. `KernelOops` (I-980) now exists, and it is
+`count_over_time({component="kernel"} |~ ...[10m]) > 0`: it would have paged
+at ~13:53 and gone green at ~14:01, leaving 3 h 38 m of that incident with
+nothing saying "do not trust host-02".
+
+So hostd exports `repose_host_kernel_tainted{reason}` and
+`repose_host_panic_on_oops`, and `repose-kernel-check` writes
+`repose_kernel_check{check}` to node_exporter's textfile collector.
+`HostKernelTainted` pages at `for: 0m` on `die|machine_check|bad_page`,
+`HostPanicOnOopsOff` warns after 15m, `HostKernelAssertFailed` pages after
+10m.
+
+**The value here is not the page. It is that a latched bit does not go green
+on its own.** `KernelOops` is an event over a window and host-02 priced it:
+8 minutes of alert for 3 h 48 m of untrustworthy host. The kernel's taint
+word is set by the fault and stands until the box reboots, so a host that
+faulted at 13:51 still reads tainted at 17:39. Nobody should later improve
+this into a rate.
+
+Decomposed into reasons in hostd, not in PromQL, for two reasons: PromQL has
+no bitwise AND, and `tainted != 0` would page for ever, because bits 0, 12
+and 13 -- a proprietary, out-of-tree or unsigned module -- are set on every
+healthy host and never clear. The label is `reason` and not `bit` because
+`internal/obs/metrics` is an allowlist that fails registration, so `bit`
+would have panicked hostd at startup. `soft_lockup` and `warn` are exported
+and alert on nothing, the division I-980 already drew: a soft lockup is load,
+which `HostCPUSaturated` covers, and a warning is a condition the kernel
+recovered from.
+
+**A failed read publishes every reason as 1.** The first draft left the
+gauges at their last value on an error, which with gauges pre-created at 0
+means a host whose taint word was never readable reads green for ever --
+exactly the host the guard exists for. That changes what the gauge means: it
+is no longer "the kernel latched this taint" but "this taint is latched, or
+cannot be ruled out", and under that meaning all five reasons have to read 1,
+not just the three the alert selects, or `soft_lockup` at 0 would assert "no
+soft lockup" about a file nobody could read. The fail-closed value is
+produced inside `hostinfo.Tainted`, returned *with* the error, so a caller
+cannot forget it. `PanicOnOops` fails closed the same way.
+
+Read at scrape time by a Collector, not Set on hostd's 60-second
+`samplesLoop`: whether a host's kernel can be trusted has no business riding
+the billing sampler, and a reader who finds a stale gauge cannot tell a quiet
+host from a stopped loop. `internal/hostd/app` is untouched.
+
+**What this claims and what it does not.** With `kernel.panic_on_oops` on
+(I-984, I-988) an oops panics and `panic=30` reboots, so the `die` bit is
+rarely scrapable and `HostdDown` is its page. The durable unique value is
+`machine_check` and `bad_page`, which taint without panicking and appear in
+none of `KernelOops`'s patterns, plus the standing-signal property above.
+I-980 rejected "a host-side metric" and this narrows that: what it rejected
+was a textfile counter grepping the journal, a worse `KernelOops`. This reads
+latched state.
+
+The textfile half is its own file, `repose_kernel.prom`, because node_exporter
+rejects a whole file for one line without a value (I-643). `large_hash_linear`
+is a *positive* read of this boot's `Dentry cache hash table ... linear` line,
+which is what `docs/CHECKLIST.md` already asks for; `cmdline_recognised` is
+the absence of `Unknown kernel command line parameters`, the exact line that
+caught I-988 after a host had been switched *and* rebooted for a parameter the
+kernel never took, and it greps with `grep -v "Command line"` first because
+the kernel echoes the whole command line into the same log -- on host-02 three
+of four matches were the command line quoting the parameter. A phrase that can
+appear inside the thing being tested is not a test of it.
+`large_hash_vmalloc_absent` ships and **no rule reads it**: its positive state
+cannot be produced on any machine available to us, because nothing here has
+more than one NUMA node, and letting an unconfirmed read veto a confirmed one
+is I-968's shape inside the guard written against I-968.
+
+Writer discipline, each item a measured failure and not a precaution: every
+check pre-seeded to 0 and published before anything can fail, then republished
+by an `EXIT` trap, because an absent series is green under `noDataState: OK`
+and silence is the one failure a textfile writer must not have; `|| true` on
+every `grep -c`, since 0 matches is the healthy answer for
+`cmdline_recognised` and `grep -c` exits 1 on it, which under
+`writeShellApplication`'s `set -e` would kill the script before the second
+check; and the two journal-derived verdicts latch per `boot_id`, because
+`nix/hosts/hardening.nix` caps the journal at 4G and these lines are printed
+in the first second of a boot, so a rotation must not turn a red into a green
+*or* a green into a red.
+
+**A corrected arm, caught by the generator's own rule.**
+`HostKernelAssertFailed` was specified with `min by (host_id, check)
+(repose_kernel_check) == 0` as its first arm. A Prometheus comparison returns
+the **left** side's value, so that arm fires with the value *zero*; the
+expression's top level is `or`, which `ops/grafana/alerts-gen.py` cannot split,
+so it goes whole into the Grafana query with the condition "above 0" -- and the
+Grafana-managed copy of the rule would never have fired on a failing check,
+the one arm that matters most. It is written `max by (host_id, check) (1 -
+repose_kernel_check) > 0` instead, and `alerts_test.yaml` asserts both values
+with `promql_expr_test` rather than reasoning about them. That rule does get a
+`BOOLEAN_EXPRS` entry, which is the opposite of `HostPanicOnOopsOff`'s `== 0`
+not getting one: `alerts-gen.py` raises on a *splittable* rule that is listed,
+and the difference is the expression's shape, not a change of policy. The
+generator's comment says that list is "the only thing standing between a new
+rule of this shape and a condition that never fires", and it earned that
+sentence here.
+
+Rejected: a `repose_kernel_numa_nodes` gauge -- nothing alerts on it, no
+dashboard shows it and no code reads it. Rejected: `panic_on_oops` in the
+textfile writer, since hostd already exports it. Rejected: naming the third
+alert `HostKernelUnsafe`, which would claim the whole class when the rule
+checks two things.
+
+What cannot be demonstrated, and is said rather than probed: nothing here
+proves the gauge reads a real taint on a real host, because this box is Azure
+AMD and hosts are Intel (`docs/DESIGN.md` §4) and no machine here is tainted;
+the `vmalloc hugepage` state is unproducible on a single-NUMA machine; and
+**no VM test can gate the `hashdist` check** -- a 3072 MB, 2-core,
+single-NUMA test node prints `linear` whether or not `hashdist=0` is in the
+configuration, so a nixos test would pass with the parameter deleted, and
+giving a test VM two NUMA nodes needs a raw qemu `-numa` flag the framework
+does not expose.

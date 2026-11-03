@@ -64,6 +64,31 @@ its SMT threads, because busy guest vCPUs per physical core is what
 `load1` is the same number the heartbeat puts in the `hosts.load1` column,
 exported because Prometheus scrapes exporters, not the database.
 
+Is the kernel one you can trust (DECISIONS I-1010)?
+`repose_host_kernel_tainted{reason}` is the kernel's own latched verdict:
+`die`, `machine_check` and `bad_page` page as `HostKernelTainted`, and
+`soft_lockup` and `warn` are exported and alert on nothing. Read it
+differently from `KernelOops`. KernelOops counts log lines in a 10-minute
+window, so it goes green eight minutes after a fault while the host is
+still faulting; a taint bit is set by the fault and stands until the box
+reboots. On 2026-11-02 that difference was 8 minutes of alert against
+3 h 48 m of host nobody should have trusted. **All five reasons reading 1
+means hostd could not read the taint word**, not five faults: the gauge
+says "latched, or cannot be ruled out", because a verdict nobody can read
+is not a clean one. `repose_host_panic_on_oops` beside it is whether an
+oops reboots this host or is survived (I-984), read back rather than
+assumed, because I-988 was a knob that `/proc/cmdline` carried and the
+kernel refused.
+
+The boot-time facts (DECISIONS I-1010): `repose_kernel_check{check}` comes
+from node_exporter's textfile collector, written every minute by
+`repose-kernel-check`. `large_hash_linear` is this boot's `Dentry cache
+hash table ... linear` line, read positively; `cmdline_recognised` is the
+absence of `Unknown kernel command line parameters`.
+`HostKernelAssertFailed` also fires when the series is absent on a scraped
+host or the file stops being written, because an absent series is green by
+default and `/var/lib` outlives a boot.
+
 The guest park (DECISIONS I-652, I-796): a park that leaves a running
 guest skipped costs that guest everything it was running, because a host
 restart then boots it cold. Every path that does so counts

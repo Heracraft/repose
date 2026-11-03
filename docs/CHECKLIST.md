@@ -109,6 +109,11 @@ written so none of them goes unnoticed again.
       item: the test speaks for a VM's kernel and the eval for a config
       file, and the thing that bit us was a real host whose config was
       already right (DECISIONS I-1012).
+      A knob worth setting is
+      worth reading back *continuously*, not once: `repose_kernel_check`
+      and `repose_host_panic_on_oops` are where a host's own answer goes,
+      and a parameter added without one is checked at the moment somebody
+      remembers to look (I-1010).
 - [ ] A new or changed test asserts the property it is named for, not a
       proxy for it, and names the probe that proves it would fail without
       the fix. A proxy fails in both directions: red when the runner is
