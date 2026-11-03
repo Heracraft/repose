@@ -673,11 +673,30 @@ cmd_record() {
   targets=$(tr ',' '\n' <<<"$targets" | { grep -v -e '^$' -e '^none$' || true; } | sort -u | paste -sd, -)
   local missing; missing=$(grep -c 'live: no result recorded' <<<"$detail" || true)
   printf 'STATUS line (%s characters):\n' "$(( ${#rel} + ${#branches} + ${#targets} + 80 ))"
+  # The release's own date and its own main, not today's and not whatever
+  # main is now. `record` used `date -u` and `git rev-parse main`, which are
+  # right only on the day of the release and wrong by exactly as much as the
+  # record is late -- so the two faults compound: the longer a record is
+  # owed, the more confidently wrong it is when finally written, and nothing
+  # said so. On 2026-11-03 sixteen of the queue's twenty-three releases had
+  # no record at all, the oldest from 2026-10-18, and `record r20261018-1`
+  # offered to stamp it `main b55d17dd` -- a commit from a fortnight later
+  # (DECISIONS I-992).
+  #
+  # The date is stored: `integrated=` is written by `done`. The release's
+  # main is not, but it is in git -- `cut` names the release in every merge
+  # commit it writes, so the newest such commit on main is that release's
+  # tip. Both fall back to the old behaviour when they cannot be found, so a
+  # release mid-flight still records something.
+  local rdate rmain
+  rdate=$(sed -n 's/^integrated=\(....-..-..\).*/\1/p' "$rf")
+  rmain=$(git rev-list -1 --grep="($rel)\$" main 2>/dev/null)
+  [ -n "$rmain" ] || rmain=$(git rev-parse main)
   printf '%s | release %s | conductor, %s | released | %s branches: %s shipped as %s. Evidence and what is not done: docs/releases/%s.md\n' \
-    "$(date -u +%Y-%m-%d)" "$rel" "$(hostname)" "$n" "${branches%, }" "${targets:-nothing to deploy}" "$rel"
+    "${rdate:-$(date -u +%Y-%m-%d)}" "$rel" "$(hostname)" "$n" "${branches%, }" "${targets:-nothing to deploy}" "$rel"
   printf '\ndocs/releases/%s.md:\n' "$rel"
   printf '# Release %s\n\nBase %s, main %s.\n\n%s' "$rel" "${base:0:9}" \
-    "$(git rev-parse --short main)" "$detail"
+    "${rmain:0:9}" "$detail"
   [ "$missing" = 0 ] || printf '\n%s of the %s branches have no live result yet.\n' "$missing" "$n"
 }
 

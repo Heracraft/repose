@@ -28142,3 +28142,19 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+**I-992. `record` stamps the release's own date and main, not today's.** (record-stamp, 2026-11-03.)
+
+`release-queue record` built the STATUS line with `date -u +%Y-%m-%d` and the record file with `git rev-parse --short main`. Both are right only on the day of the release, and wrong by exactly as much as the record is late. So the two faults compound: a record is written late *because* nobody got to it, and the lateness is what makes it wrong, and nothing in the output says so.
+
+It had teeth. On 2026-11-03, sixteen of the twenty-three releases the queue knows had neither a record file nor a STATUS line — the oldest `r20261018-1`, from 2026-10-18 — and `record r20261018-1` offered to stamp it `2026-11-03` and `main b55d17dd`, a commit from sixteen days after the release it was describing. Seven of the sixteen predate 2026-11-02, so this was not one busy night: `docs/releases/` has been honoured for seven releases out of twenty-three since the convention began at `r20261017-1` (DECISIONS I-760).
+
+Both values were recoverable and neither was being read:
+
+- **The date is stored.** `done` writes `integrated=<RFC3339>` into the release's state file; the first ten characters are the date.
+- **The main is in git.** `cut` names the release in every merge commit it writes (`Merge <branch> (<release>)`), so the newest such commit on `main` is that release's tip. Checked against three: `r20261018-1` gives `c069908cc`, `r20261101-2` gives `3dd02bf9b` — which is exactly the commit `main` was fast-forwarded to for that batch — and `r20261102-8` gives `b55d17dd9`, which is current `main` because it genuinely is the newest release.
+
+Both fall back to the old behaviour when they cannot be found, so a release whose merge is not yet on `main` still records something rather than an empty field.
+
+*Why this belongs with the rest of 2026-11-02 rather than as a tidy-up.* It is the same fault as I-958, I-968, I-970 and I-988, in the record-keeping instead of the code: `date -u` is a proxy for the release's date and `git rev-parse main` is a proxy for the release's main, and both were green — they produced a plausible, well-formed, confidently wrong record. The reader of `docs/releases/r20261018-1.md` had no way to tell. A record that is wrong in a way its own format cannot express is worse than a missing one, because the missing one is visibly missing.
+
+*Found by* checking whether the backlog was assemblable before asking an agent to assemble it, and reading what `record` actually printed for an old release instead of trusting that a tool fed from stored state would stamp stored values.
