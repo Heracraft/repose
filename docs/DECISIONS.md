@@ -27733,6 +27733,286 @@ was never deployed, and completes I-952.
   `ops/grafana/alerts-gen.py` refused `ApiMetricsAbsent` until it was
   declared in `BOOLEAN_EXPRS`, which is that guard doing its job.
 
+**I-961. The landing is one quiet, gapless composition: bands that end on
+the next band's rule, one two-column line from 1024px, one stage and one
+terminal palette.**
+(landing-refine, 2026-11-02) Amends I-837 (the landing's layout) and I-843
+(the pictures' stage, the steps, the pricing head), and LANDING.md "Real,
+or not at all" for colour only. The owner asked for a landing that is
+"clean and consistent", with visuals that no longer feel bolted on, after
+voidzero.dev and Linear. Three alternatives were built and judged at real
+size by three critics; the quiet one (B) won all three votes, and the
+judges' grafts and its named defects were then worked in.
+- *Gapless.* Every band after the hero opens with a hairline the window's
+  width and ends on the next one. A band that ends on a picture has no
+  bottom padding and its stage rests on that rule, open and square at its
+  foot. A band that ends on a ruled list (steps, plans, questions) ends on
+  its last row, the questions on the footer's rule. Empty space is padding
+  inside a band. B's first version dissolved each stage into the page
+  over 64px; all three critics read the washed strip and the empty band
+  under it as the gap the owner named, and the fade also erased the
+  Editor's statusline and the Browser's agent log. So the fade is gone.
+- *One column line.* From 1024px (I-837's breakpoint, kept) every head is
+  two equal columns 32px apart, which is the footer's own line. The h2 is
+  on the left and the one line, links or button the section needs is on
+  its first baseline on the right; a section that needs no sentence leaves
+  the right column empty rather than gaining a caption. The hero's lead
+  and buttons, the steps and the questions use the same line, and the
+  questions' heading stays sticky. Between 1024 and 1199px the steps' Copy
+  is its icon and the line 12px, so the install command fits its half
+  (`CodeCopy` gains `labelFrom`).
+- *One stage, closed in the grid.* A grid cell's stage is closed on four
+  sides with its windows inset alike, so no window runs off an edge. The
+  Browser and the Editor lose their "your cloud machine" head, since their
+  captured chrome is the head; the label stayed where it tells the machine
+  from the laptop or a snapshot. Only the hero's machine keeps its running
+  dot.
+- *Steps and pricing as ruled rows.* The steps lose their gauges and `$`:
+  a mono number and the serif name on the left, the command filling the
+  right column flush on the stage's tone, on one line at every width.
+  The plans become cells split by hairlines with no card edge, the one
+  card idiom left on the page. "Launch prices." and "Start a free week"
+  move into the pricing head's right column; "Seven days free." goes,
+  since the button beside it says so.
+- *One terminal palette, mapped by role.* Ready, Localhost's tmux, the
+  Browser's log and the Editor's nvim draw from `--t-*`, light on the
+  light page and dark on the dark one, so no black slab sits on the light
+  page. The captures' colours are mapped by role (one-dark and xterm-256
+  by their ANSI tables, Tokyo Night by a role map); their text and layout
+  are untouched, but for the checkout name (see "Review round 1"). The
+  Browser's captures exist only in the light scheme, and the owner's
+  machine is not reachable to take a dark set, so in the
+  dark scheme they are drawn with `invert(0.9) hue-rotate(180deg)`, which
+  the critics preferred to a bright block. A real dark capture replaces
+  it when one can be taken.
+- *Copy.* The lead is main's again, snapshot sentence included: B cut it,
+  and the owner's lead is the owner's. The features heading becomes "A
+  cloud machine that feels like your own box", the idea it serves; the
+  Localhost cell is titled "Use its ports on your localhost", says the
+  mechanism first ("Ports from 1024 up appear on your localhost while
+  you're attached") and shows `repose open 5173`, the port its picture
+  forwards. The eyebrow and the step numbers share one label: Geist Mono
+  12px, upper case, tracked. The h1's floor rises so it never sets under
+  an h2; at 390px it holds two lines at 32px, since "Your dev
+  environment," does not fit a line at 33px or more.
+- *Left as they were.* The hero picture is still about 1000px tall on a
+  phone; that cannot change without redrawing it. (The Localhost
+  headline left with review round 2.)
+- *Review round 1.* The feature grid joins the ruled system: four cells
+  split by hairlines like the plans, with no gap, the vertical rule in the
+  middle of the column gap so the right cells start on the column line,
+  and the band ends on its last row. Below 1024px the grid and the plans
+  are one column, as every other section is; a one-column cell keeps the
+  2x2's 34rem, so the pictures draw at one size at every width. The grid
+  pictures share one type size: their chrome and terminals at 12px mono
+  (11px on a phone), the Editor's capture at 12px cropped on the right
+  into a fade instead of shrunk to fit its 78 columns, its powerline
+  separators drawn in CSS like its box drawing. The Browser loses its
+  `repose browser` chip, which the cell's command line already names.
+  ComesBack's snapshots stand in a window as tall as the machine, as the
+  hero's rail does, and on a phone the two tiles share the row under it.
+  The Localhost crop ends under the headline where the paragraph cannot
+  show whole. The cells' commands lose their `$`, as the steps did. The
+  copy tells each fact once: the ComesBack cell says what a snapshot
+  restores that git cannot, and FAQ 3 the schedule (nightly, at each
+  stop, your own). FAQ 2 no longer names notifications, which LANDING.md
+  "What we sell" rules out. The OneCommand capture is cropped to the
+  branch's two commits: master's base commit was a note about the app's
+  own UI and told a stranger nothing. A capture's internal checkout name
+  may read `your-project`, the pictures' checkout, at the same column
+  width (the Editor's explorer, Localhost's and Ready's tmux bars); this
+  is the one text change a capture takes. Each pause button is named
+  after its picture. The hero's install line keeps 12px and scrolls
+  under a fade where its column is narrower.
+- *Review round 2.* Below 1024px a feature cell runs the frame's width
+  like every other band, its stage too, and the picture inside keeps the
+  2x2's 34rem, centred on the stage (chosen over a centred 34rem column,
+  which would have shortened the band's rules). ComesBack's snapshots
+  window is as tall as its two tiles and centred on the machine; on a
+  phone both tiles stand whole at every beat. The Localhost app page
+  ends above its headline (the nav and the ground under it), since drawn
+  at the window's width that headline set at about 34px and a smaller
+  drawing took the nav under 11px; the forward's wire takes the height
+  that frees. On a phone the Localhost and Browser captures keep a size
+  their text reads at and crop on the right into a fade, as the Editor
+  does, and the Browser capture is drawn so its own scrollbar falls
+  outside the window. The Editor's chrome accents (the explorer's frame,
+  the tree, the current line number, the statusline's mode and branch)
+  map onto the zinc steps and the folder icons onto the slate blue; the
+  hero's mode line maps onto the muted ink, so red is the wreck's alone.
+  The hero's stage alone bleeds to the window's edges, a step deeper in
+  tone: the page's one tonal moment. Cell commands set as the hero's
+  install line does (12px mono, third grey), under their paragraph,
+  which leaves two command treatments on the page, runnable (the steps,
+  with Copy) and reference. The cells' copy gives a fact the picture
+  cannot carry (the restore and `--as`, the bridge to your Chrome), and
+  the Localhost and Editor cells show the commands their pictures show
+  (`repose attach`, `ssh your-project.repose`). The struck founding price
+  sets in the serif; the plans sit flush on the frame at 640 to 899px as
+  at every other width. The agents' marks stay unnamed (I-287); each
+  names itself under the pointer.
+- *Option D.* (landing-refine-d, 2026-11-02) The owner asked for one
+  design that takes the strengths of all three alternatives. It
+  supersedes the column line, the closed grid stages and the stage's
+  floor above, and keeps B's spacing scale, type scale, stage material,
+  `--t-*` palette, bleed hero, gapless band rule, copy and the two
+  command treatments.
+  - From A (Frame): the page is one ruled sheet on a 12-column grid (32px
+    gap). The sheet is the content box outset by `--edge`: the frame's
+    gutter below 1280px, so the sheet is the window, and 16px from
+    1280px, where two rails (`--hk-border`) draw its edges and a 9px
+    cross marks each band rule where it meets a rail, the footer's rule
+    included. Two rule weights: rails and band rules in `--hk-border`,
+    every rule inside a band in `--hk-hairline`, running the sheet's
+    width. A stage is the cell itself, flush from rule to rule with no
+    edge or radius; windows stay closed in it at the one inset. Every
+    picture sits under a 40px figure bar (48px to a coarse pointer)
+    holding its number, `Fig. 0` to `Fig. 3`, and its pause button, which
+    replaces the 48px floor. Heads align their side item to the h2's
+    last baseline. From 1200px the hero sets the h1 on seven columns and
+    the lead on five, on one baseline, with the buttons and the install
+    line in one row under both. The hero field carries a 16px dot grid
+    that fades with its sheen, and the rails stop at it. The questions'
+    list runs from the centre hairline to the rail, with the sticky
+    heading on the first question's baseline.
+  - From C (Editorial): each band after the hero opens on a mono label,
+    `01 Setup` to `06 Questions`. Pricing's heading is "Launch prices",
+    the line that said it goes, and the button and seats line stand
+    beside it; the questions' heading is "Before you try it". Between
+    1024 and 1199px the hero's buttons sit on the lead's last line. The
+    hero's globe is a line globe. Ready's tools have 16px icons in the
+    dim ink at 13px, the everyday tools' line under the list. On a phone
+    a step's number and name share one baseline over the command cell.
+  - New in D: the thirds lines of the same grid hold the plans (three
+    across from 1024px, stacked below, so no plan line wraps at 768px)
+    and Ready's lower row, the tools on one third and the shell on two,
+    flush on `--t-bg`, so its hint row is whole from 1024px. Commands are
+    13px everywhere, 12px under 640px (the hero's install line too, which
+    still scrolls under its fade on a phone, never shrunk). The page's
+    own text uses no blue.
+  - Left open: the hero picture's height on a phone and the Localhost
+    crop, as before.
+  - *Option D, review.* (landing-refine-d, 2026-11-02) Three critics
+    (design, anti-pattern, adversarial) read D at 1x. What changed:
+    - No numbered labels or figure bars. The page ran three numbering
+      systems (band labels, `Fig. 0` to `Fig. 3`, step numbers) that no
+      sentence cites, and the labels repeated the h2s and the header's
+      links; seven 40px bars held a number and, on a desktop, nothing
+      else. The step numbers stay, as the one numbering. A looping
+      picture's pause button shows at rest: a band picture's in its
+      field's top right corner (the field is `--field-y`, half a band and
+      never under 48px, above and below its windows), a cell's at the
+      right end of its title's line. The hero's button had been cut away
+      by its field's `clip-path` while its box and opacity said it was
+      there, so a test now hit-tests each button at its centre.
+    - Every head has a side item: the machine's a line of copy, the
+      install and questions heads two docs links, as the agents' head
+      has. The machine's heading is "Work on the machine as you would on
+      your laptop", the claim its cells show. The questions take the
+      same head and run from rail to rail; the sticky heading over an
+      empty half went.
+    - Windows stand on the text lines at every width: band pictures pad
+      by `--edge`, the cells' pictures by `--shot-l` and `--shot-r`, and
+      below 1024px a cell's picture starts on the text line and stops at
+      34rem rather than centring. The rails and `--edge` start at 1200px,
+      where the frame stops growing, so no width shows sheet edges in
+      mid-air (1215 to 1279px did). The header cross, hidden under the
+      sticky header, went; the footer's rule over the theme switch runs
+      rail to rail and closes the rails with a cross pair.
+    - The hero's field is a dark plate in both schemes, the hero picture
+      drawn on it in its dark palette, so the page has one moment of
+      contrast; in the dark scheme the plate is a step over the page
+      with a lit edge and a visible dot grid. This lifts, for the field
+      alone, the "no dark slab on the light page" line above.
+    - One picture scale: the Browser draws a capture pixel at 0.72px, so
+      its page sets at the other cells' 13px, with the toolbar's address
+      bar stretched to the window and the page on its own ground at the
+      left; the nav beat pans to the page's top so the crop falls under
+      the subtitle. Localhost's laptop page ends under its nav's rule,
+      and the machine's window shows Vite's ready line (Vite 8.0.1, from
+      this repository's dev server) over the captured Local line.
+      ComesBack's snapshots stand on the machine's top line. The
+      Editor's rows fade over 56px.
+    - Copy: one name for the product noun ("cloud machine", not "box");
+      a command named in a sentence is mono in the sentence's grey with
+      no chip; the snapshot cell says what a snapshot holds and what
+      `--as` does; the Browser cell says what `repose browser` is for,
+      with the bridge left to the docs; the third question asks how long
+      snapshots are kept (lifecycle.md). The hero's lead, the setup
+      paragraph and "Start in three commands" stay the owner's (I-772,
+      and above).
+    - Smaller: the steps' command cells lose their top highlight and
+      darken by `--hk-active` under the pointer, Copy's hover ending on
+      the text line; a plan's rule over its memory line runs the cell's
+      width; Ready's tools stand on the stage's tone, and its shell rows
+      start on the text line below 1024px (the media rule had lost to
+      later base rules); the agents' links keep their space before the
+      arrow on a phone; Localhost's tmux bar holds one line at 360px.
+  - *Owner's pick.* (landing-refine-d, 2026-11-02) The owner chose D
+    over A, B and C, and asked for two things from C and one fix. D's
+    system (sheet, rails, crosses, flush cells, the dark hero plate,
+    heads on the h2's last baseline) stands as above. What changed:
+    - C's editor: the Editor stands in a closed window under the "your
+      cloud machine" head, inset on its stage, and its Tokyo Night
+      capture maps onto `--t-*` through C's two maps, one for grounds
+      (code and tabs on `--t-bg`; explorer, tabline and statusline on
+      `--t-bar`; the current line on `--t-sel`) and one for text, since
+      one hex is a ground in one run and a text colour in another. Its
+      accents come back from C on the palette's muted hues: the
+      explorer's frame, the tree, the current line number, the filled
+      mode and clock. The Browser takes the same head over its captured
+      toolbar, so the four grid pictures share one treatment, a closed
+      window under a head, and none is a raw capture flush to its cell.
+      The cells' stage grows from 20rem to 22rem so the head costs no
+      rows: the Editor's 20 rows keep 13.7px at 12px type, and the
+      Browser's page keeps its height, its bug beat panned to 20 capture
+      pixels over the page's top so the crop falls between the text
+      box's lines.
+    - C's editorial labels, as the page's one numbering, which reverses
+      the review's "no numbered labels": each band's head opens on its
+      label (`01 Setup`, `02 Machine`, `03 Agents`, `04 Install`,
+      `05 Pricing`, `06 Questions`) on the text line, 16px over the h2;
+      each cell's copy on its own (`2.1 Snapshots` to `2.4 Editor`), 8px
+      over the title; and the steps count `4.1` to `4.3` under 04. A
+      label is Geist Mono 12px, upper case, tracked 0.06em, in
+      `--hk-text-3`, its number in `--hk-text-2` at a fixed 2.75em, so
+      the names start on one line and a step's name starts there too.
+      No figure bar or "Fig." number returns; the pause buttons keep
+      their places (a band picture's field corner, a cell title's line).
+    - The head links: a pair of docs links (agents, install, questions)
+      ends on the right text line, the frame's right content edge, on
+      the h2's last baseline, 16px apart (24px before), and those heads
+      stand as far over what they head as the paragraph heads do: 43px
+      from the h2's last line box to the content at 1440, 1280 and 1024,
+      for every head but pricing, whose button is taller. Paragraphs
+      still start on the column line.
+    - Pricing (owner, 2026-11-02, with a screenshot: the button floated
+      mid-head from the centre column, x=729 at 1440): "Start a free
+      week" ends on the right text line too, its label on the h2's last
+      baseline, the seats line before it on the same baseline and
+      wrapping on the left (20rem at most) when the waitlist line is
+      long, so every head's side action ends on one right edge. Below
+      1024px it stays under the h2, full width on a phone.
+    - Hero (owner): the buttons never stand beside the lead. From 1024
+      to 1199px they had stood in the right half beside it; now from
+      1024px "Get started", "Copy install command" and the install line
+      share one row under the headline and the lead at every width,
+      checked at 1024, 1100, 1280, 1440 and 1920.
+    - Review of the pick (2026-11-02): Ready's shell under 03 Agents
+      takes the grid's window too (24px above and below, the text lines
+      at the sides, the same head), as C has it; it was the one picture
+      still flush to its cell after a band of inset windows. Below
+      1024px the grid's windows run between the text lines (the 34rem
+      cap left a 164px strip at 768). ComesBack's snapshots window runs
+      the machine's height. On a phone the Editor's explorer is cropped
+      off whole, so the code gets the window (15 columns of code at
+      390 before). Copy's label in the steps ends on the right text
+      line. A link pair that wraps on a phone stands its second line
+      32px under the first. The labels read "01 Setup" to a screen
+      reader and a copy (a space inside the number's fixed width). The
+      eyebrow is in the second grey. The Browser's address-bar ring
+      follows a resize. Pricing's button keeps its label on the h2's
+      baseline, its box hanging under it.
 **I-972. The thaw test asserts the deadline the unwraps share, not how
 long the reconcile took — and the old assertion could not fail for the
 reason it was named for.** (CI red on main, 2026-11-02.)

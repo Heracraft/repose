@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-883 entries.
+884 entries.
 
 ## Scope
 
@@ -825,7 +825,7 @@ pointer, not a summary.
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23913
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23979
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24210
-- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; L24242
+- **I-837** The web app moves to Herakraft UI: Inter, Geist Mono and Noto Serif 400 on zinc with one blue, hairline sections in place of cards, near-black code panes, a System, Light and Dark switch, and a landing led by a terminal of a real `repose run` — 2026-10-20; amended by I-841; amended by I-843; amended by I-961; L24242
 - **I-841** The dashboard gets a rail: Projects, Questions, Billing and Settings, your projects by name, and the plan; a Questions page; project and Settings pages split into tabs; every old URL keeps working — 2026-10-21; amended by I-896; L24369
 - **I-843** The landing gets main's drawn pictures back, in Herakraft UI — 2026-10-21; L24718
 - **I-800** Seven alert rules on counters that already incremented, the rollup's lag gauge rises on its own, and `ops/check.sh` checks that a rule's runbook anchor resolves — 2026-10-19; L24781
@@ -899,19 +899,20 @@ pointer, not a summary.
 - **I-950** A stop does not wait out a grace period for a shutdown request nobody took — 2026-11-01; L27562
 - **I-964** A host move gives a project back in the state it was in, and only a project that was running is told about it — 2026-11-02; L27620
 - **I-960** The api's metrics are pushed by a Grafana Alloy service on the control VM, not scraped; Prometheus scrapes Alloy for liveness — 2026-11-02; L27664
-- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L27736
-- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L27793
-- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L27808
-- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L27844
-- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L27895
-- **I-982** Hosts boot with `hashdist=0`, so the kernel's large system hash tables stay in the linear map — 2026-11-02; L27911
-- **I-984** A kernel oops reboots the host: `panic_on_oops=1`, `panic=30` — 2026-11-02; L27960
-- **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28002
-- **I-986** The Docker probe does not cancel its own request before reading the answer — 2026-11-02; L28028
-- **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28072
-- **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28091
-- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28145
-- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28161
-- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28180
-- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28196
-- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28209
+- **I-961** The landing is one quiet, gapless composition: bands that end on the next band's rule, one two-column line from 1024px, one stage and one terminal palette — 2026-11-02; L27736
+- **I-972** The thaw test asserts the deadline the unwraps share, not how long the reconcile took — and the old assertion could not fail for the reason it was named for — 2026-11-02; L28016
+- **I-968** A test asserts the property, not a proxy for it: main's CI had been red for sixteen days on a rotating cast of three — 2026-11-02; L28073
+- **I-974** Getting a project's base onto the target host before a migration is the operator's step, not something `move` does — 2026-11-02; L28088
+- **I-976** When a host leaves the fleet, the fallback shape becomes the fleet's real shape, and the host leaves the scrape targets in the same change — 2026-11-02; L28124
+- **I-970** A skipped CI step reports as "not failing", so lint and the rollback check no longer sit behind the test suite — 2026-11-02; L28175
+- **I-982** Hosts boot with `hashdist=0`, so the kernel's large system hash tables stay in the linear map — 2026-11-02; L28191
+- **I-984** A kernel oops reboots the host: `panic_on_oops=1`, `panic=30` — 2026-11-02; L28240
+- **I-980** A host kernel Oops pages, and the alerts that read log lines live in a file promtool does not parse — 2026-11-02; L28282
+- **I-986** The Docker probe does not cancel its own request before reading the answer — 2026-11-02; L28308
+- **I-988** `panic_on_oops` is a sysctl, not a kernel parameter, so I-984 was never in effect — 2026-11-02; L28352
+- **I-990** A thaw is also the host's blind window, and nothing said so — 2026-11-02; L28371
+- **I-992** `record` stamps the release's own date and main, not today's — 2026-11-03; L28425
+- **I-994** A cited decision id with no entry fails the index check — 2026-11-03; L28441
+- **I-1000** The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them — 2026-11-03; L28460
+- **I-996** The conductor's own test harnesses are executed, not merely present — 2026-11-03; L28476
+- **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28489

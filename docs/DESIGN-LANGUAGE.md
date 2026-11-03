@@ -1026,40 +1026,95 @@ The landing (`routes/+page.svelte`, `routes/landing.css`,
 `lib/components/landing/`) uses this system with no exception: the same
 tokens, type and components. `LANDING.md` covers what it says and shows.
 
-- **Width**: the full 1120px frame. Two-column sections from 1024px,
-  `minmax(0, 0.8fr) minmax(0, 1.2fr)` with a 3.5rem gap, the heading column
-  sticky under the header; one column below.
-- **Hero**: from 1024px `minmax(0, 1fr) minmax(0, 1.05fr)`, 4rem apart,
-  centred. Left: the eyebrow, `h1.hk-h1`, the two-tone lead at 34rem, "Get
-  started" (`hk-btn-lg`) beside a large page-tone "Copy install command",
-  and the install command in Geist Mono 13px under them, exactly what the
-  button copies. Right: the terminal.
-- **The terminal** replays the Quickstart's `repose run -p` session, parsed
-  at build time from `content/docs/index.md`, so the page cannot drift from
-  the docs. A near-black pane with 12px corners, a 1px outer ring, an inset
-  border and `--hk-shadow-terminal`; a 38px bar titled
-  `~/code/your-project`; Geist Mono 12px / 20px. Commands are
-  `--hk-code-text`, `$ ` and output `--hk-code-muted`, ticks `--hk-code-ok`.
-  When 40% in view it plays once, one line every 450ms, each rising 4px and
-  fading in over 240ms, and ends on "Ready in 16s." with a still caret. It
-  has no copy button, no minimum height and no status dot. Without scripts
-  and under reduced motion every line shows at once.
-- **Each command once**: the install line in the hero only; `repose login`
-  and `repose run` as light command lines in "Your laptop's setup"; the
-  feature cells give their command as one mono line with a muted `$` and no
-  copy button, since a visitor without the CLI cannot run it.
-- **Sections**: the hero; "Your laptop's setup, in one command"; "On every
-  machine", four cells in a 2x2 grid from 768px, each with an `hk-h3`, a
-  paragraph and its command; "Agents on first boot", a hairline list read
-  from `content/docs/agents.md`; "Pricing"; "Questions", three `details`
-  rows between hairlines; the full footer.
-- **Pricing**: `PlanCells` in its public variant, three cards from 900px on
-  `hk-panel`-like frames, the founding price struck when it applies, then
-  "Start a free week" and the seats line. Plan figures come from
-  `lib/plans.ts`, never typed into markup.
-- **Never on the landing**: isometric or anatomy figures, drawn pictures of
-  the product, invented sample output, a stat strip without a source, motion
-  on scroll, or a second dark pane in the first two screens.
+- **Width**: the 1200px frame every page shares (I-656), laid out as one
+  ruled sheet on a 12-column grid with 32px gaps from 1024px (I-961,
+  option D). Placements span six columns (halves, the footer's line),
+  four (thirds: the plans, Ready's lower row) or three (quarters, the
+  footer's Policies). Below 1024px one column.
+- **Sheet**: the content box outset by `--edge` (the frame's gutter below
+  1200px, 16px from there), so every vertical rule, and every picture's
+  window, stands 16px from the text beside it. From 1200px two rails in
+  `--hk-border` draw its edges down to the footer's last rule, which
+  closes them, with a 9px cross in `--hk-text-4` where a band rule meets
+  a rail. The hero's field is the one break: it bleeds to the window's
+  edges and the rails stop at it.
+- **Bands and rules**: each section after the hero opens with a rule the
+  window's width in `--hk-border` and ends on the next one; rules inside
+  a band are `--hk-hairline` and run the sheet's width. Spacing is one
+  scale (8, 16, 24, 32, 48, 64, 96): a band opens with 96px from 1024px,
+  64 from 768, 48 on a phone, and a head stands 48, 40 or 32 above its
+  content (I-961).
+- **Heads**: the band's numbered label ("01 Setup" to "06 Questions"),
+  the h2 16px under it, and from 1024px the band's one side item in the
+  right half on the h2's last baseline: a paragraph from the column
+  line, or an action ending on the right text line, either a pair of
+  docs links 16px apart (`1rem`, the scale's 16) or the pricing button
+  with the seats line before it. Every band has one, and every head
+  stands the same distance over its content (pricing's button box,
+  taller than a line, the head gap over the plans).
+- **Numbering**: one system, from alternative C (I-961, the owner's
+  pick): the bands' labels, the cells' (2.1 to 2.4, over each cell's
+  title) and the steps' (4.1 to 4.3). No figure bars or "Fig." numbers.
+- **Type**: `hk-h1` at `clamp(30px, 0.6rem + 5.7vw, 60px)`, `hk-h2` up to
+  40px, both Noto Serif. One item title for cells, steps, plans and
+  questions: Noto Serif 20px / 28px. Body 15px / 1.6 in `--hk-text-2`, the
+  hero's lead 17px on 34rem. One label: Geist Mono 12px, upper case,
+  tracked 0.06em, `--hk-text-3`, tabular numerals, for the eyebrow (in
+  `--hk-text-2`, the title line with no number), the numbered labels
+  and the step numbers; a number stands in `--hk-text-2` at a fixed
+  2.75em. Commands Geist Mono 13px (12px under 640px); a
+  command named in a sentence is mono in the sentence's grey, with no
+  chip. The page's own text uses no blue.
+- **Hero**: the eyebrow, `h1.hk-h1` on seven columns beside the lead on
+  five from 1200px (one baseline), then "Get started" (`hk-btn-lg`), a
+  large page-tone "Copy install command" and the install command in one
+  row, exactly what the button copies. From 1024px that row stands under
+  the headline and the lead, never beside the lead (owner, 2026-11-02). Under them the hero picture on its
+  field.
+- **Figures and stages**: a looping picture's pause button shows at
+  rest: in a band picture's field corner, or at the end of a cell
+  title's line. One stage material for every picture
+  (`landing/pictures.css`):
+  `--stage` with a top-left sheen and an inner top highlight, flush from
+  rule to rule with no edge or radius. The four grid pictures are each
+  a closed window under a "your cloud machine" head, inset on a 22rem
+  stage (the Browser's and the Editor's over their own chrome, as in
+  alternative C), and Ready's shell takes the same window, inset on its
+  cell. Windows and chips take 6px
+  corners, the kit's buttons their own; nothing else is rounded. The
+  terminals share one palette (`--t-*`) that follows the scheme; the
+  Editor's Tokyo Night capture maps onto it through separate ground and
+  text maps. The
+  hero's field alone bleeds to the window's edges: one dark plate in both
+  schemes (`--stage-hero`, a step over the page in dark) with a 16px dot
+  grid (`--stage-dot`), the hero picture drawn in its dark palette on it.
+  It is the page's one moment of contrast.
+- **Each command once**: the install line under the hero's buttons and as
+  the first step (I-843); the feature cells give their command under
+  their paragraph, set like the hero's install line (Geist Mono 13px,
+  `--hk-text-2`), with no `$` and no copy button, since a visitor without
+  the CLI cannot run it. The steps' commands fill the right half of the
+  row from the centre hairline to the rail, flush on the stage's tone,
+  with no box of their own, darkened by `--hk-active` under the pointer. Two command
+  treatments, then: runnable (the steps, with Copy) and reference.
+- **Sections**: the hero; "Your laptop's setup, in one command"; "Work
+  on the machine as you would on your laptop", four flush cells split by
+  inner rules, a 2x2 from 1024px and one column below, the cell and its
+  stage the window's width with the picture's windows between the text
+  lines; "The agents you use, and the tools they need, on first boot",
+  Ready from rail to rail; "Start in three commands"; "Launch prices";
+  "Before you try it", five `details` rows from rail to rail between
+  inner rules, each washed with `--hk-hover` under the pointer, its focus
+  ring inside the row; the full footer.
+- **Pricing**: `PlanCells` in its public variant, three flush cells on the
+  thirds from 1024px (stacked below) with no card edge, the founding
+  price struck when it applies, in the serif at the item title's size.
+  "Start a free week" and the seats line stand on the heading's last
+  line. Plan figures come from `lib/plans.ts`, never typed into markup.
+- **Never on the landing**: isometric or anatomy figures, drawn fake UIs
+  standing in for real ones, invented sample output, a stat strip without
+  a source, motion on scroll, or a dark slab on the light page other than
+  the hero's field (the terminals follow the scheme).
 
 # Copy
 

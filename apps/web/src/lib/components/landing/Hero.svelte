@@ -217,7 +217,10 @@
 				tl.pause();
 				tl = null;
 				fresh = true;
+				// Off screen the loop waits, but the wires' box is measured
+				// now, so the old width never widens the page.
 				if (visible) cycle();
+				else measure();
 			});
 		});
 
@@ -470,8 +473,17 @@
 				.call(() => (fire = true), T.run)
 				.call(() => (fire = false), T.run + 520)
 				.call(() => from.classList.add('lift'), T.fly);
-			if (flight) t.add(c, { opacity: 1, duration: CUT }, T.fly).add(c, flight, T.fly);
-			else
+			// Wide, the copy fades in only once its name is clearing the
+			// laptop's wall, and its empty right end is faded: the bare fill
+			// alone at the wall read as a rendering glitch (review round 2).
+			if (flight) {
+				c.style.maskImage = 'linear-gradient(to right, #000 60%, transparent)';
+				t.add(c, { opacity: [0, 1], duration: 250, ease: 'outQuad' }, T.fly + 300).add(
+					c,
+					flight,
+					T.fly
+				);
+			} else
 				t.add(c, { x: b.l - a.l, y: b.t - a.t - 10, duration: CUT }, T.fly + 200)
 					.add(c, { opacity: [0, 1], duration: 200, ease: 'outQuad' }, T.fly + 240)
 					.add(c, { y: b.t - a.t, duration: 600, ease: 'outCubic' }, T.fly + 240);
@@ -854,7 +866,7 @@
 
 {#snippet machineWin(live: boolean)}
 	<div class="win" class:lw={live}>
-		<WinHead who="machine" />
+		<WinHead who="machine" dot />
 		<ul class="rows">
 			<li class="fr head" class:m-proj={live} data-to={live ? 'repo' : undefined}>
 				<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true" class="chev">
@@ -911,7 +923,7 @@
 {/snippet}
 
 <div class="hero-frame" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="wreck and restore" />
 	<div class="hero-pic" role="img" aria-label={label} aria-describedby="hero-story" bind:this={pic}>
 		<p id="hero-story" hidden>{story}</p>
 
@@ -974,7 +986,7 @@
 				<i class="link w-net"><b class="lit"></b></i>
 				<span class="globe"
 					><Shape kind="sphere" /><svg viewBox="0 0 24 24" class="meridians" aria-hidden="true"
-						><g fill="none" stroke="currentColor" stroke-width="0.9"
+						><g fill="none" stroke="currentColor" stroke-width="0.6"
 							><ellipse cx="12" cy="12" rx="4.2" ry="11.6" /><path d="M0.4 8h23.2M0.4 16h23.2" /></g
 						></svg
 					></span
@@ -1002,9 +1014,10 @@
 		/* The picture's colours are the --pic-* tokens in layout.css; only
 		   the real tools' own colours are set here. */
 		--claude: #d97757;
-		/* Claude Code's colour 211 (#ff87af) on its dark theme; deepened on
-		   paper so it reads. */
-		--mode: #c2416f;
+		/* The mode line in the muted ink, mapped by role off Claude Code's
+		   pink (colour 211), so red stays the wreck's alone (review round 2,
+		   I-961). */
+		--mode: var(--pic-dim);
 		--rogue: #c0271c;
 		/* The gap between the machine and the right-hand stack, which the
 		   two wires cross. */
@@ -1086,7 +1099,7 @@
 		position: relative;
 		flex: none;
 		font-family: var(--font-mono);
-		font-size: 12.5px;
+		font-size: 12px;
 	}
 	.head .fname {
 		font-weight: 600;
@@ -1179,17 +1192,23 @@
 	.sys {
 		padding-left: 12px;
 	}
+	/* As wide as its longest value ("3,532 rows"), in tabular figures, so
+	   the count's changing width moves no box (no layout shift). */
 	.val {
 		position: relative;
 		display: grid;
 		justify-items: end;
+		min-width: calc(10ch + 8px);
 		margin-left: auto;
 		padding-left: 8px;
 		font-family: var(--font-mono);
 		font-size: 12px;
+		font-variant-numeric: tabular-nums;
 	}
 	.val > span {
 		grid-area: 1 / 1;
+		justify-self: stretch;
+		text-align: right;
 	}
 	/* The still frame is the restored machine: the wreck's values are
 	   drawn only by the timeline, which sets them inline. */
@@ -1235,7 +1254,7 @@
 	}
 
 	/* The agent's row: Claude Code's mark and its footer line for the
-	   permission mode, in its own pink; the skill docks at the row's end. */
+	   permission mode, in the muted ink; the skill docks at the row's end. */
 	.agentrow {
 		position: relative;
 		display: flex;
@@ -1258,11 +1277,13 @@
 		display: flex;
 		flex: none;
 	}
+	/* The agent's mark in ink, as Ready draws the agents: red is the
+	   wreck's alone. */
 	.agent {
 		position: relative;
 		display: grid;
 		flex: none;
-		color: var(--claude);
+		color: var(--pic-ink);
 	}
 	.agent svg {
 		grid-area: 1 / 1;
@@ -1494,7 +1515,17 @@
 	}
 
 	/* The internet: the globe, on the stack's floor, level with the
-	   agent's row. */
+	   agent's row. It is where the skill comes from, so the still frame
+	   (reduced motion, no script), which has no skill, has no globe or
+	   wire either: alone it read as decoration (review round 2). */
+	@media (prefers-reduced-motion: reduce) {
+		.hero-pic:not(:global(.live)) .net {
+			visibility: hidden;
+		}
+	}
+	:global(html:not(.js)) .hero-pic .net {
+		visibility: hidden;
+	}
 	.net {
 		position: relative;
 		display: flex;
@@ -1503,22 +1534,27 @@
 		justify-content: center;
 		height: 40px;
 	}
-	/* The internet is the sphere of the shape set, with a globe's meridians
-	   drawn over it in paper so it reads as the world and not a stone. */
+	/* The internet: a globe in line, as the windows' head icons are drawn,
+	   a 1px --pic-dim ring on the window surface (the shape set's
+	   filled sphere stays under it for the footer's row, hidden here). */
 	.globe {
 		position: relative;
 		z-index: 1;
 		flex: none;
 		width: 40px;
 		height: 40px;
+		border: 1px solid var(--pic-dim);
 		border-radius: 50%;
+		background: var(--surface);
 		overflow: hidden;
+	}
+	.globe > :global(svg:not(.meridians)) {
+		visibility: hidden;
 	}
 	.meridians {
 		position: absolute;
-		inset: 0;
-		color: var(--sh-paper);
-		opacity: 0.8;
+		inset: -1px;
+		color: var(--pic-dim);
 	}
 
 	/* The permanent wires: a --pic-dim hairline with a dot on each end;
@@ -1855,8 +1891,14 @@
 			flex: 1;
 			height: auto;
 		}
+		/* The globe is smaller than the row, so it clears the rail's foot
+		   above it by 10px and stays centred on the wire. */
 		.net {
 			height: calc(var(--agent) + 2px);
+		}
+		.globe {
+			width: 24px;
+			height: 24px;
 		}
 		/* Each command's wire lands on the machine's wall at a row: repose
 		   run at the repo row (the laptop's first row), yours at the
@@ -1974,6 +2016,19 @@
 	@media (max-width: 480px) {
 		.hero-pic {
 			--row: 26px;
+			/* The two commands stand as a pair centred under the laptop,
+			   8px apart, at the phone's 11px: in equal halves the snapshot
+			   command ran past the windows and the stage (review round 2). */
+			grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+			grid-template-areas: 'lap lap lap lap' '. hop ask .' 'win win win win' 'side side side side';
+		}
+		.ask {
+			margin-left: 8px;
+		}
+		.hop .pic-chip,
+		.ask .pic-chip {
+			padding: 2px 6px;
+			font-size: 11px;
 		}
 		/* A phone has no room for two columns under the machine: the globe
 		   hangs on its wire at the machine's right corner, and the
@@ -2020,10 +2075,8 @@
 		.fly {
 			font-size: 12px;
 		}
-		.fname {
-			font-size: 11.5px;
-		}
 		.skill,
+		.fname,
 		.mode,
 		.st,
 		.val,
@@ -2034,12 +2087,10 @@
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not(.light):not([data-theme='light'])) .hero-pic {
 			--rogue: #ff4b3e;
-			--mode: #ff87af;
 		}
 	}
 	:global(:root[data-theme='dark']) .hero-pic,
 	:global(:root.dark) .hero-pic {
 		--rogue: #ff4b3e;
-		--mode: #ff87af;
 	}
 </style>

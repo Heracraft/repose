@@ -10,13 +10,15 @@
   so no stray keys show in lualine), so the tree stays shallow and the code
   gets most of the width. The 78x20 tmux pane was captured with
   `tmux capture-pane -p -e -N` and converted to styled runs verbatim; the
-  block cursor is the terminal's own, at the cell tmux reported. It stands
-  in the grid's window under the head that says where it runs, "your
-  cloud machine" (WinHead.svelte, I-669), as Localhost's tmux does: the
-  card's line says Neovim runs on the machine itself. From 640 wide the
-  font is sized so all 78 columns fit, so every line ends where nvim cut
-  it and the statusline keeps its clock (F18); on a phone it stays 8.4px
-  and the screen crops on the right, as a terminal would (I-397).
+  block cursor is the terminal's own, at the cell tmux reported. It
+  stands in a closed window under the head every grid picture has, "your
+  cloud machine", inset on the stage as the other three (I-961, the
+  owner's pick, from alternative C). It is set at 12px, the grid's one
+  picture size, and crops on the right where the window is narrower than
+  its 78 columns, as a terminal would, while the statusline's right
+  segment (position, line and column, clock) stays whole at the right
+  edge (F18, I-397, I-961). On a phone (under 640px) the explorer
+  is cropped off whole, so the code keeps the width.
   Two explorer rows read "education": two files whose names nvim cut at
   the explorer's 9 columns. The machine is the owner's and not reachable
   from here to recapture with a wider explorer, and a crop cannot drop a
@@ -32,19 +34,71 @@
   The rows are the picture's pixels, not text to read: the screen is one
   role="img" with its own label, and each row is aria-hidden and inert, so
   it is out of the tab order, find in page and selection as a screenshot
-  would be. Tokyo Night's comment grey, explorer grey and statusline blue
-  sit under 4.5:1 on its grounds (2.46 to 4.27); a picture's incidental
-  text is outside WCAG 1.4.3, and inert is what tells the a11y gate's
-  contrast check (axe skips inert nodes) that this is a picture. The
-  colours stay the tool's own (LANDING.md, "Real, and whole, or not at
-  all"; I-400).
+  would be. Its colours are Tokyo Night's mapped by role onto the
+  terminals' one palette (GROUND and TEXT below, pictures.css --t-*),
+  grounds and text apart, since one hex is a ground in one run and a
+  text colour in another: the code and tabs on --t-bg, the explorer,
+  tabline and statusline on --t-bar, the current line on --t-sel, and
+  the accents (the explorer's frame, the tree, the current line number,
+  the filled mode and clock) on the palette's muted hues, so the editor
+  follows the page's scheme as the other terminals do (alternative C,
+  I-961). The statusline's text runs are split off their separators,
+  which are drawn in CSS; the explorer's checkout row reads
+  `your-project`, the pictures' checkout name, in place of the machine's
+  internal one (LANDING.md, "Names a stranger understands"). A picture's
+  incidental text is outside WCAG 1.4.3, and inert is what tells the a11y
+  gate's contrast check (axe skips inert nodes) that this is a picture.
 -->
 <script lang="ts">
 	import WinHead from './WinHead.svelte';
 
-	// Verbatim capture: one inline style per distinct SGR state, and each row
-	// as [text, style] runs.
-	const styles: string[] = [
+	// The capture's Tokyo Night colours, mapped by role onto the pictures'
+	// terminal palette (pictures.css), so the editor sits with the other
+	// terminals in either scheme. Grounds and text map apart: one hex is a
+	// ground in one run and a text colour in another.
+	const GROUND: Record<string, string> = {
+		'#222436': 'var(--t-bg)',
+		'#1b1d2b': 'var(--t-bg)',
+		'#1e2030': 'var(--t-bar)',
+		'#191b28': 'var(--t-bar)',
+		'#12131d': 'var(--t-bar)',
+		'#2f334d': 'var(--t-sel)',
+		'#3b4261': 'var(--t-sel)',
+		'#82aaff': 'var(--t-blue)',
+		'#c8d3f5': 'var(--t-fg)'
+	};
+	const TEXT: Record<string, string> = {
+		'#c8d3f5': 'var(--t-fg)',
+		'#636da6': 'var(--t-dim)',
+		'#828bb8': 'var(--t-dim)',
+		'#89ddff': 'var(--t-dim)',
+		'#545c7e': 'var(--t-faint)',
+		'#3b4261': 'var(--t-faint)',
+		'#0db9d7': 'var(--t-cyan)',
+		'#86e1fc': 'var(--t-cyan)',
+		'#4fd6be': 'var(--t-cyan)',
+		'#7ca1f2': 'var(--t-blue)',
+		'#65bcff': 'var(--t-blue)',
+		'#82aaff': 'var(--t-blue)',
+		'#fca7ea': 'var(--t-magenta)',
+		'#c3e88d': 'var(--t-green)',
+		'#ff966c': 'var(--t-orange)',
+		'#ffc777': 'var(--t-yellow)',
+		'#12131d': 'var(--t-bar)',
+		'#1b1d2b': 'var(--t-bg)'
+	};
+	const recolour = (st: string) =>
+		st
+			.replace(/background:(#[0-9a-f]{6})/g, (m, h: string) => `background:${GROUND[h] ?? h}`)
+			.replace(
+				/(^|;)color:(#[0-9a-f]{6})/g,
+				(m, p: string, h: string) => `${p}color:${TEXT[h] ?? h}`
+			);
+
+	// The capture: one inline style per distinct SGR state, and each row
+	// as [text, style] runs. The last style is the statusline's text runs,
+	// split off their separators (drawn in CSS below) in the separators' colour.
+	const captured: string[] = [
 		'color:#c8d3f5;background:#1e2030;',
 		'color:#636da6;background:#191b28;',
 		'color:#0db9d7;background:#191b28;',
@@ -90,8 +144,10 @@
 		'color:#1b1d2b;background:#82aaff;',
 		'color:#82aaff;background:#3b4261;',
 		'color:#828bb8;background:#1e2030;',
-		'color:#c8d3f5;background:#1e2030;font-weight:700;'
+		'color:#c8d3f5;background:#1e2030;font-weight:700;',
+		'color:#82aaff;background:#3b4261;'
 	];
+	const styles = captured.map(recolour);
 	const rows: [string, number][][] = [
 		[
 			['                    ', 0],
@@ -165,8 +221,8 @@
 		[
 			[' ', 23],
 			['\udb81\udf70 ', 24],
-			['recruiting', 25],
-			['       ', 0],
+			['your-project', 25],
+			['     ', 0],
 			['\u2502', 10],
 			['   6   ', 11],
 			['\u2502', 18],
@@ -418,14 +474,16 @@
 		],
 		[
 			[' NORMAL ', 42],
-			['\ue0b0 \ue0a0 fetch-timeout ', 43],
+			['\ue0b0', 43],
+			[' \ue0a0 fetch-timeout ', 46],
 			['\ue0b0', 26],
 			[' \udb81\udee6 ', 24],
 			[' apps/\u2026/src/', 44],
 			['config.ts', 45],
 			['    ', 44],
 			['\ue0b2', 26],
-			[' 31%  21:3  \ue0b2', 43],
+			[' 31%  21:3  ', 46],
+			['\ue0b2', 43],
 			[' \uf43a 02:08 ', 42]
 		]
 	];
@@ -448,7 +506,9 @@
 		'╰': 'ur r',
 		'╯': 'ul',
 		'▎': 'q',
-		'▕': 'e'
+		'▕': 'e',
+		'\ue0b0': 'pr',
+		'\ue0b2': 'pl'
 	};
 	type Piece = { t: string; s: number; cell: boolean; cursor: boolean; box?: string };
 	// The statusline's right segment (from its first \ue0b2 separator: the
@@ -497,7 +557,7 @@
 
 <div class="shot">
 	<div
-		class="shot-win open ed"
+		class="shot-win ed"
 		role="img"
 		aria-label="Neovim with LazyVim running on your cloud machine, full screen: a narrow file explorer of the repo on the left, two of the worker's files open in tabs, and its TypeScript config in the editor."
 	>
@@ -534,22 +594,23 @@
 		font-display: block;
 	}
 	.ed {
-		height: calc(100% - var(--shot-in));
-		margin: var(--shot-in) var(--shot-in) 0;
+		height: calc(100% - 2 * var(--shot-in));
+		margin: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 		container-type: inline-size;
 	}
 	/* The screen's 20 rows share the window under its head, and its 78
 	   columns fill the window's width: JetBrains Mono's cell is 0.6em, so
 	   78 cells are 46.8em (I-669). */
 	.screen {
-		--lh: calc((var(--shot-h) - 2px - var(--shot-in) - 1px - var(--shot-head)) / 20);
+		--lh: calc((var(--shot-h) - 2 * var(--shot-in) - 2px - var(--shot-head)) / 20);
 		flex: 1;
 		min-height: 0;
-		background: #222436;
+		background: var(--t-bg);
 		font-family: 'Editor Nerd Symbols', var(--font-mono);
-		font-size: min(10px, calc(100cqw / 46.8));
+		font-size: 12px;
 		font-variant-ligatures: none;
-		color: #c8d3f5;
+		color: var(--t-fg);
 	}
 	.ln {
 		height: var(--lh);
@@ -562,25 +623,39 @@
 	   Where all 78 columns fit, the two meet as nvim drew them. */
 	.sl {
 		display: flex;
-		background: #1e2030;
+		background: var(--t-bar);
 	}
 	.sl-l {
 		flex: 1 1 auto;
 		min-width: 0;
 		overflow: hidden;
 	}
+	/* Where the left part gives way, it fades out before the right one. */
+	@container (max-width: 560px) {
+		.sl-l {
+			mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+		}
+	}
 	.sl-r {
 		flex: none;
 	}
-	/* On a phone, 78 columns would be 7px. Below sm the whole capture is
-	   drawn at 8.4px instead and crops on the right, so the code keeps
-	   about 40 columns (I-397). A crop from the left was tried and
-	   dropped: no crop leaves only the explorer's icons, since the top
-	   folders' icons sit in its first columns, and cutting through them
-	   left name fragments. */
-	@media (max-width: 639px) {
-		.screen {
-			font-size: 8.4px;
+	/* Where the window is narrower than 78 columns, the rows nvim drew
+	   past its edge run into a fade, as Ready's do, so none reads as cut
+	   mid-word; the statusline keeps its right segment whole instead.
+	   A crop through the explorer was tried and dropped: no crop leaves
+	   only the explorer's icons, since the top folders' icons sit in its
+	   first columns, and cutting through them left name fragments. */
+	.ln:not(.sl) {
+		mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+	}
+	/* On a phone the explorer goes whole: its 20 columns and the split's
+	   rule (21 cells, 1ch each) slide out past the window's left edge, so
+	   the rows start at the tabline and the line numbers and the code
+	   gets the window's width (about 50 columns at 390px, where the
+	   explorer left it 15). The statusline keeps its full width. */
+	@media (max-width: 639.98px) {
+		.ln:not(.sl) {
+			margin-left: -21ch;
 		}
 	}
 	/* One terminal cell: keeps the grid whatever font draws the glyph. */
@@ -681,8 +756,23 @@
 		width: 12.5%;
 		background: currentColor;
 	}
+	/* The statusline's powerline separators, drawn in CSS as the box
+	   drawing is: a triangle filling its one cell in the glyph's colour,
+	   on the cell's ground, so no font's own advance spills them over
+	   the next segment. */
+	.pr::before,
+	.pl::before {
+		inset: 0;
+		background: currentColor;
+	}
+	.pr::before {
+		clip-path: polygon(0 0, 100% 50%, 0 100%);
+	}
+	.pl::before {
+		clip-path: polygon(100% 0, 0 50%, 100% 100%);
+	}
 	.cur {
-		background: #c8d3f5 !important;
-		color: #222436 !important;
+		background: var(--t-fg) !important;
+		color: var(--t-bg) !important;
 	}
 </style>
