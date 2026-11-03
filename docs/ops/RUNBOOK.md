@@ -487,9 +487,19 @@ Alloy is up and no api series are arriving for 15 minutes.
 3. **The write path.** Prometheus answers remote-write only with
    `--web.enable-remote-write-receiver`; the edge allows 9090 to peers
    only since I-952. From the control VM:
-   `curl -sS -o /dev/null -w '%{http_code}' -X POST --data-binary @/dev/null http://10.255.0.3:9090/api/v1/write`
-   — 204 is both in place, 400 or 405 is reachable and refusing, a hang is
-   the edge.
+   `curl -sS -o /dev/null -w '%{http_code}' -X POST --data-binary @/dev/null https://prometheus-bl4mosgk1kmakk8o.herakraft.co/api/v1/write`
+   — 400 or 405 means the receiver is reachable (an empty body is not a
+   valid write, which is the point: it proves the path without injecting
+   anything), a 404 or a TLS failure means the hostname has changed. The
+   WireGuard address 10.255.0.3:9090 is NOT the path and never answered:
+   Prometheus is in a container that publishes no host port (I-1018). The
+   reading that settles whether anything is actually arriving is Alloy's own
+   queue, from the control VM:
+   `curl -sS http://10.255.255.1:12345/metrics | grep -E 'queue_highest_sent_timestamp_seconds|samples_(failed|pending)'`
+   — a sent timestamp of **0** means nothing has ever been delivered, and
+   `samples_failed_total` stays 0 while that is true, because a connection
+   timeout is retryable and only a non-retryable answer moves it. Zero
+   failures and zero delivered are the same reading.
 4. `ApiDown` is not this: a scrape that fails gives `up == 0`, and this is
    the series not arriving at all.
 

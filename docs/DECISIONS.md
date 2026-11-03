@@ -28807,3 +28807,16 @@ The handler now returns early if `page.isClosed()`, and wraps the body so that t
 *Same family as I-968 and I-1014, with the proxy one level further out.* The other three were assertions reading a stand-in for their property. This is a *fixture* whose failure is reported as a test failure, so a red here says "the dashboard is broken" when what happened is "a mock outlived its page". The repo had no way to tell those apart, and the only reason this one was diagnosed rather than retried is that the batch it reddened could not possibly have caused it.
 
 *Rejected:* `page.unroute()` in an `afterEach`, which races the same window and would need every spec that routes to remember it; and a retry on the whole spec, which would have hidden the mechanism and left the next one to rediscover it.
+**I-1018. Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address.** (alloy-url, 2026-11-03.)
+
+I-960 pointed Alloy at `http://10.255.0.3:9090/api/v1/write` and nothing ever answered there. Prometheus runs in a container that publishes no host port, so `--web.listen-address=0.0.0.0:9090` binds inside the container and a WireGuard peer reaching the tunnel address finds nothing — I-133's problem again, one service along.
+
+The measurement that proved it, and the reason nobody noticed for two days: with that URL, `queue_highest_sent_timestamp_seconds` read **0** with 8,287 samples pending, while `samples_failed_total` read **0** as well. A connection timeout is retryable, so only a non-retryable answer moves the failure counter — "zero failures" and "zero delivered" are the same reading, and the sent timestamp is the only one that separates them. With the Coolify hostname: 1,159,892 samples sent, 0 failed, 286 pending.
+
+**The repo is what drifted.** The owner corrected the running service by hand; `ops/alloy/config.alloy` kept the dead address, so a redeploy of that Coolify service from the repo would have restored it and stopped delivery silently — the same fault, reintroduced by a deploy, with the same two counters saying nothing.
+
+Also corrected: `docs/ops/RUNBOOK.md` and `ops/README.md` both handed an operator the dead address as the way to check the write path, so following either would have failed and read as the path being broken. They now name the Coolify URL, say the empty-body POST proves reachability without injecting anything, and name Alloy's queue — specifically the sent timestamp — as the reading that says whether series are arriving. `docs/workstreams/STATUS.md` and earlier DECISIONS entries keep the old address: they are records of what was believed at the time.
+
+I-952's `9090` in the edge's `logPorts` is **left alone**. It costs nothing, it is the path if the port is ever published, and removing it would be a second edge switch for no gain.
+
+*Not closed by this, and the reason it is not in this branch:* that write endpoint is public HTTPS with `--web.enable-remote-write-receiver` on, and remote-write is unauthenticated, so whether anyone who guesses the hostname can inject series into the owner's Prometheus is unanswered. An empty-body POST from outside the tunnel settles it and injects nothing. That is a question for the owner about their own server, not a change to this repo.

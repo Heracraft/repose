@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-890 entries.
+891 entries.
 
 ## Scope
 
@@ -922,3 +922,4 @@ pointer, not a summary.
 - **I-1012** A test asserts the kernel honoured a parameter, not that it was passed — 2026-11-03; L28697
 - **I-1014** A test that forces a host's state must stop the host that writes it — 2026-11-03; L28786
 - **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28799
+- **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28810
