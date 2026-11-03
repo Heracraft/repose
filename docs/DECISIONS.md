@@ -29080,3 +29080,141 @@ than `failed`, which reads like a slow start and is a crash loop. hostd's
 own reason is in the journal, which this VM test does not dump. The live
 hosts are registered and have their pool, which is why this is invisible
 in production.
+
+**I-1022. A throwaway Postgres cluster is owned by a process, and the
+kernel is what reports that process's death.** (testdb-reaper,
+2026-11-03.)
+
+I-998 closed half of this: every package that starts a cluster now has a
+`TestMain`, so the **orderly** exit stops it. The other half is that most
+leaks are not orderly. Of the twenty-five clusters alive on the dev box on
+2026-11-03 -- 2.3 GB, data dirs back to 2026-10-28, on a machine that had
+just killed two background tasks for want of memory -- most were from a
+`go test` that was cancelled, killed or OOM-killed, where `Stop` and every
+`defer` above it never ran.
+
+Ownership rather than age, as I-998 specified. `testdb` holds an exclusive
+`flock` on `owner.lock` inside the cluster's own directory for the life of
+the process, and never closes it; the kernel releases it on exit, panic,
+`SIGKILL` and OOM-kill alike. `start` reaps before it allocates: any
+`repose-pg-*` directory whose lock can be taken is a corpse, and the
+process about to spend a gigabyte is the one with an interest in the disk.
+No goroutine, no timer, nothing racing a suite that is shutting down.
+
+Three things this cost that the specification did not foresee:
+
+A cluster killed inside its first four seconds is still in `initdb`, whose
+bootstrap runs `postgres --single` -- a standalone backend, for which
+PostgreSQL writes the **negated** pid in `postmaster.pid` and which
+`pg_ctl stop` cannot stop. Measured: first line `-4111094` with pid
+4111094 alive. Reading the sign as part of the number makes every such
+cluster read as live for ever, so the magnitude is what is read, and the
+pid file is the fallback after `pg_ctl`.
+
+Killing by a recorded pid is the one dangerous thing here: a pid from days
+ago belongs to somebody else by now. So it is killed only when the kernel
+agrees it is this cluster -- `/proc/<pid>/cmdline` names this data
+directory -- and both directions of that check are tested with a real
+child process.
+
+`os.RemoveAll` once is not enough while a postmaster is still writing: the
+walk removes the files and the final `rmdir` finds the directory not
+empty. Measured on a 23 MB cluster, which left an empty directory behind.
+It runs twice, 200 ms apart.
+
+Clusters that predate this have no lock file and are judged by the
+postmaster instead, under a 30-minute floor on the directory's mtime --
+not a policy, a floor under the seconds the *old* code spends between
+`MkdirTemp` and `pg_ctl`, where there is no pid file yet and nothing
+distinguishes a cluster being born from one that never was. It goes when
+no unlocked cluster is left.
+
+*Evidence:* a real cluster, 40 MB with its postmaster up, `kill -9` on the
+`go test` process holding it (so no `Stop`, no `defer`): the directory and
+the orphaned postmaster both survive, the lock reads free. The next run in
+the same `TMPDIR` leaves the sandbox empty at 4 KB with the postmaster
+gone. Eleven unit tests cover the decisions without Postgres: a held lock
+is left alone, a free one is taken, a stranger sharing the recorded pid is
+not killed, a directory not named `repose-pg-*` is never touched, and
+`reapDirs` ascends out of `nix-shell.*` -- which is where two of the
+twenty-five were, invisible from the next dev shell because TMPDIR itself
+goes away with the one that leaked them.
+**I-1026. "Not finished" is not "passed", and a table that runs none of
+its rows is not a test.** (queue-blind-checks, 2026-11-03.)
+
+I-1008's gate asks GitHub whether `main`'s CI is red and refuses a cut if
+it is. On 2026-11-03, with main's `go` job already failed, a cut went
+straight through. The gate listed `pending` beside `success`: the newest
+run by `createdAt` was still going, a run that has not finished carries no
+`conclusion` at all, and the gate read that absence as a pass. The one
+thing it exists to stop was happening while it said yes. Waiting is cheap;
+nobody checks the merged result, which is the whole reason for the gate.
+It now reads `status` before `conclusion` and refuses anything that is not
+a finished, successful run -- `REPOSE_QUEUE_RED_MAIN="<why>"` still
+overrides, and still demands a sentence.
+
+The gate was found this way because its live check was "exercise it on a
+red main", and that is also the only way it could be found: there was no
+test. `cut` is the only caller, so testing the gate meant cutting a real
+release -- which is how batch r20261103-1 was cut by accident while
+testing I-1008. So the question now has a command of its own,
+`release-queue ci`, which asks exactly what `cut` asks and changes
+nothing, and the harness drives it with a stubbed `gh` across eleven
+answers: green, red, timed out, running, queued, and the orderings where
+a newer running run follows a green or a red one.
+
+*That table passed against the broken gate.* Three defects, each
+invisible: `read -r name want runs` split the name column on spaces, so
+`want` was never `allow` or `refuse` and the `case` fell through for every
+row; the JSON builder wrote `"conclusion":"success"success` because
+`${cn:+"$cn"}${cn:-null}` fires both halves; and nothing counted the rows.
+Eleven rows ran, asserted nothing, and reported ok. The fixes are a `|`
+delimiter, a plain conditional for the JSON, an `*)` arm that fails on a
+column it does not recognise, and `assert_eq "every row of the table ran"
+"$ran" "11"`. A table-driven test that runs none of its table is the same
+fault as the gate it was written to catch.
+
+*Evidence:* with the old gate restored, four rows fail by name -- "a run
+still going", "a run queued", "green, then a run still going", "red, then
+a run still going" -- the last being 2026-11-03 exactly. With the fix, 50
+of 50 pass. The count assertion fails if a row is deleted.
+
+**I-1028. `compgen` is not in the shell this repository tells you to work
+in, and its absence reads as "no".** (queue-blind-checks, 2026-11-03.)
+
+`needs_of` finds the Go package a changed file belongs to by walking up
+from the file until a directory holds a `*.go`, and asked that with
+`compgen -G "$d/*.go"`. nixpkgs builds `bash` without programmable
+completion, so inside `nix develop` -- the only shell this repository
+sanctions for local work (CLAUDE.md) -- `compgen` is not a builtin and not
+a command. It answers "command not found" and exits 127, and `! compgen`
+reads that as "no Go files here". The walk then climbed past every real
+package to `internal` or `cmd`, which matches nothing in any binary's
+`go list -deps`, so **every Go-only change was charged `none`** in the dev
+shell and the right target outside it. Same tool, same branch, two
+answers, and the quiet one is the one a conductor gets.
+
+It surfaced as "6 of 45 release-queue tests fail on pristine main,
+undiagnosed" -- the waiver in `test/supplychain`'s `UNRUN` (I-996). They
+never had anything to do with main. They fail inside `nix develop` and
+pass outside it, 45 of 45, and CI's `go` job has no nix, which is why the
+waiver went stale the moment anything ran the harness there: the loop that
+fails a waiver whose harness passes is what turned main red and made
+somebody look. The waiver is gone and `UNRUN` is empty again.
+
+*What it cost:* nothing that shipped, as far as this clone can say. Of the
+96 queue entries whose commits are here, exactly one was charged `none`
+over a non-test Go change -- `testdb-reaper`, where `none` is right,
+because `internal/db/testdb` is imported only by tests and reaches no
+binary. `add` is normally run from an ordinary shell rather than inside
+`nix develop`, which is why this stayed hidden; a conductor who worked the
+way the docs say would have hit it.
+
+*Evidence:* `ops/dev/release-queue-test` passes 50 of 50 in both shells,
+where before the fix it was 45/45 outside and 39/45 inside. The guard is
+`no_builtins_the_dev_shell_lacks`, which fails if `compgen` or `complete`
+appears outside a comment; putting `compgen -G` back fails it by line
+number. It skips comment lines because its first draft failed on the
+comment explaining this bug -- the third guard in one day to fire on its
+own prose, after the decision-citation check on its examples (I-994) and
+the VM-wording check on the line naming the old wording (I-1024).

@@ -146,6 +146,24 @@ written so none of them goes unnoticed again.
       `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
       literal out of the other file rather than restating it, and reverting
       the quoted side fails it in seconds without a VM.
+- [ ] A test that walks a table, a directory or a list asserts how many
+      items it walked. A guard that matches nothing passes, and it reads
+      exactly like a guard that matched everything and was happy: eleven
+      rows of a gate's test ran and asserted nothing because the name
+      column split on spaces, and the test reported ok against the very
+      bug it was written for (DECISIONS I-1026); a decision-citation check
+      fired on its own examples and a wording check on its own comment,
+      which is the same thing from the other side. Evidence: delete a row,
+      or point the walk at an empty directory, and the test fails saying
+      what it expected to find.
+- [ ] A shell tool the dev shell runs uses no builtin that nixpkgs' bash
+      leaves out. `compgen` and `complete` are not there, and a missing
+      builtin does not announce itself inside `!` -- it answers 127, which
+      reads as a plain "no". `needs_of` walked past every Go package on
+      that answer and charged `none` to Go-only changes inside `nix
+      develop` while answering correctly outside it (DECISIONS I-1028).
+      Evidence: the tool's own harness passes in both shells, with the
+      counts written down.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host

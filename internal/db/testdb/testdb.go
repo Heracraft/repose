@@ -70,10 +70,20 @@ func start(t testing.TB) string {
 	if _, err := exec.LookPath("initdb"); err != nil {
 		t.Skip("testdb: no DATABASE_URL and no initdb on PATH")
 	}
+	// Before paying for a new cluster, remove the ones whose owner is
+	// gone (reap_unix.go, DECISIONS I-1022). Here and not in a goroutine:
+	// the process about to spend a gigabyte is the one with an interest,
+	// and nothing then races a suite that is shutting down.
+	reap()
 	base, err := os.MkdirTemp("", "repose-pg-")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Held for the life of this process, so the kernel reports our death
+	// to the next run whichever way we go -- Stop() only covers the
+	// orderly exit, and most of the twenty-five leaked clusters of
+	// 2026-11-03 were killed rather than finished.
+	claim(base)
 	dataDir = filepath.Join(base, "data")
 	sock := filepath.Join(base, "sock")
 	if err := os.MkdirAll(sock, 0o700); err != nil {
