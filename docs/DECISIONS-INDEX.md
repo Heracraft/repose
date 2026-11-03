@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-886 entries.
+887 entries.
 
 ## Scope
 
@@ -918,3 +918,4 @@ pointer, not a summary.
 - **I-998** Every package that starts a throwaway Postgres cluster also ends it, and a test says so — 2026-11-03; L28489
 - **I-1002** The host-restart memory image is a park, not a freeze — 2026-11-03; L28501
 - **I-1004** Prod's plan names anything machine-shaped in the resource group that the configuration does not create — 2026-11-03; L28616
+- **I-1008** A cut is refused while `main`'s CI is red, with a named override — 2026-11-03; L28678

@@ -776,8 +776,77 @@ summary() { # release
   echo "  ships as: ${needs:-nothing to deploy}"
 }
 
+# red_main refuses a cut while GitHub's newest ci.yml run on `main` is a
+# failure. Every run from 006301c7 (2026-10-17) to 5bbe3246 (2026-11-01)
+# failed and nine releases were cut over them, because each conductor saw
+# their own branch green and nothing asked about the branch they were
+# merging into: a branch is checked before it is merged and the merged
+# result was checked by nobody (DECISIONS I-1008).
+#
+# The override is deliberate and narrow. The owner's rule is that a red
+# `main` holds a cut UNLESS the red is a mechanical fault in the tests
+# themselves -- which is what 2026-11-02 turned out to be, three tests
+# asserting a proxy (I-968) and a lint step skipped behind them (I-970).
+# So REPOSE_QUEUE_RED_MAIN takes a REASON, never a bare 1, and the reason
+# is written into the release's own state file so the record says a cut was
+# taken over a red main and why. A gate whose override leaves no trace is
+# a gate that gets used by habit.
+#
+# Fails CLOSED when it cannot answer: no `gh`, no auth, no network means
+# refuse, because "the check could not run" reading as "the check passed"
+# is the fault this whole gate belongs to. The override clears that too.
+#
+# Known limit, stated rather than hidden: a run still in progress is not a
+# failure, so pushing and cutting immediately passes this gate. It is
+# aimed at the standing red that nobody was told about, not at a race.
+red_main() {
+  [ "${REPOSE_QUEUE_SKIP_RED_MAIN:-}" = 1 ] && return 0   # the test fixture: no GitHub
+  local why=${REPOSE_QUEUE_RED_MAIN:-}
+  if [ -n "$why" ] && [ "$why" = 1 ]; then
+    die "cut: REPOSE_QUEUE_RED_MAIN needs a reason, not 1. The owner's rule is that a red main holds a cut unless the red is a mechanical fault in the tests themselves; name it, and it goes in the release record."
+  fi
+  local out concl url
+  # --limit 1 is NOT the newest run: asked for one, gh returned a run from
+  # 2026-10-31 while two from 2026-11-02 existed. Its ordering is not
+  # documented as newest-first, so take several and pick by createdAt.
+  #
+  # python prints the two fields directly. An earlier version printed JSON
+  # and read it back with sed, which silently matched nothing because
+  # json.dumps writes `"conclusion": "failure"` with a space -- and the
+  # case below treated an empty conclusion as success, so this gate passed
+  # a red main while reporting nothing. That is the fault the gate exists
+  # to catch, inside the gate, found by testing it rather than trusting it
+  # (DECISIONS I-1008). An unreadable answer now refuses.
+  if ! out=$(gh run list --workflow ci.yml --branch main --limit 20 \
+      --json conclusion,url,createdAt 2>&1 \
+      | python3 -c 'import json,sys
+rs = json.load(sys.stdin)
+if not rs:
+    print("none none"); raise SystemExit
+r = max(rs, key=lambda x: x.get("createdAt") or "")
+print((r.get("conclusion") or "pending"), (r.get("url") or "-"))' 2>&1); then
+    [ -n "$why" ] && { echo "release-queue: main's CI could not be read; cutting anyway: $why" >&2; return 0; }
+    die "cut: cannot read main's CI ($(printf '%s' "$out" | tail -1)). A check that could not run is not a check that passed. Fix it, or cut with REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\"."
+  fi
+  concl=${out%% *}
+  url=${out##* }
+  case $concl in
+    success | none | pending) return 0 ;;
+    failure | timed_out | startup_failure)
+      [ -n "$why" ] && { echo "release-queue: main's CI is $concl ($url); cutting anyway: $why" >&2; RED_MAIN_WHY=$why; return 0; }
+      die "cut: main's CI is $concl -- $url
+A branch is checked before it is merged; the merged result is checked by nobody, which is how nine releases shipped over a red main from 2026-10-17 to 2026-11-01 (DECISIONS I-1008).
+Fix main first, as its own small batch. If the red is a mechanical fault in the tests themselves, cut with:
+  REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\" ops/dev/release-queue cut" ;;
+    *)
+      [ -n "$why" ] && { echo "release-queue: main's CI reads \"$concl\"; cutting anyway: $why" >&2; return 0; }
+      die "cut: cannot tell whether main's CI passed -- it reads \"$concl\" ($url). An answer this gate does not understand is not a pass. Fix it, or cut with REPOSE_QUEUE_RED_MAIN=\"<why this is safe>\"." ;;
+  esac
+}
+
 cmd_cut() {
   locked
+  red_main
   # A cut from a stale main re-merges everything integrated since, through
   # --no-ff merges, which is how a release quietly loses a change. On
   # woker-1 refs/heads/main sat 132 commits behind for weeks and nothing
@@ -793,6 +862,8 @@ cmd_cut() {
   while :; do rel=r$(date -u +%Y%m%d)-$n; [ -e "$state/releases/$rel" ] || break; n=$((n + 1)); done
   local wt; wt=$(dirname "$main_wt")/$(basename "$main_wt")-$rel
   git worktree add -q -b "release/$rel" "$wt" main
+  # If this cut was taken over a red main, the record says so and why.
+  [ -z "${RED_MAIN_WHY:-}" ] || echo "red_main=$RED_MAIN_WHY" >> "$state/releases/$rel"
   printf 'release=%s\nbase=%s\nworktree=%s\n' "$rel" "$(git rev-parse main)" "$wt" > "$state/releases/$rel"
   merge_queue "$rel" "$wt" || exit 1
   summary "$rel"

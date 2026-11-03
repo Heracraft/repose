@@ -88,7 +88,13 @@ run_test() { # name
 # q runs release-queue in a worktree and prints its output and exit code.
 q() { # dir args...
   local d=$1; shift
+  # REPOSE_QUEUE_SKIP_RED_MAIN: `cut` asks GitHub whether main's CI is red
+  # (DECISIONS I-1008). The scratch world has no GitHub and no main worth
+  # asking about, and a harness that depends on the caller exporting this
+  # is a harness that passes or fails by whoever typed the command. It
+  # carries its own answer, like the nix and pnpm stubs beside it.
   ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      REPOSE_QUEUE_SKIP_RED_MAIN=1 \
       ops/dev/release-queue "$@" 2>&1 )
 }
 
