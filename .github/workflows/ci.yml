@@ -253,6 +253,15 @@ jobs:
       - run: ops/check.sh
       - name: postgres compose validates (ops/coolify/postgres, DECISIONS I-87)
         run: POSTGRES_PASSWORD=x docker compose -f ops/coolify/postgres/docker-compose.yml config --quiet
+      # Last in this job, and conditioned, for two reasons that pull the same
+      # way: a step behind a conditioned one must be conditioned too, or the
+      # lock in test/supplychain fires on it (DECISIONS I-1000); and this
+      # check has never run in CI at all, so it must not be the step a failure
+      # above it hides. It fails on a stale index and on a decision id cited
+      # with no entry behind it (DECISIONS I-994).
+      - name: the decisions index is current and no id is cited without an entry
+        if: ${{ !cancelled() }}
+        run: python3 ops/dev/decisions-index.py --check
 
   web:
     name: dashboard unit + e2e tests, Docker build

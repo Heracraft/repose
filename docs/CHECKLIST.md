@@ -120,8 +120,10 @@ written so none of them goes unnoticed again.
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
       or the edge without a switch, and a "changed" it gets wrong charges a
-      docs commit a deploy. Evidence: `ops/dev/closure-equiv-test` passes
-      (five cases, both directions, no nix needed), and the two answers are
+      docs commit a deploy. Evidence: `go test ./test/supplychain -run
+      TestDevToolHarnessesRun` executes `ops/dev/closure-equiv-test` (five
+      cases, both directions, no nix needed) — since I-996 it is no longer a
+      harness someone has to remember to type — and the two answers are
       confirmed against revisions of this repository — a branch that really
       changes the target reports it with the derivations between the change
       and the root, and a docs-only branch against the same target still
