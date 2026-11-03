@@ -28939,3 +28939,67 @@ single-NUMA test node prints `linear` whether or not `hashdist=0` is in the
 configuration, so a nixos test would pass with the parameter deleted, and
 giving a test VM two NUMA nodes needs a raw qemu `-numa` flag the framework
 does not expose.
+
+**I-1024. A VM test that quotes a message or a rendering asserts a
+substring something owns, or it is a second spelling that rots.**
+(vm-literals, 2026-11-03.)
+
+Two of the seven host VM tests were red on `main` and had been since
+2026-11-02, and neither red was about the host. Both tests grepped for
+text that something else had stopped producing:
+
+`host-services` required `journalctl -u repose-snapshot` to say "hostd is
+not running". I-990 removed those words from `control.ErrNotRunning` in
+the same release, on the ground that the client cannot know it -- an
+absent control socket is equally a hostd minutes into a post-reboot thaw
+-- and added `TestNotRunningDoesNotClaimHostdIsDown`, which *fails* if
+the message contains them. So that release shipped one test in
+`internal/hostd/control` forbidding the exact string another test in
+`nix/hosts/tests` required. Nothing could make both pass, and nobody saw
+it, because the VM tests need KVM and do not run in CI (`ci.yml` has no
+job for them): they are run by hand, by a conductor, at a release.
+
+`host-network` required `nft list chain inet repose output` to print
+`meta skuid "nixbuild"`. The ruleset is written with the name, but this
+nft renders the uid back -- `meta skuid 997` -- exactly as it already
+renders the group as `skgid 30000` on the line above, which is the form
+the next assertion in the same subtest was already written for. A
+rendering is nftables' choice, not ours, and the uid is an allocation,
+so the test now resolves `id -u nixbuild` on the host and accepts either
+spelling.
+
+What ships is both one-line fixes plus the tie the first one was missing:
+`TestVMTestGrepsWordingWeStillPrint` reads the literal back out of
+`nix/hosts/tests/default.nix` and fails in Go, in under a second, if it
+is not a substring of `ErrNotRunning`; `TestTheOldDiagnosisIsGoneFromThe-
+VMTests` fails if the words I-990 removed reappear anywhere in those
+tests. A guard that matched nothing would be the same fault again, so an
+absent `journalctl -u repose-snapshot` grep line is a failure and not a
+skip.
+
+*Evidence:* `host-services` passes on this branch and fails on `main` at
+b55d17dd. In `host-network` the skuid assertion passes on this branch and
+fails on `main`, and the test then gets 25 assertions further and stops on
+a different one (below). Reverting either nix line fails the Go test in
+`internal/hostd/control` in under a second, without a VM.
+
+*Two host reds this did not fix, both found by running the suite and both
+older than this branch, which touches only test text:*
+
+`host-network`, "guest traffic is shaped": the egress cap holds -- a
+shaped guest uploads to the internet at 0.6-1.3x of 20 Mbit -- and the
+I-451 *ingress* assertion reads 6301 Mbit/s for a 20 MB download the
+guest opened. The two download filters are present on `tap-ga` and
+survive a re-apply, which the subtest checks 25 lines earlier, so either
+a tenant's download is not capped at all or 20 MB crosses in 25 ms and
+the number is not a measurement. Both readings are worth the same branch.
+
+`host-reboot`, subtest 1: hostd exits 1 seven milliseconds after start on
+a boot with no volume group, where the test asserts it stays up. The
+design asks for the test's behaviour -- a host that cannot find its pool
+should say so and keep reconciling, not die -- and `Restart=always` with
+`RestartSec=2` is why `systemctl is-active` answers `activating` rather
+than `failed`, which reads like a slow start and is a crash loop. hostd's
+own reason is in the journal, which this VM test does not dump. The live
+hosts are registered and have their pool, which is why this is invisible
+in production.

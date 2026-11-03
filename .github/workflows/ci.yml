@@ -104,6 +104,13 @@ jobs:
             system-features = kvm
       - name: evaluate every output
         run: nix flake check --no-build ./nix
+      # Every step below is conditioned, not just the ones that need to
+      # outlive a failure: once one step in a job carries
+      # `!cancelled()`, an unconditioned step after it is skipped by the
+      # implicit `success()` as soon as anything above fails, and a
+      # skipped step reads like a passing one (I-970, I-1000). These
+      # builds are independent of each other, so a run that fails one
+      # should still report the rest instead of stopping at the first.
       # panic_on_oops must stay a sysctl, not a kernel parameter (DECISIONS
       # I-988, I-1012). This asserts the CONFIG only, and is deliberately
       # blind to the fault I-988 actually was: there the config was right
@@ -123,28 +130,34 @@ jobs:
           v=$(nix eval './nix#nixosConfigurations.host-02.config.boot.kernel.sysctl."kernel.panic_on_oops"')
           [ "$v" = "1" ] || { echo "kernel.panic_on_oops evaluates to '$v', want 1"; exit 1; }
       - name: build the Go binaries through the flake
+        if: ${{ !cancelled() }}
         run: nix build --no-link "git+file://$GITHUB_WORKSPACE?dir=nix#guestd" "git+file://$GITHUB_WORKSPACE?dir=nix#hostd"
       # The fragment pipeline's real-Nix corpus (docs/interfaces/nix-build-contract.md
       # "Fixtures and the test corpus") and the menu's full-catalog evaluation.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: ${{ !cancelled() }}
         with:
           go-version-file: go.mod
       - name: real-nix corpus
+        if: ${{ !cancelled() }}
         env:
           REPOSE_NIX_TESTS: "1"
           REPOSE_NIX_NETWORK: "1"
         run: go test -run 'TestRealNix' -v ./internal/hostd/nixbuild/ ./internal/menu/
       - name: fragment contract and examples
+        if: ${{ !cancelled() }}
         run: nix build --no-link ./nix#checks.x86_64-linux.fragment-contract ./nix#checks.x86_64-linux.fragment-examples
       # Reads the guest's unit texts and runs each command-not-found
       # handler under a process limit (DECISIONS I-576, I-577); it builds
       # no part of the guest system.
       - name: guest keystroke path
+        if: ${{ !cancelled() }}
         run: nix build --no-link -L ./nix#checks.x86_64-linux.guest-keystroke-path
       # The agent overlay, built and pushed to the platform cache
       # (DECISIONS I-46) when the Cachix token is configured; hosts then
       # substitute the agents instead of fetching upstream.
       - name: build the agent overlay
+        if: ${{ !cancelled() }}
         run: nix build --no-link ./nix#claude-code ./nix#opencode ./nix#codex ./nix#gemini-cli ./nix#pi-coding-agent ./nix#chrome-devtools-mcp ./nix#playwright-mcp
       - name: push the overlay to Cachix
         if: env.CACHIX_AUTH_TOKEN != '' && github.ref == 'refs/heads/main'

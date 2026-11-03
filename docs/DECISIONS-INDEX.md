@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-892 entries.
+893 entries.
 
 ## Scope
 
@@ -924,3 +924,4 @@ pointer, not a summary.
 - **I-1016** A Playwright route handler outlives the assertions, so it must survive a closed page — 2026-11-03; L28799
 - **I-1018** Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address — 2026-11-03; L28810
 - **I-1010** Nothing in the fleet read the kernel's own verdict on a host — 2026-11-03; L28824
+- **I-1024** A VM test that quotes a message or a rendering asserts a substring something owns, or it is a second spelling that rots — 2026-11-03; L28943
