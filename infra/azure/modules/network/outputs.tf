@@ -33,6 +33,11 @@ output "nat_public_ip" {
   value       = azurerm_public_ip.nat.ip_address
 }
 
+output "nat_public_ip_name" {
+  description = "Name of the NAT gateway's public IP, for the environment's resource-group inventory (DECISIONS I-1004). The inventory reads every publicIPAddresses in the group, and this one is created here rather than beside a VM, so without it the check would report the fleet's own egress address as a stray on every plan."
+  value       = azurerm_public_ip.nat.name
+}
+
 output "hosts_subnet_ready" {
   description = <<-EOT
     Depend on this before creating a host: it is only known once the NSG and
