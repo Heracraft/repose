@@ -1357,6 +1357,120 @@ base -- nothing is corrupt, so do not go looking for a writer.
    `docs/incidents/`. Record the fault times, the faulting function, the
    uptime at the first fault and what was moved.
 
+## HostKernelTainted
+
+The kernel on this host has latched a hard fault, or hostd could not read
+`/proc/sys/kernel/tainted` at all (DECISIONS I-1010). Either way the host is
+not one you can trust, and the bit does not clear until it reboots.
+
+**Read this alert differently from `KernelOops`.** KernelOops counts log
+lines in a 10-minute window, so on 2026-11-02 it would have paged at ~13:53
+and gone green at ~14:01 while host-02 went on serving tenant filesystem
+traffic until 17:40 -- 8 minutes of alert for 3 h 48 m of untrustworthy
+host. This one is the kernel's own verdict, latched, and it is still firing
+at hour four. **A green `HostKernelTainted` is the only one of the two that
+means anything.**
+
+1. Which reason:
+
+   ```
+   curl -s 10.255.0.N:9101/metrics | grep kernel_tainted
+   ```
+
+   `die` is an oops or a BUG. With `kernel.panic_on_oops` on (I-984) that
+   should have rebooted the box instead, so `die` on a *running* host means
+   either the sysctl is off -- see "HostPanicOnOopsOff" -- or the oops
+   happened before the host was switched for it.
+   `machine_check` and `bad_page` are the two this alert buys that nothing
+   else does: the kernel taints and keeps running, with no panic, no reboot
+   and nothing in `KernelOops`'s patterns.
+   `soft_lockup` and `warn` are exported and alert on nothing; a soft
+   lockup is load, which `HostCPUSaturated` covers.
+
+2. **All five reasons at 1 is the unreadable case, not five faults.** hostd
+   publishes every reason as 1 when the taint word cannot be read, because a
+   host whose verdict nobody can read is not a host known to be clean.
+   `ssh host-0X cat /proc/sys/kernel/tainted`: if that works, hostd is the
+   problem, not the kernel, and `journalctl -u hostd -b` says why.
+
+3. `journalctl -k -b` for what set it. "KernelOops" above has the full
+   procedure for a fault this fleet has already met, including the
+   `Dentry cache hash table` line to check first.
+
+4. **Drain it.** Same as KernelOops step 4, and for the same reason: a
+   planned move keeps each guest's disk and can keep its memory (I-653); a
+   panic keeps nothing.
+
+5. The bit clears on reboot and only on reboot. Do not wait for this alert
+   to go green on its own, and do not silence it to make it quiet -- that
+   is the signal.
+
+## HostPanicOnOopsOff
+
+`kernel.panic_on_oops` is off, or unreadable, on this host for 15 minutes
+(DECISIONS I-984, I-988). An oops will leave the host running with a kernel
+it cannot trust instead of rebooting, which is what cost 3 h 48 m on
+2026-11-02.
+
+Nothing is down and no tenant data is at risk right now, which is why this
+warns. What it costs is the next fault.
+
+1. `ssh host-0X sysctl kernel.panic_on_oops`. 0 confirms it.
+2. It is set in `nix/hosts/kernel.nix` as a **sysctl**, applied by a switch
+   with no reboot needed. A host that has not been switched since I-988
+   reads 0 -- that is the likeliest answer, and the fix is the owner's
+   switch, not a change on the host.
+3. `sysctl -w kernel.panic_on_oops=1` holds until the next boot and is
+   worth doing on a host you cannot switch today. Do not leave it as the
+   only thing setting it: the next boot drops it.
+4. Read it back, do not read the command line. I-988 is exactly this: the
+   knob shipped first as a kernel parameter, `/proc/cmdline` carried it, the
+   kernel refused it as a parameter and said so in `dmesg`, and the sysctl
+   stayed 0 through a reboot that was supposed to set it.
+
+## HostKernelAssertFailed
+
+A boot-time fact about this host is not what the configuration asks for, or
+nothing is checking it (DECISIONS I-1010). `repose-kernel-check` writes the
+checks to node_exporter's textfile directory every minute.
+
+1. Which check:
+
+   ```
+   ssh host-0X cat /var/lib/node_exporter/textfile/repose_kernel.prom
+   ```
+
+   `large_hash_linear 0` -- this boot did **not** print `Dentry cache hash
+   table ... linear`, so the dentry table is in a `vmalloc` mapping and this
+   host has I-982's exposure. It is a `hashdist=0` that did not take, and
+   `hashdist` is a kernel parameter, so only a boot can fix it.
+   `cmdline_recognised 0` -- the kernel printed `Unknown kernel command line
+   parameters`. Some parameter in `nix/hosts/kernel.nix` is being handed to
+   userspace instead of honoured. `journalctl -k -b | grep Unknown` names
+   it. I-988 was this, for `panic_on_oops=1`.
+   `large_hash_vmalloc_absent` alerts on nothing and is informational until
+   it has been confirmed once on a host with more than one NUMA node.
+
+2. No file at all, or a file whose mtime has stopped: the writer is not
+   running. `systemctl status repose-kernel-check.timer` and
+   `journalctl -u repose-kernel-check -b`. The rule fires on this case on
+   purpose -- an absent series is green under `noDataState: OK`, and
+   `/var/lib` survives a reboot, so a dead writer leaves yesterday's green
+   file sitting there.
+
+3. **Drain it, and the fix is a reboot the owner runs.** Both checks are
+   boot-time facts; nothing you can set on a running host changes either.
+
+4. **Silence it in Grafana until that reboot. Do not change the rule.**
+
+5. The one false red to know about: the verdicts latch per `boot_id`, and
+   they are computed a minute into the boot from `journalctl -k -b`. If a
+   state file was somehow first written after the journal had already lost
+   its head, the latch holds a red that the kernel never earned.
+   `journalctl -k -b | head` showing nothing from boot is how you tell.
+   Then, and only then, `rm /var/lib/repose/kernel-check.state` and
+   `systemctl start repose-kernel-check` recomputes.
+
 ## GuestdLost
 
 hostd cannot talk to a guest's guestd for 5 minutes.

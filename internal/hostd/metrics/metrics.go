@@ -230,6 +230,9 @@ func NewVersion(version string) *M {
 	for _, r := range WakeFailReasons {
 		m.GuestWakeFailed.WithLabelValues(r)
 	}
+	// The kernel's latched verdict is read at scrape time, not Set by any
+	// loop, so it is a Collector and not a field of M (I-1010).
+	om.MustRegister(newKernelCollector())
 	return m
 }
 

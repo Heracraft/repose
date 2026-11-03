@@ -140,6 +140,13 @@ BOOLEAN_EXPRS = {
     "BootSlow": "the value is the slow-boot share, and the rule needs it > 0.5",
     "HostNotInTargets": "the value is the ready-state gauge, which is 1",
     "NotifyFailing": "both sides of the `or` are counts the rule needs above 0",
+    # Arm 1 is `max(1 - check) > 0`, which is 1 for a failing check; arm 2
+    # is an `unless` whose left side is `up == 1`; arm 3 is an age in
+    # seconds past 3600. Written that way *because* of this list: the
+    # obvious `min(check) == 0` returns the left side's value, which is
+    # zero, and would have made this condition one that never fires
+    # (alerts_test.yaml asserts both values with promql_expr_test).
+    "HostKernelAssertFailed": "all three arms of the `or` return a value above 0 when they hold",
 }
 
 # The one rule that is told to shout when its query cannot run at all.

@@ -70,6 +70,106 @@ groups:
           description: "Over one busy guest vCPU per core for 15 minutes: typing is laggy in every guest on this host, including guests doing nothing, and sessions take seconds to open. Add a host or move to a larger SKU; nothing on the host itself fixes it."
           runbook: "docs/ops/RUNBOOK.md#hostcpusaturated"
 
+      - alert: HostKernelTainted
+        # The kernel's own latched verdict on the host, which is what
+        # KernelOops is not. On 2026-11-02 host-02 took its first
+        # __d_lookup_rcu fault at 13:51:07 and kept serving tenant
+        # filesystem traffic through virtiofsd for 3 h 48 m with a dentry
+        # cache it could not read, then hard-hung (DECISIONS I-982).
+        # KernelOops would have paged at ~13:53 and gone green at ~14:01:
+        # 8 minutes of alert for 3 h 48 m of untrustworthy host, because it
+        # counts log lines in a window and the window moves on. A taint bit
+        # does not. It is set by the fault and stands until the box reboots,
+        # so this rule still fires at 17:39 (I-1010).
+        #
+        # Three reasons, not the word: bits 0, 12 and 13 (a proprietary,
+        # out-of-tree or unsigned module) are set on every healthy host and
+        # never clear, so `tainted != 0` would page for ever. Decomposed in
+        # hostd because PromQL has no bitwise AND. soft_lockup and warn are
+        # exported and alert on nothing -- a soft lockup is load, which
+        # HostCPUSaturated covers, and a warning is a condition the kernel
+        # recovered from (the division KernelOops already drew, I-980).
+        #
+        # Also fires when hostd could not read /proc/sys/kernel/tainted at
+        # all: the gauge means "latched, or cannot be ruled out", because a
+        # host whose verdict is unreadable is not a host known to be clean.
+        #
+        # for: 0m and page. With panic_on_oops on (I-984, I-988) an oops
+        # panics and panic=30 reboots, so `die` is rarely scrapable and
+        # HostdDown is its page; what this rule uniquely buys is
+        # machine_check and bad_page, which taint without panicking, and the
+        # standing signal. max by (host_id) is one page per host rather than
+        # one per bit; the description says how to read which.
+        expr: max by (host_id) (repose_host_kernel_tainted{reason=~"die|machine_check|bad_page"}) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: "the kernel on host {{ $labels.host_id }} is tainted or unreadable"
+          description: "This host's kernel has latched a hard fault, or hostd could not read its taint word. It stays set until the host reboots. Drain the host; do not wait for it to clear. `curl -s 10.255.0.N:9101/metrics | grep kernel_tainted` says which reason."
+          runbook: "docs/ops/RUNBOOK.md#hostkerneltainted"
+
+      - alert: HostPanicOnOopsOff
+        # kernel.panic_on_oops is how I-984 is in effect, and I-988 is why
+        # it is read back rather than assumed: it shipped first as a kernel
+        # parameter, the kernel refused it as one and said so, and
+        # /proc/cmdline still carried it. The sysctl is the knob and this
+        # gauge is the only thing that says the knob is on.
+        #
+        # 15m and warn: a switch's activation sets it, so a host switching
+        # or booting reads 0 for a moment, and nothing is wrong until it
+        # stays off. Nothing is down and no tenant data is at risk while it
+        # is -- the cost is the next oops being survived instead of
+        # rebooted, which is what 2026-11-02 cost 3 h 48 m.
+        expr: repose_host_panic_on_oops == 0
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "host {{ $labels.host_id }} would survive a kernel oops instead of rebooting"
+          description: "kernel.panic_on_oops is off or unreadable on this host, so an oops leaves it serving tenants with a kernel it cannot trust. `sysctl kernel.panic_on_oops` on the host; it is set by nix/hosts/kernel.nix and applied by a switch, so a host that has not been switched since I-988 reads 0."
+          runbook: "docs/ops/RUNBOOK.md#hostpaniconoopsoff"
+
+      - alert: HostKernelAssertFailed
+        # The boot-time facts about a host that nothing else reads back.
+        # repose-kernel-check writes them to node_exporter's textfile
+        # directory once a minute: large_hash_linear is a positive read of
+        # the `Dentry cache hash table ... linear` line, which is the
+        # allocation path that has never faulted (I-982), and
+        # cmdline_recognised is the absence of `Unknown kernel command line
+        # parameters`, the exact line that caught I-988 after a host had
+        # been switched and rebooted for a parameter the kernel never took.
+        #
+        # Three arms, because every generated rule carries noDataState: OK
+        # and /var/lib persists across boots, so both silence and staleness
+        # are green by default. A check reading 0; a host that is scraped
+        # but publishes no check at all; and a file whose mtime stopped
+        # advancing while its contents still read 1. The third is the one a
+        # writer that died at the wrong moment produces.
+        #
+        # The name claims only what was checked. HostKernelUnsafe would
+        # claim the whole class.
+        #
+        # The first arm is `max(1 - check) > 0` and not the obvious
+        # `min(check) == 0` because a Prometheus comparison returns the LEFT
+        # side's value: `min(check) == 0` fires here with the value *zero*,
+        # and alerts-gen puts a boolean expression whole into the Grafana
+        # query and conditions it on "above 0", so the Grafana-managed copy
+        # of this rule would never have fired on a failing check -- the one
+        # arm that matters most. Measured, not reasoned:
+        # promql_expr_test in alerts_test.yaml asserts both values.
+        expr: |
+          (max by (host_id, check) (1 - repose_kernel_check) > 0)
+          or (max by (host_id) (up{job="hosts"}) == 1 unless on (host_id) (max by (host_id) (repose_kernel_check)))
+          or (time() - max by (host_id) (node_textfile_mtime_seconds{file=~".*repose_kernel\\.prom"}) > 3600)
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "a kernel assertion on host {{ $labels.host_id }} failed, is missing or is stale"
+          description: "This host's boot is not the boot the configuration asks for, or nothing is checking. Drain it; the fix is a reboot the owner runs, and the parameters only take on boot. Silence this in Grafana until that reboot rather than changing the rule. `cat /var/lib/node_exporter/textfile/repose_kernel.prom` on the host says which check."
+          runbook: "docs/ops/RUNBOOK.md#hostkernelassertfailed"
+
       - alert: PoolHigh
         # The plan's disk counts what volumes hold, not their sizes, so
         # the pool is overcommitted by design (DECISIONS I-585, I-586). At

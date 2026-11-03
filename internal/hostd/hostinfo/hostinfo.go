@@ -65,6 +65,91 @@ func bootIDFrom(path string) (string, error) {
 	return id, nil
 }
 
+// TaintedPath is the kernel's own latched verdict on this host, and
+// PanicOnOopsPath the sysctl that decides whether an oops is survivable
+// (DECISIONS I-984, I-988).
+const (
+	TaintedPath     = "/proc/sys/kernel/tainted"
+	PanicOnOopsPath = "/proc/sys/kernel/panic_on_oops"
+)
+
+// TaintReasons is the taint bits a host is watched for, as
+// Documentation/admin-guide/tainted-kernels.rst numbers them. Not the
+// whole word: bits 0, 12 and 13 (a proprietary, out-of-tree or unsigned
+// module) are set on healthy hosts and never clear, so a host that reads
+// the word as one number reads tainted for ever. The decomposition is
+// here rather than in PromQL because PromQL has no bitwise AND.
+var TaintReasons = []string{"die", "machine_check", "bad_page", "soft_lockup", "warn"}
+
+// AlertingTaintReasons is the subset HostKernelTainted pages on: the
+// hard-fault family, the one a kernel does not recover from. soft_lockup
+// and warn are exported as series and alert on nothing -- a soft lockup is
+// load, which HostCPUSaturated covers, and a kernel warning is a condition
+// the kernel recovered from (the same division KernelOops draws, I-980).
+var AlertingTaintReasons = []string{"die", "machine_check", "bad_page"}
+
+// taintBits is each reason's bit in the kernel's taint word.
+var taintBits = map[string]uint64{
+	"machine_check": 1 << 4,  // M, a machine check exception
+	"bad_page":      1 << 5,  // B, a bad page was found
+	"die":           1 << 7,  // D, the kernel has oopsed or hit a BUG
+	"warn":          1 << 9,  // W, a kernel warning
+	"soft_lockup":   1 << 14, // L, a soft lockup
+}
+
+// Tainted reports, per reason in TaintReasons, whether the kernel has
+// latched that taint on this boot.
+//
+// On any failure it returns every reason true along with the error, and
+// that is the contract, not a convenience: a caller that pre-creates the
+// gauges at 0 and skips the Set on error publishes green for ever on a
+// host whose taint word it could never read -- exactly the host the guard
+// exists for. So the fail-closed value is produced here, where it cannot
+// be forgotten, and the gauge means "this taint is latched, or cannot be
+// ruled out" (DECISIONS I-1010).
+func Tainted() (map[string]bool, error) { return taintedFrom(TaintedPath) }
+
+func taintedFrom(path string) (map[string]bool, error) {
+	unknown := func() map[string]bool {
+		out := make(map[string]bool, len(TaintReasons))
+		for _, r := range TaintReasons {
+			out[r] = true
+		}
+		return out
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return unknown(), err
+	}
+	word, err := strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil {
+		return unknown(), fmt.Errorf("hostinfo: %s is not a taint word: %w", path, err)
+	}
+	out := make(map[string]bool, len(TaintReasons))
+	for _, r := range TaintReasons {
+		out[r] = word&taintBits[r] != 0
+	}
+	return out, nil
+}
+
+// PanicOnOops reports whether kernel.panic_on_oops is on, so an oops
+// reboots the host instead of leaving it serving tenants with a kernel it
+// cannot trust. A failed read reports false, which is the value
+// HostPanicOnOopsOff warns on, for the same reason Tainted fails closed.
+func PanicOnOops() (bool, error) { return panicOnOopsFrom(PanicOnOopsPath) }
+
+func panicOnOopsFrom(path string) (bool, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		return false, fmt.Errorf("hostinfo: %s is not a number: %w", path, err)
+	}
+	return v != 0, nil
+}
+
 // BootTime returns when the current boot began, from the btime line of
 // /proc/stat.
 func BootTime() (time.Time, error) { return bootTimeFrom("/proc/stat") }

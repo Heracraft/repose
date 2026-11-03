@@ -56,6 +56,16 @@ func TestHostFamily(t *testing.T) {
 		`repose_host_guest_pause_total{reason="idle",result="paused"}`,
 		"repose_host_guest_wake_seconds_bucket",
 		`repose_host_guest_wake_failed_total{reason="resume"}`,
+		// The kernel's latched verdict on the host (DECISIONS I-1010).
+		// Read at scrape time by a Collector, so these appear with no
+		// Set above -- which is also the check that the Collector is
+		// registered at all.
+		`repose_host_kernel_tainted{reason="die"}`,
+		`repose_host_kernel_tainted{reason="machine_check"}`,
+		`repose_host_kernel_tainted{reason="bad_page"}`,
+		`repose_host_kernel_tainted{reason="soft_lockup"}`,
+		`repose_host_kernel_tainted{reason="warn"}`,
+		"repose_host_panic_on_oops",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("host metrics do not contain %s", want)

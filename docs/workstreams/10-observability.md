@@ -202,6 +202,39 @@ Families:
   because `outcome` is not in the allowed label list above and `result`
   is. A resting guest keeps `guestd_ok` true, so it is never in
   `repose_host_guestd_lost` and `GuestdLost` cannot page for one.
+  The kernel's latched verdict on the host (I-1010) adds
+  `repose_host_kernel_tainted{reason}` and `repose_host_panic_on_oops`,
+  both read from `/proc` **at scrape time** by a Collector rather than Set
+  by a loop: whether a host's kernel can be trusted does not ride the
+  60-second billing sampler, and a stale gauge cannot be told from a quiet
+  host. `reason` is `die`, `machine_check`, `bad_page` (the three
+  `HostKernelTainted` pages on), `soft_lockup` and `warn` (series only --
+  a soft lockup is load, which `HostCPUSaturated` covers, and a warning is
+  a condition the kernel recovered from, the division I-980 already drew).
+  The word is decomposed in hostd because PromQL has no bitwise AND, and
+  because bits 0, 12 and 13 -- a proprietary, out-of-tree or unsigned
+  module -- are set on every healthy host and never clear, so a rule on
+  the word itself would page for ever. **Every reason reads 1 when the
+  taint word cannot be read at all**: the gauge means "latched, or cannot
+  be ruled out", because a host whose verdict is unreadable is not a host
+  known to be clean.
+- Host, from node_exporter's textfile collector rather than from hostd:
+  `repose_kernel_check{check}` (I-1010), written every minute by
+  `repose-kernel-check.timer` into its own `repose_kernel.prom`.
+  `large_hash_linear` is a positive read of this boot's `Dentry cache hash
+  table ... linear` line (I-982); `cmdline_recognised` is the absence of
+  `Unknown kernel command line parameters`, the line that caught I-988
+  after a host had been switched *and* rebooted for a parameter the kernel
+  never took; `large_hash_vmalloc_absent` reads `/proc/vmallocinfo` and no
+  rule looks at it, because its positive state cannot be produced on any
+  machine available to us -- nothing here has more than one NUMA node, and
+  letting an unconfirmed read veto a confirmed one is I-968's shape inside
+  the guard written against I-968. Every check is pre-seeded to 0 and
+  republished by an `EXIT` trap, so a writer that dies publishes reds
+  rather than nothing: an absent series is green under `noDataState: OK`.
+  The two journal-derived verdicts latch per `boot_id`, because the
+  journal is capped at 4G and a long boot can lose its own head -- a
+  rotation must not turn a red into a green or a green into a red.
 - API: `repose_api_requests_total{route,method,status}`,
   `repose_api_request_duration_seconds{route}`,
   `repose_api_hosts{state}`,
@@ -328,6 +361,9 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
 | `KernelOops` | Loki, not Prometheus: `count_over_time({component="kernel"} |~ "Oops:|BUG:|general protection fault|Voluntary context switch within RCU" [10m]) > 0`. The host kernel faulted and has not panicked yet; the source is `ops/alerts-loki.yaml`, which promtool does not parse (I-980) | page |
+| `HostKernelTainted` | `max by (host_id) (repose_host_kernel_tainted{reason=~"die\|machine_check\|bad_page"}) > 0`, `for: 0m`: the kernel's own latched verdict, or a taint word hostd could not read. Unlike `KernelOops` it does not go green on its own -- host-02 priced that difference at 8 minutes of alert for 3 h 48 m of untrustworthy host (I-1010) | page |
+| `HostPanicOnOopsOff` | `repose_host_panic_on_oops == 0` for 15m: an oops would be survived instead of rebooting the host (I-984, I-988) | warn |
+| `HostKernelAssertFailed` | `repose_kernel_check` reading 0, or absent on a scraped host, or a textfile older than an hour, for 10m: a boot that is not the boot the configuration asks for, or nothing checking (I-1010) | page |
 | `RollupLag` | `repose_api_rollup_lag_seconds > 2*3600` | warn |
 | `BillingWebhookRejected` | `sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m])) >= 5` | warn |
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |

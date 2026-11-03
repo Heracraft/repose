@@ -101,7 +101,11 @@ written so none of them goes unnoticed again.
       `Dentry cache hash table ... linear` for `hashdist=0` (I-982),
       a non-zero `sysctl` for anything that is really a sysctl. Prefer
       `boot.kernel.sysctl` where the knob is one: it applies on a switch
-      with no reboot, and it can be read back.
+      with no reboot, and it can be read back. A knob worth setting is
+      worth reading back *continuously*, not once: `repose_kernel_check`
+      and `repose_host_panic_on_oops` are where a host's own answer goes,
+      and a parameter added without one is checked at the moment somebody
+      remembers to look (I-1010).
 - [ ] A new or changed test asserts the property it is named for, not a
       proxy for it, and names the probe that proves it would fail without
       the fix. A proxy fails in both directions: red when the runner is

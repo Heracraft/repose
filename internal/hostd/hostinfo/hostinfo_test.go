@@ -114,3 +114,106 @@ func TestPhysicalCores(t *testing.T) {
 		t.Fatalf("this machine's cores = %d, threads = %d", got, runtime.NumCPU())
 	}
 }
+
+// TestTainted is the decomposition of the kernel's taint word, with the
+// three cases that each fail without the guard (DECISIONS I-1010).
+func TestTainted(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tainted")
+
+	// 4096 is bit 12, an out-of-tree module. Every host sets it and never
+	// clears it, so this is the case that proves `tainted != 0` would have
+	// paged for ever: no reason the alert reads may be 1 here.
+	_ = os.WriteFile(p, []byte("4096\n"), 0o644)
+	got, err := taintedFrom(p)
+	if err != nil {
+		t.Fatalf("4096: %v", err)
+	}
+	for _, r := range TaintReasons {
+		if got[r] {
+			t.Errorf("4096 (out-of-tree module) read %s as tainted", r)
+		}
+	}
+
+	// 16 is bit 4, a machine check: a taint that is never accompanied by a
+	// panic, which is the durable value of reading latched state at all.
+	_ = os.WriteFile(p, []byte("16\n"), 0o644)
+	got, err = taintedFrom(p)
+	if err != nil {
+		t.Fatalf("16: %v", err)
+	}
+	if !got["machine_check"] {
+		t.Error("16 did not read machine_check")
+	}
+	for _, r := range []string{"die", "bad_page", "soft_lockup", "warn"} {
+		if got[r] {
+			t.Errorf("16 (machine check) also read %s", r)
+		}
+	}
+
+	// A word with the hard-fault bit and the healthy module bits together:
+	// 4096+128 is what a host-02 that had oopsed would read.
+	_ = os.WriteFile(p, []byte("4224\n"), 0o644)
+	got, _ = taintedFrom(p)
+	if !got["die"] || got["machine_check"] {
+		t.Errorf("4224 read die=%v machine_check=%v", got["die"], got["machine_check"])
+	}
+
+	// The probe. A missing path is an unreadable verdict, not a clean one:
+	// every reason reads 1 and HostKernelTainted fires. Revert the error
+	// branch of taintedFrom to "leave the gauges alone" and this is the
+	// test that fails, with 0s on a host nothing could read.
+	got, err = taintedFrom(filepath.Join(dir, "no-such-file"))
+	if err == nil {
+		t.Fatal("a missing taint word was read without an error")
+	}
+	for _, r := range TaintReasons {
+		if !got[r] {
+			t.Errorf("a missing taint word read %s as clean", r)
+		}
+	}
+
+	// A taint word that is not a number is as unreadable as a missing one.
+	_ = os.WriteFile(p, []byte("not-a-word\n"), 0o644)
+	got, err = taintedFrom(p)
+	if err == nil {
+		t.Fatal("a non-numeric taint word was accepted")
+	}
+	for _, r := range TaintReasons {
+		if !got[r] {
+			t.Errorf("a non-numeric taint word read %s as clean", r)
+		}
+	}
+
+	// Every alerting reason is a reason, so the alert's selector cannot
+	// name a label value the gauge never carries.
+	for _, a := range AlertingTaintReasons {
+		if _, ok := taintBits[a]; !ok {
+			t.Errorf("alerting reason %q has no bit", a)
+		}
+	}
+
+	// This machine's own word, read for real: hosts are Intel and this box
+	// is Azure AMD, so the value says nothing about a host, but the read
+	// path has to work on a live /proc.
+	if _, err := Tainted(); err != nil {
+		t.Fatalf("this machine's taint word: %v", err)
+	}
+}
+
+func TestPanicOnOops(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "panic_on_oops")
+	_ = os.WriteFile(p, []byte("1\n"), 0o644)
+	if on, err := panicOnOopsFrom(p); err != nil || !on {
+		t.Fatalf("1 read %v, %v", on, err)
+	}
+	_ = os.WriteFile(p, []byte("0\n"), 0o644)
+	if on, err := panicOnOopsFrom(p); err != nil || on {
+		t.Fatalf("0 read %v, %v", on, err)
+	}
+	// Fails closed, like Tainted: an unreadable sysctl warns rather than
+	// reporting the host configured.
+	if on, err := panicOnOopsFrom(filepath.Join(t.TempDir(), "gone")); err == nil || on {
+		t.Fatalf("a missing sysctl read %v, %v", on, err)
+	}
+}
