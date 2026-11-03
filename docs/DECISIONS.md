@@ -28142,3 +28142,14 @@ survives a host restart. Rejected: making `ErrNotRunning` guess by
 stat-ing the unit. The control client is used where systemd may not be
 (tests, the fakes) and a wrong guess reads worse than an honest "one of
 these two".
+**I-1016. A Playwright route handler outlives the assertions, so it must survive a closed page.** (route-teardown, 2026-11-03.)
+
+`onlyPending` in `apps/web/tests/questions.spec.ts` registers a route handler that narrows a shared account's pending-question list. A request still in flight as the test ends arrives in that handler after the page has closed, and `route.fetch()` then throws `route.fetch: Target page, context or browser has been closed`. CI run 41534860432 on `main` at `b55d17dd` failed on exactly that, one test of 334, reddening `main` — from a **fixture**, not an assertion, in a batch (`thaw-window`, `internal/hostd/control`) that touches nothing in `apps/web`.
+
+The handler now returns early if `page.isClosed()`, and wraps the body so that the error is swallowed **only** when the page has actually gone; otherwise it rethrows. That distinction is the whole of the fix: nothing is asserted in this handler — its only job is to filter a list for a page that no longer exists — while a genuine route failure during a live test must still fail, and a bare `catch {}` would have hidden it.
+
+*Evidence, and its limit.* `eslint` clean, `svelte-check` 0 errors across 711 files, `pnpm build` ok, and `playwright test tests/questions.spec.ts` 13/13. **I could not reproduce the race locally and did not pretend to**: it needs a request in flight at the instant the page closes, which is a property of a loaded shared runner rather than something a test can force. What is demonstrable is the guard's shape — it cannot mask a failure while the page is open, because that path rethrows — and that the spec it protects still passes in full.
+
+*Same family as I-968 and I-1014, with the proxy one level further out.* The other three were assertions reading a stand-in for their property. This is a *fixture* whose failure is reported as a test failure, so a red here says "the dashboard is broken" when what happened is "a mock outlived its page". The repo had no way to tell those apart, and the only reason this one was diagnosed rather than retried is that the batch it reddened could not possibly have caused it.
+
+*Rejected:* `page.unroute()` in an `afterEach`, which races the same window and would need every spec that routes to remember it; and a retry on the whole spec, which would have hidden the mechanism and left the next one to rediscover it.
