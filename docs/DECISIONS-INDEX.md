@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-899 entries.
+900 entries.
 
 ## Scope
 
@@ -931,3 +931,4 @@ pointer, not a summary.
 - **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29227
 - **I-1030** hostd knew its own version and did not tell the metric that publishes it — 2026-11-03; L29267
 - **I-1032** Six checks in one day were green in exactly the situation they existed for, and the ones with the best names survived longest — 2026-11-03; L29315
+- **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29396
