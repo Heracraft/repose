@@ -1,6 +1,6 @@
 // Package control is hostd's local operator API on a unix socket: what
 // `hostd status`, `hostd guests`, `hostd snapshot-all`, `hostd drain`,
-// `hostd reconcile`, `hostd freeze|thaw` and `hostd pause|wake` talk to
+// `hostd reconcile`, `hostd park|unpark` and `hostd pause|wake` talk to
 // while the daemon runs.
 package control
 
@@ -110,7 +110,7 @@ func Serve(ctx context.Context, path string, b Backend) error {
 		}
 		writeJSON(w, "ok", b.OperatorLogin(rep))
 	})
-	registerFreeze(mux, b, writeJSON)
+	registerPark(mux, b, writeJSON)
 	registerPause(mux, b, writeJSON)
 	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,17 +151,17 @@ func NewClient(path string) *Client {
 
 // ErrNotRunning is returned when the socket is absent, which is not the
 // same thing as hostd being down and must not claim to be. hostd creates
-// this socket last, after Reconcile and ThawAll, so for the whole of a
-// post-reboot thaw an entirely healthy hostd has no socket: the unit is
+// this socket last, after Reconcile and UnparkAll, so for the whole of a
+// post-reboot unpark an entirely healthy hostd has no socket: the unit is
 // `active`, `Result=success`, `ExecMainStatus=0`, and this error is the
 // only thing an operator sees. On 2026-11-02 that window was 3m16s and
 // the first read of it was "hostd is down", stated before checking
-// (DECISIONS I-990). The window scales with the frozen memory a thaw has
+// (DECISIONS I-990). The window scales with the parked memory an unpark has
 // to read back, so a full host's is minutes longer than that.
 //
 // The client cannot tell the two apart -- an absent socket is an absent
 // socket -- so the message names both and points at the thing that can.
-var ErrNotRunning = errors.New("hostd is not answering: no control socket. It is either not running, or still starting -- after a host reboot Reconcile and ThawAll run before the socket is created, which takes minutes on a host with frozen guests. `systemctl is-active hostd` and `journalctl -u hostd -b` tell you which")
+var ErrNotRunning = errors.New("hostd is not answering: no control socket. It is either not running, or still starting -- after a host reboot Reconcile and UnparkAll run before the socket is created, which takes minutes on a host with parked guests. `systemctl is-active hostd` and `journalctl -u hostd -b` tell you which")
 
 func (c *Client) do(ctx context.Context, method, path string, out any) error {
 	return c.doBody(ctx, method, path, nil, out)

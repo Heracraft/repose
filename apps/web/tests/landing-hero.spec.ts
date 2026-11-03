@@ -146,3 +146,24 @@ test('the postgres count falls through numbers in one value, never two drawn at 
 	}
 	expect(seen.size).toBeGreaterThan(3);
 });
+
+// Review round 2: on a phone the two commands stand as a pair inside the
+// windows' width, so neither runs past the windows or the stage.
+for (const width of [360, 390]) {
+	test(`the hero's commands stay inside its windows at ${width}`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 800 });
+		await page.goto('/');
+		const m = await page.evaluate(() => {
+			const win = document.querySelector('.hero-pic .laptop .win')!.getBoundingClientRect();
+			const chips = [...document.querySelectorAll('.hero-pic .pic-chip')].map((e) =>
+				e.getBoundingClientRect()
+			);
+			return { l: win.left, r: win.right, chips: chips.map((c) => [c.left, c.right]) };
+		});
+		expect(m.chips).toHaveLength(2);
+		for (const [l, r] of m.chips) {
+			expect(l).toBeGreaterThanOrEqual(m.l);
+			expect(r).toBeLessThanOrEqual(m.r);
+		}
+	});
+}

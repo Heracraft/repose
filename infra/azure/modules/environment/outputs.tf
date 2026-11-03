@@ -53,8 +53,8 @@ output "keyvault" {
   }
 }
 
-output "freeze_keyvault" {
-  description = "The guest freeze's vault URI and key name for repose.host.freeze (DECISIONS I-653); null when not created."
+output "park_keyvault" {
+  description = "The guest park's vault URI and key name for repose.host.park (DECISIONS I-653); null when not created."
   value = length(module.freeze_keyvault) == 0 ? null : {
     vault_uri = module.freeze_keyvault[0].vault_uri
     key_name  = "freeze-wrap"

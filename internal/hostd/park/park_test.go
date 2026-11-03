@@ -1,4 +1,4 @@
-package freeze
+package park
 
 import (
 	"bytes"
@@ -63,7 +63,7 @@ func TestKeyCheckDiffersPerKey(t *testing.T) {
 
 // Records round-trip, are root-only, and List skips the temporary files.
 func TestRecordStore(t *testing.T) {
-	s := Store{Dir: filepath.Join(t.TempDir(), "freeze")}
+	s := Store{Dir: filepath.Join(t.TempDir(), "park")}
 	r := &Record{GuestID: "g1", State: StateWriting, CreatedAt: time.Now().UTC().Truncate(time.Second), WrappedKey: []byte{1, 2, 3}, KeyID: "v1"}
 	if err := s.Put(r); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestFingerprint(t *testing.T) {
 }
 
 // The image volume is btrfs with compression forced on, above dm-crypt, so
-// a freeze writes and a restore reads a fraction of the guest's memory
+// a park writes and a restore reads a fraction of the guest's memory
 // (I-685). Its metadata is single, not btrfs's default DUP, so an
 // incompressible image still fits.
 func TestImageIsCompressedBtrfs(t *testing.T) {
@@ -138,7 +138,7 @@ func TestImageIsCompressedBtrfs(t *testing.T) {
 	if img.FS() != FSBtrfs {
 		t.Fatalf("new images are %s", img.FS())
 	}
-	dir := filepath.Join(t.TempDir(), "freeze")
+	dir := filepath.Join(t.TempDir(), "park")
 	key, _ := NewKey()
 	if err := img.Create(context.Background(), "g1", 1<<30, key, dir, os.Getuid(), os.Getgid()); err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestImageOpensAnOlderExt4Image(t *testing.T) {
 		t.Fatal(err)
 	}
 	img := &Image{R: r, LVM: l, Mount: &mount.Real{R: r, MountInfo: emptyMountInfo(t)}}
-	dir := filepath.Join(t.TempDir(), "freeze")
+	dir := filepath.Join(t.TempDir(), "park")
 	key, _ := NewKey()
 	if err := img.Open(context.Background(), "g2", key, dir, ""); err != nil {
 		t.Fatal(err)
@@ -203,63 +203,63 @@ func emptyMountInfo(t *testing.T) string {
 	return p
 }
 
-// The tally is a running total, never one freeze's counts. hostd's own
+// The tally is a running total, never one park's counts. hostd's own
 // counters start at zero at every boot, so a file that held only the
-// last freeze would publish the same number after every restart and
+// last park would publish the same number after every restart and
 // increase() would see no rise: the same guest lost at each reboot
 // alerted once and then never again (DECISIONS I-796).
 func TestTheTallyIsARunningTotal(t *testing.T) {
-	s := Store{Dir: filepath.Join(t.TempDir(), "freeze")}
-	if got, err := s.LoadTally(); err != nil || len(got.Unfrozen) != 0 || len(got.Discarded) != 0 {
+	s := Store{Dir: filepath.Join(t.TempDir(), "park")}
+	if got, err := s.LoadTally(); err != nil || len(got.Skipped) != 0 || len(got.Discarded) != 0 {
 		t.Fatalf("a host that has lost nothing: %+v, %v", got, err)
 	}
 	for i, boot := range []string{"boot-a", "boot-b"} {
-		if err := s.AddUnfrozen(FreezeTally{HostBootID: boot, Reason: "shutdown", Counts: map[string]int{"estimate": 1}}); err != nil {
+		if err := s.AddSkipped(ParkTally{HostBootID: boot, Reason: "shutdown", Counts: map[string]int{"estimate": 1}}); err != nil {
 			t.Fatal(err)
 		}
 		got, err := s.LoadTally()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Unfrozen["estimate"] != i+1 {
-			t.Fatalf("after %d freezes that each left a guest: total %d", i+1, got.Unfrozen["estimate"])
+		if got.Skipped["estimate"] != i+1 {
+			t.Fatalf("after %d parks that each left a guest: total %d", i+1, got.Skipped["estimate"])
 		}
-		if got.LastFreeze.HostBootID != boot {
-			t.Fatalf("last freeze %q, want %q", got.LastFreeze.HostBootID, boot)
+		if got.LastPark.HostBootID != boot {
+			t.Fatalf("last park %q, want %q", got.LastPark.HostBootID, boot)
 		}
 	}
 	if err := s.AddDiscarded(map[string]int{"window": 2}); err != nil {
 		t.Fatal(err)
 	}
-	// A freeze that saved everything records itself with no counts, which
+	// A park that saved everything records itself with no counts, which
 	// is what clears the line a called-off event would otherwise leave
 	// for a later start to report as a loss.
-	if err := s.AddUnfrozen(FreezeTally{HostBootID: "boot-c", Reason: "shutdown"}); err != nil {
+	if err := s.AddSkipped(ParkTally{HostBootID: "boot-c", Reason: "shutdown"}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.LoadTally()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Unfrozen["estimate"] != 2 || got.Discarded["window"] != 2 {
+	if got.Skipped["estimate"] != 2 || got.Discarded["window"] != 2 {
 		t.Fatalf("totals %+v, want the two losses of each kind kept", got)
 	}
-	if len(got.LastFreeze.Counts) != 0 || got.LastFreeze.HostBootID != "boot-c" {
-		t.Fatalf("last freeze %+v, want boot-c with nothing left behind", got.LastFreeze)
+	if len(got.LastPark.Counts) != 0 || got.LastPark.HostBootID != "boot-c" {
+		t.Fatalf("last park %+v, want boot-c with nothing left behind", got.LastPark)
 	}
 	// Reported once: the counts behind the log line go, the totals stay.
-	if err := s.AddUnfrozen(FreezeTally{HostBootID: "boot-d", Reason: "shutdown", Counts: map[string]int{"failed": 1}}); err != nil {
+	if err := s.AddSkipped(ParkTally{HostBootID: "boot-d", Reason: "shutdown", Counts: map[string]int{"failed": 1}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MarkLastFreezeReported(); err != nil {
+	if err := s.MarkLastParkReported(); err != nil {
 		t.Fatal(err)
 	}
 	got, err = s.LoadTally()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.LastFreeze.Counts) != 0 || got.Unfrozen["failed"] != 1 {
-		t.Fatalf("after reporting: %+v, want the count kept in the total and gone from the last freeze", got)
+	if len(got.LastPark.Counts) != 0 || got.Skipped["failed"] != 1 {
+		t.Fatalf("after reporting: %+v, want the count kept in the total and gone from the last park", got)
 	}
 	// Store.List never sees it as a guest's record.
 	ids, err := s.List()

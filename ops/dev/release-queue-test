@@ -88,7 +88,13 @@ run_test() { # name
 # q runs release-queue in a worktree and prints its output and exit code.
 q() { # dir args...
   local d=$1; shift
+  # REPOSE_QUEUE_SKIP_RED_MAIN: `cut` asks GitHub whether main's CI is red
+  # (DECISIONS I-1008). The scratch world has no GitHub and no main worth
+  # asking about, and a harness that depends on the caller exporting this
+  # is a harness that passes or fails by whoever typed the command. It
+  # carries its own answer, like the nix and pnpm stubs beside it.
   ( cd "$d" && PATH="$root/bin:$PATH" REPOSE_QUEUE_EQUIV="$root/bin/equiv-stub" \
+      REPOSE_QUEUE_SKIP_RED_MAIN=1 \
       ops/dev/release-queue "$@" 2>&1 )
 }
 
@@ -124,6 +130,20 @@ fi
 echo "VERDICT: the system really changes"; exit 1
 EOF
   chmod +x "$root/bin/equiv-stub"
+
+  # A `nix` that exists and is never run. release-queue gates the closure
+  # comparison on `command -v nix` (:275) and on nothing else -- it never
+  # executes nix, it executes REPOSE_QUEUE_EQUIV -- so without this the
+  # comparison is skipped on any machine with no nix and
+  # t_needs_drops_a_target_whose_system_is_unchanged asserts nothing while
+  # still passing. The harness has to carry its own answer rather than borrow
+  # the host's PATH (DECISIONS I-996).
+  cat > "$root/bin/nix" <<'EOF'
+#!/usr/bin/env bash
+echo "release-queue-test: nix was executed, which this fixture does not expect: $*" >&2
+exit 97
+EOF
+  chmod +x "$root/bin/nix"
 
   local src=$root/src
   mkdir -p "$src"

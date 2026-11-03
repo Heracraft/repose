@@ -1,12 +1,14 @@
 <!--
   Ready: what is on a machine the moment it boots. The five agents are the
-  hero, as their marks alone (owner, 2026-09-27: no names or commands
-  under them; the aria-label names them);
+  hero, as their marks alone (owner, 2026-09-27, I-287: no names or
+  commands under them; the aria-label names them, and each mark's title
+  names it under the pointer);
   below them the toolchain, and a shell on the machine where a missing
   command prints the real command-not-found hint (nix/guest/base/devtools.nix,
   captured for real on a repose machine).
 -->
 <script lang="ts">
+	import WinHead from './WinHead.svelte';
 	import { agentMarks, toolMarks, type Mark } from '$lib/components/illustrations/marks';
 
 	// Labels from docs/machine.md "What's installed".
@@ -58,7 +60,7 @@
 	];
 </script>
 
-{#snippet mark(m: Mark, size: number)}
+{#snippet mark(m: Mark, size: number, named = false)}
 	<svg
 		viewBox="0 0 24 24"
 		width={size}
@@ -66,7 +68,7 @@
 		class="shrink-0"
 		fill="currentColor"
 		aria-hidden="true"
-		>{#each m.paths as d (d)}<path
+		>{#if named}<title>{m.name}</title>{/if}{#each m.paths as d (d)}<path
 				{d}
 				fill-rule={m.evenodd ? 'evenodd' : 'nonzero'}
 				clip-rule={m.evenodd ? 'evenodd' : 'nonzero'}
@@ -82,17 +84,17 @@
 	<ul class="agents" aria-hidden="true">
 		{#each agentMarks as m (m.name)}
 			<li>
-				<span class="am">{@render mark(m, 44)}</span>
+				<span class="am">{@render mark(m, 32, true)}</span>
 			</li>
 		{/each}
 	</ul>
 
 	<div class="below" aria-hidden="true">
-		<div>
+		<div class="kit">
 			<ul class="tools">
 				{#each toolMarks as m (m.name)}
 					<li>
-						{@render mark(m, 18)}{toolLabel[m.name] ?? m.name}
+						{@render mark(m, 16)}{toolLabel[m.name] ?? m.name}
 					</li>
 				{/each}
 			</ul>
@@ -101,162 +103,229 @@
 			</p>
 		</div>
 
-		<div class="term">
-			<div class="lines">
-				{#each rows as row, i (i)}
-					{#if row === 'hint'}
-						{#each hint as [cmd, what] (cmd)}
-							<div class="hint">
-								<span>{cmd}</span><span>&nbsp;&nbsp;</span><span>{what}</span>
+		<div class="tcell">
+			<div class="shot-win term">
+				<WinHead who="machine" />
+				<div class="lines">
+					{#each rows as row, i (i)}
+						{#if row === 'hint'}
+							{#each hint as [cmd, what] (cmd)}
+								<div class="hint">
+									<span>{cmd}</span><span>&nbsp;&nbsp;</span><span>{what}</span>
+								</div>
+							{/each}
+						{:else}
+							<div>
+								{#each row as [text, cls], j (j)}<span class={cls}>{text}</span
+									>{/each}{#if row.length === 0}&nbsp;{/if}
 							</div>
-						{/each}
-					{:else}
-						<div>
-							{#each row as [text, cls], j (j)}<span class={cls}>{text}</span
-								>{/each}{#if row.length === 0}&nbsp;{/if}
-						</div>
-					{/if}
-				{/each}
-			</div>
-			<div class="bar">
-				<span class="pre">0:shell- 1:dev&nbsp; 2:ready*</span><span class="clock"
-					><span class="long">{barHost}</span>19:49<span class="long">{barDate}</span></span
-				>
+						{/if}
+					{/each}
+				</div>
+				<div class="bar">
+					<span class="pre">0:shell- 1:dev&nbsp; 2:ready*</span><span class="clock"
+						><span class="long">{barHost}</span>19:49<span class="long">{barDate}</span></span
+					>
+				</div>
 			</div>
 		</div>
 	</div>
 </div>
 
 <style>
+	/* Ready fills its figure from rail to rail (landing.css, .fig): the
+	   five marks on the stage's tone, an inner rule, then two flush cells
+	   on the page's thirds line, the toolchain, and the machine's shell
+	   in a closed window under the grid's head, inset on the stage as the
+	   Machine cells' windows are: the stage's inset above and below, the
+	   cell's text lines at the sides (pictures.css, I-961). Text in each
+	   cell stands on the page's text lines (--edge out, 16px in from a
+	   rule). */
+	.ready {
+		display: grid;
+	}
 	.agents {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 28px 8px;
-		padding: 32px 12px;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		gap: 8px;
+		margin: 0;
+		padding: 36px var(--edge, 16px);
+		list-style: none;
+		background:
+			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
+		box-shadow: inset 0 1px 0 var(--stage-top);
 	}
 	.agents li {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
+		justify-content: center;
 	}
-	/* The landing's own chrome around the capture: text tokens, so the
-	   two schemes are paired once in layout.css, not here. */
 	.am {
+		display: flex;
 		color: var(--ink);
 	}
 	.below {
 		display: grid;
-		gap: 24px;
-		padding: 16px;
-		align-items: start;
-		border-top: 1px solid var(--rule);
+		border-top: 1px solid var(--rule-in, var(--rule));
+	}
+	/* The toolchain stands on the stage's tone with the marks over it, so
+	   the figure is two materials: the stage, and the shell. */
+	.kit {
+		padding: 32px var(--edge, 16px);
+		background: var(--stage);
 	}
 	.tools {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 12px 16px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 	.tools li {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		font-size: 14px;
+		font-size: 13px;
+		line-height: 20px;
 		color: var(--pic-ink);
 	}
+	.tools li :global(svg) {
+		color: var(--pic-dim);
+	}
 	.more {
-		margin-top: 16px;
+		margin: 16px 0 0;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 20px;
 		color: var(--ink-faint);
 	}
-	@media (min-width: 640px) {
-		.agents {
-			grid-template-columns: repeat(5, minmax(0, 1fr));
-			padding: 40px 32px;
-		}
+	/* From 1024px the two cells split on the thirds line: the tools on
+	   the first third, the shell on the other two. Narrower, the tools
+	   stand over the shell, each the sheet's width. */
+	@media (min-width: 1024px) {
 		.below {
-			padding: 32px;
+			grid-template-columns:
+				calc(var(--edge) + (100% - 2 * var(--edge) + var(--col-gap)) / 3 - var(--col-gap) / 2)
+				minmax(0, 1fr);
+		}
+		.kit {
+			padding-right: var(--in);
+		}
+		.tcell {
+			padding-left: calc(var(--in) - 1px);
+			border-left: 1px solid var(--rule-in, var(--rule));
 		}
 	}
-	@media (min-width: 768px) {
-		.below {
-			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
-			gap: 32px;
+	/* One column, the shell's window runs between the page's text lines;
+	   from 640px the tools take one row of four. */
+	@media (max-width: 1023.98px) {
+		.tcell {
+			border-top: 1px solid var(--rule-in, var(--rule));
+		}
+	}
+	@media (min-width: 640px) and (max-width: 1023.98px) {
+		.tools {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
 		}
 	}
 
+	/* The shell's cell: the stage, the window inset on it. */
+	.tcell {
+		display: flex;
+		min-width: 0;
+		padding: var(--shot-in, 24px) var(--edge, 16px);
+		background:
+			radial-gradient(70% 90% at 0% 0%, var(--stage-sheen), transparent 70%), var(--stage);
+	}
+	/* The shell, in the terminals' palette (pictures.css): the window's
+	   head, the rows, the tmux bar at the window's foot. */
 	.term {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		border: 1px solid #2a2a28;
-		background: #0d0d0c;
-		color: #d4d4d0;
+		container-type: inline-size;
 		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 19px;
+		background: var(--t-bg);
+		color: var(--t-fg);
 	}
 	/* A terminal does not re-flow: rows keep white-space: pre and a narrow
-	   frame crops them on the right, as the editor and browser captures
-	   are cropped (I-397). */
+	   cell crops them on the right into a fade, as the editor and browser
+	   captures are cropped (I-397). */
 	.lines {
 		flex: 1;
-		padding: 12px 14px 14px;
+		padding: 12px;
 		overflow: hidden;
 		white-space: pre;
+		background: var(--t-bg);
+		mask-image: linear-gradient(to left, transparent 0, #000 32px);
 	}
 	.y {
-		color: #e5c07b;
+		color: var(--t-yellow);
 	}
 	.g {
-		color: #98c379;
+		color: var(--t-green);
 	}
 	.c {
-		color: #56b6c2;
+		color: var(--t-cyan);
 	}
 	.r {
-		color: #e06c75;
+		color: var(--t-red);
 	}
 	.pre,
 	.clock span {
 		white-space: pre;
 	}
+	.pre {
+		min-width: 0;
+		overflow: hidden;
+	}
+	.clock {
+		flex: none;
+	}
+	/* A shell narrower than its rows (a phone) drops the bar's host and
+	   date. */
+	@container (max-width: 560px) {
+		.long {
+			display: none;
+		}
+	}
 	.b {
 		font-weight: 700;
 	}
+	/* The window list gives way before the clock: the right part keeps
+	   its width, the left one crops. */
 	.bar {
 		display: flex;
 		justify-content: space-between;
-		gap: 1ch;
-		padding: 1px 14px;
-		background: #1f9d55;
-		color: #0d0d0c;
+		gap: 2ch;
+		padding: 2px 12px;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bar);
+		color: var(--t-bar-fg);
 		white-space: nowrap;
 		overflow: hidden;
 	}
 	@media (max-width: 639px) {
-		.long {
-			display: none;
-		}
 		.term {
-			font-size: 10.5px;
-			line-height: 16px;
+			font-size: 11px;
+			line-height: 17px;
 		}
 		.lines {
-			padding: 10px 10px 12px;
-		}
-		.bar {
-			padding: 1px 10px;
+			padding-block: 12px 14px;
 		}
 		.agents {
-			display: flex;
-			flex-wrap: wrap;
-			justify-content: center;
+			gap: 4px;
+			padding: 28px var(--edge, 16px);
 		}
-		.agents li {
-			width: calc((100% - 16px) / 3);
+		.agents :global(svg) {
+			width: 24px;
+			height: 24px;
+		}
+		.kit {
+			padding-block: 24px;
 		}
 	}
 </style>

@@ -5,6 +5,9 @@
   `⇄ 5173` chip on a wire; below, the laptop's browser on localhost:5173
   showing the app the machine serves.
 
+  READY is Vite's own line over it, as Vite 8.0.1 printed it for this
+  repository's web app on the build box (2026-11-02), with the blank row
+  Vite leaves under it; the machine's capture kept the Local row alone.
   LOCAL and BAR are verbatim `tmux capture-pane -p -e` output (2026-09-25):
   LOCAL from the dev window on the machine (its 21-column turbo prefix
   cropped), BAR the last row of the attached client on the laptop, its
@@ -34,7 +37,13 @@
   Each page's crop ends in the page's white space, whatever the pane's
   width: the pane is a size container, and the image's top is set so a
   chosen row of the capture (between two lines of text) lands on the
-  pane's bottom edge, the row picked by the pane's aspect ratio.
+  pane's bottom edge, the row picked by the pane's aspect ratio. The
+  app's page shows its nav, cropped under its rule: drawn at the window's
+  width, the 48px headline under it set at about 34px, louder than the
+  cell's own title, and a smaller drawing would take the nav under 11px;
+  an empty strip of ground under the nav read as a page still loading.
+  So the page's pane is as tall as that crop (140 capture rows) and the
+  forward's wire takes the rest of the height (I-961).
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -57,14 +66,14 @@
 
 	// The capture's colours, mapped as the hero maps them (ops/dev/hero/convert.py).
 	const BASE = [
-		'#1c1c1c',
-		'#e06c75',
-		'#98c379',
-		'#e5c07b',
-		'#61afef',
-		'#c678dd',
-		'#56b6c2',
-		'#dcdfe4'
+		'var(--t-bg-2)',
+		'var(--t-red)',
+		'var(--t-green)',
+		'var(--t-yellow)',
+		'var(--t-blue)',
+		'var(--t-magenta)',
+		'var(--t-cyan)',
+		'var(--t-fg)'
 	];
 
 	// An SGR escape: ESC [ params m.
@@ -98,6 +107,15 @@
 	}
 	// Without the turbo prefix.
 	const local = parse(LOCAL).slice(1);
+	// Vite's ready line: VITE and its version in bold green, the rest dim
+	// but the time, as Vite colours it.
+	const ready: Seg[] = [
+		{ text: '  VITE', style: 'color:var(--t-green);font-weight:700;' },
+		{ text: ' v8.0.1', style: 'color:var(--t-green);' },
+		{ text: '  ready in ', style: 'color:var(--t-dim);' },
+		{ text: '1494', style: 'font-weight:700;' },
+		{ text: ' ms', style: 'color:var(--t-dim);' }
+	];
 
 	let pic: HTMLDivElement;
 	const picture = new Picture({ group: 'grid' });
@@ -236,7 +254,7 @@
 <!-- ⇄ drawn one cell wide: several monospace fonts lack the glyph, and the
      fallback is a different width. -->
 {#snippet fw()}<svg class="fw" viewBox="0 0 10 16"
-		><path d="M1 6.5h8M6.5 4l2.5 2.5M9 10.5H1M3.5 13L1 10.5" /></svg
+		><path d="M1 5h8M6.5 2.5L9 5 6.5 7.5M9 11.5H1M3.5 9L1 11.5 3.5 14" /></svg
 	>{/snippet}
 
 {#snippet shot(name: string, alt: string)}
@@ -261,7 +279,7 @@
 {/snippet}
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="ports" />
 	<div
 		class="lh"
 		bind:this={pic}
@@ -271,6 +289,10 @@
 		<div class="shot-win machine" aria-hidden="true">
 			<WinHead who="machine" />
 			<div class="term">
+				<div class="tr">
+					{#each ready as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
+				</div>
+				<div class="tr">&nbsp;</div>
 				<div class="tr">
 					{#each local as seg, j (j)}<span style={seg.style}>{seg.text}</span>{/each}
 				</div>
@@ -291,7 +313,7 @@
 			<i class="wire arrow"></i>
 		</div>
 
-		<div class="shot-win open laptop" aria-hidden="true">
+		<div class="shot-win laptop" aria-hidden="true">
 			<WinHead who="laptop"><span class="url" class:typing>{ADDR}</span></WinHead>
 			<div class="page">
 				<div class="err">
@@ -319,7 +341,8 @@
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in) var(--shot-in) 0;
+		padding: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 	}
 
 	/* The two windows, the grid's own (landing.css, WinHead.svelte). */
@@ -327,9 +350,22 @@
 		flex: none;
 		font-size: 12px;
 	}
-	.laptop {
-		flex: 1;
-		min-height: 0;
+	/* --min-w: the narrowest the captures are drawn. On a phone that is
+	   wider than the window, so their text keeps 11px or more and the
+	   window crops them on the right into a fade, as the Editor's rows
+	   are cropped (review round 2, I-961). */
+	.lh {
+		--pw: 1440;
+		--min-w: 0px;
+	}
+	@media (max-width: 479px) {
+		.lh {
+			--pw: 1280;
+			--min-w: 480px;
+		}
+		.page {
+			mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+		}
 	}
 
 	/* The laptop's browser on localhost:5173. */
@@ -353,10 +389,18 @@
 	.url.typing {
 		border-color: var(--pic-accent);
 	}
+	/* The page's pane: 140 rows of the capture at the window's width
+	   (the nav and its rule). */
 	.page {
 		position: relative;
-		flex: 1;
-		min-height: 0;
+		flex: none;
+		height: calc(
+			max(
+					100cqw - var(--shot-l, var(--shot-in)) - var(--shot-r, var(--shot-in)) - 2px,
+					var(--min-w)
+				) *
+				140 / var(--pw)
+		);
 		overflow: hidden;
 		container-type: size;
 	}
@@ -397,125 +441,51 @@
 	/* The crop. Capture row --b (in the capture's own pixels, --iw wide)
 	   lands on the pane's bottom edge, so the pane ends in white space
 	   between two lines of text; --cap 0px keeps the capture's top from
-	   coming below the pane's (no extra ground above it). Which row
-	   depends on how many capture rows the pane shows, its aspect ratio.
-	   Rows, from the captures: the app's lines end at 85 (Job Alerts),
-	   306 (the headline), 409 and 467 (the paragraph), 542 (Apply...);
-	   Chromium's at 308 (the title), 385 (refused to connect), 452
-	   (Try:), 555 (the buttons). The phone's (640px) captures share the
-	   app's rows, and Chromium's sit 8 to 24 rows higher. */
+	   coming below the pane's (no extra ground above it). The pane is 140
+	   capture rows tall (.page), so one row serves every width.
+	   Rows, from the captures: the app's nav ends at 85 (Job Alerts) and
+	   its rule at 128, so the app ends at 140, under the rule; Chromium's refused page has its title at
+	   308 and "refused to connect" at 385, so it ends at 405, under them.
+	   The phone's (640px) captures share the app's rows, and Chromium's
+	   sit 8 to 24 rows higher. */
 	.page img {
+		--dw: max(100cqw, var(--min-w));
 		position: absolute;
 		left: 0;
-		top: min(var(--cap), calc(100cqh - var(--b) * 100cqw / var(--iw)));
+		top: min(var(--cap), calc(100cqh - var(--b) * var(--dw) / var(--iw)));
 		display: block;
-		width: 100cqw;
+		width: var(--dw);
 		max-width: none;
 		height: auto;
 	}
 	.home img {
 		--iw: 1440;
-		--b: 548;
+		--b: 140;
 		--cap: 0px;
 	}
 	.err img {
 		--iw: 1440;
-		--b: 575;
+		--b: 405;
 		--cap: 9999px;
-	}
-	@container (min-aspect-ratio: 2667/1000) {
-		.err img {
-			--b: 465;
-		}
-	}
-	@container (min-aspect-ratio: 2835/1000) {
-		.home img {
-			--b: 490;
-		}
-	}
-	@container (min-aspect-ratio: 3165/1000) {
-		.home img {
-			--b: 430;
-			--cap: 9999px;
-		}
-	}
-	@container (min-aspect-ratio: 2939/1000) {
-		.err img {
-			--b: 405;
-		}
-	}
-	@container (min-aspect-ratio: 3692/1000) {
-		.home img {
-			--b: 350;
-		}
-	}
-	@container (min-aspect-ratio: 4645/1000) {
-		.home img {
-			--b: 320;
-		}
 	}
 	/* The phone's captures, 1280 pixels wide. */
 	@media (max-width: 479px) {
 		.page .home img {
 			--iw: 1280;
-			--b: 548;
-			--cap: 0px;
 		}
 		.page .err img {
 			--iw: 1280;
-			--b: 545;
+			--b: 395;
 		}
 	}
-	@container (min-aspect-ratio: 2462/1000) {
-		@media (max-width: 479px) {
-			.page .err img {
-				--b: 453;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2520/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 490;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2813/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 430;
-				--cap: 9999px;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 2723/1000) {
-		@media (max-width: 479px) {
-			.page .err img {
-				--b: 395;
-			}
-		}
-	}
-	@container (min-aspect-ratio: 3282/1000) {
-		@media (max-width: 479px) {
-			.page .home img {
-				--b: 350;
-			}
-		}
-	}
-	@container (max-width: 420px) {
-		/* room under the bar for the chip to start clear of it */
-		.lh .hop {
-			height: 36px;
-		}
-	}
-
-	/* The forward between them. */
+	/* The forward between them: its wire takes what the two windows
+	   leave, the chip at its middle. */
 	.hop {
-		flex: none;
+		flex: 1;
+		min-height: 30px;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		height: 30px;
 	}
 	.wire {
 		flex: 1;
@@ -543,10 +513,10 @@
 
 	/* The machine's terminal: its tmux, as in the hero. */
 	.term {
-		background: #0d0d0c;
-		color: #d4d4d0;
+		background: var(--t-bg);
+		color: var(--t-fg);
 		font-family: var(--font-mono);
-		font-size: 11px;
+		font-size: 12px;
 		font-variant-ligatures: none;
 		line-height: 16px;
 	}
@@ -567,8 +537,9 @@
 		display: flex;
 		gap: 1ch;
 		padding: 0 8px;
-		background: #1f9d55;
-		color: #0b0b0b;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bar);
+		color: var(--t-bar-fg);
 	}
 	.bar .left {
 		flex: none;
@@ -577,6 +548,7 @@
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
+		white-space: nowrap;
 		text-align: right;
 	}
 	.port {

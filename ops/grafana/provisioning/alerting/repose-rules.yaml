@@ -176,6 +176,222 @@ groups:
                   reducer:
                     type: last
                     params: []
+      - uid: repose-hostkerneltainted
+        title: HostKernelTainted
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "the kernel on host {{ $labels.host_id }} is tainted or unreadable"
+          description: "This host's kernel has latched a hard fault, or hostd could not read its taint word. It stays set until the host reboots. Drain the host; do not wait for it to clear. `curl -s 10.255.0.N:9101/metrics | grep kernel_tainted` says which reason."
+          runbook: "docs/ops/RUNBOOK.md#hostkerneltainted"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) (repose_host_kernel_tainted{reason=~\"die|machine_check|bad_page\"})"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostpaniconoopsoff
+        title: HostPanicOnOopsOff
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: warn
+          stack: repose
+        annotations:
+          summary: "host {{ $labels.host_id }} would survive a kernel oops instead of rebooting"
+          description: "kernel.panic_on_oops is off or unreadable on this host, so an oops leaves it serving tenants with a kernel it cannot trust. `sysctl kernel.panic_on_oops` on the host; it is set by nix/hosts/kernel.nix and applied by a switch, so a host that has not been switched since I-988 reads 0."
+          runbook: "docs/ops/RUNBOOK.md#hostpaniconoopsoff"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: repose_host_panic_on_oops
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: eq
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
+      - uid: repose-hostkernelassertfailed
+        title: HostKernelAssertFailed
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "a kernel assertion on host {{ $labels.host_id }} failed, is missing or is stale"
+          description: "This host's boot is not the boot the configuration asks for, or nothing is checking. Drain it; the fix is a reboot the owner runs, and the parameters only take on boot. Silence this in Grafana until that reboot rather than changing the rule. `cat /var/lib/node_exporter/textfile/repose_kernel.prom` on the host says which check."
+          runbook: "docs/ops/RUNBOOK.md#hostkernelassertfailed"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "(max by (host_id, check) (1 - repose_kernel_check) > 0) or (max by (host_id) (up{job=\"hosts\"}) == 1 unless on (host_id) (max by (host_id) (repose_kernel_check))) or (time() - max by (host_id) (node_textfile_mtime_seconds{file=~\".*repose_kernel\\\\.prom\"}) > 3600)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
       - uid: repose-poolhigh
         title: PoolHigh
         condition: C
@@ -2845,8 +3061,8 @@ groups:
                   reducer:
                     type: last
                     params: []
-      - uid: repose-guestleftunfrozen
-        title: GuestLeftUnfrozen
+      - uid: repose-guestnotparked
+        title: GuestNotParked
         condition: C
         for: 5m
         noDataState: OK
@@ -2856,9 +3072,9 @@ groups:
           severity: warn
           stack: repose
         annotations:
-          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were left unfrozen ({{ $labels.reason }}) and lost what they were running"
-          description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
-          runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} were not parked ({{ $labels.reason }}) and lost what they were running"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_park\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-park -u hostd` has the park that did it. Compare the park's duration with repose.host.park.deadline before raising it."
+          runbook: "docs/ops/RUNBOOK.md#guestnotparked"
         data:
           - refId: A
             relativeTimeRange:
@@ -2871,7 +3087,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h]))"
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_park_skipped_total[6h]))"
               instant: true
               range: false
               intervalMs: 1000
@@ -2928,8 +3144,8 @@ groups:
           severity: warn
           stack: repose
         annotations:
-          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} lost their frozen memory at the thaw ({{ $labels.reason }})"
-          description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
+          summary: "{{ if $values.B }}{{ $values.B }}{{ end }} guest(s) on {{ $labels.host_id }} lost their parked memory at the unpark ({{ $labels.reason }})"
+          description: "Loki `{component=\"hostd\"} | json | event=\"guest_unpark\"` names each guest and what its image ran into; `parked guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
           runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
         data:
           - refId: A
@@ -2943,7 +3159,7 @@ groups:
                 type: prometheus
                 uid: repose-prometheus
               editorMode: code
-              expr: "sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h]))"
+              expr: "sum by (host_id, reason) (increase(repose_host_guest_unpark_discarded_total[6h]))"
               instant: true
               range: false
               intervalMs: 1000

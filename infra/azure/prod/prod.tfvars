@@ -20,7 +20,7 @@ zone                = "1"
 # the live host's disk settings and changing one plans a change on it. A 2048
 # GB disk under four times the guests may want more; provisioned IOPS and
 # throughput are billed, so raising them is the owner's call. Raising mbps is
-# also the only lever on the guest freeze's budget (DECISIONS I-786).
+# also the only lever on the guest park's budget (DECISIONS I-786).
 host_size           = "Standard_D64s_v7"
 host_class          = "azure-d64s-v7"
 host_data_disk_gb   = 2048
@@ -80,13 +80,24 @@ host_flake_attrs = {
 # month at the P15 to P20 step.
 host_shapes = {}
 
+# repose-prod holds the fleet and nothing else, so the inventory check in
+# modules/environment/inventory.tf speaks on every plan here (DECISIONS
+# I-1004). It names any virtual machine, disk, network interface or public IP
+# in the group that no resource here creates -- the case it exists for is a
+# host's OS disk, which is inline on the VM, which no plan ever names, and
+# which is therefore invisible to a diff whether it survived a destroy or not.
+#
+# Staging leaves this false: its hosts are named in a git-ignored local
+# tfvars, so the check could not tell a host it cannot see from a stray.
+resource_group_is_exclusive = true
+
 snapshots_account_name = "reposesnapshots3912"
 keyvault_name          = "repose-kv-3912"
-# The guest freeze's image-wrapping key, in a vault of its own because access
+# The guest park's image-wrapping key, in a vault of its own because access
 # policies are vault-wide: the hosts get Get and UnwrapKey here and nothing on
 # the vault that wraps users' secret keys (DECISIONS I-653, I-686). The name is
 # not secret, so it lives here; nix/hosts/host-01.nix names the same vault.
-freeze_keyvault_name = "repose-frz-3912"
+park_keyvault_name = "repose-frz-3912"
 
 dns_zone = "herakraft.co"
 

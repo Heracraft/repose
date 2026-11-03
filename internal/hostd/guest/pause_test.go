@@ -361,7 +361,7 @@ func TestWakeClearsTheMarkEvenWhenGuestdDoesNotAnswer(t *testing.T) {
 }
 
 // A mark the hypervisor contradicts goes: something resumed the guest
-// (a freeze's fallback, a `hostd thaw`), and a mark nothing cleared
+// (a park's fallback, a `hostd unpark`), and a mark nothing cleared
 // would silence that guest's samples for good.
 func TestReconcileClearsAMarkTheHypervisorContradicts(t *testing.T) {
 	h := newHarness(t, nil)
@@ -459,7 +459,7 @@ func TestWakeSetsTheGuestClock(t *testing.T) {
 	if len(dates) != 1 {
 		t.Fatalf("clock calls %v, want one", dates)
 	}
-	// The step itself, as the freeze writes it.
+	// The step itself, as the park writes it.
 	if !regexp.MustCompile(`date -u -s @\d+\.\d+`).MatchString(dates[0][2]) {
 		t.Fatalf("clock step script %q", dates[0][2])
 	}

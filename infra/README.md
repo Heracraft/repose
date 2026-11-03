@@ -224,7 +224,7 @@ ssh -F ~/repose-ws/staging-ssh-config stg-host
 
 `rebuild` destroys what the pool holds, so do it before there are guests
 worth keeping. The larger shape is about **$33 a day** against $9.50, and it
-is the exception: it went on for the freeze tests (owner's call,
+is the exception: it went on for the park tests (owner's call,
 2026-10-11) and comes back off after them.
 
 ### Taking it down
@@ -459,9 +459,9 @@ Then:
    which carries what every production host shares (the api's VNet address
    and server name, the platform CA, the bootstrap operator key, the base
    repository, the Blob account and snapshot identity, the idle pause and
-   the freeze vault), and adds only what this host measured for itself: its
-   freeze write rate. `nix/hosts/host-01.nix` is the model, and the rate is
-   measured after the host exists (`docs/ops/RUNBOOK.md` "Guest freeze"
+   the park vault), and adds only what this host measured for itself: its
+   park write rate. `nix/hosts/host-01.nix` is the model, and the rate is
+   measured after the host exists (`docs/ops/RUNBOOK.md` "Guest park"
    step 3), not guessed from a neighbour.
 3. `host-02 = "host-02"` in `host_flake_attrs` in `azure/prod/prod.tfvars`.
    **A host with no entry here installs the generic `host` configuration**,

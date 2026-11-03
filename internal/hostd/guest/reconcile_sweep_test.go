@@ -26,7 +26,7 @@ func TestReconcileRemovesStaleSnapshotVolumes(t *testing.T) {
 
 // A snapshot this hostd is taking or uploading is not an orphan, and the
 // sweep leaves it alone (I-906). Reconcile is reachable while one is in
-// flight — the operator's `POST /reconcile`, and the one after a thaw —
+// flight — the operator's `POST /reconcile`, and the one after an unpark —
 // and the sweep used to pull the volume out from under its own upload.
 func TestReconcileLeavesAnInFlightSnapshotAlone(t *testing.T) {
 	h := newHarness(t, nil)

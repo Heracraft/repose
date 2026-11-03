@@ -218,9 +218,9 @@ variable "keyvault_name" {
   description = "Key Vault holding the DEK-wrapping key."
 }
 
-variable "freeze_keyvault_name" {
+variable "park_keyvault_name" {
   type        = string
-  description = "Key Vault for the guest freeze's image-wrapping key (DECISIONS I-653); null creates none."
+  description = "Key Vault for the guest park's image-wrapping key (DECISIONS I-653); null creates none."
   default     = null
 }
 
@@ -262,4 +262,22 @@ variable "alert_email" {
   type        = string
   description = "Where the Azure alerts are emailed. Set it in prod.local.tfvars: the repository is public."
   default     = ""
+}
+
+variable "resource_group_is_exclusive" {
+  type        = bool
+  description = <<-EOT
+    Whether this configuration is the only thing in its resource group, which
+    turns on the inventory check in inventory.tf (DECISIONS I-1004).
+
+    Default false, and that is not timidity: staging's hosts are named in a
+    git-ignored local tfvars, so an environment whose `hosts` the check cannot
+    see would report every host it does not know about as a stray and warn on
+    every plan for ever. A check that always warns is a check nobody reads,
+    and infra/README.md already teaches the reader to scroll past the
+    `dns_is_managed_or_manual` warning -- one such habit is enough.
+
+    Only prod sets it true, where the group holds the fleet and nothing else.
+  EOT
+  default     = false
 }

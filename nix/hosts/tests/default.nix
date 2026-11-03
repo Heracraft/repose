@@ -18,8 +18,8 @@
 #                  console password file (I-643, I-644, I-649, I-654)
 #   host-storage   the disko data-disk layout on a virtual disk: PV, VG,
 #                  thin pool with autoextend, a thin volume, the pool monitor
-#   host-freeze    the guest freeze's shutdown ordering and hostd's freeze
-#                  and thaw commands, with the real hostd (freeze.nix)
+#   host-park    the guest park's shutdown ordering and hostd's park
+#                  and unpark commands, with the real hostd (park.nix)
 #   host-services  the real hostd, guests.slice, transient guest survives a
 #                  hostd restart and kill, store export with .links masked,
 #                  registration against a `hostdev` in a second node
@@ -209,7 +209,13 @@ in
 
       with subtest("Nix build accounts reach the internet and nothing of the host's (I-439)"):
           host.succeed("nft list chain inet repose output | grep -q 'meta skgid 30000 jump build_out'")
-          host.succeed("nft list chain inet repose output | grep -q 'meta skuid \"nixbuild\" jump build_out'")
+          # The ruleset is written with the account's name; this nft prints
+          # the uid back (`meta skuid 997`), the way it already prints the
+          # gid as 30000 on the line above. So accept either rendering and
+          # resolve the uid on the host rather than pinning 997, which is
+          # an allocation and not a contract (I-1024).
+          uid = host.succeed("id -u nixbuild").strip()
+          host.succeed(f"nft list chain inet repose output | grep -qE 'meta skuid (\"nixbuild\"|{uid}) jump build_out'")
           host.succeed("systemd-run --unit lo-probe ${pkgs.python3}/bin/python3 -m http.server 8999 --bind 127.0.0.1")
           host.wait_for_open_port(8999)
           # A nixbld user is what a fixed-output builder runs as, in the
@@ -819,10 +825,39 @@ in
           print(lvm)
           assert "dmeventd" in lvm, f"lvm on PATH is {lvm}"
 
-      with subtest("I-649: mana_ib blacklisted, NVMe io_timeout 240 s, ethtool"):
-          host.succeed("grep -q 'nvme_core.io_timeout=240' /proc/cmdline")
+      with subtest("the kernel honoured what it was given (I-649, I-988)"):
+          # This used to grep /proc/cmdline, which says a parameter was
+          # passed and nothing about whether the kernel knew the name.
+          # `panic_on_oops=1` rode a switch and a reboot into host-02's
+          # cmdline on 2026-11-02 while `kernel.panic_on_oops` stayed 0: it
+          # is a sysctl, not a parameter at all, and the kernel said so in a
+          # dmesg line nobody read (DECISIONS I-988, I-1012).
+          #
+          # So: the kernel recognised every name we passed, and the setting
+          # reads back on. NOT "the kernel printed no Unknown line" -- in a
+          # test VM that line always carries the driver's own `regInfo=`, so
+          # that form is red on a correct configuration and would have to be
+          # loosened, which is how a guard becomes the next proxy. Names are
+          # read back out of the line rather than matched as substrings, and
+          # dotted ones are left out: those are module parameters, which the
+          # kernel hands to the module instead of refusing.
+          ours = ${builtins.toJSON (builtins.filter (n: !(lib.hasInfix "." n))
+            (map (p: builtins.head (lib.splitString "=" p)) nodes.host.boot.kernelParams))}
+          line = host.execute("journalctl -k -b 0 --grep 'Unknown kernel command line parameters' || true")[1]
+          refused = set()
+          for chunk in line.split('"')[1::2]:
+              for tok in chunk.split():
+                  refused.add(tok.split("=")[0])
+          bad = sorted(set(ours) & refused)
+          assert not bad, f"the kernel did not recognise {bad}; its line: {line.strip()}"
+          assert host.succeed("sysctl -n kernel.panic_on_oops").strip() == "1"
           host.succeed("modprobe --showconfig | grep -q '^blacklist mana_ib$'")
           host.succeed("ethtool --version")
+          # The NVMe io_timeout has no cmdline assertion because this unit
+          # is the parameter's effect (vm-hardening.nix): it writes every
+          # running disk's queue at a switch, and the sysfs path it writes
+          # does not exist on a virtio VM, so the unit is what there is to
+          # read here.
           host.succeed("systemctl is-active repose-nvme-timeout.service")
 
       with subtest("I-654: root is locked without the console file, and takes its hash with it"):
@@ -843,8 +878,8 @@ in
           host.succeed("grep -q '^PasswordAuthentication no' /etc/ssh/sshd_config || sshd -T 2>/dev/null | grep -qi '^passwordauthentication no'")
     '';
   };
-  # The guest freeze's host side (DECISIONS I-652): freeze.nix.
-  host-freeze = import ./freeze.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
+  # The guest park's host side (DECISIONS I-652): park.nix.
+  host-park = import ./park.nix { inherit pkgs lib hostNode apiNode hostdevDir lanIP hostdevCA; };
 
   host-storage = pkgs.testers.runNixOSTest {
     name = "repose-host-storage";
@@ -1151,7 +1186,14 @@ in
           # runbook quotes. It runs for real once the host is registered,
           # a few subtests below.
           host.fail("systemctl start repose-snapshot.service")
-          host.succeed("journalctl -u repose-snapshot --no-pager | grep -q 'hostd is not running'")
+          # `no control socket`, not the old `hostd is not running`: I-990
+          # removed that wording from the message, because an absent socket
+          # is equally a hostd minutes into a post-reboot thaw, and this
+          # line kept grepping for it -- red from the moment thaw-window
+          # landed (I-1024). The literal is a substring of
+          # control.ErrNotRunning, and TestVMTestGrepsWordingWeStillPrint
+          # fails in Go if it ever stops being one.
+          host.succeed("journalctl -u repose-snapshot --no-pager | grep -q 'no control socket'")
 
       hostdev = "hostdev --state-dir ${hostdevDir}"
 

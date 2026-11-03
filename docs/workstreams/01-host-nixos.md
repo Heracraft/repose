@@ -235,6 +235,17 @@ by drain, `nixos-rebuild boot`, reboot, undrain. `system.autoUpgrade` is off.
   (c) `repose-host-net` configures the bridge from a fixture `host.json`,
   (d) the hostd unit starts the stub and survives `systemctl restart`
   without stopping a transient `guest@test` unit.
+- Kernel parameters and sysctls are asserted by what the kernel did with
+  them, never by `/proc/cmdline` (DECISIONS I-988, I-1012). `host-reboot`'s
+  "the kernel honoured what it was given" subtest reads the kernel's
+  Unknown-parameter line and fails if any name this node passed is in it,
+  then reads `kernel.panic_on_oops` back. That half needs a booted VM and
+  so needs KVM: it gates on woker-1 under `nix flake check ./nix`, **not**
+  in hosted CI, where `ci.yml` runs `nix flake check --no-build`. What CI
+  has instead is one `nix eval` of host-02's
+  `boot.kernel.sysctl."kernel.panic_on_oops"`, which asserts the config and
+  is deliberately blind to the fault I-988 was -- there the config was
+  right and the kernel ignored the name.
 - On a real Azure host (required, the VM test cannot do KVM inside KVM in
   CI): nixos-anywhere from scratch, then the checklist commands below.
   Paste outputs in the PR.

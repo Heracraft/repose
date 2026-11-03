@@ -21,8 +21,10 @@
   snapshots, a click that timed out on the hidden radio) are cropped out.
   OSC 8 hyperlink wrappers are dropped; they carry no visible text.
 
-  Both stand in the grid's window under "your cloud machine" (WinHead,
-  I-669): the browser on top, the log under its viewport, so the page's
+  Both stand in one closed window under the head every grid picture has,
+  "your cloud machine" (I-961, the owner's pick), with the browser's
+  captured toolbar under it. The browser on top, the log
+  under its viewport, so the page's
   tabs are never under the log and the log's rows crop on the right as a
   terminal's do (F18). The pans stop where the crop's edges fall between
   the page's rows (the Type tabs, Write and Record, the text box's top),
@@ -30,7 +32,8 @@
   The captures are the light scheme's only: they came from the owner's
   machine, which is not reachable from here, so there is no dark set to
   swap in under dark mode (F47, I-669); in the dark scheme the toolbar and
-  page are dimmed (brightness 0.86) to sit beside the dark windows.
+  page are drawn inverted with their hues turned back (I-961), so the
+  app reads as a dark page beside the dark windows.
 
   The loop opens on about:blank for 400ms and ends on it: at the seam the
   page fades to the blank page under it and the toolbar cuts back to
@@ -39,8 +42,8 @@
   frame instead of crossfading. The still frame is the loop's last beat
   before the seam, so a first cycle starting from it begins at the seam.
 
-  The pan of the page, the blue focus box, the command chip and the pointer
-  are the illustration; everything inside the page and terminal is captured.
+  The pan of the page, the blue focus box and the pointer are the
+  illustration; everything inside the page and terminal is captured.
   anime.js plays it when the card is on screen; without JS, or under
   prefers-reduced-motion, the last beat is shown still, and turning reduced
   motion on while the page is open stops the loop there. Everything moves
@@ -67,13 +70,13 @@
 
 	// The xterm-256 and bright colours this capture uses.
 	const X256: Record<number, string> = {
-		114: '#87d787',
-		231: '#ffffff',
-		237: '#3a3a3a',
-		239: '#8a8a8a',
-		246: '#949494'
+		114: 'var(--t-green)',
+		231: 'var(--t-fg)',
+		237: 'var(--t-sel)',
+		239: 'var(--t-dim)',
+		246: 'var(--t-dim)'
 	};
-	const BRIGHT_BLUE = '#8fb3ff';
+	const BRIGHT_BLUE = 'var(--t-blue)';
 
 	// An SGR escape: ESC [ params m.
 	const SGR = new RegExp(`${String.fromCharCode(27)}\\[([0-9;]*)m`, 'g');
@@ -89,7 +92,7 @@
 		const push = (text: string) => {
 			if (!text) return;
 			let style = fg ? `color:${fg};` : '';
-			if (bold) style += 'font-weight:700;color:' + (fg || '#f2f2ef') + ';';
+			if (bold) style += 'font-weight:700;color:' + (fg || 'var(--t-fg)') + ';';
 			segs.push({ text, style });
 		};
 		for (const m of line.matchAll(SGR)) {
@@ -126,14 +129,18 @@
 	// Where the pointer is drawn: in the text box, under the text (the real
 	// click, at y 350, sits below the frame's crop).
 	const POINTER = { x: 330, y: 296 };
+	// Where your pointer enters, from the page's top right (capture pixels
+	// under the toolbar): the command that opens this view is the cell's
+	// own line, so the picture draws no chip for it.
+	const YOU = { x: 520, y: 30 };
 	// Where the page sits, in capture pixels from its top: each stop puts
 	// the viewport's top edge in the page's white space (nav: under the
 	// app's name, above its links; typed and you: under "Say it your way",
-	// above Write and Record; bug: 12 capture pixels above the page's top,
-	// so the ring round Bug clears the toolbar's line by 8 instead of
-	// sitting on it, over the page's own ground), and at typed and you
-	// the chip lands on the page's empty right side, over no text.
-	const PAN = { nav: 52, typed: 120, bug: -12, you: 120 };
+	// above Write and Record; bug: 20 capture pixels above the page's top,
+	// so the ring round Bug clears the toolbar's line instead of sitting on
+	// it, over the page's own ground, and the foot falls under the text
+	// box's first line).
+	const PAN = { nav: 0, typed: 120, bug: -20, you: 120 };
 	// The seam (ms): the beat where the frame equals the still frame, and
 	// where a first cycle starts when the still frame is on screen.
 	const SEAM = 17200;
@@ -174,10 +181,13 @@
 		// Bumped on each start and stop, so an anime.js import that resolves
 		// after a stop does not start a loop.
 		let run = 0;
+		// Follows the toolbar's width while the ring is on the address bar,
+		// which stretches with the window (a resize, without a reload).
+		let ro: ResizeObserver | null = null;
 
 		const q = (s: string) => Array.from(pic.querySelectorAll<HTMLElement>(s));
 		const one = (s: string) => pic.querySelector<HTMLElement>(s)!;
-		const moved = () => [pic, ...q('.layer, .ring, .pic-chip, .pointer, .rows, .tr')];
+		const moved = () => [pic, ...q('.layer, .ring, .pointer, .rows, .tr')];
 		// The style attributes the markup gave them (a row's captured
 		// background), so a stop puts back exactly those.
 		const markup = new Map(moved().map((el) => [el, el.getAttribute('style')]));
@@ -199,7 +209,6 @@
 				if (style === null) el.removeAttribute('style');
 				else el.setAttribute('style', style);
 			}
-			one('.pic-chip').classList.remove('fire');
 			q('.tr').forEach((r) => r.classList.remove('new'));
 		}
 
@@ -214,13 +223,26 @@
 				// Keep row `last` at the bottom of the terminal.
 				const offset = (last: number) => (rowEls.length - 1 - last) * rowH();
 
+				// The address bar stretches with the window (the toolbar's
+				// middle is drawn stretched, .tb), so its ring does too.
+				const tb = one('.tb');
+				const urlbar = () => ({
+					...URLBAR,
+					w: URLBAR.w + Math.max(0, (tb.clientWidth * 48) / tb.clientHeight - 574)
+				});
+				let onUrlbar = false;
+				ro?.disconnect();
+				ro = new ResizeObserver(() => {
+					if (onUrlbar && !dead && me === run) utils.set(one('.ring'), ring(urlbar(), TB));
+				});
+				ro.observe(tb);
+
 				function pre() {
 					utils.set(q('.layer'), { opacity: 0 });
 					utils.set(q('.l-blank, .tb-blank'), { opacity: 1 });
 					utils.set(pic, { '--pan': PAN.nav });
-					utils.set(one('.ring'), { opacity: 0, ...ring(URLBAR, TB) });
-					utils.set(one('.pic-chip'), { opacity: 0, scale: 0.85 });
-					one('.pic-chip').classList.remove('fire');
+					utils.set(one('.ring'), { opacity: 0, ...ring(urlbar(), TB) });
+					onUrlbar = true;
 					utils.set(one('.pointer'), { opacity: 0 });
 					utils.set(rowEls, { opacity: 0 });
 					utils.set(rowEls[0], { opacity: 1 });
@@ -272,6 +294,7 @@
 					// 2. Type into the text box (the page scrolled it into view,
 					// and the pan moves with the ring).
 					log(3, 2900);
+					t.call(() => (onUrlbar = false), 3000);
 					box(TEXTBOX, PAN.typed, 3000);
 					pan(PAN.typed, 3000, 700);
 					swap('.l-typed', 3100);
@@ -295,20 +318,12 @@
 					t.add(one('.ring'), { opacity: 0, duration: 300, ease: 'inQuad' }, 8800);
 					rowEls.forEach((r) => t.call(() => r.classList.remove('new'), 8800));
 					t.add(rowEls, { opacity: REST, duration: 500, ease: 'outQuad' }, 8800);
-					t.add(
-						one('.pic-chip'),
-						{ opacity: [0, 1], scale: [0.85, 1], duration: 320, ease: 'outBack' },
-						9000
-					);
-					t.call(() => one('.pic-chip').classList.add('fire'), 9450);
-					t.call(() => one('.pic-chip').classList.remove('fire'), 9950);
 					pan(PAN.you, 9300, 900);
 
-					const k = pic.querySelector('.br')!.getBoundingClientRect().width / 574;
-					const c = one('.pic-chip').getBoundingClientRect();
-					const b = pic.querySelector('.br')!.getBoundingClientRect();
-					const sx = (c.left - b.left + c.width * 0.3) / k;
-					const sy = (c.bottom - b.top - 4) / k;
+					// Your pointer comes in from the page's empty right side,
+					// under the toolbar, over no text (capture pixels).
+					const sx = YOU.x;
+					const sy = TB + YOU.y;
 					const ex = POINTER.x;
 					const ey = TB + POINTER.y - PAN.you;
 					t.add(one('.pointer'), { '--px': sx, '--py': sy, duration: SWAP }, 0)
@@ -334,11 +349,11 @@
 					// the first tick).
 					t.call(() => at || picture.looped(), SEAM - 1);
 					swap('.l-nav, .l-typed, .l-bug, .l-t0, .l-t1', SEAM, 0);
-					t.add(
-						q('.l-t2, .pic-chip, .pointer'),
+					t.add(q('.l-t2, .pointer'), { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM).add(
+						rowEls,
 						{ opacity: 0, duration: 450, ease: 'inQuad' },
 						SEAM
-					).add(rowEls, { opacity: 0, duration: 450, ease: 'inQuad' }, SEAM);
+					);
 					swap('.tb-live', SEAM + 450, 0);
 					t.add(list, { y: offset(0), duration: SWAP }, SEAM + 450).add(
 						rowEls[0],
@@ -368,6 +383,7 @@
 
 		return () => {
 			dead = true;
+			ro?.disconnect();
 			unwatch();
 			picture.stop();
 			tl?.pause();
@@ -376,93 +392,82 @@
 </script>
 
 <div class="shot shot-box" use:picture.frame>
-	<PauseButton {picture} />
+	<PauseButton {picture} name="browser" />
 	<p id={descId} class="sr-only">{story}</p>
 	<div class="bstage" role="img" aria-label={label} aria-describedby={descId} bind:this={pic}>
-		<div class="shot-win open bw" aria-hidden="true">
+		<div class="shot-win bw" aria-hidden="true">
 			<WinHead who="machine" />
 			<div class="br">
 				<div class="tb">
-					<img
-						class="layer tb-blank"
-						src="/landing/browser-tb-blank.webp"
-						width="574"
-						height="48"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
-					<img
-						class="layer tb-live on"
-						src="/landing/browser-tb.webp"
-						width="574"
-						height="48"
-						loading="lazy"
-						decoding="async"
-						alt=""
-					/>
+					<i class="layer tb-blank"></i>
+					<i class="layer tb-live on"></i>
 				</div>
 				<div class="vp">
 					<div class="pg">
 						<div class="layer l-blank"></div>
-						<img
-							class="layer l-nav"
-							src="/landing/browser-p-nav.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-typed"
-							src="/landing/browser-p-typed.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-bug"
-							src="/landing/browser-p-bug.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t0"
-							src="/landing/browser-p-t0.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t1"
-							src="/landing/browser-p-t1.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
-						<img
-							class="layer l-t2 on"
-							src="/landing/browser-p-t2.webp"
-							width="574"
-							height="536"
-							loading="lazy"
-							decoding="async"
-							alt=""
-						/>
+						<div class="layer l-nav">
+							<img
+								src="/landing/browser-p-nav.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-typed">
+							<img
+								src="/landing/browser-p-typed.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-bug">
+							<img
+								src="/landing/browser-p-bug.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t0">
+							<img
+								src="/landing/browser-p-t0.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t1">
+							<img
+								src="/landing/browser-p-t1.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
+						<div class="layer l-t2 on">
+							<img
+								src="/landing/browser-p-t2.webp"
+								width="574"
+								height="536"
+								loading="lazy"
+								decoding="async"
+								alt=""
+							/>
+						</div>
 					</div>
 				</div>
 				<i class="ring"><i class="rt"></i><i class="rb"></i><i class="rl"></i><i class="rr"></i></i>
-				<span class="pic-chip">repose browser</span>
 				<svg
 					class="pointer"
 					viewBox="0 0 12 18"
@@ -503,23 +508,18 @@
 	/* Not named `stage`: landing.css gives .landing .stage a hairline and
 	   a 12px radius, which would ring this picture inside its cell. */
 	.bstage {
-		/* The chip sits on the captured page, which is white in either
-		   scheme, so it keeps the light scheme's --pic-accent value: the
-		   dark scheme's is 2.5:1 on #fff. */
-		--chip: var(--color-blue-600);
-		/* The log is dark in either scheme, so its acting row's bar keeps
-		   the dark scheme's --pic-accent value; the ring, on the white
-		   page, takes --chip's. A mark over a capture follows the
-		   capture's ground, not the page's scheme. */
-		--on-log: var(--color-blue-400);
-		/* one capture pixel, at the window's inner width (.bw) */
-		--k: calc(100cqw / 574);
+		/* The ring sits on the captured page, which follows the page's
+		   scheme (see the filter below), so it takes its accent. */
+		--chip: var(--pic-accent);
+		/* The log follows the scheme too (the terminals' palette). */
+		--on-log: var(--pic-accent);
 		--pan: 120;
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		height: 100%;
-		padding: var(--shot-in) var(--shot-in) 0;
+		padding: var(--shot-in) var(--shot-r, var(--shot-in)) var(--shot-in)
+			var(--shot-l, var(--shot-in));
 	}
 	.bw {
 		flex: 1;
@@ -527,8 +527,17 @@
 		container-type: inline-size;
 	}
 
-	/* The browser: flush with the frame's top and sides, a crop of the window. */
+	/* The browser: flush with the frame's top and sides, a crop of the
+	   window. One capture pixel is drawn 0.72px, so the captured page's
+	   type sets at the other cells' 13px (the captures are at 125% zoom),
+	   and the window is wider than the capture: the toolbar's middle, in
+	   the address bar, is drawn stretched, and the page stands at the
+	   left on its own ground, as a page with a fixed measure does in a
+	   wide window. The page's own scrollbar (its last 12 columns) is cut
+	   off (I-961). */
 	.br {
+		/* one capture pixel */
+		--k: min(0.72px, calc(100cqw / 562));
 		position: relative;
 		flex: 1;
 		min-height: 0;
@@ -544,6 +553,23 @@
 		border-bottom: 1px solid #d9dce0;
 		background: #fff;
 	}
+	/* Three slices of the toolbar's capture: the buttons and the address
+	   bar's start, one column of the address bar stretched, then its end,
+	   the profile and the menu at the right edge. */
+	.tb .layer {
+		inset: 0;
+		width: auto;
+		border-style: solid;
+		border-width: 0 calc(var(--k) * 174) 0 calc(var(--k) * 400);
+		border-image-slice: 0 174 0 400 fill;
+		border-image-repeat: stretch;
+	}
+	.tb-blank {
+		border-image-source: url('/landing/browser-tb-blank.webp');
+	}
+	.tb-live {
+		border-image-source: url('/landing/browser-tb.webp');
+	}
 	/* The page's own ground (#fafafa in the captures), so the Bug stop's
 	   12 pixels above the page's top read as the page. */
 	.vp {
@@ -552,41 +578,65 @@
 		overflow: hidden;
 		background: #fafafa;
 	}
-	/* The captures are the light scheme's only (I-669), so in the dark
-	   scheme the page and toolbar are dimmed to sit beside the dark
-	   windows instead of glaring white; the ring, the chip and the pointer
-	   are drawn over them undimmed. */
+	/* The captures are the light scheme's only (I-669). In the dark
+	   scheme they are drawn inverted with their hues turned back, so the
+	   app reads as its own dark theme beside the dark windows instead of a
+	   white block; the ring and the pointer are drawn over them
+	   untouched. */
 	@media (prefers-color-scheme: dark) {
 		:global(:root:not(.light):not([data-theme='light'])) :is(.tb, .vp) {
-			filter: brightness(0.86);
+			filter: invert(0.9) hue-rotate(180deg) saturate(0.8);
 		}
 	}
 	:global(:root[data-theme='dark']) :is(.tb, .vp),
 	:global(:root.dark) :is(.tb, .vp) {
-		filter: brightness(0.86);
+		filter: invert(0.9) hue-rotate(180deg) saturate(0.8);
 	}
 	/* Panned with translate, not top: a pan moves no layout box, so it
 	   counts for nothing in CLS (I-397). */
 	.pg {
 		position: absolute;
 		left: 0;
-		right: 0;
 		top: 0;
+		width: 100%;
 		height: calc(var(--k) * 536);
 		translate: 0 calc(var(--k) * var(--pan) * -1);
 	}
 	.layer {
 		position: absolute;
-		inset: 0;
-		width: 100%;
+		inset: 0 auto 0 0;
+		width: calc(var(--k) * 574);
 		max-width: none;
 		height: 100%;
 		opacity: 0;
+	}
+	/* Each page runs the window's width on the app's ground, its capture
+	   at the left with the page's scrollbar, its last 12 columns, cut
+	   off. The nav page's header rule (capture row 106) runs on to the
+	   window's edge. */
+	.pg > .layer {
+		width: 100%;
+		background: #fafafa;
+	}
+	.pg > .l-nav {
+		background:
+			linear-gradient(#e6e6e6, #e6e6e6) 0 calc(var(--k) * 106) / 100% 1px no-repeat,
+			#fafafa;
+	}
+	.pg > .layer > img {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: calc(var(--k) * 574);
+		max-width: none;
+		height: 100%;
+		clip-path: inset(0 calc(var(--k) * 12) 0 0);
 	}
 	.layer.on {
 		opacity: 1;
 	}
 	.l-blank {
+		width: 100%;
 		background: #fff;
 	}
 
@@ -642,20 +692,6 @@
 		}
 	}
 
-	/* You: the command, and your pointer in the same window. The grid's
-	   chip (landing.css), in --chip on the white page. */
-	.bstage .pic-chip {
-		position: absolute;
-		right: 10px;
-		top: calc(var(--k) * 48 + 10px);
-		border-color: var(--chip);
-		background: #fff;
-		color: var(--chip);
-	}
-	.bstage .pic-chip:global(.fire) {
-		background: var(--chip);
-		color: #fff;
-	}
 	/* Placed with translate, so anime.js's scale (the click) composes with
 	   it and the pointer's travel moves no layout box. */
 	.pointer {
@@ -672,14 +708,14 @@
 	.term {
 		position: relative;
 		flex: none;
-		height: 52px;
+		height: 55px;
 		overflow: hidden;
-		border-top: 1px solid #2a2a28;
-		background: #0d0d0c;
-		color: #d4d4d0;
+		border-top: 1px solid var(--rule);
+		background: var(--t-bg);
+		color: var(--t-fg);
 		font-family: var(--font-mono);
-		font-size: 11px;
-		line-height: 14px;
+		font-size: 12px;
+		line-height: 15px;
 		font-variant-ligatures: none;
 	}
 	.clip {
@@ -687,7 +723,7 @@
 		left: 0;
 		right: 0;
 		bottom: 5px;
-		height: 42px;
+		height: 45px;
 		overflow: hidden;
 	}
 	.rows {
@@ -726,14 +762,22 @@
 		opacity: 1;
 	}
 
+	/* On a phone the captures keep a size their text reads at (the
+	   address 11px), and the window crops them on the right into a fade,
+	   as the Editor's rows are cropped, instead of shrinking them to fit
+	   (review round 2, I-961). */
 	@container (max-width: 400px) {
+		.br {
+			--k: max(calc(100cqw / 562), 0.8px);
+			mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+		}
 		.term {
-			font-size: 10px;
-			line-height: 13px;
-			height: 49px;
+			font-size: 11px;
+			line-height: 14px;
+			height: 52px;
 		}
 		.clip {
-			height: 39px;
+			height: 42px;
 		}
 		.tr {
 			padding: 0 10px;

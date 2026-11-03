@@ -3,7 +3,8 @@
   --shot-head (28px) tall, 10px in from the window's sides, with the
   place's 16px mark and its name at 12px, the same in the hero, the
   setup section, the feature grid and Ready. `machine` is the cloud and
-  "your cloud machine" with the green running dot; `laptop` is the laptop
+  "your cloud machine" (the hero passes `dot` for the running dot its
+  stop greys; elsewhere the head names the place alone); `laptop` is the laptop
   and "your laptop"; `snapshots` is the hero's snapshots panel, whose
   pinwheel the hero passes as `mark` so its loop can turn it. Whatever
   the caller puts in `children` follows the name (Localhost's address
@@ -21,7 +22,7 @@
 	let {
 		who,
 		mark,
-		dot = who === 'machine',
+		dot = false,
 		children
 	}: {
 		who: keyof typeof NAME;
@@ -71,7 +72,9 @@
 		height: var(--shot-head, 28px);
 		padding: 0 10px;
 		border-bottom: 1px solid var(--rule);
+		border-radius: 5px 5px 0 0;
 		background: var(--sunken);
+		font-family: var(--font-sans);
 		font-size: 12px;
 		line-height: 16px;
 		color: var(--pic-ink);
@@ -92,7 +95,7 @@
 		height: 7px;
 		margin-left: auto;
 		border-radius: 50%;
-		background: var(--color-emerald-500);
+		background: var(--hk-ok-dot);
 		transition: background-color 0.2s;
 	}
 </style>

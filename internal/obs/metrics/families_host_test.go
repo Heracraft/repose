@@ -47,8 +47,8 @@ func TestHostFamily(t *testing.T) {
 		`repose_host_guest_cpu_seconds_total{class="large"}`,
 		`repose_host_guest_net_bytes_total{direction="tx"}`,
 		`repose_host_guest_notify_dropped_total{reason="rate_limited"}`,
-		`repose_host_guest_freeze_unfrozen_total{reason="estimate"}`,
-		`repose_host_guest_thaw_discarded_total{reason="window"}`,
+		`repose_host_guest_park_skipped_total{reason="estimate"}`,
+		`repose_host_guest_unpark_discarded_total{reason="window"}`,
 		// The idle pause (DECISIONS I-818). §5 of
 		// docs/workstreams/10-observability.md names these four; this
 		// list is what holds hostd to it.
@@ -56,6 +56,16 @@ func TestHostFamily(t *testing.T) {
 		`repose_host_guest_pause_total{reason="idle",result="paused"}`,
 		"repose_host_guest_wake_seconds_bucket",
 		`repose_host_guest_wake_failed_total{reason="resume"}`,
+		// The kernel's latched verdict on the host (DECISIONS I-1010).
+		// Read at scrape time by a Collector, so these appear with no
+		// Set above -- which is also the check that the Collector is
+		// registered at all.
+		`repose_host_kernel_tainted{reason="die"}`,
+		`repose_host_kernel_tainted{reason="machine_check"}`,
+		`repose_host_kernel_tainted{reason="bad_page"}`,
+		`repose_host_kernel_tainted{reason="soft_lockup"}`,
+		`repose_host_kernel_tainted{reason="warn"}`,
+		"repose_host_panic_on_oops",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("host metrics do not contain %s", want)

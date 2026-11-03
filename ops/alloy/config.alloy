@@ -83,12 +83,25 @@ prometheus.scrape "api" {
   scrape_interval = "30s"
 }
 
-// 10.255.0.3 is the monitoring server on the edge's hub, and 9090 is open
-// to peers only since I-952. Prometheus answers this path only with
-// --web.enable-remote-write-receiver.
+// The monitoring server's own Coolify-exported hostname, NOT the WireGuard
+// address. 10.255.0.3:9090 was the original target and nothing ever answers
+// there: Prometheus runs in a container that publishes no host port, so its
+// `--web.listen-address=0.0.0.0:9090` is inside the container and a peer
+// reaching the tunnel address finds nothing. Measured 2026-11-02: with that
+// URL, queue_highest_sent_timestamp_seconds was 0 with 8287 samples pending
+// after two days -- nothing had ever been delivered, while
+// samples_failed_total read 0, because a connection timeout is retryable and
+// only a non-retryable answer moves that counter. With this URL, 1.16M
+// samples sent, 0 failed (DECISIONS I-1018). I-952's 9090 in the edge's
+// logPorts is left alone: it costs nothing and is the path if the port is
+// ever published.
+//
+// This is the config the running service has had since the owner corrected
+// it by hand; the repo is what drifted. A redeploy from the repo would have
+// restored the dead address and stopped delivery silently.
 prometheus.remote_write "monitoring" {
   endpoint {
-    url = "http://10.255.0.3:9090/api/v1/write"
+    url = "https://prometheus-bl4mosgk1kmakk8o.herakraft.co/api/v1/write"
   }
 
   // That Prometheus is shared with the owner's other projects, and every

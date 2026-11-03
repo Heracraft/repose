@@ -102,8 +102,8 @@ component must emit:
   carries the `reason` it was asked for and, when hostd refuses, the
   `why_not`; a wake carries `wake_ms`, and a wake that failed logs at
   Error with the step as `phase`). `guest_resting` is a literal beside
-  the constants in `internal/obs/events.go`, as `guest_freeze` and
-  `guest_thaw` are.
+  the constants in `internal/obs/events.go`, as `guest_park` and
+  `guest_unpark` are.
 - guestd: `ready`, `freeze`, `thaw`, `freeze_timeout`, `switch`,
   `agent_event`, `agent_state`, `oom_priority` (I-200, counts only),
   `hook_bad_payload`, `agent_question` (I-244: ids, states, counts and
@@ -175,14 +175,14 @@ Families:
   not forwarded: `rate_limited`, `invalid`, `queue_full`; I-445),
   `repose_host_guests_interrupted` (gauge, guests a host restart took down
   in the last 6 h that have not run since; I-645),
-  `repose_host_guest_freeze_unfrozen_total{reason}` (running guests a
-  freeze left without their memory: `no_room`, `estimate`, `deadline`,
+  `repose_host_guest_park_skipped_total{reason}` (running guests a
+  park left without their memory: `no_room`, `estimate`, `deadline`,
   `failed`, `no_key`, `busy`; I-796),
-  `repose_host_guest_thaw_discarded_total{reason}` (frozen guests whose
-  image a thaw discarded, so they started cold: `incomplete`, `too_old`,
+  `repose_host_guest_unpark_discarded_total{reason}` (parked guests whose
+  image an unpark discarded, so they started cold: `incomplete`, `too_old`,
   `changed`, `no_key`, `failed`, `window`; I-796). Both are running
-  totals kept beside the freeze records and published at each start: a
-  shutdown freeze's counter is never scraped and a thaw's is raised
+  totals kept beside the park records and published at each start: a
+  shutdown park's counter is never scraped and an unpark's is raised
   before the listener is up, so a per-process count reads the same after
   every reboot and `increase()` sees no rise.
   The idle pause (I-818) adds `repose_host_guests_resting` (gauge, guests
@@ -202,6 +202,39 @@ Families:
   because `outcome` is not in the allowed label list above and `result`
   is. A resting guest keeps `guestd_ok` true, so it is never in
   `repose_host_guestd_lost` and `GuestdLost` cannot page for one.
+  The kernel's latched verdict on the host (I-1010) adds
+  `repose_host_kernel_tainted{reason}` and `repose_host_panic_on_oops`,
+  both read from `/proc` **at scrape time** by a Collector rather than Set
+  by a loop: whether a host's kernel can be trusted does not ride the
+  60-second billing sampler, and a stale gauge cannot be told from a quiet
+  host. `reason` is `die`, `machine_check`, `bad_page` (the three
+  `HostKernelTainted` pages on), `soft_lockup` and `warn` (series only --
+  a soft lockup is load, which `HostCPUSaturated` covers, and a warning is
+  a condition the kernel recovered from, the division I-980 already drew).
+  The word is decomposed in hostd because PromQL has no bitwise AND, and
+  because bits 0, 12 and 13 -- a proprietary, out-of-tree or unsigned
+  module -- are set on every healthy host and never clear, so a rule on
+  the word itself would page for ever. **Every reason reads 1 when the
+  taint word cannot be read at all**: the gauge means "latched, or cannot
+  be ruled out", because a host whose verdict is unreadable is not a host
+  known to be clean.
+- Host, from node_exporter's textfile collector rather than from hostd:
+  `repose_kernel_check{check}` (I-1010), written every minute by
+  `repose-kernel-check.timer` into its own `repose_kernel.prom`.
+  `large_hash_linear` is a positive read of this boot's `Dentry cache hash
+  table ... linear` line (I-982); `cmdline_recognised` is the absence of
+  `Unknown kernel command line parameters`, the line that caught I-988
+  after a host had been switched *and* rebooted for a parameter the kernel
+  never took; `large_hash_vmalloc_absent` reads `/proc/vmallocinfo` and no
+  rule looks at it, because its positive state cannot be produced on any
+  machine available to us -- nothing here has more than one NUMA node, and
+  letting an unconfirmed read veto a confirmed one is I-968's shape inside
+  the guard written against I-968. Every check is pre-seeded to 0 and
+  republished by an `EXIT` trap, so a writer that dies publishes reds
+  rather than nothing: an absent series is green under `noDataState: OK`.
+  The two journal-derived verdicts latch per `boot_id`, because the
+  journal is capped at 4G and a long boot can lose its own head -- a
+  rotation must not turn a red into a green or a green into a red.
 - API: `repose_api_requests_total{route,method,status}`,
   `repose_api_request_duration_seconds{route}`,
   `repose_api_hosts{state}`,
@@ -328,13 +361,16 @@ to watch the heartbeat from is the one it would be watching (I-944).
 | `StoreFull` | host root fs > 85 percent | warn |
 | `GuestdLost` | `repose_host_guestd_lost > 0` for 5m | warn |
 | `KernelOops` | Loki, not Prometheus: `count_over_time({component="kernel"} |~ "Oops:|BUG:|general protection fault|Voluntary context switch within RCU" [10m]) > 0`. The host kernel faulted and has not panicked yet; the source is `ops/alerts-loki.yaml`, which promtool does not parse (I-980) | page |
+| `HostKernelTainted` | `max by (host_id) (repose_host_kernel_tainted{reason=~"die\|machine_check\|bad_page"}) > 0`, `for: 0m`: the kernel's own latched verdict, or a taint word hostd could not read. Unlike `KernelOops` it does not go green on its own -- host-02 priced that difference at 8 minutes of alert for 3 h 48 m of untrustworthy host (I-1010) | page |
+| `HostPanicOnOopsOff` | `repose_host_panic_on_oops == 0` for 15m: an oops would be survived instead of rebooting the host (I-984, I-988) | warn |
+| `HostKernelAssertFailed` | `repose_kernel_check` reading 0, or absent on a scraped host, or a textfile older than an hour, for 10m: a boot that is not the boot the configuration asks for, or nothing checking (I-1010) | page |
 | `RollupLag` | `repose_api_rollup_lag_seconds > 2*3600` | warn |
 | `BillingWebhookRejected` | `sum(increase(repose_api_billing_webhook_total{result="bad_signature"}[10m])) >= 5` | warn |
 | `OverageChargeFailed` | `increase(repose_api_billing_overage_charges_total{result="error"}[1h]) > 0` | warn |
 | `BillingStopped` | `sum by (reason) (increase(repose_api_billing_stops_total[1h])) > 0` | info |
 | `EgressBlocked` | `repose_host_egress_blocked_guests > 0` for 2m (I-238..I-240) | warn |
-| `GuestLeftUnfrozen` | `sum by (host_id, reason) (increase(repose_host_guest_freeze_unfrozen_total[6h])) > 0` for 5m (I-796) | warn |
-| `GuestImageDiscarded` | `sum by (host_id, reason) (increase(repose_host_guest_thaw_discarded_total[6h])) > 0` for 5m (I-796) | warn |
+| `GuestNotParked` | `sum by (host_id, reason) (increase(repose_host_guest_park_skipped_total[6h])) > 0` for 5m (I-796) | warn |
+| `GuestImageDiscarded` | `sum by (host_id, reason) (increase(repose_host_guest_unpark_discarded_total[6h])) > 0` for 5m (I-796) | warn |
 | `GuestWakeFailed` | `sum by (host_id, reason) (increase(repose_host_guest_wake_failed_total[15m])) > 0` for 5m: a frozen guest that would not resume, its memory and processes still intact (I-818) | warn |
 | `GuestWakeSlow` | `histogram_quantile(0.9, sum by (host_id, le) (rate(repose_host_guest_wake_seconds_bucket[15m]))) > 5` for 15m: past the gateway's 10 s dial budget, so the next wake is a failed ssh (I-818) | warn |
 | `SamplesFailing` | `sum by (reason) (increase(repose_api_samples_failed_total[15m])) > 0` (I-446) | warn |

@@ -3,6 +3,7 @@ package resting_test
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,8 +12,15 @@ import (
 
 	"github.com/heracraft/repose/internal/api/apitest"
 	"github.com/heracraft/repose/internal/api/resting"
+	"github.com/heracraft/repose/internal/db/testdb"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
+
+// Without this the throwaway Postgres cluster this package starts is never
+// stopped: testdb.Run is what stops it when the package's tests end, and
+// every other package that touches testdb or apitest has had this line all
+// along -- this was the one that did not (DECISIONS I-998).
+func TestMain(m *testing.M) { os.Exit(testdb.Run(m)) }
 
 // sender stands in for hostmgr: it counts the commands the service sends
 // and, when answer is set, hands each one back as a result the way the

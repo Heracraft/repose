@@ -27733,6 +27733,286 @@ was never deployed, and completes I-952.
   `ops/grafana/alerts-gen.py` refused `ApiMetricsAbsent` until it was
   declared in `BOOLEAN_EXPRS`, which is that guard doing its job.
 
+**I-961. The landing is one quiet, gapless composition: bands that end on
+the next band's rule, one two-column line from 1024px, one stage and one
+terminal palette.**
+(landing-refine, 2026-11-02) Amends I-837 (the landing's layout) and I-843
+(the pictures' stage, the steps, the pricing head), and LANDING.md "Real,
+or not at all" for colour only. The owner asked for a landing that is
+"clean and consistent", with visuals that no longer feel bolted on, after
+voidzero.dev and Linear. Three alternatives were built and judged at real
+size by three critics; the quiet one (B) won all three votes, and the
+judges' grafts and its named defects were then worked in.
+- *Gapless.* Every band after the hero opens with a hairline the window's
+  width and ends on the next one. A band that ends on a picture has no
+  bottom padding and its stage rests on that rule, open and square at its
+  foot. A band that ends on a ruled list (steps, plans, questions) ends on
+  its last row, the questions on the footer's rule. Empty space is padding
+  inside a band. B's first version dissolved each stage into the page
+  over 64px; all three critics read the washed strip and the empty band
+  under it as the gap the owner named, and the fade also erased the
+  Editor's statusline and the Browser's agent log. So the fade is gone.
+- *One column line.* From 1024px (I-837's breakpoint, kept) every head is
+  two equal columns 32px apart, which is the footer's own line. The h2 is
+  on the left and the one line, links or button the section needs is on
+  its first baseline on the right; a section that needs no sentence leaves
+  the right column empty rather than gaining a caption. The hero's lead
+  and buttons, the steps and the questions use the same line, and the
+  questions' heading stays sticky. Between 1024 and 1199px the steps' Copy
+  is its icon and the line 12px, so the install command fits its half
+  (`CodeCopy` gains `labelFrom`).
+- *One stage, closed in the grid.* A grid cell's stage is closed on four
+  sides with its windows inset alike, so no window runs off an edge. The
+  Browser and the Editor lose their "your cloud machine" head, since their
+  captured chrome is the head; the label stayed where it tells the machine
+  from the laptop or a snapshot. Only the hero's machine keeps its running
+  dot.
+- *Steps and pricing as ruled rows.* The steps lose their gauges and `$`:
+  a mono number and the serif name on the left, the command filling the
+  right column flush on the stage's tone, on one line at every width.
+  The plans become cells split by hairlines with no card edge, the one
+  card idiom left on the page. "Launch prices." and "Start a free week"
+  move into the pricing head's right column; "Seven days free." goes,
+  since the button beside it says so.
+- *One terminal palette, mapped by role.* Ready, Localhost's tmux, the
+  Browser's log and the Editor's nvim draw from `--t-*`, light on the
+  light page and dark on the dark one, so no black slab sits on the light
+  page. The captures' colours are mapped by role (one-dark and xterm-256
+  by their ANSI tables, Tokyo Night by a role map); their text and layout
+  are untouched, but for the checkout name (see "Review round 1"). The
+  Browser's captures exist only in the light scheme, and the owner's
+  machine is not reachable to take a dark set, so in the
+  dark scheme they are drawn with `invert(0.9) hue-rotate(180deg)`, which
+  the critics preferred to a bright block. A real dark capture replaces
+  it when one can be taken.
+- *Copy.* The lead is main's again, snapshot sentence included: B cut it,
+  and the owner's lead is the owner's. The features heading becomes "A
+  cloud machine that feels like your own box", the idea it serves; the
+  Localhost cell is titled "Use its ports on your localhost", says the
+  mechanism first ("Ports from 1024 up appear on your localhost while
+  you're attached") and shows `repose open 5173`, the port its picture
+  forwards. The eyebrow and the step numbers share one label: Geist Mono
+  12px, upper case, tracked. The h1's floor rises so it never sets under
+  an h2; at 390px it holds two lines at 32px, since "Your dev
+  environment," does not fit a line at 33px or more.
+- *Left as they were.* The hero picture is still about 1000px tall on a
+  phone; that cannot change without redrawing it. (The Localhost
+  headline left with review round 2.)
+- *Review round 1.* The feature grid joins the ruled system: four cells
+  split by hairlines like the plans, with no gap, the vertical rule in the
+  middle of the column gap so the right cells start on the column line,
+  and the band ends on its last row. Below 1024px the grid and the plans
+  are one column, as every other section is; a one-column cell keeps the
+  2x2's 34rem, so the pictures draw at one size at every width. The grid
+  pictures share one type size: their chrome and terminals at 12px mono
+  (11px on a phone), the Editor's capture at 12px cropped on the right
+  into a fade instead of shrunk to fit its 78 columns, its powerline
+  separators drawn in CSS like its box drawing. The Browser loses its
+  `repose browser` chip, which the cell's command line already names.
+  ComesBack's snapshots stand in a window as tall as the machine, as the
+  hero's rail does, and on a phone the two tiles share the row under it.
+  The Localhost crop ends under the headline where the paragraph cannot
+  show whole. The cells' commands lose their `$`, as the steps did. The
+  copy tells each fact once: the ComesBack cell says what a snapshot
+  restores that git cannot, and FAQ 3 the schedule (nightly, at each
+  stop, your own). FAQ 2 no longer names notifications, which LANDING.md
+  "What we sell" rules out. The OneCommand capture is cropped to the
+  branch's two commits: master's base commit was a note about the app's
+  own UI and told a stranger nothing. A capture's internal checkout name
+  may read `your-project`, the pictures' checkout, at the same column
+  width (the Editor's explorer, Localhost's and Ready's tmux bars); this
+  is the one text change a capture takes. Each pause button is named
+  after its picture. The hero's install line keeps 12px and scrolls
+  under a fade where its column is narrower.
+- *Review round 2.* Below 1024px a feature cell runs the frame's width
+  like every other band, its stage too, and the picture inside keeps the
+  2x2's 34rem, centred on the stage (chosen over a centred 34rem column,
+  which would have shortened the band's rules). ComesBack's snapshots
+  window is as tall as its two tiles and centred on the machine; on a
+  phone both tiles stand whole at every beat. The Localhost app page
+  ends above its headline (the nav and the ground under it), since drawn
+  at the window's width that headline set at about 34px and a smaller
+  drawing took the nav under 11px; the forward's wire takes the height
+  that frees. On a phone the Localhost and Browser captures keep a size
+  their text reads at and crop on the right into a fade, as the Editor
+  does, and the Browser capture is drawn so its own scrollbar falls
+  outside the window. The Editor's chrome accents (the explorer's frame,
+  the tree, the current line number, the statusline's mode and branch)
+  map onto the zinc steps and the folder icons onto the slate blue; the
+  hero's mode line maps onto the muted ink, so red is the wreck's alone.
+  The hero's stage alone bleeds to the window's edges, a step deeper in
+  tone: the page's one tonal moment. Cell commands set as the hero's
+  install line does (12px mono, third grey), under their paragraph,
+  which leaves two command treatments on the page, runnable (the steps,
+  with Copy) and reference. The cells' copy gives a fact the picture
+  cannot carry (the restore and `--as`, the bridge to your Chrome), and
+  the Localhost and Editor cells show the commands their pictures show
+  (`repose attach`, `ssh your-project.repose`). The struck founding price
+  sets in the serif; the plans sit flush on the frame at 640 to 899px as
+  at every other width. The agents' marks stay unnamed (I-287); each
+  names itself under the pointer.
+- *Option D.* (landing-refine-d, 2026-11-02) The owner asked for one
+  design that takes the strengths of all three alternatives. It
+  supersedes the column line, the closed grid stages and the stage's
+  floor above, and keeps B's spacing scale, type scale, stage material,
+  `--t-*` palette, bleed hero, gapless band rule, copy and the two
+  command treatments.
+  - From A (Frame): the page is one ruled sheet on a 12-column grid (32px
+    gap). The sheet is the content box outset by `--edge`: the frame's
+    gutter below 1280px, so the sheet is the window, and 16px from
+    1280px, where two rails (`--hk-border`) draw its edges and a 9px
+    cross marks each band rule where it meets a rail, the footer's rule
+    included. Two rule weights: rails and band rules in `--hk-border`,
+    every rule inside a band in `--hk-hairline`, running the sheet's
+    width. A stage is the cell itself, flush from rule to rule with no
+    edge or radius; windows stay closed in it at the one inset. Every
+    picture sits under a 40px figure bar (48px to a coarse pointer)
+    holding its number, `Fig. 0` to `Fig. 3`, and its pause button, which
+    replaces the 48px floor. Heads align their side item to the h2's
+    last baseline. From 1200px the hero sets the h1 on seven columns and
+    the lead on five, on one baseline, with the buttons and the install
+    line in one row under both. The hero field carries a 16px dot grid
+    that fades with its sheen, and the rails stop at it. The questions'
+    list runs from the centre hairline to the rail, with the sticky
+    heading on the first question's baseline.
+  - From C (Editorial): each band after the hero opens on a mono label,
+    `01 Setup` to `06 Questions`. Pricing's heading is "Launch prices",
+    the line that said it goes, and the button and seats line stand
+    beside it; the questions' heading is "Before you try it". Between
+    1024 and 1199px the hero's buttons sit on the lead's last line. The
+    hero's globe is a line globe. Ready's tools have 16px icons in the
+    dim ink at 13px, the everyday tools' line under the list. On a phone
+    a step's number and name share one baseline over the command cell.
+  - New in D: the thirds lines of the same grid hold the plans (three
+    across from 1024px, stacked below, so no plan line wraps at 768px)
+    and Ready's lower row, the tools on one third and the shell on two,
+    flush on `--t-bg`, so its hint row is whole from 1024px. Commands are
+    13px everywhere, 12px under 640px (the hero's install line too, which
+    still scrolls under its fade on a phone, never shrunk). The page's
+    own text uses no blue.
+  - Left open: the hero picture's height on a phone and the Localhost
+    crop, as before.
+  - *Option D, review.* (landing-refine-d, 2026-11-02) Three critics
+    (design, anti-pattern, adversarial) read D at 1x. What changed:
+    - No numbered labels or figure bars. The page ran three numbering
+      systems (band labels, `Fig. 0` to `Fig. 3`, step numbers) that no
+      sentence cites, and the labels repeated the h2s and the header's
+      links; seven 40px bars held a number and, on a desktop, nothing
+      else. The step numbers stay, as the one numbering. A looping
+      picture's pause button shows at rest: a band picture's in its
+      field's top right corner (the field is `--field-y`, half a band and
+      never under 48px, above and below its windows), a cell's at the
+      right end of its title's line. The hero's button had been cut away
+      by its field's `clip-path` while its box and opacity said it was
+      there, so a test now hit-tests each button at its centre.
+    - Every head has a side item: the machine's a line of copy, the
+      install and questions heads two docs links, as the agents' head
+      has. The machine's heading is "Work on the machine as you would on
+      your laptop", the claim its cells show. The questions take the
+      same head and run from rail to rail; the sticky heading over an
+      empty half went.
+    - Windows stand on the text lines at every width: band pictures pad
+      by `--edge`, the cells' pictures by `--shot-l` and `--shot-r`, and
+      below 1024px a cell's picture starts on the text line and stops at
+      34rem rather than centring. The rails and `--edge` start at 1200px,
+      where the frame stops growing, so no width shows sheet edges in
+      mid-air (1215 to 1279px did). The header cross, hidden under the
+      sticky header, went; the footer's rule over the theme switch runs
+      rail to rail and closes the rails with a cross pair.
+    - The hero's field is a dark plate in both schemes, the hero picture
+      drawn on it in its dark palette, so the page has one moment of
+      contrast; in the dark scheme the plate is a step over the page
+      with a lit edge and a visible dot grid. This lifts, for the field
+      alone, the "no dark slab on the light page" line above.
+    - One picture scale: the Browser draws a capture pixel at 0.72px, so
+      its page sets at the other cells' 13px, with the toolbar's address
+      bar stretched to the window and the page on its own ground at the
+      left; the nav beat pans to the page's top so the crop falls under
+      the subtitle. Localhost's laptop page ends under its nav's rule,
+      and the machine's window shows Vite's ready line (Vite 8.0.1, from
+      this repository's dev server) over the captured Local line.
+      ComesBack's snapshots stand on the machine's top line. The
+      Editor's rows fade over 56px.
+    - Copy: one name for the product noun ("cloud machine", not "box");
+      a command named in a sentence is mono in the sentence's grey with
+      no chip; the snapshot cell says what a snapshot holds and what
+      `--as` does; the Browser cell says what `repose browser` is for,
+      with the bridge left to the docs; the third question asks how long
+      snapshots are kept (lifecycle.md). The hero's lead, the setup
+      paragraph and "Start in three commands" stay the owner's (I-772,
+      and above).
+    - Smaller: the steps' command cells lose their top highlight and
+      darken by `--hk-active` under the pointer, Copy's hover ending on
+      the text line; a plan's rule over its memory line runs the cell's
+      width; Ready's tools stand on the stage's tone, and its shell rows
+      start on the text line below 1024px (the media rule had lost to
+      later base rules); the agents' links keep their space before the
+      arrow on a phone; Localhost's tmux bar holds one line at 360px.
+  - *Owner's pick.* (landing-refine-d, 2026-11-02) The owner chose D
+    over A, B and C, and asked for two things from C and one fix. D's
+    system (sheet, rails, crosses, flush cells, the dark hero plate,
+    heads on the h2's last baseline) stands as above. What changed:
+    - C's editor: the Editor stands in a closed window under the "your
+      cloud machine" head, inset on its stage, and its Tokyo Night
+      capture maps onto `--t-*` through C's two maps, one for grounds
+      (code and tabs on `--t-bg`; explorer, tabline and statusline on
+      `--t-bar`; the current line on `--t-sel`) and one for text, since
+      one hex is a ground in one run and a text colour in another. Its
+      accents come back from C on the palette's muted hues: the
+      explorer's frame, the tree, the current line number, the filled
+      mode and clock. The Browser takes the same head over its captured
+      toolbar, so the four grid pictures share one treatment, a closed
+      window under a head, and none is a raw capture flush to its cell.
+      The cells' stage grows from 20rem to 22rem so the head costs no
+      rows: the Editor's 20 rows keep 13.7px at 12px type, and the
+      Browser's page keeps its height, its bug beat panned to 20 capture
+      pixels over the page's top so the crop falls between the text
+      box's lines.
+    - C's editorial labels, as the page's one numbering, which reverses
+      the review's "no numbered labels": each band's head opens on its
+      label (`01 Setup`, `02 Machine`, `03 Agents`, `04 Install`,
+      `05 Pricing`, `06 Questions`) on the text line, 16px over the h2;
+      each cell's copy on its own (`2.1 Snapshots` to `2.4 Editor`), 8px
+      over the title; and the steps count `4.1` to `4.3` under 04. A
+      label is Geist Mono 12px, upper case, tracked 0.06em, in
+      `--hk-text-3`, its number in `--hk-text-2` at a fixed 2.75em, so
+      the names start on one line and a step's name starts there too.
+      No figure bar or "Fig." number returns; the pause buttons keep
+      their places (a band picture's field corner, a cell title's line).
+    - The head links: a pair of docs links (agents, install, questions)
+      ends on the right text line, the frame's right content edge, on
+      the h2's last baseline, 16px apart (24px before), and those heads
+      stand as far over what they head as the paragraph heads do: 43px
+      from the h2's last line box to the content at 1440, 1280 and 1024,
+      for every head but pricing, whose button is taller. Paragraphs
+      still start on the column line.
+    - Pricing (owner, 2026-11-02, with a screenshot: the button floated
+      mid-head from the centre column, x=729 at 1440): "Start a free
+      week" ends on the right text line too, its label on the h2's last
+      baseline, the seats line before it on the same baseline and
+      wrapping on the left (20rem at most) when the waitlist line is
+      long, so every head's side action ends on one right edge. Below
+      1024px it stays under the h2, full width on a phone.
+    - Hero (owner): the buttons never stand beside the lead. From 1024
+      to 1199px they had stood in the right half beside it; now from
+      1024px "Get started", "Copy install command" and the install line
+      share one row under the headline and the lead at every width,
+      checked at 1024, 1100, 1280, 1440 and 1920.
+    - Review of the pick (2026-11-02): Ready's shell under 03 Agents
+      takes the grid's window too (24px above and below, the text lines
+      at the sides, the same head), as C has it; it was the one picture
+      still flush to its cell after a band of inset windows. Below
+      1024px the grid's windows run between the text lines (the 34rem
+      cap left a 164px strip at 768). ComesBack's snapshots window runs
+      the machine's height. On a phone the Editor's explorer is cropped
+      off whole, so the code gets the window (15 columns of code at
+      390 before). Copy's label in the steps ends on the right text
+      line. A link pair that wraps on a phone stands its second line
+      32px under the first. The labels read "01 Setup" to a screen
+      reader and a copy (a space inside the number's fixed width). The
+      eyebrow is in the second grey. The Browser's address-bar ring
+      follows a resize. Pricing's button keeps its label on the h2's
+      baseline, its box hanging under it.
 **I-972. The thaw test asserts the deadline the unwraps share, not how
 long the reconcile took — and the old assertion could not fail for the
 reason it was named for.** (CI red on main, 2026-11-02.)
@@ -28219,3 +28499,584 @@ failed with exit code 3. `nix flake check --no-build ./nix` passes.
 
 This is what I-1012's "the VM half gates nothing until `host-reboot` is
 fixed" was waiting for: with this merged, that guard is live.
+**I-992. `record` stamps the release's own date and main, not today's.** (record-stamp, 2026-11-03.)
+
+`release-queue record` built the STATUS line with `date -u +%Y-%m-%d` and the record file with `git rev-parse --short main`. Both are right only on the day of the release, and wrong by exactly as much as the record is late. So the two faults compound: a record is written late *because* nobody got to it, and the lateness is what makes it wrong, and nothing in the output says so.
+
+It had teeth. On 2026-11-03, sixteen of the twenty-three releases the queue knows had neither a record file nor a STATUS line — the oldest `r20261018-1`, from 2026-10-18 — and `record r20261018-1` offered to stamp it `2026-11-03` and `main b55d17dd`, a commit from sixteen days after the release it was describing. Seven of the sixteen predate 2026-11-02, so this was not one busy night: `docs/releases/` has been honoured for seven releases out of twenty-three since the convention began at `r20261017-1` (DECISIONS I-760).
+
+Both values were recoverable and neither was being read:
+
+- **The date is stored.** `done` writes `integrated=<RFC3339>` into the release's state file; the first ten characters are the date.
+- **The main is in git.** `cut` names the release in every merge commit it writes (`Merge <branch> (<release>)`), so the newest such commit on `main` is that release's tip. Checked against three: `r20261018-1` gives `c069908cc`, `r20261101-2` gives `3dd02bf9b` — which is exactly the commit `main` was fast-forwarded to for that batch — and `r20261102-8` gives `b55d17dd9`, which is current `main` because it genuinely is the newest release.
+
+Both fall back to the old behaviour when they cannot be found, so a release whose merge is not yet on `main` still records something rather than an empty field.
+
+*Why this belongs with the rest of 2026-11-02 rather than as a tidy-up.* It is the same fault as I-958, I-968, I-970 and I-988, in the record-keeping instead of the code: `date -u` is a proxy for the release's date and `git rev-parse main` is a proxy for the release's main, and both were green — they produced a plausible, well-formed, confidently wrong record. The reader of `docs/releases/r20261018-1.md` had no way to tell. A record that is wrong in a way its own format cannot express is worse than a missing one, because the missing one is visibly missing.
+
+*Found by* checking whether the backlog was assemblable before asking an agent to assemble it, and reading what `record` actually printed for an old release instead of trusting that a tool fed from stored state would stamp stored values.
+**I-994. A cited decision id with no entry fails the index check.** (green-checks, 2026-11-03.)
+
+`ops/dev/decisions-index.py` refused two entries claiming one id and asked nothing about the reverse. So `I-904` was cited in eight shipped places — `docs/interfaces/api.md` among them, a contract doc — with no entry at all, for two days, and was found by accident while somebody asked an unrelated question about id reservations (2026-11-02). A reader following that citation arrived at nothing, and the index, the release gate and CI were all green.
+
+`orphans()` now collects every bare id from the paths where one is a claim about an entry, and fails on any that no entry declares. Each failure names the file and line. The script exits 1 in both write and `--check` mode, and prints to **stderr**, because `ops/dev/release-queue` redirects only stdout when it regenerates the index during a cut: a gate that aborts under `set -euo pipefail` with its reason on a discarded stream is a worse gate than none.
+
+- **Declared, not grepped.** The set comes from the script's own `parse()`, so grouped (`R2-12 + R3-16`) and ranged (`I-195..I-205`) headings keep one grammar; ranges are expanded numerically. 884 ids are declared today.
+- **One `git grep -nI -P`,** not a file walk. `-I` skips binaries once and for all, which is what stops a byte sequence inside `apps/web/static/fonts/inter-latin-ext-opsz-normal.woff2` reading as a citation. `-P` is not optional: the pattern ends in a negative lookahead, and `git grep -E` matches nothing at all with it, silently — the same fault this check exists for, in the check itself.
+- **A separate pattern for citations.** The heading pattern allows a trailing letter; no entry uses one, and allowing it here would let `I-7xx` in a comment read as a citation of `I-7`. The lookahead rejects it.
+- **A scan that matched no files fails loudly.** Run outside a work tree or with a bad pathspec, `git grep` says nothing, and silence would read as a clean tree.
+- **`docs/DECISIONS.md` itself is out of scope**, with the rest of the logs — `STATUS.md`, `status-archive/`, `releases/`, `research/` — because a dead id in a record of claimed or abandoned work is the history, not a mistake.
+
+*It failed its own check twice on the way in, which is the best evidence it works.* First on the three places its own comments and message name this entry, before this entry existed. Then on a comment that cited two reserved-and-unused ids as examples of what `DECISIONS.md` holds in prose: written inside an enforced path, the examples were citations. That comment now names them by line number instead, and says why.
+
+*Waived, in `KNOWN_ORPHANS`, four ids with a reason each:* `I-809`, cited in `internal/api/snapshots/expiry.go`, whose intent is not recoverable — the citing commit carried two other ids and no STATUS line names it, so whoever wrote the comment should say what they meant, and nobody should invent an entry for it; and three interview-round ids used as cross-references and never written as entries. A waiver that acquires an entry also fails, so a stale one cannot sit there. A fifth line is a confession, not a configuration.
+
+*A sibling branch's entry is an orphan here, and that is correct.* Two branches cut from the same main, each adding an entry and each citing the other's id, both fail this check until they are integrated together. The check reads one tree, which is the tree a reader of that branch gets, so per-tree is the honest answer -- but a lane that cites an id from a branch still in the queue will see it, and the fix is to name the behaviour rather than the number until both land. This was found on the branch that added the check, citing an id from its own sibling.
+
+*What it does not do, and must not be read as doing.* It is an existence check on a number. It cannot tell whether the id cited was the one meant — a mis-cite of a real entry passes, and that is the commoner fault. A stub entry satisfies it. In-prose citations inside `DECISIONS.md` and everything outside git — commit messages, release notes, handover files — are unreachable. *Rejected:* enforcing over the logs, which would turn every abandoned claim into a failure and be disabled within a week.
+**I-1000. The steps that must run when something above them fails are locked, and nothing unconditioned may sit behind them.** (green-checks, 2026-11-03.)
+
+I-970 put `if: ${{ !cancelled() }}` on the three steps of the `go` job that had been skipped for sixteen days. Nothing holds them there. Delete a condition and the step goes back to being hidden by any failure above it, silently, because a step that never ran reports as "not failing" — which on the job list is indistinguishable from one that ran and passed.
+
+`TestAlwaysRunStepsStayUnconditioned` in `test/supplychain` does two things:
+
+- **`ALWAYS_RUN` is a registry**, keyed `"<workflow> <job> <step>"`, of the steps that must keep running, each with the reason it is there. It asserts the condition is exactly `${{ !cancelled() }}` — `always()` is rejected by name, because I-970 rejected it: it runs on a deliberate cancellation too and turns one cancel into two misleading failures. A key that names **no** step fails, so renaming a step cannot silence its own lock.
+- **Nothing unconditioned behind a conditioned step.** Within a job, once a step carries `!cancelled()`, every later step must carry some condition of its own. Any value passes: `if: failure()` and `if: always()` elsewhere in `ci.yml` are not what this is about. The fault is a step *appended* behind a conditioned one, which a failure above would skip while the job list shows nothing wrong.
+
+The glob that finds workflows also widened from `*.yml` to `*.y*ml`, one character: a workflow saved as `.yaml` was invisible to all five tests in that file.
+
+*Evidence, three probes, each run.* Remove the condition from the migrate-rollback step → fails naming the step and the reason. Append `- run: true` after the `go` job's last gated step → fails naming the step index. And the third was unplanned: a careless `git checkout` of `ci.yml` while this branch's own new step was uncommitted removed it, and the test failed with *"ALWAYS_RUN names … and no such step exists; its lock is now vacuous"* — the rename branch, proven by accident on the author.
+
+*What this is not.* It is a regression lock on four named steps and an ordering rule. It is **not** a guard on the class, and the larger half stays open: nothing here notices a whole job skipped by a condition, a `needs:` chain on a failed job, a path-filtered workflow that never triggers, or the 88 `t.Skip` calls in the suite — every one of which reports green. *"The run was green" still does not mean every check ran.* Reading a run's per-step conclusions is what would, and it needs `gh` plus matching step names back to the YAML; it is its own branch.
+
+*Rejected:* a linter-recognising rule that would have required `!cancelled()` on every step whose body looks like a check. Measured on this repo it demanded roughly seventeen condition-or-waiver edits across two workflows, false-fired on `install tfsec` (whose body names `tfsec` three times while being the step `make -C infra policy` depends on), and would have pushed the ordering rule onto eleven steps of the `web` job, two of which are genuinely serial. It is also itself a name-matching proxy: `staticcheck`, `ruff` or a `make lint` wrapper walks straight past it.
+**I-996. The conductor's own test harnesses are executed, not merely present.** (green-checks, 2026-11-03.)
+
+`ops/dev/release-queue-test` (45 tests) and `ops/dev/closure-equiv-test` existed, passed when anyone remembered to type them, and nothing ran them: on 2026-11-03, `git grep` for either name across `.github/workflows`, `ops/check.sh` and the justfile returned nothing. `ops/dev/closure-equiv.py` decides whether a branch touching `nix/` is charged a deploy target, so the blindness fixed as I-958 — `env` hashed, `structuredAttrs` not, 2646 of the edge's 4657 derivations comparing equal — shipped unnoticed for as long as the file existed, and its harness was written the night the bug was found.
+
+`TestDevToolHarnessesRun` in `test/supplychain` globs by convention — `ops/dev/*-test`, `*-test.sh`, `*_test.py`, `scripts/*-test*` — and executes each one that is marked executable, failing with its combined output. Globbing rather than listing means a harness added later is run without anyone remembering to register it. An empty glob fails, because a scan that found nothing is a broken scan and not a clean tree.
+
+It deliberately does **not** skip when `bash`, `python3` or `git` is missing, the way `test/supplychain/scripts_test.go` does. A guard that skips reports as a pass, which is the fault this whole branch is about.
+
+**It found something within minutes of existing, which is the point and also the reason it ships with a waiver.** `ops/dev/release-queue-test` fails **6 of 45 on pristine `main`** (`b55d17dd`), with none of this branch's changes: `add_runs_cli_guards`, `needs_against_stale_local_main`, `needs_cli_only`, `needs_embedded_file`, `needs_go_shared_package` and `record_prints_the_line_and_the_detail`. Nothing had run the harness, so nobody knew. It is waived in `UNRUN` with that sentence rather than papered over, and the waiver cannot outlive the bug: the test also fails if a waived harness starts passing. First place to look, recorded so the next person does not start cold — five of the six run `go list` inside the fixture's scratch module, and the sixth is the output `I-992` changed, so a stale fixture expectation is the likely half of it.
+
+*Also in this change.* `release-queue-test`'s fixture now carries its own `nix` on the scratch `PATH`, beside the `pnpm` and `equiv-stub` it already had. `release-queue` gates the closure comparison on `command -v nix` and never executes nix — it executes `REPOSE_QUEUE_EQUIV` — so without one on PATH that comparison was skipped and `needs_drops_a_target_whose_system_is_unchanged` asserted nothing while still passing. A harness has to carry its own answer rather than borrow the host's PATH; the stub exits 97 with a message if it is ever actually run, so a future change that starts invoking nix for real cannot pass quietly.
+
+*What this does not do.* It runs the harnesses; it does not make them good. `closure-equiv-test`'s own `equiv-stub` still stands in for the real comparison, and no mechanical guard reaches that — which is why `docs/CHECKLIST.md`'s both-directions clause stays word for word and only the evidence sentence beside it changed. And the `--check` of `ops/dev/decisions-index.py`, which was in no workflow either, is wired into CI by I-994 rather than here.
+**I-998. Every package that starts a throwaway Postgres cluster also ends it, and a test says so.** (green-checks, 2026-11-03.)
+
+`internal/db/testdb` starts one cluster per test process and `testdb.Run` is what stops it when the package's tests end. `internal/api/resting` had no `TestMain`, so it leaked its cluster on every ordinary, passing run — not only on a crash. Nineteen of the twenty packages that touch `testdb` or `apitest` carried the line; that one did not, for as long as it existed, and nothing failed, because a leaked cluster makes nothing fail. On 2026-11-03 twenty-five were alive on the dev box, data dirs going back to 2026-10-28, 2.3 GB under `TMPDIR`, on a machine that had just killed two background tasks for want of memory.
+
+The line is added, and `TestEveryTestdbPackageStopsItsCluster` in `internal/db/testdb` catches the next one: it walks the tree for packages that import `testdb` or `apitest` and have at least one `_test.go`, and fails any without a `TestMain`. Scoped to packages with tests because `internal/api/apitest` holds only non-test files and would otherwise read as a violation. An empty walk fails, because a walk that found nothing is a broken walk and not a clean tree. It checks 21 packages today, and needs no Postgres, so it runs in CI's `go` job on every push.
+
+*Evidence:* remove the new `TestMain` and it fails naming `internal/api/resting` and the line to add; restore it and the package is green.
+
+*The reaper is deliberately not in this change, and the leak is therefore only half fixed.* What ships here stops the **normal-exit** leak, which is what `internal/api/resting` had. A cluster whose `go test` was killed, crashed or OOM-killed still survives, because `Stop()` never runs — and that is how most of the twenty-five got there. The designed fix is ownership rather than age: hold an exclusive `flock` on a lock file inside the cluster's own directory for the life of the process, so the kernel releases it on exit, panic, `SIGKILL` and OOM-kill alike, and reap at allocation any cluster whose lock can be taken. It also has to ascend out of `nix-shell.*` when resolving where to look, because inside `nix develop` `os.TempDir()` is itself a `nix-shell.*` directory and two of the twenty-five were nested in one while twenty-three sat in its parent.
+
+That is a janitor which calls `os.RemoveAll` on paths under `TMPDIR`, where the failure mode is deleting a live cluster and redding somebody else's suite. It wants its own branch and a fresh reading, not the end of a long session — so it is specified here and left, rather than half-built. Until it lands, the standing cleanup is the one in the handover: kill the clusters whose data dir is hours old and remove their directories; `ppid=1` does not identify them, because `pg_ctl` daemonizes a live cluster too, and `pgrep -f "go test"` matches the shell asking the question.
+
+**I-1002. The host-restart memory image is a park, not a freeze.**
+(park, 2026-11-03.)
+
+`freeze` meant three unrelated things in this repository, and on
+2026-11-02 that cost the owner a real misreading: they asked whether
+guest freeze/thaw had ever run in production, having watched idle
+machines "freeze" and come back on `ssh` in milliseconds for weeks. They
+were right that something froze routinely and right that it was a
+different mechanism, and nothing in the names could have told them.
+
+The three were: (1) the idle pause, whose vCPUs stop with memory left
+resident, and whose **user-visible word is "frozen"** (I-683); (2) the
+encrypted dm-crypt image of a guest's memory written before a host
+restart and read back on boot (I-652, I-653, I-686, I-796); (3) the
+filesystem freeze of a volume snapshot, `FIFREEZE` by its literal name.
+(1) is the owner's word and cannot move. (3) is literal and stays. (2)
+has no user-visible surface at all -- a tenant's machine simply survives
+a host restart -- so (2) is the one that moved, and it is now
+**park**/**unpark**.
+
+`park` was free (`git grep -ciIw park` matched nothing), it is plain
+English in this repo's register, it implies temporary and deliberate and
+coming back to the same place, and it reads correctly in the sentence
+that matters: the host parks every running guest before it restarts, and
+unparks them on the way back. Rejected: `stash` (29 files, and `git
+stash` is already a documented trap here); `suspend` (28 files);
+`hibernate`, free and the most recognisable, but `wake` belongs to the
+idle pause and `resume` to Cloud Hypervisor's resume-from-pause, leaving
+no return verb; `checkpoint`, precise with CRIU prior art, but `restore`
+already means snapshot restore; `shelve`, OpenStack prior art and more
+jargon than this repo uses.
+
+**The alert is `GuestNotParked`, not `GuestLeftUnparked`, and the metric
+is `repose_host_guest_park_skipped_total`.** `GuestLeftUnfrozen` was
+unambiguous only because the reverse verb was "thaw", so "unfrozen"
+could only mean "never got frozen". With park/unpark the negation of
+"parked" and the name of the reverse operation are the same word, and
+`GuestLeftUnparked` reads as "we failed to unpark them" -- a different
+and real failure. Do not helpfully restore the symmetric form. The other
+half stays `GuestImageDiscarded`, reading
+`repose_host_guest_unpark_discarded_total`.
+
+**Pre-rename metric history does not carry over and no alias is kept.**
+Both counters are host-published running totals read from the tally at
+each start, so a Grafana panel or an `increase()` over a window spanning
+the switch sees the old series end and a new one begin at the host's
+current total. An alias would have to be published from the same tally
+under two names for ever, since nothing expires it; the owner's panels
+are the only reader and they are re-pointed in the same change.
+
+**Three names deliberately keep `freeze`/`frz`. Do not tidy them, and
+here is what happens if you do.**
+
+- `frz-<guest_id>`, `repose-frz-<guest_id>` and the `repose-frz` btrfs
+  label. `sweepImages` finds images no record claims with a literal
+  `strings.CutPrefix(v, "frz-")`. Rename the prefix and every volume
+  written before the rename stops matching: it is never discarded, and
+  the thin pool leaks for ever. Pool exhaustion is the one resource
+  failure that takes tenants down.
+- `/var/lib/repose/hostd/freeze/` (the records and `.tally.json`) and
+  `<guest dir>/freeze` (the image mountpoint). The upgrade sequence is
+  `nix-env -p system --set` and then a reboot, so guests are parked by
+  the **old** hostd that is still running and unparked by the **new**
+  one that boots. A renamed directory reads as "no records" on exactly
+  the restart that ships the rename, and every guest comes back cold.
+  Read-both was considered and rejected: a compatibility path we must
+  remember to delete is itself a thing that gets forgotten, and keeping
+  the name costs one machine-facing inconsistency.
+- The Azure Key Vault key `freeze-wrap`, and the `module
+  "freeze_keyvault"` block that creates it. A module block name is a
+  state address, so renaming it plans a destroy and create of the Key
+  Vault, which makes every park image already on a host unreadable; and
+  it is a `tofu apply`, which is the owner's. The tofu *variable* and
+  *output* are `park_keyvault_name` and `park_keyvault`, which are not
+  state addresses and are safe.
+
+Each of those sites carries the same warning in a comment where a reader
+meets it. An inconsistency that is explained survives; one that is
+merely present gets tidied.
+
+**The control socket accepts the old shape for one release.** `park` and
+`unpark` are the commands and `POST /park` and `POST /unpark` the
+routes; `POST /freeze` and `POST /thaw` are still registered, to the same
+handlers, because `docs/interfaces/host-conventions.md` is this socket's
+contract and the rule is one release of overlap. Nothing in the tree
+calls them -- the only client is `internal/hostd/control`'s own `Client`,
+which a switch replaces together with the daemon -- so they can be
+deleted in the release after this one ships. On the gRPC side the only
+affected value is `PauseResult.why_not`, `frozen` becoming `parked`; the
+api logs that word and never branches on it, so both read the same to it.
+
+**What is still called freeze, on purpose.** Every "frozen" a user
+reads (`repose ls`, the dashboard, `/docs/lifecycle`); everything
+`guestd` does with `FIFREEZE`, including `proto` `Freeze`/`Thaw`,
+`obs.EventFreeze`/`EventThaw`, `freeze_timeout`,
+`repose_host_snapshot_freeze_seconds` and the RUNBOOK's "Freeze timeout"
+and "hostd: freeze without thaw"; and **Azure Scheduled Events' own
+`Freeze` event type**, which is an external API value and was the fourth
+meaning nobody had counted. `docs/releases/`, `docs/research/` and every
+DECISIONS entry before this one keep the old word: they record what
+happened under the name it happened under. Workstream checklists were
+renamed, because a checklist that cites a metric nobody can find is
+worse than one that cites a renamed one.
+
+*On scoping it.* The brief named 35 files from a grep for nine
+identifiers. The real closure was about 60, and the gap was not noise: it
+held the whole `internal/hostd/freeze` package, the Cloud Hypervisor
+`Freezer` interface, the control socket's routes, the Scheduled Events
+listener, the `repose.host.freeze.*` nix option path with its six host
+configs, the `--freeze-*` daemon flags, the bench tool and the tofu
+variables. A path list standing in for a closure is I-968's shape
+again -- the artefact that looks like the answer, checked instead of the
+property -- and the property here is "no reader meets the word in this
+meaning", which only a vocabulary grep over the tree can answer.
+
+**I-1004. Prod's plan names anything machine-shaped in the resource group
+that the configuration does not create.** (rg-inventory, 2026-11-03.)
+
+A host's OS disk is declared inline on its VM, the host module sets no
+`delete_option`, and **no plan ever names it**. So when host-01 was
+destroyed on 2026-11-02, whether `osdisk-host-01` survived as an unowned
+Premium SSD P15 at about $38 a month was invisible to the diff, invisible
+to `tofu plan`, and answerable only by asking Azure by hand afterwards. It
+went with the VM that time. That is a fact about one apply, not a property
+of the configuration, and the check is there because the next one is a
+different apply.
+
+`check "resource_group_is_exclusive"` compares four resource types in the
+group -- `virtualMachines`, `disks`, `networkInterfaces`,
+`publicIPAddresses` -- against the names the modules themselves produce,
+and names the difference with the `az disk delete` to fix it.
+
+Three things about how, each of which the obvious version gets wrong.
+
+*The ARM read is at module scope, not inside the check.* A data source
+that fails **inside** a check block has its error demoted to a warning
+under a different heading and every assertion in that block is skipped.
+So an expired credential or a lost Reader role would read as a clean
+group and pass any `grep "Check block assertion failed"` gate. Outside,
+a failed or unauthorised read is a hard plan error, which is the only
+honest answer to "we could not look".
+
+*It fails closed as well as open.* `inventory_missing` holds the names no
+environment can be without -- the edge, its NIC, every host in `hosts` --
+and the assertion requires that set to be found. A read that comes back
+empty, or filtered to nothing because Azure renamed a type string, is a
+check that has stopped looking, and without this clause it would pass the
+stray test for ever.
+
+*Expected names are derived per role, not as a cross-product.* Hosts have
+no public IP, edge and control have no data disk, and control is absent
+when `coolify_count` is 0. An all-pairs set would expect `pip-host-02`,
+which nothing creates, and would therefore have to tolerate absences --
+and a check that tolerates absences cannot see a stray. The NAT gateway's
+`pip-natgw-hosts` belongs to no VM and is read from a new
+`network.nat_public_ip_name` output rather than retyped, because a
+hardcoded copy is how the fleet's own egress address gets reported as a
+stray.
+
+Gated on `resource_group_is_exclusive`, default false, true only in
+`prod.tfvars`. Staging's hosts are named in a git-ignored local tfvars, so
+there it could not tell a host it cannot see from a stray and would warn
+on every plan for ever. `infra/README.md` already teaches the reader to
+scroll past `dns_is_managed_or_manual`; one such habit is enough, and the
+RUNBOOK step now names both expected warnings rather than implying prod
+plans are clean.
+
+**What this does not cover, so nobody infers otherwise.** Four hardcoded
+types. Snapshots, blob containers, Key Vault keys, managed identities and
+the NAT gateway resource itself are not checked, so a quiet check is not
+an empty group. And there is no staging or CI win in it: it cannot know
+host-stg-01's resources, which is the same reason it is off there.
+
+Rejected: asserting on resource *types* rather than instances, which the
+first sketch of this claimed to do. With four type strings hardcoded, the
+scope is the instances of those four types and nothing broader, and saying
+otherwise would promise coverage that does not exist.
+**I-1008. A cut is refused while `main`'s CI is red, with a named override.** (red-gate, 2026-11-03.)
+
+Every `ci.yml` run on `main` from `006301c7` (2026-10-17) to `5bbe3246` (2026-11-01) failed, and nine releases were cut over them. The mechanism is worth more than the count: **a branch is checked before it is merged, and the merged result is checked by nobody.** Each conductor saw their own branch green and nothing asked about the branch they were merging into.
+
+`cut` now reads GitHub's newest `ci.yml` run on `main` and refuses on `failure`, `timed_out` or `startup_failure`, printing the run's URL.
+
+**The override is the owner's rule, not an escape hatch.** A red `main` holds a cut *unless the red is a mechanical fault in the tests themselves* — which is what 2026-11-02 and 2026-11-03 both turned out to be: three tests asserting a proxy (I-968), a lint step skipped behind them (I-970), a test racing a heartbeat it had provoked (I-1014), and a Playwright fixture outliving its page (I-1016). So `REPOSE_QUEUE_RED_MAIN` takes a **reason**, refuses a bare `1`, and the reason is written into the release's own state file as `red_main=`, so the record says a cut was taken over a red main and why. A gate whose override leaves no trace is a gate that gets used by habit.
+
+**It fails closed.** No `gh`, no auth, no network, or an answer this gate does not understand all refuse, because "the check could not run" reading as "the check passed" is the fault this gate belongs to. The override clears those too.
+
+*Two faults were found in the gate by testing it, both of which it exists to prevent.*
+
+- **`gh run list --limit 1` is not the newest run.** Asked for one, it returned a run from 2026-10-31 while two from 2026-11-02 existed; its ordering is not documented as newest-first. The gate would have held a cut on a stale red. It now takes twenty and picks by `createdAt`.
+- **The first version passed a red `main` in silence.** It read the conclusion out of JSON with `sed`, which matched nothing because `json.dumps` writes `"conclusion": "failure"` *with a space*, and the `case` treated an empty conclusion as success. So the gate answered "fine" having read nothing — exactly its own subject. python now prints the two fields directly, and an unrecognised conclusion refuses instead of passing.
+
+*Known limit, stated rather than hidden:* a run still in progress is not a failure, so pushing and cutting immediately passes this gate. It is aimed at the standing red nobody was told about, not at a race. The other half — a job skipped by a condition, a `needs:` chain on a failure, a path-filtered workflow, the 88 `t.Skip` calls — is untouched and still reports green (I-1000's gaps).
+
+*Found by:* running the gate as a live `cut` instead of calling the function, which cut a real batch that then had to be `abandon`ed. `abandon` did its job; the lesson is that a gate on `cut` is testable only by sourcing it, and the fixture escape `REPOSE_QUEUE_SKIP_RED_MAIN=1` exists so `ops/dev/release-queue-test` never reaches GitHub.
+
+**I-1012. A test asserts the kernel honoured a parameter, not that it was
+passed.** (oops-guard, 2026-11-03.)
+
+I-988 closed with "nothing asserts this", and named `nix/hosts/tests` as
+where a guard would go. This is that guard. The fault it is for: a name
+the kernel does not recognise is accepted silently into the command line
+and handed to userspace, so `/proc/cmdline` shows it present while the
+setting is absent. `panic_on_oops=1` rode a switch *and* a reboot into
+host-02's cmdline on 2026-11-02 with `kernel.panic_on_oops` still 0. The
+branch that shipped it verified `nix eval ...boot.kernelParams`, which is
+two steps from the kernel.
+
+`host-reboot`'s I-649 subtest is renamed "the kernel honoured what it was
+given" and its `grep -q 'nvme_core.io_timeout=240' /proc/cmdline` is
+replaced by two assertions: no name this node passed appears in the
+kernel's Unknown-parameter line, and `sysctl -n kernel.panic_on_oops`
+reads 1. `systemctl is-active repose-nvme-timeout.service` **stays**,
+because that unit is the io_timeout parameter's effect
+(`nix/hosts/vm-hardening.nix`): it writes every running NVMe queue at a
+switch, and the sysfs path a naive check would read does not exist on a
+virtio VM.
+
+**The obvious form of the first assertion is wrong, and it is wrong in
+the direction that matters.** `host.fail("journalctl -k -b 0 --grep
+'Unknown kernel command line parameters'")` -- no Unknown line at all --
+is **red on a correct configuration**: a NixOS test VM always carries the
+driver's own `regInfo=<closure-info>/registration`, which the kernel
+refuses exactly as it refused `panic_on_oops`. Measured, not reasoned:
+with the tree correct, the line reads `Unknown kernel command line
+parameters "regInfo=/nix/store/...-closure-info/registration"`. A guard
+that is red when nothing is wrong gets loosened, and a loosened grep is
+the next proxy. So the assertion is "no name **we** passed is in that
+line": the refused names are read back out of the line and intersected
+with this node's own `boot.kernelParams`, dotted names excluded because
+those are module parameters, which the kernel hands to the module rather
+than refusing (`nvme_core.io_timeout` is one). If it ever trips on a name
+we did pass and should not have to, the fix is to stop passing that name.
+Never widen the grep.
+
+Rejected: `dmesg | grep 'Dentry cache hash table.*linear'` for
+`hashdist=0` (I-982). It asserts nothing here. The test node is 3072 MB,
+2 cores, **one NUMA node**, and `alloc_large_system_hash()` only defaults
+`hashdist=1` on a NUMA machine, so that line reads `linear` with
+`hashdist=0` deleted. It is a proxy wearing an effect's clothes, which is
+the thing `docs/CHECKLIST.md` forbids two lines above where it would have
+gone.
+
+**The CI half asserts strictly less, on purpose.** `ci.yml` gains one
+`nix eval` of `host-02`'s
+`boot.kernel.sysctl."kernel.panic_on_oops"` asserting 1. That is a
+**config** assertion and is deliberately blind to I-988 itself, where the
+config was right and the kernel ignored the name; it is there to catch a
+future edit or an `mkForce` deleting the sysctl. It is the only half that
+can run on GitHub: `ci.yml` runs `nix flake check --no-build ./nix`
+because hosted runners have no KVM, so the booted-VM half gates on
+woker-1 only. The step carries `if: ${{ !cancelled() }}` (I-970: a
+skipped step reads exactly like a passing one), and it does **not** use
+`nix eval --raw`, which fails with "cannot coerce an integer to a string"
+and would make the step fail for a reason unrelated to the setting.
+
+*Evidence, from a scratch worktree with the subtest's own two assertions
+on a node with the same `hostModules`.* Correct tree: the Unknown line
+holds `regInfo=` alone, the intersection with our names is empty, `sysctl
+kernel.panic_on_oops = 1`, green. Then I-984's shipped shape put back --
+the sysctl removed and `"panic_on_oops=1"` returned to `boot.kernelParams`
+-- red, with `AssertionError: the kernel did not recognise
+['panic_on_oops']; its line: ... Unknown kernel command line parameters
+"panic_on_oops=1 regInfo=..."` and `sysctl kernel.panic_on_oops = 0`.
+That is I-988 reproduced and caught on a branch in minutes, which the
+`nix eval` of `boot.kernelParams` could not do at all.
+
+**What it does not cover.** A real host's kernel: this is a VM, and the
+thing that bit us was a D64s_v7. `docs/CHECKLIST.md`'s I-988 item
+therefore **stays** rather than being closed by this test. Parameters
+gated on the provider in `nix/hosts/azure.nix`, because every test node
+sets `provider = "none"`. And `hashdist=0`'s own effect, for the NUMA
+reason above; the real-host gauge for that belongs to the triage lane.
+
+*A limit found while verifying it, which is not this branch's to fix.*
+`host-reboot` is **red on `main`** (b55d17dd), independently of anything
+here: in its subtest 1, `hostd.service` starts and exits 1 about 15 ms
+later with no log line of its own, so `systemctl is-active hostd.service`
+fails. The subtest's premise, and
+`docs/interfaces/host-conventions.md`, say hostd comes up regardless of
+an unavailable pool -- the pool unit is `wants`, not `requires`. So the
+new subtest is in a test that does not currently reach it, and the VM
+half of this guard gates nothing until that is fixed. Reproduced on a
+clean `main` checkout before concluding it was pre-existing, which is why
+the evidence above comes from a standalone node instead.
+**I-1014. A test that forces a host's state must stop the host that writes it.** (unreachable-race, 2026-11-03.)
+
+`TestStartUnreachableText` set `hosts.state = 'unreachable'` straight in the database and immediately asked the api to start a project there, expecting the refusal at `internal/api/lifecycle/lifecycle.go:180`. It failed CI on `main` at `1df94164` with `202 {"op_id":…,"restart":false}` — the start was accepted.
+
+**The host writes that column back.** Measured on 2026-11-03: with the fake host's stream still connected, the row reverts from `unreachable` to `ready` **50 to 75 ms** after the test sets it. So the POST was a footrace against the next heartbeat: it wins on an idle machine and loses on a loaded one, and the refusal then read `ready` and let the start through. The test passed here and failed on a shared runner for that reason alone, and the batch it reddened (`hashdist`, `oops-alert`) touches nothing in `internal/api`.
+
+The fix is `e.h.DisconnectHost()` before the update: it stops the stream and waits for `HostMgr` to notice, so nothing is left writing the column. `internal/api/resume/resume_test.go:412` already did this; this test did not.
+
+*Evidence.* Reproduced locally before the fix — six runs under six busy loops, failing with the same `202 {"restart":false}`. After: 6/6 idle, and **10/10 under the same load that reproduced it**. The mechanism was measured rather than inferred: a probe polling the row every 25 ms printed `unreachable, unreachable, unreachable, ready` at 75 ms and `unreachable, unreachable, ready` at 50 ms on two runs.
+
+*This is the fourth instance of I-968's class and the first one found after that entry was written.* The assertion read a database column as a proxy for "the api considers this host unreachable", while a live writer owned the column — green when the race was won, red when it was lost, and in both cases silent about which. Widening the window or retrying would have been the wrong fix for the same reason it was wrong three times before: it tunes the proxy. Removing the writer asserts the property.
+
+*Not fixed here:* nothing stops the next test from forcing a column some live component owns. The general form — "a test that writes state a running component also writes must first stop that component" — is a checklist line at best, because the set of such columns is not enumerable from the code. It is named in `docs/CHECKLIST.md` beside the proxy item rather than pretended to be mechanical.
+**I-1016. A Playwright route handler outlives the assertions, so it must survive a closed page.** (route-teardown, 2026-11-03.)
+
+`onlyPending` in `apps/web/tests/questions.spec.ts` registers a route handler that narrows a shared account's pending-question list. A request still in flight as the test ends arrives in that handler after the page has closed, and `route.fetch()` then throws `route.fetch: Target page, context or browser has been closed`. CI run 41534860432 on `main` at `b55d17dd` failed on exactly that, one test of 334, reddening `main` — from a **fixture**, not an assertion, in a batch (`thaw-window`, `internal/hostd/control`) that touches nothing in `apps/web`.
+
+The handler now returns early if `page.isClosed()`, and wraps the body so that the error is swallowed **only** when the page has actually gone; otherwise it rethrows. That distinction is the whole of the fix: nothing is asserted in this handler — its only job is to filter a list for a page that no longer exists — while a genuine route failure during a live test must still fail, and a bare `catch {}` would have hidden it.
+
+*Evidence, and its limit.* `eslint` clean, `svelte-check` 0 errors across 711 files, `pnpm build` ok, and `playwright test tests/questions.spec.ts` 13/13. **I could not reproduce the race locally and did not pretend to**: it needs a request in flight at the instant the page closes, which is a property of a loaded shared runner rather than something a test can force. What is demonstrable is the guard's shape — it cannot mask a failure while the page is open, because that path rethrows — and that the spec it protects still passes in full.
+
+*Same family as I-968 and I-1014, with the proxy one level further out.* The other three were assertions reading a stand-in for their property. This is a *fixture* whose failure is reported as a test failure, so a red here says "the dashboard is broken" when what happened is "a mock outlived its page". The repo had no way to tell those apart, and the only reason this one was diagnosed rather than retried is that the batch it reddened could not possibly have caused it.
+
+*Rejected:* `page.unroute()` in an `afterEach`, which races the same window and would need every spec that routes to remember it; and a retry on the whole spec, which would have hidden the mechanism and left the next one to rediscover it.
+**I-1018. Alloy's remote-write target is the monitoring server's Coolify hostname, not its WireGuard address.** (alloy-url, 2026-11-03.)
+
+I-960 pointed Alloy at `http://10.255.0.3:9090/api/v1/write` and nothing ever answered there. Prometheus runs in a container that publishes no host port, so `--web.listen-address=0.0.0.0:9090` binds inside the container and a WireGuard peer reaching the tunnel address finds nothing — I-133's problem again, one service along.
+
+The measurement that proved it, and the reason nobody noticed for two days: with that URL, `queue_highest_sent_timestamp_seconds` read **0** with 8,287 samples pending, while `samples_failed_total` read **0** as well. A connection timeout is retryable, so only a non-retryable answer moves the failure counter — "zero failures" and "zero delivered" are the same reading, and the sent timestamp is the only one that separates them. With the Coolify hostname: 1,159,892 samples sent, 0 failed, 286 pending.
+
+**The repo is what drifted.** The owner corrected the running service by hand; `ops/alloy/config.alloy` kept the dead address, so a redeploy of that Coolify service from the repo would have restored it and stopped delivery silently — the same fault, reintroduced by a deploy, with the same two counters saying nothing.
+
+Also corrected: `docs/ops/RUNBOOK.md` and `ops/README.md` both handed an operator the dead address as the way to check the write path, so following either would have failed and read as the path being broken. They now name the Coolify URL, say the empty-body POST proves reachability without injecting anything, and name Alloy's queue — specifically the sent timestamp — as the reading that says whether series are arriving. `docs/workstreams/STATUS.md` and earlier DECISIONS entries keep the old address: they are records of what was believed at the time.
+
+I-952's `9090` in the edge's `logPorts` is **left alone**. It costs nothing, it is the path if the port is ever published, and removing it would be a second edge switch for no gain.
+
+*Not closed by this, and the reason it is not in this branch:* that write endpoint is public HTTPS with `--web.enable-remote-write-receiver` on, and remote-write is unauthenticated, so whether anyone who guesses the hostname can inject series into the owner's Prometheus is unanswered. An empty-body POST from outside the tunnel settles it and injects nothing. That is a question for the owner about their own server, not a change to this repo.
+
+**I-1010. Nothing in the fleet read the kernel's own verdict on a
+host.** (kernel-taint, 2026-11-03.)
+On 2026-11-02 host-02 took its first `__d_lookup_rcu` fault at 13:51:07 and
+kept serving tenant filesystem traffic through virtiofsd for 3 h 48 m with a
+dentry cache it could not read, then hard-hung (I-982). Nobody was paged; the
+owner noticed. `KernelOops` (I-980) now exists, and it is
+`count_over_time({component="kernel"} |~ ...[10m]) > 0`: it would have paged
+at ~13:53 and gone green at ~14:01, leaving 3 h 38 m of that incident with
+nothing saying "do not trust host-02".
+
+So hostd exports `repose_host_kernel_tainted{reason}` and
+`repose_host_panic_on_oops`, and `repose-kernel-check` writes
+`repose_kernel_check{check}` to node_exporter's textfile collector.
+`HostKernelTainted` pages at `for: 0m` on `die|machine_check|bad_page`,
+`HostPanicOnOopsOff` warns after 15m, `HostKernelAssertFailed` pages after
+10m.
+
+**The value here is not the page. It is that a latched bit does not go green
+on its own.** `KernelOops` is an event over a window and host-02 priced it:
+8 minutes of alert for 3 h 48 m of untrustworthy host. The kernel's taint
+word is set by the fault and stands until the box reboots, so a host that
+faulted at 13:51 still reads tainted at 17:39. Nobody should later improve
+this into a rate.
+
+Decomposed into reasons in hostd, not in PromQL, for two reasons: PromQL has
+no bitwise AND, and `tainted != 0` would page for ever, because bits 0, 12
+and 13 -- a proprietary, out-of-tree or unsigned module -- are set on every
+healthy host and never clear. The label is `reason` and not `bit` because
+`internal/obs/metrics` is an allowlist that fails registration, so `bit`
+would have panicked hostd at startup. `soft_lockup` and `warn` are exported
+and alert on nothing, the division I-980 already drew: a soft lockup is load,
+which `HostCPUSaturated` covers, and a warning is a condition the kernel
+recovered from.
+
+**A failed read publishes every reason as 1.** The first draft left the
+gauges at their last value on an error, which with gauges pre-created at 0
+means a host whose taint word was never readable reads green for ever --
+exactly the host the guard exists for. That changes what the gauge means: it
+is no longer "the kernel latched this taint" but "this taint is latched, or
+cannot be ruled out", and under that meaning all five reasons have to read 1,
+not just the three the alert selects, or `soft_lockup` at 0 would assert "no
+soft lockup" about a file nobody could read. The fail-closed value is
+produced inside `hostinfo.Tainted`, returned *with* the error, so a caller
+cannot forget it. `PanicOnOops` fails closed the same way.
+
+Read at scrape time by a Collector, not Set on hostd's 60-second
+`samplesLoop`: whether a host's kernel can be trusted has no business riding
+the billing sampler, and a reader who finds a stale gauge cannot tell a quiet
+host from a stopped loop. `internal/hostd/app` is untouched.
+
+**What this claims and what it does not.** With `kernel.panic_on_oops` on
+(I-984, I-988) an oops panics and `panic=30` reboots, so the `die` bit is
+rarely scrapable and `HostdDown` is its page. The durable unique value is
+`machine_check` and `bad_page`, which taint without panicking and appear in
+none of `KernelOops`'s patterns, plus the standing-signal property above.
+I-980 rejected "a host-side metric" and this narrows that: what it rejected
+was a textfile counter grepping the journal, a worse `KernelOops`. This reads
+latched state.
+
+The textfile half is its own file, `repose_kernel.prom`, because node_exporter
+rejects a whole file for one line without a value (I-643). `large_hash_linear`
+is a *positive* read of this boot's `Dentry cache hash table ... linear` line,
+which is what `docs/CHECKLIST.md` already asks for; `cmdline_recognised` is
+the absence of `Unknown kernel command line parameters`, the exact line that
+caught I-988 after a host had been switched *and* rebooted for a parameter the
+kernel never took, and it greps with `grep -v "Command line"` first because
+the kernel echoes the whole command line into the same log -- on host-02 three
+of four matches were the command line quoting the parameter. A phrase that can
+appear inside the thing being tested is not a test of it.
+`large_hash_vmalloc_absent` ships and **no rule reads it**: its positive state
+cannot be produced on any machine available to us, because nothing here has
+more than one NUMA node, and letting an unconfirmed read veto a confirmed one
+is I-968's shape inside the guard written against I-968.
+
+Writer discipline, each item a measured failure and not a precaution: every
+check pre-seeded to 0 and published before anything can fail, then republished
+by an `EXIT` trap, because an absent series is green under `noDataState: OK`
+and silence is the one failure a textfile writer must not have; `|| true` on
+every `grep -c`, since 0 matches is the healthy answer for
+`cmdline_recognised` and `grep -c` exits 1 on it, which under
+`writeShellApplication`'s `set -e` would kill the script before the second
+check; and the two journal-derived verdicts latch per `boot_id`, because
+`nix/hosts/hardening.nix` caps the journal at 4G and these lines are printed
+in the first second of a boot, so a rotation must not turn a red into a green
+*or* a green into a red.
+
+**A corrected arm, caught by the generator's own rule.**
+`HostKernelAssertFailed` was specified with `min by (host_id, check)
+(repose_kernel_check) == 0` as its first arm. A Prometheus comparison returns
+the **left** side's value, so that arm fires with the value *zero*; the
+expression's top level is `or`, which `ops/grafana/alerts-gen.py` cannot split,
+so it goes whole into the Grafana query with the condition "above 0" -- and the
+Grafana-managed copy of the rule would never have fired on a failing check,
+the one arm that matters most. It is written `max by (host_id, check) (1 -
+repose_kernel_check) > 0` instead, and `alerts_test.yaml` asserts both values
+with `promql_expr_test` rather than reasoning about them. That rule does get a
+`BOOLEAN_EXPRS` entry, which is the opposite of `HostPanicOnOopsOff`'s `== 0`
+not getting one: `alerts-gen.py` raises on a *splittable* rule that is listed,
+and the difference is the expression's shape, not a change of policy. The
+generator's comment says that list is "the only thing standing between a new
+rule of this shape and a condition that never fires", and it earned that
+sentence here.
+
+Rejected: a `repose_kernel_numa_nodes` gauge -- nothing alerts on it, no
+dashboard shows it and no code reads it. Rejected: `panic_on_oops` in the
+textfile writer, since hostd already exports it. Rejected: naming the third
+alert `HostKernelUnsafe`, which would claim the whole class when the rule
+checks two things.
+
+What cannot be demonstrated, and is said rather than probed: nothing here
+proves the gauge reads a real taint on a real host, because this box is Azure
+AMD and hosts are Intel (`docs/DESIGN.md` §4) and no machine here is tainted;
+the `vmalloc hugepage` state is unproducible on a single-NUMA machine; and
+**no VM test can gate the `hashdist` check** -- a 3072 MB, 2-core,
+single-NUMA test node prints `linear` whether or not `hashdist=0` is in the
+configuration, so a nixos test would pass with the parameter deleted, and
+giving a test VM two NUMA nodes needs a raw qemu `-numa` flag the framework
+does not expose.
+
+**I-1024. A VM test that quotes a message or a rendering asserts a
+substring something owns, or it is a second spelling that rots.**
+(vm-literals, 2026-11-03.)
+
+Two of the seven host VM tests were red on `main` and had been since
+2026-11-02, and neither red was about the host. Both tests grepped for
+text that something else had stopped producing:
+
+`host-services` required `journalctl -u repose-snapshot` to say "hostd is
+not running". I-990 removed those words from `control.ErrNotRunning` in
+the same release, on the ground that the client cannot know it -- an
+absent control socket is equally a hostd minutes into a post-reboot thaw
+-- and added `TestNotRunningDoesNotClaimHostdIsDown`, which *fails* if
+the message contains them. So that release shipped one test in
+`internal/hostd/control` forbidding the exact string another test in
+`nix/hosts/tests` required. Nothing could make both pass, and nobody saw
+it, because the VM tests need KVM and do not run in CI (`ci.yml` has no
+job for them): they are run by hand, by a conductor, at a release.
+
+`host-network` required `nft list chain inet repose output` to print
+`meta skuid "nixbuild"`. The ruleset is written with the name, but this
+nft renders the uid back -- `meta skuid 997` -- exactly as it already
+renders the group as `skgid 30000` on the line above, which is the form
+the next assertion in the same subtest was already written for. A
+rendering is nftables' choice, not ours, and the uid is an allocation,
+so the test now resolves `id -u nixbuild` on the host and accepts either
+spelling.
+
+What ships is both one-line fixes plus the tie the first one was missing:
+`TestVMTestGrepsWordingWeStillPrint` reads the literal back out of
+`nix/hosts/tests/default.nix` and fails in Go, in under a second, if it
+is not a substring of `ErrNotRunning`; `TestTheOldDiagnosisIsGoneFromThe-
+VMTests` fails if the words I-990 removed reappear anywhere in those
+tests. A guard that matched nothing would be the same fault again, so an
+absent `journalctl -u repose-snapshot` grep line is a failure and not a
+skip.
+
+*Evidence:* `host-services` passes on this branch and fails on `main` at
+b55d17dd. In `host-network` the skuid assertion passes on this branch and
+fails on `main`, and the test then gets 25 assertions further and stops on
+a different one (below). Reverting either nix line fails the Go test in
+`internal/hostd/control` in under a second, without a VM.
+
+*Two host reds this did not fix, both found by running the suite and both
+older than this branch, which touches only test text:*
+
+`host-network`, "guest traffic is shaped": the egress cap holds -- a
+shaped guest uploads to the internet at 0.6-1.3x of 20 Mbit -- and the
+I-451 *ingress* assertion reads 6301 Mbit/s for a 20 MB download the
+guest opened. The two download filters are present on `tap-ga` and
+survive a re-apply, which the subtest checks 25 lines earlier, so either
+a tenant's download is not capped at all or 20 MB crosses in 25 ms and
+the number is not a measurement. Both readings are worth the same branch.
+
+`host-reboot`, subtest 1: hostd exits 1 seven milliseconds after start on
+a boot with no volume group, where the test asserts it stays up. The
+design asks for the test's behaviour -- a host that cannot find its pool
+should say so and keep reconciling, not die -- and `Restart=always` with
+`RestartSec=2` is why `systemctl is-active` answers `activating` rather
+than `failed`, which reads like a slow start and is a crash loop. hostd's
+own reason is in the journal, which this VM test does not dump. The live
+hosts are registered and have their pool, which is why this is invisible
+in production.

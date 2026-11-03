@@ -1,20 +1,20 @@
-// Command freezebench talks to a guest's guestd through Cloud Hypervisor's
-// vsock socket, for the guest freeze experiments (docs/research/guest-freeze.md,
+// Command parkbench talks to a guest's guestd through Cloud Hypervisor's
+// vsock socket, for the guest park experiments (docs/research/guest-freeze.md,
 // DECISIONS I-652). It stands in for the parts of hostd's boot and delivery
 // the experiments need, and nothing else.
 //
-//	freezebench wait   DIR TIMEOUT        ping until guestd answers; prints ms
-//	freezebench ping   DIR                prints guestd's version, uptime, boot id
-//	freezebench register DIR FILE      RegisterPaths with a nix-store --dump-db listing
-//	freezebench setup  DIR SLUG           SetupProject (starts the tmux session)
-//	freezebench exec   DIR USER ARGV...   runs ARGV in the guest; prints stdout
-//	freezebench settime DIR               sets the guest clock to the host's
-//	freezebench hostd-freeze DIR CLASS KEYPEM RECDIR VG
-//	                                      freezes the guest with hostd's own code
-//	                                      (internal/hostd/freeze, ch.Freezer) onto a
+//	parkbench wait   DIR TIMEOUT        ping until guestd answers; prints ms
+//	parkbench ping   DIR                prints guestd's version, uptime, boot id
+//	parkbench register DIR FILE      RegisterPaths with a nix-store --dump-db listing
+//	parkbench setup  DIR SLUG           SetupProject (starts the tmux session)
+//	parkbench exec   DIR USER ARGV...   runs ARGV in the guest; prints stdout
+//	parkbench settime DIR               sets the guest clock to the host's
+//	parkbench hostd-park DIR CLASS KEYPEM RECDIR VG
+//	                                      parks the guest with hostd's own code
+//	                                      (internal/hostd/freeze, ch.Parker) onto a
 //	                                      thin volume of VG; the caller then removes
 //	                                      virtiofsd and the tap
-//	freezebench hostd-thaw DIR KEYPEM RECDIR VG
+//	parkbench hostd-unpark DIR KEYPEM RECDIR VG
 //	                                      restores it the same way; the caller has
 //	                                      brought back virtiofsd and the tap
 package main
@@ -32,11 +32,11 @@ import (
 
 func main() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: freezebench wait|ping|setup|exec|settime DIR ...")
+		fmt.Fprintln(os.Stderr, "usage: parkbench wait|ping|setup|exec|settime DIR ...")
 		os.Exit(64)
 	}
 	if err := run(context.Background(), os.Args[1], os.Args[2], os.Args[3:]); err != nil {
-		fmt.Fprintln(os.Stderr, "freezebench:", err)
+		fmt.Fprintln(os.Stderr, "parkbench:", err)
 		os.Exit(1)
 	}
 }
@@ -146,16 +146,16 @@ func run(ctx context.Context, cmd, dir string, args []string) error {
 			return fmt.Errorf("date -s: exit %d: %s", r.ExitCode, r.Stderr)
 		}
 		return nil
-	case "hostd-freeze":
+	case "hostd-park":
 		if len(args) < 4 {
-			return fmt.Errorf("hostd-freeze DIR CLASS KEYPEM RECDIR VG")
+			return fmt.Errorf("hostd-park DIR CLASS KEYPEM RECDIR VG")
 		}
-		return hostdFreeze(ctx, dir, args[0], args[1], args[2], args[3])
-	case "hostd-thaw":
+		return hostdPark(ctx, dir, args[0], args[1], args[2], args[3])
+	case "hostd-unpark":
 		if len(args) < 3 {
-			return fmt.Errorf("hostd-thaw DIR KEYPEM RECDIR VG")
+			return fmt.Errorf("hostd-unpark DIR KEYPEM RECDIR VG")
 		}
-		return hostdThaw(ctx, dir, args[0], args[1], args[2])
+		return hostdUnpark(ctx, dir, args[0], args[1], args[2])
 	}
 	return fmt.Errorf("unknown command %q", cmd)
 }

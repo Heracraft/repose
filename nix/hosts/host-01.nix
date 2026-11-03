@@ -17,6 +17,6 @@
   #
   # The root disk, where the earlier figure came from, does 126 MB/s: under
   # a third of this, and not where any image goes. Re-measure on the pool
-  # whenever a disk changes (RUNBOOK "Guest freeze").
-  repose.host.freeze.writeRateMBs = 400;
+  # whenever a disk changes (RUNBOOK "Guest park").
+  repose.host.park.writeRateMBs = 400;
 }

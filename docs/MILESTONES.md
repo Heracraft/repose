@@ -114,7 +114,7 @@ by an agent: paging that reaches a human (nothing paged anyone during the
 2026-10-10 outage), the Azure alert path, a console login on host-01 and the
 edge (root is locked, so a host that will not boot cannot be rescued), a
 planned host-01 restart (the only proof of pool activation, the restart of
-running machines and the guest freeze on prod), and the herdr laptop checks.*
+running machines and the guest park on prod), and the herdr laptop checks.*
 
 ## Later, in order of likely demand
 

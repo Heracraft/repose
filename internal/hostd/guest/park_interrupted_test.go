@@ -5,34 +5,34 @@ import (
 	"testing"
 )
 
-// A host restart with the freeze on (I-652) and resume after a reboot
-// (I-645) together: Reconcile restores the frozen guests before it lists
-// the units, so a guest ThawAll brought back is running and is not marked
+// A host restart with the park on (I-652) and resume after a reboot
+// (I-645) together: Reconcile restores the parked guests before it lists
+// the units, so a guest UnparkAll brought back is running and is not marked
 // interrupted (the api would otherwise start a machine that already runs,
 // and tell its user it restarted). A guest whose image could not be used
 // starts cold, and that one is marked, as after any host restart.
-func TestThawedGuestIsNotMarkedInterrupted(t *testing.T) {
-	fh := newFreezeHarness(t, nil)
+func TestUnparkedGuestIsNotMarkedInterrupted(t *testing.T) {
+	fh := newParkHarness(t, nil)
 	fh.create(gid1)
 	fh.create(gid2)
 	b := withBoot(t, fh.harness, "boot-1")
 
-	for _, r := range fh.m.FreezeAll(context.Background(), FreezeOperator) {
-		if !r.OK || r.Outcome != "frozen" {
-			t.Fatalf("freeze: %+v", r)
+	for _, r := range fh.m.ParkAll(context.Background(), ParkOperator) {
+		if !r.OK || r.Outcome != "parked" {
+			t.Fatalf("park: %+v", r)
 		}
 	}
-	// gid2's volume was written after its freeze: its image is stale and
+	// gid2's volume was written after its park: its image is stale and
 	// is discarded, so gid2 comes back cold.
 	fh.setFingerprint(gid2, "sb-2")
 
 	m2 := hostRestart(t, fh.harness, b, "boot-2")
 
 	if g := fh.guest(gid1); g.Interrupted != nil {
-		t.Fatalf("a guest ThawAll restored was marked interrupted: %+v", g.Interrupted)
+		t.Fatalf("a guest UnparkAll restored was marked interrupted: %+v", g.Interrupted)
 	}
 	if !fh.unitActive(gid1) {
-		t.Fatal("frozen guest not restored by the reconcile after the restart")
+		t.Fatal("parked guest not restored by the reconcile after the restart")
 	}
 	fh.waitState(gid1, StateRunning)
 	g2 := fh.guest(gid2)

@@ -98,6 +98,12 @@ module "environment" {
   host_data_disk_mbps = var.host_data_disk_mbps
   host_shapes         = var.host_shapes
 
+  # Prod owns repose-prod outright, so the inventory check speaks here
+  # (DECISIONS I-1004). Declared and passed rather than left to the module
+  # default: a global the root never passes is one prod cannot set, which is
+  # how host_os_disk_gb sat at the module's 256 unreachable from here.
+  resource_group_is_exclusive = var.resource_group_is_exclusive
+
   # Comes from the environment's tfvars, which is where somebody reads it.
   # The variable has no default, so a plan without that file fails rather than
   # silently picking a security type (docs/workstreams/11-infra-opentofu.md §6).
@@ -112,7 +118,7 @@ module "environment" {
 
   snapshots_account_name = var.snapshots_account_name
   keyvault_name          = var.keyvault_name
-  freeze_keyvault_name   = var.freeze_keyvault_name
+  park_keyvault_name     = var.park_keyvault_name
 
   manage_dns         = var.manage_dns
   cloudflare_zone_id = var.cloudflare_zone_id

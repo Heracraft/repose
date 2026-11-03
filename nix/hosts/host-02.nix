@@ -18,12 +18,12 @@
   # data disk) by the method host-01.nix records -- a scratch thin volume
   # written with `dd oflag=direct`, 2 GiB and 8 GiB single-stream to rule
   # out a burst, four at once, and a read back -- and put the single-stream
-  # figure, rounded down, here (RUNBOOK "Guest freeze" step 3).
+  # figure, rounded down, here (RUNBOOK "Guest park" step 3).
   #
-  # Too high is a loss, not a slow freeze: the deadline is a hard cap,
+  # Too high is a loss, not a slow park: the deadline is a hard cap,
   # snapshots are admitted against the memory this rate says fits inside
-  # it, so a rate the disk cannot hold has the freeze start more than it
+  # it, so a rate the disk cannot hold has the park start more than it
   # can finish, and the guest memory still unwritten when the deadline
   # passes is gone on the restart.
-  repose.host.freeze.writeRateMBs = 400;
+  repose.host.park.writeRateMBs = 400;
 }

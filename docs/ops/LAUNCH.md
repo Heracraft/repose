@@ -217,8 +217,8 @@ that changes host-01 reboots a host with tenants on it.
       `nix/hosts/prod.nix`, which carries everything every production host
       shares (the api address and server name, the platform CA, the
       bootstrap key, the base repository, the Blob account and snapshot
-      identity, the idle pause and the freeze vault), and names on top of
-      it only host-02's own freeze write rate. `host_flake_attrs` must
+      identity, the idle pause and the park vault), and names on top of
+      it only host-02's own park write rate. `host_flake_attrs` must
       name the host. Without that entry the install is the generic `host`
       configuration, which knows no api address, so the host comes up and
       never registers; the plan and the apply warn and neither stops.
@@ -330,21 +330,21 @@ that changes host-01 reboots a host with tenants on it.
       `infra/README.md` "Draining and destroying a host" has the step.
 
 **One known limit of the bigger host: a restart does not save all of its
-memory.** The freeze writes each running guest's memory to a thin volume
+memory.** The park writes each running guest's memory to a thin volume
 on the data disk and admits snapshots only while they fit in
 `writeRateMBs` times `deadline`, which is capped at 300 s
-(`nix/hosts/freeze.nix`); the guests that do not fit are stopped by the
+(`nix/hosts/park.nix`); the guests that do not fit are stopped by the
 shutdown and lose what they were running. host-01's measured
 single-stream rate is 400 MB/s, so its 240 s default saves 96 GB and the
 300 s cap 120 GB; the disk's provisioned 600 MB/s would be 180 GB at the
 cap. A full host-02 holds 192 GB of guest memory (24 seats of 8 GB).
 host-01 never met this: 64 GB less its 8 GB reserve is 56 GB of guest
 memory at most, under even the 240 s figure. Measure host-02's
-own rate on its pool (RUNBOOK "Guest freeze" step 3) and set
+own rate on its pool (RUNBOOK "Guest park" step 3) and set
 `writeRateMBs` in `nix/hosts/host-02.nix` from that -- it is the one value
 that file carries, and it currently holds host-01's number unmeasured. The
 only lever that raises the ceiling is the disk's provisioned MB/s, which
-costs money. `GuestLeftUnfrozen` counts
+costs money. `GuestNotParked` counts
 what was lost.
 
 ## 4. Deploy order

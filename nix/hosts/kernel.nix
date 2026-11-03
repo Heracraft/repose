@@ -2,8 +2,117 @@
 # needs before hostd starts.
 # The module list is fixed here instead of locking modules (hardening.nix)
 # because hostd creates taps and Cloud Hypervisor opens /dev/kvm after boot.
-{ config, lib, ... }:
+{ config, lib, pkgs, ... }:
 let
+  textfileDir = "/var/lib/node_exporter/textfile";
+
+  # repose-kernel-check reads back the boot-time facts about a host that
+  # nothing else in this repository reads back at all (DECISIONS I-1010).
+  #
+  # Two paging checks:
+  #
+  #   large_hash_linear   the `Dentry cache hash table ... linear` line this
+  #                       boot printed. A *positive* read of the allocation
+  #                       path that has never faulted, which is what
+  #                       docs/CHECKLIST.md already asks for -- not the
+  #                       absence of a symbol from /proc/vmallocinfo.
+  #   cmdline_recognised  no `Unknown kernel command line parameters` line.
+  #                       The general guard for every parameter this file
+  #                       ever grows, and the exact line that caught I-988
+  #                       after a host had been switched AND rebooted for a
+  #                       parameter the kernel never took.
+  #
+  # and one read that no rule looks at, large_hash_vmalloc_absent, because
+  # its positive state cannot be produced anywhere we can test: this is the
+  # only fleet and no machine here has more than one NUMA node. Letting an
+  # unconfirmed read veto a confirmed one would be I-968's shape inside the
+  # guard written against I-968.
+  #
+  # Not here: panic_on_oops, which hostd exports and HostPanicOnOopsOff
+  # reads, and a NUMA node count, which nothing alerts on, no dashboard
+  # shows and no code reads.
+  kernelCheck = pkgs.writeShellApplication {
+    name = "repose-kernel-check";
+    runtimeInputs = [ pkgs.coreutils pkgs.gnugrep pkgs.systemd ];
+    text = ''
+      out=${textfileDir}/repose_kernel.prom
+      tmp="$out.tmp"
+      state=/var/lib/repose/kernel-check.state
+
+      # Every check starts red. A check that is never computed -- because
+      # this script died, or journalctl hung, or a grep was added without
+      # its assignment -- publishes 0 and pages, rather than publishing
+      # nothing: `noDataState: OK` makes an absent series green, so silence
+      # is the one failure a textfile writer must not have.
+      large_hash_linear=0
+      cmdline_recognised=0
+      large_hash_vmalloc_absent=0
+
+      publish() {
+        {
+          echo "# HELP repose_kernel_check 1 when this boot satisfies the named kernel assertion (DECISIONS I-1010)."
+          echo "# TYPE repose_kernel_check gauge"
+          echo "repose_kernel_check{check=\"large_hash_linear\"} $large_hash_linear"
+          echo "repose_kernel_check{check=\"cmdline_recognised\"} $cmdline_recognised"
+          echo "repose_kernel_check{check=\"large_hash_vmalloc_absent\"} $large_hash_vmalloc_absent"
+        } > "$tmp"
+        mv -f "$tmp" "$out"
+      }
+
+      # Reds on disk before anything can fail, and again on the way out
+      # whatever happens -- a SIGKILL excepted, which is why the first call
+      # is here and not only in the trap.
+      publish
+      trap publish EXIT
+
+      # The two journal reads latch for the life of the boot. nix/hosts/
+      # hardening.nix caps the journal at 4G and these lines are printed in
+      # the first second of a boot, so a long chatty boot can lose its own
+      # head: without the latch a rotated journal turns a red into a green
+      # (the Unknown line scrolled away) and a green into a red (the Dentry
+      # line did), and both are wrong. First reading of this boot wins.
+      boot=$(cat /proc/sys/kernel/random/boot_id)
+      sboot=""
+      sa=0
+      sb=0
+      if [ -r "$state" ]; then
+        read -r sboot sa sb < "$state" || true
+      fi
+      if [ "$sboot" = "$boot" ]; then
+        large_hash_linear=$sa
+        cmdline_recognised=$sb
+      else
+        # `|| true` on every count: 0 matches is the healthy answer for
+        # cmdline_recognised and `grep -c` exits 1 on it, which under
+        # writeShellApplication's `set -e` would kill the script before it
+        # ever reached the second check.
+        klog=$(journalctl -k -b --no-pager 2>/dev/null || true)
+
+        if [ "$(echo "$klog" | grep -c "Dentry cache hash table.*linear" || true)" != 0 ]; then
+          large_hash_linear=1
+        fi
+
+        # `grep -v "Command line"` first, because the kernel echoes the
+        # whole command line into the same log: on host-02 three of the four
+        # oops-pattern matches were the command line quoting the parameter
+        # and only the fourth was the kernel refusing it (I-988). A phrase
+        # that can appear inside the thing being tested is not a test of it.
+        if [ "$(echo "$klog" | grep -v "Command line" | grep -c "Unknown kernel command line parameters" || true)" = 0 ]; then
+          cmdline_recognised=1
+        fi
+
+        printf '%s %s %s\n' "$boot" "$large_hash_linear" "$cmdline_recognised" > "$state.tmp"
+        mv -f "$state.tmp" "$state"
+      fi
+
+      # Live state, read every run and never latched: /proc/vmallocinfo is
+      # now, not a line from boot.
+      if [ "$(grep -c alloc_large_system_hash /proc/vmallocinfo || true)" = 0 ]; then
+        large_hash_vmalloc_absent=1
+      fi
+    '';
+  };
+
   # CVE-2026-99999: the first stable kernel carrying the backport of
   # 6785011f8b16, "ipv4: validate checksum_start before completing checksum".
   patchedKernel = "6.18.57";
@@ -145,6 +254,38 @@ in
     "net.bridge.bridge-nf-call-iptables" = 0;
     "net.bridge.bridge-nf-call-ip6tables" = 0;
     "net.bridge.bridge-nf-call-arptables" = 0;
+  };
+
+  systemd.tmpfiles.rules = [
+    # Both also created elsewhere (storage.nix for the textfile directory,
+    # hostd.nix for /var/lib/repose), and repeated here on purpose: this
+    # writer must not fail because a host was built without the thin pool
+    # or without hostd.
+    "d /var/lib/node_exporter 0755 root root -"
+    "d ${textfileDir} 0755 root root -"
+    "d /var/lib/repose 0755 root root -"
+  ];
+
+  systemd.services.repose-kernel-check = {
+    description = "Read back this boot's kernel assertions for node_exporter";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${kernelCheck}/bin/repose-kernel-check";
+    };
+  };
+
+  systemd.timers.repose-kernel-check = {
+    description = "Read back this boot's kernel assertions every minute";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      # 1 min after boot, then every minute: HostKernelAssertFailed treats a
+      # file older than an hour as a failure, so the write has to be far
+      # more frequent than that for a stale file to mean the writer stopped
+      # rather than that the timer is slow.
+      OnBootSec = "1min";
+      OnUnitActiveSec = "1min";
+      Unit = "repose-kernel-check.service";
+    };
   };
 
   # virtiofsd runs unprivileged in a user namespace (`--sandbox namespace`).

@@ -359,13 +359,13 @@ variable "keyvault_name" {
   description = "Globally unique Key Vault name."
 }
 
-variable "freeze_keyvault_name" {
+variable "park_keyvault_name" {
   type        = string
   description = <<-EOT
-    Key Vault for the guest freeze's image-wrapping key (DECISIONS I-653),
+    Key Vault for the guest park's image-wrapping key (DECISIONS I-653),
     a vault of its own because access policies are vault-wide: the hosts
     get Get and UnwrapKey here, and nothing on the vault that wraps users'
-    secret keys. Null creates nothing; hosts then cannot freeze guests.
+    secret keys. Null creates nothing; hosts then cannot park guests.
   EOT
   default     = null
 }
@@ -436,4 +436,22 @@ variable "alert_email" {
   type        = string
   description = "Where the Azure alerts are emailed. Required when alerts_enabled is true. It is a personal address in a public repository, so it goes in the environment's local tfvars."
   default     = ""
+}
+
+variable "resource_group_is_exclusive" {
+  type        = bool
+  description = <<-EOT
+    Whether this configuration is the only thing in its resource group, which
+    turns on the inventory check in inventory.tf (DECISIONS I-1004).
+
+    Default false, and that is not timidity: staging's hosts are named in a
+    git-ignored local tfvars, so an environment whose `hosts` the check cannot
+    see would report every host it does not know about as a stray and warn on
+    every plan for ever. A check that always warns is a check nobody reads,
+    and infra/README.md already teaches the reader to scroll past the
+    `dns_is_managed_or_manual` warning -- one such habit is enough.
+
+    Only prod sets it true, where the group holds the fleet and nothing else.
+  EOT
+  default     = false
 }

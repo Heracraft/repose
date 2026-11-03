@@ -101,7 +101,19 @@ written so none of them goes unnoticed again.
       `Dentry cache hash table ... linear` for `hashdist=0` (I-982),
       a non-zero `sysctl` for anything that is really a sysctl. Prefer
       `boot.kernel.sysctl` where the knob is one: it applies on a switch
-      with no reboot, and it can be read back.
+      with no reboot, and it can be read back. `nix/hosts/tests`' "the
+      kernel honoured what it was given" subtest holds the general form —
+      no name the node passed appears in the kernel's Unknown-parameter
+      line, and `kernel.panic_on_oops` reads back 1 — and `ci.yml` asserts
+      the sysctl is still 1 in host-02's *config*. Neither retires this
+      item: the test speaks for a VM's kernel and the eval for a config
+      file, and the thing that bit us was a real host whose config was
+      already right (DECISIONS I-1012).
+      A knob worth setting is
+      worth reading back *continuously*, not once: `repose_kernel_check`
+      and `repose_host_panic_on_oops` are where a host's own answer goes,
+      and a parameter added without one is checked at the moment somebody
+      remembers to look (I-1010).
 - [ ] A new or changed test asserts the property it is named for, not a
       proxy for it, and names the probe that proves it would fail without
       the fix. A proxy fails in both directions: red when the runner is
@@ -116,12 +128,32 @@ written so none of them goes unnoticed again.
       "logged but not enforced" with the ban lookup disabled — and the
       test passes repeated `-race` runs under load, not once on an idle
       box.
+- [ ] A test that forces state in the database first stops whatever else
+      writes it. A connected fake host reverts `hosts.state` 50-75 ms after
+      a test sets it, so an assertion that races the next heartbeat is green
+      on an idle machine and red on a shared runner, and says nothing about
+      which (DECISIONS I-1014). Evidence: the test passes repeatedly under
+      load, not once on an idle box, and the commit names what was stopped
+      (`DisconnectHost`, `StopEngine`) and why.
+- [ ] A message a user or an operator reads has one owner, and a test
+      that quotes it greps a substring of that owner. A VM test or a
+      runbook retyping the words is a second spelling of them, and the
+      release that reworded `control.ErrNotRunning` shipped a Go test
+      forbidding the old words beside a VM test requiring them -- two host
+      VM tests red on `main` for a day, unseen, because the VM tests need
+      KVM and CI has no job for them (DECISIONS I-1024). The same goes for
+      a *rendering* nobody here owns: nftables decides whether it prints
+      `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
+      literal out of the other file rather than restating it, and reverting
+      the quoted side fails it in seconds without a VM.
 - [ ] A change to `ops/dev/closure-equiv.py`, or to what it reads, keeps
       both of its answers. It decides whether a branch touching `nix/` is
       charged a deploy target, so an "unchanged" it gets wrong ships a host
       or the edge without a switch, and a "changed" it gets wrong charges a
-      docs commit a deploy. Evidence: `ops/dev/closure-equiv-test` passes
-      (five cases, both directions, no nix needed), and the two answers are
+      docs commit a deploy. Evidence: `go test ./test/supplychain -run
+      TestDevToolHarnessesRun` executes `ops/dev/closure-equiv-test` (five
+      cases, both directions, no nix needed) — since I-996 it is no longer a
+      harness someone has to remember to type — and the two answers are
       confirmed against revisions of this repository — a branch that really
       changes the target reports it with the derivations between the change
       and the root, and a docs-only branch against the same target still
@@ -367,12 +399,12 @@ entry and this list with it. Counts as of 2026-10-21.
       menu waits 10 s so an older generation can be chosen (I-649, I-654).
 - [ ] **A planned host-01 restart has been ridden out.** It is the only
       proof of the new initrd pool activation (I-643), the restart of
-      machines that were running (I-645) and the guest freeze on prod
+      machines that were running (I-645) and the guest park on prod
       (I-652, I-685, I-686), none of which a switch exercises. Evidence:
-      `journalctl -u hostd` shows `guest_freeze` before the shutdown and
-      `guest_thaw` after the boot, every guest back `running` with its
+      `journalctl -u hostd` shows `guest_park` before the shutdown and
+      `guest_unpark` after the boot, every guest back `running` with its
       earlier pids, `lvs -o seg_monitor` says `monitored`, and the pool
-      unit logged `pool_activated`. `hostd freeze` is all-or-nothing, so
+      unit logged `pool_activated`. `hostd park` is all-or-nothing, so
       this cannot be rehearsed on one guest while others must keep
       running (I-696).
 - [ ] **The herdr laptop checks** from release r20261008-1 have been run on

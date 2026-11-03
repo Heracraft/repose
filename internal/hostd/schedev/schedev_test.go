@@ -14,12 +14,12 @@ import (
 
 type host struct {
 	mu                    sync.Mutex
-	freezes, thaws, syncs int
+	parks, unparks, syncs int
 }
 
-func (h *host) FreezeForEvent(context.Context) { h.mu.Lock(); h.freezes++; h.mu.Unlock() }
-func (h *host) ThawNow(context.Context)        { h.mu.Lock(); h.thaws++; h.mu.Unlock() }
-func (h *host) SyncClocks(context.Context)     { h.mu.Lock(); h.syncs++; h.mu.Unlock() }
+func (h *host) ParkForEvent(context.Context) { h.mu.Lock(); h.parks++; h.mu.Unlock() }
+func (h *host) UnparkNow(context.Context)    { h.mu.Lock(); h.unparks++; h.mu.Unlock() }
+func (h *host) SyncClocks(context.Context)   { h.mu.Lock(); h.syncs++; h.mu.Unlock() }
 
 type imds struct {
 	mu       sync.Mutex
@@ -61,9 +61,9 @@ func (l *Listener) step(t *testing.T) {
 	l.Step(context.Background(), d)
 }
 
-// A Reboot notice freezes once, then approves; Azure need not wait out
+// A Reboot notice parks once, then approves; Azure need not wait out
 // NotBefore. Another VM's event is ignored.
-func TestRebootNoticeFreezesThenApproves(t *testing.T) {
+func TestRebootNoticeParksThenApproves(t *testing.T) {
 	s, h := &imds{}, &host{}
 	l := newListener(t, s, h)
 	s.doc = Document{DocumentIncarnation: 2, Events: []Event{
@@ -72,8 +72,8 @@ func TestRebootNoticeFreezesThenApproves(t *testing.T) {
 	}}
 	l.step(t)
 	l.step(t)
-	if h.freezes != 1 {
-		t.Fatalf("%d freezes, want 1", h.freezes)
+	if h.parks != 1 {
+		t.Fatalf("%d parks, want 1", h.parks)
 	}
 	if len(s.approved) == 0 || s.approved[0] != "e1" {
 		t.Fatalf("approved %v", s.approved)
@@ -86,8 +86,8 @@ func TestRebootNoticeFreezesThenApproves(t *testing.T) {
 }
 
 // A cancelled restart (the event leaves the list and the host is still
-// up) restores the frozen guests.
-func TestCancelledRebootThaws(t *testing.T) {
+// up) restores the parked guests.
+func TestCancelledRebootUnparks(t *testing.T) {
 	s, h := &imds{}, &host{}
 	l := newListener(t, s, h)
 	s.doc = Document{Events: []Event{{EventID: "e1", EventType: "Redeploy", EventStatus: "Scheduled"}}}
@@ -96,20 +96,20 @@ func TestCancelledRebootThaws(t *testing.T) {
 	s.doc = Document{DocumentIncarnation: 3}
 	s.mu.Unlock()
 	l.step(t)
-	if h.freezes != 1 || h.thaws != 1 {
-		t.Fatalf("freezes %d thaws %d", h.freezes, h.thaws)
+	if h.parks != 1 || h.unparks != 1 {
+		t.Fatalf("parks %d unparks %d", h.parks, h.unparks)
 	}
 }
 
-// A Freeze notice (a pause of seconds) freezes nothing; when it is over
+// A Freeze notice (a pause of seconds) parks nothing; when it is over
 // the guests' clocks are set.
 func TestPauseEventSyncsClocksAfter(t *testing.T) {
 	s, h := &imds{}, &host{}
 	l := newListener(t, s, h)
 	s.doc = Document{Events: []Event{{EventID: "p1", EventType: "Freeze", EventStatus: "Scheduled", DurationInSeconds: 5}}}
 	l.step(t)
-	if h.freezes != 0 || len(s.approved) != 0 {
-		t.Fatalf("a pause froze guests (%d) or was approved (%v)", h.freezes, s.approved)
+	if h.parks != 0 || len(s.approved) != 0 {
+		t.Fatalf("a pause parked guests (%d) or was approved (%v)", h.parks, s.approved)
 	}
 	s.mu.Lock()
 	s.doc = Document{}
@@ -120,16 +120,16 @@ func TestPauseEventSyncsClocksAfter(t *testing.T) {
 	}
 }
 
-// Preempt and Terminate delete the VM: nothing is frozen or approved.
-func TestDeletionNoticeFreezesNothing(t *testing.T) {
+// Preempt and Terminate delete the VM: nothing is parked or approved.
+func TestDeletionNoticeParksNothing(t *testing.T) {
 	for _, typ := range []string{"Preempt", "Terminate"} {
 		s, h := &imds{}, &host{}
 		l := newListener(t, s, h)
 		s.doc = Document{Events: []Event{{EventID: "d1", EventType: typ, EventStatus: "Scheduled"}}}
 		l.step(t)
 		l.step(t)
-		if h.freezes != 0 || len(s.approved) != 0 {
-			t.Fatalf("%s: %d freezes, approved %v", typ, h.freezes, s.approved)
+		if h.parks != 0 || len(s.approved) != 0 {
+			t.Fatalf("%s: %d parks, approved %v", typ, h.parks, s.approved)
 		}
 	}
 }

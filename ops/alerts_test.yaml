@@ -128,6 +128,188 @@ tests:
               description: "81 percent of vg-guests/thin's metadata is used. hostd refuses creates at 85 and starts at 95."
               runbook: "docs/ops/RUNBOOK.md#poolmetadatahigh"
 
+  # --- HostKernelTainted --------------------------------------------------
+  - interval: 1m
+    name: HostKernelTainted pages on a hard-fault bit, not on a module bit
+    input_series:
+      # host-02's shape on 2026-11-02: the host stayed scrapable through
+      # the whole 3 h 48 m, so `up` is 1 beside the taint. The bit rises at
+      # minute 10 and never falls, which is what a latched bit does.
+      - series: 'repose_host_kernel_tainted{job="hostd",instance="10.255.0.8:9101",host_id="host-02",reason="machine_check"}'
+        values: "0+0x10 1+0x20"
+      - series: 'repose_host_kernel_tainted{job="hostd",instance="10.255.0.8:9101",host_id="host-02",reason="die"}'
+        values: "0+0x30"
+      - series: 'up{job="hostd",instance="10.255.0.8:9101",host_id="host-02"}'
+        values: "1+0x30"
+      # A healthy host with an out-of-tree module: bit 12 is set for ever
+      # and is not one of the three reasons, so nothing here fires. This is
+      # the series that would have paged for ever under `tainted != 0`.
+      - series: 'repose_host_kernel_tainted{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="machine_check"}'
+        values: "0+0x30"
+      - series: 'repose_host_kernel_tainted{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="die"}'
+        values: "0+0x30"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HostKernelTainted
+        exp_alerts: []
+      # for: 0m -- the next evaluation after the bit is set.
+      - eval_time: 11m
+        alertname: HostKernelTainted
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-02
+            exp_annotations:
+              summary: "the kernel on host host-02 is tainted or unreadable"
+              description: "This host's kernel has latched a hard fault, or hostd could not read its taint word. It stays set until the host reboots. Drain the host; do not wait for it to clear. `curl -s 10.255.0.N:9101/metrics | grep kernel_tainted` says which reason."
+              runbook: "docs/ops/RUNBOOK.md#hostkerneltainted"
+      # Still firing 3 h later, which is the whole point: KernelOops went
+      # green 8 minutes in and this does not.
+      - eval_time: 29m
+        alertname: HostKernelTainted
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-02
+            exp_annotations:
+              summary: "the kernel on host host-02 is tainted or unreadable"
+              description: "This host's kernel has latched a hard fault, or hostd could not read its taint word. It stays set until the host reboots. Drain the host; do not wait for it to clear. `curl -s 10.255.0.N:9101/metrics | grep kernel_tainted` says which reason."
+              runbook: "docs/ops/RUNBOOK.md#hostkerneltainted"
+    promql_expr_test:
+      # One alert per host, not one per bit, even with two bits latched.
+      - expr: max by (host_id) (repose_host_kernel_tainted{reason=~"die|machine_check|bad_page"}) > 0
+        eval_time: 11m
+        exp_samples:
+          - labels: '{host_id="host-02"}'
+            value: 1
+
+  # --- HostPanicOnOopsOff -------------------------------------------------
+  - interval: 1m
+    name: HostPanicOnOopsOff warns after 15 minutes off and not at 14
+    input_series:
+      - series: 'repose_host_panic_on_oops{job="hostd",instance="10.255.0.7:9101",host_id="host-01"}'
+        values: "0+0x30"
+      - series: 'repose_host_panic_on_oops{job="hostd",instance="10.255.0.8:9101",host_id="host-02"}'
+        values: "1+0x30"
+    alert_rule_test:
+      # A host part-way through a switch reads 0 for a moment and must not
+      # warn for it.
+      - eval_time: 14m
+        alertname: HostPanicOnOopsOff
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: HostPanicOnOopsOff
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              job: hostd
+              instance: 10.255.0.7:9101
+              host_id: host-01
+            exp_annotations:
+              summary: "host host-01 would survive a kernel oops instead of rebooting"
+              description: "kernel.panic_on_oops is off or unreadable on this host, so an oops leaves it serving tenants with a kernel it cannot trust. `sysctl kernel.panic_on_oops` on the host; it is set by nix/hosts/kernel.nix and applied by a switch, so a host that has not been switched since I-988 reads 0."
+              runbook: "docs/ops/RUNBOOK.md#hostpaniconoopsoff"
+
+  # --- HostKernelAssertFailed ---------------------------------------------
+  - interval: 1m
+    name: HostKernelAssertFailed fires on a failing check, and its value is above 0
+    input_series:
+      - series: 'repose_kernel_check{job="hosts",instance="10.255.0.8:9100",host_id="host-02",check="large_hash_linear"}'
+        values: "0+0x30"
+      - series: 'repose_kernel_check{job="hosts",instance="10.255.0.8:9100",host_id="host-02",check="cmdline_recognised"}'
+        values: "1+0x30"
+      - series: 'node_textfile_mtime_seconds{job="hosts",instance="10.255.0.8:9100",host_id="host-02",file="/var/lib/node_exporter/textfile/repose_kernel.prom"}'
+        values: "0+60x30"
+      - series: 'up{job="hosts",instance="10.255.0.8:9100",host_id="host-02"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HostKernelAssertFailed
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: HostKernelAssertFailed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-02
+              check: large_hash_linear
+            exp_annotations:
+              summary: "a kernel assertion on host host-02 failed, is missing or is stale"
+              description: "This host's boot is not the boot the configuration asks for, or nothing is checking. Drain it; the fix is a reboot the owner runs, and the parameters only take on boot. Silence this in Grafana until that reboot rather than changing the rule. `cat /var/lib/node_exporter/textfile/repose_kernel.prom` on the host says which check."
+              runbook: "docs/ops/RUNBOOK.md#hostkernelassertfailed"
+    promql_expr_test:
+      # The arm that matters, and the reason it is not written
+      # `min(check) == 0`. A Prometheus comparison returns the LEFT side's
+      # value, so `min(check) == 0` fires with the value zero -- and
+      # alerts-gen conditions this rule's Grafana copy on "above 0", which
+      # zero does not satisfy. These two samples are the measurement:
+      - expr: min by (host_id, check) (repose_kernel_check) == 0
+        eval_time: 11m
+        exp_samples:
+          - labels: '{check="large_hash_linear", host_id="host-02"}'
+            value: 0
+      - expr: max by (host_id, check) (1 - repose_kernel_check) > 0
+        eval_time: 11m
+        exp_samples:
+          - labels: '{check="large_hash_linear", host_id="host-02"}'
+            value: 1
+
+  - interval: 1m
+    name: HostKernelAssertFailed fires when a scraped host publishes no check at all
+    input_series:
+      # The arm this file normally cannot exercise, because every other
+      # case seeds the series it tests. node_exporter is up and the
+      # textfile is absent: nothing wrote it, or nothing enabled the timer.
+      - series: 'up{job="hosts",instance="10.255.0.7:9100",host_id="host-01"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HostKernelAssertFailed
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: HostKernelAssertFailed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-01
+            exp_annotations:
+              summary: "a kernel assertion on host host-01 failed, is missing or is stale"
+              description: "This host's boot is not the boot the configuration asks for, or nothing is checking. Drain it; the fix is a reboot the owner runs, and the parameters only take on boot. Silence this in Grafana until that reboot rather than changing the rule. `cat /var/lib/node_exporter/textfile/repose_kernel.prom` on the host says which check."
+              runbook: "docs/ops/RUNBOOK.md#hostkernelassertfailed"
+
+  - interval: 1m
+    name: HostKernelAssertFailed fires when the file stops being written though its checks read 1
+    input_series:
+      # Every check green and the writer dead: the mtime stops advancing
+      # while the last values it published sit there reading healthy for
+      # ever. /var/lib survives a reboot, so without this arm a host can
+      # publish a green file from a boot that is long gone.
+      - series: 'repose_kernel_check{job="hosts",instance="10.255.0.7:9100",host_id="host-01",check="large_hash_linear"}'
+        values: "1+0x130"
+      - series: 'repose_kernel_check{job="hosts",instance="10.255.0.7:9100",host_id="host-01",check="cmdline_recognised"}'
+        values: "1+0x130"
+      - series: 'up{job="hosts",instance="10.255.0.7:9100",host_id="host-01"}'
+        values: "1+0x130"
+      # Written once at t=0 and never again. `time()` in a unit test starts
+      # at 0, so the file is an hour stale at 60m and the rule's `for: 10m`
+      # makes it fire at 70m.
+      - series: 'node_textfile_mtime_seconds{job="hosts",instance="10.255.0.7:9100",host_id="host-01",file="/var/lib/node_exporter/textfile/repose_kernel.prom"}'
+        values: "0+0x130"
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: HostKernelAssertFailed
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: HostKernelAssertFailed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-01
+            exp_annotations:
+              summary: "a kernel assertion on host host-01 failed, is missing or is stale"
+              description: "This host's boot is not the boot the configuration asks for, or nothing is checking. Drain it; the fix is a reboot the owner runs, and the parameters only take on boot. Silence this in Grafana until that reboot rather than changing the rule. `cat /var/lib/node_exporter/textfile/repose_kernel.prom` on the host says which check."
+              runbook: "docs/ops/RUNBOOK.md#hostkernelassertfailed"
+
   # --- PoolUnavailable ----------------------------------------------------
   - interval: 1m
     name: PoolUnavailable pages after 5 minutes down
@@ -874,31 +1056,31 @@ tests:
               description: "`hostd guests --json | jq '.[] | select(.interrupted_boot_id)'` on the host lists them; compare with guest_resumes for that boot."
               runbook: "docs/ops/RUNBOOK.md#resumenotstarted"
 
-  # --- GuestLeftUnfrozen --------------------------------------------------
+  # --- GuestNotParked --------------------------------------------------
   - interval: 1m
-    name: GuestLeftUnfrozen warns when a freeze leaves a running guest unfrozen
+    name: GuestNotParked warns when a park leaves a running guest skipped
     input_series:
       # The series exists at 0 from hostd's start, so the rise at the next
       # boot is an increase and not a new series.
-      - series: 'repose_host_guest_freeze_unfrozen_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="estimate"}'
+      - series: 'repose_host_guest_park_skipped_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="estimate"}'
         values: "0+0x10 1+0x30"
-      - series: 'repose_host_guest_freeze_unfrozen_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="deadline"}'
+      - series: 'repose_host_guest_park_skipped_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="deadline"}'
         values: "0+0x41"
     alert_rule_test:
       - eval_time: 8m
-        alertname: GuestLeftUnfrozen
+        alertname: GuestNotParked
         exp_alerts: []
       - eval_time: 20m
-        alertname: GuestLeftUnfrozen
+        alertname: GuestNotParked
         exp_alerts:
           - exp_labels:
               severity: warn
               host_id: host-01
               reason: estimate
             exp_annotations:
-              summary: "1 guest(s) on host-01 were left unfrozen (estimate) and lost what they were running"
-              description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
-              runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+              summary: "1 guest(s) on host-01 were not parked (estimate) and lost what they were running"
+              description: "Loki `{component=\"hostd\"} | json | event=\"guest_park\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-park -u hostd` has the park that did it. Compare the park's duration with repose.host.park.deadline before raising it."
+              runbook: "docs/ops/RUNBOOK.md#guestnotparked"
 
   # Two reboots, each losing the same guest, which is host-01's own
   # pattern: the host's running total goes 0, 1, 2, and the alert says
@@ -907,31 +1089,31 @@ tests:
   # sees as no rise at all, so every reboot after the first was silent
   # and this case would say one guest instead of two (I-796's review).
   - interval: 1m
-    name: GuestLeftUnfrozen counts a second reboot's loss on top of the first
+    name: GuestNotParked counts a second reboot's loss on top of the first
     input_series:
-      - series: 'repose_host_guest_freeze_unfrozen_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="estimate"}'
+      - series: 'repose_host_guest_park_skipped_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="estimate"}'
         values: "0+0x5 1+0x20 2+0x20"
     alert_rule_test:
       - eval_time: 3m
-        alertname: GuestLeftUnfrozen
+        alertname: GuestNotParked
         exp_alerts: []
       - eval_time: 40m
-        alertname: GuestLeftUnfrozen
+        alertname: GuestNotParked
         exp_alerts:
           - exp_labels:
               severity: warn
               host_id: host-01
               reason: estimate
             exp_annotations:
-              summary: "2 guest(s) on host-01 were left unfrozen (estimate) and lost what they were running"
-              description: "Loki `{component=\"hostd\"} | json | event=\"guest_freeze\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-freeze -u hostd` has the freeze that did it. Compare the freeze's duration with repose.host.freeze.deadline before raising it."
-              runbook: "docs/ops/RUNBOOK.md#guestleftunfrozen"
+              summary: "2 guest(s) on host-01 were not parked (estimate) and lost what they were running"
+              description: "Loki `{component=\"hostd\"} | json | event=\"guest_park\"` names each guest and the reason; `journalctl -b -1 -u repose-guest-park -u hostd` has the park that did it. Compare the park's duration with repose.host.park.deadline before raising it."
+              runbook: "docs/ops/RUNBOOK.md#guestnotparked"
 
   # --- GuestImageDiscarded ------------------------------------------------
   - interval: 1m
-    name: GuestImageDiscarded warns when a thaw throws a frozen guest's memory away
+    name: GuestImageDiscarded warns when an unpark throws a parked guest's memory away
     input_series:
-      - series: 'repose_host_guest_thaw_discarded_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="window"}'
+      - series: 'repose_host_guest_unpark_discarded_total{job="hostd",instance="10.255.0.7:9101",host_id="host-01",reason="window"}'
         values: "0+0x10 2+0x30"
     alert_rule_test:
       - eval_time: 8m
@@ -945,8 +1127,8 @@ tests:
               host_id: host-01
               reason: window
             exp_annotations:
-              summary: "2 guest(s) on host-01 lost their frozen memory at the thaw (window)"
-              description: "Loki `{component=\"hostd\"} | json | event=\"guest_thaw\"` names each guest and what its image ran into; `frozen guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
+              summary: "2 guest(s) on host-01 lost their parked memory at the unpark (window)"
+              description: "Loki `{component=\"hostd\"} | json | event=\"guest_unpark\"` names each guest and what its image ran into; `parked guests restored` carries `restored`, `images` and `duration_ms`. A whole boot's images discarded at once is the host, not the guests."
               runbook: "docs/ops/RUNBOOK.md#guestimagediscarded"
 
   # --- GuestWakeFailed ----------------------------------------------------

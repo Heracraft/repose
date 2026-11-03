@@ -1,38 +1,38 @@
 #!/usr/bin/env bash
-# Guest freeze experiments on a KVM box (docs/research/guest-freeze.md,
+# Guest park experiments on a KVM box (docs/research/guest-freeze.md,
 # DECISIONS I-652). Boots the repose guest runner under Cloud Hypervisor the
 # way hostd does (ext4 volume, virtiofsd store share, tap, vsock), and
 # snapshots, kills and restores it. Run as root. Not a host tool: hostd's
-# freeze lives in internal/hostd/guest/freeze.go.
+# park lives in internal/hostd/guest/park.go.
 #
-#   freeze-bench.sh up ID CLASS          volume, tap, virtiofsd, boot, setup
-#   freeze-bench.sh freeze ID            pause, snapshot, kill CH and virtiofsd, drop tap
-#                                        (ENC=1 dm-crypt image volume, DROP=1 guest drops caches first)
-#   freeze-bench.sh thaw ID [MODE]       tap, virtiofsd, restore (copy|ondemand), resume, set the clock
-#                                        (COLD=1 drops the host page cache first)
-#   freeze-bench.sh down ID              stop everything, keep the volume
-#   freeze-bench.sh rm ID                remove everything
-#   freeze-bench.sh x ID USER CMD...     run a command in the guest
-#   freeze-bench.sh hfreeze|hthaw ID     the same through hostd's code (KEY, REC, VG)
-#   freeze-bench.sh hup ID CLASS VOL     boot a host's guest closure ($CLOSURE) on the
-#                                        bench-* volume VOL (/dev/VG/bench-*, wiped;
-#                                        anything else is refused) the way hostd's create does
-#                                        (fresh ext4, hostd's argv and unit limits,
-#                                        a view of the closure over virtiofs), then
-#                                        register and set up; prints a timings line
-#                                        (DIAG=1 adds where the guest's time went)
-#   freeze-bench.sh hdown ID             stop a hup guest, keep the volume
+#   park-bench.sh up ID CLASS       volume, tap, virtiofsd, boot, setup
+#   park-bench.sh park ID           pause, snapshot, kill CH and virtiofsd, drop tap
+#                                   (ENC=1 dm-crypt image volume, DROP=1 guest drops caches first)
+#   park-bench.sh unpark ID [MODE]  tap, virtiofsd, restore (copy|ondemand), resume, set the clock
+#                                   (COLD=1 drops the host page cache first)
+#   park-bench.sh down ID           stop everything, keep the volume
+#   park-bench.sh rm ID             remove everything
+#   park-bench.sh x ID USER CMD...  run a command in the guest
+#   park-bench.sh hpark|hunpark ID  the same through hostd's code (KEY, REC, VG)
+#   park-bench.sh hup ID CLASS VOL  boot a host's guest closure ($CLOSURE) on the
+#                                   bench-* volume VOL (/dev/VG/bench-*, wiped;
+#                                   anything else is refused) the way hostd's create does
+#                                   (fresh ext4, hostd's argv and unit limits,
+#                                   a view of the closure over virtiofs), then
+#                                   register and set up; prints a timings line
+#                                   (DIAG=1 adds where the guest's time went)
+#   park-bench.sh hdown ID          stop a hup guest, keep the volume
 #
 # BALLOON=1 on up and hup adds a virtio-balloon with free page reporting.
 # CMDLINE on hup is appended to the kernel command line. LATE=1 on hup
 # loads virtio_balloon in the guest after setup (with CMDLINE carrying
 # modprobe.blacklist=virtio_balloon). hup needs CH (cloud-hypervisor) and
 # VIRTIOFSD set, or on PATH, and no RUNNER (DECISIONS I-704).
-# Environment: RUNNER (guest runner, default /tmp/gf/runner), FB (freezebench
+# Environment: RUNNER (guest runner, default /tmp/gf/runner), FB (parkbench
 # binary), ROOT (work dir, default /mnt/nixstore/gf).
 set -euo pipefail
 RUNNER=${RUNNER:-/tmp/gf/runner}
-FB=${FB:-/tmp/gf/freezebench}
+FB=${FB:-/tmp/gf/parkbench}
 ROOT=${ROOT:-/mnt/nixstore/gf}
 CH=${CH:-}; [ -n "$CH" ] || [ ! -e "$RUNNER/bin/run" ] || CH=$(grep -o '/nix/store/[^ ]*cloud-hypervisor[^/]*/bin/cloud-hypervisor' "$(readlink -f "$RUNNER/bin/run")" | head -1)
 
@@ -120,17 +120,17 @@ enc_open() { # enc_open ID new|old
   if [ "$2" = new ]; then
     mkfs.ext4 -q -E nodiscard,lazy_itable_init=1,lazy_journal_init=1 -m 0 "/dev/mapper/gffrz$id"
   fi
-  mkdir -p "$d/freeze"
-  mount -o noatime "/dev/mapper/gffrz$id" "$d/freeze"
+  mkdir -p "$d/park"
+  mount -o noatime "/dev/mapper/gffrz$id" "$d/park"
 }
 enc_close() {
   local id=$1 d=$ROOT/$1
-  umount "$d/freeze"
+  umount "$d/park"
   cryptsetup close "gffrz$id"
   losetup -d "$(cat "$d/frz.loop")"
 }
 
-freeze() {
+park() {
   local id=$1 d=$ROOT/$1
   local s="$d/snap" t0 te t1 t2 t3 tc
   t0=$(now_ms)
@@ -165,7 +165,7 @@ freeze() {
   echo "prep_ms=$((te - t0)) drop_ms=$((tc - te)) pause_ms=$((t1 - tc)) snapshot_ms=$((t2 - t1)) total_ms=$((t3 - t0)) image_apparent=$apparent image_disk=$real"
 }
 
-thaw() {
+unpark() {
   local id=$1 mode=${2:-copy} d=$ROOT/$1
   local t0 t1 t2 t3 t4; t0=$(now_ms)
   local s="$d/snap"
@@ -222,11 +222,11 @@ down() {
 bench_vol() {
   local vol=$1 lv
   if ! [[ $vol =~ ^/dev/[A-Za-z0-9_.+-]+/bench-[A-Za-z0-9_.+-]+$ ]] || [[ $vol == */../* ]]; then
-    echo "freeze-bench: $vol is not /dev/VG/bench-*; refusing to wipe it" >&2; return 1
+    echo "park-bench: $vol is not /dev/VG/bench-*; refusing to wipe it" >&2; return 1
   fi
-  [ -b "$vol" ] || { echo "freeze-bench: $vol is not a block device" >&2; return 1; }
+  [ -b "$vol" ] || { echo "park-bench: $vol is not a block device" >&2; return 1; }
   lv=$(lvs --noheadings -o lv_name "$vol" 2>/dev/null | tr -d ' ') || true
-  [[ $lv == bench-* ]] || { echo "freeze-bench: $vol is not a bench-* logical volume (lvs: ${lv:-none})" >&2; return 1; }
+  [[ $lv == bench-* ]] || { echo "park-bench: $vol is not a bench-* logical volume (lvs: ${lv:-none})" >&2; return 1; }
 }
 
 hup() {
@@ -309,23 +309,23 @@ hdown() {
 
 case "${1:-}" in
   up) up "$2" "${3:-large}" ;;
-  freeze) freeze "$2" ;;
-  thaw) thaw "$2" "${3:-copy}" ;;
+  park) park "$2" ;;
+  unpark) unpark "$2" "${3:-copy}" ;;
   down) down "$2" ;;
   hup) hup "$2" "${3:-large}" "${4:?VOL}" ;;
   hdown) hdown "$2" ;;
   rm) down "$2"; rm -rf "${ROOT:?}/$2" ;;
   x) id=$2 user=$3; shift 3; "$FB" exec "$ROOT/$id" "$user" "$@" ;;
-  # The same freeze and restore through hostd's own code (freeze.Image on a
-  # thin volume of $VG, dm-crypt, Key check, fingerprint, ch.Freezer,
+  # The same park and restore through hostd's own code (park.Image on a
+  # thin volume of $VG, dm-crypt, Key check, fingerprint, ch.Parker,
   # ch.RestoreArgs); the key is an RSA PEM ($KEY), records in $REC.
-  hfreeze)
+  hpark)
     id=$2; d=$ROOT/$2
-    "$FB" hostd-freeze "$d" "$(cat "$d/class")" "${KEY:?}" "${REC:?}" "${VG:?}"
+    "$FB" hostd-park "$d" "$(cat "$d/class")" "${KEY:?}" "${REC:?}" "${VG:?}"
     kill_pidfile "$d/ch.pid"; kill_pidfile "$d/virtiofsd.pid"; net_down "$id" ;;
-  hthaw)
+  hunpark)
     id=$2; d=$ROOT/$2
     net_up "$id"; vfs_up "$id"
-    CH=$CH "$FB" hostd-thaw "$d" "${KEY:?}" "${REC:?}" "${VG:?}" ;;
+    CH=$CH "$FB" hostd-unpark "$d" "${KEY:?}" "${REC:?}" "${VG:?}" ;;
   *) sed -n '2,20p' "$0"; exit 64 ;;
 esac

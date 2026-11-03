@@ -48,18 +48,22 @@
     ];
 
     # The idle pause is proven here before host-01 (DECISIONS I-818), the
-    # way the freeze below was: this host has no tenant guests, and the
+    # way the park below was: this host has no tenant guests, and the
     # mechanism -- a plain vm.pause and vm.resume of a guest with two
     # vhost-user devices -- was measured here on 2026-10-21
     # (../../docs/workstreams/18-idle-pause.md section 7).
     pauseIdle = true;
 
-    # The guest freeze is proven here before host-01 (DECISIONS I-652,
+    # The guest park is proven here before host-01 (DECISIONS I-652,
     # I-653), with staging's own vault (`make output ENV=staging`,
-    # freeze_keyvault).
-    freeze = {
+    # park_keyvault).
+    park = {
       enable = true;
       keyVaultUrl = "https://repose-frz-stg-3912.vault.azure.net/";
+      # The Azure key name stays `freeze-wrap` on purpose (I-1002): the
+      # rename to park never touched it, because renaming a Key Vault key
+      # is a destroy-and-create that makes every park image already on a
+      # host unreadable. Do not "fix" it for consistency.
       keyName = "freeze-wrap";
       # 125 MB/s measured here during I-652, on the pool itself (a 4.1 GB
       # image in 36 s with a second snapshot beside it); rounded down
