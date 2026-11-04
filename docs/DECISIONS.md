@@ -29481,11 +29481,22 @@ upstream implicates and 4096 switches it off, but nobody has shown it
 closes *this* instance; a third occurrence on a host at 4096 means it did
 not, and the upstream fix is then the only answer left.
 
-**Owed, and it is not a sysctl.** `fault_around_bytes` is a debugfs file,
-so `boot.kernel.sysctl` cannot carry it and nothing in `nix/hosts/` sets
-it. Until a tmpfiles rule or a unit lands, a host restart silently returns
-it to 65536 and the next fault reads as the lever failing rather than the
-lever being gone. That is the live follow-up to this entry.
+**Not persisted, and that is a decision rather than an omission.**
+`fault_around_bytes` is a debugfs file, so `boot.kernel.sysctl` cannot
+carry it; a tmpfiles rule or a unit would, and the owner decided on
+2026-11-04 not to add one for now. The reasoning is theirs and is not
+recorded here as mine to give. What follows from it is: host-02 is
+mitigated until its next restart and not after it, and nothing announces
+the transition.
+
+The consequence worth guarding is a misreading, not the exposure. After a
+restart the host reads 65536, which is indistinguishable from a host where
+the lever was applied and failed -- and those two states call for opposite
+next steps. So the RUNBOOK's entry now opens with `fault_around_bytes`
+and `/proc/uptime` together, before the stack and before the alert,
+because only the pair separates "nobody re-applied it" from "it does not
+hold". Getting that backwards would retire a working mitigation on the
+evidence of its own absence.
 
 **And the arithmetic moved the right way.** host-02 ran one VMM when
 disabling free page reporting was proposed and four within a day, three

@@ -1361,13 +1361,31 @@ stopped arriving, which is what a one-off fault always does. An operator
 who sees it go green an hour later will read the problem as having passed.
 It has not; nothing about a kernel fault un-happens.
 
-*The mitigation does not survive a reboot.* `fault_around_bytes` is a
-debugfs file, not a sysctl, so `boot.kernel.sysctl` will not carry it and
-nothing in `nix/hosts/` sets it yet. Until a tmpfiles rule or a unit
-lands, a host restart silently returns it to 65536 and the next fault
-looks like the lever failing rather than the lever being absent. Check it
-(`cat /sys/kernel/debug/fault_around_bytes`) before concluding anything
-about a fault on a host that has rebooted.
+*The mitigation does not survive a reboot, and that is deliberate.*
+`fault_around_bytes` is a debugfs file, not a sysctl, so
+`boot.kernel.sysctl` cannot carry it; a tmpfiles rule or a unit would, and
+the owner decided on 2026-11-04 **not to add one for now**. So host-02 is
+mitigated until its next restart and not after it, by choice, and nothing
+will tell you when that line is crossed.
+
+That makes this the first thing to read on any fault here, before the
+stack and before the alert:
+
+```
+cat /sys/kernel/debug/fault_around_bytes    # 4096 mitigated, 65536 not
+cat /proc/uptime                            # has it restarted since?
+```
+
+65536 does **not** mean the lever failed. It means either nobody applied
+it since the last restart, or it was never applied on this host. Only the
+uptime separates those, and the difference decides whether the next step
+is "re-apply and watch" or "the mitigation does not hold and the upstream
+fix is the only answer left". Getting that backwards turns a host nobody
+has mitigated into a host where mitigation is believed not to work.
+
+Re-applying is one line and needs no restart:
+`echo 4096 > /sys/kernel/debug/fault_around_bytes`. Whether to is the
+owner's call each time, not a standing instruction.
 
 *Count pages, not lines.* Each page produces two lines, a `Bad page map`
 and a `Bad page cache`, within milliseconds. Six lines is three pages, not
