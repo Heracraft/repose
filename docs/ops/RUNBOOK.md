@@ -1344,6 +1344,16 @@ off, reversibly and without a restart, and leaves park images alone. Leave
 upstream window needs a large folio splitting under a partial punch, which
 `never` prevents.
 
+**"Needs no action" is not "harmless", and do not let the two collapse.**
+This race can hand a guest a page that was punched out from under it, which
+is the mechanism behind the one thing I-1040 leaves unproven: that
+`01a1938f`'s guest died of it on 2026-11-02. What makes watching the
+proportionate response is the arithmetic -- one event in 29 hours, no
+merged upstream fix to move to, and a stopgap that starts dropping guests
+at a third of the host. It is not a finding that nothing happened. If the
+frequency changes, the answer changes with it, and that is what the second
+occurrence is for.
+
 Everything below is for the *other* kind -- a fault that is not this one.
 
 1. Which host. The `host` label on these lines is the **host_id**, not the
