@@ -315,10 +315,12 @@ two is the smaller is whether the next host should bring memory or cores.
    else: once a seat is free, the api's minute tick invites the oldest
    waiting user, holds the seat 72 hours for them and emails them to
    choose a plan; `waitlist_invite` in the api log (grpc app) carries the
-   count. A hold that runs out moves the user to the back
-   (`waitlist_expire`) and the seat goes to the next one.
+   count. A hold that runs out lapses the user off the list and the seat
+   goes to the next one; a lapsed user is not invited again until they
+   ask (I-1033).
 2. To see the queue: `repose-admin waitlist list` (position, handle,
-   joined, invited, hold, converted, expired invites, by). `GET
+   joined, invited, hold, converted, expired invites, by). A lapsed
+   user's position reads `lapsed`; `admit <handle>` invites them anyway. `GET
    /public/seats` is the same count the landing page shows.
 3. To let one person in now (a tester, someone who wrote in):
    `repose-admin waitlist admit <handle>` (or `admit --next N`). They get

@@ -82,7 +82,7 @@ func fixtures() map[string]notify.Message {
 		"welcome":                account("welcome", nil),
 		"waitlist_joined":        account("waitlist_joined", map[string]any{"position": 7}),
 		"waitlist_invited":       account("waitlist_invited", map[string]any{"hold_until": "2026-09-30T14:00:00Z"}),
-		"waitlist_expired":       account("waitlist_expired", map[string]any{"position": 3}),
+		"waitlist_expired":       account("waitlist_expired", map[string]any{}),
 		"trial_ending":           account("trial_ending", map[string]any{"plan": "solo", "amount_cents": 2900, "charge_at": "2026-10-04T14:00:00Z"}),
 		"payment_failed":         account("payment_failed", map[string]any{"plan": "pro", "amount_cents": 5900, "portal_url": "https://polar.sh/repose/portal?customer_session_token=polar_cst_abc"}),
 		"subscription_cancelled": account("subscription_cancelled", map[string]any{"plan": "solo", "ends_at": "2026-10-27T14:00:00Z"}),

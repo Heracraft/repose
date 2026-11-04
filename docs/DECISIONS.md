@@ -29702,3 +29702,93 @@ switch.
 switching it off narrows the window; nobody has shown it closes this
 instance. A third fault on a host already at 4096 means it did not, and
 then the unmerged upstream patch is the only answer left.
+**I-1033. An expired waitlist hold ends the invitations until the user
+asks again.** (api triage, 2026-11-04; owner report. Replaces I-902;
+amends I-290 and I-294 (4).)
+
+The owner: "there is an infinite loop with waitlists if you don't take a
+seat. Very noticeable when the waitlist is very small."
+
+I-902's cooldown did not end the loop. It only spaced it out. With one
+person waiting, the tick invited them, the hold ran out 72 hours later,
+the cooldown ran 24 hours, and the tick invited them again: two emails
+every four days for as long as nobody took the seat. With two people
+waiting they took turns, and neither cycle had an end. Any rule that puts
+a user who did not answer back in the candidate list by itself, at once
+(I-290) or after a wait (I-902), loops the same way while the list is
+short. Only the user's own action can end it.
+
+So a hold that runs out unconverted lapses the user: `expire` sets
+`waitlist.lapsed_at` (migration 0034). A
+lapsed row holds no place (position 0, and no place in front of anyone
+else), is not counted in `Waiting`, and `ListWaiting` never returns it.
+`GET /billing` and `/me` show no `waitlist` object for it, so the plan
+page draws what a user with no place sees: the plans when a seat is free,
+"repose is full" with Join the waitlist when not. Two things end a
+lapse: `join` (`POST /billing/waitlist`, or a checkout that does not fit),
+which puts the user at the back without a second joined email and
+without counting the expiry twice; `inviteTx` (an operator's
+`repose-admin waitlist admit HANDLE`). A checkout while a seat is free
+needs neither: `Reserve` never reads `lapsed_at`, and the subscription
+converts the row as usual. The expiry email says the user is
+off the waitlist and how to come back, and its payload is `{}`, since a
+lapsed user has no number. `repose-admin waitlist list` shows `lapsed`
+in the position column.
+
+I-290 rejected dropping an expired user because "a launch weekend is not
+a reason to lose them". A lapse loses nobody: the row, its history and
+the account stay, and coming back is one click on the page the email
+links to. What it drops is the system asking again, unprompted, forever.
+
+*The gap that would have undone it.* `Overview` (`GET /billing`) priced
+each plan for a plan-less account with `Seats.Reserve`, and `Reserve`
+joins the list when the plan does not fit. Every dashboard visit while
+full put the user on the list (the bug in the 2026-10-17 waitlist
+review), and with lapses it would also have ended every lapse the moment
+the user opened the page the expiry email links to, restarting the loop.
+`Seats.Fits` is `Reserve`'s answer without the join, takes no lock and
+writes nothing; `Overview` uses it. It has the shape the unmerged
+`waitlist-feedback` branch gives it (I-773 there), so that branch merges
+onto this one by dropping its copy.
+
+*Migration.* 0034 adds the column and lapses nobody. Every user whose
+hold ran out before it was told "you're number N again", and a lapse
+backfilled by the migration would make that untrue with no email to say
+so. Those users keep their place, sit out what is left of their
+cooldown, get one more invitation, and lapse with the new email when it
+runs out: one more invitation each, then quiet. For the same reason
+`expire` still writes `joined_at = now` and `cooldown_until = now + 24h`
+as I-902 did, and `count` and `ListWaiting` still honour the cooldown.
+An api on the old code (mid-deploy, or after a rollback, whose down
+migration drops only `lapsed_at`) then reads a lapsed row as a cooling
+one at the back of the list, which is I-902's behaviour, and not as the
+next candidate at its first place. The one mid-deploy cost: a lapsed
+user whose join lands on an old replica stays lapsed, because the old
+`join` does not know the column; they join again.
+
+*Smaller fixes on the way.* `WaitlistPlace` answers no place for a hold
+that ran out and the tick has not lapsed yet, which the plan page drew
+as "0th of N waiting" for up to a minute. The fake api re-queues a user
+whose hold ran out when they join again. `ops/sql/launch.sql` Q10 counts
+lapsed rows apart from waiting ones, and `expired_unused` sums
+`expired_invites`, since an expiry no longer leaves `invited_at` set.
+Rejoining after a lapse sends no second `waitlist_joined` email: the user
+clicked the button and the page shows the place. The `waitlist_joined`
+email had promised I-902's "your turn comes round again a day later" and
+now says what a lapse does.
+
+*Also.* `expire` and `count` disagreed at the instant `hold_until ==
+now`: `count` no longer held the seat and `expire` did not yet expire the
+hold. `expire` takes `hold_until <= now` now, the same instant `count`
+stops holding the seat.
+
+*Why the I-902 test missed it.* `TestLoneWaiterIsNotReInvitedByItsOwnExpiry`
+asserted the re-invitation after the cooldown as correct behaviour.
+`TestAnExpiredHoldEndsTheInvitations` (internal/api/http) runs the tick
+hourly for 30 days with one waiter, then with two, and asserts one
+invitation each; it also asserts that `GET /billing` joins nobody and
+ends no lapse, that asking again goes to the back with one joined email
+and one counted expiry, and that an admit ends a lapse. Each of four
+mutations fails it: lapsed rows numbered as waiting, `Overview` back on
+`Reserve`, `join` ignoring `lapsed_at`, and the expiry counted twice on
+rejoin.

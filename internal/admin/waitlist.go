@@ -37,8 +37,11 @@ func (e *Env) waitlistCmd(ctx context.Context, args []string) error {
 		out := [][]string{{"POSITION", "HANDLE", "JOINED", "INVITED", "HOLD", "CONVERTED", "EXPIRED", "BY"}}
 		for _, r := range rows {
 			pos := "-"
-			if r.Position > 0 {
+			switch {
+			case r.Position > 0:
 				pos = strconv.Itoa(r.Position)
+			case r.LapsedAt != nil && r.ConvertedAt == nil:
+				pos = "lapsed"
 			}
 			by := ""
 			if r.InvitedBy != nil {

@@ -34,6 +34,10 @@ type Seats interface {
 	// When it may not, the user is on the waitlist afterwards (joining is
 	// idempotent) and place describes their position.
 	Reserve(ctx context.Context, userID string, seats int) (ok bool, place *Place, err error)
+	// Fits is Reserve's answer without the join: whether `seats` seats
+	// are free for this user now, own hold included. It writes nothing,
+	// so a page that only reads (GET /billing) puts nobody on the list.
+	Fits(ctx context.Context, userID string, seats int) (bool, error)
 	// Converted records that the user's subscription arrived, freeing the
 	// hold and keeping the row for the count. A user who was never on the
 	// list is not an error.

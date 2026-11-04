@@ -845,9 +845,13 @@ func (f *Fake) getBilling(w http.ResponseWriter, r *http.Request) *apiError {
 	return nil
 }
 
-// joinWaitlist puts the user on the list if they are not on it; the place
-// is the same on a second call.
+// joinWaitlist puts the user on the list if they are not on it, or back
+// at the end when their hold ran out (I-1033); the place is the same on a
+// second call.
 func (f *Fake) joinWaitlist() *WaitlistPlace {
+	if w := f.bill.waitlist; w != nil && w.HoldUntil != nil && !w.HoldUntil.After(f.now()) {
+		f.bill.waitlist = nil
+	}
 	if f.bill.waitlist == nil {
 		f.bill.waiting++
 		f.bill.waitlist = &WaitlistPlace{Position: f.bill.waiting, JoinedAt: f.now()}

@@ -331,7 +331,7 @@ one email, ours.
 | `welcome` | Welcome to repose | first sign-in, `internal/api/auth/users.go` in the user's insert transaction: install, `repose run`, choose a plan; the seven free days | none |
 | `waitlist_joined` | You're on the waitlist | `waitlist.Service.Reserve` or `Join` created the row: the place, that a seat is 8 GB running at once, that an email comes at their turn and the hold is 72 hours | `{position}` |
 | `waitlist_invited` | A seat is yours for 72 hours | the invite tick or `repose-admin waitlist admit` (replaces `waitlist_admitted`): choose a plan at `/billing` before `hold_until`, what an expired hold means | `{hold_until}` |
-| `waitlist_expired` | Your seat hold ran out | the tick, when `hold_until` passed unconverted: back on the list at position N | `{position}` |
+| `waitlist_expired` | Your seat hold ran out | the tick, when `hold_until` passed unconverted: off the waitlist until they choose a plan or join again (I-1033) | `{}` |
 | `trial_ending` | Your free week ends soon | billing, two days before `trial_end`: the plan, the amount, the charge date, the cancel link | `{plan, amount_cents, charge_at}` |
 | `payment_failed` | Your payment failed | billing, day 0 and day 2 of `past_due`: update the card in Polar's customer portal, machines run three days, then stop | `{plan, amount_cents, portal_url?}` |
 | `subscription_cancelled` | Your plan is ending | billing, on a cancellation: the end date, machines stop then, snapshots kept 30 days, resume link | `{plan, ends_at}` |
