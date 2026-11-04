@@ -115,7 +115,7 @@ func TestCarryMCPFeedsRegistry(t *testing.T) {
 		"claude":   ".claude.json",
 		"codex":    ".codex/config.toml",
 		"gemini":   ".gemini/extensions/repose-mcp/gemini-extension.json",
-		"opencode": ".config/opencode/config.json",
+		"opencode": ".config/opencode/opencode.json",
 		"pi":       ".repose/mcp/agents/pi.json",
 	}
 	for agent, rel := range files {

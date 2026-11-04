@@ -549,7 +549,10 @@ Each agent binary is wrapped (`nix/overlay/agents/wrap.nix`) to:
    - `opencode`: `~/.config/opencode/plugins/repose.js` is installed if
      absent, and replaced only while its sha256 is one an earlier base
      installed (I-481); the `repose-agent-hooks` user unit also runs this
-     at login, for an OpenCode 2 started outside the wrapper.
+     at login, since version 2 loads the plugin in a background service
+     the wrapper does not start. An opencode the reader installed under
+     `~/.opencode/bin` while the machine's was version 1 is removed once
+     per home, with the dangling `~/.local/bin/opencode2` link (I-1050).
    - `gemini`, `pi`: the machine guide (I-243) and the turn hooks
      (I-690) are linked in as an extension: Gemini CLI runs the
      extension's `hooks/hooks.json` (`BeforeAgent`, `AfterAgent`, each
@@ -632,7 +635,7 @@ never blocks an agent. Mapping:
 | gemini | `hook_event_name=BeforeAgent` (I-690) | `prompt` | none |
 | gemini | `hook_event_name=AfterAgent` | `completed` | `prompt_response`, else `gemini finished` |
 | pi | the extension's `{agent, kind, summary}`: `input` → `prompt`, `agent_end` → `completed` (summary: the last assistant text, else `pi finished`) | | |
-| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 1: `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input`. OpenCode 2 (I-481): `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1's `chat.message` hook → `prompt` (I-690; checked with 1.18.34) | | |
+| opencode | plugin runs `repose-hook --agent opencode` with `{agent, kind, summary}` already mapped. Version 2, the machine's (I-1050): `session.execution.started` → `prompt`, `session.execution.succeeded` → `completed` (summary: the turn's last text), `session.execution.failed` → `error`, `permission.asked` → `needs_input`. Version 1, for a reader who kept one (I-481): `chat.message` → `prompt` (I-690; checked with 1.18.34), `session.idle` → `completed`, `session.error` → `error`, `permission.updated` or `permission.asked` → `needs_input` | | |
 | any | a payload that already has `agent` and `kind` | passed through | |
 
 Anything else is dropped silently. The kinds `prompt` and `resume` never
@@ -687,7 +690,7 @@ Per agent, `sync` writes:
 | claude | `~/.claude.json` `mcpServers`, and `projects[<path>].mcpServers` for project servers | as in `mcp.json` | as carried; with a secret reference `{"type":"stdio","command":"repose-mcp","args":["run",NAME]}`, and `["run",NAME,PATH]` under `projects[PATH]` | as carried | `{"type":"stdio","command":"repose-mcp","args":[NAME]}` |
 | codex | `~/.codex/config.toml` `[mcp_servers.NAME]` tables | `command`, `args` | `command = "repose-mcp"`, `args = ["run", NAME]`, `startup_timeout_sec = 60` | `url`; `Authorization: Bearer ${X}` as `bearer_token_env_var = "X"`, a header that is all `${X}` in `env_http_headers`, a literal one in `http_headers`; sse, ws, a `${X}` in the URL or inside a longer header are skipped | `command = "repose-mcp"`, `args = [NAME]` |
 | gemini | `~/.gemini/extensions/repose-mcp/gemini-extension.json` | none (its system defaults) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `type`, `url`, `headers` as carried; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
-| opencode | `~/.config/opencode/config.json` `mcp` | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}`; with a secret reference `{type:"local", command:["repose-mcp", "run", NAME]}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
+| opencode | `~/.config/opencode/opencode.json` `mcp` (opencode 2 merges it into its own `mcp.servers`; a name the reader defines there or in `opencode.jsonc` is theirs, I-1050) | none (`/etc/opencode`) | `{type:"local", command:[command, args...], environment}` with `${X}` as `{env:X}`; with a secret reference `{type:"local", command:["repose-mcp", "run", NAME]}` | `{type:"remote", url, headers}` with `{env:X}`; ws skipped | `{type:"local", command:["repose-mcp", NAME]}` |
 | pi | `~/.repose/mcp/agents/pi.json` | none (its extension) | `command`, `args`, `env` as carried; with a secret reference `command = "repose-mcp"`, `args = ["run", NAME]` | `url`, `headers`; ws skipped | `command = "repose-mcp"`, `args = [NAME]` |
 
 A secret reference, in a carried stdio server, is a `${X:-default}`, or a
@@ -782,7 +785,7 @@ lacks the server to the reason: the renderer's (`needs the secret X` for
 a remote server whose secret is missing, which `state` leaves to its
 `needs X`), or a file sync leaves
 alone (`~/.codex/config.toml is a link, which repose does not write`, `...
-holds it in a form repose does not edit`, `~/.config/opencode/config.json
+holds it in a form repose does not edit`, `~/.config/opencode/opencode.json
 has comments, which a rewrite would lose`). `problems` (absent when none)
 are the registry files sync left out, one line each. `state` joins, with `; `, the carry's
 reason, `laptop not connected` for a forward whose

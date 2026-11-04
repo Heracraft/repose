@@ -240,7 +240,7 @@ func heldReason(p Paths, rec *agentRecord, agent, name string) string {
 		}
 	case "opencode":
 		if _, held := rec.held()[name]; held {
-			return "~/.config/opencode/config.json has comments, which a rewrite would lose"
+			return "~/.config/opencode/opencode.json has comments, which a rewrite would lose"
 		}
 	}
 	return ""
@@ -282,7 +282,7 @@ func contains(ss []string, s string) bool {
 
 // jsonServers reads key (a JSON object of servers) from a JSON file;
 // anything unreadable is empty.
-func jsonServers(path, key string) map[string]any {
+func jsonServers(path string, keys ...string) map[string]any {
 	b, ok, _ := readFile(path)
 	if !ok {
 		return nil
@@ -297,11 +297,28 @@ func jsonServers(path, key string) map[string]any {
 			return nil
 		}
 	}
-	o, err := doc.child(key)
-	if err != nil {
-		return nil
+	for _, key := range keys {
+		if doc, err = doc.child(key); err != nil || doc == nil {
+			return nil
+		}
 	}
-	return rawMap(o)
+	return rawMap(doc)
+}
+
+// opencodeServers are one opencode config file's MCP servers in both
+// spellings: `mcp.NAME`, which version 1 took and version 2 still merges,
+// and version 2's own `mcp.servers.NAME` (DECISIONS I-1050).
+func opencodeServers(path string) map[string]any {
+	out := map[string]any{}
+	for n, v := range jsonServers(path, "mcp") {
+		if n != "servers" {
+			out[n] = v
+		}
+	}
+	for n, v := range jsonServers(path, "mcp", "servers") {
+		out[n] = v
+	}
+	return out
 }
 
 func decoded(v any) map[string]any {
@@ -413,7 +430,11 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 			off[n] = off[n] || disabled(v)
 		}
 		dir := filepath.Join(home, ".config", "opencode")
-		for n, v := range jsonServers(filepath.Join(dir, "config.json"), "mcp") {
+		// opencode 2 loads both of the reader's global files and no longer
+		// the config.json an earlier base wrote (I-1050). repose merges
+		// into the .json, so an entry there is told apart by what repose
+		// rendered, as for codex; the .jsonc is the reader's alone.
+		for n, v := range opencodeServers(filepath.Join(dir, "opencode.json")) {
 			if disabled(v) {
 				off[n] = true
 			}
@@ -421,14 +442,12 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 				final[n] = found{n, fromOf(n, v, ""), ""}
 			}
 		}
-		for _, f := range []string{"opencode.json", "opencode.jsonc"} {
-			for n, v := range jsonServers(filepath.Join(dir, f), "mcp") {
-				if disabled(v) {
-					off[n] = true
-				}
-				if hasAny(v, "command", "url") {
-					final[n] = found{n, FromMachine, ""}
-				}
+		for n, v := range opencodeServers(filepath.Join(dir, "opencode.jsonc")) {
+			if disabled(v) {
+				off[n] = true
+			}
+			if hasAny(v, "command", "url") {
+				final[n] = found{n, FromMachine, ""}
 			}
 		}
 		for n := range off {

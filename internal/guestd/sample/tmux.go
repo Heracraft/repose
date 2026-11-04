@@ -42,7 +42,7 @@ var HookedAgents = map[string]bool{"claude": true, "codex": true, "opencode": tr
 // hook the base installs and the user cannot drop: Claude Code's merged
 // settings and Codex's /etc/codex/config.toml (I-690). Their state comes
 // from hooks from the start (I-694). Any other agent's does once its
-// window sent a prompt hook; OpenCode 2 sends none and stays running.
+// window sent a prompt hook; one that sends none stays running.
 var PromptHookedAgents = map[string]bool{"claude": true, "codex": true}
 
 // AgentOf maps a tmux window name to an agent name, or "" if the window is not

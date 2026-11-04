@@ -52,9 +52,12 @@
 #          (DECISIONS I-555) and exits 0 on every path.
 # opencode ~/.config/opencode/plugins/repose.js is installed if absent, and
 #          replaced while it is byte for byte one an earlier base installed
-#          (I-481). The plugin serves opencode 1.18 and OpenCode 2; the
-#          repose-agent-hooks user unit runs this at login too, so an
-#          OpenCode 2 the user installed reports without the wrapper.
+#          (I-481). The machine's opencode is version 2 (I-1050) and the
+#          plugin still serves version 1 for the readers who kept one; the
+#          repose-agent-hooks user unit runs this at login too, so the
+#          background service that loads the plugin finds it. A version 2
+#          the reader installed under ~/.opencode when the machine's was
+#          version 1 is removed once (I-1050).
 # gemini, pi: the machine guide (DECISIONS I-243), and for both the turn
 #          hooks (I-690), are linked in as an extension:
 #          ~/.gemini/extensions/repose-machine-guide -> /etc/repose/gemini-extension,
@@ -349,10 +352,34 @@ writeShellApplication {
     # sha256 of every repose.js an earlier base installed. A file equal to
     # one of them is the platform's and is replaced; anything else is the
     # user's and stays (DECISIONS I-481).
-    opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49 f733e9b42b2e25cb2c76f12d040fef1868582ec6e556ae138035795203cad462"
+    opencode_retired="8f5f76a5dc77376f3ad38127a42959c8448fcb812ff75ee71291bb762f990a49 f733e9b42b2e25cb2c76f12d040fef1868582ec6e556ae138035795203cad462 2d016e2e66515af1c9f92458345b709030839c5315ba3d06e70f3a569f469c85"
+
+    # remove_user_opencode: once per home, the OpenCode 2 the reader
+    # installed beside the machine's version 1, which /docs/agents told
+    # them to do while version 1 was the machine's (I-481). The machine's
+    # opencode is version 2 now (I-1050), and the installed copy updates
+    # itself on its own channel and shadows the wrapper wherever its
+    # installer added ~/.opencode/bin to a shell profile. Only opencode's
+    # own install directory is touched; its config, sessions and logins
+    # live elsewhere and stay.
+    remove_user_opencode() {
+      local dir="$HOME/.opencode/bin" marker="$HOME/.local/state/repose/opencode-user-removed"
+      [ -e "$marker" ] && return 0
+      if [ -f "$dir/opencode" ]; then
+        rm -f "$dir/opencode" "$dir/opencode2"
+        rmdir "$dir" "$HOME/.opencode" 2>/dev/null || true
+        # The symlink the docs told them to make for it, now dangling.
+        if [ -L "$HOME/.local/bin/opencode2" ] && [ ! -e "$HOME/.local/bin/opencode2" ]; then
+          rm -f "$HOME/.local/bin/opencode2"
+        fi
+        echo "repose-agent-setup: removed the opencode installed in $dir; the machine's opencode is version 2" >&2
+      fi
+      mkdir -p "$(dirname "$marker")" && : > "$marker"
+    }
 
     setup_opencode() {
       local dir="$HOME/.config/opencode/plugins" have
+      remove_user_opencode
       mkdir -p "$dir"
       if [ ! -e "$dir/repose.js" ]; then
         write_atomic "$dir/repose.js" 0644 < ${reposeOpencodePlugin}

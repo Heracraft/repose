@@ -819,8 +819,8 @@ func TestAQuietPaneEndsAWorkingState(t *testing.T) {
 }
 
 // I-694: opencode is hook-driven only once its window sent a prompt hook.
-// OpenCode 2 sends turn ends and no prompt, so it stays running rather
-// than idle in the middle of a turn.
+// One that sends turn ends and no prompt stays running rather than idle
+// in the middle of a turn.
 func TestOpencodeWithoutAPromptHookIsRunning(t *testing.T) {
 	procs := []fakeProc{
 		{pid: 100, ppid: 1, comm: "bash"},

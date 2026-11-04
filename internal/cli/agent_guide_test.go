@@ -39,7 +39,7 @@ var guideSkippedSections = map[string]string{
 	"agents#permissions":                            "the user's own permission settings, not something the machine offers",
 	"agents#what-agents-are-told-about-the-machine": "describes this guide",
 	"agents#agent-states":                           "what the user sees of the agent; the guide's turn line covers what the agent does",
-	"agents#opencode-2":                             "a tool the user installs and runs, not one the machine has (I-481)",
+	"agents#opencode-version":                       "which opencode the platform pins, and the copy a reader installed under version 1; nothing an agent does (I-1050)",
 	"limits#projects":                               "account limits on the number of projects, not the machine",
 	"limits#when-repose-is-full":                    "the seats waitlist gates choosing a plan (I-290); an agent on a machine is past it",
 	"limits#ssh-connections":                        "the gateway limits connections from laptops into machines; an agent on the machine makes none",

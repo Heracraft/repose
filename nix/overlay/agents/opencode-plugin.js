@@ -53,12 +53,19 @@ const onV1 = async (event) => {
 // V2 (checked against 2.0.22): a turn ends with session.execution.succeeded
 // or session.execution.failed; session.text.ended carries the reply, kept
 // per session for the summary. permission.asked is unchanged from V1.
+// session.execution.started is V2's turn start, which stands in for V1's
+// chat.message: guestd closes the questions this opencode asked and marks
+// it working (DECISIONS I-690, I-1050). V2 has no user-message event, so a
+// turn a command or plugin started counts as a prompt too.
 const lastText = new Map();
 const onV2 = async (event) => {
   const type = (event && event.type) || "";
   const d = (event && event.data) || {};
   const sid = d.sessionID || "";
-  if (type === "session.text.ended") {
+  if (type === "session.execution.started") {
+    // Not awaited, so the turn is never held up.
+    void send("prompt", "");
+  } else if (type === "session.text.ended") {
     if (d.text) lastText.set(sid, String(d.text).slice(-1000));
   } else if (type === "session.execution.succeeded") {
     const text = lastText.get(sid);

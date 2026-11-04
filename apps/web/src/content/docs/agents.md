@@ -54,30 +54,24 @@ opencode, Gemini CLI and pi keep their own permission prompts unless you configu
 | Claude Code | Built in.                                            |
 | Codex CLI   | Built in, live (below).                              |
 | Gemini CLI  | Built in (Google Search).                            |
-| opencode    | Off unless you turn it on, below.                    |
+| opencode    | With a search provider's API key, below.             |
 | pi          | None built in. It can still fetch pages with `curl`. |
 
 **Codex** searches live, since it runs in `danger-full-access` on the machine. Set `web_search = "cached"` in `~/.codex/config.toml` to search a cache of pages instead, or `"disabled"` to turn it off.
 
-**opencode** offers its `websearch` tool only with its own Zen provider, or when `OPENCODE_ENABLE_EXA` is `1`. Set it once as a secret and every opencode on the machine can search, through Exa's public endpoint, with no key of yours:
+**opencode** searches through one of five providers, each with its own key: Exa (`EXA_API_KEY`), Firecrawl (`FIRECRAWL_API_KEY`), Parallel (`PARALLEL_API_KEY`), Tavily (`TAVILY_API_KEY`) or TinyFish (`TINYFISH_API_KEY`). Store the one you have as a secret and every opencode on the machine can search:
 
 ```
-repose secrets set OPENCODE_ENABLE_EXA
+repose secrets set TAVILY_API_KEY
 ```
 
-Type `1` as the value. Each search sends your query to Exa. An opencode that's already running needs a restart to pick it up.
+The first search asks which provider to use; set `"websearch": {"provider": "tavily"}` in `~/.config/opencode/opencode.jsonc` on the machine to skip the question, or `"websearch": false` to take the tool away. An opencode that's already running needs a restart to see a new secret.
 
-## OpenCode 2
+## opencode version
 
-The machine's `opencode` is version 1, the one opencode's installer still gives by default. OpenCode 2 comes from a separate channel, and you can install it on the machine next to version 1:
+The machine's `opencode` is version 2. The platform pins it, as it pins every agent, so `opencode upgrade` is off and a new version reaches you with the next machine update.
 
-```
-curl -fsSL https://opencode.ai/v2/install -o /tmp/oc2-install
-bash /tmp/oc2-install --no-modify-path
-ln -s ~/.opencode/bin/opencode ~/.local/bin/opencode2
-```
-
-You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at version 1, which `repose run --agent opencode -p "..."` starts; without it a plain `opencode` in a new shell is OpenCode 2, started outside the project's dev environment. `opencode2 upgrade` updates it, a platform update leaves it as it is, and a restore brings it back with the rest of your home directory. Its notifications come from the same plugin as version 1, `~/.config/opencode/plugins/repose.js`; run `opencode2 service restart` if you edit it.
+If you installed version 2 yourself while the machine's `opencode` was version 1, the machine removes that copy from `~/.opencode` the next time you log in, along with the `opencode2` link, and says so. Your config, sessions and logins are elsewhere and stay. Version 1 is gone from the machine; a version 1 plugin of your own won't load, and `~/.config/opencode/plugins/repose.js`, which sends your notifications, serves both.
 
 ## Agent states
 
@@ -86,7 +80,7 @@ You run it as `opencode2`. `--no-modify-path` keeps `opencode` pointing at versi
 - `working`: from your prompt to the end of the turn, including a pause while a background task it started runs. After 2 minutes with no output in its window it shows `idle`, which is also how a turn you interrupted ends.
 - `needs input`: waiting for your permission (Claude Code and opencode).
 - `idle`: at its prompt.
-- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt. OpenCode 2 shows it throughout, since it doesn't report prompts, and so do Gemini CLI and pi if you replaced the machine's extension for them.
+- `running`: the agent's process is alive and no hook says more. Gemini CLI, pi and opencode show it until their first prompt, and Gemini CLI and pi throughout if you replaced the machine's extension for them.
 
 Gemini CLI and pi report through the machine's extension for them, `repose-machine-guide`.
 

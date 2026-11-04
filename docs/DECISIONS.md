@@ -12791,6 +12791,13 @@ and completed; `opencode2 run` through the service sent completed
 the guest's `opencode` moves to it and the version 1 half of the plugin
 stays for one release.
 
+*Amended by I-1050 (2026-11-04):* the guest's `opencode` is version 2 and
+version 1 is gone; `opencode2` is not shipped and a copy the reader
+installed under `~/.opencode` is removed once per home. The plugin keeps
+its version 1 half, and gains `session.execution.started` → `prompt`.
+repose's MCP layer moves to `~/.config/opencode/opencode.json`: version 2
+does not read the `config.json` this entry's design relied on.
+
 **I-482. herdr is documented, not packaged, and gets no boot unit.**
 (opencode-herdr, 2026-10-04; settles the herdr boot unit left open by
 the 2026-10-03 client report) The report proposed a guest user unit to
@@ -29792,3 +29799,118 @@ and one counted expiry, and that an admit ends a lapse. Each of four
 mutations fails it: lapsed rows numbered as waiting, `Overview` back on
 `Reserve`, `join` ignoring `lapsed_at`, and the expiry counted twice on
 rejoin.
+
+**I-1050. opencode on the machine is version 2, and version 1 is gone.**
+(opencode-2, 2026-11-04; amends I-481, whose *revisit when* said the
+guest's `opencode` moves to 2.x once upstream makes it the default
+channel.)
+
+The owner called it on 2026-11-04 after trying to move a guest forward by
+hand: `curl -fsSL https://opencode.ai/v2/install | bash` inside a guest
+installed 2.2.5 into `~/.opencode/bin` and `opencode --version` still
+answered `1.18.34`, because the machine's wrapped version 1 is on PATH and
+`~/.opencode/bin` is not. The platform pins the agent, so the only way to
+move it is to move the pin.
+
+Upstream has met half of I-481's condition. The CLI's `latest` channel is
+version 2 (`opencode.ai/update/api/latest/cli/npm` answers 2.2.5,
+published 2026-10-30, package `@opencode/cli`), and `opencode.ai/install`
+says in its own comment that it installs version 1 only; the GitHub
+"latest" release is still 1.19.5 (2026-10-28). Waiting for the other half
+keeps every guest on a line upstream has stopped adding to, so the pin
+moves now.
+
+**The package.** Version 2 ships as per-platform npm packages, not GitHub
+release assets: `@opencode/cli-linux-x64`, one bun-compiled, dynamically
+linked binary at `package/bin/opencode`. A guest is glibc on an Intel host
+(DESIGN §4), so the plain `linux-x64` package is the one it wants, not the
+`-baseline` (no avx2) or `-musl` variant its installer would pick
+elsewhere. `scripts/bump-agents.sh` reads the scope from the channel's own
+metadata, which has moved once already (`@opencode-ai` → `@opencode`).
+`opencode.nix` refuses a `versions.json` that leaves version 2's line, so
+a bump cannot quietly undo this entry. 242 MB in the closure, against
+about 200 MB for version 1.
+
+**No `opencode2`.** While version 1 was the machine's, `/docs/agents` told
+the reader to install version 2 beside it and link it as `opencode2`.
+Names are fixed (CLAUDE.md), and a second name for the machine's opencode
+is how half its uses stop being greppable, so `opencode2` is not shipped.
+`repose-agent-setup opencode` removes `~/.opencode/bin/opencode` once per
+home, with the `opencode2` shim beside it and the dangling
+`~/.local/bin/opencode2` link, and says so on stderr: it updates itself on
+its own channel, and its installer puts `~/.opencode/bin` on PATH ahead of
+the wrapper wherever a shell profile exists. Only opencode's own install
+directory is touched; its config, sessions and logins are elsewhere. This
+is `remove_npm_gemini`'s shape (I-543) for the same failure.
+
+**The prompt hook comes back.** I-690 left OpenCode 2 with no prompt
+event, so an opencode would have shown `running` for its whole life and a
+question it asked would have stayed open until answered from the laptop.
+Version 2 has `session.execution.started`, which the plugin now maps to
+`prompt` beside the `session.execution.succeeded`/`failed` mapping I-481
+added. It is a turn start, not a user message, so a turn a command or a
+plugin starts counts as a prompt too; marking the agent working and
+closing its open questions is right either way.
+
+**MCP moved file, and would have failed silently.** repose wrote the
+laptop's forwarded servers to `~/.config/opencode/config.json` `mcp`
+(I-555), chosen because version 1 loaded it *beneath* the reader's
+`opencode.json`, so the reader's entry won without repose having to reason
+about it. Version 2 does not read that file at all. Checked on the built
+2.2.5 with `opencode debug config`, which lists the sources it loaded:
+with both files present it reported `~/.config/opencode/opencode.json` and
+not `config.json`. Shipping version 2 without this would have taken every
+platform and forwarded MCP server away from opencode with no error
+anywhere -- the shape of 2026-11-03's findings again, and of
+`silent wrong answers`.
+
+So repose merges into `~/.config/opencode/opencode.json` and tells its own
+entries apart by the record, as it already does for Codex's
+`~/.codex/config.toml`. Three more things were checked on 2.2.5, each by
+writing the file and reading `opencode debug config` back: version 2 loads
+both `opencode.json` and `opencode.jsonc` (so a name the reader defines in
+the `.jsonc`, which a comment makes unsafe to rewrite, still wins and
+repose renders none of it); version 1's `mcp.NAME` spelling is still
+accepted and merged into version 2's own `mcp.servers.NAME`, so repose
+keeps writing `mcp.NAME` and `/etc/opencode/opencode.json` needs no
+change; and entries in both spellings survive together in one file, so a
+name under `mcp.servers` is the reader's and repose skips it. The
+`config.json` an earlier base wrote is left exactly where it is: nothing
+reads it, `repose mcp` no longer reports from it, and removing entries
+from a file the platform has no further reason to touch buys tidiness at
+the cost of writing in a reader's home.
+
+**Web search changed hands.** `OPENCODE_ENABLE_EXA`, which version 1 took
+and `/docs/agents` told the reader to set as a secret, does not exist in
+version 2 (the string is absent from the binary). Version 2 searches
+through one of five providers on the reader's own key -- `EXA_API_KEY`,
+`FIRECRAWL_API_KEY`, `PARALLEL_API_KEY`, `TAVILY_API_KEY`,
+`TINYFISH_API_KEY` -- each of which is a named secret like any other.
+`/docs/agents` and the machine guide say that instead; the free
+Exa-through-opencode's-endpoint search is gone and the docs no longer
+promise it.
+
+*Built and checked here:* `nix build ./nix#opencode.unwrapped` and
+`env -i HOME=$(mktemp -d) opencode --version` → `opencode v2.2.5`; the
+four `opencode debug config` findings above, on that build; `go test
+./internal/mcpreg` with the render goldens moved to `opencode.json` and
+new cases for the `mcp.servers` spelling and for the stale `config.json`
+being neither read nor written; `go test ./internal/cli` for the docs and
+agent-guide checks.
+
+*Not checked here, and the live note on the queue entry says so:* this box
+is an Azure AMD size and the nix work is for remote environments, so
+nothing below ran in a guest. After the base publish, on a real guest:
+`opencode --version` is 2.2.5 and `~/.opencode` is gone with its message;
+the plugin at `~/.config/opencode/plugins/repose.js` loads in version 2's
+background service and `session.execution.started` reaches guestd as a
+`prompt` (`repose ps` shows `working`, then `idle`); a permission ask
+still shows `needs_input`; `repose mcp list` reports the platform servers
+and a forwarded one, and the agent can call one; and whether the laptop's
+`auth.json` reaches version 2 at all -- it keeps logins in
+`~/.local/share/opencode/opencode.db` (checked here: a first start creates
+it), and a version 1 `auth.json` holding an Anthropic API key left
+`opencode auth list` saying "No authenticated integrations", which may
+only mean that providers and integrations are different lists in version
+2. If a copied login does not reach it, `/docs/secrets` and `/docs/agents`
+say to log in on the machine instead, as they already do for Gemini.

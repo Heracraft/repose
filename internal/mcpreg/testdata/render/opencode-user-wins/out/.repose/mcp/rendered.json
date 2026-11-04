@@ -55,14 +55,7 @@
         }
       }
     },
-    "opencode": {
-      "user": {
-        "baz": {
-          "type": "remote",
-          "url": "https://baz.example/mcp"
-        }
-      }
-    },
+    "opencode": {},
     "pi": {
       "user": {
         "bar": {

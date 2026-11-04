@@ -698,6 +698,16 @@ in
           guest.succeed("sudo -u dev repose-agent-setup opencode && grep -q 'id: \"repose\"' /home/dev/.config/opencode/plugins/repose.js")
           # I-481: a repose.js the user changed is kept.
           guest.succeed("sudo -u dev sh -c 'echo // mine >> ~/.config/opencode/plugins/repose.js' && sudo -u dev repose-agent-setup opencode && grep -q '// mine' /home/dev/.config/opencode/plugins/repose.js")
+          # I-1050: the opencode a reader installed under ~/.opencode while
+          # the machine's was version 1 goes once, with the dangling
+          # opencode2 link /docs/agents told them to make for it.
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/oc/.opencode/bin /tmp/oc/.local/bin && : > /tmp/oc/.opencode/bin/opencode && chmod +x /tmp/oc/.opencode/bin/opencode && ln -s /tmp/oc/.opencode/bin/opencode /tmp/oc/.local/bin/opencode2 && HOME=/tmp/oc repose-agent-setup opencode'")
+          guest.fail("test -e /tmp/oc/.opencode")
+          guest.fail("test -L /tmp/oc/.local/bin/opencode2")
+          guest.succeed("test -f /tmp/oc/.config/opencode/plugins/repose.js")
+          # Once per home: one installed again afterwards is the reader's.
+          guest.succeed("sudo -u dev sh -c 'mkdir -p /tmp/oc/.opencode/bin && : > /tmp/oc/.opencode/bin/opencode && HOME=/tmp/oc repose-agent-setup opencode'")
+          guest.succeed("test -e /tmp/oc/.opencode/bin/opencode")
 
       with subtest("every agent has the platform MCP servers in its own layer, and its own switch turns one off (I-553, I-554)"):
           import re, shlex
@@ -790,7 +800,7 @@ in
           assert '[mcp_servers.probe]\ncommand = "repose-mcp"\nargs = ["run", "probe"]\nstartup_timeout_sec = 60' in codex, codex
           ext = json.loads(guest.succeed("cat /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json"))
           assert ext["mcpServers"]["probe"]["command"] == "repose-mcp", ext  # a reference in args needs the launcher
-          oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))
+          oc = json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))
           assert oc["mcp"]["probe"]["command"] == ["repose-mcp", "run", "probe"], oc
           assert "probe" in json.loads(guest.succeed("cat /home/dev/.repose/mcp/agents/pi.json"))["mcpServers"]
           # Each agent lists it from its own config.
@@ -827,7 +837,7 @@ in
           pw = [r for r in st["servers"] if r["name"] == "playwright"]
           assert pw and pw[0]["from"] == "repose", pw
           # Idempotent: a second start changes no byte.
-          files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/config.json /home/dev/.repose/mcp/rendered.json"
+          files = "/home/dev/.claude.json /home/dev/.codex/config.toml /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json /home/dev/.config/opencode/opencode.json /home/dev/.repose/mcp/rendered.json"
           before = guest.succeed(f"sha256sum {files}")
           for a in agents:
               guest.succeed(f"sudo -u dev repose-agent-setup {a}")
@@ -841,7 +851,7 @@ in
           codex = guest.succeed("cat /home/dev/.codex/config.toml")
           assert "mcp_servers.probe" not in codex and "[mcp_servers.mine]" in codex, codex
           guest.fail("test -e /home/dev/.gemini/extensions/repose-mcp/gemini-extension.json")
-          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/config.json"))["mcp"]
+          assert "probe" not in json.loads(guest.succeed("cat /home/dev/.config/opencode/opencode.json"))["mcp"]
           guest.fail("test -e /home/dev/.claude.json.lock")
 
       with subtest("the carry's own payload reaches claude and codex through repose-agent-setup (I-556, design 3.2.5)"):

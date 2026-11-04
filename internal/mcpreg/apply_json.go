@@ -38,20 +38,25 @@ func applyGemini(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 	return &agentRecord{User: want.User}
 }
 
-// applyOpencode merges want into ~/.config/opencode/config.json `mcp`,
-// which opencode loads beneath the user's opencode.json. opencode merges a
-// server of the same name field by field, so repose renders no name the
-// user's opencode.json or opencode.jsonc defines: the user's entry wins
-// whole. An entry in config.json is repose's only while it equals what
-// repose wrote.
+// applyOpencode merges want into ~/.config/opencode/opencode.json `mcp`.
+// opencode 2 loads opencode.json and opencode.jsonc and no longer reads
+// the config.json an earlier base wrote beneath them (DECISIONS I-1050,
+// checked with `opencode debug config` on 2.2.5), so repose merges into
+// the .json and leaves the .jsonc, which a comment makes unsafe to
+// rewrite, to the reader: a name defined there is theirs and repose
+// renders none of it. An entry in opencode.json is repose's only while it
+// equals what repose wrote.
 func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
 	dir := filepath.Join(p.Home, ".config", "opencode")
-	path := filepath.Join(dir, "config.json")
+	path := filepath.Join(dir, "opencode.json")
 	theirs := map[string]bool{}
-	for _, f := range []string{"opencode.json", "opencode.jsonc"} {
-		for n := range jsonServers(filepath.Join(dir, f), "mcp") {
-			theirs[n] = true
-		}
+	for n := range opencodeServers(filepath.Join(dir, "opencode.jsonc")) {
+		theirs[n] = true
+	}
+	// opencode 2's own spelling, `mcp.servers.NAME`, in the file repose
+	// writes: the reader's, and repose never renders that name.
+	for n := range jsonServers(path, "mcp", "servers") {
+		theirs[n] = true
 	}
 	user := map[string]any{}
 	for n, v := range want.User {
@@ -61,7 +66,7 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 	}
 	b, exists, err := readFile(path)
 	if err != nil {
-		warn("cannot read ~/.config/opencode/config.json: " + err.Error())
+		warn("cannot read ~/.config/opencode/opencode.json: " + err.Error())
 		return prev
 	}
 	doc, err := parseObject(b)
@@ -69,12 +74,12 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		if jdoc, jerr := parseObject(stripJSONC(b)); jerr == nil {
 			return opencodeCommented(jdoc, user, want, prev, warn)
 		}
-		warn("~/.config/opencode/config.json is not valid JSON; leaving it alone")
+		warn("~/.config/opencode/opencode.json is not valid JSON; leaving it alone")
 		return prev
 	}
 	servers, err := doc.child("mcp")
 	if err != nil {
-		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
+		warn("~/.config/opencode/opencode.json mcp is not an object; leaving it alone")
 		return prev
 	}
 	changes, owned := plan(rawMap(servers), user, prev.User, want.replaceable())
@@ -93,19 +98,19 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		}
 	}
 	if err := writeAtomic(path, doc.indented(), 0o600); err != nil {
-		warn("cannot write ~/.config/opencode/config.json: " + err.Error())
+		warn("cannot write ~/.config/opencode/opencode.json: " + err.Error())
 		return prev
 	}
 	return rec
 }
 
-// opencodeCommented is a config.json with comments or trailing commas,
+// opencodeCommented is an opencode.json with comments or trailing commas,
 // which opencode reads and a rewrite would lose: repose writes nothing
 // and warns once per set of changes it holds back.
 func opencodeCommented(doc *object, user map[string]any, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
 	servers, err := doc.child("mcp")
 	if err != nil {
-		warn("~/.config/opencode/config.json mcp is not an object; leaving it alone")
+		warn("~/.config/opencode/opencode.json mcp is not an object; leaving it alone")
 		return prev
 	}
 	changes, _ := plan(rawMap(servers), user, prev.User, want.replaceable())
@@ -118,7 +123,7 @@ func opencodeCommented(doc *object, user map[string]any, want *Rendered, prev *a
 		held[c.name] = c.want
 	}
 	if !equal(map[string]any(prev.Held), held) {
-		warn("~/.config/opencode/config.json has comments, which a rewrite would lose; leaving it alone")
+		warn("~/.config/opencode/opencode.json has comments, which a rewrite would lose; leaving it alone")
 	}
 	rec.Held = held
 	return rec
