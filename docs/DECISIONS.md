@@ -29665,6 +29665,28 @@ needed no human at all. So the case for `--verify` is not that the next
 person will be more careful; it is that a guard's latency is zero and a
 reviewer's is however long until somebody looks. (The formulation is the
 conductor session's, 2026-11-04.)
+
+**And the test needs a second clause, from the worst instance of the two
+days: a guard must run in the configuration the thing runs in.** The
+conductor's pre-release race suite was not absent, not skipped and not a
+proxy -- it ran on every batch and passed, against a different system.
+CI's `go` job sets `DATABASE_URL` to a Postgres service, so every package
+shares one database server; a local run with no `DATABASE_URL` has
+`internal/db/testdb` start a throwaway cluster per test process, so every
+package is isolated. Three consecutive CI runs failed on three different
+test names, none reproduced locally, and they were one untested
+condition surfacing wherever the contention landed. `r20261103-1` through
+`r20261104-2` were certified by a check that could not see the class CI
+tests in.
+
+That is worse than a missing guard, because a missing guard is silent and
+this one produced a green. "Invisible between pushes" does not catch it:
+the thing *was* checked, every batch. What was invisible was the
+difference between the checker's configuration and the target's. It was
+found by asking what three differently-named failures had in common
+instead of fixing them one at a time -- which is the only move that finds
+this shape, and it is not available to someone being careful about each
+failure in turn.
 **I-1042. The mitigation lived in debugfs, so it was one reboot from
 gone with nothing to say so.** (fault-around, 2026-11-04.)
 
