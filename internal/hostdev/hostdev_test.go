@@ -68,8 +68,24 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = srv.Serve(ctx) }()
+	// Cancel, then WAIT for Serve to return, and do both before the test
+	// function ends -- deferred calls run before `t.TempDir`'s cleanup,
+	// `t.Cleanup` ones run after. Without the wait the server was still
+	// shutting down inside the directory `RemoveAll` was walking, and CI
+	// failed the test *after* its body had passed:
+	// `TempDir RemoveAll cleanup: unlinkat /tmp/TestEndToEnd.../001:
+	// directory not empty` (run 41859472806 on main 301adebc).
+	//
+	// This is `docs/CHECKLIST.md`'s "a test that forces state first stops
+	// whatever else writes it" (I-1014) applied to a directory rather than
+	// a database row. It closes the window this test leaves open; whether
+	// it closes the one CI hit is NOT established, because the failure has
+	// not been reproduced here -- `Serve` returns on `ctx.Done()` without
+	// waiting for the two goroutines it started, so "Serve returned" does
+	// not yet mean "everything stopped" (DECISIONS I-1044).
+	served := make(chan struct{})
+	defer func() { cancel(); <-served }()
+	go func() { defer close(served); _ = srv.Serve(ctx) }()
 	time.Sleep(100 * time.Millisecond)
 
 	// hostd side.

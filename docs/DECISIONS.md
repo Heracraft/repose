@@ -29877,3 +29877,43 @@ learns the rule three times.
 *Checked:* `TestExecWordReadsTheMachinesHome` and
 `TestLaptopHomePathFindsTheExpandedTilde` (internal/cli), the second with
 `HOME` set to a laptop home and to `/home/dev`.
+**I-1052. A test that starts a server and does not wait for it to stop
+fails in `TempDir` cleanup, after passing.** (hostdev-wait,
+2026-11-04.)
+
+CI run 41859472806, on `main` at `301adebc`, failed the `go` job like
+this:
+
+    --- FAIL: TestEndToEnd (0.46s)
+        testing.go:1464: TempDir RemoveAll cleanup: unlinkat
+        /tmp/TestEndToEnd1884499737/001: directory not empty
+
+The body passed. The failure is Go's own `t.TempDir` cleanup, racing
+something that was still working inside the directory. `internal/hostdev`'s
+`TestEndToEnd` did `defer cancel()` and `go func() { _ = srv.Serve(ctx) }()`
+and nothing else: the cancel fires, the test returns, and `t.Cleanup`
+walks a directory the server is still shutting down in. Deferred calls
+run before `t.Cleanup`, so the wait belongs in a defer, and now is one.
+
+That is `docs/CHECKLIST.md`'s "a test that forces state first stops
+whatever else writes it" (I-1014) applied to a directory rather than a
+database row, which is the second time this week the same sentence has
+been the answer.
+
+*What this does not establish.* The failure has not been reproduced
+here: eight runs under `-race` pass, and the 94-package suite passed on
+this commit before the release went out. So the honest claim is that the
+test no longer leaves a window open, not that CI's window is closed.
+`Server.Serve` returns on `ctx.Done()` after `gs.Stop()` without waiting
+for either of the two goroutines it started -- the gRPC server and
+`serveControl`, whose own shutdown goroutine removes the control socket
+from that same directory. "Serve returned" therefore does not yet mean
+"everything stopped", and making it mean that is a change to
+`server.go` that wants somebody who can reproduce the failure first.
+
+The next run of this job is the evidence either way, which is a poor
+substitute for a reproduction and is stated as one rather than dressed
+up.
+
+*Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
+passes 8 of 8 here, as it did before the change; `go vet` clean.
