@@ -20,7 +20,8 @@ type fullSeats struct{}
 func (fullSeats) Reserve(_ context.Context, _ string, _ int) (bool, *waitlist.Place, error) {
 	return false, &waitlist.Place{Position: 3, JoinedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC), Email: "who@example.test"}, nil
 }
-func (fullSeats) Converted(context.Context, string) error { return nil }
+func (fullSeats) Fits(context.Context, string, int) (bool, error) { return false, nil }
+func (fullSeats) Converted(context.Context, string) error         { return nil }
 func (fullSeats) Count(context.Context) (waitlist.Count, error) {
 	return waitlist.Count{Total: 30, Held: 30, Free: 0, Waiting: 3}, nil
 }

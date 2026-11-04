@@ -29393,6 +29393,88 @@ change, so they were superseded from the entry that caused the change and
 left standing where they are. Edit your own conclusion; supersede a fact
 that the world moved under.
 
+**I-1036. A test that skips when its tool is missing must not skip in
+the one place it says it belongs.** (strace-ci, 2026-11-03.)
+
+`internal/guestd`'s strace tests call `exec.LookPath("strace")` and
+`t.Skip` when it is absent, with the message "this test must run on the
+Linux CI runner". `ci.yml` installed strace nowhere. So whether that
+guard had ever run in CI was not knowable from outside the runner: a
+skipped test prints nothing without `-v`, and `go test ./...` reports
+`ok` for the package either way.
+
+I could not settle it by looking, either. The package takes 8.2 s in CI
+against 4.9 s here with strace present and the tests really running,
+which is consistent with the tests running on a slower shared runner and
+equally consistent with them skipping on a slower shared runner. Timing
+is not evidence at that margin, and saying "it probably runs" is how a
+guard stays unexamined.
+
+So the unknowable is made known from both ends. The test **fails** rather
+than skips when `CI` is set, naming what to do; and the `go` job installs
+strace, so it has no reason to. Either alone would be worse: the check
+without the install reds `main` the moment the runner image drops a tool,
+which after a day spent unredding `main` is a poor trade; the install
+without the check is a line somebody deletes in a year with nothing to
+say so.
+
+The skip stays for a laptop, which is what it was always for. What
+changes is that it no longer applies in the one environment the test's
+own comment names (DECISIONS I-1032 names the family).
+
+*Found by the launch lane*, while chasing why these tests failed 2 of 3
+there and passed here. That turned out to be load — a 30 s wait for
+`hooks.sock`, generous idle and tight on a box running host closure
+builds, `nix eval`s and tofu plans at once — and not the trapdoor. They
+reported the trapdoor anyway rather than only the answer they went
+looking for, which is the reason it is fixed.
+
+*Evidence:* with strace hidden from `PATH` and `CI=1`, the tests fail
+naming the missing tool; with strace hidden and `CI` unset, they skip as
+before; with strace present they pass.
+**I-1038. A test that waits for something waits on the thing, not only on
+the clock.** (strace-wait, 2026-11-03.)
+
+`waitForSocket` polled `os.Stat` for 30 seconds and then said
+`"<name> never appeared"`. That sentence is true of two different
+failures and distinguishes neither: a guestd that died on startup, and a
+guestd that is simply slow because the machine is busy. It also printed
+nothing the process had written, because the process's output was not
+captured at all.
+
+What that cost on 2026-11-03: `TestStraceReadsEnvironOnlyForTheHookPane
+Lookup` passed in 0.85 s on a quiet box and timed out twice in three on
+one running host closure builds, `nix eval`s and tofu plans at once. The
+message supported "it is the dev shell", "it is skipping" and "it is
+broken" equally well, and an hour went on deciding between them -- by
+checking that `strace` was the same binary on both sides, and that the
+run which reported `ok` was a pass and not the skip the helper takes when
+`strace` is absent. Both checks were necessary only because the failure
+said nothing.
+
+So `waitForSocket` and `dialWithRetry` now take a `gone func() error`
+that reports the process's exit once it has one and nil while it still
+runs. A process that has exited fails the test immediately and prints
+what it wrote; a process still running at the deadline is reported as a
+slow machine rather than a broken guestd, in those words. The deadline
+doubles to 60 s, which is affordable because it is no longer the only
+thing consulted -- the common failure now returns in microseconds instead
+of burning the budget.
+
+Rejected: just lengthening the timeout, which was the obvious move. A
+longer wall-clock proxy is still a proxy: it fails in both directions, it
+turns every real breakage into a minute of waiting, and the next busy
+machine moves the number again. Rejected: dropping the deadline and
+waiting on the process alone. A guestd that starts, never binds and never
+exits would hang the suite with no output at all.
+
+Evidence: both strace tests pass twice in a row; `go vet` clean, which is
+what checks the new format strings. The dead-process arm was exercised
+with a `gone` that reports an exit and a path that never appears: it fails
+in **46.62 microseconds** naming the exit status, against the 60 s the old
+code would have spent saying nothing. The still-running arm was not run to
+its full minute; it is the previous behaviour with a message that names
+load.
 **I-1040. The balloon stays on: host-02's `__balloon` fault is a known
 upstream shmem race, and nothing we would change is smaller than the
 fault.** (balloon-doc, 2026-11-04.) *Record of a decision not to act.*
@@ -29583,3 +29665,189 @@ needed no human at all. So the case for `--verify` is not that the next
 person will be more careful; it is that a guard's latency is zero and a
 reviewer's is however long until somebody looks. (The formulation is the
 conductor session's, 2026-11-04.)
+**I-1042. The mitigation lived in debugfs, so it was one reboot from
+gone with nothing to say so.** (fault-around, 2026-11-04.)
+
+I-1040 established that host-02's `__balloon` faults are the known
+upstream shmem hole-punch race and that `fault_around_bytes=4096` is the
+lever. On 2026-11-04 the owner authorised it and I wrote it by hand:
+65536 -> 4096, three tenant guests undisturbed. That left the fleet in
+the worst shape a mitigation can be in — **working, and invisible**.
+`/sys/kernel/debug/fault_around_bytes` is a debugfs file. It is not a
+sysctl, so `boot.kernel.sysctl` cannot carry it; it is not a kernel
+parameter either. It reverts at every boot. Nothing in `nix/hosts/` set
+it and nothing read it, so after the next restart of host-02 the next
+fault would have looked like the lever failing rather than the lever
+being absent — and those call for opposite actions.
+
+So it ships as two things that are deliberately not one. A unit,
+`repose-fault-around.service`, ordered after `sys-kernel-debug.mount`
+and before `hostd`, so no guest balloons on a host whose window is still
+open. And a read-back, `repose_kernel_check{check="fault_around_off"}`,
+which `HostKernelAssertFailed` already pages on without a rule change.
+The unit having run and the metric saying so are two different facts,
+and only the second is what an operator sees.
+
+Three choices in it worth the words:
+
+**No `ConditionPathIsReadWrite` on the file.** A condition would make a
+kernel without this knob *skip* the unit, and a skipped unit reads
+exactly like one that ran (I-1032). If a future kernel carries
+upstream's fix and drops the file, every host failing this unit at boot
+is the right way to find that out. `Before=` is ordering only, so the
+failure delays hostd by one failed exec and does not stop it.
+
+**The check compares against the configured value, not a literal.**
+`repose.host.faultAroundBytes` feeds both the unit and the assertion, so
+the knob and its guard cannot drift apart — which is I-1024's rule,
+whose two instances today were a VM test quoting a message nothing
+printed any more and one quoting a rendering nftables had changed.
+
+**The VM subtest asserts the file, then the published metric, then the
+negative.** The value on a booted host is what protects a guest; the
+metric is what an operator sees; and setting 65536 back mid-test and
+re-running the check proves the assertion can fail, because an
+assertion that cannot fail is the thing this release is named for.
+
+*Evidence:* `host-reboot`'s new subtest, which reads
+`fault_around_bytes` as 4096 on a booted VM, finds
+`repose_kernel_check{check="fault_around_off"} 1` in the published
+textfile, and finds 0 after writing 65536 back. On host-02 the hand
+write is already in place and the metric will confirm it at the next
+switch.
+
+*Not fixed:* the race. 4096 is the path upstream implicates and
+switching it off narrows the window; nobody has shown it closes this
+instance. A third fault on a host already at 4096 means it did not, and
+then the unmerged upstream patch is the only answer left.
+**I-1033. An expired waitlist hold ends the invitations until the user
+asks again.** (api triage, 2026-11-04; owner report. Replaces I-902;
+amends I-290 and I-294 (4).)
+
+The owner: "there is an infinite loop with waitlists if you don't take a
+seat. Very noticeable when the waitlist is very small."
+
+I-902's cooldown did not end the loop. It only spaced it out. With one
+person waiting, the tick invited them, the hold ran out 72 hours later,
+the cooldown ran 24 hours, and the tick invited them again: two emails
+every four days for as long as nobody took the seat. With two people
+waiting they took turns, and neither cycle had an end. Any rule that puts
+a user who did not answer back in the candidate list by itself, at once
+(I-290) or after a wait (I-902), loops the same way while the list is
+short. Only the user's own action can end it.
+
+So a hold that runs out unconverted lapses the user: `expire` sets
+`waitlist.lapsed_at` (migration 0034). A
+lapsed row holds no place (position 0, and no place in front of anyone
+else), is not counted in `Waiting`, and `ListWaiting` never returns it.
+`GET /billing` and `/me` show no `waitlist` object for it, so the plan
+page draws what a user with no place sees: the plans when a seat is free,
+"repose is full" with Join the waitlist when not. Two things end a
+lapse: `join` (`POST /billing/waitlist`, or a checkout that does not fit),
+which puts the user at the back without a second joined email and
+without counting the expiry twice; `inviteTx` (an operator's
+`repose-admin waitlist admit HANDLE`). A checkout while a seat is free
+needs neither: `Reserve` never reads `lapsed_at`, and the subscription
+converts the row as usual. The expiry email says the user is
+off the waitlist and how to come back, and its payload is `{}`, since a
+lapsed user has no number. `repose-admin waitlist list` shows `lapsed`
+in the position column.
+
+I-290 rejected dropping an expired user because "a launch weekend is not
+a reason to lose them". A lapse loses nobody: the row, its history and
+the account stay, and coming back is one click on the page the email
+links to. What it drops is the system asking again, unprompted, forever.
+
+*The gap that would have undone it.* `Overview` (`GET /billing`) priced
+each plan for a plan-less account with `Seats.Reserve`, and `Reserve`
+joins the list when the plan does not fit. Every dashboard visit while
+full put the user on the list (the bug in the 2026-10-17 waitlist
+review), and with lapses it would also have ended every lapse the moment
+the user opened the page the expiry email links to, restarting the loop.
+`Seats.Fits` is `Reserve`'s answer without the join, takes no lock and
+writes nothing; `Overview` uses it. It has the shape the unmerged
+`waitlist-feedback` branch gives it (I-773 there), so that branch merges
+onto this one by dropping its copy.
+
+*Migration.* 0034 adds the column and lapses nobody. Every user whose
+hold ran out before it was told "you're number N again", and a lapse
+backfilled by the migration would make that untrue with no email to say
+so. Those users keep their place, sit out what is left of their
+cooldown, get one more invitation, and lapse with the new email when it
+runs out: one more invitation each, then quiet. For the same reason
+`expire` still writes `joined_at = now` and `cooldown_until = now + 24h`
+as I-902 did, and `count` and `ListWaiting` still honour the cooldown.
+An api on the old code (mid-deploy, or after a rollback, whose down
+migration drops only `lapsed_at`) then reads a lapsed row as a cooling
+one at the back of the list, which is I-902's behaviour, and not as the
+next candidate at its first place. The one mid-deploy cost: a lapsed
+user whose join lands on an old replica stays lapsed, because the old
+`join` does not know the column; they join again.
+
+*Smaller fixes on the way.* `WaitlistPlace` answers no place for a hold
+that ran out and the tick has not lapsed yet, which the plan page drew
+as "0th of N waiting" for up to a minute. The fake api re-queues a user
+whose hold ran out when they join again. `ops/sql/launch.sql` Q10 counts
+lapsed rows apart from waiting ones, and `expired_unused` sums
+`expired_invites`, since an expiry no longer leaves `invited_at` set.
+Rejoining after a lapse sends no second `waitlist_joined` email: the user
+clicked the button and the page shows the place. The `waitlist_joined`
+email had promised I-902's "your turn comes round again a day later" and
+now says what a lapse does.
+
+*Also.* `expire` and `count` disagreed at the instant `hold_until ==
+now`: `count` no longer held the seat and `expire` did not yet expire the
+hold. `expire` takes `hold_until <= now` now, the same instant `count`
+stops holding the seat.
+
+*Why the I-902 test missed it.* `TestLoneWaiterIsNotReInvitedByItsOwnExpiry`
+asserted the re-invitation after the cooldown as correct behaviour.
+`TestAnExpiredHoldEndsTheInvitations` (internal/api/http) runs the tick
+hourly for 30 days with one waiter, then with two, and asserts one
+invitation each; it also asserts that `GET /billing` joins nobody and
+ends no lapse, that asking again goes to the back with one joined email
+and one counted expiry, and that an admit ends a lapse. Each of four
+mutations fails it: lapsed rows numbered as waiting, `Overview` back on
+`Reserve`, `join` ignoring `lapsed_at`, and the expiry counted twice on
+rejoin.
+
+**I-1052. A test that starts a server and does not wait for it to stop
+fails in `TempDir` cleanup, after passing.** (hostdev-wait,
+2026-11-04.)
+
+CI run 41859472806, on `main` at `301adebc`, failed the `go` job like
+this:
+
+    --- FAIL: TestEndToEnd (0.46s)
+        testing.go:1464: TempDir RemoveAll cleanup: unlinkat
+        /tmp/TestEndToEnd1884499737/001: directory not empty
+
+The body passed. The failure is Go's own `t.TempDir` cleanup, racing
+something that was still working inside the directory. `internal/hostdev`'s
+`TestEndToEnd` did `defer cancel()` and `go func() { _ = srv.Serve(ctx) }()`
+and nothing else: the cancel fires, the test returns, and `t.Cleanup`
+walks a directory the server is still shutting down in. Deferred calls
+run before `t.Cleanup`, so the wait belongs in a defer, and now is one.
+
+That is `docs/CHECKLIST.md`'s "a test that forces state first stops
+whatever else writes it" (I-1014) applied to a directory rather than a
+database row, which is the second time this week the same sentence has
+been the answer.
+
+*What this does not establish.* The failure has not been reproduced
+here: eight runs under `-race` pass, and the 94-package suite passed on
+this commit before the release went out. So the honest claim is that the
+test no longer leaves a window open, not that CI's window is closed.
+`Server.Serve` returns on `ctx.Done()` after `gs.Stop()` without waiting
+for either of the two goroutines it started -- the gRPC server and
+`serveControl`, whose own shutdown goroutine removes the control socket
+from that same directory. "Serve returned" therefore does not yet mean
+"everything stopped", and making it mean that is a change to
+`server.go` that wants somebody who can reproduce the failure first.
+
+The next run of this job is the evidence either way, which is a poor
+substitute for a reproduction and is stated as one rather than dressed
+up.
+
+*Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
+passes 8 of 8 here, as it did before the change; `go vet` clean.

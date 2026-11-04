@@ -3,11 +3,14 @@
 package guestd
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -33,7 +36,7 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 	// herdr pane are all in the trace.
 	var herdrSock string
 	var herdrAnswered *atomic.Int32
-	_, devSock, hookSock, tracePath, stop := tracedGuestd(t, func(root string) {
+	_, devSock, hookSock, tracePath, gone, stop := tracedGuestd(t, func(root string) {
 		p := sysdep.Paths{Root: root}
 		mustMkdir(t, filepath.Dir(p.ProjectJSON()))
 		mustWrite(t, p.ProjectJSON(), `{"slug":"strace-app","multiplexer":"herdr"}`)
@@ -57,7 +60,7 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	client := dialWithRetry(t, devSock)
+	client := dialWithRetry(t, devSock, gone)
 	defer client.Close() //nolint:errcheck // test cleanup
 
 	// A Sample walks every process in /proc. This is the request that would
@@ -103,9 +106,9 @@ func TestStraceNeverOpensCmdlineOrEnviron(t *testing.T) {
 // hook does not name its window, exactly one environment is read, and it is
 // the caller's own.
 func TestStraceReadsEnvironOnlyForTheHookPaneLookup(t *testing.T) {
-	_, _, hookSock, tracePath, stop := tracedGuestd(t)
+	_, _, hookSock, tracePath, gone, stop := tracedGuestd(t)
 
-	waitForSocket(t, hookSock)
+	waitForSocket(t, hookSock, gone)
 	postHook(t, hookSock, `{"agent":"claude","kind":"completed","summary":"x"}`)
 	time.Sleep(300 * time.Millisecond)
 	stop()
@@ -124,10 +127,21 @@ func TestStraceReadsEnvironOnlyForTheHookPaneLookup(t *testing.T) {
 // real one, and returns the trace path and a stop function. The whole process
 // group is killed on stop: strace -f leaves its child running otherwise, and a
 // leaked guestd would outlive the test.
-func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookSock, tracePath string, stop func()) {
+func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookSock, tracePath string, gone func() error, stop func()) {
 	t.Helper()
 	strace, err := exec.LookPath("strace")
 	if err != nil {
+		// The skip is for a developer's laptop. In CI it is a failure,
+		// because the comment above said "this test must run on the Linux
+		// CI runner" while a silent skip there would report ok having
+		// tested nothing, and `ci.yml` installs strace nowhere -- so
+		// whether this guard has ever run in CI was not knowable from the
+		// outside. A skip that reads as a pass in the one place the test
+		// claims to belong is the family named in DECISIONS I-1032
+		// (I-1036).
+		if os.Getenv("CI") != "" {
+			t.Fatalf("strace is not on PATH in CI, so this test would report ok having tested nothing: install it in the job, or change the sentence above that says this test must run there")
+		}
 		t.Skip("strace is not installed; this test must run on the Linux CI runner")
 	}
 
@@ -151,9 +165,35 @@ func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookS
 		"--dev-socket", devSock,
 		"--hook-socket", hookSock,
 	)
+	// Held so waitForSocket can tell a guestd that is slow from one that is
+	// gone, and so a failure carries what it said (DECISIONS I-1038).
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start guestd under strace: %v", err)
+	}
+
+	var mu sync.Mutex
+	var exited bool
+	var waitErr error
+	done := make(chan struct{})
+	go func() {
+		err := cmd.Wait()
+		mu.Lock()
+		exited, waitErr = true, err
+		mu.Unlock()
+		close(done)
+	}()
+	// Reports the exit if the process is gone, and nil while it still runs.
+	gone = func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		if !exited {
+			return nil
+		}
+		return fmt.Errorf("it exited first (%v); what it wrote:\n%s", waitErr, out.String())
 	}
 
 	var once bool
@@ -163,10 +203,13 @@ func tracedGuestd(t *testing.T, prep ...func(root string)) (root, devSock, hookS
 		}
 		once = true
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		_ = cmd.Wait()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+		}
 	}
 	t.Cleanup(stop)
-	return root, devSock, hookSock, tracePath, stop
+	return root, devSock, hookSock, tracePath, gone, stop
 }
 
 // procOpens splits a trace into the command-line and environment opens of
@@ -204,29 +247,65 @@ func buildGuestd(t *testing.T) string {
 	return out
 }
 
-func dialWithRetry(t *testing.T, path string) *vsockrpc.Client {
+// dialWithRetry has waitForSocket's contract and the same reason for it: a
+// dial that keeps being refused says nothing about whether the thing meant to
+// answer is starting or dead (DECISIONS I-1038).
+func dialWithRetry(t *testing.T, path string, gone func() error) *vsockrpc.Client {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	const budget = 60 * time.Second
+	deadline := time.Now().Add(budget)
 	for {
 		conn, err := vsockrpc.DialUnix(path)
 		if err == nil {
 			return vsockrpc.NewClient(conn, nil)
 		}
+		if gone != nil {
+			if gerr := gone(); gerr != nil {
+				t.Fatalf("dial %s: %v, because %v", path, err, gerr)
+			}
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("dial %s: %v", path, err)
+			t.Fatalf("dial %s: %v after %s, with the process still running: "+
+				"a slow machine rather than a broken guestd. Check the load before reading it as a failure.",
+				path, err, budget)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 }
 
-func waitForSocket(t *testing.T, path string) {
+// waitForSocket waits for path, watching the process rather than only the
+// clock. `gone` reports the process's exit once it has one, and nil while it
+// still runs; pass nil when there is no process to watch.
+//
+// The old version polled os.Stat for 30 s and then said "<name> never
+// appeared", which is true of two different failures and distinguishes
+// neither: a guestd that died at once, and a guestd that is simply slow on a
+// loaded machine. It cost an hour of this on 2026-11-03 -- the test passed in
+// 0.85 s on a quiet box and timed out twice in three on one running host
+// closure builds, nix evals and tofu plans at once, and the message supported
+// "the dev shell", "it skips", and "it is broken" equally well (DECISIONS
+// I-1038).
+//
+// So the deadline is generous on purpose and no longer the only thing
+// consulted. A process that has exited fails immediately and prints what it
+// wrote; a process still running at the deadline is reported as slow, which
+// names the machine rather than the code.
+func waitForSocket(t *testing.T, path string, gone func() error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	const budget = 60 * time.Second
+	deadline := time.Now().Add(budget)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			return
 		}
+		if gone != nil {
+			if err := gone(); err != nil {
+				t.Fatalf("%s never appeared because %v", filepath.Base(path), err)
+			}
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("%s never appeared", filepath.Base(path))
+	t.Fatalf("%s did not appear within %s, and the process was still running: "+
+		"that is a slow machine rather than a broken guestd, and the wait is wall clock. "+
+		"Check the load before reading it as a failure.", filepath.Base(path), budget)
 }

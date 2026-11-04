@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-901 entries.
+906 entries.
 
 ## Scope
 
@@ -368,10 +368,10 @@ pointer, not a summary.
 - **I-287** The landing has a design system of its own, drawn from its pictures — 2026-09-27; amended by I-369; L7563
 - **I-288** Every landing shape names a feature and appears where the feature is; the footer collects them; the logo is an r-mark — 2026-09-27; L7588
 - **I-289** Monthly plans through Paddle: Solo and Pro buy memory that may run at once, disk and egress; a week free with a card; no hourly meter — 2026-09-27; amended by I-362; amended by I-497; amended by I-569; amended by I-585; partly amended by I-616; amended by I-634; amended by I-604; L7610
-- **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; amended by I-902; L7688
+- **I-290** Seats: the waitlist gates checkout, not the first project; a seat is 8 GB running at once; invitations hold a seat 72 hours — 2026-09-27; amended by I-362; partly amended by I-402; amended by I-739; amended by I-902; amended by I-1033; L7688
 - **I-291** Every email is HTML with a plain-text twin, from one template, and the account emails exist — 2026-09-27; amended by I-934; L7727
 - **I-293** How the plans landed in the code: repose_api_ metric names, the limits an exempt account keeps, stops counted, once-only emails derived from the events table, and a subscriptions-only seat count until I-290 merges — 2026-09-27; amended by I-569; L7754
-- **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; amended by I-902; L7811
+- **I-294** Seats and emails, the choices the spec left open: one account-event helper, the sentence, a re-queue on a new checkout, no `!` in an email — 2026-09-27; amended by I-902; amended by I-1033; L7811
 - **I-295** The dashboard under plans: the fake's default is exempt, the Paddle stub, one site-wide CSP, and what the pages stop showing — 2026-09-27; L7879
 - **I-292** Watching the agent's browser is one command: `repose browser` opens a viewer page repose ships, sized to the tab, on TigerVNC's Xvnc, with the password in the URL fragment and the forward in the background — 2026-09-27; L7924
 - **I-296** `repose browser bridge` lends the guest's browser tools the laptop's own Chrome, through Chrome's DevTools switch, a front that answers `/json/version`, and a reverse tunnel whose remote command holds the guest's endpoint switched — 2026-09-27; L8016
@@ -868,7 +868,7 @@ pointer, not a summary.
 - **I-896** /projects shows what is running, one duration a row, and no head that repeats the control above it — 2026-10-28; L26440
 - **I-898** The word is freeze, not awake — 2026-10-28; L26490
 - **I-900** A project keeps seven snapshots, which is what the docs have always said — 2026-10-28; L26503
-- **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; L26554
+- **I-902** An expired waitlist hold cools down before its turn comes round — 2026-10-28; superseded by I-1033; L26554
 - **I-904** `repose snapshots list` with no project lists every snapshot the account has, over a new `GET /v1/snapshots` — 2026-10-28; L26596
 - **I-906** The snapshot sweep skips a live upload, and runs on every reconcile — 2026-10-28; L26647
 - **I-908** An agent checks a secret by its file, not by its environment variable — 2026-10-28; L26670
@@ -931,5 +931,10 @@ pointer, not a summary.
 - **I-1028** `compgen` is not in the shell this repository tells you to work in, and its absence reads as "no" — 2026-11-03; L29227
 - **I-1030** hostd knew its own version and did not tell the metric that publishes it — 2026-11-03; L29267
 - **I-1032** Six checks in one day were green in exactly the situation they existed for, and the ones with the best names survived longest — 2026-11-03; L29315
-- **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29396
-- **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29524
+- **I-1036** A test that skips when its tool is missing must not skip in the one place it says it belongs — 2026-11-03; L29396
+- **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29435
+- **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29478
+- **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29606
+- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29650
+- **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29705
+- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29796

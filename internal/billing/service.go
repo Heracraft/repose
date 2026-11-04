@@ -115,7 +115,9 @@ func (s *Service) Overview(ctx context.Context, u *store.User) (map[string]any, 
 	for _, p := range Plans {
 		available := true
 		if sub == nil {
-			ok, _, err := s.seats.Reserve(ctx, u.ID.String(), p.Seats)
+			// Fits, never Reserve: reading the page puts nobody on the
+			// waitlist and undoes nobody's lapse (I-1033).
+			ok, err := s.seats.Fits(ctx, u.ID.String(), p.Seats)
 			if err != nil {
 				return nil, err
 			}

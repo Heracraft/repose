@@ -315,10 +315,12 @@ two is the smaller is whether the next host should bring memory or cores.
    else: once a seat is free, the api's minute tick invites the oldest
    waiting user, holds the seat 72 hours for them and emails them to
    choose a plan; `waitlist_invite` in the api log (grpc app) carries the
-   count. A hold that runs out moves the user to the back
-   (`waitlist_expire`) and the seat goes to the next one.
+   count. A hold that runs out lapses the user off the list and the seat
+   goes to the next one; a lapsed user is not invited again until they
+   ask (I-1033).
 2. To see the queue: `repose-admin waitlist list` (position, handle,
-   joined, invited, hold, converted, expired invites, by). `GET
+   joined, invited, hold, converted, expired invites, by). A lapsed
+   user's position reads `lapsed`; `admit <handle>` invites them anyway. `GET
    /public/seats` is the same count the landing page shows.
 3. To let one person in now (a tester, someone who wrote in):
    `repose-admin waitlist admit <handle>` (or `admit --next N`). They get
@@ -1544,6 +1546,17 @@ checks to node_exporter's textfile directory every minute.
    parameters`. Some parameter in `nix/hosts/kernel.nix` is being handed to
    userspace instead of honoured. `journalctl -k -b | grep Unknown` names
    it. I-988 was this, for `panic_on_oops=1`.
+   `fault_around_off 0` -- the mitigation for the shmem hole-punch race is
+   **not in effect on this host** (DECISIONS I-1040, I-1042). It lives in
+   debugfs, so it does not survive a reboot on its own;
+   `repose-fault-around.service` writes it at every boot and this reads it
+   back. A 0 means that unit failed, debugfs is not mounted, or somebody
+   wrote the kernel's 65536 back by hand -- `systemctl status
+   repose-fault-around` and `cat /sys/kernel/debug/fault_around_bytes` tell
+   you which, and `echo 4096 >` that file restores it now, without a
+   restart. Do not read a 0 as "the mitigation failed to work": it means
+   the mitigation is **absent**, which is a different thing and the far
+   likelier one.
    `large_hash_vmalloc_absent` alerts on nothing and is informational until
    it has been confirmed once on a host with more than one NUMA node.
 

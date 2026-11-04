@@ -721,9 +721,14 @@ type WaitlistEntry struct {
 	// Position is 0 once invited, and for a waiting user whose account is
 	// suspended, cancelled or deleted: such a user holds no place.
 	Position int `db:"position"`
-	// CooldownUntil is set while a user whose hold ran out unconverted
-	// is not yet a candidate again (I-902). They keep their Position
-	// throughout; ListWaiting leaves them out until it passes.
+	// LapsedAt is when a hold ran out unconverted (I-1033). A lapsed
+	// user holds no place (Position 0), is not counted as waiting and is
+	// never invited by the tick, until they ask again.
+	LapsedAt *time.Time `db:"lapsed_at"`
+	// CooldownUntil is I-902's cooldown: a row cooling keeps its
+	// Position but ListWaiting leaves it out until it passes. Since
+	// I-1033 it matters only for rows that were cooling at migration
+	// 0034, and for an api on the older code.
 	CooldownUntil *time.Time `db:"cooldown_until"`
 }
 
@@ -734,13 +739,13 @@ func (e *WaitlistEntry) Holding(now time.Time) bool {
 }
 
 // waitlistSQL numbers the waiting users of live accounts oldest first;
-// everyone else gets position 0.
-const waitlistSQL = `select w.user_id, u.handle, w.joined_at, w.invited_at, w.invited_by, w.hold_until, w.converted_at, w.expired_invites, w.cooldown_until,
+// everyone else, the lapsed included, gets position 0.
+const waitlistSQL = `select w.user_id, u.handle, w.joined_at, w.invited_at, w.invited_by, w.hold_until, w.converted_at, w.expired_invites, w.lapsed_at, w.cooldown_until,
 	coalesce(q.position, 0)::integer as position
 	from waitlist w join users u on u.id = w.user_id
 	left join (select w2.user_id, row_number() over (order by w2.joined_at, w2.user_id) as position
 	             from waitlist w2 join users u2 on u2.id = w2.user_id
-	            where w2.invited_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null) q
+	            where w2.invited_at is null and w2.lapsed_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null) q
 	  on q.user_id = w.user_id`
 
 // GetWaitlistEntry returns the user's row, or db.ErrNotFound.
@@ -749,10 +754,9 @@ func GetWaitlistEntry(ctx context.Context, q Querier, userID uuid.UUID) (*Waitli
 }
 
 // ListWaiting returns the candidates for a free seat, next first: the
-// users holding a place whose cooldown, if any, has passed at now
-// (I-902). A cooling user keeps their position and still reads it; they
-// are only not picked, which is what stops the one waiting user from
-// being re-invited by the same tick that expired their hold.
+// users holding a place whose cooldown, if any, has passed at now. A
+// lapsed user holds none (I-1033), which is what stops a hold that ran
+// out from being offered again by itself.
 func ListWaiting(ctx context.Context, q Querier, now time.Time) ([]WaitlistEntry, error) {
 	return many[WaitlistEntry](ctx, q, waitlistSQL+" where q.position is not null and (w.cooldown_until is null or w.cooldown_until <= $1) order by q.position", now)
 }
