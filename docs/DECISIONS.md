@@ -29468,7 +29468,31 @@ and no other guest in the fleet has faulted in 29 days. It remains the
 leading explanation and nobody has shown the punched page held that
 freelist. Do not quote it as more.
 
-**Revisit when** either the upstream fix merges -- then this is a version
-bump, not a capability removal -- or `KernelOops` fires on this signature
-a second time, at which point `fault_around_bytes=4096` is the first
-thing to try and is reversible without a restart.
+**It fired a second time, so the lever is pulled.** 2026-11-04 04:20:26Z,
+same guest, same VMM (PID 3104), same balloon thread (TID 3166), same
+`memfd:ch_ram` -- and **three pages rather than one**: six kernel lines
+against the first event's two. `fault_around_bytes` on host-02 went from
+65536 to 4096 under the owner's authorisation, every tenant guest left
+running. The position recorded above held for exactly as long as its own
+stated condition, which is the only reason to write a condition down.
+
+That makes the race mitigated and not closed. Fault-around is the path
+upstream implicates and 4096 switches it off, but nobody has shown it
+closes *this* instance; a third occurrence on a host at 4096 means it did
+not, and the upstream fix is then the only answer left.
+
+**Owed, and it is not a sysctl.** `fault_around_bytes` is a debugfs file,
+so `boot.kernel.sysctl` cannot carry it and nothing in `nix/hosts/` sets
+it. Until a tmpfiles rule or a unit lands, a host restart silently returns
+it to 65536 and the next fault reads as the lever failing rather than the
+lever being gone. That is the live follow-up to this entry.
+
+**And the arithmetic moved the right way.** host-02 ran one VMM when
+disabling free page reporting was proposed and four within a day, three
+guests live. Against a 96 GB park budget and 251 GB of RAM the stopgap
+withdrawn above would have been getting worse by the week rather than
+holding. What made withdrawing it right was not caution: the cost scaled
+with the fleet and the fault did not.
+
+**Still revisit when** the upstream fix merges -- then this is a version
+bump rather than a capability removal.
