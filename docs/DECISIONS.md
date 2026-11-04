@@ -29392,3 +29392,83 @@ sentences were *true when written* and became false through a later
 change, so they were superseded from the entry that caused the change and
 left standing where they are. Edit your own conclusion; supersede a fact
 that the world moved under.
+
+**I-1040. The balloon stays on: host-02's `__balloon` fault is a known
+upstream shmem race, and nothing we would change is smaller than the
+fault.** (balloon-doc, 2026-11-04.) *Record of a decision not to act.*
+
+On 2026-11-03 at 10:52:24Z host-02's kernel reported, twice in 10 ms:
+
+    BUG: Bad page map in process __balloon  pte:80000006db0f7b67
+    file:memfd:ch_ram fault:shmem_fault
+      shmem_fallocate -> unmap_mapping_range
+      -> zap_page_range_single -> unmap_page_range -> vm_normal_page
+    BUG: Bad page cache in process __balloon  pfn:6db0f7
+
+PID 3166 is the balloon thread of the hypervisor serving guest
+`01a1938f`, whose live argv carries `--balloon
+size=0,free_page_reporting=on`. The host is tainted `bad_page`. The
+feature malfunctioned and the kernel diagnosed it; none of that is
+inference.
+
+**It is a known upstream bug.** Free page reporting returns guest pages
+by `fallocate(FALLOC_FL_PUNCH_HOLE)` on the memfd backing guest RAM.
+Shmem makes an ordinary fault wait out a punch in progress, but the
+fault-around path -- `filemap_map_pages`, installed directly as
+`.map_pages` -- does not join that protocol and does not take the
+invalidate lock, so it can re-install PTEs for pages the punch is in the
+middle of removing. The two messages are that disagreement seen from each
+side: a mapping pointing at a page that is gone, and a page removed while
+still mapped. The report on the list is against memfd-backed guest RAM
+with a balloon inflating and its own trace says `in process __balloon`.
+Andrew Morton has posted a fix serialising fault-around against the punch
+with the mapping invalidate lock. **It is under discussion and not
+merged, so there is no version to upgrade to.**
+
+**Why nothing changes here.**
+
+Turning free page reporting off was proposed and withdrawn. It makes a
+park image the guest's allocated memory rather than its working set, and
+the park budget is `deadline x writeRateMBs` = 240 s x 400 MB/s = **96
+GB** against host-02's **251 GB** of RAM. A guest whose image does not
+fit is not parked at all: the shutdown stops it and it loses everything
+it was running (`park.nix`, and `GuestNotParked`). So the change is
+harmless at two guests and starts dropping guests at about a third of the
+host -- a certain failure later traded for a possible one now, which is
+the wrong direction. It was written up as a fix when it was a stopgap.
+
+`fault_around_bytes` is the smaller lever and is not being pulled either.
+It is a host debugfs knob, 65536 on host-02, and 4096 switches
+fault-around off -- the implicated path -- keeping the balloon and leaving
+park images alone, at the cost of more minor faults on the host. It is
+not pulled because it narrows a race rather than closing one, nobody has
+shown it closes *this* instance, and the thing it would buy is already
+bought: see below.
+
+What makes waiting affordable is that `KernelOops` is live and matches
+`BUG:` (I-980). On 2026-11-02 the same class of fault ran for 3 h 48 m
+unseen; it would now page. One event in 26 hours, against an alert that
+did not exist for the last one, is a second data point worth having before
+removing a capability.
+
+Worth recording as possibly protective rather than as luck:
+`/sys/kernel/mm/transparent_hugepage/shmem_enabled` is **`never`** on
+host-02, so the memfd holds no large folios. The upstream write-up ties
+the window to a large folio splitting under a partial punch and its pieces
+staying briefly visible, which cannot happen here. That may be why this
+is one event in 26 hours rather than many, and it is a reason not to set
+`shmem_enabled` to anything else on a host that runs guests.
+
+Not established, and labelled so rather than left to be assumed: that
+this caused `01a1938f`'s guest-side fault on 2026-11-02 at 21:05:01Z, a
+general protection fault on a non-canonical pointer read from a SLUB
+freelist. A punched page returning zeroed would decode to exactly such a
+value under freelist hardening, no other explanation has been offered,
+and no other guest in the fleet has faulted in 29 days. It remains the
+leading explanation and nobody has shown the punched page held that
+freelist. Do not quote it as more.
+
+**Revisit when** either the upstream fix merges -- then this is a version
+bump, not a capability removal -- or `KernelOops` fires on this signature
+a second time, at which point `fault_around_bytes=4096` is the first
+thing to try and is reversible without a restart.

@@ -1318,6 +1318,34 @@ hugepage` or `linear`, and `vmalloc hugepage` on a kernel without I-982's
 not-present page` with `P4D 0`, from different processes, at the same table
 base -- nothing is corrupt, so do not go looking for a writer.
 
+**The second cause this fleet has met, and it needs no action.** A fault in
+`process __balloon` on `file:memfd:ch_ram`, through `shmem_fallocate` ->
+`unmap_mapping_range` -> `vm_normal_page`, reported as a *pair* 10 ms apart
+-- `BUG: Bad page map` and `BUG: Bad page cache ... still mapped when
+deleted` -- is the known upstream shmem hole-punch race, not a new problem
+and not ours (DECISIONS I-1040). Free page reporting returns guest pages by
+punching holes in the memfd behind guest RAM; shmem makes an ordinary fault
+wait out a punch, but fault-around (`filemap_map_pages`) does not, and
+re-installs PTEs for pages the punch is removing. A fix is posted upstream
+and not merged.
+
+So on *this* signature: **do not drain, do not reboot, and do not turn the
+balloon off.** Turning it off makes a park image the guest's allocated
+memory instead of its working set, and the park budget (240 s x 400 MB/s =
+96 GB) is smaller than host-02's 251 GB of RAM, so it starts dropping
+guests at about a third full -- each losing everything it was running.
+Record the event, check it is a pair from one moment rather than a repeat
+(`dmesg -T | grep "Bad page"`; two lines at the same timestamp are one
+event), and let the alert tell you if it happens again. On the second
+occurrence, `fault_around_bytes` is the first lever:
+`echo 4096 > /sys/kernel/debug/fault_around_bytes` switches fault-around
+off, reversibly and without a restart, and leaves park images alone. Leave
+`/sys/kernel/mm/transparent_hugepage/shmem_enabled` at `never`; the
+upstream window needs a large folio splitting under a partial punch, which
+`never` prevents.
+
+Everything below is for the *other* kind -- a fault that is not this one.
+
 1. Which host. The `host` label on these lines is the **host_id**, not the
    name (`host_id` in Prometheus means the name; nothing joins the two).
    `repose-admin hosts list` is the mapping.
