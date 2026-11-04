@@ -1544,6 +1544,17 @@ checks to node_exporter's textfile directory every minute.
    parameters`. Some parameter in `nix/hosts/kernel.nix` is being handed to
    userspace instead of honoured. `journalctl -k -b | grep Unknown` names
    it. I-988 was this, for `panic_on_oops=1`.
+   `fault_around_off 0` -- the mitigation for the shmem hole-punch race is
+   **not in effect on this host** (DECISIONS I-1040, I-1042). It lives in
+   debugfs, so it does not survive a reboot on its own;
+   `repose-fault-around.service` writes it at every boot and this reads it
+   back. A 0 means that unit failed, debugfs is not mounted, or somebody
+   wrote the kernel's 65536 back by hand -- `systemctl status
+   repose-fault-around` and `cat /sys/kernel/debug/fault_around_bytes` tell
+   you which, and `echo 4096 >` that file restores it now, without a
+   restart. Do not read a 0 as "the mitigation failed to work": it means
+   the mitigation is **absent**, which is a different thing and the far
+   likelier one.
    `large_hash_vmalloc_absent` alerts on nothing and is informational until
    it has been confirmed once on a host with more than one NUMA node.
 

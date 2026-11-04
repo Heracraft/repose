@@ -6,6 +6,28 @@
 let
   textfileDir = "/var/lib/node_exporter/textfile";
 
+  # Fault-around is the half of the shmem hole-punch race that ignores the
+  # punch: on one fault the kernel maps this many bytes of nearby pages at
+  # once through `filemap_map_pages`, which does not take the invalidate
+  # lock, so it re-installs PTEs for pages a `fallocate(PUNCH_HOLE)` is
+  # removing. Free page reporting punches exactly those holes in the memfd
+  # behind a guest's RAM, so every host running a ballooning guest is
+  # exposed (DECISIONS I-1040). host-02 faulted twice, 2026-11-03 10:52:24Z
+  # (one page) and 2026-11-04 04:20:26Z (three), both in the same guest's
+  # `__balloon` thread.
+  #
+  # 4096 is one page per fault, which closes the window. It costs minor
+  # faults and nothing else: no restart, no drain, no effect on park images.
+  # It is a mitigation and not a fix -- upstream's `invalidate_lock` patch
+  # is posted and unmerged, and nobody has shown 4096 closes this instance
+  # rather than narrowing it. A third fault on a host already at 4096 means
+  # it did not.
+  #
+  # The default is the mitigation because every repose host runs guests that
+  # balloon. Set it back to the kernel's 65536 per host if upstream lands a
+  # fix and this becomes a cost for nothing.
+  faultAround = config.repose.host.faultAroundBytes;
+
   # repose-kernel-check reads back the boot-time facts about a host that
   # nothing else in this repository reads back at all (DECISIONS I-1010).
   #
@@ -47,6 +69,7 @@ let
       large_hash_linear=0
       cmdline_recognised=0
       large_hash_vmalloc_absent=0
+      fault_around_off=0
 
       publish() {
         {
@@ -55,6 +78,7 @@ let
           echo "repose_kernel_check{check=\"large_hash_linear\"} $large_hash_linear"
           echo "repose_kernel_check{check=\"cmdline_recognised\"} $cmdline_recognised"
           echo "repose_kernel_check{check=\"large_hash_vmalloc_absent\"} $large_hash_vmalloc_absent"
+          echo "repose_kernel_check{check=\"fault_around_off\"} $fault_around_off"
         } > "$tmp"
         mv -f "$tmp" "$out"
       }
@@ -109,6 +133,17 @@ let
       # now, not a line from boot.
       if [ "$(grep -c alloc_large_system_hash /proc/vmallocinfo || true)" = 0 ]; then
         large_hash_vmalloc_absent=1
+      fi
+
+      # Also live, and the reason this check exists at all: the mitigation
+      # for I-1040 lives in debugfs and is gone at every reboot unless
+      # repose-fault-around.service put it back. A unit that failed, a
+      # debugfs that did not mount, or a hand-written 65536 all read the
+      # same here -- 0, and HostKernelAssertFailed pages. Compared against
+      # the configured value rather than a literal 4096, so the knob and
+      # its assertion cannot drift apart (I-1024's rule).
+      if [ "$(cat /sys/kernel/debug/fault_around_bytes 2>/dev/null || echo unreadable)" = ${toString faultAround} ]; then
+        fault_around_off=1
       fi
     '';
   };
@@ -265,6 +300,37 @@ in
     "d ${textfileDir} 0755 root root -"
     "d /var/lib/repose 0755 root root -"
   ];
+
+  # A debugfs file, so `boot.kernel.sysctl` cannot carry it and neither can
+  # a kernel parameter: it has to be written after `sys-kernel-debug.mount`,
+  # on every boot. It was applied by hand on host-02 at 2026-11-04 04:4xZ
+  # and would have vanished at the next reboot with nothing to say so --
+  # which is why `fault_around_off` below reads it back rather than this
+  # unit being trusted to have run (DECISIONS I-1042).
+  systemd.services.repose-fault-around = {
+    description = "Switch fault-around off for the shmem hole-punch race (I-1040)";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "sys-kernel-debug.mount" ];
+    requires = [ "sys-kernel-debug.mount" ];
+    # Before any guest can run, so no guest ever balloons on a host whose
+    # window is still open.
+    before = [ "hostd.service" ];
+    # No `ConditionPathIsReadWrite` on the file, deliberately. A condition
+    # would make a kernel without this knob *skip* the unit, and a skipped
+    # unit reads exactly like one that ran -- which is the fault this whole
+    # release has been about (I-1032). If a future kernel carries upstream's
+    # fix and drops the file, every host failing this unit at boot is the
+    # right way to find out that the mitigation no longer applies. `Before=`
+    # is ordering only, so a failure here delays hostd by one failed exec
+    # and does not stop it.
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      # No `|| true` either: the unit says so itself rather than leaving
+      # the metric to be the only witness.
+      ExecStart = "${pkgs.runtimeShell} -c 'echo ${toString faultAround} > /sys/kernel/debug/fault_around_bytes'";
+    };
+  };
 
   systemd.services.repose-kernel-check = {
     description = "Read back this boot's kernel assertions for node_exporter";

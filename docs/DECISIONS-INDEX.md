@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-903 entries.
+904 entries.
 
 ## Scope
 
@@ -935,3 +935,4 @@ pointer, not a summary.
 - **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29435
 - **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29478
 - **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29606
+- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29650

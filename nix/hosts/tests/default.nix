@@ -850,6 +850,34 @@ in
                   refused.add(tok.split("=")[0])
           bad = sorted(set(ours) & refused)
           assert not bad, f"the kernel did not recognise {bad}; its line: {line.strip()}"
+
+      with subtest("fault-around is off and the check says so (I-1040, I-1042)"):
+          # The mitigation lives in debugfs, so it survives no reboot on its
+          # own and `boot.kernel.sysctl` cannot carry it. What is asserted
+          # here is the thing that actually protects a guest -- the value in
+          # the file on a booted host -- and then that the check publishes
+          # it, because the unit having run and the metric saying so are two
+          # different facts and only the second is what an operator sees.
+          host.succeed("systemctl is-active repose-fault-around.service")
+          got = host.succeed("cat /sys/kernel/debug/fault_around_bytes").strip()
+          want = "${toString nodes.host.repose.host.faultAroundBytes}"
+          assert got == want, f"fault_around_bytes is {got}, want {want}"
+
+          # And the read-back, from the file node_exporter serves rather
+          # than from the script: a check that is computed and not published
+          # is a check nothing alerts on.
+          host.succeed("systemctl start repose-kernel-check.service")
+          prom = host.succeed("cat /var/lib/node_exporter/textfile/repose_kernel.prom")
+          assert 'repose_kernel_check{check="fault_around_off"} 1' in prom, prom
+
+          # The negative, in the same boot: put the kernel's own default
+          # back and the check must go red. Without this the assertion above
+          # passes on a check hardcoded to 1.
+          host.succeed("echo 65536 > /sys/kernel/debug/fault_around_bytes")
+          host.succeed("systemctl start repose-kernel-check.service")
+          prom = host.succeed("cat /var/lib/node_exporter/textfile/repose_kernel.prom")
+          assert 'repose_kernel_check{check="fault_around_off"} 0' in prom, prom
+          host.succeed(f"echo {want} > /sys/kernel/debug/fault_around_bytes")
           assert host.succeed("sysctl -n kernel.panic_on_oops").strip() == "1"
           host.succeed("modprobe --showconfig | grep -q '^blacklist mana_ib$'")
           host.succeed("ethtool --version")

@@ -29647,3 +29647,58 @@ Grafana evaluating what main says" a check rather than a memory. A
 `--verify` that exits non-zero on drift, run wherever the token lives, is
 the shape. It is not built tonight because the token is the owner's and a
 check nobody can run is another guard in the wrong place.
+**I-1042. The mitigation lived in debugfs, so it was one reboot from
+gone with nothing to say so.** (fault-around, 2026-11-04.)
+
+I-1040 established that host-02's `__balloon` faults are the known
+upstream shmem hole-punch race and that `fault_around_bytes=4096` is the
+lever. On 2026-11-04 the owner authorised it and I wrote it by hand:
+65536 -> 4096, three tenant guests undisturbed. That left the fleet in
+the worst shape a mitigation can be in — **working, and invisible**.
+`/sys/kernel/debug/fault_around_bytes` is a debugfs file. It is not a
+sysctl, so `boot.kernel.sysctl` cannot carry it; it is not a kernel
+parameter either. It reverts at every boot. Nothing in `nix/hosts/` set
+it and nothing read it, so after the next restart of host-02 the next
+fault would have looked like the lever failing rather than the lever
+being absent — and those call for opposite actions.
+
+So it ships as two things that are deliberately not one. A unit,
+`repose-fault-around.service`, ordered after `sys-kernel-debug.mount`
+and before `hostd`, so no guest balloons on a host whose window is still
+open. And a read-back, `repose_kernel_check{check="fault_around_off"}`,
+which `HostKernelAssertFailed` already pages on without a rule change.
+The unit having run and the metric saying so are two different facts,
+and only the second is what an operator sees.
+
+Three choices in it worth the words:
+
+**No `ConditionPathIsReadWrite` on the file.** A condition would make a
+kernel without this knob *skip* the unit, and a skipped unit reads
+exactly like one that ran (I-1032). If a future kernel carries
+upstream's fix and drops the file, every host failing this unit at boot
+is the right way to find that out. `Before=` is ordering only, so the
+failure delays hostd by one failed exec and does not stop it.
+
+**The check compares against the configured value, not a literal.**
+`repose.host.faultAroundBytes` feeds both the unit and the assertion, so
+the knob and its guard cannot drift apart — which is I-1024's rule,
+whose two instances today were a VM test quoting a message nothing
+printed any more and one quoting a rendering nftables had changed.
+
+**The VM subtest asserts the file, then the published metric, then the
+negative.** The value on a booted host is what protects a guest; the
+metric is what an operator sees; and setting 65536 back mid-test and
+re-running the check proves the assertion can fail, because an
+assertion that cannot fail is the thing this release is named for.
+
+*Evidence:* `host-reboot`'s new subtest, which reads
+`fault_around_bytes` as 4096 on a booted VM, finds
+`repose_kernel_check{check="fault_around_off"} 1` in the published
+textfile, and finds 0 after writing 65536 back. On host-02 the hand
+write is already in place and the metric will confirm it at the next
+switch.
+
+*Not fixed:* the race. 4096 is the path upstream implicates and
+switching it off narrows the window; nobody has shown it closes this
+instance. A third fault on a host already at 4096 means it did not, and
+then the unmerged upstream patch is the only answer left.
