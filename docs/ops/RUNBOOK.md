@@ -1344,15 +1344,44 @@ off, reversibly and without a restart, and leaves park images alone. Leave
 upstream window needs a large folio splitting under a partial punch, which
 `never` prevents.
 
+**It recurred, and the lever is pulled.** 2026-11-04 04:20:26Z, same guest,
+same VMM, same balloon thread, and **three pages rather than one** -- six
+kernel lines against the first event's two. `fault_around_bytes` on host-02
+is now **4096**, applied under the owner's authorisation with every tenant
+guest left running. So the paragraphs below describe a race that is
+mitigated and not closed, and the next occurrence on a host at 4096 means
+the mitigation did not hold and the upstream fix is the only remaining
+answer.
+
+**Three traps around that, in the order they will catch you.**
+
+*This alert resolves on NoData, so resolved never means fixed.* The
+04:20:26Z event paged at 04:21:10Z and closed at 04:31 because the lines
+stopped arriving, which is what a one-off fault always does. An operator
+who sees it go green an hour later will read the problem as having passed.
+It has not; nothing about a kernel fault un-happens.
+
+*The mitigation does not survive a reboot.* `fault_around_bytes` is a
+debugfs file, not a sysctl, so `boot.kernel.sysctl` will not carry it and
+nothing in `nix/hosts/` sets it yet. Until a tmpfiles rule or a unit
+lands, a host restart silently returns it to 65536 and the next fault
+looks like the lever failing rather than the lever being absent. Check it
+(`cat /sys/kernel/debug/fault_around_bytes`) before concluding anything
+about a fault on a host that has rebooted.
+
+*Count pages, not lines.* Each page produces two lines, a `Bad page map`
+and a `Bad page cache`, within milliseconds. Six lines is three pages, not
+six events. `dmesg -T | grep "Bad page"` and group by timestamp.
+
 **"Needs no action" is not "harmless", and do not let the two collapse.**
 This race can hand a guest a page that was punched out from under it, which
 is the mechanism behind the one thing I-1040 leaves unproven: that
-`01a1938f`'s guest died of it on 2026-11-02. What makes watching the
-proportionate response is the arithmetic -- one event in 29 hours, no
-merged upstream fix to move to, and a stopgap that starts dropping guests
-at a third of the host. It is not a finding that nothing happened. If the
-frequency changes, the answer changes with it, and that is what the second
-occurrence is for.
+`01a1938f`'s guest died of it on 2026-11-02. What made watching the
+proportionate response, while it was one event in 29 hours, was the
+arithmetic: no merged upstream fix to move to, and a stopgap that starts
+dropping guests at a third of the host. It was never a finding that
+nothing happened -- and the frequency did change, which is what the second
+occurrence was for. The answer changed with it.
 
 Everything below is for the *other* kind -- a fault that is not this one.
 
