@@ -29792,3 +29792,88 @@ and one counted expiry, and that an admit ends a lapse. Each of four
 mutations fails it: lapsed rows numbered as waiting, `Overview` back on
 `Reserve`, `join` ignoring `lapsed_at`, and the expiry counted twice on
 rejoin.
+
+**I-1046. A project's name before the command is answered as the words the
+other way round, not as an unknown command.** (exec-paths, 2026-11-04.)
+
+`repose job exec rm out/resume.pdf` answered `unknown command "job" for
+"repose"`, which sends the reader looking for a command called `job`. The
+CLI already knew better: `projectWord` (I-633) looks a word up in
+`projects.json` and then in the account's list, and the group hint
+("`todo-app` is a project: `repose snapshots list todo-app`") has used it
+since 2026-10-18. Only the top level, where the mistake actually happens,
+never asked. Decided: the root-level unknown word goes through the same
+lookup, and a word that names one of the account's projects is answered
+`job is a project, not a command.`, with a second line that is the reader's
+own words rearranged, to copy.
+
+Which rearrangement depends on the word after the project. One that names
+a command taking PROJECT first -- read off its usage line, so `status
+[PROJECT]` and `stop [PROJECT...]` qualify and `ls` and `cp [-r] SRC...
+DST` do not -- is the two words swapped: ``repose status job``. Anything
+else is the words run on the machine: ``repose exec job cat out/x``, which
+is what a reader coming from `docker exec <container> CMD` or `kubectl
+exec <pod>` means by the noun-first order, and the only reading left when
+the word is no command of repose's at all.
+
+`ls`, `rm` and `cp` take the second reading although they are commands,
+because each is also the everyday shell word for what the reader typed.
+`repose job rm out/resume.pdf` is a file on the machine, never
+`repose rm job out/resume.pdf`, which destroys the project; offering that
+line would be worse than offering none. A `~` in the words is quoted in
+the suggested line, or the reader's shell eats it again (I-1048).
+
+With nothing after the project the message says what the word is and
+stops, because any command named there would be invented. A typo of a real
+command is still read as a typo and the lookup is not asked for it, so
+`repose exce ls` keeps naming `repose exec` and costs no API call.
+
+The project-first order is a guess worth answering rather than a user
+error to list: every other tool the reader has in that terminal takes the
+noun first (`docker exec <container> CMD`, `kubectl exec <pod>`,
+`gh repo view <repo>`), and repose takes the verb first.
+
+*Checked:* `TestProjectBeforeTheCommand` (internal/cli) over both
+rearrangements, the three shell words, a quoted `~`, a bare project, a
+word that is no project (the old answer), and a typo asked with an
+`isProject` that fails the test if it is called. On the built binary with
+a `projects.json` naming one project: `repose job exec rm out/resume.pdf`,
+`repose job rm out/resume.pdf`, `repose job status`, `repose job cat file`
+and `repose job` each printed the line above and exited 2.
+
+**I-1048. `repose exec` reads a quoted `~` as the machine's home, and says
+so when the laptop's shell ate an unquoted one.** (exec-paths, 2026-11-04.)
+
+Every word of `repose exec`'s command was shell-quoted on the way to the
+machine (I-275, "the words pass through as they are"), so `~` could not
+reach the machine's shell by any spelling: unquoted, the laptop expanded
+it first; quoted, it arrived as a literal tilde. `--workdir ~/PATH`
+(I-608) and `repose cp todo-app:~/PATH` both expand `~` on the machine, so
+`repose exec` was the one command of the three where the reader's `~` went
+nowhere. The observed cost, on the owner's laptop 2026-11-04: seven
+commands in a row against a machine whose home is `/home/dev`, each
+answered `ls: cannot access '/home/agustus/job/out/'`, a path that exists
+on neither side.
+
+Decided, two halves of one change. (1) A word that is `~` or starts with
+`~/` becomes `"$HOME"` on the machine, the same reading `--workdir` and
+`repose cp` give it; every other word is still quoted and reaches the
+command unchanged. (2) Before the command runs, a word that is this
+computer's home directory or under it gets one line on stderr naming the
+machine's home and the quoted spelling. That word is the shell's work, not
+the reader's -- repose never sees the `~` -- so the note is the only place
+the mistake can be caught, and it is the half that unblocks; without (1)
+the note would advise a spelling that does not work either.
+
+The note stays quiet where it would be wrong: a laptop whose own home is
+`/home/dev` (a user called `dev`) and a home of `/` get nothing, since the
+word is as good on the machine as here. The cost of (1) is a word meant as
+a literal tilde, `repose exec grep '~' file`; it now expands, and the docs
+and `--help` say to run a shell for that. A literal `~` as a whole
+argument is rare, a `~/...` argument meant literally rarer still, and the
+alternative -- leaving all three commands disagreeing -- is how the reader
+learns the rule three times.
+
+*Checked:* `TestExecWordReadsTheMachinesHome` and
+`TestLaptopHomePathFindsTheExpandedTilde` (internal/cli), the second with
+`HOME` set to a laptop home and to `/home/dev`.

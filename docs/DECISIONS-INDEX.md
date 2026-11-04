@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-905 entries.
+907 entries.
 
 ## Scope
 
@@ -937,3 +937,5 @@ pointer, not a summary.
 - **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29606
 - **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29650
 - **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29705
+- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29796
+- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L29844
