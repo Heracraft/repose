@@ -29898,6 +29898,48 @@ new cases for the `mcp.servers` spelling and for the stale `config.json`
 being neither read nor written; `go test ./internal/cli` for the docs and
 agent-guide checks.
 
+**Blocked: the base closure has no room for it.** `nix build
+./nix#checks.x86_64-linux.guest-closure-size` fails on this branch.
+Measured on this box today, both from a full `guest-system` build:
+
+| | bytes | against the 6 GiB limit |
+|---|---|---|
+| `main` (3d42fce) | 6,438,214,952 | 4.04 MiB **under** |
+| this branch | 6,505,297,072 | 59.94 MiB **over** |
+
+opencode is the whole difference: `nix path-info -S` is 243,040,536 for
+1.18.34 and 310,120,776 for 2.2.5, and the closure grew by 67,082,120 --
+the same number. Nothing in the packaging shaves it: `dontStrip` is set
+because the binary is a bun single-file executable with its payload
+appended, and stripping it by hand here saved 49,472 bytes of 252,713,136
+(0.02%), so the size is the embedded runtime and not symbols.
+
+The limit is 02 §7 ("a bigger base means every host's store grows and
+every first-boot copy of the closure metadata takes longer"), so raising
+it is the owner's call, not this branch's. Two ways out, with their
+numbers from the same build:
+
+- *Raise the limit.* What it protects is host store growth and first-boot
+  metadata time, and the hosts' store is on its own volume. 7 GiB would
+  give 500 MiB of headroom.
+- *Cut the browsers.* The guest carries two Chromiums:
+  `chromium-unwrapped` 701.7 MB for the desktop browser and
+  `playwright-chromium` 390.8 MB plus
+  `playwright-chromium-headless-shell` 260.2 MB for playwright-mcp, which
+  pins its own build (I-246 overrides the browser set already). About
+  650 MB if they can be made one, which is ten times what this entry
+  needs and a workstream of its own.
+
+**The finding is bigger than this branch.** `main` sits 4 MiB under a
+limit the base build fails above, so the next bump of any agent breaks it:
+claude-code alone moves most days, and `scripts/bump-agents.sh` has no
+size check of its own -- it builds the package and runs `--version`, and
+the closure is only measured by `nix flake check`, which is where CI finds
+out. A 5 MB claude-code release would have done this to `main` with no
+opencode involved. Whichever way the limit goes, the bump script or its
+PR check should measure the closure, so the number appears in the pull
+request that causes it.
+
 *Not checked here, and the live note on the queue entry says so:* this box
 is an Azure AMD size and the nix work is for remote environments, so
 nothing below ran in a guest. After the base publish, on a real guest:
@@ -29906,7 +29948,10 @@ the plugin at `~/.config/opencode/plugins/repose.js` loads in version 2's
 background service and `session.execution.started` reaches guestd as a
 `prompt` (`repose ps` shows `working`, then `idle`); a permission ask
 still shows `needs_input`; `repose mcp list` reports the platform servers
-and a forwarded one, and the agent can call one; and whether the laptop's
+and a forwarded one, and the agent can call one; `repose run --agent
+opencode -p "..."` still submits the prompt, since the CLI passes it as
+`--prompt=PROMPT` and version 2's flag parser is not version 1's yargs
+(the flag is still in version 2's `--help`); and whether the laptop's
 `auth.json` reaches version 2 at all -- it keeps logins in
 `~/.local/share/opencode/opencode.db` (checked here: a first start creates
 it), and a version 1 `auth.json` holding an Anthropic API key left
