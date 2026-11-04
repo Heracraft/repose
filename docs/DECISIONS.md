@@ -29866,19 +29866,66 @@ anywhere -- the shape of 2026-11-03's findings again, and of
 
 So repose merges into `~/.config/opencode/opencode.json` and tells its own
 entries apart by the record, as it already does for Codex's
-`~/.codex/config.toml`. Three more things were checked on 2.2.5, each by
-writing the file and reading `opencode debug config` back: version 2 loads
-both `opencode.json` and `opencode.jsonc` (so a name the reader defines in
-the `.jsonc`, which a comment makes unsafe to rewrite, still wins and
-repose renders none of it); version 1's `mcp.NAME` spelling is still
-accepted and merged into version 2's own `mcp.servers.NAME`, so repose
-keeps writing `mcp.NAME` and `/etc/opencode/opencode.json` needs no
-change; and entries in both spellings survive together in one file, so a
-name under `mcp.servers` is the reader's and repose skips it. The
-`config.json` an earlier base wrote is left exactly where it is: nothing
-reads it, `repose mcp` no longer reports from it, and removing entries
-from a file the platform has no further reason to touch buys tidiness at
-the cost of writing in a reader's home.
+`~/.codex/config.toml`. Version 2 loads both `opencode.json` and
+`opencode.jsonc` (checked), so a name the reader defines in the `.jsonc`,
+which a comment makes unsafe to rewrite, still wins and repose renders
+none of it. The `config.json` an earlier base wrote is left exactly where
+it is: nothing reads it, `repose mcp` no longer reports from it, and
+removing entries from a file the platform has no further reason to touch
+buys tidiness at the cost of writing in a reader's home.
+
+**The key moved too, and `debug config` nearly hid it.** This entry first
+said version 1's `mcp.NAME` spelling was still accepted, on the evidence
+that `opencode debug config` echoes such a file back with the name
+normalised under `mcp.servers`. That was the wrong reading of the right
+output. Version 2's own documentation says it plainly -- "give it a unique
+name under `mcp.servers`. V2 does not place server names directly under
+`mcp`" -- and the off switch is `disabled: true`, not version 1's
+`enabled: false`. `debug config` reports what the loader parsed, not what
+the MCP subsystem will connect, so believing it would have shipped a
+platform layer opencode reads and ignores: the same silent failure as the
+file move, found only because the guest VM test asked a second question of
+the same build. Every write has to move to `mcp.servers.NAME` with
+`disabled`, in repose's user layer and in the platform's
+`/etc/opencode/opencode.json` both, and `/docs/agents`'s off-switch
+example with them.
+
+**Version 2 inverted the precedence, which breaks I-553's off switch.**
+This is the second blocker and the deeper one. I-553 put the platform's
+MCP servers in `/etc/opencode/opencode.json` and left `enabled` out of
+them precisely so a reader's `enabled: false` in
+`~/.config/opencode/opencode.json` would turn one off: under version 1 the
+reader's file won. Version 2's documented order is the other way round --
+"OpenCode applies these files from lowest to highest precedence:
+`~/.config/opencode/opencode.json`, [project], [package],
+`/etc/opencode/opencode.json` ... The system config overrides all of
+them" -- and a higher layer "replaces the entire server object with the
+same name". So while the platform's servers live in `/etc/opencode`, a
+reader on version 2 has **no** way to turn one off: not the global config,
+not a project config, and macOS managed preferences are the only thing
+above the system directory.
+
+That is a user-visible promise (`/docs/agents`, "its own switch turns one
+off") that version 2 takes away, and the fix is a choice this entry does
+not get to make: either the platform's MCP servers move out of
+`/etc/opencode` into the reader's own file, the way Codex's already do for
+the same reason, or the switch goes and the docs say the platform's
+servers cannot be turned off on opencode. The `guest-base` subtest for it
+fails today, and should: it asserts a property version 2 no longer has.
+
+**And the probe the test used is gone too.** `opencode mcp list` on 2.2.5
+answers "No MCP servers configured" for every server configured by hand --
+both spellings, global and project config, a real stdio MCP server, with
+and without `--standalone`, on this box and on the guest -- while
+`opencode debug config` and `GET /api/config` on the same home show the
+file loaded and `GET /api/mcp` returns `data: []`. So the server parses
+the config and instantiates nothing outside a session, and `opencode mcp
+add` (which writes the entry itself) is how the docs reach it. I-555's
+proof that a forwarded secret arrives needs the mechanism-level probe the
+test already uses for Codex and pi instead: take the entry from opencode's
+resolved config and run it through `mcp-client.py`. That is a small change
+and it is left with the layering decision above, because where the entry
+comes from is what that decision settles.
 
 **Web search changed hands.** `OPENCODE_ENABLE_EXA`, which version 1 took
 and `/docs/agents` told the reader to set as a secret, does not exist in
@@ -29890,13 +29937,31 @@ through one of five providers on the reader's own key -- `EXA_API_KEY`,
 Exa-through-opencode's-endpoint search is gone and the docs no longer
 promise it.
 
-*Built and checked here:* `nix build ./nix#opencode.unwrapped` and
-`env -i HOME=$(mktemp -d) opencode --version` → `opencode v2.2.5`; the
-four `opencode debug config` findings above, on that build; `go test
-./internal/mcpreg` with the render goldens moved to `opencode.json` and
-new cases for the `mcp.servers` spelling and for the stale `config.json`
-being neither read nor written; `go test ./internal/cli` for the docs and
-agent-guide checks.
+*Built and checked here:* `nix build ./nix#opencode.unwrapped`,
+`./nix#opencode` and `./nix#guest-system`, and `env -i HOME=$(mktemp -d)
+opencode --version` → `opencode v2.2.5`; the `opencode debug config` and
+`opencode mcp list` findings above, on that build; `go test
+./internal/mcpreg ./internal/guestd/... ./internal/mcpshim
+./test/supplychain` and `go test ./internal/cli` (473 s; one unrelated
+flake, `TestLaptopPortTakenOnAnyAddress`, which passes 5/5 in isolation on
+this branch and on `main`).
+
+*Run on a real guest, which found two of the breaks above:* the
+`guest-base` VM test booted a guest with 2.2.5. It proved the
+`~/.opencode` removal and its `opencode2` link, and then failed twice,
+each time on something no build could have told us: `opencode debug
+config` now prints the list of sources it loaded rather than the merged
+config (`TypeError: list indices must be integers or slices, not str`),
+and version 2's background service binds `127.0.0.1:49374` machine-wide,
+so a subtest running opencode under a second `HOME` got "Managed service
+port 49374 on 127.0.0.1 is already in use" (`--standalone` is the way
+round it, confirmed here). The second of those is a fact about the guest,
+not the test: one service per machine, and it holds the config it started
+with, so a `repose sync` that renders new MCP servers does not reach a
+running opencode until `opencode service restart`. Whether
+`repose-agent-setup` should restart it when it changed something is open:
+a restart is cheap for sessions, which live in `opencode.db`, but it is
+still a thing done to a running agent.
 
 **Blocked: the base closure has no room for it.** `nix build
 ./nix#checks.x86_64-linux.guest-closure-size` fails on this branch.

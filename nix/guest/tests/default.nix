@@ -743,10 +743,23 @@ in
           assert "links to a file repose cannot write" in first, first
           assert "links to a file repose cannot write" not in second, second
           assert guest.succeed("cat /tmp/cxlink3/ro/real.toml") == 'model = "o3"\n'
-          # opencode: the managed layer, type local, no enabled key.
-          oc = json.loads(dev_out("cd /tmp && opencode debug config", err=False))["mcp"]
+          # opencode: the managed layer, type local. Version 2's `debug
+          # config` prints the sources it loaded rather than the merged
+          # config, and normalises `mcp.NAME` into `mcp.servers.NAME`
+          # (I-1050), so the documents are merged in the order it lists
+          # them, which is lowest precedence first.
+          def oc_servers(out):
+              merged = {}
+              for src in json.loads(out):
+                  if src.get("type") != "document":
+                      continue
+                  mcp = (src.get("info") or {}).get("mcp") or {}
+                  merged.update(mcp.get("servers") or {})
+              return merged
+          oc = oc_servers(dev_out("cd /tmp && opencode --standalone debug config", err=False))
           for n, e in reg.items():
-              assert oc[n] == {"type": "local", "command": [e["command"]] + e["args"]}, oc
+              assert oc[n]["type"] == "local", (n, oc)
+              assert oc[n]["command"] == [e["command"]] + e["args"], (n, oc)
           # Gemini: a copied root file in a root 0755 directory, folder
           # trust off, so a folder it was never told about connects both.
           guest.succeed("test -f /etc/gemini-cli/system-defaults.json && ! test -L /etc/gemini-cli/system-defaults.json")
@@ -764,9 +777,12 @@ in
           cx = {e["name"]: e for e in json.loads(dev_out("cd /tmp && HOME=/tmp/cxoff codex mcp list --json", err=False))}
           assert cx["playwright"]["enabled"] is False and cx["chrome-devtools"]["enabled"] is True, cx
           assert "enabled = false" in guest.succeed("cat /tmp/cxoff/.codex/config.toml")
-          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"playwright": {"enabled": false}}}')
+          put("/tmp/ocoff/.config/opencode/opencode.json", '{"mcp": {"servers": {"playwright": {"disabled": true}}}}')
           # opencode colours its list; the driver's log shows it without.
-          out = re.sub(r"\x1b\[[0-9;]*m", "", dev_out("cd /tmp && HOME=/tmp/ocoff opencode mcp list"))
+          # --standalone: version 2's managed service binds 127.0.0.1:49374
+          # for the whole machine, so an opencode under another HOME cannot
+          # start one of its own (I-1050).
+          out = re.sub(r"\x1b\[[0-9;]*m", "", dev_out("cd /tmp && HOME=/tmp/ocoff opencode --standalone mcp list"))
           assert re.search(r"playwright\s+disabled", out), out
           put("/tmp/gmoff/.gemini/settings.json", '{"mcp": {"excluded": ["playwright"]}}')
           out = dev_out("mkdir -p /tmp/gem-fresh && cd /tmp/gem-fresh && HOME=/tmp/gmoff gemini mcp list")
@@ -809,7 +825,7 @@ in
           assert any(e.get("name") == "probe" and "repose-mcp" in json.dumps(e) for e in cl), cl
           # Claude Code, Gemini CLI and opencode start the server through
           # the launcher while listing it; it connects only with the secret.
-          for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+          for cmd in ["claude mcp list", "gemini mcp list", "opencode --standalone mcp list"]:
               status, out = guest.execute(f"sudo -u dev env -u PROBE_TOKEN bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
               print(f"{cmd} ({status}):\n{out}")
               bad = ["disconnected", "failed", "error", "needs auth"]
@@ -922,7 +938,7 @@ in
           assert json.loads(guest.succeed("cat /home/dev/.claude.json"))["mcpServers"]["fwprobe"] == {"type": "stdio", "command": "repose-mcp", "args": ["fwprobe"]}
           assert '[mcp_servers.fwprobe]\ncommand = "repose-mcp"\nargs = ["fwprobe"]' in guest.succeed("cat /home/dev/.codex/config.toml")
           def listed(connected_word):
-              for cmd in ["claude mcp list", "gemini mcp list", "opencode mcp list"]:
+              for cmd in ["claude mcp list", "gemini mcp list", "opencode --standalone mcp list"]:
                   status, out = guest.execute(f"sudo -u dev bash -lc 'cd /home/dev && timeout 150 {cmd}' 2>&1")
                   print(f"{cmd} ({status}):\n{out}")
                   rows = [l.lower() for l in out.splitlines() if "fwprobe" in l]
@@ -2428,7 +2444,14 @@ in
           def dev_json(cmd):
               return json.loads(guest.succeed(f"sudo -H -u dev bash -lc {shlex.quote(cmd)}"))
           cx = dev_json("cd /tmp && codex mcp get playwright --json")["transport"]
-          oc = dev_json("cd /tmp && opencode debug config")["mcp"]["playwright"]["command"]
+          # opencode 2's `debug config` lists the sources it loaded, with
+          # mcp.NAME normalised into mcp.servers.NAME (I-1050).
+          oc = [
+              (src.get("info") or {}).get("mcp", {}).get("servers", {})["playwright"]["command"]
+              for src in dev_json("cd /tmp && opencode --standalone debug config")
+              if src.get("type") == "document"
+              and "playwright" in ((src.get("info") or {}).get("mcp") or {}).get("servers", {})
+          ][-1]
           gm = json.loads(guest.succeed("cat /etc/gemini-cli/system-defaults.json"))["mcpServers"]["playwright"]
           for agent, e in {
               "codex": {"command": cx["command"], "args": cx["args"]},
@@ -2830,7 +2853,11 @@ in
           # I-553: the platform MCP servers beside it; Codex gets them in
           # the user file instead, so /etc/codex holds no mcp_servers.
           reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
-          assert set(oc["mcp"]) == set(reg) and not any("enabled" in v for v in oc["mcp"].values()), oc
+          # I-1050: opencode 2 reads mcp.servers, and its off switch is
+          # `disabled`, so the platform layer sets neither key.
+          ocs = oc["mcp"]["servers"]
+          assert set(ocs) == set(reg), oc
+          assert not any("enabled" in v or "disabled" in v for v in ocs.values()), oc
           ext = json.loads(guest.succeed("cat /etc/repose/gemini-extension/gemini-extension.json"))
           assert ext["contextFileName"] == "GEMINI.md", ext
           hooks = json.loads(guest.succeed("cat /etc/repose/gemini-extension/hooks/hooks.json"))["hooks"]

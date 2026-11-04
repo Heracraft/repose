@@ -333,8 +333,14 @@ func decoded(v any) map[string]any {
 }
 
 func disabled(v any) bool {
-	e, ok := decoded(v)["enabled"].(bool)
-	return ok && !e
+	m := decoded(v)
+	if e, ok := m["enabled"].(bool); ok && !e {
+		return true
+	}
+	// opencode 2's spelling (DECISIONS I-1050); version 1 took
+	// `enabled: false` and no other agent takes this one.
+	d, ok := m["disabled"].(bool)
+	return ok && d
 }
 
 // agentEntries are the servers agent has, with where each came from. The
@@ -425,7 +431,9 @@ func agentEntries(p Paths, agent string, checkouts []string, fromOf func(string,
 	case "opencode":
 		final := map[string]found{}
 		off := map[string]bool{}
-		for n, v := range jsonServers(p.etc("etc/opencode/opencode.json"), "mcp") {
+		// Both spellings: this base writes mcp.servers (I-1050), a base
+		// before it wrote mcp.NAME.
+		for n, v := range opencodeServers(p.etc("etc/opencode/opencode.json")) {
 			final[n] = found{n, FromRepose, ""}
 			off[n] = off[n] || disabled(v)
 		}

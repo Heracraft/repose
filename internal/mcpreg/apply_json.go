@@ -38,14 +38,15 @@ func applyGemini(p Paths, want *Rendered, prev *agentRecord, warn func(string)) 
 	return &agentRecord{User: want.User}
 }
 
-// applyOpencode merges want into ~/.config/opencode/opencode.json `mcp`.
-// opencode 2 loads opencode.json and opencode.jsonc and no longer reads
-// the config.json an earlier base wrote beneath them (DECISIONS I-1050,
-// checked with `opencode debug config` on 2.2.5), so repose merges into
-// the .json and leaves the .jsonc, which a comment makes unsafe to
-// rewrite, to the reader: a name defined there is theirs and repose
-// renders none of it. An entry in opencode.json is repose's only while it
-// equals what repose wrote.
+// applyOpencode merges want into ~/.config/opencode/opencode.json
+// `mcp.servers` (DECISIONS I-1050). opencode 2 loads opencode.json and
+// opencode.jsonc and no longer reads the config.json an earlier base
+// wrote beneath them, and it takes servers under `mcp.servers` only, not
+// a name directly under `mcp` as version 1 did. repose merges into the
+// .json and leaves the .jsonc, which a comment makes unsafe to rewrite,
+// to the reader: a name defined there is theirs and repose renders none
+// of it. An entry in opencode.json is repose's only while it equals what
+// repose wrote.
 func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
 	dir := filepath.Join(p.Home, ".config", "opencode")
 	path := filepath.Join(dir, "opencode.json")
@@ -53,10 +54,12 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 	for n := range opencodeServers(filepath.Join(dir, "opencode.jsonc")) {
 		theirs[n] = true
 	}
-	// opencode 2's own spelling, `mcp.servers.NAME`, in the file repose
-	// writes: the reader's, and repose never renders that name.
-	for n := range jsonServers(path, "mcp", "servers") {
-		theirs[n] = true
+	// A name the reader left in version 1's place in the file repose
+	// writes is still theirs, even though opencode 2 ignores it.
+	for n := range jsonServers(path, "mcp") {
+		if n != "servers" {
+			theirs[n] = true
+		}
 	}
 	user := map[string]any{}
 	for n, v := range want.User {
@@ -77,9 +80,14 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		warn("~/.config/opencode/opencode.json is not valid JSON; leaving it alone")
 		return prev
 	}
-	servers, err := doc.child("mcp")
+	mcp, err := doc.child("mcp")
 	if err != nil {
 		warn("~/.config/opencode/opencode.json mcp is not an object; leaving it alone")
+		return prev
+	}
+	servers, err := mcp.child("servers")
+	if err != nil {
+		warn("~/.config/opencode/opencode.json mcp.servers is not an object; leaving it alone")
 		return prev
 	}
 	changes, owned := plan(rawMap(servers), user, prev.User, want.replaceable())
@@ -91,7 +99,8 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 		return rec
 	}
 	applyEntries(servers, changes)
-	doc.setChild("mcp", servers)
+	mcp.setChild("servers", servers)
+	doc.setChild("mcp", mcp)
 	if !exists {
 		if _, ok := doc.get("$schema"); !ok {
 			doc = withSchema(doc)
@@ -108,9 +117,14 @@ func applyOpencode(p Paths, want *Rendered, prev *agentRecord, warn func(string)
 // which opencode reads and a rewrite would lose: repose writes nothing
 // and warns once per set of changes it holds back.
 func opencodeCommented(doc *object, user map[string]any, want *Rendered, prev *agentRecord, warn func(string)) *agentRecord {
-	servers, err := doc.child("mcp")
+	mcp, err := doc.child("mcp")
 	if err != nil {
 		warn("~/.config/opencode/opencode.json mcp is not an object; leaving it alone")
+		return prev
+	}
+	servers, err := mcp.child("servers")
+	if err != nil {
+		warn("~/.config/opencode/opencode.json mcp.servers is not an object; leaving it alone")
 		return prev
 	}
 	changes, _ := plan(rawMap(servers), user, prev.User, want.replaceable())

@@ -27,7 +27,7 @@ func TestStatus(t *testing.T) {
 	writeFile(t, p.Platform, `{"mcpServers":{"playwright":{"type":"stdio","command":"playwright-mcp","args":[]}}}`)
 	// Unit A's system layers.
 	writeFile(t, filepath.Join(root, "etc/gemini-cli/system-defaults.json"), `{"mcpServers":{"playwright":{"command":"playwright-mcp","args":[]}}}`)
-	writeFile(t, filepath.Join(root, "etc/opencode/opencode.json"), `{"mcp":{"playwright":{"type":"local","command":["playwright-mcp"]}}}`)
+	writeFile(t, filepath.Join(root, "etc/opencode/opencode.json"), `{"mcp":{"servers":{"playwright":{"type":"local","command":["playwright-mcp"]}}}}`)
 	writeFile(t, filepath.Join(root, "etc/repose/pi-extension.js"), `pi.registerMcpServer`)
 	writeFile(t, filepath.Join(home, ".repose/checkout"), "app\n")
 	writeFile(t, filepath.Join(co, ".mcp.json"), `{"mcpServers":{"notes-db":{"command":"sqlite-mcp"}}}`)

@@ -1,13 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "db": {
-      "command": [
-        "repose-mcp",
-        "run",
-        "db"
-      ],
-      "type": "local"
+    "servers": {
+      "db": {
+        "command": [
+          "repose-mcp",
+          "run",
+          "db"
+        ],
+        "type": "local"
+      }
     }
   }
 }

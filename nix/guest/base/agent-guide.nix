@@ -32,7 +32,8 @@
 #                absent: a same-name
 #                user table with `url` beside a system-layer `command`
 #                stops Codex from loading its config
-#   opencode     /etc/opencode/opencode.json `mcp`, type local, no `enabled`
+#   opencode     /etc/opencode/opencode.json `mcp.servers`, type local, no
+#                `disabled` (I-1050; version 1 read `mcp.NAME` and `enabled`)
 #   Gemini CLI   /etc/gemini-cli/system-defaults.json `mcpServers` (browser.nix)
 #   pi           pi.registerMcpServer in the extension below (pi 0.99 and
 #                later); a ~/.pi/agent/mcp.json entry of the same name wins
@@ -82,8 +83,10 @@ let
       printf '\n[features]\nhooks = true\n'
       printf '\n[[hooks.UserPromptSubmit]]\n[[hooks.UserPromptSubmit.hooks]]\ntype = "command"\ncommand = "repose-hook --agent codex"\n'
     } > $out/codex-config.toml
+    # opencode 2 reads servers under mcp.servers only; a name directly
+    # under mcp is ignored (DECISIONS I-1050).
     jq '{ "$schema": "https://opencode.ai/config.json", instructions: [ "/etc/repose/agent-guide.md" ],
-          mcp: with_entries(.value = { type: "local", command: ([ .value.command ] + .value.args) }) }' $mcp > $out/opencode.json
+          mcp: { servers: (. | with_entries(.value = { type: "local", command: ([ .value.command ] + .value.args) })) } }' $mcp > $out/opencode.json
     jq -n '{ name: "repose-machine-guide", version: "1.0.0", contextFileName: "GEMINI.md" }' > $out/gemini-extension/gemini-extension.json
     cp $out/agent-guide.md $out/gemini-extension/GEMINI.md
     # The turn hooks (I-690, I-694): Gemini CLI runs an extension's hooks
