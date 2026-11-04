@@ -29475,3 +29475,175 @@ in **46.62 microseconds** naming the exit status, against the 60 s the old
 code would have spent saying nothing. The still-running arm was not run to
 its full minute; it is the previous behaviour with a message that names
 load.
+**I-1040. The balloon stays on: host-02's `__balloon` fault is a known
+upstream shmem race, and nothing we would change is smaller than the
+fault.** (balloon-doc, 2026-11-04.) *Record of a decision not to act.*
+
+On 2026-11-03 at 10:52:24Z host-02's kernel reported, twice in 10 ms:
+
+    BUG: Bad page map in process __balloon  pte:80000006db0f7b67
+    file:memfd:ch_ram fault:shmem_fault
+      shmem_fallocate -> unmap_mapping_range
+      -> zap_page_range_single -> unmap_page_range -> vm_normal_page
+    BUG: Bad page cache in process __balloon  pfn:6db0f7
+
+PID 3166 is the balloon thread of the hypervisor serving guest
+`01a1938f`, whose live argv carries `--balloon
+size=0,free_page_reporting=on`. The host is tainted `bad_page`. The
+feature malfunctioned and the kernel diagnosed it; none of that is
+inference.
+
+**It is a known upstream bug.** Free page reporting returns guest pages
+by `fallocate(FALLOC_FL_PUNCH_HOLE)` on the memfd backing guest RAM.
+Shmem makes an ordinary fault wait out a punch in progress, but the
+fault-around path -- `filemap_map_pages`, installed directly as
+`.map_pages` -- does not join that protocol and does not take the
+invalidate lock, so it can re-install PTEs for pages the punch is in the
+middle of removing. The two messages are that disagreement seen from each
+side: a mapping pointing at a page that is gone, and a page removed while
+still mapped. The report on the list is against memfd-backed guest RAM
+with a balloon inflating and its own trace says `in process __balloon`.
+Andrew Morton has posted a fix serialising fault-around against the punch
+with the mapping invalidate lock. **It is under discussion and not
+merged, so there is no version to upgrade to.**
+
+**Why nothing changes here.**
+
+Turning free page reporting off was proposed and withdrawn. It makes a
+park image the guest's allocated memory rather than its working set, and
+the park budget is `deadline x writeRateMBs` = 240 s x 400 MB/s = **96
+GB** against host-02's **251 GB** of RAM. A guest whose image does not
+fit is not parked at all: the shutdown stops it and it loses everything
+it was running (`park.nix`, and `GuestNotParked`). So the change is
+harmless at two guests and starts dropping guests at about a third of the
+host -- a certain failure later traded for a possible one now, which is
+the wrong direction. It was written up as a fix when it was a stopgap.
+
+`fault_around_bytes` is the smaller lever and is not being pulled either.
+It is a host debugfs knob, 65536 on host-02, and 4096 switches
+fault-around off -- the implicated path -- keeping the balloon and leaving
+park images alone, at the cost of more minor faults on the host. It is
+not pulled because it narrows a race rather than closing one, nobody has
+shown it closes *this* instance, and the thing it would buy is already
+bought: see below.
+
+What makes waiting affordable is that `KernelOops` is live and matches
+`BUG:` (I-980). On 2026-11-02 the same class of fault ran for 3 h 48 m
+unseen; it would now page. One event in 26 hours, against an alert that
+did not exist for the last one, is a second data point worth having before
+removing a capability.
+
+Worth recording as possibly protective rather than as luck:
+`/sys/kernel/mm/transparent_hugepage/shmem_enabled` is **`never`** on
+host-02, so the memfd holds no large folios. The upstream write-up ties
+the window to a large folio splitting under a partial punch and its pieces
+staying briefly visible, which cannot happen here. That may be why this
+is one event in 26 hours rather than many, and it is a reason not to set
+`shmem_enabled` to anything else on a host that runs guests.
+
+Not established, and labelled so rather than left to be assumed: that
+this caused `01a1938f`'s guest-side fault on 2026-11-02 at 21:05:01Z, a
+general protection fault on a non-canonical pointer read from a SLUB
+freelist. A punched page returning zeroed would decode to exactly such a
+value under freelist hardening, no other explanation has been offered,
+and no other guest in the fleet has faulted in 29 days. It remains the
+leading explanation and nobody has shown the punched page held that
+freelist. Do not quote it as more.
+
+**It fired a second time, so the lever is pulled.** 2026-11-04 04:20:26Z,
+same guest, same VMM (PID 3104), same balloon thread (TID 3166), same
+`memfd:ch_ram` -- and **three pages rather than one**: six kernel lines
+against the first event's two. `fault_around_bytes` on host-02 went from
+65536 to 4096 under the owner's authorisation, every tenant guest left
+running. The position recorded above held for exactly as long as its own
+stated condition, which is the only reason to write a condition down.
+
+That makes the race mitigated and not closed. Fault-around is the path
+upstream implicates and 4096 switches it off, but nobody has shown it
+closes *this* instance; a third occurrence on a host at 4096 means it did
+not, and the upstream fix is then the only answer left.
+
+**It is applied by hand, so it is not yet persisted.**
+`fault_around_bytes` is a debugfs file, so `boot.kernel.sysctl` cannot
+carry it; a tmpfiles rule or a unit does. Until one is on the host,
+host-02 is mitigated from the moment it was set until its next restart and
+not after it, and nothing announces that transition.
+
+The unit exists as a branch and is **kept, to be cut later** -- the
+owner's instruction, given directly, so the gap is a matter of timing
+rather than of anyone deciding the mitigation should not persist. Nothing
+needed it cut on the night: main was green and host-02 already carried
+4096.
+
+That distinction is worth the sentence because an earlier draft of this
+entry recorded the opposite -- "the owner decided not to add one for now"
+-- from an instruction relayed between two sessions serving one owner,
+with no ordering between their channels. A deferral arrived here and a
+reversal arrived in the other session minutes later, both reported
+honestly. The wording above was de-attributed to be true whichever
+channel was ahead, and only now says what was decided, from the owner
+first-hand. Do not write an owner decision into this file from a relay.
+
+The consequence worth guarding is a misreading, not the exposure. After a
+restart the host reads 65536, which is indistinguishable from a host where
+the lever was applied and failed -- and those two states call for opposite
+next steps. So the RUNBOOK's entry now opens with `fault_around_bytes`
+and `/proc/uptime` together, before the stack and before the alert,
+because only the pair separates "nobody re-applied it" from "it does not
+hold". Getting that backwards would retire a working mitigation on the
+evidence of its own absence.
+
+**And the arithmetic moved the right way.** host-02 ran one VMM when
+disabling free page reporting was proposed and four within a day, three
+guests live. Against a 96 GB park budget and 251 GB of RAM the stopgap
+withdrawn above would have been getting worse by the week rather than
+holding. What made withdrawing it right was not caution: the cost scaled
+with the fleet and the fault did not.
+
+**Still revisit when** the upstream fix merges -- then this is a version
+bump rather than a capability removal.
+
+**I-1044. A rule in this repository is not a rule in Grafana, and nothing
+checks the difference.** (balloon-doc, 2026-11-04.) *Recorded, not fixed.*
+
+Grafana-managed alert rules exist only once `ops/grafana/push.py` has run
+against the owner's instance with a token. Nothing in this repository
+knows whether `ops/alerts.yaml` and `ops/alerts-loki.yaml` are what
+Grafana is evaluating, so the gap between a rule merging and a rule
+existing is unbounded and unmonitored.
+
+It has already cost the thing it would have caught. `KernelOops` (I-980)
+merged 2026-11-02 18:18. A host kernel fault of precisely the kind it was
+written for happened 2026-11-03 10:52 and paged nobody. The owner's
+Grafana token arrived 15:25, the rules were pushed about 15:30, and the
+rule fired on the second occurrence at 2026-11-04 04:21:10Z. Eighteen
+hours in which the alert existed in `main` and nowhere that could fire it,
+and the occurrence it missed is the one that would have been worth
+catching early.
+
+This is the same shape as the rest of 2026-11-03's findings and the last
+of them anyone noticed: a guard that exists in the place you look and not
+in the place it has to run. `hashdist=0` evaluated in the flake and not
+honoured by the kernel (I-982, I-988); a `strace` guard that skipped
+rather than ran (I-1036); `exact_nix` answering "no base change" from a
+path list (I-958); and now a rule that is green in review and absent in
+production.
+
+**Not fixed here, and the unproven part said rather than smoothed.**
+Nobody can show that no push happened between the merge and 10:52 -- the
+first push anyone can account for is the 15:30 one. Grafana answers it in
+one query, because a rule carries an `updated` timestamp and state history
+outlives the rule, and nothing outside Grafana can: its own logs are not
+shipped to our Loki (checked -- the `host` label holds only our hosts and
+the edge), and `push.py` keeps no receipt because Grafana's state is in
+its own Postgres (checked). So "the alert did not fire" and "the alert did
+not exist" are indistinguishable from here, and only one of them is
+reassuring.
+
+What would close it belongs to whoever next picks up alerting, and
+`push.py` already knows enough to do it: it reads the rules it would send
+and could compare them against what Grafana holds, which makes "is
+Grafana evaluating what main says" a check rather than a memory. A
+`--verify` that exits non-zero on drift, run wherever the token lives, is
+the shape. It is not built tonight because the token is the owner's and a
+check nobody can run is another guard in the wrong place.

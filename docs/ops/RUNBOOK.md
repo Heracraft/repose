@@ -1318,6 +1318,92 @@ hugepage` or `linear`, and `vmalloc hugepage` on a kernel without I-982's
 not-present page` with `P4D 0`, from different processes, at the same table
 base -- nothing is corrupt, so do not go looking for a writer.
 
+**The second cause this fleet has met, and it needs no action.** A fault in
+`process __balloon` on `file:memfd:ch_ram`, through `shmem_fallocate` ->
+`unmap_mapping_range` -> `vm_normal_page`, reported as a *pair* 10 ms apart
+-- `BUG: Bad page map` and `BUG: Bad page cache ... still mapped when
+deleted` -- is the known upstream shmem hole-punch race, not a new problem
+and not ours (DECISIONS I-1040). Free page reporting returns guest pages by
+punching holes in the memfd behind guest RAM; shmem makes an ordinary fault
+wait out a punch, but fault-around (`filemap_map_pages`) does not, and
+re-installs PTEs for pages the punch is removing. A fix is posted upstream
+and not merged.
+
+So on *this* signature: **do not drain, do not reboot, and do not turn the
+balloon off.** Turning it off makes a park image the guest's allocated
+memory instead of its working set, and the park budget (240 s x 400 MB/s =
+96 GB) is smaller than host-02's 251 GB of RAM, so it starts dropping
+guests at about a third full -- each losing everything it was running.
+Record the event, check it is a pair from one moment rather than a repeat
+(`dmesg -T | grep "Bad page"`; two lines at the same timestamp are one
+event), and let the alert tell you if it happens again. On the second
+occurrence, `fault_around_bytes` is the first lever:
+`echo 4096 > /sys/kernel/debug/fault_around_bytes` switches fault-around
+off, reversibly and without a restart, and leaves park images alone. Leave
+`/sys/kernel/mm/transparent_hugepage/shmem_enabled` at `never`; the
+upstream window needs a large folio splitting under a partial punch, which
+`never` prevents.
+
+**It recurred, and the lever is pulled.** 2026-11-04 04:20:26Z, same guest,
+same VMM, same balloon thread, and **three pages rather than one** -- six
+kernel lines against the first event's two. `fault_around_bytes` on host-02
+is now **4096**, applied under the owner's authorisation with every tenant
+guest left running. So the paragraphs below describe a race that is
+mitigated and not closed, and the next occurrence on a host at 4096 means
+the mitigation did not hold and the upstream fix is the only remaining
+answer.
+
+**Three traps around that, in the order they will catch you.**
+
+*This alert resolves on NoData, so resolved never means fixed.* The
+04:20:26Z event paged at 04:21:10Z and closed at 04:31 because the lines
+stopped arriving, which is what a one-off fault always does. An operator
+who sees it go green an hour later will read the problem as having passed.
+It has not; nothing about a kernel fault un-happens.
+
+*The mitigation does not survive a reboot.* `fault_around_bytes` is a
+debugfs file, not a sysctl, so `boot.kernel.sysctl` cannot carry it; a
+tmpfiles rule or a unit does, and until one is on the host **a restart
+reverts it to 65536 and nothing will tell you**. host-02 carried 4096 by
+hand from 2026-11-04 and that is all a by-hand change can mean.
+
+Once a unit does set it, this check still earns its place: a unit can
+fail, and the failure looks the same from here.
+
+That makes this the first thing to read on any fault here, before the
+stack and before the alert:
+
+```
+cat /sys/kernel/debug/fault_around_bytes    # 4096 mitigated, 65536 not
+cat /proc/uptime                            # has it restarted since?
+```
+
+65536 does **not** mean the lever failed. It means either nobody applied
+it since the last restart, or it was never applied on this host. Only the
+uptime separates those, and the difference decides whether the next step
+is "re-apply and watch" or "the mitigation does not hold and the upstream
+fix is the only answer left". Getting that backwards turns a host nobody
+has mitigated into a host where mitigation is believed not to work.
+
+Re-applying is one line and needs no restart:
+`echo 4096 > /sys/kernel/debug/fault_around_bytes`.
+
+*Count pages, not lines.* Each page produces two lines, a `Bad page map`
+and a `Bad page cache`, within milliseconds. Six lines is three pages, not
+six events. `dmesg -T | grep "Bad page"` and group by timestamp.
+
+**"Needs no action" is not "harmless", and do not let the two collapse.**
+This race can hand a guest a page that was punched out from under it, which
+is the mechanism behind the one thing I-1040 leaves unproven: that
+`01a1938f`'s guest died of it on 2026-11-02. What made watching the
+proportionate response, while it was one event in 29 hours, was the
+arithmetic: no merged upstream fix to move to, and a stopgap that starts
+dropping guests at a third of the host. It was never a finding that
+nothing happened -- and the frequency did change, which is what the second
+occurrence was for. The answer changed with it.
+
+Everything below is for the *other* kind -- a fault that is not this one.
+
 1. Which host. The `host` label on these lines is the **host_id**, not the
    name (`host_id` in Prometheus means the name; nothing joins the two).
    `repose-admin hosts list` is the mapping.

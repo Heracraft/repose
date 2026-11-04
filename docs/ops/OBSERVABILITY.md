@@ -344,6 +344,30 @@ month has to age out, the real retention is 90 or 30 days plus up to a month.
 
 ## Alerts
 
+**A rule in this repository is not a rule in Grafana.** Grafana-managed
+rules exist only once `ops/grafana/push.py` has run against the owner's
+instance with a token, and nothing here knows whether `ops/alerts.yaml`
+and `ops/alerts-loki.yaml` are what Grafana is evaluating. The gap between
+a rule merging and a rule existing is unbounded and unchecked (DECISIONS
+I-1044).
+
+That is not hypothetical. `KernelOops` merged on 2026-11-02 at 18:18, a
+host kernel fault of exactly the kind it was written for happened on
+2026-11-03 at 10:52 in silence, the owner's token arrived at 15:25, and
+the rule paged on the next occurrence at 2026-11-04 04:21. Eighteen hours
+in which the alert existed in `main` and nowhere that could fire it.
+
+So after any release that adds or changes a rule, the rule is not live
+until somebody runs `push.py` and says so. And when an alert did not fire
+for something it should have caught, **"the alert did not fire" and "the
+alert did not exist" look identical afterwards** -- the first is a broken
+pipeline and the second is a missing push, and only one is reassuring.
+What separates them is inside Grafana: an alert rule carries its own
+`updated` timestamp, and state history reaches back further than the rule
+does. Neither Loki nor this repository can answer it -- Grafana's own logs
+are not shipped here, and `push.py` keeps no receipt, because Grafana's
+state is in its own Postgres. Ask Grafana.
+
 Three of the host alerts ask the api, not the host (DECISIONS I-786). Every
 other per-host signal in this stack comes from the host's own exporters,
 reached through a target file a human copies to this server, so the two
