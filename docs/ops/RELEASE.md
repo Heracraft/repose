@@ -171,12 +171,22 @@ Integrate whenever branches are queued; it needs no owner approval.
    everything the batch ships as:
    - always: `python3 ops/dev/decisions-index.py --check`; `go build ./...`,
      `go vet ./...`, `golangci-lint run ./...`; `go test -race -timeout 30m ./...`
-     with a real Postgres for the api packages (on a repose guest, unset
+     **with `DATABASE_URL` set** (on a repose guest, unset
      `REPOSE_PROJECT REPOSE REPOSE_HOOK_AGENT` first, and keep `TMPDIR`
      at `/tmp`: a longer one pushes the hostd fakes' unix sockets past the
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
+     `DATABASE_URL` is not a detail of convenience and "a real Postgres"
+     was the wrong way to say it: `internal/db/testdb` starts a throwaway
+     cluster **per test process** when the variable is unset, which is
+     also a real Postgres and is a *different test*. CI sets
+     `DATABASE_URL` at one service, so every package contends for one
+     server; run it the way the thing you are gating runs (DECISIONS
+     I-1054). Set it, and point it at a server nothing else is using.
+     This does **not** explain the three CI failures of 2026-11-04 —
+     `TestStopWindowScripts`, `TestEndToEnd`,
+     `TestHelloRefusedClosesTheStream` — and I-1054 says why not.
      `docs/CHECKLIST.md` greps. **A batch that changes a VM test, a flake
      check or `nix/guest/checks.nix`: run that check, whatever the batch
      ships as** — those paths install nothing, so they no longer put
