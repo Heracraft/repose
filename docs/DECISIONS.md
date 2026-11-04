@@ -29432,3 +29432,46 @@ looking for, which is the reason it is fixed.
 *Evidence:* with strace hidden from `PATH` and `CI=1`, the tests fail
 naming the missing tool; with strace hidden and `CI` unset, they skip as
 before; with strace present they pass.
+**I-1038. A test that waits for something waits on the thing, not only on
+the clock.** (strace-wait, 2026-11-03.)
+
+`waitForSocket` polled `os.Stat` for 30 seconds and then said
+`"<name> never appeared"`. That sentence is true of two different
+failures and distinguishes neither: a guestd that died on startup, and a
+guestd that is simply slow because the machine is busy. It also printed
+nothing the process had written, because the process's output was not
+captured at all.
+
+What that cost on 2026-11-03: `TestStraceReadsEnvironOnlyForTheHookPane
+Lookup` passed in 0.85 s on a quiet box and timed out twice in three on
+one running host closure builds, `nix eval`s and tofu plans at once. The
+message supported "it is the dev shell", "it is skipping" and "it is
+broken" equally well, and an hour went on deciding between them -- by
+checking that `strace` was the same binary on both sides, and that the
+run which reported `ok` was a pass and not the skip the helper takes when
+`strace` is absent. Both checks were necessary only because the failure
+said nothing.
+
+So `waitForSocket` and `dialWithRetry` now take a `gone func() error`
+that reports the process's exit once it has one and nil while it still
+runs. A process that has exited fails the test immediately and prints
+what it wrote; a process still running at the deadline is reported as a
+slow machine rather than a broken guestd, in those words. The deadline
+doubles to 60 s, which is affordable because it is no longer the only
+thing consulted -- the common failure now returns in microseconds instead
+of burning the budget.
+
+Rejected: just lengthening the timeout, which was the obvious move. A
+longer wall-clock proxy is still a proxy: it fails in both directions, it
+turns every real breakage into a minute of waiting, and the next busy
+machine moves the number again. Rejected: dropping the deadline and
+waiting on the process alone. A guestd that starts, never binds and never
+exits would hang the suite with no output at all.
+
+Evidence: both strace tests pass twice in a row; `go vet` clean, which is
+what checks the new format strings. The dead-process arm was exercised
+with a `gone` that reports an exit and a path that never appears: it fails
+in **46.62 microseconds** naming the exit status, against the 60 s the old
+code would have spent saying nothing. The still-running arm was not run to
+its full minute; it is the previous behaviour with a message that names
+load.
