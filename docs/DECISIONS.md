@@ -29833,3 +29833,47 @@ up.
 
 *Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
 passes 8 of 8 here, as it did before the change; `go vet` clean.
+
+**I-1056. The base closure limit is 7 GiB, and the margin is the point.**
+(closure-limit, 2026-11-04; amends the 6 GB number in
+docs/workstreams/02-guest-base.md §7.)
+
+`main` at 3d42fce measures 6,438,214,952 bytes, which is 4.04 MiB under
+the 6 GiB the check fails above. A limit with 0.07% of headroom is not a
+limit, it is a trap: `scripts/bump-agents.sh` builds each package and runs
+`--version`, nothing measures the closure, and the first bump of any agent
+over about 4 MB turns the base build red. claude-code alone publishes most
+days. The next failure was going to be whichever agent moved first, and
+the reader of that CI failure would have had no idea the number had been
+touching the ceiling for weeks.
+
+Decided: 7 GiB. That is about 964 MiB above the closure with opencode 2
+(I-1050), so one large agent can land without a second decision, and it is
+still a number a review notices. The owner raised it on 2026-11-04 rather
+than cut the guest, after both options were measured.
+
+What the limit protects is unchanged: every host's store grows by the base
+and every first boot registers its metadata. Both scale with the closure
+and neither is close to a cliff at 7 GiB -- a host's store is on its own
+2048 GB data disk (DESIGN §4).
+
+*The alternative, measured and not taken.* The guest carries two
+Chromiums: `chromium-unwrapped` (701.7 MB) for the desktop browser, and
+`playwright-chromium` (390.8 MB) plus `playwright-chromium-headless-shell`
+(260.2 MB) for playwright-mcp, which pins its own build (I-246 already
+overrides that browser set). Making them one recovers about 650 MB, ten
+times what opencode 2 needs. It stays available, and it is the right move
+when the next ceiling arrives, but it is a workstream rather than a line
+in a flake, and it would have held a correctness fix behind a size
+refactor.
+
+*Still open, and the cause rather than the symptom:* nothing warns before
+CI. A closure measurement belongs in `scripts/bump-agents.sh` or the
+pull request its companion opens, so the number appears in the diff that
+moves it instead of in a red build two commits later. Not built here: this
+entry raises the ceiling, and whoever next touches the bump script should
+make it report the closure.
+
+*Checked:* `nix build ./nix#checks.x86_64-linux.guest-closure-size` on
+this branch prints `guest system closure: 6438215064 bytes (limit
+7516192768)` and exits 0.
