@@ -152,14 +152,15 @@ select u.handle, s.plan, u.past_due_since::date as past_due_since,
 
 -- Q10. The waitlist's throughput, and what it wasted.
 -- An invitation holds a seat for 72 hours. One that expired held a seat
--- the fleet paid for and nobody used.
+-- the fleet paid for and nobody used, and lapsed the user off the list
+-- until they ask again (I-1033).
 select count(*)                                                      as on_the_list,
-       count(*) filter (where invited_at is null)                     as waiting,
+       count(*) filter (where invited_at is null and lapsed_at is null) as waiting,
+       count(*) filter (where lapsed_at is not null and converted_at is null) as lapsed,
        count(*) filter (where invited_at is not null and converted_at is not null) as converted,
        count(*) filter (where invited_at is not null and converted_at is null
                           and hold_until > now())                     as holding_now,
-       count(*) filter (where invited_at is not null and converted_at is null
-                          and hold_until <= now())                    as expired_unused,
+       sum(expired_invites)                                          as expired_unused,
        round(avg(extract(epoch from converted_at - invited_at) / 3600.0)
              filter (where converted_at is not null), 1)              as hours_to_convert
   from waitlist;

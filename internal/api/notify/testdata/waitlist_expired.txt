@@ -1,10 +1,10 @@
 Your seat hold ran out
 
-The seat we held for you for 72 hours is free again.
+The seat we held for you for 72 hours is free again, and you're off the waitlist.
 
-You're number 3 again.
+Want one later? Choose a plan on your plan page, or join the waitlist again if repose is still full.
 
-Your place: https://repose.herakraft.co/billing
+Your plan page: https://repose.herakraft.co/billing
 
 --
 repose. Open the dashboard: https://repose.herakraft.co

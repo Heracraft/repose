@@ -29,6 +29,7 @@ type seatsRecorder struct {
 func (s *seatsRecorder) Reserve(context.Context, string, int) (bool, *waitlist.Place, error) {
 	return true, nil, nil
 }
+func (s *seatsRecorder) Fits(context.Context, string, int) (bool, error) { return true, nil }
 func (s *seatsRecorder) Converted(_ context.Context, userID string) error {
 	s.converted = append(s.converted, userID)
 	return nil

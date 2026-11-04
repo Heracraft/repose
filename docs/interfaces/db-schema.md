@@ -211,7 +211,11 @@ questions    (id pk,               -- chosen by guestd (UUIDv7); a re-announceme
 waitlist     (user_id pk fk, joined_at, invited_at null, hold_until null,
               invited_by text null,    -- auto | the operator's audit actor
               converted_at null,       -- the invited user's subscription arrived
-              expired_invites int)     -- holds that ran out; each moves joined_at to now
+              expired_invites int,     -- holds that ran out unconverted
+              lapsed_at null,          -- the last hold ran out (0034, I-1033): no place,
+                                       -- never invited by the tick, cleared by a join or an admit
+              cooldown_until null)     -- I-902's cooldown (0031): still written on expiry and
+                                       -- honoured, for rows cooling at 0034 and an older api
               -- the seats waitlist (0007 I-269, 0008 I-290): a row is kept after
               -- conversion for the count; invited_at with hold_until in the
               -- future holds one seat

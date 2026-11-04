@@ -8,7 +8,8 @@
 // free seat the user joins the list and gets `waitlisted`. Every minute
 // the Inviter hands free seats to the oldest waiting users, one seat each
 // and strictly in order, holding each for 72 hours; a hold that runs out
-// unconverted moves the user to the back and says so by email.
+// unconverted takes the user off the list until they ask again, and says
+// so by email (I-1033).
 //
 // Every email here is an account event through the outbox
 // (events.InsertAccount): joined, invited, expired.
@@ -35,14 +36,12 @@ const SeatBytes = int64(8) << 30
 // HoldDuration is how long an invitation holds a seat.
 const HoldDuration = 72 * time.Hour
 
-// CooldownDuration is how long a user whose hold ran out unconverted
-// waits before they are a candidate again (DECISIONS I-902). Without
-// it, the one tick that expires a hold frees the seat and re-invites
-// the same user when they are the only one waiting, so the owner got
-// "your hold ran out" and "a seat is yours" in the same minute, every
-// 72 hours, with no way for the cycle to end. They keep their place in
-// the queue throughout; they are only not picked.
-const CooldownDuration = 24 * time.Hour
+// legacyCooldown is I-902's cooldown, still written on expiry and still
+// honoured, so an api on the code before I-1033 (mid-deploy, or after a
+// rollback) reads a lapsed row as a cooling one rather than as the next
+// candidate, and a row cooling at the migration keeps the place its
+// email named. A lapse is what keeps a user out since I-1033.
+const legacyCooldown = 24 * time.Hour
 
 // Event kinds this package raises; each is an account email (I-291).
 const (
@@ -177,7 +176,7 @@ func count(ctx context.Context, q store.Querier, total int, now time.Time) (Coun
 		(select coalesce(sum(seats), 0) from subscriptions where status in ('trialing','active','past_due'))::integer
 		+ (select count(*) from waitlist where invited_at is not null and converted_at is null and hold_until > $1)::integer,
 		(select count(*) from waitlist w join users u on u.id = w.user_id
-		  where w.invited_at is null and (w.cooldown_until is null or w.cooldown_until <= $1)
+		  where w.invited_at is null and w.lapsed_at is null and (w.cooldown_until is null or w.cooldown_until <= $1)
 		    and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null)::integer`, now).Scan(&c.Held, &c.Waiting)
 	if err != nil {
 		return c, d, err
@@ -203,6 +202,43 @@ func lock(ctx context.Context, tx db.Tx) error {
 	return err
 }
 
+// fits is the arithmetic Reserve and Fits share: Free, plus one for this
+// user's own unexpired invitation, covers seats. q is the pool (Fits) or
+// the locked transaction (Reserve).
+func (s *Service) fits(ctx context.Context, q store.Querier, uid uuid.UUID, seats int, now time.Time) (bool, Count, error) {
+	if seats < 1 {
+		seats = 1
+	}
+	c, _, err := count(ctx, q, s.Total, now)
+	if err != nil {
+		return false, c, err
+	}
+	own := 0
+	cur, err := store.GetWaitlistEntry(ctx, q, uid)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+	case err != nil:
+		return false, c, err
+	case cur.Holding(now):
+		own = 1
+	}
+	return c.Free+own >= seats, c, nil
+}
+
+// Fits implements Seats: Reserve's answer without the join, for GET
+// /billing, which only reads. A page that joined whoever opened it would
+// also undo a lapse (I-1033) without the user asking. It takes no lock,
+// so a checkout that follows may still find the seat gone; Reserve
+// decides.
+func (s *Service) Fits(ctx context.Context, userID string, seats int) (bool, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return false, fmt.Errorf("waitlist: user id: %w", err)
+	}
+	ok, _, err := s.fits(ctx, s.Pool, uid, seats, s.now())
+	return ok, err
+}
+
 // Reserve implements Seats: ok when Free, plus one for this user's own
 // unexpired invitation, covers seats; otherwise the user is on the list
 // afterwards (joining is idempotent) and place is their position.
@@ -210,9 +246,6 @@ func (s *Service) Reserve(ctx context.Context, userID string, seats int) (bool, 
 	uid, err := uuid.Parse(userID)
 	if err != nil {
 		return false, nil, fmt.Errorf("waitlist: user id: %w", err)
-	}
-	if seats < 1 {
-		seats = 1
 	}
 	now := s.now()
 	var (
@@ -225,22 +258,9 @@ func (s *Service) Reserve(ctx context.Context, userID string, seats int) (bool, 
 			return err
 		}
 		var err error
-		c, _, err = count(ctx, tx, s.Total, now)
-		if err != nil {
+		ok, c, err = s.fits(ctx, tx, uid, seats, now)
+		if err != nil || ok {
 			return err
-		}
-		own := 0
-		cur, err := store.GetWaitlistEntry(ctx, tx, uid)
-		switch {
-		case errors.Is(err, db.ErrNotFound):
-		case err != nil:
-			return err
-		case cur.Holding(now):
-			own = 1
-		}
-		if c.Free+own >= seats {
-			ok = true
-			return nil
 		}
 		place, err = s.join(ctx, tx, uid, now)
 		return err
@@ -272,10 +292,10 @@ func (s *Service) Join(ctx context.Context, userID uuid.UUID) (*Place, error) {
 }
 
 // join is the idempotent insert under the lock. A row whose hold ran out
-// is re-queued here rather than waiting for the tick; a row that was
-// converted (a plan that has since ended) is re-queued too, since the user
-// is asking again. A row that is waiting or holding keeps its place. A new
-// row raises the joined email.
+// is re-queued here rather than waiting for the tick; so is a lapsed row
+// (I-1033) and a converted one (a plan that has since ended), since the
+// user is asking again. Each goes to the back. A row that is waiting or
+// holding keeps its place. A new row raises the joined email.
 func (s *Service) join(ctx context.Context, tx db.Tx, userID uuid.UUID, now time.Time) (*Place, error) {
 	tag, err := tx.Exec(ctx, "insert into waitlist (user_id, joined_at) values ($1, $2) on conflict (user_id) do nothing", userID, now)
 	if err != nil {
@@ -283,14 +303,13 @@ func (s *Service) join(ctx context.Context, tx db.Tx, userID uuid.UUID, now time
 	}
 	joined := tag.RowsAffected() == 1
 	if !joined {
-		// Re-queue an expired hold or a converted row; leave a waiting or
-		// holding row alone.
-		// The cooldown goes with it: it exists to stop the tick
-		// re-inviting someone who never answered, and a user asking
-		// again has answered (I-902).
-		if _, err := tx.Exec(ctx, `update waitlist set joined_at = $2, invited_at = null, hold_until = null, invited_by = null, converted_at = null, cooldown_until = null,
-			expired_invites = expired_invites + case when converted_at is null then 1 else 0 end
-			where user_id = $1 and invited_at is not null and (converted_at is not null or hold_until <= $2)`, userID, now); err != nil {
+		// Re-queue an expired hold, a lapsed row or a converted row;
+		// leave a waiting or holding row alone. A hold that ran out before
+		// the tick saw it counts as expired here; a lapsed one was counted
+		// when it lapsed.
+		if _, err := tx.Exec(ctx, `update waitlist set joined_at = $2, invited_at = null, hold_until = null, invited_by = null, converted_at = null, lapsed_at = null, cooldown_until = null,
+			expired_invites = expired_invites + case when invited_at is not null and converted_at is null then 1 else 0 end
+			where user_id = $1 and (lapsed_at is not null or (invited_at is not null and (converted_at is not null or hold_until <= $2)))`, userID, now); err != nil {
 			return nil, err
 		}
 	}
@@ -343,10 +362,14 @@ func (s *Service) Converted(ctx context.Context, userID string) error {
 	return nil
 }
 
-// JoinedPayload is waitlist_joined's and waitlist_expired's summary.
+// JoinedPayload is waitlist_joined's summary.
 type JoinedPayload struct {
 	Position int `json:"position"`
 }
+
+// ExpiredPayload is waitlist_expired's summary: empty since I-1033, as a
+// lapsed user holds no place to name.
+type ExpiredPayload struct{}
 
 // InvitedPayload is waitlist_invited's summary.
 type InvitedPayload struct {
@@ -370,10 +393,10 @@ func Invite(ctx context.Context, pool *db.Pool, userID uuid.UUID, by string, now
 
 func inviteTx(ctx context.Context, tx db.Tx, userID uuid.UUID, by string, now time.Time, invited *bool) error {
 	until := now.Add(HoldDuration)
-	// The invitation clears any cooldown: it has served its purpose, and
-	// an operator admitting a cooling user by handle (I-294 (5)) must not
-	// leave the row saying the user is still waiting it out (I-902).
-	tag, err := tx.Exec(ctx, "update waitlist set invited_at = $2, hold_until = $3, invited_by = $4, cooldown_until = null where user_id = $1 and invited_at is null", userID, now, until, by)
+	// The invitation clears a lapse: an operator admitting a lapsed user
+	// by handle (I-294 (5)) is the one way past it besides the user
+	// asking (I-1033).
+	tag, err := tx.Exec(ctx, "update waitlist set invited_at = $2, hold_until = $3, invited_by = $4, lapsed_at = null, cooldown_until = null where user_id = $1 and invited_at is null", userID, now, until, by)
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
@@ -442,10 +465,13 @@ func (a *Inviter) Run(ctx context.Context, now time.Time) (invited, expired int,
 	}
 }
 
-// expire moves every unconverted hold that ran out to the back of the
-// list, one transaction each, with the email saying where they are now.
+// expire lapses every unconverted hold that ran out, one transaction
+// each, with the email saying how to ask again (I-1033). A lapsed user is
+// off the list until they join again: re-queueing them, at once (I-290)
+// or after a cooldown (I-902), offered the seat back by itself with one
+// or two people waiting, for as long as nobody took it.
 func (a *Inviter) expire(ctx context.Context, now time.Time) (int, error) {
-	rows, err := a.Pool.Query(ctx, "select user_id from waitlist where invited_at is not null and converted_at is null and hold_until < $1 order by hold_until", now)
+	rows, err := a.Pool.Query(ctx, "select user_id from waitlist where invited_at is not null and converted_at is null and hold_until <= $1 order by hold_until", now)
 	if err != nil {
 		return 0, err
 	}
@@ -470,16 +496,16 @@ func (a *Inviter) expire(ctx context.Context, now time.Time) (int, error) {
 			}
 			// Guarded again under the lock: a checkout that converted the
 			// user meanwhile keeps its row.
-			tag, err := tx.Exec(ctx, `update waitlist set invited_at = null, hold_until = null, invited_by = null, joined_at = $2, expired_invites = expired_invites + 1, cooldown_until = $3
-				where user_id = $1 and invited_at is not null and converted_at is null and hold_until < $2`, id, now, now.Add(CooldownDuration))
+			// joined_at and cooldown_until as I-902 wrote them, for an
+			// api on the old code (legacyCooldown); lapsed_at is what
+			// this code reads.
+			tag, err := tx.Exec(ctx, `update waitlist set invited_at = null, hold_until = null, invited_by = null, expired_invites = expired_invites + 1,
+				lapsed_at = $2, joined_at = $2, cooldown_until = $3
+				where user_id = $1 and invited_at is not null and converted_at is null and hold_until <= $2`, id, now, now.Add(legacyCooldown))
 			if err != nil || tag.RowsAffected() == 0 {
 				return err
 			}
-			e, err := store.GetWaitlistEntry(ctx, tx, id)
-			if err != nil {
-				return err
-			}
-			if _, err := events.InsertAccount(ctx, tx, id, now, KindExpired, JoinedPayload{Position: e.Position}); err != nil {
+			if _, err := events.InsertAccount(ctx, tx, id, now, KindExpired, ExpiredPayload{}); err != nil {
 				return err
 			}
 			n++

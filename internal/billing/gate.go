@@ -300,24 +300,30 @@ type Place struct {
 // WaitlistPlace reads the user's waitlist place from the 0008 schema
 // (I-290): the position among waiting users of live accounts, oldest
 // first, or the invitation and its hold. nil when the user holds no place
-// (never joined, converted, or suspended, cancelled or deleted).
+// (never joined, converted, lapsed (I-1033), or suspended, cancelled or
+// deleted).
 func WaitlistPlace(ctx context.Context, q store.Querier, userID uuid.UUID) (*Place, error) {
 	var p Place
-	var converted *time.Time
-	err := q.QueryRow(ctx, `select w.joined_at, w.invited_at, w.hold_until, w.converted_at,
+	var converted, lapsed *time.Time
+	err := q.QueryRow(ctx, `select w.joined_at, w.invited_at, w.hold_until, w.converted_at, w.lapsed_at,
 		coalesce((select count(*) from waitlist w2 join users u2 on u2.id = w2.user_id
-			where w2.invited_at is null and w2.converted_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null
+			where w2.invited_at is null and w2.converted_at is null and w2.lapsed_at is null and u2.suspended_at is null and u2.cancelled_at is null and u2.deleted_at is null
 			and (w2.joined_at, w2.user_id) <= (w.joined_at, w.user_id)), 0)::integer
 		from waitlist w join users u on u.id = w.user_id
 		where w.user_id = $1 and u.suspended_at is null and u.cancelled_at is null and u.deleted_at is null`, userID).
-		Scan(&p.JoinedAt, &p.InvitedAt, &p.HoldUntil, &converted, &p.Position)
+		Scan(&p.JoinedAt, &p.InvitedAt, &p.HoldUntil, &converted, &lapsed, &p.Position)
 	if db.IsNoRows(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if converted != nil {
+	if converted != nil || lapsed != nil {
+		return nil, nil
+	}
+	// A hold that ran out and the tick has not lapsed yet: no place
+	// either, rather than "0th of N waiting" for up to a minute.
+	if p.InvitedAt != nil && (p.HoldUntil == nil || !p.HoldUntil.After(time.Now())) {
 		return nil, nil
 	}
 	if p.InvitedAt != nil {

@@ -1,0 +1,19 @@
+-- An expired waitlist hold ends the automatic invitations until the user
+-- asks again (DECISIONS I-1033, replacing I-902's cooldown as the rule).
+--
+-- I-902 made the user whose hold ran out wait 24 hours before the tick
+-- could pick them again. With one or two people on the list that only
+-- slowed the loop down: invited, 72 hours, expired, 24 hours, invited
+-- again, two emails every four days for as long as nobody took a seat.
+-- A lapsed row keeps the user's history and is one click from the list
+-- (`join` clears it), but it holds no place, is not counted as waiting,
+-- and the tick never picks it.
+--
+-- No row is lapsed here. Every user whose hold ran out before this
+-- migration was told "you're number N again"; they keep that place, sit
+-- out what is left of their cooldown, and lapse, with the email that
+-- says so, when the next hold they get runs out. `expire` still writes
+-- `cooldown_until` and `joined_at` as I-902 did, so an api on the old
+-- code (mid-deploy, or after a rollback, which drops only this column)
+-- reads a lapsed row as a cooling one at the back of the list.
+alter table waitlist add column lapsed_at timestamptz;

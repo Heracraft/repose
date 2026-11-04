@@ -174,7 +174,8 @@ place; `GET /public/seats` gives the landing page `{total, free,
 waiting}`. Every minute the api invites the oldest waiting user while a
 seat is free, one seat each and strictly in order; an invited user has 72
 hours to choose a plan, after which the seat goes to the next person and
-the user is back on the list, at the back, told by email. Every waitlist
+the user is off the list until they ask again, told by email (DECISIONS
+I-1033). Every waitlist
 email is transactional: sent whatever notify email says
 (`features/notifications.md`, "Account emails"). Suspended, cancelled and
 deleted accounts hold no place. `repose-admin waitlist list | admit HANDLE
