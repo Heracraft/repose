@@ -1361,12 +1361,14 @@ stopped arriving, which is what a one-off fault always does. An operator
 who sees it go green an hour later will read the problem as having passed.
 It has not; nothing about a kernel fault un-happens.
 
-*The mitigation does not survive a reboot, and that is deliberate.*
-`fault_around_bytes` is a debugfs file, not a sysctl, so
-`boot.kernel.sysctl` cannot carry it; a tmpfiles rule or a unit would, and
-the owner decided on 2026-11-04 **not to add one for now**. So host-02 is
-mitigated until its next restart and not after it, by choice, and nothing
-will tell you when that line is crossed.
+*The mitigation does not survive a reboot.* `fault_around_bytes` is a
+debugfs file, not a sysctl, so `boot.kernel.sysctl` cannot carry it; a
+tmpfiles rule or a unit does, and until one is on the host **a restart
+reverts it to 65536 and nothing will tell you**. host-02 carried 4096 by
+hand from 2026-11-04 and that is all a by-hand change can mean.
+
+Once a unit does set it, this check still earns its place: a unit can
+fail, and the failure looks the same from here.
 
 That makes this the first thing to read on any fault here, before the
 stack and before the alert:
@@ -1384,8 +1386,7 @@ fix is the only answer left". Getting that backwards turns a host nobody
 has mitigated into a host where mitigation is believed not to work.
 
 Re-applying is one line and needs no restart:
-`echo 4096 > /sys/kernel/debug/fault_around_bytes`. Whether to is the
-owner's call each time, not a standing instruction.
+`echo 4096 > /sys/kernel/debug/fault_around_bytes`.
 
 *Count pages, not lines.* Each page produces two lines, a `Bad page map`
 and a `Bad page cache`, within milliseconds. Six lines is three pages, not

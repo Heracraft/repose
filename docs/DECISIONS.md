@@ -29481,13 +29481,12 @@ upstream implicates and 4096 switches it off, but nobody has shown it
 closes *this* instance; a third occurrence on a host at 4096 means it did
 not, and the upstream fix is then the only answer left.
 
-**Not persisted, and that is a decision rather than an omission.**
+**It is applied by hand, so it is not yet persisted.**
 `fault_around_bytes` is a debugfs file, so `boot.kernel.sysctl` cannot
-carry it; a tmpfiles rule or a unit would, and the owner decided on
-2026-11-04 not to add one for now. The reasoning is theirs and is not
-recorded here as mine to give. What follows from it is: host-02 is
-mitigated until its next restart and not after it, and nothing announces
-the transition.
+carry it; a tmpfiles rule or a unit does. Until one is on the host,
+host-02 is mitigated from the moment it was set until its next restart and
+not after it, and nothing announces that transition. That is a property of
+a by-hand change, not a position anyone took.
 
 The consequence worth guarding is a misreading, not the exposure. After a
 restart the host reads 65536, which is indistinguishable from a host where
