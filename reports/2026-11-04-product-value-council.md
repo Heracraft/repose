@@ -151,7 +151,7 @@ The chair's notes on how this changes the council's design:
 - **Hotplug is not necessary.** hostd can boot each guest with the ceiling as its vCPU count (`boot=4`, `6` or `8`) and keep the sold share with cgroups. `cpu.weight` keeps the class weights (I-737), and the extra vCPUs get CPU time only when the host has idle time. This is simpler than Cloud Hypervisor vCPU hotplug, and the guest kernel does not have to bring CPUs online or offline.
 - **The latency gate stays, and it becomes automatic.** Measured on prod: keystrokes stay smooth while busy guest vCPUs stay at or below physical cores, and one tenant at full load took p90 to 44.5 ms. hostd must cap burst time when the host approaches that line. A `cpu.max` on each guest above its base share is one way to do it. The latency check on host-02 that the growth member asked for is now a release gate for this feature.
 - **Placement and the 1.5x rule (I-734, I-736) count base vCPUs only.** If placement counts the ceiling, a host holds about half the seats.
-- **No user-facing meter or allowance.** Users never ask for burst or count core-hours, so the council's 20, 50 and 120 core-hour allowances are dropped. Plans still sell memory, and the public docs say cores above the base are best-effort. The owner keeps two money levers open (see "Burst and the plans" below).
+- **No request, no lease.** Users never ask for burst. The plan includes burst core-hours, and usage above them is billed only when the user turns overage on (see "Decision: metered burst, overage off by default" below). Plans still sell memory, and the public docs say cores above the base are best-effort.
 - **It is visible.** `repose status` shows the cores the machine can use now, so a slow build on a full host has an explanation. The guest agent guide says the same thing, so agents do not plan for 8 cores on a busy host.
 - **It works with the freeze.** A frozen guest uses no cores, and the cores it frees are the ones other guests burst into.
 - **Open question for the owner:** do small guests on Solo get burst at once, or only after the latency check passes on host-02? The council's risk case was one tenant raising everyone's typing lag, and a burst to 8 cores makes that tenant heavier than today.
@@ -162,7 +162,7 @@ This decision needs a DECISIONS.md entry before anyone builds it, because it cha
 
 The council's lease had a revenue hook. The plan included the allowance, and the economist proposed selling more core-hours later as an add-on. The $0.13 and $0.03 per core-hour figures are what idle capacity costs at list price, not a price. Burst sells cores that repose already pays for, so any charge for it is close to pure margin.
 
-On 2026-11-04 the owner said that both of these directions are acceptable. Neither is decided yet:
+On 2026-11-04 the owner first said that both of these directions are acceptable. The owner then chose a metered charge (see the decision below). The two directions were:
 
 1. **Charging for burst.** Automatic burst can still earn money. The council's other priced items show the shape: a per-job Android spot VM at about $1 a device-hour, against a cost of $0.05 to $0.15, and a bare-metal KVM pool as a $29 add-on that breaks even at about 34 subscribers. Any charge has to keep the automatic rule: the user never requests a core, and burst never stops in the middle of a build because a counter ran out.
 2. **Priority for higher plans.** When several guests on one host want burst at the same time, hostd gives the burst vCPUs of Pro guests a higher cgroup weight than Plus guests, and Plus guests a higher weight than Solo guests. Nobody asks for anything, and nobody counts anything. On a quiet host, all guests reach their class ceiling. On a busy host, Pro gets the larger share of the idle cores. This gives Plus and Pro a value beyond memory, at no cost to repose. The base share that each class buys (I-737) stays the same on all plans, so a Solo user's sold cores never lose to a Pro user's burst.
@@ -173,6 +173,42 @@ Facts that apply to both directions:
 - A charge or a tier difference is something a user can see, so it ships with its update to `docs/PRICING.md`, `docs/features/pricing.md` and the public billing docs, under a DECISIONS entry.
 - For the owner's goal (reach, low cash burn), the tier priority costs nothing to run and adds a reason to upgrade. A paid add-on brings in cash, but it needs a meter and billing code (Polar usage events), and support has to explain it.
 
+
+### Decision: metered burst, overage off by default
+
+The owner chose this on 2026-11-04, after comparing it with a flat add-on that raises the ceiling and with plan-set ceilings. It follows the egress model that already ships: automatic use, an allowance in the plan, and a metered charge above it. The owner's condition: **users must be told clearly that they can turn overage on.**
+
+**How it works**
+
+- hostd measures CPU time above each guest's base share from the guest cgroup's `cpu.stat`. Only time above the base counts. The sold cores (1, 2 or 4) are never metered.
+- Each plan includes burst core-hours per billing period. The council's 20, 50 and 120 on Solo, Plus and Pro is the starting proposal, with the aim that most users never reach the allowance. The numbers need checking against measured burst on host-02.
+- **Overage is off by default.** When the allowance runs out, burst stops and each machine runs on its base cores until the period ends. Nothing stops: builds and agents continue, at base speed.
+- **A user can turn overage on**, with a monthly cap in dollars. Burst then continues past the allowance and is billed per core-hour. At the cap, burst stops the same way it stops at the allowance. A proposed starting price is about $0.04 per core-hour: the marginal cost is about $0, and the most it can cost repose is $0.13 per core-hour at Azure list price. At that price, 6 extra cores for 4 hours a day for 22 days come to about $21.
+- Billing uses the same path as egress overage: a metered charge on the Polar subscription, shown on the invoice, with "Additional metered charges may apply" already at checkout.
+- The latency gate still comes first. Overage buys burst time, but only while the host has idle cores. Paying never pushes busy guest vCPUs past physical cores.
+
+**Where users learn that they can turn it on**
+
+Each of these is a line that unblocks the user or prevents a surprise, so each one passes the "Trust the reader" rule:
+
+| Place | What the user reads |
+|---|---|
+| `repose status` | `burst: 14.2 of 20 core-hours this period, overage off`. With overage on: `burst: 26.0 core-hours, 6.0 over, $0.24 of a $10 cap`. |
+| Notification at 80 percent of the allowance (once per period) | `Your machines used 16 of this period's 20 burst core-hours. When they are used up, machines run on their base cores until 1 December. You can turn on burst overage, with a cap, at https://repose.herakraft.co/billing.` |
+| Notification when the allowance is used up (once per period) | `Your machines used this period's 20 burst core-hours and now run on their base cores until 1 December. To keep bursting, turn on burst overage at https://repose.herakraft.co/billing and set a monthly cap.` |
+| Dashboard billing page | A Burst row: a usage bar against the allowance, an Overage switch (off), and a cap field that the switch requires. |
+| Guest agent guide | One line: when burst is used up, the machine has its base cores only, and the user can turn on overage on the billing page. An agent that sees a slow build can then tell the user why. |
+| Public docs | `billing.md` (what is included, the price, the cap, the default), `limits.md` (best-effort burst ceilings per class) and `machine.md` (cores the machine can use). |
+
+The switch lives on the dashboard billing page, next to the plan. No new CLI command is proposed: `repose status` shows the state, and the notification links to the page.
+
+**Before it is built**
+
+- A DECISIONS entry. It changes I-734 placement accounting (base vCPUs only), the cgroup design in I-737, and adds a metered charge next to egress in `docs/PRICING.md` and `docs/features/pricing.md`.
+- The latency check on host-02 with guests booted at their ceiling.
+- Allowance numbers and the price, set from measured burst.
+
+
 ## Future features
 
 Mean of the members who scored each one in round 2.
@@ -182,7 +218,7 @@ Mean of the members who scored each one in round 2.
 | 1 | **Per-turn rewind**: each agent turn writes the tree, untracked files included, to a hidden git ref. `repose rewind` lists the last 20 turns. | 7.0 | 7.0 | 7.2 | S (git-ref version) | 4 build-next | The undo that agent users want. It replaces the snapshot picker. |
 | 2 | **Forward daemon with pinned ports** | 4.8 | 8.0 | 4.0 | S | 4 build-next | See Ports |
 | 3 | **Reverse forwards and the laptop emulator bridge** | 6.0 | 6.3 | 7.0 | S | 4 build-next | See Ports and Cores |
-| 4 | **Burst cores** (council: lease; owner: automatic, up to 4, 6 or 8 by class) | 6.3 | 5.8 | 6.3 | M | 3 build-next, 1 experiment | See Cores |
+| 4 | **Burst cores** (council: lease; owner: automatic up to 4, 6 or 8 by class, metered above an allowance, overage off by default) | 6.3 | 5.8 | 6.3 | M | 3 build-next, 1 experiment | See Cores |
 | 5 | **Owner-only phone preview link** | 6.8 | 6.0 | 3.3 | M | 4 build-next | Closes the `--done` loop on the phone |
 | 6 | **Scheduled agent prompts**: `repose schedule 'weekdays 07:00' -p 'triage new issues'` | 5.2 | 7.0 | 4.8 | S | 3 build-next | Timers, wake and notify exist already. It is a CLI wrapper. |
 | 7 | **Prompt queue per agent**: prompts start when the turn ends | 4.5 | 7.0 | 5.2 | S | 3 build-next | A worker does not sit idle overnight |
@@ -214,7 +250,7 @@ The four theses agree. repose is the machine where your exact laptop state lands
 
 ## Where the council disagreed
 
-- **Burst cores now or later.** Daily driver and innovation said build next. Growth said experiment, with a latency gate on host-02. The economist moved to build next in round 2. All four members designed it as a lease that the user asks for. The owner chose automatic burst instead, and keeps a charge and plan-tier priority open as options (see Cores).
+- **Burst cores now or later.** Daily driver and innovation said build next. Growth said experiment, with a latency gate on host-02. The economist moved to build next in round 2. All four members designed it as a lease that the user asks for. The owner chose automatic burst instead, metered above an included allowance with overage off by default, and users told clearly that they can turn it on (see Cores).
 - **Browser bridge.** The daily driver voted trim, because it needs the laptop open, which works against the lid-closed loop. The other three voted keep, because it costs no host resources and makes a good security post.
 - **Phone surface.** Daily driver and economist want a repose phone console. Innovation lowered it, because Claude Code Remote Control and Cursor's iOS app already exist, and proposed registering with them instead.
 - **machine.nix.** The economist voted trim, because of fleet-wide rebuilds on each save. The other three voted keep and agreed on the same fix.
