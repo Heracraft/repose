@@ -151,12 +151,27 @@ The chair's notes on how this changes the council's design:
 - **Hotplug is not necessary.** hostd can boot each guest with the ceiling as its vCPU count (`boot=4`, `6` or `8`) and keep the sold share with cgroups. `cpu.weight` keeps the class weights (I-737), and the extra vCPUs get CPU time only when the host has idle time. This is simpler than Cloud Hypervisor vCPU hotplug, and the guest kernel does not have to bring CPUs online or offline.
 - **The latency gate stays, and it becomes automatic.** Measured on prod: keystrokes stay smooth while busy guest vCPUs stay at or below physical cores, and one tenant at full load took p90 to 44.5 ms. hostd must cap burst time when the host approaches that line. A `cpu.max` on each guest above its base share is one way to do it. The latency check on host-02 that the growth member asked for is now a release gate for this feature.
 - **Placement and the 1.5x rule (I-734, I-736) count base vCPUs only.** If placement counts the ceiling, a host holds about half the seats.
-- **No meter, no allowance, no billing change.** The 20, 50 and 120 core-hour allowances from the council's design are dropped. Plans still sell memory, and the public docs say cores above the base are best-effort.
+- **No user-facing meter or allowance.** Users never ask for burst or count core-hours, so the council's 20, 50 and 120 core-hour allowances are dropped. Plans still sell memory, and the public docs say cores above the base are best-effort. The owner keeps two money levers open (see "Burst and the plans" below).
 - **It is visible.** `repose status` shows the cores the machine can use now, so a slow build on a full host has an explanation. The guest agent guide says the same thing, so agents do not plan for 8 cores on a busy host.
 - **It works with the freeze.** A frozen guest uses no cores, and the cores it frees are the ones other guests burst into.
 - **Open question for the owner:** do small guests on Solo get burst at once, or only after the latency check passes on host-02? The council's risk case was one tenant raising everyone's typing lag, and a burst to 8 cores makes that tenant heavier than today.
 
 This decision needs a DECISIONS.md entry before anyone builds it, because it changes I-734 placement accounting and the cgroup design in I-737.
+
+### Burst and the plans
+
+The council's lease had a revenue hook. The plan included the allowance, and the economist proposed selling more core-hours later as an add-on. The $0.13 and $0.03 per core-hour figures are what idle capacity costs at list price, not a price. Burst sells cores that repose already pays for, so any charge for it is close to pure margin.
+
+On 2026-11-04 the owner said that both of these directions are acceptable. Neither is decided yet:
+
+1. **Charging for burst.** Automatic burst can still earn money. The council's other priced items show the shape: a per-job Android spot VM at about $1 a device-hour, against a cost of $0.05 to $0.15, and a bare-metal KVM pool as a $29 add-on that breaks even at about 34 subscribers. Any charge has to keep the automatic rule: the user never requests a core, and burst never stops in the middle of a build because a counter ran out.
+2. **Priority for higher plans.** When several guests on one host want burst at the same time, hostd gives the burst vCPUs of Pro guests a higher cgroup weight than Plus guests, and Plus guests a higher weight than Solo guests. Nobody asks for anything, and nobody counts anything. On a quiet host, all guests reach their class ceiling. On a busy host, Pro gets the larger share of the idle cores. This gives Plus and Pro a value beyond memory, at no cost to repose. The base share that each class buys (I-737) stays the same on all plans, so a Solo user's sold cores never lose to a Pro user's burst.
+
+Facts that apply to both directions:
+
+- The latency gate comes before priority and before price. Neither a paid add-on nor a Pro weight may push busy guest vCPUs past physical cores. One tenant at full load took p90 keystroke latency to 44.5 ms for all guests (2026-10-14).
+- A charge or a tier difference is something a user can see, so it ships with its update to `docs/PRICING.md`, `docs/features/pricing.md` and the public billing docs, under a DECISIONS entry.
+- For the owner's goal (reach, low cash burn), the tier priority costs nothing to run and adds a reason to upgrade. A paid add-on brings in cash, but it needs a meter and billing code (Polar usage events), and support has to explain it.
 
 ## Future features
 
@@ -199,7 +214,7 @@ The four theses agree. repose is the machine where your exact laptop state lands
 
 ## Where the council disagreed
 
-- **Burst cores now or later.** Daily driver and innovation said build next. Growth said experiment, with a latency gate on host-02. The economist moved to build next in round 2. All four members designed it as a lease that the user asks for. The owner chose automatic burst instead (see Cores).
+- **Burst cores now or later.** Daily driver and innovation said build next. Growth said experiment, with a latency gate on host-02. The economist moved to build next in round 2. All four members designed it as a lease that the user asks for. The owner chose automatic burst instead, and keeps a charge and plan-tier priority open as options (see Cores).
 - **Browser bridge.** The daily driver voted trim, because it needs the laptop open, which works against the lid-closed loop. The other three voted keep, because it costs no host resources and makes a good security post.
 - **Phone surface.** Daily driver and economist want a repose phone console. Innovation lowered it, because Claude Code Remote Control and Cursor's iOS app already exist, and proposed registering with them instead.
 - **machine.nix.** The economist voted trim, because of fleet-wide rebuilds on each save. The other three voted keep and agreed on the same fix.
