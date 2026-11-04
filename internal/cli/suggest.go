@@ -58,13 +58,14 @@ func unknownCommand(root *cobra.Command, args []string, isProject func(string) b
 	return unknownCommandMessage(cmd, typed)
 }
 
-// projectFirstMessage answers `repose PROJECT COMMAND ...`, the two words
-// the other way round (DECISIONS I-1046). The first word names one of the
+// projectFirstMessage answers `repose PROJECT WORDS...`, the project
+// before the command (DECISIONS I-1046). The first word names one of the
 // account's projects, so it is not a mistyped command, and "unknown
-// command" sent the reader looking for a command of that name. When a
-// later word names a command, the message is their own line with the two
-// swapped, to copy; otherwise it says only what the word is. "" when the
-// word is not a project, or when a typo is the likelier reading.
+// command" sent the reader looking for a command of that name. The second
+// line is their own words rearranged, as suggestedLine reads them, and is
+// left out when nothing follows the project, because any command named
+// there would be invented. "" when the word is not a project, or when a
+// typo of a real command is the likelier reading.
 func projectFirstMessage(root *cobra.Command, args []string, typed string, isProject func(string) bool) string {
 	if isProject == nil || len(suggestCommands(root, typed)) > 0 || !isProject(typed) {
 		return ""
