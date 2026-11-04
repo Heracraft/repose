@@ -29520,3 +29520,48 @@ with the fleet and the fault did not.
 
 **Still revisit when** the upstream fix merges -- then this is a version
 bump rather than a capability removal.
+
+**I-1044. A rule in this repository is not a rule in Grafana, and nothing
+checks the difference.** (balloon-doc, 2026-11-04.) *Recorded, not fixed.*
+
+Grafana-managed alert rules exist only once `ops/grafana/push.py` has run
+against the owner's instance with a token. Nothing in this repository
+knows whether `ops/alerts.yaml` and `ops/alerts-loki.yaml` are what
+Grafana is evaluating, so the gap between a rule merging and a rule
+existing is unbounded and unmonitored.
+
+It has already cost the thing it would have caught. `KernelOops` (I-980)
+merged 2026-11-02 18:18. A host kernel fault of precisely the kind it was
+written for happened 2026-11-03 10:52 and paged nobody. The owner's
+Grafana token arrived 15:25, the rules were pushed about 15:30, and the
+rule fired on the second occurrence at 2026-11-04 04:21:10Z. Eighteen
+hours in which the alert existed in `main` and nowhere that could fire it,
+and the occurrence it missed is the one that would have been worth
+catching early.
+
+This is the same shape as the rest of 2026-11-03's findings and the last
+of them anyone noticed: a guard that exists in the place you look and not
+in the place it has to run. `hashdist=0` evaluated in the flake and not
+honoured by the kernel (I-982, I-988); a `strace` guard that skipped
+rather than ran (I-1036); `exact_nix` answering "no base change" from a
+path list (I-958); and now a rule that is green in review and absent in
+production.
+
+**Not fixed here, and the unproven part said rather than smoothed.**
+Nobody can show that no push happened between the merge and 10:52 -- the
+first push anyone can account for is the 15:30 one. Grafana answers it in
+one query, because a rule carries an `updated` timestamp and state history
+outlives the rule, and nothing outside Grafana can: its own logs are not
+shipped to our Loki (checked -- the `host` label holds only our hosts and
+the edge), and `push.py` keeps no receipt because Grafana's state is in
+its own Postgres (checked). So "the alert did not fire" and "the alert did
+not exist" are indistinguishable from here, and only one of them is
+reassuring.
+
+What would close it belongs to whoever next picks up alerting, and
+`push.py` already knows enough to do it: it reads the rules it would send
+and could compare them against what Grafana holds, which makes "is
+Grafana evaluating what main says" a check rather than a memory. A
+`--verify` that exits non-zero on drift, run wherever the token lives, is
+the shape. It is not built tonight because the token is the owner's and a
+check nobody can run is another guard in the wrong place.

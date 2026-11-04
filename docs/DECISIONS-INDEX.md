@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-900 entries.
+901 entries.
 
 ## Scope
 
@@ -932,3 +932,4 @@ pointer, not a summary.
 - **I-1030** hostd knew its own version and did not tell the metric that publishes it — 2026-11-03; L29267
 - **I-1032** Six checks in one day were green in exactly the situation they existed for, and the ones with the best names survived longest — 2026-11-03; L29315
 - **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29396
+- **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29524
