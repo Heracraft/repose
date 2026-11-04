@@ -29485,8 +29485,22 @@ not, and the upstream fix is then the only answer left.
 `fault_around_bytes` is a debugfs file, so `boot.kernel.sysctl` cannot
 carry it; a tmpfiles rule or a unit does. Until one is on the host,
 host-02 is mitigated from the moment it was set until its next restart and
-not after it, and nothing announces that transition. That is a property of
-a by-hand change, not a position anyone took.
+not after it, and nothing announces that transition.
+
+The unit exists as a branch and is **kept, to be cut later** -- the
+owner's instruction, given directly, so the gap is a matter of timing
+rather than of anyone deciding the mitigation should not persist. Nothing
+needed it cut on the night: main was green and host-02 already carried
+4096.
+
+That distinction is worth the sentence because an earlier draft of this
+entry recorded the opposite -- "the owner decided not to add one for now"
+-- from an instruction relayed between two sessions serving one owner,
+with no ordering between their channels. A deferral arrived here and a
+reversal arrived in the other session minutes later, both reported
+honestly. The wording above was de-attributed to be true whichever
+channel was ahead, and only now says what was decided, from the owner
+first-hand. Do not write an owner decision into this file from a relay.
 
 The consequence worth guarding is a misreading, not the exposure. After a
 restart the host reads 65536, which is indistinguishable from a host where
