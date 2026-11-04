@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-906 entries.
+907 entries.
 
 ## Scope
 
@@ -938,3 +938,4 @@ pointer, not a summary.
 - **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29657
 - **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29712
 - **I-1050** opencode on the machine is version 2, and version 1 is gone — 2026-11-04; L29803
+- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29917
