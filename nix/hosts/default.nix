@@ -224,6 +224,22 @@ in
       '';
     };
 
+    faultAroundBytes = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 4096;
+      description = ''
+        Bytes of nearby pages the kernel maps on one fault
+        (`/sys/kernel/debug/fault_around_bytes`). The default of 4096 is one
+        page, which switches fault-around off; the kernel's own default is
+        65536. This is the mitigation for the shmem hole-punch race that
+        free page reporting exposes (DECISIONS I-1040, I-1042), not a tuning
+        knob: fault-around is the side of that race which re-installs PTEs
+        for pages a punch is removing, and host-02 faulted twice on it.
+        Raise it back to 65536 only when upstream's fix is in the host
+        kernel.
+      '';
+    };
+
     buildUser = lib.mkOption {
       type = lib.types.str;
       default = "nixbuild";
