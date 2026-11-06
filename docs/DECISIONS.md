@@ -29833,3 +29833,59 @@ up.
 
 *Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
 passes 8 of 8 here, as it did before the change; `go vet` clean.
+
+**I-1058. `Connected` is true before the first Hello is read, so a test
+that waits on it can assert the Hello that has not arrived.** (hello-wait,
+2026-11-06.)
+
+`TestHelloRefusedClosesTheStream` failed on the runner as `1 Hellos, want
+2` (CI 41867038782, `3d42fce`) and reproduced nowhere. It waited for
+`h.srv.Connected(hostID)` and then asserted `hellos == 2`. Those are two
+different facts. `Server.Session` registers the stream --
+`s.sessions[hostID] = sess` -- before its first `stream.Recv()`, so
+`Connected` is true from the moment the stream opens and says nothing
+about whether a Hello has been read off it. The window between them is
+`onHello`'s `update hosts ... from (select ... for update) prev` round
+trip, which runs before `s.handlers.Hello` increments the counter.
+
+That is why the failure follows the configuration rather than the code.
+With no `DATABASE_URL`, `internal/db/testdb` gives each test process its
+own cluster and the statement is sub-millisecond, far inside `waitFor`'s
+20 ms poll. CI points every package at one Postgres service, so the
+row lock contends with the rest of the suite and the statement can
+outlast a poll. The run's own log shows the gap: `stream_connect` at
+16:28:34.142 and `hello` at 16:28:34.149.
+
+This closes one of the three reds of 2026-11-04 and **only** one.
+I-1054's retraction stands: a shared database is not the explanation for
+`TestStopWindowScripts` or `TestEndToEnd`, and the confirming 94-package
+shared-database run passed. What a shared database does here is widen an
+existing hole in this one test, which was always wrong and always
+passing.
+
+Fixed by waiting for the thing asserted, which is DECISIONS I-1038's
+rule applied to a proxy rather than to a clock: `waitFor` now polls
+`hellos >= 2`. The `Connected` check stays as an assertion after it --
+once a Hello has been accepted the stream is certainly up -- so the test
+still fails rather than hangs if an extra Hello ever arrives.
+
+*Evidence, as a deterministic A/B rather than a count of green runs.* The
+window was made real by inserting `time.Sleep(120 * time.Millisecond)`
+into `onHello` immediately before `s.handlers.Hello`, which is where the
+contended statement's latency lands:
+
+    unfixed test, delay injected:  FAIL 5 of 5, "1 Hellos, want 2"
+    fixed test,   delay injected:  ok  10 of 10
+    fixed test,   no delay:        ok, and the package green
+
+The delay is scratch and is not in the branch; `git diff main...hello-wait`
+touches `hostmgr_test.go` only.
+
+*A trap found on the way, and not fixed here.* Outside `nix develop`
+this test does not run: `testdb` skips with "no DATABASE_URL and no
+initdb on PATH", and `go test` prints `ok`. Every api package behaves
+the same way, so a conductor who runs the suite outside the dev shell
+gets a green that tested none of them. I-1036 made exactly this skip
+fail when `CI` is set, for strace; the same argument applies to `testdb`
+and nobody has made it. Left as a branch of its own rather than widened
+into this one.
