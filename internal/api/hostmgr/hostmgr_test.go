@@ -292,9 +292,23 @@ func TestHelloRefusedClosesTheStream(t *testing.T) {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { _ = fake.Run(sctx, h.dial(t, &cert)) }()
-	waitFor(t, "connected after the second Hello", func() bool { return h.srv.Connected(hostID) })
+	// Wait for the Hello, not for the stream that carries it: Session
+	// puts the host in s.sessions before its first Recv, so Connected is
+	// true from the moment the stream opens and says nothing about
+	// whether a Hello has been read off it yet (DECISIONS I-1058). The
+	// gap is onHello's `update hosts ... for update` round trip, which is
+	// sub-millisecond against a cluster of its own and long enough to
+	// span a poll against the one server CI gives every package.
+	waitFor(t, "the second Hello", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return hellos >= 2
+	})
 	mu.Lock()
 	defer mu.Unlock()
+	if !h.srv.Connected(hostID) {
+		t.Fatal("the host is not connected after a Hello it accepted")
+	}
 	if hellos != 2 {
 		t.Fatalf("%d Hellos, want 2", hellos)
 	}

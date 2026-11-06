@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-910 entries.
+911 entries.
 
 ## Scope
 
@@ -942,3 +942,4 @@ pointer, not a summary.
 - **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29920
 - **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29961
 - **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30017
+- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30060
