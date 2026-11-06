@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-908 entries.
+909 entries.
 
 ## Scope
 
@@ -940,3 +940,4 @@ pointer, not a summary.
 - **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29836
 - **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L29884
 - **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29920
+- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29961

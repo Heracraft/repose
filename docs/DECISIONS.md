@@ -29957,3 +29957,60 @@ up.
 
 *Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
 passes 8 of 8 here, as it did before the change; `go vet` clean.
+
+**I-1054. The pre-release suite and CI's suite are different tests, and
+the one that found that out was wrong about why it mattered.**
+(ci-shape, 2026-11-04.)
+
+`docs/ops/RELEASE.md` told the conductor to run `go test -race ./...`
+"with a real Postgres for the api packages". `internal/db/testdb` starts
+a throwaway cluster **per test process** when `DATABASE_URL` is unset,
+which is also a real Postgres, so the instruction was satisfied by the
+isolated configuration. CI sets `DATABASE_URL` at one service and every
+package contends for one server. Two different tests, one instruction,
+and four releases verified with the one CI does not run. The line now
+names the variable.
+
+*That much is worth fixing on its own terms.* A gate should run what it
+gates. What follows is why it is not the story it looked like, recorded
+because the story was already written down before it was checked.
+
+Three consecutive CI runs failed on three different tests, none
+reproducible here:
+
+    41691706591  66b03b96  TestStopWindowScripts            internal/cli
+    41859472806  301adebc  TestEndToEnd                     internal/hostdev
+    41867038782  3d42fceb  TestHelloRefusedClosesTheStream  internal/api/hostmgr
+
+The third had already failed once on this box, in a log written that
+morning for an unrelated reason, in a whole-suite run **with**
+`DATABASE_URL`. One configuration difference, one matching failure, three
+rotating reds: the explanation assembled itself, and it went into
+`RELEASE.md` and `docs/CHECKLIST.md` before the confirming run finished.
+
+**The confirming run passed. 94 packages, zero failures, `DATABASE_URL`
+set, same commit.** So a shared database is not sufficient to reproduce
+any of the three, and nothing here explains them. What is true is
+narrower and duller than what was written an hour earlier: the two
+configurations differ, CI's is the one that counts, and the conductor was
+running the other one. Whether that blindness has ever hidden a real
+failure is unknown.
+
+The one failing run remains unexplained and is now the oldest open
+thread: it differed from the passing one in load — VM tests and a
+Playwright suite were running beside it — which is the same untested
+condition that `TestStopWindowScripts` and `TestEndToEnd` keep pointing
+at and that nothing has yet produced on demand.
+
+*Evidence:* `DATABASE_URL=... go test -race ./...` on `3d42fceb`,
+94 ok, exit 0. The earlier failing run is
+`internal/api/hostmgr` and `internal/api/resume` in one log, same
+variable, different load.
+
+*The method note, which is the part that generalises.* The finding came
+from asking what three differently-named failures had in common instead
+of fixing each in turn — care applied per-failure cannot reach a shared
+cause. The error came from the same move: a shared cause is a satisfying
+shape, and it was committed to two instruction files before the
+measurement that was already running came back. `docs/CHECKLIST.md`
+warns against exactly this in the entry above it, written the same day.

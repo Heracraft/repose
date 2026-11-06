@@ -157,6 +157,19 @@ written so none of them goes unnoticed again.
       `skuid "nixbuild"` or `skuid 997`. Evidence: the test reads the
       literal out of the other file rather than restating it, and reverting
       the quoted side fails it in seconds without a VM.
+- [ ] A check runs in the configuration the thing runs in, and the
+      difference is named where the check is written down. A guard that
+      runs and passes in the wrong configuration is worse than a missing
+      one: a missing guard is silent, and this one returns a green. The
+      conductor's pre-release `go test -race ./...` ran with `testdb`'s
+      per-process clusters while CI ran every package against one shared
+      `DATABASE_URL`, so four releases were certified by a check blind to
+      the class CI tests in (DECISIONS I-1054 — which also records that
+      the shared-database run then passed 94 of 94, so the configuration
+      gap is real and is *not* the explanation for those failures).
+      Evidence: the command in
+      `docs/ops/RELEASE.md` names the variable, not "a real Postgres" —
+      the throwaway cluster is also a real Postgres.
 - [ ] A test is named for the property it asserts, not for the subject it
       touches. `TestBuildInfo` passed on every run while
       `repose_build_info{component="hostd"}` read `version="dev"` on every
