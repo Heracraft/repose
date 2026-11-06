@@ -255,14 +255,17 @@
       # (nix/guest/tests). They need KVM on the builder: `system-features =
       # kvm` in nix.conf.
       checks.${system} = hostChecks // guestTests // fragmentChecks // {
-        # The base closure must stay under 6 GB (02 §7): every host's store
-        # grows by it, and every first boot registers its metadata.
+        # The base closure must stay under 7 GiB (02 §7, raised from 6 by
+        # DECISIONS I-1056): every host's store grows by it, and every
+        # first boot registers its metadata. The margin is the point --
+        # `main` sat 4 MiB under the old number, where any agent bump
+        # failed the base build.
         guest-closure-size = pkgs.runCommand "guest-closure-size" {
           closureInfo = pkgs.closureInfo { rootPaths = [ self.packages.${system}.guest-system ]; };
         } ''
           size=$(cut -f2 $closureInfo/total-nar-size 2>/dev/null || true)
           [ -n "$size" ] || size=$(cat $closureInfo/total-nar-size)
-          limit=$((6 * 1024 * 1024 * 1024))
+          limit=$((7 * 1024 * 1024 * 1024))
           echo "guest system closure: $size bytes (limit $limit)"
           if [ "$size" -gt "$limit" ]; then
             echo "over the limit printed above; largest paths:" >&2
