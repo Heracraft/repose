@@ -29833,3 +29833,74 @@ up.
 
 *Evidence:* `go test -race -count=1 -run TestEndToEnd ./internal/hostdev/`
 passes 8 of 8 here, as it did before the change; `go vet` clean.
+
+**I-1060. `display-message -t` answers about the wrong window rather
+than failing, and `repose stop` handed that answer to `git worktree
+remove`.** (stop-probe, 2026-11-06.)
+
+`stopWindowProbeScript` read the window's folder with
+
+    d=$(tmux display-message -p -t '=SLUG:=WINDOW' '#{pane_current_path}')
+
+and `display-message -t` does not fail on a target that does not
+resolve: it prints the **active** pane's path and exits 0. Measured on
+tmux 3.7c, against a session whose only window is `shell`:
+
+    $ tmux display-message -p -t '=app:=nosuchwindow' '#{pane_current_path}'
+    /tmp/rt
+    $ echo $?
+    0
+    $ tmux list-panes -t '=app:=nosuchwindow' -F '#{pane_current_path}'
+    can't find window: nosuchwindow
+    $ echo $?
+    1
+
+So whenever the target stopped resolving, `$d` silently became some
+other window's folder. `StopWindow` passes the probe's `Dir` to
+`worktreeRemoveScript` (`stop_window.go`), guarded only by that same
+probe's `Dirty` and `Others` -- which describe the folder it read, not
+the one the user named. A developer running two agents has
+`app-worktree-1` and `app-worktree-2`; `repose stop app:claude-2` could
+read worktree-2's pane, find it clean and fetched, and remove
+**worktree-2**. `cli.md` already says a stop removes "the window's
+worktree", so this is the code disagreeing with the doc and the doc being
+right (CLAUDE.md).
+
+The pane now comes from `list-panes`, which fails, and an unresolvable
+window exits `typeExitNoWindow` -- the answer `repose stop` already has
+a message for -- instead of being read as "not a worktree". `me`, the
+window id that excludes the named window from `#other`, came from the
+same call and had the same hole; it comes out of the same `list-panes`
+line now.
+
+**Every giving-up path now says which one it was**, as `#why <reason>`
+on stderr. There were six paths that exited 0 having printed nothing, so
+"this folder is not a worktree" and "the probe read a folder it should
+not have" were the same observation. That is the I-1032 family: a check
+that matched nothing reads exactly like a satisfied one. `#why` is not
+parsed -- `parseStopWindowProbe` reads only `#wt ` and `#other `.
+
+*What this does NOT claim.* It is **not** established that this fixes
+`TestStopWindowScripts`, whose runner failure is `probe: 0 "" -> <nil>`
+(CI 41691706591). That symptom is what this bug produces -- the fallback
+lands on the main checkout, `gd == cm`, and the probe exits 0 silent --
+but the trigger, why the target stopped resolving ~20 ms after
+`new-window -d` returned, is unknown and was not reproduced here:
+
+    300 runs, 16 CPU spinners on 8 cores:   0 failures
+    300 runs, 8 fork/exec load generators:  0 failures
+
+`automatic-rename` was ruled out (the window keeps the `-n` name at
++0 ms, +300 ms and +2.3 s, and `window_automatic_rename` is off), and so
+was a shared tmux server (`testguest.TmuxTmpdir` is a fresh
+`MkdirTemp` per call). What the change does is make the next occurrence
+legible: it will exit `typeExitNoWindow`, or print `#why` naming the
+test it failed, and the test prints the probe's output on failure.
+
+*Evidence.* `go test -race -count=3 -run TestStopWindowScripts
+./internal/cli/` ok 3 of 3; `go vet` clean. The new assertions fail
+against main's probe -- restoring `git show main:internal/cli/
+stop_window.go` makes the test FAIL in 0.08 s -- so they can fail. They
+check the reason is printed for the main-checkout path, and they pin the
+tmux asymmetry itself in both directions, so a tmux release that makes
+`display-message` fail will say so and the extra work can come out.
