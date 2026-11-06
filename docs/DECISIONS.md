@@ -30188,3 +30188,50 @@ stop_window.go` makes the test FAIL in 0.08 s -- so they can fail. They
 check the reason is printed for the main-checkout path, and they pin the
 tmux asymmetry itself in both directions, so a tmux release that makes
 `display-message` fail will say so and the extra work can come out.
+
+**I-1062. The released main is stored when it is known, not grepped for
+afterwards.** (record-main, 2026-11-06.)
+
+`release-queue record` found a release's main with
+
+    rmain=$(git rev-list -1 --grep="($rel)\$" main)
+
+which matches every merge `cut` writes and nothing else. But a conductor
+who fixes something in the batch worktree commits on top of those merges,
+and *that* commit is the one main is fast-forwarded to and the one the
+push ships. The grep cannot see it, so the record named the commit before
+the one that shipped.
+
+Found on r20261106-1, where the batch carried one such commit ("Batch
+fixes for r20261106-1", which repaired a sentence ci-shape had split and
+marked balloon-doc's append to the released I-1044 as an addendum).
+`record` offered `main 3f7de7e32`; the commit pushed was `0230ae22c`.
+
+This is I-992's fault class a second time: a record that names a commit
+with confidence and nothing that says the number is a guess. I-992 fixed
+the version of it where the guess was "whatever main is now"; it replaced
+that with a better guess rather than with the answer. The answer is
+available at exactly one moment -- `done` has just checked that main holds
+the release -- so `done` now writes `main=<sha>` beside the
+`integrated=<date>` it already stored, and `record` reads it.
+
+The two guesses stay as fallbacks, in order: the grep for releases
+integrated before this change, then today's main for a release still
+mid-flight. A release recorded late is the case the whole mechanism
+exists for, so losing the old path would have traded one wrong number for
+another.
+
+*Evidence.* `ops/dev/release-queue-test`: 52 passed, 0 failed.
+`t_record_names_the_commit_that_shipped_not_the_last_merge` commits a
+"Batch fixes for <rel>" on top of the cut's merges, fast-forwards main,
+runs `done`, and asserts both that the release file holds `main=<that
+sha>` and that the record names it and **not** the last merge. It FAILS
+against `git show main:ops/dev/release-queue` (51 passed, 1 failed), so it
+can fail. `t_record_falls_back_to_the_merge_subject_without_a_stored_main`
+strips the new field to stand in for an older release and passes against
+both copies, which is the backward-compatible half.
+
+*Not changed:* r20261106-1's own release file, which `done` had already
+written before this existed. Its `main=` was added by hand to the queue
+state so its record names `0230ae22c`; every release after this one gets
+it from `done`.

@@ -1009,6 +1009,57 @@ t_record_names_a_branch_with_no_live_result() {
   assert_has "and counted" "$o" "have no live result"
 }
 
+# I-1062: the record must name the commit that shipped. `record` found the
+# release's main by grepping main for a merge subject ending "($rel)", which
+# is every merge `cut` writes -- but a fix the conductor commits in the batch
+# worktree sits on top of those merges and is the commit that actually ships.
+# The record then named the commit before it, which is the same fault I-992
+# fixed once already: a record confidently naming the wrong commit, with
+# nothing saying so.
+t_record_names_the_commit_that_shipped_not_the_last_merge() {
+  local wt; wt=$(branch woker batchfixed)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  local s; s=$(state_of woker)/release-queue
+  local bwt; bwt=$(sed -n 's/^worktree=//p' "$s/releases/$rel")
+  # The conductor's own fix, on top of the cut's merges. Its subject is not
+  # "... ($rel)", so the grep cannot see it.
+  echo 'const Fixed = 1' >> "$bwt/internal/shared/shared.go"
+  commit "$bwt" "Batch fixes for $rel"
+  local shipped; shipped=$(git -C "$bwt" rev-parse HEAD)
+  local lastmerge; lastmerge=$(git -C "$bwt" rev-list -1 --grep="($rel)\$" HEAD)
+  [ "$shipped" != "$lastmerge" ] || { note "fixture: the fix is the last merge"; return 1; }
+  git -C "$root/woker" merge -q --ff-only "release/$rel"
+  q "$root/woker" "done" "$rel" >/dev/null
+  assert_has "done stores the released main" "$(cat "$s/releases/$rel")" "main=$shipped" || return 1
+  local o; o=$(q "$root/woker" record "$rel")
+  assert_has "the record names the commit that shipped" "$o" "main ${shipped:0:9}" || return 1
+  assert_not "and not the last merge cut wrote" "$o" "main ${lastmerge:0:9}"
+}
+
+# A release integrated before I-1062 has no stored main, and must still
+# record something rather than failing: the grep over cut's merge subjects
+# is the fallback.
+t_record_falls_back_to_the_merge_subject_without_a_stored_main() {
+  local wt; wt=$(branch woker nostoredmain)
+  echo 'const More = 1' >> "$wt/internal/shared/shared.go"
+  commit "$wt" "shared"
+  q "$wt" add >/dev/null
+  q "$root/woker" cut >/dev/null
+  local rel; rel=$(cut_release woker)
+  local s; s=$(state_of woker)/release-queue
+  git -C "$root/woker" merge -q --ff-only "release/$rel"
+  q "$root/woker" "done" "$rel" >/dev/null
+  # an old release file: drop the field done now writes
+  grep -v '^main=' "$s/releases/$rel" > "$s/releases/$rel.old" && mv "$s/releases/$rel.old" "$s/releases/$rel"
+  local lastmerge; lastmerge=$(git -C "$root/woker" rev-list -1 --grep="($rel)\$" main)
+  local o; o=$(q "$root/woker" record "$rel")
+  assert_has "the old behaviour still answers" "$o" "main ${lastmerge:0:9}"
+}
+
 # -------------------------------------------------------------------- run
 
 tests=$(declare -F | sed -n 's/^declare -f t_//p' | sort)
