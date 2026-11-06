@@ -99,14 +99,17 @@ With WINDOW (or `-w`/`--window NAME`), it prints that window's last 20 lines ins
 
 ### `repose exec [PROJECT[:CHECKOUT]] [--] COMMAND [ARG...]`
 
-Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it; for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
+Run one command in the checkout on the machine, with your secrets and the project's [dev shell](/docs/machine#projects-with-a-flake-nix), as an agent there has them. Output streams back and the exit code is the command's. Needs the machine running. The command is passed word for word, its own flags included, and no shell expands it, apart from a leading `~` (below); for a pipeline, run a shell yourself. If the first word names one of your projects, it is PROJECT; that name with no command after it exits 2. To run a command that has a project's name, put `--` before it. Put `exec`'s flags before the command.
 
 ```
 $ repose exec npm test
 $ repose exec todo-app git log --oneline -3
 $ repose exec -it psql
 $ repose exec sh -c "npm run build && npm test"
+$ repose exec todo-app ls '~/out'
 ```
+
+A word that is `~` or starts with `~/` is the machine's home, `/home/dev`, as in `--workdir` and [`repose cp`](#repose-cp-r-src-dst). Quote it: unquoted, your own shell expands it to your laptop's home first, and that path isn't on the machine. repose says so when it sees one. For a literal tilde, run a shell yourself.
 
 `-i`/`--interactive` passes your input to the command; `-t`/`--tty` gives it a terminal. Without either, the command reads nothing. Pass both for anything interactive.
 
