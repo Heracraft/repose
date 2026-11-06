@@ -935,12 +935,12 @@ pointer, not a summary.
 - **I-1038** A test that waits for something waits on the thing, not only on the clock — 2026-11-03; L29435
 - **I-1040** The balloon stays on: host-02's `__balloon` fault is a known upstream shmem race, and nothing we would change is smaller than the fault — 2026-11-04; L29478
 - **I-1044** A rule in this repository is not a rule in Grafana, and nothing checks the difference — 2026-11-04; L29606
-- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29690
-- **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29745
-- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29836
-- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L29884
-- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29920
-- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29961
-- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30017
-- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30060
-- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30115
+- **I-1042** The mitigation lived in debugfs, so it was one reboot from gone with nothing to say so — 2026-11-04; L29696
+- **I-1033** An expired waitlist hold ends the invitations until the user asks again — 2026-11-04; L29751
+- **I-1046** A project's name before the command is answered as the words the other way round, not as an unknown command — 2026-11-04; L29842
+- **I-1048** `repose exec` reads a quoted `~` as the machine's home, and says so when the laptop's shell ate an unquoted one — 2026-11-04; L29890
+- **I-1052** A test that starts a server and does not wait for it to stop fails in `TempDir` cleanup, after passing — 2026-11-04; L29926
+- **I-1054** The pre-release suite and CI's suite are different tests, and the one that found that out was wrong about why it mattered — 2026-11-04; L29967
+- **I-1056** The base closure limit is 7 GiB, and the margin is the point — 2026-11-04; L30023
+- **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30066
+- **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30121

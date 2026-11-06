@@ -177,6 +177,7 @@ Integrate whenever branches are queued; it needs no owner approval.
      108-byte limit; internal/cli alone takes about 15 minutes with
      GOMAXPROCS=2, past go test's default 10-minute timeout); `go test ./internal/cli
      -run 'TestDocs|TestSuccessOutputNamesNoCommand|TestCLIReassures'`; the
+     `docs/CHECKLIST.md` greps.
      `DATABASE_URL` is not a detail of convenience and "a real Postgres"
      was the wrong way to say it: `internal/db/testdb` starts a throwaway
      cluster **per test process** when the variable is unset, which is
@@ -184,10 +185,11 @@ Integrate whenever branches are queued; it needs no owner approval.
      `DATABASE_URL` at one service, so every package contends for one
      server; run it the way the thing you are gating runs (DECISIONS
      I-1054). Set it, and point it at a server nothing else is using.
-     This does **not** explain the three CI failures of 2026-11-04 —
-     `TestStopWindowScripts`, `TestEndToEnd`,
-     `TestHelloRefusedClosesTheStream` — and I-1054 says why not.
-     `docs/CHECKLIST.md` greps. **A batch that changes a VM test, a flake
+     Of the three CI failures of 2026-11-04 this explains none on its
+     own: `TestHelloRefusedClosesTheStream` was a test waiting on a proxy
+     that a contended shared database widened (I-1058),
+     `TestEndToEnd` was a `TempDir` cleanup race (I-1052), and
+     `TestStopWindowScripts` is still open (I-1054, I-1060). **A batch that changes a VM test, a flake
      check or `nix/guest/checks.nix`: run that check, whatever the batch
      ships as** — those paths install nothing, so they no longer put
      `base`, `host` or `edge` in a branch's targets (DECISIONS I-759), and

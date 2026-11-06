@@ -29648,6 +29648,11 @@ Grafana evaluating what main says" a check rather than a memory. A
 the shape. It is not built tonight because the token is the owner's and a
 check nobody can run is another guard in the wrong place.
 
+- *Addendum (balloon-doc, 2026-11-04).* Added after this entry was
+  released, so it is marked rather than folded into the body above:
+  what the two days settled about when a guard of this kind earns its
+  place, and the second clause that the worst instance forced.
+
 **The test for whether it is worth building, which is the reusable part:
 a guard earns its place when the thing it checks is invisible between
 pushes.** Not "guards are good". This gap was a day wide and nothing in
@@ -29687,6 +29692,7 @@ found by asking what three differently-named failures had in common
 instead of fixing them one at a time -- which is the only move that finds
 this shape, and it is not available to someone being careful about each
 failure in turn.
+
 **I-1042. The mitigation lived in debugfs, so it was one reboot from
 gone with nothing to say so.** (fault-around, 2026-11-04.)
 
