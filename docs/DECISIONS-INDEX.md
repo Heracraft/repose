@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-913 entries.
+914 entries.
 
 ## Scope
 
@@ -945,3 +945,4 @@ pointer, not a summary.
 - **I-1058** `Connected` is true before the first Hello is read, so a test that waits on it can assert the Hello that has not arrived — 2026-11-06; L30066
 - **I-1060** `display-message -t` answers about the wrong window rather than failing, and `repose stop` handed that answer to `git worktree remove` — 2026-11-06; L30121
 - **I-1062** The released main is stored when it is known, not grepped for afterwards — 2026-11-06; L30192
+- **I-1064** `repose github setup` gives the machines a GitHub token of the user's own, for the repositories they picked, and stops copying the gh login — 2026-11-08; L30238

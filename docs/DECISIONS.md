@@ -30235,3 +30235,120 @@ both copies, which is the backward-compatible half.
 written before this existed. Its `main=` was added by hand to the queue
 state so its record names `0230ae22c`; every release after this one gets
 it from `done`.
+**I-1064. `repose github setup` gives the machines a GitHub token of the
+user's own, for the repositories they picked, and stops copying the gh
+login.** (gh-scope, 2026-11-08.)
+
+The gh login the laptop copies is, in the CLI's own words, "every repo you
+can reach". On a machine where Claude Code runs in `bypassPermissions`
+(I-250) and egress is open, that is the widest credential repose hands an
+agent, and the one whose misuse is irreversible: code read out cannot be
+unread. This gives a user a way to hand over less, without repose holding
+any GitHub authority of its own.
+
+- **The mechanism is one named secret.** gh reads `GH_TOKEN` before
+  `~/.config/gh/hosts.yml`, and `gh auth git-credential` -- the helper the
+  guest's `/etc/gitconfig` names by command (I-526) -- answers with the
+  environment's token even when the machine has no gh login at all
+  (source: cli/go-gh `tokenForHost` reads `GH_TOKEN` before any config).
+  So git and gh on the machine use that token and nothing else, through
+  machinery that already shipped: ciphertext in Postgres, a 0400 file on
+  the guest's tmpfs, `BASH_ENV` into every command (R3-10, I-475). No
+  fourth home, and the api holds no GitHub credential: it holds a value
+  the user typed, as it does for `STRIPE_KEY`.
+- **The form is prefilled; the repository list is not.** GitHub documents
+  query parameters for a fine-grained token's `name`, `description`,
+  `target_name`, `expires_in` and one per permission. `repose github
+  setup` sends the user to it with Contents and Pull requests write, 366
+  days, the checkout's owner, and nothing else: not Administration (which
+  deletes repositories and flips their visibility), not Repository
+  creation, not Secrets, not Workflows. There is no parameter for the
+  repository selection, which is as well: that choice is the user's, and
+  it is the only one they have to make.
+- **Why not a GitHub App.** I-204 stands: nothing on GitHub may name the
+  platform, and an installation token acts as `repose[bot]`. Its revisit
+  condition ("a way to get per-repo scope without platform branding is
+  found") is met by this, not by an app. The prefilled display name is
+  "coding machines", not the platform's: a token whose owner is an
+  organisation is listed by name on that organisation's token review
+  screen, which its owners read, so I-204 holds there too (found in
+  review). The form lets the user rename it.
+- **Widening is another paste, never an edit.** GitHub documents no way to
+  edit a token's repository list, and the edit form is reported to start
+  from "All repositories" whatever the token holds, so repose never sends
+  anyone there. `repose github setup` again replaces the secret. An agent
+  that is refused a repository asks for a wider token with `repose-ask
+  --secret GH_TOKEN` (I-929) and the user pastes it from their phone, so
+  the ask, the approval and the storing are all shipped behaviour. The
+  machine guide tells the agent that a 404 on a repository it knows exists
+  is this, and that `gh auth login`, a token of its own and a push to a
+  fork are not the answer.
+- **Setup turns the gh row off.** A broad token beside a narrow one
+  protects nothing, so `setup` writes `skip` for the scope it stored the
+  token for (I-422's table, in the laptop's `config.toml`; the api never
+  holds the choice) and says so once. The next `run` then removes the
+  machine's copy of `hosts.yml` while it is still byte for byte the
+  laptop's, by I-422's existing rule.
+- **The SSH rewrites stop depending on the copy.** `run` wrote
+  `url.https://github.com/.insteadOf` only when gh travelled, so a machine
+  on a token alone could not push to a `git@github.com:` remote -- the
+  shape most checkouts have. Those four git keys now go when the row is
+  off as well. A machine with neither a login nor a token then meets the
+  username git asks for when no helper answers: an error for a
+  non-interactive command, a wait in an attached pane, where before an SSH
+  remote failed on a key it never had (I-247). That prompt is not new --
+  an HTTPS remote on such a machine has always reached it, since
+  `/etc/gitconfig` names the helper whether or not gh travelled (I-526) --
+  and making it fail fast everywhere (`GIT_TERMINAL_PROMPT=0` in the
+  guest, or an askpass that refuses) is left for its own change, because
+  it reaches every host and not only github. A laptop that never had a gh login and never turned the row off
+  is unchanged, so a `gh auth login` made in the guest still covers HTTPS
+  URLs alone.
+- **The account is the default scope.** The token is about the user's
+  GitHub, not about one project, so `setup` stores an account secret and
+  `--project NAME` narrows it. That is the opposite default from `repose
+  secrets set`, where the project is the unit.
+
+*Rejected.* A credential scoped per repository inside the machine: `gh
+auth git-credential` is keyed by host, so one token serves every
+repository a machine reaches, and a per-repository scheme would need
+repose's own helper and a token per repository, each of them another
+paste. *Rejected:* read on everything and write on a few, which the owner
+asked for first. GitHub cannot express it in one credential (an
+installation's and a fine-grained token's permissions are uniform across
+its repositories), so it costs two credentials, and the half it would add
+is the irreversible one. A named list the user picks is the same
+convenience with a bounded loss. *Rejected:* minting tokens for the user
+(no API creates a fine-grained token) and a token with Repository
+creation, which on a personal account can create a public repository and
+push private code into it; repository creation stays a thing the user
+does. *Rejected:* storing the token's own settings URL so an ask could
+link to it, since the edit form cannot be trusted to keep the selection.
+
+*Evidence.* The mechanism itself, checked rather than reasoned about: with
+an empty `HOME` (no `hosts.yml` anywhere) and `GH_TOKEN=github_pat_FAKEVALUE`
+in the environment, `gh auth git-credential get` (gh 2.100.0, the guest's
+version) answers `username=x-access-token` and `password=github_pat_FAKEVALUE`,
+and `git credential fill` for `https://github.com/heracraft/skills.git`
+with the guest's helper config answers the same, so git has a password to
+send with no gh login at all. `git ls-remote --get-url origin` with the
+rewrite turns `git@github.com:heracraft/skills.git` into
+`https://github.com/heracraft/skills.git`, which is the path that makes an
+SSH remote reach it. The `guest-devtools` VM test's new I-1064 subtest
+asserts the same `git credential fill` on a real guest, beside the I-526
+helper subtest, and passed there (0.20 s, named in that run's `nix log`).
+Two subtests later the run fails on its own: I-531's offline `nix flake
+lock` tries to resolve github.com and times out. It fails the same way on
+main on this box, so that is this machine's sandbox and not this change.
+
+`go test ./internal/cli/` passes, including
+`TestGithubTokenURL` (every query parameter pinned to GitHub's documented
+names, and Administration, Repository creation, Secrets, Workflows and
+Actions asserted absent), `TestGithubSetupStoresTokenAndLeavesGhLogin`
+(the account secret is set, `config.toml` gains `[logins] skip = ["gh"]`
+with the rest of the file byte for byte, the second run says nothing about
+the login again, a classic `ghp_` token is stored with one line saying it
+is not limited, an empty paste exits 2 before anything is stored) and
+`TestSyncCredentialsGhHelpersWithoutLogin` (against the sync fixture's
+guest: with the row off, `url.https://github.com/.insteadOf` holds both
+SSH forms and the helper is set, and `hosts.yml` did not travel).

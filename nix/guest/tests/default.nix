@@ -1695,6 +1695,17 @@ in
           assert left.strip() == "credential.https://example.com.helper store", left
           dev("if [ -f /tmp/gitconfig.keep ]; then cp /tmp/gitconfig.keep ~/.gitconfig; else git config --global --unset credential.https://example.com.helper; fi")
 
+      with subtest("I-1064: GH_TOKEN alone is the GitHub credential, with no gh login"):
+          # What `repose github setup` leaves the machine with: the token as
+          # a secret, no hosts.yml. gh answers the system credential helper
+          # from the environment, so git pushes with that token and nothing
+          # else; the SSH rewrites the CLI writes (guest-conventions.md) put
+          # a git@github.com: remote on this path too.
+          assert dev("ls ~/.config/gh/hosts.yml 2>&1 || true").find("No such file") >= 0
+          out = dev("printf 'url=https://github.com/me/skills.git\\n\\n' | GH_TOKEN=github_pat_FAKEVALUE git credential fill")
+          assert "username=x-access-token" in out, out
+          assert "password=github_pat_FAKEVALUE" in out, out
+
       with subtest("I-527: git defaults for a fresh HOME"):
           assert dev("git config --system init.defaultBranch").strip() == "main"
           assert dev("git config --system push.autoSetupRemote").strip() == "true"

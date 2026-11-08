@@ -215,6 +215,7 @@ func newRootCmd(version string) *cobra.Command {
 		newStatusCmd(envJSON, env, g),
 		newOpenCmd(env, g),
 		newSecretsCmd(env, g),
+		newGithubCmd(env, g),
 		newConfigCmd(env, g),
 		newSnapshotsCmd(env, g),
 		newRmCmd(env, g),
@@ -2060,6 +2061,50 @@ func newReplyCmd(envJSON func(*cobra.Command) (*Env, error), g *globalFlags) *co
 	cmd.Flags().StringVar(&question, "question", "", "the question's `ID`, or its last characters, as questions shows it")
 	_ = cmd.RegisterFlagCompletionFunc("question", completeQuestionID(func() (*Env, error) { return envJSON(cmd) }))
 	return cmd
+}
+
+// newGithubCmd is `repose github`, whose one command stores the GitHub
+// token the machines use in place of the laptop's gh login (I-1064).
+func newGithubCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "github",
+		Short: "Give the machines a GitHub token for only some repositories",
+		Long: "Give the machines a GitHub token of your own, for the repositories you pick,\n" +
+			"in place of the gh login repose copies, which reaches every repository you\n" +
+			"can.",
+		Example: "  repose github setup\n  repose github setup --owner acme",
+	}
+	var owner string
+	setup := &cobra.Command{
+		Use:   "setup",
+		Short: "Store a GitHub token for the machines, and stop copying your gh login",
+		Long: "Open GitHub's fine-grained token form, prefilled with everything but the\n" +
+			"repository list, and store what you paste as the GH_TOKEN secret of your\n" +
+			"account, or with --project of one project. git and gh on the machine then\n" +
+			"use that token. Your gh login stays on your laptop from then on, and the\n" +
+			"next repose run removes the copy an earlier one left while it still matches\n" +
+			"your laptop's.\n\n" +
+			"To widen or renew it, run this again and paste a new token; an agent that is\n" +
+			"refused a repository can ask you for one itself. Piped input is taken as the\n" +
+			"token and opens nothing.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := env()
+			if err != nil {
+				return err
+			}
+			o := githubSetupOpts{Project: g.project, Owner: owner}
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				if o.Token, err = readPipedSecret(os.Stdin, githubTokenSecret); err != nil {
+					return err
+				}
+			}
+			return GithubSetupCmd(cmd.Context(), e, o)
+		},
+	}
+	setup.Flags().StringVar(&owner, "owner", "", "the account or organisation that owns the repositories (`NAME`); the checkout's, else yours")
+	root.AddCommand(setup)
+	return root
 }
 
 func newNotifyCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {

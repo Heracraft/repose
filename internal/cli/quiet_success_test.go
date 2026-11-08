@@ -35,6 +35,7 @@ var quietAllowed = map[string]string{
 	"creds.go:skippedCredNotice: login an earlier repose run copied to t":         "says why a copy was removed",
 	"sync.go:Warnings:Removed the .env file an earlier repose ":                   "says why a copy was removed",
 	"sync.go:Warnings:Removed the %d .env files an earlier rep":                   "says why a copy was removed",
+	"logins.go:saveLoginSkip:Without gh, git on the machine needs a t":            "unblocks: the login they just turned off was the machine's only GitHub credential (I-1064)",
 	"logins.go:loginsHeader:Copied at each repose run, for every pro":             "names when, not what to type",
 	"logins.go:loginsHeader: at each repose run (its own list)":                   "names when, not what to type",
 	"logins.go:loginsHeader: at each repose run (the shared list)":                "names when, not what to type",

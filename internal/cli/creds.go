@@ -76,7 +76,7 @@ type credSyncOptions struct {
 func skippedCredNotice(label string) string {
 	n := "Removed the " + label + " login an earlier repose run copied to the machine: repose secrets choose has it off."
 	if label == "gh" {
-		n += " Git on the machine cannot push to GitHub until you run gh auth login there or store a token as a secret."
+		n += " Git on the machine needs a GH_TOKEN secret, or a gh auth login made there."
 	}
 	return n
 }
@@ -227,13 +227,21 @@ func buildCredentialsAndCarry(homeDir, repoDir string, opts credSyncOptions, co 
 		labels = append(labels, "git")
 		hashParts = append(hashParts, []byte("identity"), []byte(name), []byte(email))
 	}
-	if ghCopied {
+	if ghCopied || opts.Skip["gh"] {
 		// Whatever the project's remote: with no agent forwarding (I-247)
 		// an SSH URL for github.com (the origin guestd sets, a submodule,
-		// a repository cloned in the guest) has no key to use, and gh's
-		// login is the one way to github the guest has. Each rewrite is
-		// set by value, so a second run, or another insteadOf the user
-		// added under the same key, is left as it is.
+		// a repository cloned in the guest) has no key to use, and a
+		// token over HTTPS is the one way to github the guest has. Each
+		// rewrite is set by value, so a second run, or another insteadOf
+		// the user added under the same key, is left as it is.
+		//
+		// They go when the login is left at home too (I-1064): the
+		// machine then pushes with the GH_TOKEN secret `repose github
+		// setup` stored, which gh answers with through this same helper
+		// even with no login of its own, and an SSH remote has to be
+		// rewritten to reach it. With neither a login nor a token, git
+		// asks for a username and fails saying so, where before it
+		// failed on a key it never had.
 		lines = append(lines,
 			"git config --global --replace-all url.https://github.com/.insteadOf git@github.com: '^git@github\\.com:$'",
 			"git config --global --replace-all url.https://github.com/.insteadOf ssh://git@github.com/ '^ssh://git@github\\.com/$'",

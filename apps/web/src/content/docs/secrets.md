@@ -85,7 +85,7 @@ At each `repose run`, these are copied straight to the machine over SSH if you h
 | Codex CLI  | `~/.codex/auth.json`                                                             |
 | opencode   | `~/.local/share/opencode/auth.json`                                              |
 
-With the `gh` login copied, git on the machine sends every GitHub URL over HTTPS with that login, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included. A `gh auth login` made on the machine covers HTTPS URLs only; the SSH rewrite comes with a copied login. A copy on the machine newer than your laptop's is kept, so the login you made there survives the next run.
+With the `gh` login copied, git on the machine sends every GitHub URL over HTTPS with that login, `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` included. The same rewrite is made when you leave the login at home, so a [token](#a-token-for-only-some-repositories) covers SSH remotes too. A `gh auth login` made on the machine covers HTTPS URLs only. A copy on the machine newer than your laptop's is kept, so the login you made there survives the next run.
 
 Never copied: SSH private keys, [Claude Code's login, Gemini's OAuth login](/docs/agents#log-in), the Vercel CLI's login.
 
@@ -130,7 +130,39 @@ The list is saved in `~/.config/repose/config.toml` on your laptop and covers ev
 
 The next `repose run` after you turn one off removes the copy an earlier run left on the machine, as long as it is still the same as your laptop's. A `.env` file an agent changed there is left alone, and `run` names it. With `mcp` off, the next `run` or `attach` takes the servers it copied off the machine's agents; a server you added on the machine stays.
 
-Without the `gh` login, git on the machine has no way to push to GitHub. Run `gh auth login` there, or use a [token](#other-git-hosts).
+Without the `gh` login, git on the machine needs a token: `repose github setup` stores one for the repositories you pick (below), or run `gh auth login` on the machine.
+
+### A token for only some repositories
+
+The `gh` login reaches every repository you can. To give the machines less than that, make a GitHub token for the repositories you pick and store that instead:
+
+```
+$ repose github setup
+Make a token at
+https://github.com/settings/personal-access-tokens/new?...
+Pick the repositories; it needs Contents and Pull requests write.
+Paste the token: ********
+Set GH_TOKEN for every project; 1 running machine has it now.
+Your gh login stays on your laptop, for every project.
+```
+
+GitHub's form opens with everything filled in but the repository list, which is yours to pick: one repository, a few, or every repository of an account. git and gh on the machine then use that token, `git@github.com:` remotes included. A list of selected repositories does not cover one you make later, so pick every repository of the account if the machines should reach new ones without another token.
+
+What the token can do is read and write the code of the repositories you picked, and open pull requests on them. It cannot create, delete or rename a repository, make a private one public, read a repository's Actions secrets or change its workflows. Any fine-grained token can also read every public repository on GitHub; that is GitHub's rule, not a choice on the form.
+
+`--project NAME` stores the token for one project rather than your whole account.
+
+The next `repose run` removes the `hosts.yml` an earlier run copied, on the same terms as the Vercel login above: while it is still the same as your laptop's. One the machine has changed since stays, and a snapshot taken before then holds the copy it had, so a login you want out of reach has to be revoked on GitHub.
+
+Destroying a project does not revoke the token, and an agent on the machine can read it, so the repositories you picked stay reachable from it until you revoke the token on GitHub.
+
+`GH_TOKEN` wins over any login on the machine, so if you turn the `gh` copy back on, remove the secret with `repose secrets rm --global GH_TOKEN` or the machine keeps using the token.
+
+To widen or renew the token, run `repose github setup` again and paste a new one. Editing a token's repository list on GitHub is not the way: that form starts from every repository, whatever the token has now.
+
+An agent that needs a repository your token leaves out gets GitHub's 404, and can ask you for a wider one with `repose-ask --secret GH_TOKEN` ([when an agent asks for a secret](/docs/notifications#when-an-agent-asks-for-a-secret)). You paste the new token on the dashboard, and its next command uses it. A token pasted that way is stored for the project that asked, where it wins over your account's, so your other projects keep the one they had.
+
+A token whose owner is an organisation that reviews fine-grained tokens waits for an owner there to approve it, and reads only public repositories until they do. An organisation can also block them, and then it is not on the form at all.
 
 ### Other git hosts
 
