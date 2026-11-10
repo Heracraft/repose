@@ -328,8 +328,8 @@ groups:
           severity: warn
         annotations:
           summary: "Prometheus cannot scrape {{ $labels.job }} on {{ $labels.host_id }}"
-          description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not."
-          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+          description: "The WireGuard tunnel or the exporter is down. Metering continues through the api stream; metrics and the host dashboards do not. Its own section's step 2 is the tunnel, which is HostWgDown."
+          runbook: "docs/ops/RUNBOOK.md#hostscrapedown"
 
       - alert: FluentBitStuck
         # §6: Fluent Bit buffers to disk and retries forever, so failed

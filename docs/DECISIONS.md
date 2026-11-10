@@ -30322,6 +30322,19 @@ ones, and the long tail of `hostd:`-prefixed sections is unaddressed. The
 says so rather than the metric being fixed, which needs the gateway's
 dial-fail counter to grow a label and is its own change.
 
+**One more misdirection, and the guard for it.** `HostScrapeDown`'s
+`runbook:` annotation resolved to `#hostwgdown` — so the alert that fires
+for a dead tunnel delivered the operator into a different section, whose
+step 3 (before I-1070 corrected it) would have finished the tunnel off.
+It was the only alert in either rules file whose anchor did not match its
+own name, and `ops/check.sh` passed it, because the anchor resolved: the
+existing check asks whether an anchor goes *somewhere*, never whether it
+goes to the right place. An anchor pointing at a real but wrong section is
+worse than one pointing nowhere, since nothing about the page looks
+broken. The annotation now points at its own section and names
+`HostWgDown` as its step 2, and a new check refuses any alert whose
+anchor is not its own slug.
+
 *Evidence.* Every section title quoted in the new table resolves to a
 heading in the same file, checked by script over the table's 41 rows and
 48 titles. `ops/check.sh` ok, with "all anchors resolve" after the
