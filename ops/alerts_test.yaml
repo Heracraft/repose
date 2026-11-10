@@ -1321,6 +1321,48 @@ tests:
               description: "No scrape of :9101 over WireGuard for 3 minutes. The host, its network or hostd is down; its guests may be down with it."
               runbook: "docs/ops/RUNBOOK.md#hostddown"
 
+  # --- HostWgDown (I-1070) ------------------------------------------------
+  - interval: 1m
+    name: HostWgDown pages for a host the api can reach and Prometheus cannot, and not for a host that is down
+    input_series:
+      # host-01: the tunnel is gone and the api still has it ready. This is
+      # the 2026-11-10 shape and the only one that should page here.
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "1 1 0+0x14"
+      - series: 'repose_api_host_state{state="unreachable",host_id="host-01",instance="api-grpc:9090",job="api"}'
+        values: "0+0x16"
+      # host-02: down by both paths. HostdDown and HostUnreachable own this
+      # one; a rebind would fix nothing and the page must not say tunnel.
+      - series: 'up{job="hostd",instance="10.255.0.4:9101",host_id="host-02"}'
+        values: "0+0x16"
+      - series: 'repose_api_host_state{state="unreachable",host_id="host-02",instance="api-grpc:9090",job="api"}'
+        values: "1+0x16"
+    alert_rule_test:
+      # Still silent while the host's own watchdog is having its go.
+      - eval_time: 6m
+        alertname: HostWgDown
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: HostWgDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              host_id: host-01
+            exp_annotations:
+              summary: "host-01 is heartbeating but its tunnel to the edge is down"
+              description: "The api can reach this host and Prometheus cannot scrape it through the edge, so the WireGuard tunnel is down or one-way. Its guests keep running and no `repose ssh`, `run`, `attach` or `open` reaches them; its logs and metrics stop; operator ssh to the host stops with them. repose_host_wg_rebinds_total says whether the host's own watchdog is already trying."
+              runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+
+  - interval: 1m
+    name: HostWgDown stays silent when api-grpc publishes no host states at all
+    input_series:
+      - series: 'up{job="hostd",instance="10.255.0.2:9101",host_id="host-01"}'
+        values: "0+0x16"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: HostWgDown
+        exp_alerts: []
+
   # --- HostServiceDown (I-648) --------------------------------------------
   - interval: 1m
     name: HostServiceDown warns for a named unit inactive for 15 minutes, not for others

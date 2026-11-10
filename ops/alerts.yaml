@@ -303,6 +303,69 @@ groups:
           description: "No scrape of :9101 over WireGuard for 3 minutes. The host, its network or hostd is down; its guests may be down with it."
           runbook: "docs/ops/RUNBOOK.md#hostddown"
 
+      - alert: HostWgDown
+        # The host is alive and its tunnel to the edge is not. hostd's
+        # heartbeat reaches the api over the provider NIC and this scrape
+        # comes through the edge over WireGuard, so a dead or one-way
+        # tunnel takes the scrape and leaves the heartbeat: the api still
+        # has the host `ready` while the gateway cannot dial a single
+        # guest on it, Fluent Bit ships nothing, and the host's sshd,
+        # which binds the WireGuard address and nothing else, cannot be
+        # reached at all.
+        #
+        # RUNBOOK has had a HostWgDown section since the alert was
+        # specified and no rule ever carried it, so on 2026-11-10 host-02
+        # spent 42 minutes in this state and what fired was HostdDown and
+        # HostScrapeDown, both naming hostd, which was healthy throughout
+        # (DECISIONS I-1070). HostScrapeDown's runbook link already points
+        # at that section.
+        #
+        # The api NOT seeing the host unreachable is what separates this
+        # from a host that is simply down; with api-grpc dead the gauge
+        # has no series at all and this cannot fire, which is
+        # ApiHostsAbsent's job rather than this one's. HostdDown is left
+        # as the catch-all page it was built to be (it is the only alert
+        # that saw 2026-10-10), so both fire together and this one names
+        # the cause; OBSERVABILITY.md's table is where that is written
+        # down, Grafana having no inhibitions (I-942).
+        # Written as a product rather than the obvious
+        #   up{job="hostd"} == 0 and on (host_id) (... == 0)
+        # on purpose. A Prometheus comparison returns the LEFT side's
+        # value, so that form fires with the value zero, and alerts-gen
+        # cannot split a boolean top level: the Grafana copy would get the
+        # whole expression with a condition of "above 0" and could never
+        # fire (I-1012 and ops/grafana/alerts-gen.py's BOOLEAN_EXPRS, which
+        # ops/check.sh refuses to let this join without that being true).
+        # `1 - up` is 1 for a failed scrape, `== bool 0` is 1 for a host
+        # the api does not hold unreachable, and the product is 1 only when
+        # both are, so the firing value is 1 and the condition splits. With
+        # api-grpc publishing no host states the group_left finds no match,
+        # the series is dropped and this cannot fire at all, which is
+        # ApiHostsAbsent's job.
+        expr: |
+          max by (host_id) (
+            (1 - up{job="hostd"})
+              * on (host_id) group_left()
+                (max by (host_id) (repose_api_host_state{state="unreachable"}) == bool 0)
+          ) > 0
+        # Longer than HostdDown's 3m on purpose, and the number is the
+        # watchdog's (I-1068), not a guess. A break at T is detected by
+        # repose-wg-watchdog between T+180 s and T+240 s, it rebinds the
+        # socket, and a rebind that works is scraped as recovered inside
+        # another half minute. So 8m pages only once self-repair has been
+        # tried and has had five minutes to prove it worked, which is what
+        # makes this page actionable rather than a race with its own fix.
+        # Nothing is silent in the meantime: HostdDown still pages at 3m
+        # as the catch-all, and on a host whose watchdog is off or absent
+        # this simply pages five minutes later than it otherwise would.
+        for: 8m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.host_id }} is heartbeating but its tunnel to the edge is down"
+          description: "The api can reach this host and Prometheus cannot scrape it through the edge, so the WireGuard tunnel is down or one-way. Its guests keep running and no `repose ssh`, `run`, `attach` or `open` reaches them; its logs and metrics stop; operator ssh to the host stops with them. repose_host_wg_rebinds_total says whether the host's own watchdog is already trying."
+          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+
       - alert: HostServiceDown
         # A unit a host needs is not active. After the 2026-10-10 reboot
         # docker-registry was skipped on its mount condition and stayed

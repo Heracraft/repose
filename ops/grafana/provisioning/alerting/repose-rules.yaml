@@ -1040,6 +1040,78 @@ groups:
                   reducer:
                     type: last
                     params: []
+      - uid: repose-hostwgdown
+        title: HostWgDown
+        condition: C
+        for: 8m
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+        labels:
+          severity: page
+          stack: repose
+        annotations:
+          summary: "{{ $labels.host_id }} is heartbeating but its tunnel to the edge is down"
+          description: "The api can reach this host and Prometheus cannot scrape it through the edge, so the WireGuard tunnel is down or one-way. Its guests keep running and no `repose ssh`, `run`, `attach` or `open` reaches them; its logs and metrics stop; operator ssh to the host stops with them. repose_host_wg_rebinds_total says whether the host's own watchdog is already trying."
+          runbook: "docs/ops/RUNBOOK.md#hostwgdown"
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: repose-prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: repose-prometheus
+              editorMode: code
+              expr: "max by (host_id) ( (1 - up{job=\"hostd\"}) * on (host_id) group_left() (max by (host_id) (repose_api_host_state{state=\"unreachable\"}) == bool 0) )"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: B
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: reduce
+              reducer: last
+              expression: A
+              settings:
+                mode: dropNN
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: C
+              datasource:
+                type: __expr__
+                uid: __expr__
+              type: threshold
+              expression: B
+              conditions:
+                - type: query
+                  evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    type: last
+                    params: []
       - uid: repose-hostservicedown
         title: HostServiceDown
         condition: C

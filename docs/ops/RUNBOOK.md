@@ -2282,22 +2282,61 @@ the export mount private). On a host built before the fix:
 
 The edge cannot reach a host's guests: `wg show` on the edge shows no
 recent handshake for the host's peer, `dial_fail` in gateway logs for its
-guests, alert `host_wg_down`. hostd's gRPC stream goes over the provider
-NIC, so the api still sees the host as `ready`.
+guests, alert `HostWgDown` (DECISIONS I-1070). hostd's gRPC stream goes
+over the provider NIC, so the api still sees the host as `ready` — and it
+is right. That is this page's whole shape: the host is healthy and only
+the tunnel is not, so `HostdDown` and `HostScrapeDown` fire beside this
+and both name hostd, which is fine throughout. Believe this one.
 
-1. On the host (via the Azure serial console or the bootstrap key if the
-   tunnel is the only way in): `systemctl status wg-quick-wg0`,
-   `wg show wg0`. `ConditionPathExists=/run/repose/wg0.conf` unmet means
-   the host never registered: "HostUnregistered".
-2. `journalctl -u repose-host-net`: the render from `host.json` failed
+While it lasts the guests keep running and nothing reaches them: no
+`repose ssh`, `run`, `attach` or `open`, no metrics, no logs, and no
+operator ssh to the host either, because `repose-host-net` binds sshd to
+the WireGuard address and nothing else.
+
+0. **The host may already be repairing it.** `repose-wg-watchdog`
+   rebinds the host's WireGuard socket once it has sent for 180 s and
+   heard nothing (DECISIONS I-1068), which fixes the case where the
+   five-tuple is what broke: a stale NAT mapping, a blackholed flow.
+   `repose_host_wg_rebinds_total` on the host's node_exporter, or
+   `journalctl -u repose-wg-watchdog`. **The counter climbing while the
+   tunnel stays down is the useful reading** — it says the cause is not
+   the five-tuple, so do not wait for another rebind, go to step 2.
+1. **From the edge, is the host reachable at all?** Hosts and the edge
+   share one VNet, so the edge reaches a host's private address even with
+   the tunnel dead: `ping -c3 <host private ip>` (`az vm list -d`, or
+   `make -C infra output ENV=prod`). It answers: the host is alive, this
+   page. It does not: "HostUnreachable" step 1. Port 22 on that private
+   address refuses by design, sshd being on the WireGuard address.
+2. On the host: `systemctl status wg-quick-wg0`, `wg show wg0`.
+   `ConditionPathExists=/run/repose/wg0.conf` unmet means the host never
+   registered: "HostUnregistered". Getting a shell is the hard part, and
+   the ways in, in the order that works: ssh is out, the tunnel being
+   what is broken; Azure Run Command is disabled on hosts
+   (`Extensions.Enabled=n`); the serial console needs root's console
+   password, a file placed by hand that **may never have been placed on
+   this host** (DECISIONS I-654 and "Console access" below — on
+   2026-11-10 host-02 had none, which is what left a VM restart as the
+   only option).
+3. `journalctl -u repose-host-net`: the render from `host.json` failed
    (malformed `host.json` after a bad rotation) or the endpoint did not
    resolve at boot. `systemctl restart repose-host-net` re-renders and
-   restarts wg0, sshd, node_exporter and Fluent Bit.
-3. Keys do not match: `repose-admin hosts rotate-wg host-NN` issues a new
-   pair, hostd rewrites `host.json` and restarts `repose-host-net`;
-   confirm the edge's `wgsync` picked up the new public key within 30 s.
-4. Handshake fine but no route: on the edge `ip route | grep <guest cidr>`;
+   restarts wg0, sshd, node_exporter and Fluent Bit; it rebinds the
+   socket on the way, so it is also the heavy version of step 0.
+4. Keys do not match: `repose-admin hosts rotate-wg host-NN` stores a new
+   public key and **prints the private key for you to install in
+   `host.json` on the host by hand** — the api never holds it — followed
+   by `systemctl restart repose-host-net`. **Do not run it while the
+   tunnel is what is broken.** The edge's `wgsync` takes the new public
+   key within 30 s, so from that moment the edge expects a key the host
+   has not got, and a one-way tunnel becomes a completely dead one with
+   no way in to finish the job.
+5. Handshake fine but no route: on the edge `ip route | grep <guest cidr>`;
    `wgsync` adds it from `/internal/hosts`.
+6. If no shell can be had, the last lever is `az vm restart -g
+   repose-prod -n <host>`. Guests keep their memory across it when the
+   park is on and fits, they restart themselves (DECISIONS I-645), and
+   `host_id=<name>` wants silencing first. Read "Host rebooted" before
+   using it, not after.
 
 ## Host rebooted
 

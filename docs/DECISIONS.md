@@ -30235,3 +30235,181 @@ both copies, which is the backward-compatible half.
 written before this existed. Its `main=` was added by hand to the queue
 state so its record names `0230ae22c`; every release after this one gets
 it from `done`.
+
+**I-1068. A host repairs its own one-way tunnel by rebinding the socket,
+because twice now nothing else has.** (wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+On 2026-11-10 Azure live-migrated host-02 and its WireGuard tunnel to the
+edge came back one way. The host's handshake initiations reached the edge
+and authenticated — the edge re-learned its endpoint from them, which it
+only does for a packet that authenticates — and the edge's answers never
+arrived. Both ends then retried the same dead five-tuple every few
+seconds for 42 minutes, which is as long as it took a person to notice
+and ask.
+
+Everything an operator and a tenant need from a host rides that tunnel:
+the gateway relays `ssh`, `run`, `attach` and `open` to guests over it,
+Prometheus scrapes node_exporter and hostd through it, Fluent Bit ships
+logs through it, and the host's sshd binds the WireGuard address and
+nothing else (`network.nix`, `write_sshd`). The heartbeat does not: that
+is gRPC over the provider NIC. So the api held host-02 `ready` and
+correct throughout, with three of the owner's machines running and
+unreachable, and no shell into the host to run the one command that would
+have fixed it. The repair needed a VM restart.
+
+This is the second occurrence. The control VM on 2026-10-26 (I-866) sent
+a 148-byte initiation every 5.6 s for nine hours and received nothing,
+and was fixed by rebinding its socket to a new port. That incident file
+closed on exactly this gap: "neither end rebinds its socket when it has
+sent for minutes and received nothing."
+
+`repose-wg-watchdog`, a timer on every host, samples each peer's
+handshake age and byte counters once a minute. When the handshake is
+older than `staleAfter` (180 s), the host has sent since the previous
+sample and received nothing in that window, it runs `wg set <iface>
+listen-port 0`. That is the whole repair. It changes the five-tuple,
+which is what a stale NAT mapping or a blackholed flow is keyed on, and
+it keeps the interface, its keys, its peers and its routes. The host's
+`wg0.conf` carries no `ListenPort`, so a random port is what it already
+had and nothing has to agree with the choice.
+
+**What it does not do, deliberately.** It never restarts `wg-quick`:
+that tears down routes a guest's traffic is on for a repair that does not
+need them touched. It does nothing on its first sample after a boot,
+having no counters to compare. It does nothing on a quiet tunnel: "no
+handshake" is also true of a host whose edge is genuinely down and of a
+tunnel nobody is using, and without `tx` rising while `rx` is flat there
+is no evidence of one-wayness. And it cannot fix a break that is not
+keyed on the five-tuple — wrong keys, a firewall or routing change, an
+edge that is down — so it is rate-limited to one rebind per
+`minInterval` (600 s) and `HostWgDown` (I-1070) still pages.
+`repose_host_wg_rebinds_total` climbing with the tunnel still down is the
+signal that the cause is not this one.
+
+**One coupling, found by the test rather than by reading.** Detection
+needs `tx` to have moved *between two samples*, so it depends on the
+host's peer carrying `PersistentKeepalive = 25` (`network.nix`): that is
+what makes a dead tunnel keep sending. Take the keepalive away and a
+one-way tunnel with no traffic on it becomes invisible here. The sampling
+interval must therefore stay comfortably longer than the keepalive and
+`staleAfter` longer again. The first version of the VM test asserted
+re-detection a fraction of a second after a rebind and failed, correctly:
+no keepalive had gone out, so there was no new sending to see and the
+watchdog concluded nothing.
+
+**What it publishes, and the freshness trap.** `repose_host_wg_one_way`,
+`repose_host_wg_handshake_age_seconds`, `repose_host_wg_rebinds_total`,
+`repose_host_wg_rebound`, `repose_host_wg_rebind_failed` and
+`repose_host_wg_watchdog_run_seconds`. The failure gauge is separate
+because "one-way and not rebound" is otherwise the same reading as
+"one-way and rate-limited", and those call for different next steps. The
+run timestamp is there because node_exporter serves whatever is on disk:
+a stopped timer keeps publishing its last numbers for ever, and a
+watchdog that is not running reads exactly like a healthy tunnel. That is
+the trap I-1010 names, and it applies to this writer as much as to any
+other.
+
+**Known gaps, none of them closed here.** (1) The watchdog is on hosts
+only. The 2026-10-26 occurrence was the control VM, whose wg-quick is not
+managed by `nix/hosts`, and the edge's interface is
+`networking.wireguard`; both still need a person. (2) A rebind drops
+in-flight tunnel traffic for the moment it takes to handshake again, so a
+tenant's session blips — against an hour down, that is the trade accepted
+here, and on a healthy tunnel the detector never fires. (3) It treats a
+peer that has never handshaked as stale, so a host whose tunnel never
+came up rebinds every 10 minutes until someone looks; harmless, visible
+in the counter, and better than the alternative of never acting on a
+tunnel that is dead from birth. (4) If `ListenPort` is ever pinned on
+hosts (the I-866 direction for the control VM), it conflicts with this
+and the pin has to win, since a pinned port and a rebinding one cannot
+both be the contract.
+
+**The deeper cause is not fixed here and is the owner's call.** The
+tunnel leaves the VNet at all only because the endpoint hosts dial is the
+edge's *public* address, so host-02's packets hairpinned through
+`natgw-hosts` and back to reach a machine 2 ms away in the same VNet. A
+private endpoint removes the NAT gateway, and with it this failure, but
+the endpoint is one global setting (`SettingEdgeWGEndpoint`), WireGuard
+holds one endpoint per peer with no failover, and a host outside the
+edge's VNet — the BYO and Hetzner directions — would then never connect
+at all. It is also written only at registration, so it would not repair
+the running fleet. That needs a per-host endpoint or a fallback, and a
+decision, not a flipped string.
+
+*Evidence.* `nix/hosts/tests/wg-watchdog.nix`, VM test
+`host-wg-watchdog`: the one-way condition is produced rather than faked,
+with the peer's endpoint at `127.0.0.1:51821` and nothing bound, so the
+sends really happen and `tx` really climbs while `rx` stays put and no
+handshake completes. A blackholed public address reads the same to
+WireGuard but not to the kernel: with no route or no ARP reply the send
+fails and `tx` never moves, which is the one thing the test needs true.
+It asserts the timer is `is-enabled` and not merely present, that a host
+with no interface publishes no metric file rather than a zero that reads
+as a healthy tunnel, that the first sample does not act, that the second
+rebinds to a different port, and that a third inside `minInterval` does
+not.
+
+**I-1070. RUNBOOK had a HostWgDown section for an alert that was never
+written, so the one failure it describes pages as something else.**
+(wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+`docs/ops/RUNBOOK.md` has carried a "HostWgDown" section since the alert
+was specified, naming an alert `host_wg_down`, and `ops/alerts.yaml` has
+never had a rule behind it. `HostScrapeDown`'s own `runbook:` annotation
+already links to that section. So on 2026-11-10, with host-02 alive and
+heartbeating and its tunnel dead, what fired was `HostdDown` and
+`HostScrapeDown` — both of which name hostd, which was healthy
+throughout, and the first of which sends a reader to check whether the
+host, its network or hostd is down.
+
+`HostWgDown` is now a rule. The signal that separates it from a host that
+is simply down was already published and unused: the api's own view of
+the host. Prometheus scrapes hostd through the edge over WireGuard and
+the heartbeat travels the provider NIC, so
+
+    up{job="hostd"} == 0
+      and on (host_id) (max by (host_id) (repose_api_host_state{state="unreachable"}) == 0)
+
+is "the api can reach this host and nothing through the edge can", which
+is the tunnel and nothing else. Reading `state="unreachable" == 0` rather
+than `state="ready" == 1` is deliberate: a draining host with a dead
+tunnel is the same incident and should page the same way.
+
+`HostdDown` is left exactly as it was. It is the catch-all page and the
+only alert that saw 2026-10-10, and gating it on the api's view would
+have broken the case it exists for. So both fire together and this one
+names the cause; Grafana has no inhibitions (I-942), and
+`docs/ops/OBSERVABILITY.md`'s table is where which-causes-which is
+written down. With api-grpc down the gauge has no series and this cannot
+fire at all, which is `ApiHostsAbsent`'s job rather than this rule's.
+
+**The expression is a product, not the obvious `and`, and `ops/check.sh`
+is why.** Written the natural way —
+`up{job="hostd"} == 0 and on (host_id) (… == 0)` — it fires with the value
+**zero**, because a Prometheus comparison returns the left side's value.
+Prometheus does not mind; `alerts-gen.py` cannot split a boolean top
+level, so the Grafana copy would have taken the whole expression with a
+condition of "above 0" and could never have fired. That is I-1012's trap
+exactly, and the generator refused the rule rather than emitting it,
+which is the check earning itself. The shipped form multiplies
+`1 - up` by `… == bool 0`, so its firing value is 1 and the condition
+splits.
+
+**`for` is 8m, and the number is the watchdog's.** A break at T is
+detected by `repose-wg-watchdog` between T+180 s and T+240 s and a rebind
+that works is scraped as recovered within another half minute, so 8
+minutes means this pages only once self-repair has been tried and has had
+five minutes to prove it worked. A page that races its own fix is worse
+than a slower one, and nothing is silent in the meantime: `HostdDown`
+still pages at 3m. On a host with the watchdog off or absent this simply
+pages five minutes later than it otherwise would.
+
+*Evidence.* `promtool check rules ops/alerts.yaml`: SUCCESS, 60 rules.
+`promtool test rules ops/alerts_test.yaml`: SUCCESS. Two cases in
+`ops/alerts_test.yaml`: a host the api holds reachable with a dead hostd
+scrape pages after 3 minutes and not before, a host the api also holds
+unreachable does not page here at all (that one is `HostdDown` and
+`HostUnreachable`, and a rebind would fix nothing), and a fleet where
+api-grpc publishes no host states stays silent.

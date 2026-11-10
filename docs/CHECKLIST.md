@@ -443,14 +443,25 @@ entry and this list with it. Counts as of 2026-10-21.
       `alert_email`. `az monitor action-group test-notifications create`
       refuses with "no valid receivers", so the portal is the way
       (I-648).
-- [ ] **A console login exists on host-01 and the edge.** Both are built
-      with root locked, so the Azure serial console shows output but cannot
-      log in, and a host that will not boot cannot be rescued. Evidence: a
-      yescrypt hash in `/var/lib/repose/root-console.hash` on each machine
-      (made by the owner, never in the repo), a switch after it, and one
-      login on the portal's serial console. SSH stays key-only; the boot
-      menu waits 10 s so an older generation can be chosen (I-649, I-654).
-- [ ] **A planned host-01 restart has been ridden out.** It is the only
+- [ ] **A console login exists on every host and the edge.** Each is
+      built with root locked, so the Azure serial console shows output but
+      cannot log in, and a host that will not boot — or whose tunnel is
+      down, which is the same thing for access — cannot be rescued.
+      Evidence: a yescrypt hash in `/var/lib/repose/root-console.hash` on
+      each machine (made by the owner, never in the repo), a switch after
+      it, and one login on the portal's serial console. SSH stays
+      key-only; the boot menu waits 10 s so an older generation can be
+      chosen (I-649, I-654).
+      **This row names every machine, not two, because it was written
+      when the fleet was host-01 and the edge and was never widened.**
+      host-02 was provisioned on 2026-11-02 and never had a hash; its
+      journal logged `password file '/var/lib/repose/root-console.hash'
+      does not exist` at every boot and every switch for eight days and
+      nothing read it. On 2026-11-10 that is what reduced a one-command
+      tunnel repair to a VM restart (I-1068). Until a check publishes the
+      file's absence as a metric, adding a host means adding its hash in
+      the same sitting.
+- [ ] **A planned host restart has been ridden out.** It is the only
       proof of the new initrd pool activation (I-643), the restart of
       machines that were running (I-645) and the guest park on prod
       (I-652, I-685, I-686), none of which a switch exercises. Evidence:
@@ -460,6 +471,18 @@ entry and this list with it. Counts as of 2026-10-21.
       unit logged `pool_activated`. `hostd park` is all-or-nothing, so
       this cannot be rehearsed on one guest while others must keep
       running (I-696).
+      **Two of the three are now done, on host-02 and unplanned.** The
+      2026-11-10 restart (`docs/incidents/2026-11-10-host-02-tunnel-one-way.md`)
+      parked all three running guests and restored all three: `parked`
+      for each at 42.8 s, 56.0 s and 80.4 s for images of 7.4, 13.0 and
+      15.1 GiB, the park holding the shutdown 96 s against its 240 s
+      deadline, then `parked guests restored restored=3 images=3
+      duration_ms=60263`, each guest's `uptime` spanning the restart (3
+      days, 7 days, 23 h) and its agents back. The pool came back on a
+      real boot with every unit active. **I-645 is still unproven**: the
+      park pre-empted it, so no guest was ever marked interrupted and the
+      api's resume path did not run. A restart with the park off, or one
+      where a guest does not fit the budget, is what exercises that.
 - [ ] **The herdr laptop checks** from release r20261008-1 have been run on
       the owner's laptop. Evidence: the five steps in commit `7bd8807c`'s
       message, with their output (I-596, I-597, I-598).
