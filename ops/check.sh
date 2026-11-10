@@ -96,6 +96,36 @@ else
   echo "all alerts have one"
 fi
 
+say "every alert-shaped runbook heading is a real alert"
+# The reverse of the check above, and the one that was missing. A heading
+# written as a bare CamelCase word reads as an alert name, so an operator
+# or an agent who finds it believes an alert exists for that failure. On
+# 2026-11-10 "## HostWgDown" had been in the runbook for months, said
+# "alert `host_wg_down`", and no such rule existed: the section for the
+# failure in front of the diagnosing agent looked like it was for some
+# other, alerted condition, and 42 minutes went elsewhere (I-1074).
+#
+# Sections deliberately named after something other than a Prometheus
+# alert go in this list with the reason. Keep it honest: it is the only
+# thing between a new phantom alert and a reader who trusts the name.
+allowed_non_alerts="StoreHigh"
+# StoreHigh: a hostd host_warning kind (`kind="store_high"`), not a
+# Prometheus rule. The Prometheus alert for the root filesystem is
+# StoreFull, at 85 percent, and that section names it.
+phantom=""
+for name in $(grep -oE "^## [A-Z][A-Za-z0-9]+$" docs/ops/RUNBOOK.md | awk '{print $2}'); do
+  case " $allowed_non_alerts " in *" $name "*) continue ;; esac
+  grep -qE "^[[:space:]]+- alert: $name$" "$ops/alerts.yaml" "$ops/alerts-loki.yaml" ||
+    phantom="$phantom $name"
+done
+if [ -n "$phantom" ]; then
+  echo "runbook headings that read as alert names with no such alert:$phantom" >&2
+  echo "add the alert, rename the heading to a symptom, or name it in allowed_non_alerts with the reason" >&2
+  fail=1
+else
+  echo "no phantom alerts"
+fi
+
 say "grafana alert rules are what the generator produces"
 python3 "$ops/grafana/alerts-gen.py" --check || fail=1
 

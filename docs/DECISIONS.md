@@ -30413,3 +30413,41 @@ scrape pages after 3 minutes and not before, a host the api also holds
 unreachable does not page here at all (that one is `HostdDown` and
 `HostUnreachable`, and a rebind would fix nothing), and a fleet where
 api-grpc publishes no host states stays silent.
+
+**I-1074. A runbook heading that reads as an alert name has to be one, or
+say why not.** (wg-selfheal, 2026-11-10.)
+*Made during implementation.*
+
+`ops/check.sh` has checked that every alert has a runbook heading since
+I-648, and that every alert's anchor resolves since I-800. Neither runs in
+the other direction, which is how `## HostWgDown` sat in the runbook for
+months, said "alert `host_wg_down`", and had no rule behind it. The cost
+is not a missing page. It is that a heading written as a bare CamelCase
+word *reads* as an alert name, so an agent that finds the section for the
+failure in front of it concludes the section must be about some other,
+alerted condition, and keeps looking. On 2026-11-10 that is what happened
+for 42 minutes.
+
+The check is now both ways: a `## ` heading matching a bare CamelCase word
+must be an alert in `ops/alerts.yaml` or `ops/alerts-loki.yaml`, or be
+named in `allowed_non_alerts` with its reason. One name is on that list
+today — `StoreHigh`, which is a hostd `host_warning` kind
+(`kind="store_high"`) and not a Prometheus rule; the Prometheus alert for
+the root filesystem is `StoreFull` at 85 percent, and the section says so.
+The list is the same device as `alerts-gen.py`'s `BOOLEAN_EXPRS`: the only
+thing between a new phantom and a reader who trusts the name.
+
+The second copy of the phantom, `docs/workstreams/01-host-nixos.md`'s host
+failure table, is corrected in the same commit. Nothing checks prose in
+workstream docs for alert names that do not exist, so that one was found
+by reading rather than by a tool, and a doc outside `docs/ops/` can still
+name an alert that is not there.
+
+*Evidence.* `ops/check.sh` prints "no phantom alerts" on this branch,
+where `HostWgDown` is a real rule (I-1070). Against `main`, where it is
+not, the same check fails with "runbook headings that read as alert names
+with no such alert: HostWgDown" — so it can fail, and it fails on exactly
+the thing that cost the time. The guard ships in this branch and not in
+`runbook-triage` for that reason: the check and the alert that satisfies
+it have to land together, or `main` goes red on a merge order nobody
+chose.
