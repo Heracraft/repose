@@ -405,7 +405,7 @@ entry and this list with it. Counts as of 2026-10-21.
 - [ ] A second human has completed login, run, attach, stop, start, secrets,
       config apply, snapshot restore, destroy on their own laptop.
 - [ ] **Paging reaches a human.** One contact point in the owner's Grafana,
-      set as the default, and the 53 alert rules pushed in
+      set as the default, and the alert rules pushed in
       (`ops/README.md` step 3). Evidence: **Test** on that contact point
       arrives; and `GRAFANA_URL=... GRAFANA_TOKEN=... python3
       ops/grafana/verify.py --wait 120` exits 0, which means a rule for every
@@ -523,7 +523,7 @@ entry and this list with it. Counts as of 2026-10-21.
       production series they evaluate healthy: none firing, none in
       error. *Wired* here means loaded and tested, not yet delivering:
       delivery needs the WireGuard peer that `10-observability.md` §9 still
-      has open. There are 57 alerts, 56 of them generated into Grafana's own
+      has open. Every alert but `Watchdog` is generated into Grafana's own
       alerting by `ops/grafana/alerts-gen.py` and pushed in by
       `ops/grafana/push.py` over the API; `ops/check.sh --grafana` proves
       every one of them against a running Grafana, twice, and the drift

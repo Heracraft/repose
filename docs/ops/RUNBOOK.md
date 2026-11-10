@@ -1,9 +1,69 @@
 # Runbook
 
-Symptom-titled. Each alert in `../CHECKLIST.md` and `../workstreams/10-observability.md`
-has an entry with the same name. Commands assume an operator certificate
-(`repose-admin operator-cert`) and, on the operator machine, either the
-edge WireGuard up or the per-host ssh blocks below.
+Two ways in. **By symptom**, from the table below — that is what a person
+or an agent actually holds when something is wrong. **By alert name**, each
+of which is a section with the same name. Commands assume an operator
+certificate (`repose-admin operator-cert`) and, on the operator machine,
+either the edge WireGuard up or the per-host ssh blocks below.
+
+## Start here: symptom to section
+
+An alert name is not a symptom, and most of this file is named after
+alerts. 58 of its sections are, and the rest are reachable only by
+someone who already knows the title — which is how, on 2026-11-10, a host
+whose tunnel had gone one way was diagnosed for 42 minutes without
+anyone reaching "HostWgDown", the section written for it (I-1072,
+`../incidents/2026-11-10-host-02-tunnel-one-way.md`).
+
+Find the row for what you have, go to that section, do its first step.
+Where a row names two sections, the first is the common cause.
+
+| What you have | Go to |
+|---|---|
+| **Access** | |
+| `repose ssh`, `run`, `attach` or `open` fails for everyone, every project | "GatewayDown", then "GatewayCachesStale", then "Control plane cannot reach the edge network" |
+| …fails for every project on **one** host, other hosts fine | "HostWgDown" |
+| …fails for one project only | "Gateway relay failures" — its table maps the exact refusal the CLI printed to a cause |
+| The CLI printed a refusal and you want to know what it means | "Gateway relay failures" |
+| `kex_exchange_identification` or `read: Connection reset by peer` | "Gateway relay failures", the ban row |
+| `<slug> did not answer ssh in N s` after a `run` | "GuestWakeFailed" if the machine was resting, else "CLI: SSH timeout after running" |
+| `ssh host-0X` times out while the api still shows the host `ready` | "HostWgDown" — the tunnel, not the host |
+| A host answers on no path at all | "HostUnreachable" |
+| The machine is reachable and `sudo` or a command inside it hangs | "Guest unresponsive", then "GuestdLost" |
+| **A machine** | |
+| Never became ready after a start | "Guest not ready" |
+| No tmux session, or the agent windows are gone | "No session on a machine (tmux or herdr)" |
+| Browser tools refuse every connection | "Browser tools on a machine refuse every connection" |
+| A tool that is on the laptop is missing in the machine | "CLI: a laptop tool is missing in the guest" |
+| Claude asks to log in again in every project | "Claude asks for a login in every project" |
+| Slow to start | "BootSlow", or "GuestWakeSlow" if it was resting |
+| Guests on a host did not come back after it rebooted | "Host rebooted", then "ResumeStalled" and "ResumeNotStarted" |
+| **Nothing to look at** | |
+| No logs from a host in Loki | "FluentBitLogShipperDown", then "FluentBitStuck" |
+| One host's dashboard panels are blank | "HostScrapeDown" |
+| Every Prometheus target is down at once | "MonitoringPathDown", then "Every Prometheus target is down and WireGuard looks fine" |
+| Grafana holds no alert rules, or they are not the repository's | "Observability" under "First-time setup" (`ops/grafana/verify.py` answers it) |
+| **Capacity and builds** | |
+| A project will not start, the refusal naming capacity | "api: no capacity right now", then "ScheduleRefused" |
+| A stop, snapshot or destroy is taking minutes | "Snapshot, stop or destroy slow" |
+| A build never finishes | "BuildQueueStuck", then "Build stuck (no BuildLog line for 10 minutes)" |
+| **A host** | |
+| Kernel `Oops`, `BUG:` or a taint | "KernelOops" — read its first two steps before searching anything |
+| Memory or CPU pressure | "HostMemory80", "HostCPUSaturated" |
+| The thin pool is full, inactive or unmonitored | "PoolUnavailable", then "PoolFull" |
+| The Nix store is filling | "StoreFull" |
+| It will not boot | "Host does not boot" (needs the console password: "Console access (host and edge)") |
+| **People and money** | |
+| A user cannot log in | "CLI: user cannot log in", then "api: login service unavailable" |
+| A user says their account is suspended | the section titled `api: user reports "account suspended"` |
+| A customer disputes a charge | "Customer disputes a charge" |
+| **Infrastructure** | |
+| An apply hangs on the state lock | "OpenTofu state lock stuck" |
+| An apply wants to replace a disk or an IP | "An apply wants to replace a host data disk or a static IP" |
+
+Two sections are worth reading before you need them, because both are
+about a check that looks conclusive and is not: "Every Prometheus target
+is down and WireGuard looks fine", and "GuestdLost" step 1.
 
 ## First-time setup
 
@@ -189,7 +249,7 @@ copy-paste version):
   Alertmanager, no SMTP password of repose's and no heartbeat (DECISIONS
   I-648, I-848, I-942, I-944; `ops/README.md` step 3).
 - `ops/dashboards/*.json` go in the same way, by the same command. The eight
-  dashboards appear in a `repose` folder and the 53 alert rules under
+  dashboards appear in a `repose` folder and the alert rules under
   Alerting, in a `repose alerts` folder of their own. No datasource is
   created: the push finds that Grafana's own by type and rewrites the uids in
   the rules and panels to it, so they query the address Grafana already
@@ -377,8 +437,15 @@ host's scrape failure does not hold it back (I-786).
    "instanceView.statuses[].displayStatus"`. A platform repair shows there,
    in the Azure alert email, and under Resource health in the portal. If
    the VM is not running: "Operating while host-01 is down".
-2. If the VM runs but neither path answers, its network may be dead
-   behind a working VM: "Host network dead after a live migration" below.
+2. If the VM runs but neither path answers: step 1's ping goes over the
+   host's WireGuard, so a dead tunnel fails it exactly as a dead network
+   does. Separate the two before concluding, because hostd's heartbeat
+   travels the VNet and not the tunnel. `repose-admin hosts list` showing
+   this host with a current heartbeat means the host is alive and only
+   the 10.255 path is dead: "HostWgDown". The VNet address answers too,
+   from the edge: `ping -c3 <host private ip>` (`az vm list -d`). A dead
+   network function kills both paths; a dead tunnel kills one. Both
+   really dead: "Host network dead after a live migration" below.
 3. If the VM is up and reachable: `ssh host-01` (the block in "Operator
    machine"), `systemctl status hostd`,
    `journalctl -u hostd -n 200`. A `stream_disconnect` loop with TLS errors
@@ -403,7 +470,13 @@ which needs the console password (I-654).
 
 1. Serial console (portal: the VM, Help, Serial console; or `az
    serial-console connect -g repose-prod -n host-01` from Cloud Shell, which
-   has the extension). Log in as root.
+   has the extension). Log in as root. **Check first that this host has a
+   console password at all**: root is locked without
+   `/var/lib/repose/root-console.hash`, the file is placed by hand, and a
+   host provisioned without one cannot be logged into here
+   ("Console access (host and edge)", I-654). host-02 had none on
+   2026-11-10 and that was found only after everything else had been
+   ruled out.
 2. Is the VF stuck? Read its counters twice, 10 s apart:
    `cat /sys/class/net/eth1/statistics/{tx,rx}_packets`. TX rising with RX
    flat is the dead VF. With ethtool on the host (I-649), `ethtool -S eth0 |
@@ -434,8 +507,12 @@ the two paths.
    repose-prod -n <host> --query "instanceView.statuses[].displayStatus"`.
    Not running: "Operating while host-01 is down".
 3. Running: `ssh -o ConnectTimeout=15 host-01` ("Operator machine"), which
-   is `ssh -J root@<edge>:2222 root@10.255.0.<host>`.
-   No answer: "Host network dead after a live migration".
+   is `ssh -J root@<edge>:2222 root@10.255.0.<host>` — over the host's
+   WireGuard, so a dead tunnel refuses it exactly as a dead host does. No
+   answer: read the api's view first, it being the one path that does not
+   use the tunnel. A current heartbeat in `repose-admin hosts list` means
+   the host is alive and its tunnel is not: "HostWgDown". No heartbeat
+   either: "Host network dead after a live migration".
 4. Reachable: `systemctl status hostd`, `journalctl -u hostd -n 200`,
    `ss -tlnp | grep 9101`, then "HostScrapeDown" step 3.
 
@@ -826,7 +903,7 @@ reach it with `ssh -p <edge_operator_ssh_port> root@<edge ip>` and read
 | `permission denied (certificate revoked)` | logout or a revoked serial | expected; takes effect within 30 s of `repose logout` |
 | `certificate not valid for this project` | the certificate's principals do not contain the resolved project id, or the login names another user's handle (no lookup is made, so this says nothing about whether that project exists; I-437) | the CLI re-requests a cert for the project; repeated from one user is probing ("GatewayAuthSpike" step 3) |
 | `<slug> is stopped; run \`repose start\`` | the project is stopped | expected; the user starts it |
-| `<slug> is on a host the control plane cannot reach right now; try again shortly` | the api has not heard from the project's host within the heartbeat deadline | "HostHeartbeatMissing"; the machine itself may be fine, and the banner clears with the next heartbeat |
+| `<slug> is on a host the control plane cannot reach right now; try again shortly` | the api has not heard from the project's host within the heartbeat deadline | "HostUnreachable" (and "HostWgDown" if the host is still heartbeating); the machine itself may be fine, and the banner clears with the next heartbeat |
 | `<slug> is running but repose has no address for it; run \`repose stop <slug>\` then \`repose start <slug>\`` | `projects.guest_ip` is NULL under a running guest (reason `no_address`, I-721) | should not happen since I-720: a start and every Hello record the address. `repose-admin projects show <slug>` for the row, then the host's `hostd status` for what it holds; one `repose stop` + `repose start` writes it. A run of these means the api is not taking the host's word — check the `guest_address` log lines |
 | `gateway busy` | the 200-relay cap is reached (on stderr, exit 255), or 512 connections are already in the handshake (one plain line before the handshake; `ssh -v` shows it) | alert on `repose_gateway_sessions`; if legitimate, the edge is undersized |
 | `too many open connections for your account; close some and try again` | one user holds 32 relays | usually a script that leaks connections; the user closes them |
@@ -1298,6 +1375,23 @@ Host root filesystem over 85 percent, almost always `/nix/store`.
 
 ## KernelOops
 
+**Two checks before anything else.** Both known causes are identified by
+one grep each, and one of them calls for no action at all, so running
+these first can end the page here. The reasoning for both is below.
+
+- `journalctl -k -b | grep -i "Dentry cache hash table"`. `vmalloc
+  hugepage` on a kernel without `hashdist=0` is I-982: nothing is
+  corrupt, do not look for a writer.
+- A `BUG: Bad page map in process __balloon` and a `BUG: Bad page cache`
+  pair milliseconds apart on `memfd:ch_ram` is I-1040, the known upstream
+  shmem hole-punch race. **It needs no action, which is not the same as
+  harmless** — read its paragraph below before deciding anything, and do
+  not drain, reboot or disable the balloon on it. Read
+  `cat /sys/kernel/debug/fault_around_bytes` and `/proc/uptime`
+  *together*: only the pair separates "nobody re-applied the mitigation
+  after a reboot" from "the mitigation does not hold", and those call for
+  opposite next steps.
+
 The host's kernel faulted: an `Oops:`, a `BUG:`, a general protection
 fault or an RCU read-side violation reached Loki from `component="kernel"`
 (DECISIONS I-980). The host is still running, which is the only reason this
@@ -1591,7 +1685,7 @@ what `repose_host_guestd_lost` counts (I-824) -- but step 2 below is a
 stop without a snapshot, and run against a frozen machine it destroys
 every process and all the memory the pause exists to keep. If the guest
 is resting, `hostd wake <guest_id>` is the move, and "GuestWakeFailed"
-below is the procedure.
+is the procedure.
 
 1. `repose-admin projects show <id>`: is the guest `running`? If the
    guest crashed, the transient unit is gone: `repose-admin projects
@@ -1614,7 +1708,7 @@ keeps arriving (docs/workstreams/10-observability.md §6).
 
 1. From the monitoring server: `curl -s http://<host wg addr>:9101/metrics |
    head -1`. A timeout is the tunnel, a connection refused is hostd.
-2. Tunnel: "HostWgDown" above. The scrape and the logs use the same path, so
+2. Tunnel: "HostWgDown". The scrape and the logs use the same path, so
    a FluentBitStuck alert for the same host confirms it.
 3. hostd itself: on the host, `systemctl status hostd` and
    `ss -tlnp | grep 9101`. hostd binds the WireGuard address, so a hostd that
@@ -1751,6 +1845,11 @@ are dropped.
 A guest is `starting` and never reaches `running`, or the api shows
 `guestd_ok=false` from the first sample. guestd sends `Ready` only once sshd
 is listening, so "not ready" means guestd did not start, or sshd did not.
+
+**This is one of three sections for a guest that never became ready, and
+the narrowest.** Start at "Guest not ready", which branches to this one
+when the boot got as far as guestd, and to "hostd: guest never sends
+Ready" when the hypervisor or its argv is the suspect.
 
 1. Console log at `/var/lib/repose/guests/<id>/console.log`. The line to look
    for is guestd's own: `{"event":"ready","msg":"listening",...}` with
@@ -2023,11 +2122,19 @@ the user cannot start a machine.
 The gateway cannot reach guest sshd. A user's `repose attach` fails with a
 healthy guest behind it.
 
+0. If a user quoted the refusal they read, "Gateway relay failures" maps
+   that exact message to its cause; this section is for the dial failing
+   with nothing to quote.
 1. `{component="gateway"} | json | event="dial_fail"` names the project.
 2. Every project at once is the path, not the guests: check
    `repose_gateway_wgsync_peers` against the running guests and
    `repose_gateway_wgsync_errors_total`. A host whose tunnel dropped takes
-   all of its guests with it.
+   all of its guests with it, and that is "HostWgDown" — the host itself
+   will still be heartbeating and still look `ready` to the api. The
+   expression behind this alert is a fleet-wide `sum()` and carries no
+   `host_id`, so it cannot tell you which host: group the `dial_fail`
+   lines of step 1 by project and map them to hosts with
+   `repose-admin projects list --host <name>`.
 3. One project is its sshd: `repose-admin exec <id> -- systemctl status
    sshd` (audited), and the guest's console in Loki
    (`{component="console", guest_id="<id>"}`).
@@ -2128,7 +2235,7 @@ Postgres grows. Nothing else breaks and no data is lost
    date_trunc('month', now())::date);` is the fix, and hostd's sample buffer
    holds what did not land (workstream 03).
 
-## HostUnregistered (host never registered)
+## HostUnregistered
 
 The api has had a host row in `registering` for 30 minutes: the row
 `repose-admin hosts add` created when it minted the join token, and no
@@ -2233,7 +2340,7 @@ metadata as they count data (I-586).
 2. `lvextend --poolmetadatasize +1G vg-guests/thin` (online). Without VG
    room, grow the data disk first ("PoolHigh" step 2).
 
-## StoreHigh (store at 80 percent)
+## StoreHigh
 
 `host_warning{kind="store_high"}` from hostd; the root filesystem is over
 80 percent, almost always `/nix/store`. `nix.settings.min-free` (50 GB)
@@ -2545,6 +2652,12 @@ A tenant reports `repose attach` hangs, or `Freeze` times out.
 
 hostd reports `guest did not become ready` (no `Ready` from guestd within
 120 s of start), or the api shows a project `starting` for minutes.
+
+**Start here for any "never became ready", then branch.** Two narrower
+sections continue it: "Guestd not ready" once the console shows the boot
+reached guestd, and "hostd: guest never sends Ready" when it did not get
+that far and the hypervisor, `ch.args` or KVM is the suspect. All three
+begin at the same console log, so read it once here.
 
 1. Console log: `/var/lib/repose/guests/<id>/console.log` on the host.
    The last lines say where boot stopped. A kernel panic or `init=` not
@@ -3391,9 +3504,16 @@ locally from `repose-snapshot.timer`.
 1. `hostd status` (control socket) shows `stream_connected: false`.
 2. From the host: `curl -sv https://api.repose.herakraft.co:443`. A TLS error naming the client certificate means the
    host certificate expired without rotation: `journalctl -u hostd | grep
-   rotate`; rotation needs the stream, so if the certificate is past
-   expiry re-register with a new token (previous entry) after moving the
-   old `cert.pem` aside.
+   rotate`. hostd's *own* rotation needs the stream, so it cannot recover
+   from this; the operator command does not need it. `repose-admin hosts
+   rotate-cert <name>` issues from the CA, stores the new serial and
+   prints the certificate and key for you to write to
+   `/var/lib/repose/hostd/cert.pem` and `key.pem` on the host through the
+   edge jump, then `systemctl restart hostd` ("HostUnreachable" step 3).
+   Re-registering with a new token is **not** the move here and is a
+   heavier path: keep it for the case `rotate-cert` itself refuses
+   because the host is `lost` or `retired` (I-432, "A host installed but
+   never registered").
 3. Results, events and up to 60 minutes of samples are buffered and sent
    on reconnect; longer outages lose samples (`repose_host_samples_dropped_total`).
 
@@ -4042,6 +4162,13 @@ or `POST /certs` itself fails.
 `Guest is running but SSH did not answer in 60s.` after the API already
 reports the project `running`.
 
+0. Was the machine resting? `hostd guests --json`, or
+   `repose-admin projects show <id>` for `guest_resting`. If it was, this
+   is "GuestWakeFailed" and the wake is the procedure; the steps below
+   are for a machine that was never paused. The same message is printed
+   for both cases (`internal/cli/run.go`), so the message does not tell
+   you which. If a user quoted a different refusal, "Gateway relay
+   failures" maps the exact text to its cause.
 1. The guest reached Ready, so `repose logs --kind console` has nothing
    of this boot (it keeps only boots that never reached Ready, I-592).
    On the host, `tail -n 200 /var/lib/repose/guests/<guest_id>/console.log`
@@ -4249,7 +4376,7 @@ July 2027, and sooner if Polar announces an earlier removal:
    against the sandbox, end to end with `REPOSE_POLAR_E2E_LISTEN`, before
    the change ships.
 
-## Claude asks for a login in every project (login share, I-278)
+## Claude asks for a login in every project
 
 A tenant logged in to Claude Code in one machine and another still asks,
 or all of them ask again at once.

@@ -569,7 +569,7 @@ groups:
         annotations:
           summary: "{{ $labels.host_id }} has not registered"
           description: "The api has had this host in registering for 30 minutes: no hostd has presented its join token, so nothing is placed on it. For a new host that is a machine that was created and never arrived; for one already running it is a reissued token nothing has used."
-          runbook: "docs/ops/RUNBOOK.md#hostunregistered-host-never-registered"
+          runbook: "docs/ops/RUNBOOK.md#hostunregistered"
 
       - alert: BootSlow
         # Most creates and starts on a host took over 2 minutes (DECISIONS
