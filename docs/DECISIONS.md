@@ -30235,3 +30235,194 @@ both copies, which is the backward-compatible half.
 written before this existed. Its `main=` was added by hand to the queue
 state so its record names `0230ae22c`; every release after this one gets
 it from `done`.
+
+**I-1076. Nineteen operational claims the code contradicted, five of them
+commands that cannot run.** (docs-drift, 2026-11-10.)
+*Made during implementation.*
+
+An audit of `docs/ops/`, `docs/interfaces/` and `docs/features/` against
+the code, prompted by the 2026-11-10 outage, where the step the runbook
+offered for a dead tunnel (`hosts rotate-wg`) would have made it
+permanently dead. That one is corrected with the alert in I-1070; this
+entry is the rest, and the worst of it is not wrong numbers but **steps an
+operator reaches mid-incident and cannot run, or runs and is misled by**.
+
+Acting on these made things worse:
+
+- **`projects restart` does not snapshot.** It passes `snapshot: false`
+  (`internal/admin/cmds.go`). Two places said it did, and one of them was
+  the step for a project whose snapshots keep timing out — the project
+  most in need of one — so the operator walked away believing a snapshot
+  existed. A third place in the same file said "stop without snapshot"
+  and was right.
+- **`guestd call ping` through `repose-admin exec` cannot work.** Inside
+  a guest that call defaults to `/run/repose/guestd.sock`, which
+  production guests do not have (guestd serves vsock only, and
+  `guest-conventions.md` calls the socket "absent in real guests"). It
+  fails on a healthy guest, and it was the *health check* after a
+  snapshot freeze — where the next move is a stop that ends every
+  process the tenant had. The second instance was worse still: `exec`
+  reaches the guest *through* guestd, the thing that section presumes is
+  down, and is refused unless the project is `running`, which there it is
+  not.
+- **`hosts drain --all` does not exist**, as step 1 of "Suspected
+  cross-tenant access". `drain` resolves its argument with `findHost`, so
+  `--all` is a host name and the command fails, while placements keep
+  landing on the host under investigation.
+- **`hosts mark-lost` sends no notification.** Two lines promised tenants
+  an email. It writes the `host_moved` row into `events` with raw SQL
+  rather than through `events.Insert`, so nothing reaches `events_outbox`,
+  and nothing scans `events` for rows that have none. During a host loss
+  the operator believed the tenants had been told. **This is a code bug
+  and is recorded, not fixed**: the promise lived in the runbook, the
+  delivery path is a behaviour change in an incident path with no test
+  for it, and it wants its own branch. The runbook now says to tell them
+  yourself.
+- **`hosts reconcile` does none of the three things it was documented to
+  do.** It never contacts hostd, it recomputes nothing, and without
+  `--fix` it changes nothing at all: it reads the newest `meter_samples`
+  row per project, prints a table, and with `--fix` corrects a project's
+  state when the sample is under 3 minutes old. "reserved memory
+  recomputed" is a `select` against `host_reservations`, a view derived
+  live from `projects` — so that number never drifts, and the entry
+  titled "Reservation drift" described a fix for a thing that cannot
+  happen. The placement-mismatch section had it fixing `projects.host_id`
+  from a Hello; nothing in the api ever writes that from a Hello, so the
+  guest stayed unreachable.
+- **`hosts list` prints no address of either kind.** Its columns are name,
+  state, SKU, memory, free, reserved, guests, pool free, heartbeat and
+  guest CIDR. Two places said to read a WireGuard or VNet address from it,
+  and one was step 3 of a recovery that kills your session by design — so
+  the operator was sent to a column that is not there, mid-recovery, on a
+  host not yet in the fleet. A third place in the same file already said
+  where the address really is.
+- **`HostKeyAlias` on a VNet address**, which this same runbook forbids at
+  I-916 ("a VNet address is the wrong thing to pin an identity to") after
+  host-01 answered with keys the alias did not know. Removed here and from
+  `ops/dev/operator-cert.sh`'s comment.
+- **The join token does not arrive through cloud-init.** `grpc-hostd.md`
+  said it did. It arrives over SSH after the install, because
+  `custom_data` is readable through IMDS (I-20) — and the cloud-init
+  template says so in its own comments. An agent "fixing" the code to
+  match that sentence would have put a single-use credential where every
+  process on the VM can read it.
+- **`users suspend --retain` does nothing.** It is written into the audit
+  row and never read, and nothing deletes a suspended account's data on a
+  schedule keyed to the suspension. An operator placing a hold for a
+  dispute got no hold, and there was no clock to hold off either.
+
+Wrong values, each of which is arithmetic someone plans with:
+
+- **The park's shutdown ceiling is 390 s, not 550.** `TimeoutStopSec =
+  deadline + 150` with a default deadline of 240; 400 is `writeRateMBs`,
+  a different number that had been read as the deadline. An operator
+  budgeting a restart window from 550 s has systemd cut the park 160 s
+  early, and every guest not yet written loses what it was running. The
+  deadline's 300 s cap makes 450 s the real ceiling; no configuration
+  reaches 550.
+- **`pool_high` fires at 70 percent**, not 80 (`PoolWarnPct = 70`). The
+  two interface docs disagreed with each other.
+- **The `guests.slice` reserve is one eighth of memory**, floored at 2 GiB
+  and capped at 16, not "8 GiB below 128 GiB, 16 GiB above" — which is
+  right only at exactly 64 GiB and at or above 128. Capacity arithmetic
+  from the old wording is wrong on a 16 or 96 GiB host.
+- **`repose_kernel_check` has four checks, not three**; `fault_around_off`
+  (I-1042) was missing, so an alert written from the list would not cover
+  it.
+- **The api's `hosts` row is frozen at registration** in more columns than
+  anyone had written down. `Register` runs once, the join token being
+  single use; `Rotate` refreshes only `vcpus` and `cores`; `Hello` and
+  `Heartbeat` only the free/pool/load fields. So `sku`, `hostname`,
+  `mem_bytes`, `nixos_system` and `ch_version` are never refreshed. I hit
+  this myself on 2026-11-10: I confirmed a host's park configuration from
+  `nixos_system` and got the system from install day, eight days stale,
+  from a column sitting in the same annotation as fields that are live.
+  `mem_bytes` is the one with teeth — it is the numerator of the seat
+  ceiling and of placement, so after a resize the fleet keeps selling the
+  old host's seats, and the runbook's "move to a larger SKU" said nothing
+  about it. `hosts add --reissue` and a re-register are what update them.
+
+Also corrected: `ops list --kind` in three places (`ops list` takes
+`--project`, `--host`, `--state`, and the flag parser exits 1);
+`projects rebuild` and `hosts show`, neither of which exists, and `hosts`
+as a host-side command, which is `hostd status`; a quoted CLI message that
+differs from what the CLI prints, while the same file quotes it correctly
+elsewhere; `HostMemory80` step 1 asking `hosts list` for a count of
+stopped guests, which `host_reservations` excludes by construction; a
+`repose.host.park.UnwrapTimeout` setting that is a Go constant with no
+option or flag; a vsock dev-socket path that is `guestd call`'s default
+and not what hostd dials; and a cross-reference to a DECISIONS title
+rather than the section holding the procedure.
+
+**Not fixed, and left as found.** `hosts mark-lost`'s missing
+notification (above). `docs/interfaces/vsock-guestd.md`'s version
+negotiation, which the file describes as a gate hostd applies and which
+does not exist — both `Ping` callers discard the result and nothing reads
+`GetVersion()`; the same file already admits it two lines later, so an
+agent adding a vsock request would assume a gate that is not there.
+`guest_resting_stale`, a `host_warning` kind hostd raises that is in no
+doc and in no `notifyKinds`, so it collapses to `other` and cannot be
+alerted on. hostd's exec audit line, documented as carrying `argv` and
+deliberately carrying `argv_len` (the argv is in the api's `audit_log`,
+which is the right place and is not what the doc says). The tap-device
+block in `host-conventions.md`, presented as "exactly these settings" and
+missing `vnet_hdr`, with `bridge fdb add` where the golden file says
+`replace`.
+
+*Evidence.* Each correction was verified against the named file and line
+in the code before it was written, not taken from the audit that found
+them: `snapshot: false` in `cmds.go`'s restart case, `drain`'s
+`findHost(args[1])`, the raw `insert into events` in `mark-lost`,
+`reconcile`'s `ListProjectsOnHost` and `meter.LatestSample` with no hostd
+call, `hosts list`'s own column list, `PoolWarnPct = 70`,
+`TimeoutStopSec = pk.deadline + 150` against `deadline`'s default of 240,
+and `Register` versus `Rotate` versus `Hello` in `hostmgr.go`. One claim
+from the audit was checked and rejected: that `HostdDown` step 4's
+pointer to "HostScrapeDown" step 3 was off by one. Step 4 is reached only
+when the host *is* ssh-reachable, so the tunnel step is irrelevant and
+step 3 is correct; it was left alone.
+
+**I-1078. `ops/check.sh` refuses a documented `repose-admin` command that
+does not exist.** (docs-drift, 2026-11-10.)
+*Made during implementation.*
+
+Five invocations in the runbook could not run, and nothing noticed: `hosts
+drain --all`, `projects rebuild` twice, `hosts show`, and `ops list
+--kind` three times. Every one of them is a step an operator or an agent
+reaches with an incident in front of them, and each fails as "host not
+found" or an exit 1 from the flag parser — which reads, in the moment,
+like the system being broken rather than the instruction being wrong.
+
+The check reads the command set from `internal/admin/admin.go`'s usage
+block, which is the surface a reader is sent to anyway, and compares it
+against every `repose-admin <group> <sub>` in `docs/ops/`,
+`docs/interfaces/` and `docs/features/`.
+
+Three things it deliberately does not do, each found by it failing on
+something correct while it was being written:
+
+- It skips a group whose usage lists no subcommands (`exec ID -- ARGV`,
+  `audit`, `seats`), because the word after the group there is an
+  argument, and reading an argument as a subcommand flagged
+  `repose-admin exec over` out of a sentence.
+- It strips bracketed optionals before splitting alternatives, so
+  `[--class small|large|xl]` cannot donate "large" as a subcommand.
+- It does not read `docs/workstreams/` or its archives. Those are records
+  of what was true when they were written — `STATUS.md` names
+  `billing stripe-bootstrap` correctly, from before Polar — and editing
+  history to satisfy a checker would be the wrong fix.
+
+It also constrains prose: a sentence about a subcommand that does *not*
+exist must not write the invocation out, or it trips the check. Saying
+"`projects` has no `rebuild` subcommand" is both shorter and checkable,
+and two of this branch's own corrections were rewritten that way after
+the guard caught them.
+
+Flags are not checked. `ops list --kind` and `hosts drain --all` were
+found by hand, and a flag check needs the `flag.FlagSet` definitions
+rather than the usage line; it is worth doing and is not done here.
+
+*Evidence.* `ops/check.sh` prints "every documented repose-admin command
+exists" on this branch and fails against `main` naming all three
+subcommand offenders with their file and line, so it can fail on exactly
+what it was written for.

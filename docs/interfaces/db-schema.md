@@ -35,6 +35,14 @@ hosts        (id pk, name text unique, hostname text, sku text, provider text, r
                                                              -- every Heartbeat; nothing is placed here (0021, I-644)
               last_heartbeat_at, cert_serial text, prev_cert_serial text (0012, I-432), cert_expires_at,
               nixos_system text, ch_version text,
+                                                            -- FROZEN AT REGISTRATION, with sku, hostname and mem_bytes:
+                                                            -- Register runs once (single-use token), Rotate refreshes only
+                                                            -- vcpus and cores, Hello and Heartbeat only the free/pool/load
+                                                            -- fields. A switch does not update nixos_system, so it reports
+                                                            -- the system from install day; mem_bytes keeps the old SKU's
+                                                            -- memory after a resize, and it is the numerator of the seat
+                                                            -- ceiling and of placement. `hosts add --reissue` and a
+                                                            -- re-register are what refresh them (I-1076)
               features text[] not null default '{}',  -- Hello.features: local_clone (0025, I-701)
               join_token_hash text, join_token_expires_at, registered_at)   -- the token itself is never stored
 

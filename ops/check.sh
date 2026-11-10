@@ -114,6 +114,67 @@ trap 'rm -rf "$tmp"' EXIT
 python3 "$ops/dashboards/validate.py" --emit-rules >"$tmp/dashboard-rules.yaml"
 promtool check rules "$tmp/dashboard-rules.yaml" || fail=1
 
+say "every repose-admin command the docs name exists"
+# Nothing checked this, and five invocations in the runbook did not exist:
+# `hosts drain --all` as step 1 of a breach response, `projects rebuild`
+# twice, `hosts show`, and `ops list --kind` three times. Each is a step an
+# operator or an agent reaches mid-incident and gets "host not found" or an
+# exit 1 from the flag parser (DECISIONS I-1078).
+#
+# The command set comes from internal/admin/admin.go's usage block, which
+# is the documented surface and the thing a reader is sent to. Prose about
+# a subcommand that does *not* exist must not write the invocation out, or
+# it trips this: say "`projects` has no `rebuild` subcommand" instead.
+python3 - <<'ADMINCMDS' || fail=1
+import glob, pathlib, re, sys
+block = re.search(r'repose-admin <command> \[args\]\n(.*?)\n\s*`',
+                  pathlib.Path("internal/admin/admin.go").read_text(), re.S)
+if not block:
+    print("cannot find repose-admin's usage block in internal/admin/admin.go", file=sys.stderr)
+    sys.exit(1)
+groups, cur = {}, None
+for line in block.group(1).splitlines():
+    m = re.match(r"\s{2}(\w[\w-]*)\s{2,}(.*)$", line)
+    if m:
+        cur = m.group(1); groups.setdefault(cur, []).append(m.group(2))
+    elif cur and line.strip():
+        groups[cur].append(line.strip())
+subs = {}
+for g, lines in groups.items():
+    s = set()
+    for line in lines:
+        # Bracketed optionals are stripped first so a value list such as
+        # `--class small|large|xl` cannot donate "large" as a subcommand;
+        # both `|` and the start of a continuation line separate alternatives.
+        for alt in re.sub(r"\[[^\]]*\]", " ", line).split("|"):
+            toks = alt.strip().split()
+            if toks and re.fullmatch(r"[a-z][a-z-]*", toks[0]):
+                s.add(toks[0])
+    subs[g] = s
+bad = []
+# The docs an operator acts from. docs/workstreams/ and its archives are
+# records of what was true when they were written -- STATUS.md names
+# `billing stripe-bootstrap` correctly, from before Polar -- and rewriting
+# history to satisfy a checker would be the wrong fix.
+targets = sorted(glob.glob("docs/ops/*.md") + glob.glob("docs/interfaces/*.md")
+                 + glob.glob("docs/features/*.md"))
+for f in targets:
+    t = pathlib.Path(f).read_text()
+    for m in re.finditer(r"repose-admin\s+([a-z][a-z-]*)\s+([a-z][a-z-]*)", t):
+        g, s = m.group(1), m.group(2)
+        # A group with no subcommands at all (`exec ID -- ARGV`, `audit`,
+        # `seats`) takes an argument in that position, not a name, so there
+        # is nothing to check: skip it rather than read the argument as one.
+        if g in subs and subs[g] and s not in subs[g]:
+            bad.append(f"{f}:{t[:m.start()].count(chr(10))+1} repose-admin {g} {s}")
+if bad:
+    print("documented repose-admin commands that do not exist:", file=sys.stderr)
+    for b in bad:
+        print("  " + b, file=sys.stderr)
+    sys.exit(1)
+print("every documented repose-admin command exists")
+ADMINCMDS
+
 if [ "${1:-}" = "--grafana" ]; then
   say "dashboards load in Grafana"
   docker compose -f "$ops/dev/docker-compose.yml" up -d

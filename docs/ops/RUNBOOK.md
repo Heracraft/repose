@@ -239,7 +239,10 @@ copy-paste version):
 
 Reserved memory on a host is above 80 percent.
 
-1. `repose-admin hosts list`: confirm which host and how many guests are
+1. `repose-admin hosts list` for the host and its free memory, then
+   `repose-admin projects list --host <name>` for the guests — the
+   `GUESTS` column counts only what `host_reservations` holds, which
+   excludes stopped projects, so it cannot answer how many are
    `stopped` (stopped guests hold no memory reservation; if the number is
    wrong, the api's reservation accounting drifted, see "Reservation
    drift").
@@ -291,7 +294,13 @@ deciding otherwise.
    nothing: `nr_throttled` was 298 of 3,082,823 periods (0.01 percent) on
    the busiest guest.
 3. Add a host, or move to a larger SKU (workstream 11 §5; the shapes are
-   in the proposal's §3). The `tofu apply` is the owner's. New projects go
+   in the proposal's §3). The `tofu apply` is the owner's. **A resize
+   leaves the api holding the old shape**: `sku` and `mem_bytes` are
+   written at registration and never refreshed, and `mem_bytes` is the
+   numerator of the seat ceiling and of placement, so the fleet keeps
+   selling the old host's seats and `hosts list` keeps reporting the old
+   memory. `hosts add --name <name> --reissue` and a re-register are what
+   update them (I-1076). New projects go
    to the new host, but a project is pinned to its host for life, so this
    one only cools as its own guests stop. `repose-admin hosts drain
    host-NN` stops placements on it immediately if the apply has to wait.
@@ -1038,7 +1047,9 @@ where to look.
    - `too_old`: the host was down longer than the 6 h window (I-645).
      Nothing to do: the image is deliberately not kept longer.
    - `no_key`: Key Vault did not answer within
-     `repose.host.park.UnwrapTimeout`. See "Guest park".
+     hostd's own unwrap timeout, 90 s, which is a constant in
+     `internal/hostd/guest/park.go` and not a setting: there is no
+     `repose.host.park` option and no flag for it. See "Guest park".
    - `failed`: the restore itself. The `restore failed` line has the
      error.
 2. `journalctl -b -u hostd | grep '"event":"guest_unpark"'` has a line per
@@ -1426,7 +1437,8 @@ Everything below is for the *other* kind -- a fault that is not this one.
    does not.
 4. **Drain it, do not wait.** `repose-admin hosts drain <name>` stops new
    placements, then `repose-admin projects move <id> --to <other host>` per
-   project ("Getting a project's base onto the target host", I-974, is the
+   project (the operator's step before a move is the base bullet in
+   "Retiring a host once its projects are moved"; I-974 is
    operator's step before a move). A planned stop writes each guest's disk
    and can keep its memory (I-653); a panic keeps nothing, which is the
    whole difference between acting on this alert and reading about it in
@@ -1762,8 +1774,11 @@ is listening, so "not ready" means guestd did not start, or sshd did not.
    sshd material that never arrived, so `/run/repose/ssh_host_ed25519_key` is
    missing; `repose-admin projects restart <id>` re-sends `CreateGuest`'s
    secrets.
-3. From the host, talk to the guest directly:
-   `repose-admin exec <id> -- guestd call ping --cid <vsock cid>`. A response
+3. From the host, talk to the guest directly, **on the host and not
+   through `exec`**: `guestd call ping --cid <vsock cid>`. `repose-admin
+   exec` cannot do this job at all -- it reaches the guest through guestd,
+   the thing presumed down, and it is refused unless the project is
+   `running`, which in this section it is not. A response
    means guestd is fine and the problem is on hostd's side of the vsock; no
    response with guestd listening means the CID is wrong in hostd's state.
 4. The guest keeps running through all of this. A tenant with a certificate
@@ -1785,10 +1800,17 @@ A snapshot failed with `freeze_timeout`, or the alert fired from a
    "PoolFull" above, then `repose-admin projects snapshot <id>` again.
 4. If it repeats for one project only, the guest's root filesystem has a
    writer that will not quiesce (a database in a container). Stop the guest
-   and snapshot from stopped: `repose-admin projects restart <id>` takes the
-   snapshot on the way through.
+   and snapshot from stopped: `repose-admin projects stop <id>` (which
+   does snapshot) and then `start`. **`projects restart` does not
+   snapshot** -- it passes `snapshot: false` -- so it is the wrong command
+   here, and the point of this step is to come away with a snapshot.
 5. To confirm the guest is healthy afterwards:
-   `repose-admin exec <id> -- guestd call ping` and check `df` inside.
+   `repose-admin exec <id> -- true` and `df` inside. **Not
+   `guestd call ping` through `exec`**: inside a guest that call defaults
+   to the dev socket, which production guests do not have (guestd serves
+   vsock only), so it fails on a perfectly healthy guest -- and the next
+   move after a failed health check here is a stop. From the *host*,
+   `guestd call ping --cid <vsock cid>` is the real probe.
 
 ## herdr_down
 
@@ -1995,7 +2017,7 @@ An op finished in `error`: a machine a user asked for and did not get.
    id>` for the full output (build output is in `build_logs`, not Loki).
 2. The op's error names the phase. A create that failed after `CreateGuest`
    has a volume and a reservation behind it; the destroy path reclaims
-   both, and `repose-admin ops list --kind destroy` shows it ran.
+   both, and `repose-admin ops list --state done` shows it ran (`ops list` has no `--kind`; it takes `--project`, `--host` and `--state`).
 3. A build failure is the tenant's configuration, not the fleet: the op's
    log has the Nix error and the user sees the same sentence.
 4. Every kind failing at once is the host: check `HostdDown` and
@@ -2039,7 +2061,7 @@ A snapshot failed on a host. A stop with no snapshot leaves the work only
 on the volume, and a destroy after it loses the work.
 
 1. `{component="hostd"} | json | event="snapshot"` has the guest and the
-   code. `repose-admin ops list --kind snapshot` has the op the api asked
+   code. `repose-admin ops list --project <id>` has the op the api asked
    for.
 2. `SnapshotStale` is the slow half of the same signal and reads the api's
    backstop gauge, which is refreshed on a 24-hour ticker; this rule reads
@@ -2463,7 +2485,10 @@ Checks:
   running; each one is an Error line and a count in
   `repose_host_guest_park_skipped_total`, which GuestNotParked
   alerts on (DECISIONS I-796). The park unit holds the shutdown for at
-  most `deadline` plus 150 s (550 s at the default 400).
+  most `deadline` plus 150 s, which is 390 s at the default deadline of
+  240 (`TimeoutStopSec = deadline + 150`, `nix/hosts/park.nix`). 400 is
+  `writeRateMBs`, a different number; the deadline is capped at 300, so
+  the ceiling is 450 s and no configuration reaches 550.
 - A guest still paused after a park that did not finish (hostd killed
   mid-park, or `park failed and the guest did not resume` in the
   journal): the image and its `writing` record are kept; `hostd unpark`, or
@@ -2725,9 +2750,15 @@ The base's compat layer (DECISIONS I-228, `nix/guest/base/compat.nix`).
 
 `hosts list` free memory does not match the sum of running guests.
 
-`repose-admin hosts reconcile host-NN` asks hostd for its `Hello` state
-and recomputes reservations. Happens after an api crash mid-command; the
-reconcile is safe to run any time.
+`repose-admin hosts reconcile host-NN` does **not** ask hostd anything
+and recomputes nothing. It reads the newest `meter_samples` row per
+project on the host, prints a table, and — only with `--fix`, and only
+for a project whose sample is under 3 minutes old with no open op —
+corrects that project's state. `reserved memory recomputed` in its
+output is a `select` against `host_reservations`, a view derived live
+from `projects`, so the number is always current and never drifts; what
+drifts is a project's recorded state, which is what `--fix` repairs.
+Without `--fix` it changes nothing at all. Safe to run any time.
 
 ## api cannot resolve repose-postgres
 
@@ -2985,7 +3016,10 @@ an hour without it (host-02, 2026-10-27):
 succeeds, the host's sshd moves off its VNet address to WireGuard only, so
 the session you are typing in dies at the moment the thing you wanted
 succeeds. That is the fix working, not a new fault. Come back on the host's
-WireGuard address -- `repose-admin hosts list` prints it, and I-782 means the
+WireGuard address. **`hosts list` does not print it** — its columns are
+name, state, SKU, memory, free, reserved, guests, pool free, heartbeat and
+guest CIDR. Read it from the host's own `/run/repose/host.env` (`WG_ADDR`)
+or `wg show wg0 allowed-ips` on the edge, and note that I-782 means the
 second host is 10.255.0.4 rather than the monitoring server's .3.
 
 An install that fails this way now fails the apply instead: the host module's
@@ -3041,12 +3075,18 @@ A host is gone (Azure repair, disk lost, or a deliberate retirement without
 drain).
 
 1. `repose-admin hosts mark-lost host-NN`: every project on it goes to
-   `error` with reason `host_lost`, tenants get an email. Its certificate
+   `error` with reason `host_lost`, and the `host_moved` event appears in
+   each project's feed. **No notification is sent**: `mark-lost` writes
+   that row with raw SQL rather than through `events.Insert`, so nothing
+   reaches the outbox that email, ntfy and Chat are delivered from, and
+   nothing scans `events` for rows that have none. Tell the affected
+   tenants yourself (I-1076). Its certificate
    stops working at once (I-432); if the machine comes back, it joins
    again with `hosts add --name host-NN --reissue`.
 2. For each project: `repose-admin projects restore <id> --latest --to
    <other host>`. Data since the last snapshot (up to 24 hours, or since
-   the last `stop`) is lost; the email says so. Tenants' git remotes hold
+   the last `stop`) is lost; say so when you tell them, since nothing
+   emails it. Tenants' git remotes hold
    whatever their agents pushed.
 3. `repose-admin hosts retire host-NN`; `tofu apply` with it removed.
 
@@ -3152,7 +3192,10 @@ its steps bite if they are taken in the wrong order.
 
 ## Suspected cross-tenant access
 
-1. `repose-admin hosts drain --all` (no new placements anywhere).
+1. Drain every host, one at a time: `repose-admin hosts drain <name>`
+   for each in `repose-admin hosts list`. There is no `--all`; it is read
+   as a host name and the command fails, which is worth knowing before
+   step 1 of a breach response rather than during it.
 2. Snapshot the guests involved (`projects snapshot`); do not stop them
    yet, memory state may matter.
 3. Capture: `journalctl -u hostd --since <window>` on the host, gateway
@@ -3329,8 +3372,7 @@ logins the moment the CA is present, so, in order, per host:
 2. From the operator machine: `ops/dev/operator-cert.sh` (an 8 h
    certificate next to `~/.ssh/id_ed25519`, signed inside the api
    container; the api must be at I-177 or newer for `--pubkey -`), then
-   `ssh -o HostKeyAlias=10.200.1.4 -J root@20.102.98.254:2222
-   root@10.255.0.2 true` and, on the host, `journalctl -t sshd-session -g
+   `ssh -J root@20.102.98.254:2222 root@10.255.0.2 true` and, on the host, `journalctl -t sshd-session -g
    'ID operator:'` (or `-t sshd`) shows the certificate login.
 3. Set `bootstrap.keyUntilHostCA = true` in `nix/hosts/host-NN.nix` and
    switch the host. `cat /run/repose/bootstrap_authorized_keys` is empty
@@ -3627,8 +3669,8 @@ no tenant config changes.
    store); `journalctl -u hostd | grep base` has git's stderr. Place the
    checkout by hand from a machine that can: `git clone --no-checkout
    <url> /var/lib/repose/base/<rev> && git -C /var/lib/repose/base/<rev>
-   checkout <rev>`, then resend the build (`repose-admin projects
-   rebuild <id>`, or `repose config apply` as the user).
+   checkout <rev>`, then resend the build with `repose config apply` as
+   the user, or the api's `POST .../revisions/:rev/apply`.
 3. `checkout failed`: the revision is not in the repository (a
    `base publish` of a rev that was never pushed). Publish a rev that
    exists.
@@ -3661,7 +3703,7 @@ error's first line; each has a `base_update_failed` event the user saw.
    --reboot`); `repose status` says `base X (Y ready; reboot when
    convenient)`.
 4. A bump that never started: the daily job runs at 04:00 UTC (05); a
-   `--security` publish runs at once. `repose-admin ops list --kind build`
+   `--security` publish runs at once. `repose-admin ops list --state running`
    shows the queued builds and their `not_before` times, spread over 24 h
    (2 h security), two per host at a time.
 
@@ -3676,12 +3718,14 @@ GC root was missing (a hostd bug) or was removed by hand.
    `<guest_id>` and the newest three revisions are
    `rev-<project_id>-<revision_id>`; `nix-store --gc --print-dead | grep
    <closure>` is empty when the closure is protected.
-2. Rebuild the revision (deterministic): `repose-admin projects rebuild
-   <id>` sends `Build` with the same fragment and base; hostd re-roots the
-   result. A guest that only lost a leaf package keeps running from page
+2. Rebuild the revision (deterministic) by applying its config again:
+   `repose config apply` on the project, or the api's
+   `POST .../revisions/:rev/apply`, sends `Build` with the same fragment
+   and base and hostd re-roots the result. `projects` has no `rebuild`
+   subcommand. A guest that only lost a leaf package keeps running from page
    cache and picks the path up at its next `switch`; one that lost its
    `init`, kernel or a service binary is wedged: `repose-admin projects
-   restart <id>` (stop with a snapshot, start) boots it from the rebuilt
+   restart <id>` (stop **without** a snapshot, then start) boots it from the rebuilt
    closure.
 3. Find why the root was gone: `journalctl -u hostd | grep gcroot`
    (hostd logs every root it sets and removes) and the weekly
@@ -3691,8 +3735,12 @@ GC root was missing (a hostd bug) or was removed by hand.
 
 `not_found: guest <id> not on this host`. The api's placement and the host
 disagree, usually after a restore onto another host that was not recorded.
-`repose-admin hosts reconcile <host>` reads the host's Hello and fixes the
-api's view.
+`repose-admin hosts reconcile <host>` does not fix this: it never reads a
+Hello, and nothing in the api rewrites `projects.host_id` from one. Correct
+the placement with the restore that records it (`repose-admin projects
+restore <id> --latest --to <host>`) or by moving the project
+(`projects move <id> --to <host>`); until the row matches the host that
+holds the guest, the guest stays unreachable.
 
 ## hostd: state.db corrupt or lost
 
@@ -3981,8 +4029,11 @@ billing portal. `repose-admin users show <handle>` for the reason;
 
 `repose-admin users suspend <handle> --reason "..."`: stops all their
 guests (with snapshot), sets `billing_status = suspended`, revokes their
-certificates, and writes an audit row. Their data is retained on the normal
-30-day schedule from the moment of suspension unless `--retain` is passed.
+certificates, and writes an audit row. **`--retain` does nothing beyond
+appearing in that audit row**: nothing reads it back, and nothing deletes a
+suspended account's data on a schedule keyed to the suspension, so there is
+no automatic 30-day clock to hold off and no hold to place. If a dispute
+needs the data kept, it is kept by not deleting it (I-1076).
 
 ## CLI: user cannot log in
 
@@ -4039,7 +4090,7 @@ or `POST /certs` itself fails.
 
 ## CLI: SSH timeout after running
 
-`Guest is running but SSH did not answer in 60s.` after the API already
+`<name> is running but did not answer ssh in 60 s.` after the API already
 reports the project `running`.
 
 1. The guest reached Ready, so `repose logs --kind console` has nothing
@@ -4047,9 +4098,10 @@ reports the project `running`.
    On the host, `tail -n 200 /var/lib/repose/guests/<guest_id>/console.log`
    shows whether sshd started.
 2. `repose status` for `sessions`/`tmux clients`: if the API's state is
-   stale (host lost contact), `hosts` on the host-01 side and
-   `repose-admin hosts show` tell you whether the host itself is
-   reachable; a `sessions` count that never reflects change means the
+   stale (host lost contact), `repose-admin hosts list` (the `HEARTBEAT`
+   column) and, on the host, `hostd status` tell you whether the host
+   itself is reachable — `hosts` has no `show` subcommand, and the host
+   has no `hosts` command at all; a `sessions` count that never reflects change means the
    API's view of the guest is the stale part, not SSH.
 3. Retry `repose run`/`attach` once more before escalating: the 60s
    window is short on purpose so an agent's user is not left staring at

@@ -21,8 +21,11 @@ HostInfo { string hostname; string sku; uint64 mem_bytes; uint32 vcpus;
            uint64 pool_bytes; }
 ```
 
-`repose-admin hosts add` mints the join token, and cloud-init places it in
-the host's `/run/repose/join-token`. hostd calls Register once, stores the
+`repose-admin hosts add` mints the join token, and it reaches the host's
+`/run/repose/join-token` **over SSH after the install**, by the `file`
+provisioner in `infra/azure/modules/host`. Not through cloud-init:
+`custom_data` stays in the Azure VM model and is readable through IMDS,
+so nothing secret goes in it (DECISIONS I-20). hostd calls Register once, stores the
 certificate at `/var/lib/repose/hostd/{cert,key}.pem` and rotates it with
 `Rotate` (unary, same shape) every 30 days.
 
@@ -301,7 +304,7 @@ was paused or woken, so the api shows the marker within seconds rather than
 at the next minute's sample. It is **not** a `guest_state_changed`: the
 guest's state does not change, and the api must not route it through its
 state-change path, which cancels the project's open questions),
-`snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (80
+`snapshot_done {guest_id, blob_path, bytes, sha256}` (sha256 added with I-462), `host_warning {kind, detail}` with kinds `pool_high` (70
 percent), `store_high` (80 percent), `build_queue_deep`, `cache_unreachable`
 (substituter down; builds fall back to source and will be slow),
 `guestd_lost` (no vsock for 60 s), `freeze_timeout`, `guest_wake_failed`
