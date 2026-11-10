@@ -821,8 +821,7 @@ msg=""
 if [ -n "$msg" ] && ` + muxProbeScript + `; then
   herdr notification show repose --body "$msg" >/dev/null 2>&1 || true
 elif [ -n "$msg" ] && tmux list-sessions >/dev/null 2>&1; then
-  s=$(tmux list-sessions -F '#{session_name}' | head -n 1)
-  tmux display-message -d 6000 -t "=$s:" "$msg" 2>/dev/null || true
+  for c in $(tmux list-clients -F '#{client_name}' 2>/dev/null); do tmux display-message -c "$c" -d 6000 "$msg" 2>/dev/null || true; done
 fi
 if [ -z "$bad" ]; then
 ` + setMarker("claude-plugins", hash) + `fi

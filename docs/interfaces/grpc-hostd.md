@@ -258,7 +258,8 @@ GuestSample { string guest_id; string state; string class; uint64 cpu_ns_delta;
               uint64 cpu_pressure_us_delta; uint64 host_cpu_wait_us_delta;
               uint64 guest_mem_used_bytes;     // the three before: I-493
               uint64 root_used_bytes; uint64 root_size_bytes;      // I-567
-              bool resting; }                                      // I-818
+              bool resting;                                        // I-818
+              optional uint64 net_egress_bytes_delta; }            // I-1063
 GuestSignals { uint32 ssh_sessions; uint32 tmux_clients; repeated AgentProc agents;
                uint32 docker_containers; bool guestd_ok; }
 AgentProc { string agent; string tmux_window; string state; }   // state: working|idle|needs_input|running|unknown (running: I-694)

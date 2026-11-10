@@ -133,6 +133,7 @@ create table if not exists meter_samples (
   root_used bigint,
   root_size bigint,
   resting boolean not null default false,
+  net_egress bigint,
   primary key (project_id, ts)
 ) partition by range (ts);
 

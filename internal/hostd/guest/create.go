@@ -287,6 +287,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	if err := m.d.Net.AddGuestRules(ctx, g.GuestID, g.IP, g.MAC, g.Tap); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}
+	m.baselineEgress(ctx, g.GuestID)
 	if err := m.d.Net.Shape(ctx, g.Tap, m.cfg.EgressMbit, m.cfg.DownloadMbit); err != nil {
 		return m.fail(g, stepNetwork, err)
 	}

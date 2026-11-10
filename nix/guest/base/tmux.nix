@@ -383,6 +383,10 @@ in
     secureSocket = false;
     # Written to /etc/tmux.conf; guest-conventions.md "tmux" lists these.
     historyLimit = 50000;
+    # Each attach is a session grouped with the project's (DECISIONS
+    # I-1067), so a window takes the size of the terminals showing it,
+    # not of every terminal attached.
+    aggressiveResize = true;
     escapeTime = 10;
     terminal = "tmux-256color";
     extraConfig = ''
@@ -429,9 +433,12 @@ in
       # status bar's own colours rather than tmux's yellow, which read as
       # a warning each time a dev server started.
       set -g message-style "bg=green,fg=black"
+      # The title and the status line name the project's session, not
+      # the grouped one each attach makes (DECISIONS I-1067).
+      set -g status-left "[#{?session_grouped,#{session_group},#S}] "
       # The laptop's tab or window title names the machine and session.
       set -g set-titles on
-      set -g set-titles-string "#h: #S"
+      set -g set-titles-string "#h: #{?session_grouped,#{session_group},#S}"
       # A window whose agent waits for input (guestd's @repose-state,
       # DECISIONS I-606) shows `?` after its name, so an attached user
       # sees which other agent needs them. tmux's default formats

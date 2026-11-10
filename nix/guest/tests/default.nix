@@ -975,7 +975,8 @@ in
           for f in ["xterm-ghostty:RGB", "xterm-kitty:RGB", "alacritty:RGB", "wezterm:RGB", "foot*:RGB", "*-direct:RGB"]:
               assert f in features, features
           assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles").strip() == "on"
-          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #S"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gv set-titles-string").strip() == "#h: #{?session_grouped,#{session_group},#S}"
+          assert guest.succeed("sudo -H -u dev tmux show-options -gwv aggressive-resize").strip() == "on"
 
       with subtest("I-513, I-514: login shells read ~/.bashrc last; ls, vi, history and fzf"):
           guest.succeed("cat > /home/dev/.bashrc <<'EOF'\nexport REPOSE_RC_MARK=read\nalias rcprobe='echo alias-ok'\nalias ll='echo user-ll'\nEOF\nchown dev:dev /home/dev/.bashrc")

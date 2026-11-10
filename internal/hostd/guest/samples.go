@@ -22,12 +22,15 @@ import (
 const levelNotice = obs.LevelNotice
 
 // sampleCursor is a running guest's last reading of its cumulative
-// counters: the hypervisor unit's CPU time and its tap's bytes, and the two
-// CPU pressure totals (DECISIONS I-493), each with its own seen flag since
-// either can be missing while the others read.
+// counters: the hypervisor unit's CPU time and its tap's bytes, its nft
+// egress counter (DECISIONS I-1063), and the two CPU pressure totals
+// (DECISIONS I-493), each with its own seen flag since either can be
+// missing while the others read.
 type sampleCursor struct {
 	cpu, rx, tx  uint64
 	seen         bool
+	egress       uint64
+	egressSeen   bool
 	pressure     uint64
 	pressureSeen bool
 	wait         uint64
@@ -171,6 +174,73 @@ func (m *Manager) advanceNet(guestID, tap string) (drx, dtx uint64, ok bool) {
 	return drx, dtx, true
 }
 
+// egressLocked moves a guest's egress cursor to total, its nft egress
+// counter, and returns the bytes it sent to the internet since the last
+// reading; the caller holds curMu. Billing reads this, not the tap: the
+// tap also carries what the guest sends the edge (SSH, port forwards,
+// hooks, the browser view) and the host's caches, none of which is
+// egress (DECISIONS I-1063). A cursor not yet seen takes the reading as
+// its baseline, as the tap's does.
+func (m *Manager) egressLocked(guestID string, total uint64) uint64 {
+	cur := m.last[guestID]
+	var d uint64
+	if cur.egressSeen {
+		d = counterDelta(cur.egress, total)
+	}
+	cur.egress, cur.egressSeen = total, true
+	m.last[guestID] = cur
+	return d
+}
+
+// egressDeltas reads every guest's egress counter and moves the running
+// guests' cursors past it, all under curMu, so a stop's final reading,
+// a boot's baseline and this tick cannot interleave: a reading taken
+// before a restart and applied after its baseline would have counted the
+// guest's whole lifetime. When the counters cannot be read, or a guest
+// has none, its egress this tick is 0 and its cursor stays, so the next
+// reading counts those bytes once.
+func (m *Manager) egressDeltas(ctx context.Context, gs []*state.Guest) map[string]uint64 {
+	m.curMu.Lock()
+	defer m.curMu.Unlock()
+	counters, err := m.d.Net.EgressBytes(ctx)
+	if err != nil {
+		m.d.Log.Warn("samples: egress counters unread", "event", "samples", "err", err.Error())
+	}
+	out := map[string]uint64{}
+	for _, g := range gs {
+		if g.State != StateRunning {
+			continue
+		}
+		v, ok := counters[g.GuestID]
+		if err == nil && !ok {
+			m.d.Log.Warn("samples: guest has no egress counter", "event", "samples", "guest_id", g.GuestID)
+		}
+		if err != nil || !ok {
+			out[g.GuestID] = 0
+			continue
+		}
+		out[g.GuestID] = m.egressLocked(g.GuestID, v)
+	}
+	return out
+}
+
+// baselineEgress sets a booting guest's egress cursor to its counter's
+// current value. The counter outlives a stop (destroy deletes it), so
+// unlike the tap it does not start at zero; without the counter's value
+// the first tick takes the baseline instead.
+func (m *Manager) baselineEgress(ctx context.Context, guestID string) {
+	v, err := m.d.Net.CounterBytes(ctx, guestID)
+	if err != nil {
+		m.d.Log.Warn("egress baseline unread", "event", "samples", "guest_id", guestID, "err", err.Error())
+		return
+	}
+	m.curMu.Lock()
+	cur := m.last[guestID]
+	cur.egress, cur.egressSeen = v, true
+	m.last[guestID] = cur
+	m.curMu.Unlock()
+}
+
 // advanceCPU moves a guest's CPU cursor to cpu and returns the delta.
 func (m *Manager) advanceCPU(guestID string, cpu uint64) uint64 {
 	m.curMu.Lock()
@@ -199,22 +269,36 @@ func (m *Manager) sampleTs() int64 {
 	return ts
 }
 
-// finalSample reads a guest's tap one last time before teardown deletes it
-// and sends what the guest sent and received since the last tick, so bytes
-// between the last tick and the stop are metered (DECISIONS I-448). The
+// finalSample reads a guest's tap and egress counter one last time before
+// teardown deletes the tap, and sends what the guest received, sent, and
+// sent to the internet since the last tick, so bytes between the last
+// tick and the stop are metered (DECISIONS I-448, I-1063). The
 // sample's state is stopping: the api's hours count running samples only.
 // The cursor goes with the tap; the next boot starts a new one.
 func (m *Manager) finalSample(g *state.Guest) {
 	drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap)
+	// The counter is read under curMu with the cursor's delete, so a tick
+	// cannot move the cursor in between.
+	var egress *uint64
+	v, cerr := m.d.Net.CounterBytes(context.Background(), g.GuestID)
 	m.curMu.Lock()
+	if cerr == nil && m.last[g.GuestID].egressSeen {
+		egress = proto.Uint64(m.egressLocked(g.GuestID, v))
+	}
 	delete(m.last, g.GuestID)
 	m.curMu.Unlock()
-	if !ok || (drx == 0 && dtx == 0) || m.d.Emit == nil {
+	if cerr != nil {
+		m.d.Log.Warn("samples: egress counter unread at stop", "event", "samples", "guest_id", g.GuestID, "err", cerr.Error())
+	}
+	if !ok {
+		drx, dtx = 0, 0
+	}
+	if (drx == 0 && dtx == 0 && (egress == nil || *egress == 0)) || m.d.Emit == nil {
 		return
 	}
 	m.d.Emit.Samples(&hostdv1.Samples{Ts: m.sampleTs(), Guests: []*hostdv1.GuestSample{{
 		GuestId: g.GuestID, State: StateStopping, Class: g.Class, DiskAllocBytes: g.VolumeBytes,
-		NetRxBytesDelta: drx, NetTxBytesDelta: dtx, Signals: &hostdv1.GuestSignals{},
+		NetRxBytesDelta: drx, NetTxBytesDelta: dtx, NetEgressBytesDelta: egress, Signals: &hostdv1.GuestSignals{},
 	}}, Host: m.hostSample()})
 	if m.d.Metrics != nil {
 		m.d.Metrics.GuestNetBytesTotal.WithLabelValues("rx").Add(float64(drx))
@@ -247,6 +331,7 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 		return s
 	}
 	lost := 0
+	egress := m.egressDeltas(ctx, gs)
 	for _, g := range gs {
 		gsm := &hostdv1.GuestSample{GuestId: g.GuestID, State: g.State, Class: g.Class, DiskAllocBytes: g.VolumeBytes, Signals: &hostdv1.GuestSignals{}}
 		if size, used, err := m.d.LVM.VolumeStats(ctx, VolumeName(g.GuestID)); err == nil {
@@ -266,6 +351,9 @@ func (m *Manager) CollectSamples(ctx context.Context) *hostdv1.Samples {
 			}
 			if drx, dtx, ok := m.advanceNet(g.GuestID, g.Tap); ok {
 				gsm.NetRxBytesDelta, gsm.NetTxBytesDelta = drx, dtx
+			}
+			if d, ok := egress[g.GuestID]; ok {
+				gsm.NetEgressBytesDelta = proto.Uint64(d)
 			}
 			if m.restingMark(g.GuestID) != nil {
 				// A resting guest is paused, not lost (S4 of

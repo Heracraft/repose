@@ -262,10 +262,10 @@ const tmuxMessageWait = 8 * time.Second
 // way every helper output reaches the user (never over the pane). It
 // waits, briefly, for a client to be attached.
 func tmuxMessage(ctx context.Context, t sshTarget, slug, msg string, alive func() bool) {
-	cmd := fmt.Sprintf("tmux display-message -d 4000 -t %s %s", shQuote("="+slug+":"), shQuote(strings.ReplaceAll(msg, "#", "##")))
+	cmd := tmuxShowClients(slug, 4000, shQuote(strings.ReplaceAll(msg, "#", "##")))
 	deadline := time.Now().Add(tmuxMessageWait)
 	for {
-		clients, err := runSSH(ctx, t, fmt.Sprintf("tmux list-clients -t %s -F x", shQuote("="+slug)), nil)
+		clients, err := runSSH(ctx, t, tmuxClientsScript(slug), nil)
 		if err == nil && strings.TrimSpace(string(clients)) != "" {
 			_ = runSSHOK(ctx, t, cmd)
 			// Two messages in a row would replace each other at once.

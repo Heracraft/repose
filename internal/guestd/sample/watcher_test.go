@@ -138,7 +138,7 @@ func TestHookedAgentStateComesFromHooks(t *testing.T) {
 	}
 	w, run, rec, clk, p := newWatcherFixture(t, procs)
 	run.Match["list-windows"] = tmuxOutput([4]string{"claude", "101", "claude", "0"})
-	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("todo-app~812\ttodo-app\n")}
 
 	ctx := context.Background()
 	settle := func() {
@@ -652,7 +652,7 @@ func TestOOMPriorityCoversSplitPanes(t *testing.T) {
 		[4]string{"claude", "100", "claude", "0"},
 		[4]string{"shell", "200", "bash", "0"},
 	)
-	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("/dev/pts/0\n")}
+	run.Match["list-clients"] = sysdep.RunResult{Stdout: []byte("todo-app~812\ttodo-app\n")}
 	run.Match["list-panes"] = sysdep.RunResult{Stdout: []byte(
 		"claude\t100\tclaude\nclaude\t110\tclaude\nclaude\t120\tnode\nshell\t200\tbash\nshell\t210\tclaude\n")}
 

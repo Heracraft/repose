@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"slices"
@@ -78,7 +79,7 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 		go func() { exited <- cmd.Wait() }()
 		var clients string
 		for i := 0; ; i++ {
-			out, _ := runSSH(ctx, f.target, "tmux list-clients -t "+testSlug+" -F '#{window_name}'", nil)
+			out, _ := runSSH(ctx, f.target, "tmux list-clients -F '#{window_name}'", nil)
 			if clients = strings.TrimSpace(string(out)); clients != "" {
 				break
 			}
@@ -111,7 +112,7 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 				time.Sleep(50 * time.Millisecond)
 			}
 		}
-		if _, err := runSSH(ctx, f.target, "tmux detach-client -s "+testSlug, nil); err != nil {
+		if _, err := runSSH(ctx, f.target, detachAll, nil); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -121,6 +122,95 @@ func TestAttachFallsBackToTheSessionWhenTheWindowIsGone(t *testing.T) {
 			t.Fatalf("window %s: the attach did not end on detach", tc.window)
 		}
 		_ = ptmx.Close()
+	}
+}
+
+// detachAll detaches every terminal from the fake guest's tmux.
+const detachAll = `for c in $(tmux list-clients -F '#{client_name}'); do tmux detach-client -t "$c"; done`
+
+// startAttach runs remote, a guest-side attach command, on a terminal of
+// cols x rows, and waits until tmux has one more client than before.
+func startAttach(t *testing.T, ctx context.Context, f *runFixture, remote string, cols, rows uint16) (*exec.Cmd, chan error) {
+	t.Helper()
+	before, _ := runSSH(ctx, f.target, "tmux list-clients -F x", nil)
+	n := strings.Count(string(before), "x")
+	// The fake guest's ssh passes no terminal size on to script(1), so
+	// the size is set on the terminal script gives tmux.
+	sized := "TERM=xterm-256color script -qfc " + shQuote(fmt.Sprintf("stty cols %d rows %d\n", cols, rows)+remote) + " /dev/null"
+	cmd := exec.Command("ssh", append(append([]string{"-t"}, f.target.Args...), sized)...)
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ptmx.Close() })
+	go func() { _, _ = io.Copy(io.Discard, ptmx) }()
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	for i := 0; ; i++ {
+		out, _ := runSSH(ctx, f.target, "tmux list-clients -F x", nil)
+		if strings.Count(string(out), "x") > n {
+			return cmd, exited
+		}
+		select {
+		case err := <-exited:
+			t.Fatalf("the attach exited (%v)", err)
+		default:
+		}
+		if i > 100 {
+			t.Fatal("never attached")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// Two laptops attached to one machine (DECISIONS I-1067): each terminal
+// gets a session grouped with the project's, so each keeps its own window
+// and a window takes the size of the terminal showing it. Both count as
+// the session's clients, the window last chosen is where the next attach
+// opens, and a detach leaves nothing behind.
+func TestTwoAttachesKeepTheirOwnWindowAndSize(t *testing.T) {
+	if _, err := exec.LookPath("script"); err != nil {
+		t.Skip("needs script(1) to give the fake guest's tmux client a terminal")
+	}
+	fake := fakeapi.New(fakeapi.Options{})
+	defer fake.Close()
+	f := newRunFixture(t, fake)
+	ctx := context.Background()
+	if _, err := runSSH(ctx, f.target, "tmux set -gw aggressive-resize on && tmux new-window -d -t "+testSlug+" -n editor 'exec cat' && tmux new-window -d -t "+testSlug+" -n logs 'exec cat'", nil); err != nil {
+		t.Fatal(err)
+	}
+	_, exitA := startAttach(t, ctx, f, attachNamedCommand(testSlug, "", "editor"), 80, 24)
+	_, exitB := startAttach(t, ctx, f, attachNamedCommand(testSlug, "", "logs"), 200, 60)
+	clients, err := runSSH(ctx, f.target, tmuxClientsScript(testSlug), nil)
+	if err != nil || strings.Count(strings.TrimSpace(string(clients)), "\n") != 1 {
+		t.Fatalf("the session's clients: %q (%v)", clients, err)
+	}
+	on, _ := runSSH(ctx, f.target, "tmux list-clients -F '#{window_name}' | sort | tr '\\n' ' '", nil)
+	if string(on) != "editor logs " {
+		t.Fatalf("clients are on %q, want editor and logs", on)
+	}
+	sizes, _ := runSSH(ctx, f.target, "tmux list-windows -t ="+testSlug+" -F '#{window_name} #{window_width}x#{window_height}'", nil)
+	if !strings.Contains(string(sizes), "editor 80x23") || !strings.Contains(string(sizes), "logs 200x59") {
+		cl, _ := runSSH(ctx, f.target, "tmux list-clients -F '#{client_name} #{client_width}x#{client_height} #{session_name} #{window_name}'; tmux show -gwv aggressive-resize; tmux show -gv window-size", nil)
+		t.Fatalf("window sizes:\n%s\nclients:\n%s", sizes, cl)
+	}
+	cur, _ := runSSH(ctx, f.target, "tmux display-message -p -t ="+testSlug+": '#{window_name}'", nil)
+	if strings.TrimSpace(string(cur)) != "logs" {
+		t.Fatalf("the project's session is on %q, want logs, the window last chosen", cur)
+	}
+	if _, err := runSSH(ctx, f.target, detachAll, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range []chan error{exitA, exitB} {
+		select {
+		case <-ch:
+		case <-time.After(10 * time.Second):
+			t.Fatal("an attach did not end on detach")
+		}
+	}
+	left, _ := runSSH(ctx, f.target, "tmux list-sessions -F '#{session_name}'", nil)
+	if strings.TrimSpace(string(left)) != testSlug {
+		t.Fatalf("sessions after both detached: %q", left)
 	}
 }
 

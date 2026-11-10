@@ -169,10 +169,17 @@ func (i *Ingest) insertGuest(ctx context.Context, hostID uuid.UUID, ts time.Time
 	// paused guest, because that is what bills the minute
 	// (billing/rollup.go) and what the plan's memory counts. False from a
 	// hostd older than I-818.
-	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting)
-			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) on conflict do nothing`,
+	// net_egress is null from a hostd older than I-1063, which billing
+	// reads as "use net_tx".
+	var egress *int64
+	if g.NetEgressBytesDelta != nil {
+		v := int64(g.GetNetEgressBytesDelta())
+		egress = &v
+	}
+	batch.Queue(`insert into meter_samples (ts, project_id, host_id, state, class, cpu_ns, mem_rss, net_tx, net_rx, disk_alloc, disk_used, ssh_sessions, tmux_clients, agents, docker_containers, guestd_ok, cpu_pressure_us, host_cpu_wait_us, mem_used, root_used, root_size, resting, net_egress)
+			values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) on conflict do nothing`,
 		ts, pid, hostID, g.State, g.Class, int64(g.CpuNsDelta), int64(g.MemRssBytes), int64(g.NetTxBytesDelta), int64(g.NetRxBytesDelta), int64(g.DiskAllocBytes), int64(g.DiskUsedBytes),
-		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting)
+		int32(sig.SshSessions), int32(sig.TmuxClients), aj, int32(sig.DockerContainers), sig.GuestdOk, pressure, int64(min(g.HostCpuWaitUsDelta, maxPressureUs)), memUsed, rootUsed, rootSize, g.Resting, egress)
 	if held, ok := heldBytes(g); ok {
 		// The plan's disk counts this figure (DECISIONS I-585); a sample
 		// older than the one already recorded leaves it.

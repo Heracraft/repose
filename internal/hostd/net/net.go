@@ -41,8 +41,12 @@ type Net interface {
 	// it, from anywhere but the host itself, to downMbit.
 	Shape(ctx context.Context, tap string, upMbit, downMbit int) error
 	Unshape(ctx context.Context, tap string) error
-	// CounterBytes reads the guest's egress counter.
+	// CounterBytes reads the guest's egress counter: the bytes it sent
+	// to the internet, which is what egress bills (DECISIONS I-1063).
 	CounterBytes(ctx context.Context, guestID string) (uint64, error)
+	// EgressBytes reads every guest's egress counter in one call: guest
+	// id -> bytes.
+	EgressBytes(ctx context.Context) (map[string]uint64, error)
 	// BlockedPackets reads every guest's blocked-attempt counters in one
 	// call: guest id -> kind (BlockedKinds) -> packets dropped.
 	BlockedPackets(ctx context.Context) (map[string]map[string]uint64, error)
@@ -367,6 +371,28 @@ func (n *Real) CounterBytes(ctx context.Context, guestID string) (uint64, error)
 	return strconv.ParseUint(string(m[1]), 10, 64)
 }
 
+// EgressBytes implements Net with one `nft list counters`: every counter
+// named egress-<guest id>.
+func (n *Real) EgressBytes(ctx context.Context) (map[string]uint64, error) {
+	res, err := n.R.Run(ctx, "nft", "list", "counters", "table", n.Family, n.Table)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]uint64{}
+	for _, m := range counterRe.FindAllSubmatch(res.Stdout, -1) {
+		gid, ok := strings.CutPrefix(string(m[1]), CounterName(""))
+		if !ok || gid == "" {
+			continue
+		}
+		v, err := strconv.ParseUint(string(m[3]), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		out[gid] = v
+	}
+	return out, nil
+}
+
 // BlockedPackets implements Net with one `nft list counters`: every
 // counter named <kind>-<guest id> for a kind in BlockedKinds.
 func (n *Real) BlockedPackets(ctx context.Context) (map[string]map[string]uint64, error) {
@@ -556,6 +582,19 @@ func (f *Fake) CounterBytes(_ context.Context, guestID string) (uint64, error) {
 	return v, nil
 }
 
+func (f *Fake) EgressBytes(context.Context) (map[string]uint64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.FailOn["egress"]; err != nil {
+		return nil, err
+	}
+	out := map[string]uint64{}
+	for g, v := range f.Counters {
+		out[g] = v
+	}
+	return out, nil
+}
+
 func (f *Fake) DelCounter(_ context.Context, guestID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -590,8 +629,23 @@ func (f *Fake) Block(guestID, kind string, packets uint64) {
 }
 
 // Send adds bytes to a tap's counters, as traffic does: rx what the guest
-// received, tx what it sent.
+// received, tx what it sent. What it sent went to the internet, so it is
+// on the guest's egress counter too while the guest has rules.
 func (f *Fake) Send(tap string, rx, tx uint64) {
+	f.SendLocal(tap, rx, tx)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for g, el := range f.Elements {
+		if strings.HasSuffix(el, " . "+tap) {
+			f.Counters[g] += tx
+		}
+	}
+}
+
+// SendLocal adds bytes to a tap's counters only: traffic between the
+// guest and the edge or the host (SSH, hooks, the caches), which is not
+// egress.
+func (f *Fake) SendLocal(tap string, rx, tx uint64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s := f.Stats[tap]

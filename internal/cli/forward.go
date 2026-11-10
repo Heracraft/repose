@@ -429,11 +429,15 @@ if ! tmux has-session -t "=$s" 2>/dev/null; then
   :
 elif [ -n "$u" ]; then
   g=$(tmux show-options -gv status-right 2>/dev/null || true)
-  tmux set-option -t "=$s:" status-right-length 120
-  tmux set-option -t "=$s:" status-right "⇄ $u │ $g"
+  for x in $(tmux list-sessions -F '#{session_name} #{session_group}' | awk -v s="$s" '$1 == s || $2 == s { print $1 }'); do
+    tmux set-option -t "=$x:" status-right-length 120
+    tmux set-option -t "=$x:" status-right "⇄ $u │ $g"
+  done
 else
-  tmux set-option -u -t "=$s:" status-right 2>/dev/null || true
-  tmux set-option -u -t "=$s:" status-right-length 2>/dev/null || true
+  for x in $(tmux list-sessions -F '#{session_name} #{session_group}' | awk -v s="$s" '$1 == s || $2 == s { print $1 }'); do
+    tmux set-option -u -t "=$x:" status-right 2>/dev/null || true
+    tmux set-option -u -t "=$x:" status-right-length 2>/dev/null || true
+  done
 fi
 `, entry, int(forwardStale/time.Second), shQuote(f.slug))
 }

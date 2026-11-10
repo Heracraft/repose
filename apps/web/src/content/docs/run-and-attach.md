@@ -87,7 +87,7 @@ repose attach todo-app
 
 It syncs nothing, so attaching from a second computer whose copy is older is safe. A stopped machine starts first, as with `run`. A machine [frozen](/docs/lifecycle#frozen-machines) while you were away takes a second or two to answer the first connection.
 
-Several terminals can be attached at once, from one computer or several. They see the same windows.
+Several terminals can be attached at once, from one computer or several. They share the windows, and each terminal picks its own: switching windows in one leaves the others where they are. A window takes the size of the terminal showing it. When two terminals show the same window, it takes the size of the one you typed in last, and the other shows the rest of its screen as dots. The next attach opens the window chosen last.
 
 ## tmux keys
 

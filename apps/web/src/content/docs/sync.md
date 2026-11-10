@@ -174,6 +174,17 @@ The checkout has to be a git repository with at least one commit and its whole h
 
 On a `repose run` both refusals end with `, or pass --no-sync`, which makes the machine with no checkout.
 
-Outside a git repository `repose run` refuses nothing: it creates the machine, copies nothing and says `Not a git repository, so nothing was synced.` The machine is [named after the folder](/docs/lifecycle#a-second-machine-for-the-same-repository). `repose sync` there exits 2 with `This folder is not a git checkout, so there is nothing to sync.`
+Outside a git repository, `repose run` and `repose sync` ask from a terminal:
+
+```
+~/todo-app isn't a git repository. Make it one and sync it? [Y/n]
+Committed 12 files to a new git repository.
+```
+
+Yes runs `git init` in the folder, writes a `.gitignore` if it has none, commits the rest as `Initial commit`, and syncs. That `.gitignore` leaves out `.env` files, which [still reach the machine](#what-travels), key and credential files such as `id_rsa`, `*.pem` and `credentials.json`, and the folders a sync always skips, such as `node_modules`. A folder inside it that is a git repository of its own is left out by name. If git can't make the commit, the folder is left as it was and the run stops with git's reason.
+
+The offer isn't made without a terminal, with `--temp`, or for a folder holding over 500 MB or 100,000 files. `repose run` then makes the machine with no checkout and says `Not a git repository, so nothing was synced.`, or for the large folder, `Nothing was synced: this folder isn't a git repository, and it holds over 500 MB or 100,000 files, more than one sync sends.` A no makes the same machine and prints nothing more. The machine is [named after the folder](/docs/lifecycle#a-second-machine-for-the-same-repository).
+
+`repose sync` in such a folder exits 1 with `Nothing was synced.` on a no, and 2 without a terminal (`This folder is not a git checkout, so there is nothing to sync.`) or for the large folder.
 
 A repository on github.com with at least 4 MiB of history is cloned by the machine itself on the first sync, over its own network, and your laptop sends only the commits GitHub doesn't have; the summary says `history cloned from github.com`. Submodules on github.com go the same way. A public repository arrives with the files of the commit you're on, and the machine fetches older versions in the background, so `git remote` on the machine lists `repose-backfill` until it's whole. If a fetch fails, the CLI sends that history itself and says so.

@@ -28,7 +28,7 @@ non-empty directory or not a directory; it writes the name to
 checkout the rule finds. The sync that made the checkout replaces the
 session's `shell` window (`tmux respawn-pane -k -c <checkout>`) when it
 is an idle shell in `/home/dev`, and every attach passes `-c <checkout>`
-to `tmux attach`, so new windows open there. On a herdr machine the sync runs
+to the session it makes, so new windows open there. On a herdr machine the sync runs
 `repose-herdr-workspace` instead (see "herdr"), only when the command
 exists and `repose-herdr-server` is active, activating or reloading, and
 herdr's tabs open in the workspace's directory. The same step, and every
@@ -239,7 +239,15 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   `repose/worktree-<N>`. Worktrees live beside the checkout, never in
   it, so the sync's status, stash, fingerprint and tar never see them;
   nothing removes them but the user (`git worktree remove`).
-- `repose attach` = `tmux attach -t <slug> -c <checkout>`; `repose run
+- `repose attach` = `tmux new-session -t =<slug> -s <slug>~<pid> -c
+  <checkout>`, a session grouped with the project's that ends when its
+  terminal detaches (`destroy-unattached on`), with a
+  `session-window-changed` hook that selects the same window in `<slug>`,
+  so the next attach opens the window last used (DECISIONS I-1067).
+  Before I-1067 it was `tmux attach -t <slug> -c <checkout>`, and two
+  attached terminals shared one current window. Whatever counts or
+  messages the attached terminals reads every client whose session is
+  `<slug>` or whose `session_group` is. `repose run
   "prompt"` = `tmux new-window -t <slug> -n <agent> -c <checkout> -d
   '<agent> <the prompt's argument form>'`, the agent's own initial-prompt
   argument, which its startup takes (DECISIONS I-780), so nothing is typed
@@ -281,7 +289,12 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   (no `*:Tc`: 24-bit colour goes to those TERMs and to a client whose
   `COLORTERM` is `truecolor` or `24bit`; the CLI's attach unsets the
   guest's `COLORTERM` when the laptop's says neither, I-515), `set -g
-  set-titles on`, `set -g set-titles-string "#h: #S"`, `set -s escape-time 10`, `set -g
+  set-titles on`, `set -g set-titles-string "#h:
+  #{?session_grouped,#{session_group},#S}"` and `set -g status-left
+  "[#{?session_grouped,#{session_group},#S}] "` (the project's session,
+  not the attach's grouped one), `setw -g aggressive-resize on` (each
+  attach is a session grouped with the project's, and a window is sized
+  for the terminals showing it, I-1067), `set -s escape-time 10`, `set -g
   focus-events on`, `set -g update-environment "DISPLAY SSH_AUTH_SOCK
   SSH_CONNECTION LANG COLORTERM"` (no `TZ`: an attach from a terminal
   without one would clear the session's zone), and since DECISIONS I-264

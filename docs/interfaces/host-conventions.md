@@ -124,13 +124,15 @@ rotates keys does the same restart itself.
     `flows_drop` (I-453), `ct
     state new` over the per-guest bucket in set `guest_flow_rate`
     (`limit rate over 200/second burst 2000 packets`, I-240) to
-    `flows_drop`, jump `guest_dyn`, then drop
+    `flows_drop`, then drop
     `169.254.169.254` and `168.63.129.16`, drop `10.64.0.0/12`, allow the
     edge WireGuard address on tcp 8443 and 6081, drop every private range
     (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `169.254/16`), accept
     to the provider NIC), `smtp_drop`/`stratum_drop`/`flows_drop` (jump
     the hostd-owned `guest_smtp`/`guest_stratum`/`guest_flows`, then
-    drop), `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`
+    drop), `guest_meter` (forward hook at `filter + 10`, policy accept:
+    from `br-guests` out of the provider NIC, jump `guest_dyn`; I-1063),
+    `guest_dyn`, `guest_smtp`, `guest_stratum`, `guest_flows`
     (empty at boot, hostd-owned), `nat`
     (masquerade `10.64.0.0/12` out of the provider NIC), `output` (policy
     accept; sockets of the `nixbld` group and of the build user jump to
@@ -146,7 +148,14 @@ rotates keys does the same restart itself.
   - Per-guest egress metering: `nft add counter inet repose
     egress-<guest_id>` and `nft add rule inet repose guest_dyn ip saddr
     <ip> counter name egress-<guest_id>`; read with `nft list counter`,
-    removed on destroy. Blocked attempts likewise, one counter and rule per
+    removed on destroy. `guest_dyn` is jumped from `guest_meter`, a
+    forward chain after `guest_fwd` that sees only what `guest_fwd`
+    accepted, for packets from `br-guests` out of the provider NIC. So the
+    counter holds every byte the guest sent the internet and nothing it
+    sent the edge (SSH, port forwards, hooks, the browser view) or the
+    host (the caches); `GuestSample.net_egress_bytes_delta` is its delta,
+    and `net_tx_bytes_delta` and `net_rx_bytes_delta` are still the tap's
+    (DECISIONS I-1063). Blocked attempts likewise, one counter and rule per
     kind (I-238..I-240): `nft add counter inet repose <kind>-<guest_id>`
     and `nft add rule inet repose guest_<kind> ip saddr <ip> counter name
     <kind>-<guest_id>` for `kind` in `smtp`, `stratum`, `flows`; hostd reads
