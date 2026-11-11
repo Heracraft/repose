@@ -280,13 +280,14 @@ todo-app  running 2h14m  large
   listening  node :5173 up 3d 410.0 MB
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
+  webhooks   stripe 200 2m ago, github 503 stopped 1h04m ago
 ```
 
 A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen` after the state in the header, before the size. `status` reads the machine itself for the checkout and the listening ports, so it wakes a frozen one; `repose ls` reads none of that and leaves it frozen.
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
+`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
 
 Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
@@ -429,6 +430,18 @@ SNAPSHOT_ID is a whole id, or its last or first characters (4 or more) when only
 | `repose github setup`           | Prints GitHub's fine-grained token form prefilled with Contents and Pull requests write and a year's expiry, opens it unless `REPOSE_NO_BROWSER=1`, and stores what you paste as the `GH_TOKEN` secret of your account, or with `--project` of one project (which then keeps its own copied-logins list). Your `gh` login stays on your laptop from then on, and the next `repose run` removes the copy an earlier one left while it still matches your laptop's. `--owner NAME` sets the account or organisation that owns the repositories, for the link; without it, the checkout's, else yours. Piped input is taken as the token, and nothing is printed or opened. To widen or renew the token, run it again with a new one ([a token for only some repositories](/docs/secrets#a-token-for-only-some-repositories)). |
 
 An account secret is for every project, so `--global` beside a project exits 2.
+
+## Webhooks
+
+| Command                            | What it does |
+| ---------------------------------- | ------------ |
+| `repose webhooks add NAME TARGET`  | Add a [webhook route](/docs/webhooks) and print its URL, and nothing else, so it pipes. TARGET is `PORT` or `PORT/PATH` inside the machine (`3000/api/webhooks/stripe`). Adding a name that exists changes its target and keeps its token. `--start` lets a delivery start the machine while it is stopped, at most once every 10 minutes; `--no-start` is the default. `--json` prints the route. |
+| `repose webhooks list [PROJECT]`   | The routes with their targets, whether `--start` is on, and the last delivery. Alias `ls`, and `repose webhooks` alone. `--json` for JSON, `-q`/`--quiet` for names. |
+| `repose webhooks url NAME`         | Print one route's URL, and the last 20 deliveries with `--json`. |
+| `repose webhooks rotate NAME`      | Replace the token and print the new URL. The old one answers 410 for 30 days. `--json` prints the route. |
+| `repose webhooks rm NAME...`       | Remove routes. Alias `remove`. Each URL answers 410 for 30 days. |
+
+`repose webhooks` alone takes `--json` too. A name matches `[a-z0-9][a-z0-9-]{0,31}`; anything else exits 2, as does a target that is no port. A name the project does not have exits 1.
 
 ## Configuration
 

@@ -15,8 +15,25 @@ import (
 	"github.com/heracraft/repose/internal/obs"
 )
 
-// internalRoute resolves <slug>.<handle> for the gateway.
+// internalRoute resolves <slug>.<handle> for the gateway, or a project
+// id for a webhook delivery, which knows the project the URL names and
+// no login at all (DECISIONS I-1110).
 func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
+	var p *store.Project
+	if pidParam := r.URL.Query().Get("project_id"); pidParam != "" {
+		pid, err := uuid.Parse(pidParam)
+		if err != nil {
+			return errf("invalid", "project_id is not valid")
+		}
+		if p, err = store.GetProject(r.Context(), s.d.Pool, pid); err != nil {
+			return err
+		}
+		if p.DestroyedAt != nil {
+			return db.ErrNotFound
+		}
+		writeJSON(w, http.StatusOK, routeAnswer(p))
+		return nil
+	}
 	login := r.URL.Query().Get("login")
 	i := strings.LastIndexByte(login, '.')
 	if i <= 0 || i == len(login)-1 {
@@ -32,13 +49,18 @@ func (s *Server) internalRoute(w http.ResponseWriter, r *http.Request) error {
 	// gateway refuses on this flag: its route cache holds an answer for
 	// five seconds, which makes the flag stale in both directions, and
 	// the wake is idempotent precisely so that does not matter.
+	writeJSON(w, http.StatusOK, routeAnswer(p))
+	return nil
+}
+
+// routeAnswer is the body both forms of GET /internal/route return.
+func routeAnswer(p *store.Project) map[string]any {
 	out := map[string]any{"project_id": p.ID, "guest_ip": nil, "state": p.State, "principals": []string{p.ID.String()},
 		"host_unreachable": p.HostUnreachable, "resting": p.State == "running" && p.RestingSince != nil}
 	if p.GuestIP != nil {
 		out["guest_ip"] = p.GuestIP.String()
 	}
-	writeJSON(w, http.StatusOK, out)
-	return nil
+	return out
 }
 
 // internalWake resumes a machine that rests and answers when it is awake

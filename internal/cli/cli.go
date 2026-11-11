@@ -215,6 +215,7 @@ func newRootCmd(version string) *cobra.Command {
 		newStatusCmd(envJSON, env, g),
 		newOpenCmd(env, g),
 		newSecretsCmd(env, g),
+		newWebhooksCmd(env, g),
 		newGithubCmd(env, g),
 		newConfigCmd(env, g),
 		newSnapshotsCmd(env, g),

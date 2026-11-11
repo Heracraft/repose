@@ -38,6 +38,7 @@ import (
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/api/temp"
 	"github.com/heracraft/repose/internal/api/waitlist"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"github.com/heracraft/repose/internal/billing"
 	"github.com/heracraft/repose/internal/db"
 	"github.com/heracraft/repose/internal/fakes/kv"
@@ -281,10 +282,13 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.server = httpapi.New(httpapi.Deps{
 		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions,
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
-		Gateway:   httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
-		Seats:     a.seats,
-		Resting:   a.resting,
-		CLILatest: a.cliLatest.Version,
+		Gateway: httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
+		Seats:   a.seats,
+		Resting: a.resting,
+		// The webhook routes the edge serves (DECISIONS I-1110); the
+		// token's envelope is the secrets store's, so it takes it.
+		WebhookRoutes: webhooks.New(a.pool, a.sec, cfg.WebhookHost),
+		CLILatest:     a.cliLatest.Version,
 		Migrations: func(ctx context.Context) (int, error) {
 			st, err := db.MigrateStatus(ctx, a.pool)
 			return len(st.Pending), err

@@ -231,6 +231,7 @@ type project struct {
 	destroyedAt time.Time
 	retained    time.Time // destroyed projects keep their last snapshot until then
 	secrets     map[string]*SecretMeta
+	webhooks    []*WebhookRoute
 	revisions   []*Revision
 	snapshots   []*Snapshot
 	events      []*Event

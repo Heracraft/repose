@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/heracraft/repose/internal/api/secrets"
+	"github.com/heracraft/repose/internal/api/webhooks"
 	"os"
 	"strconv"
 	"strings"
@@ -41,11 +42,15 @@ type Config struct {
 	GRPCServerKey   string
 	GRPCServerNames []string
 	GatewayHost     string
-	GatewayPort     int
-	ResendAPIKey    string
-	NotifyFrom      string
-	DashboardURL    string
-	BaseRef         string
+	// WebhookHost is the one public name webhook routes answer on
+	// (DECISIONS I-1110). It is in the URLs tenants paste into providers'
+	// dashboards, so it is kept for good.
+	WebhookHost  string
+	GatewayPort  int
+	ResendAPIKey string
+	NotifyFrom   string
+	DashboardURL string
+	BaseRef      string
 	// CLIReleasesURL is CLI_RELEASES_URL: the redirect naming the newest
 	// CLI release (DECISIONS I-626). Empty means GitHub's releases/latest,
 	// except with REPOSE_DEV=1; "off" reads none.
@@ -91,6 +96,7 @@ func FromEnv() (Config, error) {
 		GRPCServerCert:  os.Getenv("GRPC_SERVER_CERT"),
 		GRPCServerKey:   os.Getenv("GRPC_SERVER_KEY"),
 		GatewayHost:     env("GATEWAY_HOST", "ssh.repose.herakraft.co"),
+		WebhookHost:     env("WEBHOOK_HOST", webhooks.DefaultHostname),
 		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
 		NotifyFrom:      env("NOTIFY_FROM", "repose <notify@repose.herakraft.co>"),
 		DashboardURL:    env("DASHBOARD_URL", "https://repose.herakraft.co"),
