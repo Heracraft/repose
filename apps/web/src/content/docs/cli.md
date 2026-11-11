@@ -469,6 +469,7 @@ default_size = "small"
 default_agent = "codex"
 editor = "cursor"
 default_multiplexer = "herdr"
+remote_control = true
 
 [sync]
 exclude = ["dist", "*.mp4"]
@@ -492,10 +493,11 @@ forward = ["figma"]
 | `default_agent`       | `claude` | Agent for new projects.                                                                                                                                                                                     |
 | `editor`              | none     | What `repose code` opens: `code`, `cursor` or `zed`. `--editor` and `REPOSE_EDITOR` win over it.                                                                                                            |
 | `default_multiplexer` | none     | `tmux` or `herdr` for new projects. Without it, a project you create from a herdr pane gets herdr and any other gets tmux. Any other value stops every command with an error naming the key.                |
+| `remote_control`      | `false`  | Offer the machine's Claude Code to the Claude app, so you can read and drive its agents from your phone. See [Drive it from the Claude app](/docs/agents#drive-it-from-the-claude-app).                      |
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. `[projects.NAME]` with `remote_control` replaces `remote_control` for that project. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
 | `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |

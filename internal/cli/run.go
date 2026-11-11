@@ -341,7 +341,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 		target.Checkout = name
 	}
 
-	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs()}
+	helper := sessionOptions{Slug: project.Slug, Target: target.Args, TZ: tz, HomeDir: e.HomeDir, Forward: os.Getenv(forwardEnvOff) != "1", Bridge: opts.Bridge || len(opts.BridgeAllow) > 0, BridgeAllow: opts.BridgeAllow, Checkout: target.Checkout, OpenURLs: laptopOpensURLs(), RemoteControl: e.Cfg.remoteControlFor(project.Slug)}
 	if skip, _, _ := e.Cfg.loginSkip(project.Slug); skip[mcpLogin] {
 		helper.MCPOff = true // I-556: attach honours the off switch too
 	}
@@ -506,7 +506,7 @@ func runRun(ctx context.Context, e *Env, opts RunOptions, attachOnly bool) (retE
 					Kept: func(label string) {
 						noted.warn(e, keptLoginLine(label))
 					},
-				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, Markers: markers})
+				}, carryOptions{TZ: tz, Git: gc, Claude: cc, Tools: b.tc, MCP: b.mc, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers})
 			},
 		})
 		if err != nil {
@@ -2310,7 +2310,7 @@ func (e *Env) carryWithoutSync(ctx context.Context, t sshTarget, project *Projec
 		delete(markers, credsMarker)
 	}
 	noted := newCarryNoter(e.Dir, project.ID) // DECISIONS I-618
-	co := carryOptions{TZ: tz, Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
+	co := carryOptions{TZ: tz, RemoteControl: e.Cfg.remoteControlFor(project.Slug), Markers: markers, Tools: buildToolsCarry(e.HomeDir, repoDir, precedenceFor(e.personalOn, repoDir))}
 	if repoDir != "" {
 		gc, err := buildGitCarry(repoDir, e.HomeDir)
 		if err != nil {

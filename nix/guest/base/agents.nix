@@ -3,6 +3,7 @@
 # own files on first run (guest-conventions.md "Agent wrappers").
 { config, lib, pkgs, ... }:
 let
+  remoteControl = import ./remote-control.nix { inherit pkgs; };
   # A guest is a VM an agent may wreck, so Claude Code starts
   # without permission prompts unless the user set another defaultMode;
   # repose-agent-setup adds these two keys only where defaultMode is unset
@@ -63,6 +64,7 @@ in
     environment.systemPackages = (builtins.attrValues pkgs.reposeAgents) ++ [
       config.repose.hookPackage
       pkgs.repose-agent-setup
+      remoteControl
     ];
 
     # The opencode plugin at login, not only when the wrapped `opencode`

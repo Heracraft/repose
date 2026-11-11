@@ -34,7 +34,10 @@ every agent, so `repose status` and the dashboard show one timeline.
 - Telegram and Discord webhooks (DESIGN §18; the delivery interface is
   designed so they are one file each later).
 - Anything with Claude Code Remote Control or channels: those belong to the
-  user's own Claude login and the platform does not touch them.
+  user's own Claude login and the platform proxies none of it. Starting
+  Remote Control on a machine, where the user asked for it, is the guest
+  base's and the CLI's (DECISIONS I-1132, amends this line); no event, no
+  channel and nothing in this workstream changes for it.
 - Email for auth or receipts (Logto and Polar send their own; the account emails of I-291 are ours).
 
 ## 4. Interfaces

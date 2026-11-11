@@ -31054,3 +31054,183 @@ are listed as the project's clients, the project's session follows to
 `logs`, and after both detach only `<slug>` is left. The two existing
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1132. repose starts Claude Code Remote Control on a machine: the
+`remoteControlAtStartup` setting and a `remote-control` tmux window.**
+(remote-control-host, 2026-11-11. Amends DESIGN §13 and
+`docs/workstreams/13-notifications.md`, both of which said the platform
+does nothing to Remote Control.)
+
+The proposal is `docs/proposals/2026-11-10-remote-control-host.md`;
+this entry decides its Claude half. The reason the Claude login is a
+real `/login` and not a copied token was partly that it keeps Remote
+Control (I-278, `docs/features/agents.md` "Claude login and the policy
+behind it"). Until now nothing used it: a user who wanted the machine in
+the Claude app had to type `claude remote-control` in a window
+themselves and open it again after every freeze.
+
+Two parts, both the user's to ask for (I-1134):
+
+1. `repose-agent-setup claude` adds `remoteControlAtStartup: true` to
+   `~/.claude/settings.json` where the user's file has no such key, the
+   same rule the platform `defaultMode` follows (I-250). Every `claude`
+   the machine starts then registers one remote session, so the app
+   lists the agent windows. The key is *not* in
+   `/etc/repose/claude-settings.json`, because that file is the base's
+   and the same for every machine, and this one follows a per-machine
+   switch.
+2. `repose-remote-control` opens the tmux window `remote-control`, in
+   which `claude remote-control --spawn worktree --name <slug>
+   --no-chrome` runs in a restart loop, which is what lets the app start
+   a *new* session on the machine.
+
+A tmux window and not a systemd user unit: server mode asks its one-time
+`Enable Remote Control? (y/n)` on a terminal, and repose must not answer
+that for the user, the same reason `/login` is theirs (I-278). In a
+window the user meets the question at their next attach. The window is
+reconciled, not only opened: a run that finds the switch off closes it
+again, and only one repose opened (the window option
+`@repose-remote-control`).
+
+`--spawn worktree` keeps a session the phone starts out of the checkout
+an agent is already working in; its branches reach the laptop with `git
+fetch repose` (I-272). Claude Code 2.1.283 refuses worktree mode outside
+a git repository, and a machine made from a plain folder has none
+(I-1065), so that one gets `--spawn same-dir`. `--no-chrome` so a
+session started from a phone does not drive Claude in Chrome on the
+machine unless the user asks for it.
+
+The restart loop waits 5 s after a run that lasted a minute (server mode
+exits after about 10 minutes without network, which is what a freeze and
+a thaw look like from inside) and 60 s after a shorter one, so a refusal
+that will not pass — an organization policy, a login that went — does
+not spin.
+
+It runs at the claude wrapper's start, at the end of
+`repose-tmux-session` (so a boot brings the window back) and at the
+carry. Not on a herdr project: that has no tmux session, and a herdr tab
+of the same name is a later step.
+
+Conditions, every one of them by a file test and never by reading a
+credential: the switch is on, `~/.claude/settings.json` has neither
+`disableRemoteControl: true` nor `remoteControlAtStartup: false`,
+`~/.claude/.credentials.json` is not empty (`test -s`, R2-8, I-278), and
+none of `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` is a named secret, since Remote Control refuses
+all three ("Remote Control requires a full-scope login token").
+
+The freeze rule does not change (I-930: presence is not activity; I-822
+keeps the wake list). A frozen machine is offline in the app and nothing
+from the app wakes it; the docs say so in one line. A session the phone
+drives runs the hooks, so its turns report `working` and hold the
+machine awake as a laptop prompt does. Every session the server spawns
+inherits the server's `TMUX_PANE`, so they all report under the
+`remote-control` window, which `repose ps` shows as a `claude` agent
+because its foreground program is one (I-421). Keying a server session
+by `session_id` instead is a change to the hook payload contract and is
+not done here.
+
+Security: a signed-in claude.ai session becomes a second way to run
+commands as `dev`. The public agents page says so, says which permission
+mode those sessions run in, and recommends Claude's **Require trusted
+devices**. repose proxies nothing, reads no transcript, opens no port,
+and no log line, event or sample carries a session URL, a session name,
+a QR code or the window's contents.
+
+*Evidence.* `claude remote-control --help` on the base's pinned Claude
+Code 2.1.283 (`nix/overlay/agents/versions.json`) refuses without a
+login, and the usage block in the binary names every flag used here:
+`--spawn <mode>` (same-dir, worktree, session), `--name`, `--capacity`,
+`--permission-mode`, `--[no-]chrome`. The VM check
+`guest-remote-control` boots a guest with a stub `claude` that records
+its argv.
+
+**I-1134. Remote Control is off until the user asks for it, because its
+idle cost could not be measured.** (remote-control-host, 2026-11-11.)
+
+The freeze rule (I-844, `internal/api/resting/resting.go:43-66`) wants
+every quiet minute under 6 s of CPU and 64 KiB in and out. An idle
+Remote Control server polls Anthropic and sends presence heartbeats, and
+each auto-connected agent window holds its own connection. The proposal
+made the default conditional on that measurement: on for Claude if an
+idle Remote Control machine still freezes, off otherwise.
+
+**The measurement could not be taken.** `claude remote-control` refuses
+to start without a claude.ai subscription login, and the builder must
+not sign in with the owner's account:
+
+```
+$ HOME=<throwaway> claude remote-control --spawn worktree --name test
+Error: You must be logged in to use Remote Control.
+Remote Control is only available with claude.ai subscriptions.
+Run `claude auth login` to sign in with your claude.ai account.
+```
+
+The process exits in 0.09 s, so there is no idle process to sample. What
+was measured instead, on the dev box, is the base's Claude Code 2.1.283
+idle in a throwaway `HOME` under `tmux -L rc` for ten minutes, sampled
+once a minute the way `resting.go` samples a guest: 0.03 to 0.09 s of
+CPU a minute, against the 6 s the rule allows. That bounds the process
+itself and says nothing about the poll and the heartbeats, which are the
+part that matters.
+
+So the default is off, and stays off until somebody measures a real
+Remote Control machine (step 1 of the proposal's section 9: a large
+machine on a host with a subscription login, one server and three
+auto-connected windows, 30 idle minutes of `meter_samples`, and `repose
+ls` showing it `frozen`). Off is also the answer that costs nothing if
+the measurement goes the wrong way: on by default would take the freeze
+away from every Claude user's machine, which is what I-818 was built to
+save.
+
+**I-1136. The switch is `remote_control` in `config.toml`, global and
+per project, and Claude Code's own keys win over it.**
+(remote-control-host, 2026-11-11.)
+
+```toml
+remote_control = true
+
+[projects.todo-app]
+remote_control = false
+```
+
+Two layers. Claude Code's own `disableRemoteControl` or
+`remoteControlAtStartup: false`, in the laptop's `~/.claude/settings.json`
+(carried by I-196) or the machine's, always win: with either set repose
+opens no window and adds no key. Under them, `remote_control`, absent
+meaning off.
+
+No new command. `repose config on|off` already means the project's
+`machine.nix` on or off, so `repose config remote on|off` would make the
+same verbs under one noun mean two things; and "remote" in repose means
+the git remote (I-272, `sync`'s remote flags), so `repose remote ...` is
+a name already taken. A dashboard checkbox would need an api column, a
+contract field and a guestd path for something the laptop already
+carries; it is the alternative if the owner later wants the switch
+reachable from a phone. The name is Claude Code's own term, so a user who
+knows the feature finds the key.
+
+The value travels with the carry, as `on` or `off` in
+`/home/dev/.repose/remote-control` (marker `remote-control`), and the
+part then runs `repose-remote-control`, which opens the window or closes
+the one repose opened. A machine with no marker and a switch that is off
+is sent nothing: that is what it already holds. Turning the switch off
+removes the `remoteControlAtStartup: true` that `repose-agent-setup`
+wrote, tracked by `~/.local/state/repose/remote-control-startup`, and
+never a value the user set.
+
+**I-1138. Cursor's self-hosted worker is not built.**
+(remote-control-host, 2026-11-11. Conductor's ruling, owner's standing
+approval of 2026-11-11.)
+
+Section 6 of the proposal would run `agent worker start` as a systemd
+user unit so Cursor's web and iOS app can pick the machine for a run. It
+needs the Cursor CLI in the guest base, and the guest closure sits 4 MiB
+under its 6 GiB limit (I-1056), so the package alone would break the base
+build. It also needs a new login flow (`agent login` on the machine, or a
+`CURSOR_API_KEY` secret) and an unfree-allowlist entry, where Claude's
+half needs none of these. Few users have **My Machines** turned on.
+
+Recorded as not done, for later: it ships with the Cursor CLI, if that
+ever earns its place in the base, and the same 6 s and 64 KiB test
+applies to its worker.

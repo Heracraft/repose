@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+927 entries.
 
 ## Scope
 
@@ -955,3 +955,7 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1132** repose starts Claude Code Remote Control on a machine: the `remoteControlAtStartup` setting and a `remote-control` tmux window — 2026-11-11; L31058
+- **I-1134** Remote Control is off until the user asks for it, because its idle cost could not be measured — 2026-11-11; L31148
+- **I-1136** The switch is `remote_control` in `config.toml`, global and per project, and Claude Code's own keys win over it — 2026-11-11; L31186
+- **I-1138** Cursor's self-hosted worker is not built — 2026-11-11; L31222

@@ -219,6 +219,63 @@ guest, and never its login or its history:
 - Only what changed on the laptop is sent (one marker per item in the
   guest, DECISIONS I-206).
 
+## Remote Control: the machine in the Claude app (DECISIONS I-1132)
+
+Claude Code's own Remote Control shows a session in the Claude app, on
+the desktop app and at claude.ai/code, where the user can read it, prompt
+it and answer its permission prompts. repose starts it on a machine, and
+builds no phone interface of its own: the machine talks to Anthropic
+directly, repose proxies nothing, reads no transcript and opens no port
+(DESIGN §13).
+
+Two parts, both off unless the user asked for them:
+
+- **The agent windows.** `repose-agent-setup claude` adds
+  `remoteControlAtStartup: true` to `~/.claude/settings.json` where the
+  user's file has no such key, the same rule as `defaultMode` (I-250).
+  Every `claude` the machine starts then registers one remote session.
+- **The server window.** `repose-remote-control` opens the tmux window
+  `remote-control`, in which `claude remote-control --spawn worktree
+  --name <slug> --no-chrome` runs in a restart loop, so the app can also
+  start a *new* session on the machine. `--spawn worktree` keeps such a
+  session out of the checkout an agent is already working in; its
+  branches reach the laptop with `git fetch repose` (I-272). A checkout
+  that is no git repository gets `--spawn same-dir`, which is all Claude
+  Code 2.1.283 serves there. It runs at the claude wrapper's start, at
+  the end of `repose-tmux-session` (so a boot brings it back) and at the
+  carry, and it is a window and not a user unit because Claude Code asks
+  its one-time `Enable Remote Control?` on a terminal and repose must not
+  answer it for the user, the same reason `/login` is theirs (I-278).
+
+**The switch.** `remote_control` in `config.toml`, global or under
+`[projects.NAME]`, carried to `~/.repose/remote-control` as `on` or `off`
+(I-1136). Off by default (I-1134). Claude Code's own `disableRemoteControl`
+and `remoteControlAtStartup: false`, from the laptop (I-196) or the
+machine, always win: nothing opens and no key is added. Nothing opens
+either without a login in the share (`test -s`, never a read, I-278) or
+with a `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or
+`ANTHROPIC_AUTH_TOKEN` secret, which Remote Control refuses. There is no
+new command: `repose config on|off` already means the project's
+`machine.nix`, and "remote" in repose means the git remote (I-272).
+
+**The freeze.** Nothing changes in the rule (I-930: presence is not
+activity). A frozen machine is offline in the app and nothing from the app
+wakes it; the wake list stays I-822's. A session the phone drives runs the
+hooks, so its turns report `working` and hold the machine awake as a
+laptop prompt does. The `remote-control` window counts as a `claude` agent
+by its foreground program (I-421), which is also how those turns are
+reported: every session the server spawns inherits the server's
+`TMUX_PANE`, so they all report under that one window.
+
+**Security.** With it on, a signed-in claude.ai session is a second way to
+run commands on the machine as `dev`, in the machine's permission mode,
+which is `bypassPermissions` unless the user set another `defaultMode`
+(I-250). The agents page recommends Claude's **Require trusted devices**.
+The server starts `--no-chrome`, so a session from the phone does not get
+Claude in Chrome on the machine unless the user asks for it. No log line,
+event or sample carries a session URL, a session name, a QR code or the
+window's contents: nothing here reads the window.
+
 ## Behaviour that must hold
 
 - Every agent starts in its own tmux window named after it, in the
@@ -250,6 +307,11 @@ guest, and never its login or its history:
   of them while it is that window's foreground program (I-421).
 - Removing an agent from the overlay is a base bump with a changelog line;
   a project holding base updates keeps the old one.
+- Remote Control opens nothing on a machine whose `remote_control` is
+  unset, and `repose-agent-setup claude` adds `remoteControlAtStartup` to
+  no settings file there (I-1134). Turning it off again closes the
+  `remote-control` window repose opened, and removes only the
+  `remoteControlAtStartup: true` repose wrote.
 
 ## MCP
 

@@ -69,6 +69,9 @@ type sessionOptions struct {
 	// OpenURLs opens, in this laptop's browser, the https links the
 	// machine's BROWSER is handed while attached (I-634).
 	OpenURLs bool `json:"open_urls,omitempty"`
+	// RemoteControl is config.toml's remote_control for this project
+	// (DECISIONS I-1136), which the carry sends on.
+	RemoteControl bool `json:"remote_control,omitempty"`
 	// Messages are shown on the multiplexer first: a line the run printed
 	// just before the attach covered it (DECISIONS I-618).
 	Messages []string `json:"messages,omitempty"`
@@ -212,7 +215,7 @@ func carryOverSession(ctx context.Context, t sshTarget, opts sessionOptions) (*c
 	if err != nil {
 		return nil, err
 	}
-	co := carryOptions{TZ: opts.TZ, Markers: parseMarkers(string(out))}
+	co := carryOptions{TZ: opts.TZ, RemoteControl: opts.RemoteControl, Markers: parseMarkers(string(out))}
 	var warnings []string
 	if opts.RepoDir != "" {
 		gc, err := buildGitCarry(opts.RepoDir, opts.HomeDir)

@@ -52,6 +52,10 @@ type carryOptions struct {
 	Tools *toolsCarry
 	// MCP is the laptop's Claude Code MCP servers, templated (I-556).
 	MCP *mcpCarry
+	// RemoteControl is config.toml's remote_control for this project
+	// (DECISIONS I-1136): whether the machine offers its Claude Code to
+	// the Claude app.
+	RemoteControl bool
 	// Markers is the guest's marker set (item -> hash), from the sync's
 	// probe or the helper's own. Nil sends every part; a part whose hash
 	// matches its marker is left out.
@@ -249,6 +253,18 @@ func addCarry(p *guestPayload, opts carryOptions) ([]string, error) {
 			return nil, err
 		}
 		sent = append(sent, "tz")
+	}
+	// The Remote Control switch (I-1136). Sent on every change, off
+	// included: turning it off is what closes the window.
+	rcHash := carryHash([]byte(fmt.Sprint(opts.RemoteControl)))
+	_, rcKnown := opts.Markers["remote-control"]
+	// A machine that was never told anything is off already, so the
+	// part is not sent to one whose switch is off and has no marker.
+	if (opts.RemoteControl || rcKnown) && !opts.unchanged("remote-control", rcHash) {
+		if err := p.part("remote control", remoteControlPart(opts.RemoteControl)+setMarker("remote-control", rcHash)); err != nil {
+			return nil, err
+		}
+		sent = append(sent, "remote-control")
 	}
 	if v := cliVersion; v != "" && !opts.unchanged("cli-version", carryHash([]byte(v))) {
 		if err := p.part("cli version", cliVersionPart(v)+setMarker("cli-version", carryHash([]byte(v)))); err != nil {

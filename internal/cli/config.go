@@ -61,6 +61,12 @@ type Config struct {
 	// forwarded whenever you're attached (`repose mcp forward`, DECISIONS
 	// I-557).
 	MCP MCPConfig `toml:"mcp"`
+	// RemoteControl is remote_control: whether repose offers this
+	// machine's Claude Code to the Claude app through Claude Code's own
+	// Remote Control (DECISIONS I-1132). nil is unset, which is off
+	// (I-1134), so a project's `remote_control = false` beats a global
+	// true and the other way round.
+	RemoteControl *bool `toml:"remote_control"`
 	// Projects holds per-project tables, keyed by the project's name:
 	// [projects.NAME.logins] replaces [logins] for that project, and
 	// [projects.NAME.mcp] forward adds to [mcp] forward.
@@ -83,6 +89,21 @@ type LoginsConfig struct {
 type ProjectConfig struct {
 	Logins LoginsConfig `toml:"logins"`
 	MCP    MCPConfig    `toml:"mcp"`
+	// RemoteControl is this project's remote_control (I-1136).
+	RemoteControl *bool `toml:"remote_control"`
+}
+
+// remoteControlFor is the machine's Remote Control switch for the
+// project named slug: [projects.NAME] remote_control, else the
+// top-level remote_control, else off (DECISIONS I-1134, I-1136).
+func (c Config) remoteControlFor(slug string) bool {
+	if p, ok := c.Projects[slug]; ok && p.RemoteControl != nil {
+		return *p.RemoteControl
+	}
+	if c.RemoteControl != nil {
+		return *c.RemoteControl
+	}
+	return false
 }
 
 // mcpForward is what the session helper forwards for the project named

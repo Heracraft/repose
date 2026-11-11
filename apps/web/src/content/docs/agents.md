@@ -94,6 +94,29 @@ A hookless agent's turn ends in `repose events` as `finished` with the summary `
 
 A window with another name counts as an agent's while the agent is its foreground program, `claude` typed in the `shell` window for example; Gemini CLI counts only in a window named `gemini`, because it runs as `node`.
 
+## Drive it from the Claude app
+
+Claude Code has its own [Remote Control](https://code.claude.com/docs/en/remote-control): a session on one machine shows up in the Claude app on your phone, on the desktop app and at claude.ai/code, where you can read it, prompt it and answer its permission prompts. repose can switch it on for a machine. It's off until you ask for it:
+
+```toml
+remote_control = true
+
+[projects.todo-app]
+remote_control = false
+```
+
+With it on, and once you've [logged in](#log-in) with a claude.ai subscription, the next `run` or `attach` sets it up. Each agent window registers itself, and a `remote-control` window on the machine runs `claude remote-control`, which is what lets you start a new session on the machine from the app. The first time, that window holds Claude Code's own `Enable Remote Control?` question; attach and answer it. Sessions you start from the app each get their own git worktree, so they don't write in the checkout an agent is already working in; `git fetch repose` brings their branches to your laptop.
+
+The `remote-control` window shows in `repose ps` as a `claude` agent, because that's what runs in it. While you drive a session from the app it reads `working`, like a prompt you typed.
+
+A session from the app runs with the machine's [permission mode](#permissions), which is `bypassPermissions` unless you set another one. Your claude.ai login is then a second way to run commands on the machine as `dev`, alongside your repose login and its SSH certificate. Turn on **Require trusted devices** in your Claude settings if you want phone access bound to an enrolled device.
+
+Claude Code's own settings win over repose's: `disableRemoteControl` or `remoteControlAtStartup: false` in your laptop's `~/.claude/settings.json`, which `run` [copies to the machine](#your-agent-setup-comes-along), stops all of this whatever `remote_control` says. Remote Control needs a claude.ai subscription: a `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` secret can't use it, and repose starts nothing when either is set. On a Team or Enterprise plan an Owner has to turn Remote Control on first.
+
+A [frozen machine](/docs/lifecycle#frozen-machines) is offline in the app, and nothing you do there wakes it.
+
+Decisions you want to make while you're away still go through `repose-ask`: a question asked inside Claude lets the machine freeze 15 minutes later, and your answer waits until something wakes it.
+
 ## Let it ask you
 
 Any agent can message you or ask you a question from the machine with `repose-notify`, `repose-notify --done` and `repose-ask` ([Agents can message you and ask questions](/docs/notifications#agents-can-message-you-and-ask-questions)). The machine's guide for agents says when to use each, and a rule in `CLAUDE.md` or `AGENTS.md` overrides it.
