@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-930 entries.
+932 entries.
 
 ## Scope
 
@@ -561,7 +561,7 @@ pointer, not a summary.
 - **I-546** Codex starts without approvals, with full access and no update check — 2026-10-06; L13213
 - **I-547** An interactive Codex in another dev environment runs without the shared daemon — 2026-10-06; L13234
 - **I-548** The guide and docs say which Playwright browsers a guest has — 2026-10-06; L13261
-- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; L13277
+- **I-553** Platform MCP servers reach every agent through the agent's own layer beneath the user's file — 2026-10-06; amended by I-1148; L13277
 - **I-554** pi moves to 1.0.4 for built-in MCP — 2026-10-06; L13348
 - **I-555** repose keeps one MCP list per machine and renders it into each agent's own config — 2026-10-06; amended by I-558; L13378
 - **I-556** `run` and `attach` carry the laptop's Claude Code MCP servers, with credentials replaced by secret references — 2026-10-06; L13513
@@ -962,3 +962,5 @@ pointer, not a summary.
 - **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31287
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31380
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31417
+- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L31507
+- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L31574
