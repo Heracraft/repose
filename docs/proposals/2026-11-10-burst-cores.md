@@ -330,6 +330,9 @@ failed. The alert gains a meaning; its rule does not change.
 
 ## 6. Measuring before building
 
+> **Measured 2026-11-11 on host-stg-01**: `docs/research/burst-staging-2026-11-11.md`. The arithmetic holds; typing lag at the gate stayed under 0.5 ms p50 / 1.4 ms p90 in-guest; the base share held at 95 % under contention. The gate value is still uncompared with alternatives.
+
+
 ### 6.1 Read-only, from `meter_samples` and `proc_samples`
 
 Each query runs in `begin read only; ... rollback;`, as in
