@@ -237,6 +237,43 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
 - Question and answer text are tenant content: shown to the owner, never
   logged, and stored like an event summary.
 
+The owner can speak first (DECISIONS I-1144):
+
+- `repose say [PROJECT] "<text>"` and `POST /projects/:id/say` send one
+  message to the project's agent. The api stores it as a `says` row,
+  sends a `SayToAgent` down the host's channel and answers with what the
+  machine did; it never queues on its own, so a machine whose host is
+  not connected, or that does not answer in 20 seconds, is a refusal the
+  sender reads.
+- guestd types it into the agent's own tmux window, with the submit
+  script `repose run -w -p` uses (I-752's screen check), **only while
+  the agent's hook state is `idle` or `needs_input`**. Otherwise the
+  message waits and goes in at the end of the turn, which the agent
+  watcher's 5-second refresh delivers at. Claude Code queues input typed
+  mid-turn; opencode, codex, gemini and pi do not all behave the same,
+  and a message half-swallowed is worse than one five seconds late.
+- One message waits per window, in order. A second replaces the first
+  and the answer says `replaced`, which the CLI prints. This is not a
+  backlog: nothing drains a queue of messages.
+- `--agent <window>` picks a window. Without it a machine with one agent
+  window uses it; with several the refusal names them, and with none it
+  says so.
+- The text reaches the agent as it was typed when the sender is the
+  project's owner, and prefixed `[from <name>]` when it is not. Today it
+  is always the owner, so there is no prefix; the field is kept.
+- A delivery records an `agent_prompted` event, which notifies nobody
+  (it is not in the api's notifying kinds) and carries the sender and
+  the window, never the text. Its word in `repose events` and the
+  dashboard is "got a message".
+- The text is tenant content: stored like an event summary, never in a
+  log line, a metric or a notification.
+- A message for an agent under herdr is refused: guestd reads herdr's
+  panes over herdr's socket and does not write to them.
+- A message the agent's terminal took but did not submit (I-752's exit
+  5) is dropped with a log line and no event, since typing it again
+  would stack a second copy on the first. On the waiting path there is
+  nobody to tell.
+
 Channels (`workstreams/13-notifications.md` §5.6):
 
 - Email through Resend, to the account's email, one message per event,

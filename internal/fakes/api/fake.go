@@ -151,6 +151,13 @@ type Fake struct {
 	wakes         int
 	sessions      []SessionReport
 	questions     []*Question       // newest last (DECISIONS I-245)
+	// says are the `repose say` messages the fake took, and sayAgents /
+	// sayState / sayReplaced what it answers with (DECISIONS I-1144).
+	says         []Say
+	sayAgents    []string
+	sayAgentsSet bool
+	sayState     string
+	sayReplaced  bool
 	secretAnswers map[string][]byte // question id -> the value its secret answer stored (I-929)
 	// bill is the billing mode, plan, seats and waitlist (billing.go); the
 	// one account the fake has is the one they describe.
@@ -661,6 +668,8 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/questions", f.listProjectQuestions)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/answer", f.answerQuestion)
 	f.handle("POST /v1/projects/{id}/questions/{qid}/cancel", f.cancelQuestion)
+	// A message for the project's agent (DECISIONS I-1144).
+	f.handle("POST /v1/projects/{id}/say", f.sayToAgent)
 	f.handle("GET /v1/questions/reply", f.replyQuestion)
 	f.handle("POST /v1/questions/reply", f.replyQuestion)
 	// Usage and billing.

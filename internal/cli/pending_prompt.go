@@ -74,7 +74,7 @@ while [ "$(date +%%s)" -lt "$repose_end" ]; do
   fi
   repose_prev=$repose_cur
   sleep 1
-done`, shQuote(prompt), pendingLoginSecs, pendingReadySecs, sh.alive, sh.runs, sh.submit.capture, submitPromptScript(sh.submit), pendingStableSecs, grep.String(), shQuote(promptHead(prompt)))
+done`, shQuote(prompt), pendingLoginSecs, pendingReadySecs, sh.alive, sh.runs, sh.submit.Capture, submitPromptScript(sh.submit), pendingStableSecs, grep.String(), shQuote(promptHead(prompt)))
 	return "setsid -f sh -c " + shQuote(waiter) + " </dev/null >/dev/null 2>&1\n"
 }
 

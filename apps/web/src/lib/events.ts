@@ -15,14 +15,18 @@ export interface EventKindInfo {
 	group: EventGroup;
 }
 
-/** The agent hooks' kinds and the three an agent sends itself (I-244, I-688). */
+/**
+ * The agent hooks' kinds, the three an agent sends itself (I-244, I-688)
+ * and the record that a `repose say` reached the agent (I-1144).
+ */
 const AGENT_KINDS = [
 	'completed',
 	'needs_input',
 	'error',
 	'agent_message',
 	'agent_question',
-	'agent_done'
+	'agent_done',
+	'agent_prompted'
 ];
 
 /** Kinds that say something failed, beyond the *_failed ones. */
@@ -70,6 +74,9 @@ const LABELS: Record<string, { label: string; tone: EventTone }> = {
 	error: { label: 'error', tone: 'error' },
 	agent_question: { label: 'question', tone: 'attention' },
 	agent_message: { label: 'message', tone: 'neutral' },
+	// A message the owner sent with `repose say`, typed into the agent's
+	// terminal (I-1144). The summary is who sent it, never the message.
+	agent_prompted: { label: 'got a message', tone: 'neutral' },
 	guest_state_changed: { label: 'machine', tone: 'neutral' },
 	base_updated: { label: 'base', tone: 'neutral' },
 	// "unused" is the fixed word for a machine nobody has touched for a

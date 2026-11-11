@@ -101,6 +101,13 @@ var builders = map[string]func(string) (*guestdv1.Request, error){
 		}
 		return &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: m}}, nil
 	},
+	"say-to-agent": func(body string) (*guestdv1.Request, error) {
+		m := &guestdv1.SayToAgent{}
+		if err := unmarshal(body, m); err != nil {
+			return nil, err
+		}
+		return &guestdv1.Request{Req: &guestdv1.Request_SayToAgent{SayToAgent: m}}, nil
+	},
 	"shutdown": func(body string) (*guestdv1.Request, error) {
 		m := &guestdv1.Shutdown{}
 		if err := unmarshal(body, m); err != nil {

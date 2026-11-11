@@ -170,6 +170,10 @@ It exits with:
 
 Messages and questions are capped at 1 KB and count toward the [hourly cap](#limits). Neither is written to any log.
 
+### Speaking first
+
+The other direction is [`repose say`](/docs/cli#repose-say-project-message): a message you send the agent from your laptop, typed into its own terminal. It is not a notification and goes to no channel; [Speak to it from your laptop](/docs/agents#speak-to-it-from-your-laptop) has it.
+
 ## Limits
 
 Repeats of the same event from the same agent within 60 seconds become one event, with both summaries in it; what an agent sends with `repose-notify` or `repose-ask` never collapses. A project sends at most 30 notifications in any hour; past that, one message says when they resume, and its events still show in `repose events`. Google Chat takes one message a second per space, so a burst arrives a second apart.

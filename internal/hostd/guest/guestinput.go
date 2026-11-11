@@ -49,7 +49,10 @@ const (
 // (docs/interfaces/grpc-hostd.md). Platform kinds such as billing_stopped
 // are the api's to raise, never a guest's. agent_done is `repose-notify
 // --done` (DECISIONS I-688).
-var guestAgentKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
+// agent_prompted is the record that a `repose say` reached the agent's
+// terminal (DECISIONS I-1144): it notifies nobody and its summary is the
+// sender's name, never the message.
+var guestAgentKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true, "agent_prompted": true}
 
 // guestWarningKinds are the Warning kinds guestd sends
 // (docs/interfaces/vsock-guestd.md). Any other becomes guestOtherWarning.

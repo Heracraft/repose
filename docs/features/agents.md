@@ -241,6 +241,13 @@ guest, and never its login or its history:
   on the machine, run it; `attached` means say `http://localhost:PORT`,
   which the forward carries to the laptop, and `away` means say which
   port it is here and name `repose open PORT`.
+- `repose say [PROJECT] "<text>"` (DECISIONS I-1144) puts a message from
+  the owner into the agent's own tmux window, through the same submit
+  script `repose run -w -p` uses, the moment the agent's hook state is
+  `idle` or `needs_input`, and at the end of the turn otherwise. One
+  message waits per window and a second replaces it. A delivery is an
+  `agent_prompted` event that notifies nobody and carries the sender and
+  the window, never the text. `notifications.md` has the whole rule.
 - A missing login produces the agent's own login prompt in the window plus
   the CLI message above; it never produces a crash loop.
 - `repose status` shows per agent window: `working`, `idle`,

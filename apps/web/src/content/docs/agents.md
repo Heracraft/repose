@@ -100,6 +100,16 @@ Any agent can message you or ask you a question from the machine with `repose-no
 
 `repose-presence` prints `attached` while you're at the machine and `away` while you aren't, by the same reading as the notification hold: a tmux client or an SSH connection, your editor and a herdr bridge included. The guide tells an agent to run it before it hands you a URL for a port on the machine, so it offers `http://localhost:PORT` while that port is on your laptop and names [`repose open PORT`](/docs/machine#ports) while it isn't. It exits 0 either way, and 1 when the machine's agent service doesn't answer.
 
+## Speak to it from your laptop
+
+`repose say "run the tests before you commit"` sends a message to the agent on a project. The machine types it into the agent's own terminal, so the agent reads it as your next prompt and answers in the session you attach to.
+
+An agent at its prompt, or waiting for your permission, gets the message at once. An agent in the middle of a turn gets it when the turn ends: the five agents don't all take input typed mid-turn, and a message half-swallowed is worse than one that lands five seconds later. One message waits per agent, so a second while one waits replaces it.
+
+`--agent WINDOW` picks the agent when the machine runs more than one; without it, a machine with several names their windows and sends nothing. Full options are under [`repose say`](/docs/cli#repose-say-project-message).
+
+A delivered message is an event, so `repose events` and the project page show that the agent got one and who sent it. The message itself is never in an event, a log line or a notification.
+
 ## Log in
 
 Logins are kept on the machine's disk, except Claude Code's. They survive stops and are in snapshots.

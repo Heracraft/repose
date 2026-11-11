@@ -340,6 +340,8 @@ func cmd(c any) *hostdv1.Command {
 		out.Cmd = &hostdv1.Command_Drain{Drain: v}
 	case *hostdv1.AnswerQuestion:
 		out.Cmd = &hostdv1.Command_AnswerQuestion{AnswerQuestion: v}
+	case *hostdv1.SayToAgent:
+		out.Cmd = &hostdv1.Command_SayToAgent{SayToAgent: v}
 	case *hostdv1.PauseGuest:
 		out.Cmd = &hostdv1.Command_PauseGuest{PauseGuest: v}
 	case *hostdv1.WakeGuest:

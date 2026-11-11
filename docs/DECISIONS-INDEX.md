@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-933 entries.
+935 entries.
 
 ## Scope
 
@@ -965,3 +965,5 @@ pointer, not a summary.
 - **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31430
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31523
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31560
+- **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — L31650
+- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L31725

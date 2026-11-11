@@ -58,6 +58,8 @@ func (s *Server) registerUserRoutes() {
 	// Events and logs
 	s.route(m, "GET /v1/projects/{id}/events", a(s.listEvents))
 	s.route(m, "GET /v1/projects/{id}/logs", a(s.projectLogs))
+	// A message for the project's agent, `repose say` (DECISIONS I-1144)
+	s.route(m, "POST /v1/projects/{id}/say", a(s.sayToAgent))
 	// Questions from repose-ask (DECISIONS I-245)
 	s.route(m, "GET /v1/questions", a(s.listQuestions))
 	s.route(m, "GET /v1/projects/{id}/questions", a(s.listProjectQuestions))

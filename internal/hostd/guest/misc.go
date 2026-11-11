@@ -2,6 +2,7 @@ package guest
 
 import (
 	"context"
+	"strings"
 
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
@@ -92,6 +93,53 @@ func (m *Manager) answerQuestion(ctx context.Context, c *hostdv1.AnswerQuestion)
 	m.log(g).Info("question answered", "event", "agent_question", "question_id", c.QuestionId, "status", c.Status)
 	return nil
 }
+
+// sayToAgent relays a message the owner typed to the guest's agent
+// (DECISIONS I-1144). The text is tenant content and is not logged; a
+// guest that is not running has no agent to say it to.
+func (m *Manager) sayToAgent(ctx context.Context, c *hostdv1.SayToAgent) (*hostdv1.SayResult, *Error) {
+	if c.SayId == "" || strings.TrimSpace(c.Text) == "" {
+		return nil, errf(CodeInvalidArgument, "say_id and text required")
+	}
+	if len(c.Text) > SayTextCap {
+		return nil, errf(CodeInvalidArgument, "text is %d bytes; at most %d", len(c.Text), SayTextCap)
+	}
+	g, gerr := m.getGuest(c.GuestId)
+	if gerr != nil {
+		return nil, gerr
+	}
+	if g.State != StateRunning {
+		return nil, errf(CodeNotFound, "guest is %s; it runs no agent", g.State)
+	}
+	// A message is what wakes a machine whose agent rested at its
+	// prompt, as an answer does (I-818).
+	sess, serr := m.sessionAwake(ctx, g)
+	if serr != nil {
+		return nil, serr
+	}
+	res, err := sess.SayToAgent(ctx, &guestdv1.SayToAgent{
+		SayId: c.SayId, Window: c.Window, Text: c.Text, Sender: c.Sender, FromOwner: c.FromOwner,
+	})
+	if err != nil {
+		if re, ok := vsockclient.IsRemote(err); ok {
+			if re.Code == CodeNotFound || re.Code == CodeInvalidArgument {
+				return nil, errf(re.Code, "guestd SayToAgent: %s", re.Message)
+			}
+			return nil, errf(CodeInternal, "guestd SayToAgent: %s: %s", re.Code, re.Message)
+		}
+		return nil, errf(CodeGuestUnresponsive, "guestd SayToAgent: %v", err)
+	}
+	if res == nil {
+		res = &guestdv1.SayResult{}
+	}
+	m.log(g).Info("message for an agent", "event", "agent_prompted", "say_id", c.SayId, "state", res.GetState())
+	return &hostdv1.SayResult{State: res.GetState(), Window: res.GetWindow(), Replaced: res.GetReplaced()}, nil
+}
+
+// SayTextCap is the longest message `repose say` may carry, four times
+// an event summary: a message is something a person wrote, and a
+// paragraph does not fit in 1 KB. guestd caps it again.
+const SayTextCap = 4 << 10
 
 // ExecOutputCap is the per-stream cap from the interface doc.
 const ExecOutputCap = 64 << 10

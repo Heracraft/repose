@@ -1,112 +1,28 @@
 package cli
 
 import (
-	"fmt"
-	"strings"
+	"github.com/heracraft/repose/internal/agentprompt"
 )
 
-// Typing a prompt is not submitting it (DECISIONS I-752). `repose run -p
-// PROMPT` typed the prompt and pressed Enter, and once in a while the
-// agent took the text and not the Enter: the prompt sat in Claude Code's
-// input, the command printed "Ready" and exited 0, and the machine
-// reported the agent idle. The race is not a slow start — the path that
-// waits for the pane to go idle loses it too — so the fix is to check
-// the terminal afterwards instead of waiting longer: the screen the
-// prompt was typed into, unchanged after Enter, means the Enter was
-// dropped, and Enter is pressed again, up to promptEnterTries times.
-// Every path that types a prompt goes through submitPromptScript, so the
-// check and the retries are in one place and run on the machine, in the
-// same ssh as the typing: the prompt never waits on another round trip.
+// The submit script of DECISIONS I-752 lives in internal/agentprompt, a
+// leaf package, because guestd types a prompt too since `repose say`
+// (DECISIONS I-1144) and neither program may import the other. The names
+// below are the CLI's own spellings of it; the reasoning, the measured
+// numbers and the script itself are in that package.
 
-// promptEnterTries is how many Enters the submit script presses before
-// it gives up; promptEnterPause is how long it waits before each check,
-// as a shell `sleep` argument. Variables so a test can shorten the wait.
-//
-// The span is NOT the variable, and this was measured rather than
-// reasoned (I-752, 2026-10-17). Live on a real `small` against prod:
-// 4 Enters over about two seconds submitted 2 prompts in 10, and 30
-// Enters over about a minute submitted 0 in 9, against a baseline of 1
-// in 10 with no retrying at all. Widening it bought nothing and cost a
-// minute of pressing Enter into a pane that was never going to take it,
-// so it stays narrow. What the retries cannot fix is in I-752: a fresh
-// agent satisfies the waiter's readiness gate while still not accepting
-// a submission.
-var (
-	promptEnterTries = 4
-	promptEnterPause = "0.5"
-)
+// promptHead is the start of the prompt's first line with anything in
+// it, which the submit script looks for on the screen.
+func promptHead(prompt string) string { return agentprompt.Head(prompt) }
 
-// promptHeadRunes bounds the needle promptHead builds: short enough to
-// sit on one line of any terminal the agent runs in, since a wrapped
-// line would not be found in the screen.
-const promptHeadRunes = 24
-
-// promptHead is what the submit script looks for on the screen: the
-// start of the prompt's first line with anything in it. "" when the
-// prompt has no such line, and then nothing is checked.
-func promptHead(prompt string) string {
-	for _, l := range strings.Split(prompt, "\n") {
-		l = strings.TrimSpace(l)
-		if l == "" {
-			continue
-		}
-		if r := []rune(l); len(r) > promptHeadRunes {
-			return string(r[:promptHeadRunes])
-		}
-		return l
-	}
-	return ""
-}
-
-// submitShell is what one terminal gives the submit script: the shell to
-// print its screen, to type the prompt in $repose_pp, and to press
-// Enter. tmux and herdr each have their own (tmuxSubmitShell,
-// herdrSubmitShell).
-type submitShell struct {
-	capture string
-	text    string
-	enter   string
-}
+// submitShell is what one terminal gives the submit script.
+type submitShell = agentprompt.Shell
 
 // submitPromptScript types $repose_pp, presses Enter, and presses Enter
-// again while the screen it typed into has not changed. It exits
-// typeExitNotSubmitted when the prompt is still sitting there after the
-// last try, 0 once the screen has moved on, and 0 without checking
-// anything when $repose_hd (promptHead) never showed on the screen: the
-// check can say nothing then, and the Enter stands as it did before.
-// The screen is read a pause after the prompt is typed, since a
-// terminal shows what it was sent when it next draws, not when the keys
-// land. The caller sets $repose_pp and $repose_hd; submitPromptFor
-// writes both.
-func submitPromptScript(sh submitShell) string {
-	return fmt.Sprintf(`%[1]s || exit 1
-sleep %[4]s
-repose_st=$(%[2]s 2>/dev/null)
-%[3]s || exit 1
-printf '%%s\n' "$repose_st" | grep -qF -e "$repose_hd" || exit 0
-repose_sn=0
-while :; do
-  sleep %[4]s
-  [ "$(%[2]s 2>/dev/null)" = "$repose_st" ] || exit 0
-  repose_sn=$((repose_sn + 1))
-  [ "$repose_sn" -lt %[5]d ] || exit %[6]d
-  %[3]s || exit 1
-done
-`, sh.text, sh.capture, sh.enter, promptEnterPause, promptEnterTries, typeExitNotSubmitted)
-}
+// again while the screen it typed into has not changed.
+func submitPromptScript(sh submitShell) string { return agentprompt.Script(sh) }
 
-// submitPromptFor is submitPromptScript for one prompt: the prompt and
-// the head to look for are written once, into the shell variables the
-// script reads. Nothing logs either (sshLabel calls a script a script).
-func submitPromptFor(sh submitShell, prompt string) string {
-	head := promptHead(prompt)
-	assign := fmt.Sprintf("repose_pp=%s\nrepose_hd=%s\n", shQuote(prompt), shQuote(head))
-	if head == "" {
-		// Nothing to look for on the screen: type it as before.
-		return assign + sh.text + "\n" + sh.enter + "\n"
-	}
-	return assign + submitPromptScript(sh)
-}
+// submitPromptFor is submitPromptScript for one prompt.
+func submitPromptFor(sh submitShell, prompt string) string { return agentprompt.For(sh, prompt) }
 
 // promptNotSubmittedError says the prompt was typed into the agent's
 // terminal and the agent never took it: the submit script pressed Enter
@@ -120,21 +36,8 @@ func (e *promptNotSubmittedError) Error() string {
 
 // tmuxSubmitShell is the submit script's shell for the tmux window
 // target t, as tmuxWindowTarget spells it, already quoted.
-func tmuxSubmitShell(t string) submitShell {
-	return submitShell{
-		capture: "tmux capture-pane -p -t " + t,
-		text:    "tmux send-keys -t " + t + ` -l "$repose_pp"`,
-		enter:   "tmux send-keys -t " + t + " Enter",
-	}
-}
+func tmuxSubmitShell(t string) submitShell { return agentprompt.TmuxShell(t) }
 
 // herdrSubmitShell is the submit script's shell for the herdr pane whose
 // id is in the shell variable named pane.
-func herdrSubmitShell(pane string) submitShell {
-	p := `"$` + pane + `"`
-	return submitShell{
-		capture: "herdr pane read " + p + " --source visible --format text",
-		text:    "herdr pane send-text " + p + ` "$repose_pp" >/dev/null`,
-		enter:   "herdr pane send-keys " + p + " enter >/dev/null",
-	}
-}
+func herdrSubmitShell(pane string) submitShell { return agentprompt.HerdrShell(pane) }

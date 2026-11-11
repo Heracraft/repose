@@ -61,6 +61,9 @@ type Session interface {
 	// AnswerQuestion closes a question a repose-ask is waiting on
 	// (DECISIONS I-244).
 	AnswerQuestion(ctx context.Context, a *guestdv1.AnswerQuestion) error
+	// SayToAgent puts a message the owner typed into an agent's own
+	// terminal, now or at the end of the agent's turn (DECISIONS I-1144).
+	SayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*guestdv1.SayResult, error)
 	Notifications() <-chan *guestdv1.Notify
 	Done() <-chan struct{}
 	Close() error
@@ -234,6 +237,14 @@ func (s *session) Shutdown(ctx context.Context, timeoutS uint32) error {
 func (s *session) AnswerQuestion(ctx context.Context, a *guestdv1.AnswerQuestion) error {
 	_, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_AnswerQuestion{AnswerQuestion: a}})
 	return err
+}
+
+func (s *session) SayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*guestdv1.SayResult, error) {
+	r, err := s.call(ctx, s.t.def, &guestdv1.Request{Req: &guestdv1.Request_SayToAgent{SayToAgent: m}})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetSay(), nil
 }
 
 func (s *session) Notifications() <-chan *guestdv1.Notify { return s.cl.Notifications() }

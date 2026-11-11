@@ -10,6 +10,7 @@ import (
 	guestdv1 "github.com/heracraft/repose/internal/gen/guestd/v1"
 	"github.com/heracraft/repose/internal/guestd/exec"
 	"github.com/heracraft/repose/internal/guestd/questions"
+	"github.com/heracraft/repose/internal/guestd/sample"
 	"github.com/heracraft/repose/internal/guestd/sysdep"
 	"github.com/heracraft/repose/internal/guestd/system"
 	"github.com/heracraft/repose/internal/vsockrpc"
@@ -132,6 +133,13 @@ func (s *Server) handle(ctx context.Context, req *guestdv1.Request) *guestdv1.Re
 	case *guestdv1.Request_AnswerQuestion:
 		return empty(s.answerQuestion(r.AnswerQuestion))
 
+	case *guestdv1.Request_SayToAgent:
+		res, err := s.sayToAgent(ctx, r.SayToAgent)
+		if err != nil {
+			return fail(err)
+		}
+		return ok(&guestdv1.Response_Say{Say: res})
+
 	default:
 		// An unknown request from a newer hostd. Saying so by code is what
 		// lets hostd degrade per request (docs/workstreams/04-guestd.md §8).
@@ -153,6 +161,26 @@ func (s *Server) answerQuestion(a *guestdv1.AnswerQuestion) error {
 	}
 	s.log.Info("agent question closed", "event", "agent_question", "question_id", a.GetQuestionId(), "status", a.GetStatus())
 	return nil
+}
+
+// sayToAgent types a message the owner sent into the agent's own
+// terminal, the moment the agent is at its prompt and not before
+// (DECISIONS I-1144). The message is tenant content: the log line
+// carries the window and the outcome, never a word of it.
+func (s *Server) sayToAgent(ctx context.Context, m *guestdv1.SayToAgent) (*guestdv1.SayResult, error) {
+	out, err := s.watcher.Say(ctx, sample.SayRequest{
+		ID:        m.GetSayId(),
+		Window:    m.GetWindow(),
+		Text:      m.GetText(),
+		Sender:    m.GetSender(),
+		FromOwner: m.GetFromOwner(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("message for an agent", "event", "agent_prompted",
+		"window", out.Window, "state", out.State, "replaced", out.Replaced)
+	return &guestdv1.SayResult{State: out.State, Window: out.Window, Replaced: out.Replaced}, nil
 }
 
 // shutdown powers the guest off after the response has been flushed.
@@ -256,6 +284,8 @@ func assign(resp *guestdv1.Response, result any) {
 	case *guestdv1.Response_Sample:
 		resp.Result = r
 	case *guestdv1.Response_Exec:
+		resp.Result = r
+	case *guestdv1.Response_Say:
 		resp.Result = r
 	}
 }

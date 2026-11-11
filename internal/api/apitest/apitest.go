@@ -29,6 +29,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/questions"
 	"github.com/heracraft/repose/internal/api/resting"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/secrets"
 	"github.com/heracraft/repose/internal/api/store"
 	"github.com/heracraft/repose/internal/db"
@@ -60,6 +61,8 @@ type Harness struct {
 	// Resting decides what rests and serves the wakes (DECISIONS I-818).
 	// Its tick is not running unless a test drives it (Resting.Once).
 	Resting *resting.Service
+	// Say carries `repose say` to the machine (DECISIONS I-1144).
+	Say *say.Service
 
 	engine       atomic.Pointer[ops.Engine]
 	helloHook    atomic.Pointer[func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error]
@@ -111,6 +114,8 @@ func New(t *testing.T, o Options) *Harness {
 	h.Resting = resting.New(pool, h.HostMgr, log)
 	h.Events.SetResting(h.Resting)
 	h.Questions.Waker = h.Resting
+	h.Say = say.New(pool, h.HostMgr, log)
+	h.Say.Waker = h.Resting
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {
 			if f := h.helloHook.Load(); f != nil {
@@ -129,6 +134,9 @@ func New(t *testing.T, o Options) *Harness {
 				return
 			}
 			if h.Questions.OnResult(ctx, hostID, r) {
+				return
+			}
+			if h.Say.OnResult(ctx, hostID, r) {
 				return
 			}
 			if e := h.engine.Load(); e != nil {

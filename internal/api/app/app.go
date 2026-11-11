@@ -31,6 +31,7 @@ import (
 	"github.com/heracraft/repose/internal/api/ops"
 	"github.com/heracraft/repose/internal/api/pki"
 	"github.com/heracraft/repose/internal/api/questions"
+	"github.com/heracraft/repose/internal/api/say"
 	"github.com/heracraft/repose/internal/api/resting"
 	"github.com/heracraft/repose/internal/api/resume"
 	"github.com/heracraft/repose/internal/api/secrets"
@@ -66,6 +67,7 @@ type App struct {
 	meterIn   *meter.Ingest
 	abuse     *abuse.Guard
 	questions *questions.Service
+	say       *say.Service
 	resting   *resting.Service
 	resume    *resume.Resumer
 	outbox    *notify.Outbox
@@ -162,6 +164,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.abuse = abuse.New(a.pool, a.engine, a.events, a.m, log)
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
 	a.events.SetQuestions(a.questions)
+	a.say = say.New(a.pool, a.hostMgr, log)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.
@@ -183,6 +186,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	}
 	a.events.SetResting(a.resting)
 	a.questions.Waker = a.resting
+	a.say.Waker = a.resting
 	a.hostMgr.SetHandlers(hostmgr.Handlers{
 		// The resume rows first (DECISIONS I-645): an error refuses the
 		// Hello, the stream closes and the host sends it again.
@@ -202,6 +206,9 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 				return
 			}
 			if a.questions.OnResult(ctx, hostID, r) { // an AnswerQuestion delivery (I-245)
+				return
+			}
+			if a.say.OnResult(ctx, hostID, r) { // a `repose say` (I-1144)
 				return
 			}
 			a.engine.OnResult(ctx, hostID, r)
@@ -279,7 +286,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 		a.cliLatest = clirelease.New(u, log)
 	}
 	a.server = httpapi.New(httpapi.Deps{
-		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions,
+		Pool: a.pool, Verifier: verifier, Users: users, CA: a.ca, Secrets: a.sec, Engine: a.engine, Logs: a.logs, Events: a.events, Outbox: a.outbox, Unsub: unsub, Questions: a.questions, Say: a.say,
 		Parser: parser, Metrics: a.m, Registry: a.reg, Log: log, Billing: a.billing, Webhooks: a.hooks, Gate: a.gate, BillingEnforce: bcfg.Enforce,
 		Gateway:   httpapi.Gateway{Host: cfg.GatewayHost, Port: cfg.GatewayPort},
 		Seats:     a.seats,

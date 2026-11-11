@@ -173,6 +173,7 @@ command_id returns the stored result) and one of:
 | `Exec` | guest_id, argv, timeout_s, audit_id (required, I-26; operator use only, audited: hostd logs `{audit_id, guest_id, argv}` at notice) | exit_code, stdout, stderr (each capped 64 KB) |
 | `Drain` | (host) | |
 | `AnswerQuestion` | guest_id, question_id, status (`answered\|cancelled\|expired\|no_channel`), answer | none. Relayed to guestd's request of the same name (DECISIONS I-244). `not_found` when the guest is not running or guestd does not know the question, which the api takes as final; any other error is retried by the api with a new command_id. The answer is tenant text and is never logged |
+| `SayToAgent` | guest_id, say_id, window, text, sender, from_owner | `SayResult {state, window, replaced}` (DECISIONS I-1144). Relayed to guestd's request of the same name, which types the message into the agent's own tmux window. `state` is `delivered` (it is in the terminal now) or `waiting` (the agent is mid-turn and it goes in at the end of the turn); `window` is the window guestd resolved it to; `replaced` is true when a message was still waiting there. `window` empty means the guest's single agent window. hostd wakes a resting guest first, as it does for `AnswerQuestion`. `not_found`: the guest is not running, or no agent is in that window. `invalid_argument`: no text, a text over 4 KB, more than one agent and no window named (the message names them), or an agent under herdr, which this does not reach. The text is tenant content and is never logged |
 | `PauseGuest` | guest_id, reason (lower_snake, `idle\|operator`) | `PauseResult {paused, why_not, at}` (DECISIONS I-818; only to a host whose Hello names `pause`). Stops the guest's vCPUs and leaves its memory resident: the hypervisor, virtiofsd, the tap and vsock stay up and nothing is written anywhere. Before it pauses, hostd asks the guest to `sync` (and to drop its page cache when the guest has the balloon) and reads the next elapse of a systemd timer inside it, in the system manager and in `dev`'s. `paused=false` with a `why_not` is a **refusal, not a failure**, and is answered `ok`: `not_running`, `already_resting`, `command_in_flight` (the api has a command for this guest in flight or queued), `host_stopping`, `parked` (the guest has a park record; `frozen` until I-1002, and the api only logs this word, so both read the same to it), `timer_due` (a user timer elapses within 15 minutes), `in_use` (a session or tmux client appeared between the api's newest sample and this pause) or `guest_unreachable`. Every refusal is decided before hostd does anything to the guest, so a guest refused at every tick is never asked to sync or drop its cache. `at` is when it paused, unix seconds. Error codes: `not_found`, `invalid_argument`, `internal` (the hypervisor refused `vm.pause`; the guest keeps running) |
 | `WakeGuest` | guest_id, reason (lower_snake) | `WakeResult {was_resting, wake_ms}` (DECISIONS I-818). Resumes a resting guest, sets its clock to the host's and waits for guestd to answer. **Idempotent**: a guest with no resting marker is answered `ok` with `was_resting=false`, whatever its state, so the api may ask for a wake it does not know it needs. `wake_ms` is from `vm.resume` to guestd's answer. A wake takes no op slot and runs on the guest's own queue, so it never waits behind the host's builds. Error codes: `not_found`, `invalid_argument` (the guest is not running), `guest_unresponsive` (the hypervisor did not resume, or the guest did not answer after it: the one part of this feature a user sees fail, and hostd raises `guest_wake_failed` with it) |
 
@@ -286,8 +287,10 @@ HostSample { uint64 mem_free; uint64 pool_free; double load1; uint32 builds_runn
 
 **Event** (host-originated, at most once each, api acks by `event_id`):
 `guest_state_changed {guest_id, state, reason}`, `agent_event {guest_id,
-agent, kind (completed|needs_input|error|agent_message|agent_done; agent_done
-from `repose-notify --done`, I-688), summary (capped 1 KB),
+agent, kind (completed|needs_input|error|agent_message|agent_done|agent_prompted;
+agent_done from `repose-notify --done`, I-688; agent_prompted is a
+`repose say` that reached the agent's terminal, whose summary is the
+sender's name and never the message, I-1144), summary (capped 1 KB),
 tmux_window (the window guestd resolved for the hook, empty when unknown;
 I-121; a tmux window name or a herdr agent key since I-504), link_url and
 link_label (fields 6 and 7, I-931: a `repose-notify --link`, which hostd
@@ -333,7 +336,7 @@ event id however often the event is re-sent.
 **Guest-raised events** (DECISIONS I-445). `agent_event`, `agent_question`
 and a relayed `host_warning` start as a guest's `Notify`, which root in the
 guest can write, so hostd bounds them before sending: `agent_event.kind` is
-one of the five above (another is dropped; a hostd before I-688 drops
+one of the six above (another is dropped; a hostd before I-688 drops
 `agent_done` too, so hostd ships before a base whose `repose-notify` sends it); `agent` is at most 32 bytes of
 `[a-z0-9_-]`, anything else `unknown`; `tmux_window` at most 64 bytes and
 `summary` and `text` at most 1 KB, valid UTF-8 without control characters

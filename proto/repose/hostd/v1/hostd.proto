@@ -272,6 +272,20 @@ message Drain {}
 // to guestd as the request of the same name; not_found means the guest no
 // longer knows the question (it rebooted, or the ask was never there).
 message AnswerQuestion { string guest_id = 1; string question_id = 2; string status = 3; string answer = 4; }
+// SayToAgent carries a message the owner typed for one of the guest's
+// agents (DECISIONS I-1144). hostd relays it to guestd as the request of
+// the same name and passes its SayResult back. text is tenant content and
+// is never logged. window empty means the guest's single agent window;
+// invalid_argument names the windows when there is more than one, and
+// not_found is a guest that is not running or has no agent there.
+message SayToAgent {
+  string guest_id = 1;
+  string say_id = 2;
+  string window = 3;
+  string text = 4;
+  string sender = 5;
+  bool from_owner = 6;
+}
 
 message Command {
   string command_id = 1;
@@ -292,6 +306,7 @@ message Command {
     AnswerQuestion answer_question = 23;
     PauseGuest pause_guest = 24;
     WakeGuest wake_guest = 25;
+    SayToAgent say_to_agent = 26;
   }
 }
 
@@ -323,6 +338,7 @@ message Result {
     StartResult start = 16;  // DECISIONS I-590; absent from a hostd before it
     PauseResult pause = 17;  // DECISIONS I-818
     WakeResult wake = 18;    // DECISIONS I-818
+    SayResult say = 19;      // DECISIONS I-1144
   }
 }
 // BootTimings is where one boot's time went, in milliseconds (DECISIONS
@@ -363,6 +379,10 @@ message PauseResult { bool paused = 1; string why_not = 2; int64 at = 3; }
 // guestd's answer (DECISIONS I-818).
 message WakeResult { bool was_resting = 1; uint32 wake_ms = 2; }
 message ExecResult { int32 exit_code = 1; bytes stdout = 2; bytes stderr = 3; }
+// SayResult is guestd's answer to a SayToAgent (DECISIONS I-1144): state
+// delivered or waiting, the window it went to, and whether it replaced a
+// message that was still waiting there.
+message SayResult { string state = 1; string window = 2; bool replaced = 3; }
 
 message BuildLog { string command_id = 1; uint64 seq = 2; string line = 3; }
 

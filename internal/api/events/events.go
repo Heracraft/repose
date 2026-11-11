@@ -62,7 +62,11 @@ var notifyKinds = map[string]bool{
 // written by the api itself, and a guest that names one is refused, so a
 // tenant's own code cannot send its owner mail worded as a platform notice
 // or reach notifications_paused, which skips the dedupe and the hourly cap.
-var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true}
+// agent_prompted (DECISIONS I-1144) is here too: the machine is the only
+// one that knows when a `repose say` actually went into the terminal,
+// because a message sent mid-turn waits for the end of the turn. It
+// notifies nobody and its summary is the sender's name, never the text.
+var GuestKinds = map[string]bool{"completed": true, "needs_input": true, "error": true, "agent_message": true, "agent_done": true, "agent_prompted": true}
 
 // guestAgents are the agent names a guest may attribute an event to:
 // guestd's five and "shell" for repose-notify and repose-ask run from a

@@ -579,3 +579,49 @@ func TestDoneReportsShareTheCap(t *testing.T) {
 		t.Fatalf("past the cap: %d sent (%d done reports), %d pause notices", sent, done, paused)
 	}
 }
+
+// TestAgentPromptedIsRecordedAndNotifiesNobody (DECISIONS I-1144): a
+// `repose say` the machine delivered is an event, so `repose events` and
+// the dashboard show that the agent got one, and it queues no delivery
+// on any channel. Its summary is the sender; the message itself never
+// travels this way, which is why the kind carries no text at all.
+func TestAgentPromptedIsRecordedAndNotifiesNobody(t *testing.T) {
+	pool := testdb.Open(t)
+	ctx := context.Background()
+	ing := events.New(pool, metrics.NewNop(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	pid, gid, host := seedOn(t, pool)
+	now := time.Now()
+	ev := func(id string) *hostdv1.Event {
+		return &hostdv1.Event{EventId: id, Ts: now.Unix(), Ev: &hostdv1.Event_AgentEvent{AgentEvent: &hostdv1.AgentEvent{
+			GuestId: gid.String(), Agent: "claude", Kind: "agent_prompted", Summary: "heracraft", TmuxWindow: "claude"}}}
+	}
+	if !ing.OnEvent(ctx, host, ev("p1")) || !ing.OnEvent(ctx, host, ev("p2")) {
+		t.Fatal("agent_prompted not acked")
+	}
+	var n int
+	var kinds, summaries []string
+	rows, err := pool.Query(ctx, "select kind, summary from events where project_id = $1 and tmux_window = 'claude'", pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var k, s string
+		if err := rows.Scan(&k, &s); err != nil {
+			t.Fatal(err)
+		}
+		kinds, summaries = append(kinds, k), append(summaries, s)
+	}
+	rows.Close()
+	if len(kinds) != 2 || kinds[0] != "agent_prompted" {
+		t.Fatalf("events = %v, want two agent_prompted (they are not deduped)", kinds)
+	}
+	for _, s := range summaries {
+		if s != "heracraft" {
+			t.Fatalf("summary = %q, want the sender alone", s)
+		}
+	}
+	_ = pool.QueryRow(ctx, "select count(*) from events_outbox").Scan(&n)
+	if n != 0 {
+		t.Fatalf("a delivered message queued %d notifications, want 0", n)
+	}
+}
