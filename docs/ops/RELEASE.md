@@ -126,7 +126,7 @@ question on its own, which is what to run before a switch or a base
 publish when the diff looks like it changes nothing:
 
 ```
-ops/dev/closure-equiv.py nixosConfigurations.host-01.config.system.build.toplevel main origin/main
+ops/dev/closure-equiv.py nixosConfigurations.host-02.config.system.build.toplevel main origin/main
 ```
 
 A plain `drvPath` comparison cannot answer it: `self.shortRev` is stamped
