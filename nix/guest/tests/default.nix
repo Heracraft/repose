@@ -3492,9 +3492,15 @@ in
       def in_a_scope(cmd):
           """Run cmd in a transient scope of dev's, which is the shape of a
           tmux pane (tmux-spawn-*.scope) and of the browser wrapper's own
-          run scope. The shell exits; what it started stays in the scope."""
+          run scope. The shell exits; what it started stays in the scope.
+
+          The whole thing is backgrounded with its output closed: the test
+          driver reads a command's output to end of file, so a browser
+          left holding the pipe keeps `succeed` waiting -- here for the
+          ten minutes until the rule stopped it, which is a test that
+          watches itself pass and calls it a failure."""
           return dev("systemd-run --user --scope --quiet --collect bash -c "
-                     + shlex.quote(cmd))
+                     + shlex.quote(cmd) + " </dev/null >/dev/null 2>&1 &")
 
       def pid_on(port):
           return guest.succeed(
@@ -3533,6 +3539,7 @@ in
           in_a_scope("chromium --headless=new --no-first-run --disable-gpu"
                      " --user-data-dir=/tmp/stray-chromium --remote-debugging-port=9337"
                      " about:blank >/tmp/stray-chromium.log 2>&1 &")
+          # systemd-run returns before the scope has the browser in it.
           guest.wait_for_open_port(9337)
 
           for port in (9333, 9334, 9335, 9336, 9337):
