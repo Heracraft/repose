@@ -33240,3 +33240,71 @@ the one shape production does not have.
   that sends a host command does so from the grpc process already —
   the ops engine, the questions worker, `resting` — and `say` was the
   one that did it from an HTTP handler.
+
+**I-1166. The attach tests need a tmux newer than the runner's, because
+tmux 3.4 crashes on the session every attach makes (attach-window-ci,
+2026-11-11).**
+
+`internal/cli/attach_window_test.go` failed twice on main a9056ba7's CI
+(run 42985983675), on a different test each time:
+`TestAttachFallsBackToTheSessionWhenTheWindowIsGone` ("no sessions")
+and `TestTwoAttachesKeepTheirOwnWindowAndSize` ("server exited
+unexpectedly"). Both say the same thing: the fake guest's tmux server
+is gone, the project's session with it. `ORCHESTRATION.md` named the
+likely class -- a test that passes here and fails on CI is usually the
+runner's PATH, where the dev box has `claude` and the runner does not,
+so a window running it exits at once -- and that class is wrong for
+this one. Neither test starts an agent; their windows run `exec cat`,
+which is on every runner and does not exit.
+
+What it is: Ubuntu 24.04 ships tmux 3.4, and `ubuntu-latest` is
+Ubuntu 24.04. Since I-1067 every attach is a session of its own,
+grouped with the project's, destroyed when its terminal detaches
+(`destroy-unattached on`, `tmuxAttachSession`). tmux 3.4 segfaults in
+that destruction when the machine is loaded: the server dies with
+`segfault at 10` in the kernel log, which takes the project's session
+and every window in it, so whatever the test runs next finds no
+session. tmux's own CHANGES for 3.4 to 3.5 has the fix -- "Pick newest
+session (as documented) when looking for next session for
+detach-on-destroy" -- the client being moved off the session that is
+going reads one that has already been freed.
+
+- **Reproduced before anything was changed.** With Ubuntu's
+  `/usr/bin/tmux` first on PATH and eight busy loops on this box, both
+  tests failed on all three runs of `go test -race -count=3`, with
+  CI's two messages word for word; without the load they pass, and
+  with the dev shell's tmux 3.7c under the same load they pass. A
+  shell reproduction without Go (one project session, one grouped
+  attach over `script`, a detach) crashes 3.4 and not 3.5a or 3.7c.
+  That is why main went red on half its runs and never here: the dev
+  shell has 3.7c, and CI's runner is four cores running the whole
+  suite.
+- **Not a repose bug, and not a fixture that waits on the wrong
+  thing.** A guest runs nixpkgs' tmux, 3.7c today, from the same pin
+  as the dev shell (`nix/flake.nix`), so no tenant can meet this
+  crash; what repose sends the guest is the same before and after this
+  entry. Nothing in `run.go` changes.
+- **So the runner gets a tmux that does not crash.** `ci.yml`'s go job
+  builds the release `nix/guest` has (3.7c) from upstream's tarball
+  into `/usr/local` before the tests: `libevent-dev libncurses-dev
+  bison pkg-config` from apt, `./configure && make`, about 25 seconds
+  on four cores. Pinned by version in the step, so the build is the
+  same until someone changes it.
+- **Why not a skip, and why not relax the assertion.** A skip on an
+  old tmux in the one place these tests have to run reads as a pass
+  (I-1036, I-1032), and the assertions are I-1067's contract: two
+  laptops keep their own window and size, and a detach leaves the
+  project's session alone. `requireAttachTmux` therefore skips on a
+  laptop and *fails* when `CI` is set, naming the ci.yml step, so the
+  next person to drop that step gets a sentence instead of a flake.
+- **Why not pin tmux in a container for the whole job.** The job's
+  other steps (Postgres service, Go toolchain, golangci-lint) are the
+  runner's, and one build of one dependency is smaller than moving a
+  job into an image nobody else uses.
+- *The general lesson.* A test that fails on CI and not here has a
+  third class beside PATH and timing: a version of a program the test
+  drives. `tmux -V`, `git --version`, `ssh -V` on the runner differ
+  from the dev shell's, and the dev shell is pinned while
+  `ubuntu-latest` is a distribution release behind. The cheap first
+  move is to put the runner's binary first on PATH here and load the
+  box, which reproduced this in under a minute.
