@@ -163,12 +163,13 @@ as its `ready`, undrained hosts deliver, each the smaller of its usable
 `SEATS_TOTAL` when the operator set it. Seats are held by every
 subscription that is `trialing`, `active` or `past_due` and by every
 waitlist invitation whose 72-hour hold has not run out.
-`POST /billing/checkout` needs the plan's seats free; otherwise, and on
-`POST /billing/waitlist`, the user joins the
-waitlist and gets `503 waitlisted` with `{position, joined_at, email}`. The
+`POST /billing/checkout` needs the plan's seats free; otherwise the user
+joins the waitlist and gets `503 waitlisted` with `{position, joined_at,
+email}`. The
 CLI prints the api's sentence as it is, `repose is full right now. You're
 number N on the waitlist; we'll email you@example.com when there's a
-seat.`, and exits 8. `GET /me` and `GET /billing` carry `waitlist:
+seat.`, and exits 8. `POST /billing/waitlist` joins the list without a
+checkout and answers `200 {position, joined_at}`. `GET /me` and `GET /billing` carry `waitlist:
 {position, joined_at, invited_at, hold_until}` while the user holds a
 place; `GET /public/seats` gives the landing page `{total, free,
 waiting}`. Every minute the api invites the oldest waiting user while a
@@ -178,7 +179,10 @@ the user is off the list until they ask again, told by email (DECISIONS
 I-1033). Every waitlist
 email is transactional: sent whatever notify email says
 (`features/notifications.md`, "Account emails"). Suspended, cancelled and
-deleted accounts hold no place. `repose-admin waitlist list | admit HANDLE
+deleted accounts hold no place, and nor does a billing-exempt one: it has
+no plan to choose, so both POST routes answer it `409 conflict`
+`detail.reason = exempt` and the invite tick passes its row over
+(I-1090). `repose-admin waitlist list | stale | admit HANDLE
 | admit --next N` and `repose-admin seats` let an operator see and move
 the queue (`ops/RUNBOOK.md`, "Waitlist growing").
 

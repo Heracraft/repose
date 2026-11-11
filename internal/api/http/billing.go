@@ -26,6 +26,11 @@ import (
 // carries no place on it, so the sentence promises none.
 const msgNoSeat = "no seat is free for the upgrade; each seat that frees goes to the oldest account on the waitlist"
 
+// msgExempt refuses a checkout or a waitlist join by a billing-exempt
+// account (I-1090). The dashboard shows such an account no plan cards
+// and no waitlist button, so only a hand-made request reaches it.
+const msgExempt = "This account is billing-exempt, so it has no plan to choose and no place to wait for."
+
 // billingService returns the service or the disabled error.
 func (s *Server) billingService() (*billing.Service, error) {
 	if s.d.Billing == nil {
@@ -89,6 +94,8 @@ func (s *Server) billingCheckout(w http.ResponseWriter, r *http.Request) error {
 		return errf("invalid", "plan must be solo, plus or pro")
 	case errors.Is(err, billing.ErrSubscribed):
 		return withDetail(errf("conflict", "you already have a plan; change it from the billing page"), map[string]any{"reason": "subscribed"})
+	case errors.Is(err, billing.ErrExempt):
+		return withDetail(errf("conflict", "%s", msgExempt), map[string]any{"reason": "exempt"})
 	case errors.As(err, &wl):
 		return withDetail(errf("waitlisted", "%s", wl.Message()), map[string]any{"position": wl.Place.Position, "joined_at": wl.Place.JoinedAt, "email": wl.Place.Email})
 	case err != nil:

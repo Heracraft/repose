@@ -49,7 +49,9 @@ ignore it (I-1033, replacing I-902's 24-hour cooldown). Asking again
 (`POST /billing/waitlist`, or a checkout that does not fit) puts them at
 the back of the list, and so does an operator's `repose-admin waitlist
 admit HANDLE`, which invites them at once. `GET /billing` only reads: it
-joins nobody and ends no lapse.
+joins nobody and ends no lapse. A billing-exempt account has no plan to
+choose and no place to wait for: both routes refuse it and the queue
+passes its row over (I-1090).
 
 ## What the plan buys
 

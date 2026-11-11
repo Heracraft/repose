@@ -81,3 +81,81 @@ func TestWaitlistCommands(t *testing.T) {
 		t.Fatal("seats with an argument was accepted")
 	}
 }
+
+// I-1092: `waitlist stale` lists the waiting rows that joined before the
+// release where GET /billing stopped joining, reads by default, and with
+// --lapse takes exactly those rows out of the queue with no email.
+func TestWaitlistStale(t *testing.T) {
+	h := apitest.New(t, apitest.Options{NoHost: true})
+	e := &admin.Env{KV: h.KV, Actor: "admin:test"}
+	e.SetPool(h.Pool)
+	cut := time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC)
+	old := h.NewUser("olga")
+	oldSub := h.NewUser("oona")
+	recent := h.NewUser("rita")
+	invited := h.NewUser("ivan")
+	for _, c := range []struct {
+		id     any
+		joined time.Time
+	}{{old.ID, cut.Add(-48 * time.Hour)}, {oldSub.ID, cut.Add(-24 * time.Hour)}, {recent.ID, cut.Add(time.Hour)}, {invited.ID, cut.Add(-72 * time.Hour)}} {
+		if _, err := h.Pool.Exec(h.Ctx, "insert into waitlist (user_id, joined_at) values ($1, $2)", c.id, c.joined); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Ivan was invited after joining, so his row is not waiting; Oona
+	// subscribed since, which the listing shows and does not act on.
+	if _, err := h.Pool.Exec(h.Ctx, "update waitlist set invited_at = $2::timestamptz, hold_until = $2::timestamptz + interval '72 hours' where user_id = $1", invited.ID, cut); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Pool.Exec(h.Ctx, "insert into subscriptions (id, user_id, customer_id, plan, status, seats) values ('sub_oona', $1, 'ctm_oona', 'solo', 'active', 1)", oldSub.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := run(t, e, "waitlist", "stale")
+	if err != nil || !strings.Contains(out, "olga") || !strings.Contains(out, "oona") || !strings.Contains(out, "2 waiting rows joined before 2026-11-06T02:00:00Z") {
+		t.Fatalf("stale:\n%s %v", out, err)
+	}
+	if strings.Contains(out, "rita") || strings.Contains(out, "ivan") {
+		t.Fatalf("stale listed a recent or an invited row:\n%s", out)
+	}
+	if !strings.Contains(out, "true") || !strings.Contains(out, "false") {
+		t.Fatalf("stale did not say who ever subscribed:\n%s", out)
+	}
+	var waiting int
+	if err := h.Pool.QueryRow(h.Ctx, "select count(*) from waitlist where lapsed_at is null").Scan(&waiting); err != nil || waiting != 4 {
+		t.Fatalf("the listing wrote: %d %v", waiting, err)
+	}
+	// A different cut covers Ivan's join time but not his row, which is
+	// no longer waiting.
+	if out, err := run(t, e, "waitlist", "stale", "--before", "2026-11-03T00:00:00Z"); err != nil || !strings.Contains(out, "no waiting row joined before 2026-11-03T00:00:00Z") {
+		t.Fatalf("an earlier cut:\n%s %v", out, err)
+	}
+	if _, err := run(t, e, "waitlist", "stale", "--before", "yesterday"); err == nil {
+		t.Fatal("a cut that is not a time was accepted")
+	}
+	if _, err := run(t, e, "waitlist", "stale", "extra"); err == nil {
+		t.Fatal("stale with an argument was accepted")
+	}
+
+	out, err = run(t, e, "waitlist", "stale", "--lapse")
+	if err != nil || !strings.Contains(out, "2 lapsed, no email sent") {
+		t.Fatalf("stale --lapse:\n%s %v", out, err)
+	}
+	var lapsed, audits, events int
+	if err := h.Pool.QueryRow(h.Ctx, `select (select count(*) from waitlist where lapsed_at is not null),
+		(select count(*) from audit_log where action = 'waitlist_lapse' and actor = 'admin:test'),
+		(select count(*) from events)`).Scan(&lapsed, &audits, &events); err != nil {
+		t.Fatal(err)
+	}
+	if lapsed != 2 || audits != 2 || events != 0 {
+		t.Fatalf("after --lapse: lapsed %d audited %d events %d", lapsed, audits, events)
+	}
+	if out, err := run(t, e, "waitlist", "stale"); err != nil || !strings.Contains(out, "no waiting row joined before") {
+		t.Fatalf("stale again:\n%s %v", out, err)
+	}
+	// Rita keeps her place and Ivan his invitation.
+	out, err = run(t, e, "waitlist", "list")
+	if err != nil || !strings.Contains(out, "lapsed    olga") || !strings.Contains(out, "lapsed    oona") || !strings.Contains(out, "1         rita") {
+		t.Fatalf("list after --lapse:\n%s %v", out, err)
+	}
+}
