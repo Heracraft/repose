@@ -522,10 +522,10 @@ in
           free = mbit("ip netns exec gb sh -c 'head -c 30M /dev/zero | nc -N -w10 203.0.113.9 9000'", 30)
           assert free > cap * 2, f"unshaped guest -> internet at {free:.0f} Mbit/s; the link is too slow to test the cap"
           inet_sink()
-          out = mbit(f"{ga} sh -c 'head -c 20M /dev/zero | nc -N -w30 203.0.113.9 9000'", 20)
+          out = mbit(f"{ga} sh -c '${pkgs.coreutils}/bin/head -c 20M /dev/zero | nc -N -w30 203.0.113.9 9000'", 20)
           assert cap * 0.6 < out < cap * 1.3, f"shaped guest -> internet at {out:.0f} Mbit/s, cap {cap}"
           # internet -> guest, a download the guest opened: capped (I-451)
-          inet.succeed(f"systemd-run --unit inet-src-{next(sinks)} --collect ${pkgs.bash}/bin/sh -c 'head -c 20M /dev/zero | ${pkgs.netcat-openbsd}/bin/nc -N -l 9002'")
+          inet.succeed(f"systemd-run --unit inet-src-{next(sinks)} --collect ${pkgs.bash}/bin/sh -c '${pkgs.coreutils}/bin/head -c 20M /dev/zero | ${pkgs.netcat-openbsd}/bin/nc -N -l 9002'")
           inet.wait_until_succeeds("ss -tlnH | grep -c ':9002 ' >/dev/null")
           dl = mbit(f"{ga} sh -c 'nc -d -w30 203.0.113.9 9002 > /dev/null'", 20)
           assert cap * 0.6 < dl < cap * 1.3, f"internet -> shaped guest at {dl:.0f} Mbit/s, cap {cap}"
