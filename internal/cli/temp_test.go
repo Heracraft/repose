@@ -394,8 +394,8 @@ func TestRunNameInCheckoutMakesASecondProject(t *testing.T) {
 	if e.Cache.ByRemote[remote].ProjectID != own || len(e.Cache.ByDir) != 0 {
 		t.Fatalf("cache moved: %+v %+v", e.Cache.ByRemote, e.Cache.ByDir)
 	}
-	// The second machine gets a git remote of its own name, as a fork's
-	// copy does, and `repose` stays the original's (I-633).
+	// The second machine gets a git remote of its own name, and `repose`
+	// stays the original's (I-633).
 	if got, want := remoteURLOf(f.local, "proj-experiment"), reposeRemoteURL("proj-experiment", checkoutName(f.local)); got != want {
 		t.Fatalf("remote proj-experiment = %q, want %q (stderr %q)", got, want, errOut.buf.String())
 	}

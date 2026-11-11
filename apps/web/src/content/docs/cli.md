@@ -14,7 +14,7 @@ Did you mean `repose ls`?
 `repose --help` shows its usage.
 ```
 
-Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `copy` to `cp`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
 
 ## Which project
 
@@ -64,7 +64,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
 
-It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
+It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. From a terminal it asks which copy to keep before it stops. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
@@ -334,25 +334,6 @@ Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no 
 
 Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` names the snapshot. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
 
-### `repose fork [PROJECT]`
-
-Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. The project itself keeps running. Without `--snapshot` it has to be running or stopped: a stopping one is waited out, and any other state exits 5.
-
-| Flag                      | What it does                                                                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-n`, `--count N`         | How many copies: 1 to 10, default 1. Another number exits 2.                                                                                         |
-| `--name NAME`             | Name them `NAME-1`, `NAME-2` and so on, in place of `PROJECT-fork-1`. Numbers a live project of yours already has are skipped.                        |
-| `--size small\|large\|xl` | Size of the copies. Default: the project's.                                                                                                          |
-| `--snapshot ID`           | Copy one of the project's [snapshots](#snapshots) instead of its disk as it is now.                                                                  |
-| `--prompt TEXT`           | Start the agent in every copy with that prompt. Your checkout isn't synced into them.                                                                |
-| `--agent NAME`            | Which agent `--prompt` starts: `claude`, `codex`, `opencode`, `gemini` or `pi`. Default: the project's. Needs `--prompt`.                             |
-| `--no-start`              | Create the copies stopped, so they take none of your plan's memory until `repose start`. Not with `--prompt`.                                        |
-| `--json`                  | Print the copies as JSON.                                                                                                                            |
-
-In a checkout whose `repose` remote is the project's machine, each copy gets a git remote of its own name; `repose rm` of a copy removes that remote again.
-
-Each copy is a project, and counts toward [the 100 an account can have](/docs/limits#projects) and toward your plan's disk and memory. A fork that would pass any of those is refused before anything is copied and exits 7; the memory refusal names `--no-start`.
-
 ### `repose resize [PROJECT] [DISK]`
 
 Grow the project's disk: `repose resize 80G`, or `repose resize todo-app 80G` for a project other than this checkout's. DISK needs a unit, `M`, `G` or `T`, all binary (`80G`, `80GB` and `80GiB` are one size); a bare number exits 2. Disks can't shrink: a smaller size exits 2 and names the disk's size, and a size it already has changes nothing. A grow ends with `Resized todo-app's disk to 120G.` One argument that reads as a size is DISK; anything else is PROJECT. A disk past your [plan's ceiling for one project](/docs/billing#what-a-plan-means) exits 7.
@@ -457,6 +438,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook). |
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). Six tests a minute. Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version, as `repose 0.1.36 (herakraft)`. |
+| `repose version update [VERSION]`               | Replace this binary with the latest release, or with VERSION (`v0.1.40`) to go back to it. It checks the release signature and the archive's checksum before it writes anything, and leaves your login and settings alone. A binary a package manager owns is never touched: the command names the manager and exits 1. Releases before v0.1.28 are unsigned and exit 2. [Update](/docs/install#update). |
 | `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. [Install](/docs/install#shell-completion) has the line that loads it for each shell. |
 | `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
@@ -543,6 +525,8 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` print local RFC 3339; `--json` prints UTC. Progress lines go to stderr. Without a terminal each step prints a line when it starts, that line with its time every 30 seconds while it runs, and a `✓` line with its time when it ends, unless the command prints the step's result itself. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
 
+Two lines on stderr are about the CLI itself. One release behind the latest, it prints `repose 0.1.43 is older than 0.1.44, the latest release.` once for that release. Older than the oldest release the server still answers as these docs describe, it prints `repose 0.1.30 is too old for some of repose's answers.` at the end of every `run`, `attach` and `sync`. Both name [`repose version update`](#account), or the package manager that owns the binary. Neither changes an exit code, and neither prints on a machine.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -553,7 +537,7 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 3 | Not logged in, or the login expired. |
 | 4 | No such project. |
 | 5 | The machine isn't running. |
-| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
+| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10 | The configuration build failed. |

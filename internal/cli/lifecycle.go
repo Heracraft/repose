@@ -678,8 +678,8 @@ var laptopFiles sync.Mutex
 
 // forgetDestroyedOnLaptop drops what the laptop keeps for a machine being
 // destroyed, and returns the checkout's git remotes that went with it:
-// its `repose` remote, and the one `repose fork` added for a copy
-// (I-622). Several destroys run at once and git refuses a second writer
+// its `repose` remote, and the one added for a second machine of that
+// name (I-622). Several destroys run at once and git refuses a second writer
 // of .git/config, so the files are edited one at a time (I-631).
 func forgetDestroyedOnLaptop(ctx context.Context, e *Env, project *Project) []string {
 	laptopFiles.Lock()
@@ -694,7 +694,7 @@ func forgetDestroyedOnLaptop(ctx context.Context, e *Env, project *Project) []st
 	if forgetReposeRemote(root, project.Slug) {
 		removed = append(removed, "repose")
 	}
-	if forgetForkRemote(root, project.Slug) {
+	if forgetMachineRemote(root, project.Slug) {
 		removed = append(removed, project.Slug)
 	}
 	return removed

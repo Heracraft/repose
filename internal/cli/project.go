@@ -25,8 +25,7 @@ type ResolveResult struct {
 	Remote  string   // normalised remote for cwd, "" if none
 	// NoRemote says a project this run creates gets no remote_url even
 	// though cwd has one: it is temporary, or a second project for a
-	// repository whose remote another project has (DECISIONS I-348), like
-	// a fork's copies (I-254).
+	// repository whose remote another project has (DECISIONS I-348).
 	NoRemote bool
 	// Checkout is the machine's other checkout cwd is, or PROJECT:CHECKOUT
 	// named (`repose run --on`, DECISIONS I-480); "" for the checkout

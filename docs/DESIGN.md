@@ -133,7 +133,7 @@ next host.
 writes of every guest on it, so it is watched by what it holds, data or
 metadata whichever is fuller, and never by the volumes' sizes. hostd
 reports the pool's size and free bytes in every heartbeat. At 70 percent
-the scheduler places no new project there (a create, a restore or fork as
+the scheduler places no new project there (a create, or a restore as
 a new project) and hostd sends `pool_high`, which is the `PoolHigh`
 warning: the remaining 30 percent is room for the guests already on the
 host to grow into while a human grows the data disk (an online Premium SSD

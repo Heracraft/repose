@@ -858,14 +858,14 @@ func TestDestroyDelay(t *testing.T) {
 	r := call(t, f, "GET", "/v1/projects/"+a.ID+"/snapshots", tok, nil)
 	var snaps []Snapshot
 	r.json(t, &snaps)
-	fork := map[string]any{"snapshot_id": snaps[0].ID, "name": "a-fork"}
-	wantErr(t, call(t, f, "POST", "/v1/projects/"+a.ID+"/fork", tok, fork), 400, "invalid")
+	asNew := map[string]any{"as_new_project": "a-copy"}
+	wantErr(t, call(t, f, "POST", "/v1/projects/"+a.ID+"/snapshots/"+snaps[0].ID+"/restore", tok, asNew), 400, "invalid")
 	opID(t, call(t, f, "DELETE", "/v1/projects/"+c.ID, tok, nil))
 	if p := getProject(t, f, tok, c.ID); p.State != "destroying" || p.OpID == "" {
 		t.Fatalf("while destroying: %+v", p)
 	}
 	wantErr(t, call(t, f, "POST", "/v1/projects", tok, map[string]any{"name": "c", "class": "large"}), 409, "conflict")
-	want(t, call(t, f, "POST", "/v1/projects/"+a.ID+"/fork", tok, fork), http.StatusAccepted)
+	want(t, call(t, f, "POST", "/v1/projects/"+a.ID+"/snapshots/"+snaps[0].ID+"/restore", tok, asNew), http.StatusAccepted)
 	deadline := time.Now().Add(5 * time.Second)
 	for call(t, f, "GET", "/v1/projects/"+c.ID, tok, nil).status != 404 {
 		if time.Now().After(deadline) {

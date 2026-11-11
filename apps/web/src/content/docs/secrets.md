@@ -77,7 +77,7 @@ The dashboard keeps these under **Settings** → **Secrets**, and each project's
 
 ## Logins copied from your laptop
 
-At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. A copied login or `.env` file lands on the machine's disk, so in its [snapshots](/docs/lifecycle#snapshots) and in anything you fork from it. `Logins copied: gh, codex` prints when a project's copied logins change.
+At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. A copied login or `.env` file lands on the machine's disk, so in its [snapshots](/docs/lifecycle#snapshots) and in anything restored from them. `Logins copied: gh, codex` prints when a project's copied logins change.
 
 | Tool       | File                                                                             |
 | ---------- | -------------------------------------------------------------------------------- |
