@@ -202,7 +202,10 @@ func newHarness(t *testing.T) *harness {
 	app := newGuestApp(t)
 	api := newFakeAPI()
 	hp := &harness{api: api, app: app, token: "Xq3k9LmZpR2vT8wYb1nC4d", gone: "b8Nf2QeVr6GhK0zTw4mYsA", logs: &bytes.Buffer{}}
-	hp.now = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	// A real instant, not a date: the handler sets socket deadlines from
+	// this clock on real pipes, so a fixed 2026-11-11 12:00 UTC made every
+	// test fail the moment the wall clock passed it (found 2026-11-11 21:00).
+	hp.now = time.Now().UTC().Truncate(time.Second)
 	hp.route = Route{RouteID: "route-1", ProjectID: testProject, Name: "stripe", Port: 3000,
 		Path: "/api/webhooks/stripe", TokenHash: HashToken(hp.token)}
 	api.table = RouteTable{Version: "v1", Routes: []Route{hp.route}, Tombstones: []string{HashToken(hp.gone)}}
