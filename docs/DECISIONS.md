@@ -31054,3 +31054,134 @@ are listed as the project's clients, the project's session follows to
 `logs`, and after both detach only `<slug>` is left. The two existing
 attach tests (I-304, I-606) pass with the grouped attach. guestd's
 sampler counts `todo-app` and `todo-app~812` and not `other`.
+
+**I-1100. On a terminal the sync's overlap refusal is a one-key choice,
+not a flag to type the command again with.** (sync-conflict-choice,
+2026-11-11; amends I-573, I-618; proposal
+`docs/proposals/2026-11-10-sync-conflict-choice.md`.)
+
+I-573 narrowed `repose sync`'s exit 6 to the files the machine changed
+that the laptop changed too, and named them. Acting on that list still
+meant reading it, deciding, and running the command again with
+`--stash-machine`, which takes *every* change the machine has, the ones
+the refusal did not name included. There was no way to say "mine" for
+those files, and no way to say "the machine's, send the rest". The
+product value council of 2026-11-04 asked for the choice at the point
+the user is already looking at the list.
+
+From a terminal (stdin and stderr both terminals, as I-1065's question
+asks), with no `--json` and no `--stash-machine` or `--discard-machine`,
+the refusal's last line is replaced by a menu, read in raw mode, one key,
+no Enter:
+
+```
+Not synced: the machine changed 2 files that your laptop changed too:
+  src/session.ts
+  notes.md
+  l  use the laptop's copy; the machine's goes to its git stash
+  m  keep the machine's copy; sync the rest
+  s  move all of the machine's changes to its git stash, then sync
+Choose l, m or s, or Enter to stop:
+```
+
+- `l` syncs the laptop's copy over the machine's and stashes the
+  machine's copy of the overlapping files, and only those, under
+  `repose sync: the machine's copy`. The summary names the stash commit
+  (`git stash apply <commit>`, never `pop`: one stash stack per machine,
+  and a bare `pop` takes whatever is on top, which is how another
+  session's work landed in the wrong tree here on 2026-10-17).
+- `m` keeps the machine's copy of those files and syncs everything else.
+- `s` is `--stash-machine` (I-618), unchanged.
+- Enter, `q`, Esc and the input ending stop: exit 6 with nothing more
+  printed, the refusal being on the screen already. Ctrl-C exits 130.
+  Any other key is ignored.
+
+Mechanically, a key runs the whole sync again with the paths the refusal
+listed. The apply writes them to `$t/chosen`, and `repose_guard` lets an
+overlap through only when it is one of them: a file the agent changed
+while the user was deciding refuses again, with the longer list, and the
+menu comes back. Nothing is stashed that the user did not see. The stash
+itself is `repose_stash_own`'s `git stash push -u -m <name>
+--pathspec-from-file`, in each overlapping submodule first.
+
+`m` has two details that are not obvious. The record
+(`.git/repose-synced-paths`) leaves those paths out: with their hash in
+it, the next sync would read the agent's work as the last sync's own and
+stash it without asking, which is exactly the loss `m` was pressed to
+avoid; the whole-tree fingerprint goes for the same reason. And the
+laptop still has its own version, so the next sync finds the same
+overlap and asks again until the laptop commits, reverts or stashes it.
+That recurrence is the true state of the two copies, not a bug; reverse
+sync (`repose sync --pull`) is the thing that would end it, and it stays
+a separate proposal. `m` is not offered when one of the overlapping
+paths is a checked-out submodule on the machine (the apply reports those
+as `#overlapsub`): a submodule's copy cannot be restored from a stash
+without a commit of its own.
+
+What was considered and not done. Flags `--keep-laptop` and
+`--keep-machine` for scripts: a script has `--stash-machine`, and a
+second pair of flags for a question only a person answers is two more
+names for `docs/interfaces/README.md` to carry (decision 1 of the
+proposal, conductor's ruling, owner's standing approval of 2026-11-11).
+Listing every overlapping file on a terminal rather than eight and a
+count: the keys act on all of them either way and the summary says how
+many, so a 40-line list buys nothing (decision 2). Offering `d`
+(`--discard-machine`) at the mid-merge refusal: that refusal is about
+state a stash cannot hold, and discarding is not a key to press by
+accident (decision 3). Keys `1`, `2`, `3`: `l` and `m` say which side
+they mean (decision 4).
+
+*Evidence.* `internal/cli/sync_choice_test.go`, against the real git
+checkouts on both sides of `newSyncFixture` over the in-process sshd:
+`l` leaves the laptop's bytes, a stash holding only the machine's copy
+of the overlapping file, and the machine's change to a file the laptop
+did not touch untouched; `m` leaves the machine's bytes, brings the rest
+of the laptop's work, leaves no stash behind, keeps the file untracked
+when it was untracked, lands the laptop's commit under the machine's
+copy, and asks again on the next sync -- with the probe that the record
+is what decides, a mutation writing the path back into the record, after
+which the second sync stops asking and stashes the agent's copy as the
+last sync's own; a second overlapping file appearing between the refusal
+and the key refuses again, naming both, and stashes nothing; `s` equals
+`--stash-machine`; Enter exits 6 with nothing moved and nothing
+reprinted; without a `Choose` the message is byte for byte what it was;
+the keys, the submodule case and the menu's text are read as a user
+reads them.
+
+**I-1102. The guest's apply reports the overlapping paths that are
+submodules, and the stash of a chosen copy is found by its commit, never
+by its index.** (sync-conflict-choice, 2026-11-11.)
+
+Two small shapes I-1100 needed, written down because the next person
+changing `syncGuardFns` will meet them.
+
+The overlap list on the apply's stderr gains `#overlapsub <path>` beside
+`#overlap <path>` for each overlapping path that is a checked-out
+submodule on the machine. The CLI cannot work this out from the laptop's
+side: a submodule the machine has and the laptop does not would be
+missed, and the menu would offer `m` for a path it cannot restore. The
+`$t/overlap` file became NUL-separated at the same time so one gawk pass
+can intersect it with the chosen list; the stderr lines are still one
+path each, so `overlapFiles` reads both prefixes the same way.
+
+A key runs the sync again, which means `run`'s callbacks are called
+again, and three of them read a channel the laptop's work was sent down
+once (the `.env` walk, the git and Claude carry, the early probe). The
+second call waited forever: the command hung after the key, with the
+menu still on the screen. `SyncOptions.reusable` memoises them for a
+sync that may ask, which is right as well as necessary -- the refused
+attempt stopped before the carry ran, so the second has to send exactly
+what the first built. Found by the pty end-to-end test
+(`TestSyncOverlapMenuEndToEndOnATerminal`), not by the integration
+tests, which pass bare options with no callbacks: an in-process test of
+a function is not a test of the command that calls it.
+
+`m`'s restore drops the stash it made. It finds it by matching the
+commit it recorded against `git stash list --format='%gd %H'`, and drops
+that ref, never `stash@{0}`: an agent pushing a stash of its own between
+the sync's stash and its restore shifts every index, and a drop by
+position would then throw away the agent's work. `pruneSyncStashes`
+already works this way for the same reason (I-210). `repose_stash_pick`
+also compares `stash@{0}` before and after its push: a push that stashed
+nothing leaves the previous stash on top, and taking that for ours would
+restore a stranger's files over the sync's.

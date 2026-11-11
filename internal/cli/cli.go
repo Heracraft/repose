@@ -629,8 +629,9 @@ func newSyncCmd(env func() (*Env, error), g *globalFlags) *cobra.Command {
 		Short: "Send this checkout's changes to its machine",
 		Long: "Copy your uncommitted changes and unpushed commits over the machine's checkout,\n" +
 			"creating or starting the machine if needed, without attaching. When the machine\n" +
-			"changed the same files, stop with exit 6 and name them; --stash-machine clears\n" +
-			"the way. Nothing comes back: git fetch repose does that.\n\n" +
+			"changed the same files, name them and ask which copy to keep, or exit 6 with no\n" +
+			"terminal to ask on; --stash-machine decides it in advance. Nothing comes back:\n" +
+			"git fetch repose does that.\n\n" +
 			"sync.exclude in config.toml leaves out files that .gitignore does not.",
 		Example:           "  repose sync\n  repose sync --stash-machine",
 		Args:              cobra.ArbitraryArgs,

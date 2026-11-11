@@ -348,6 +348,13 @@ $ repose run
       only when the guest changed a path the sync writes (DECISIONS
       I-573).
 
+      On a terminal, that refusal is a menu: `l` uses the laptop's copy
+      and stashes the machine's copy of the overlapping files under
+      `repose sync: the machine's copy`, `m` keeps the machine's copy
+      and syncs the rest, `s` is `--stash-machine`, Enter stops with
+      exit 6. One key. Off a terminal and under `--json` nothing
+      changes (DECISIONS I-1100).
+
       `--stash-machine` runs `git stash push -u -m "repose sync
       --stash-machine"`, `--discard-machine` ends a git operation in progress
       and stashes the same way under its own name before `git reset --hard

@@ -64,7 +64,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
 
-It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
+It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. From a terminal it asks which copy to keep before it stops. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
@@ -553,7 +553,7 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 3 | Not logged in, or the login expired. |
 | 4 | No such project. |
 | 5 | The machine isn't running. |
-| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
+| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10 | The configuration build failed. |
