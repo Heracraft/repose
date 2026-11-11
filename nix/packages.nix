@@ -62,8 +62,11 @@ let
     inherit version src;
 
     # `nix build ./nix#guestd` prints the expected value when a dependency
-    # changes and this no longer matches.
-    vendorHash = "sha256-s20s9wRZutz/jtol/LG25vnT2O0YGKLQvoHBuh8Chbg=";
+    # changes and this no longer matches. It is the vendored module set,
+    # so a new import of a package inside a module go.mod already names
+    # moves it with go.mod untouched: `acme/autocert` pulled in
+    # `x/net/idna` and `x/text` (DECISIONS I-1112).
+    vendorHash = "sha256-4YFlt3dMGyVMpydDEbV5w427fB4JwrK+9GRM/YQEJX0=";
 
     postPatch = ''
       mkdir -p internal/gen

@@ -31191,6 +31191,16 @@ source, against :22's 64 and 20. Stripe's fifteen addresses carry every
 tenant's deliveries, so :22's figures would throttle one tenant's events
 with another's.
 
+`autocert` lives in `golang.org/x/crypto`, which `go.mod` already
+required, so adding it changed no dependency — and it still moved
+`nix/packages.nix`'s `vendorHash`, because that hash is over the
+*vendored module set* and `acme/autocert` pulls `x/net/idna` and
+`x/text` into it. `guest-closure-size` is what caught it: `go build`,
+`go vet` and every Go test passed against a tree whose guest base could
+not be built. A new import of a package inside a module `go.mod`
+already names is therefore a `vendorHash` bump, and the comment above
+the hash now says so.
+
 *Evidence.* `nix eval ./nix#nixosConfigurations.edge.config.system.build.toplevel.drvPath`
 builds the edge with the new unit environment, the `StateDirectory` and
 the nftables sets. The live check — `openssl s_client -servername

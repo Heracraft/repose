@@ -957,20 +957,20 @@ pointer, not a summary.
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31015
 - **I-1110** Webhooks: a project's named routes on one public hostname, routed by path, owned by the api — 2026-11-11; L31061
 - **I-1112** The edge's :443 serves the webhook hostname with an autocert certificate from TLS-ALPN-01, beside the preview stub — 2026-11-11; L31147
-- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31201
-- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31255
-- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31311
-- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31333
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31367
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31409
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31450
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31529
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31593
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31686
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31723
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31812
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31842
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31906
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31955
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32049
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32087
+- **I-1114** A delivery wakes a frozen machine, gets 503 from a stopped one, and 410 from a URL that is gone — 2026-11-11; L31211
+- **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31265
+- **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31321
+- **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31343
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31377
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31419
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31460
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31539
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31603
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31696
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31733
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31822
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31852
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31916
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31965
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32059
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32097
