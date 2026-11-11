@@ -16,7 +16,7 @@ The URL is about 110 characters: the hostname, your project's id, the route's na
 
 Paste that into the provider's dashboard. The command prints the URL and nothing else, so it pipes: `repose webhooks add stripe 3000 | pbcopy`.
 
-The token is 128 random bits. Anyone who has it can deliver to that route, so it's a secret: it belongs in the provider's dashboard and nowhere public. A URL nobody has guessed is a URL nobody can reach; a wrong token is refused at the edge without touching your machine.
+The token is 128 random bits, which makes the URL a credential: anyone who has it can deliver to that route, so it belongs in the provider's dashboard and nowhere public. A wrong token is refused at the edge and never reaches your machine.
 
 ## The routes you have
 
