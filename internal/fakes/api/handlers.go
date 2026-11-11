@@ -357,7 +357,7 @@ func (f *Fake) create(u *userRec, name, remoteURL, class string) (*project, *api
 }
 
 // createGated is create with the class the memory gate is asked about:
-// "" for a project that is not started, as a fork with start: false
+// "" for a project that is not started, as a restore with start: false
 // (the api's gateClass).
 func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string) (*project, *apiError) {
 	if !nameRe.MatchString(name) {
@@ -370,7 +370,7 @@ func (f *Fake) createGated(u *userRec, name, remoteURL, class, gateClass string)
 	if slug == "" {
 		return nil, invalid("name: yields an empty slug")
 	}
-	// The billing gate runs on every create, fork and restore as on a
+	// The billing gate runs on every create and restore as on a
 	// start (I-290): no plan, no compute; a plan, its memory and disk.
 	if e := f.gate(u, gateClass, &diskAsk{addGB: newProjectHeldGB, volumeBytes: classes[class]}, nil); e != nil {
 		return nil, e
@@ -1529,7 +1529,7 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 		return e
 	}
 	reason := "manual"
-	if body.Reason == "fork" && !f.oldFork {
+	if body.Reason == "fork" {
 		reason = "fork" // a fork's own, gone a day later (I-703)
 	}
 	o := f.newOp(p, "snapshot")
@@ -1542,180 +1542,11 @@ func (f *Fake) createSnapshot(w http.ResponseWriter, r *http.Request) *apiError 
 	return opResult(w, o)
 }
 
-// forkProject is POST /projects/:id/fork (I-254): count projects restored
-// from one of p's snapshots, named <base>-<k> for the lowest free k,
-// without p's remote, with its secrets; the limit is checked for all of
-// them first, and a resent request_id answers with the same projects.
-func (f *Fake) forkProject(w http.ResponseWriter, r *http.Request) *apiError {
-	var body struct {
-		SnapshotID string `json:"snapshot_id"`
-		Count      *int   `json:"count"`
-		Name       string `json:"name"`
-		Class      string `json:"class"`
-		Start      *bool  `json:"start"`
-		RequestID  string `json:"request_id"`
-	}
-	if e := decodeBody(r, &body, false); e != nil {
-		return e
-	}
-	u := userFrom(r)
-	p, e := f.project(u, r.PathValue("id"))
-	if e != nil {
-		return e
-	}
-	if body.SnapshotID == "" && f.oldFork {
-		return invalid("snapshot_id is required: take a snapshot of %s first (POST /projects/:id/snapshots)", p.Slug)
-	}
-	if body.SnapshotID == "" && p.State != "running" && p.State != "stopped" {
-		// The api's refusal: copies of the project as it is now need it
-		// settled (internal/api/http/fork.go).
-		return errf("conflict", "%s is %s; a fork needs it running or stopped", p.Slug, p.State)
-	}
-	if body.SnapshotID == "" && f.forkNoClone {
-		return errf("conflict", "%s's server cannot hold the copies; fork from a snapshot of it", p.Slug).withDetail(map[string]any{"reason": "snapshot_needed"})
-	}
-	count := 1
-	if body.Count != nil {
-		count = *body.Count
-	}
-	if count < 1 || count > 10 {
-		return invalid("count must be 1 to 10")
-	}
-	// Without snapshot_id the copies are clones of p as it is now (I-701).
-	var snap *Snapshot
-	for _, s := range p.snapshots {
-		if body.SnapshotID != "" && s.ID == body.SnapshotID {
-			snap = s
-		}
-	}
-	if snap == nil && body.SnapshotID != "" {
-		return errf("not_found", "that snapshot is not one of %s's, or it has expired", p.Slug)
-	}
-	class := p.Class
-	if body.Class != "" {
-		if _, ok := classes[body.Class]; !ok {
-			return invalid("class must be small, large or xl")
-		}
-		class = body.Class
-	}
-	base := body.Name
-	if base == "" {
-		base = p.Slug + "-fork"
-	}
-	if !nameRe.MatchString(base) || slugOf(base) == "" {
-		return invalid("name must match [A-Za-z0-9._-]{1,64}")
-	}
-	type forked struct {
-		ProjectID string `json:"project_id"`
-		Name      string `json:"name"`
-		Slug      string `json:"slug"`
-		Class     string `json:"class"`
-		OpID      string `json:"op_id"`
-	}
-	answer := func(list []forked) *apiError {
-		resp := map[string]any{"snapshot_id": nil, "snapshot_created_at": f.now(), "from_project_id": p.ID, "projects": list}
-		if snap != nil {
-			resp["snapshot_id"], resp["snapshot_created_at"] = snap.ID, snap.CreatedAt
-		}
-		writeJSON(w, http.StatusAccepted, resp)
-		return nil
-	}
-	if body.RequestID != "" {
-		if prev := f.forks[u.ID+"/"+body.RequestID]; prev != nil {
-			var list []forked
-			for _, fp := range prev {
-				list = append(list, forked{ProjectID: fp.projectID, Name: fp.name, Slug: fp.name, Class: fp.class, OpID: fp.opID})
-			}
-			return answer(list)
-		}
-	}
-	// The project cap is checked for all N at once; xl is the memory
-	// gate's to refuse, as in the api (I-293), not a count.
-	taken := map[string]bool{}
-	for _, q := range f.userProjects(u) {
-		taken[q.Slug] = true
-	}
-	if e := f.projectCap(u, count); e != nil {
-		return e
-	}
-	b := slugOf(base)
-	var list []forked
-	var rec []forkRec
-	for k := 1; len(list) < count; k++ {
-		suffix := fmt.Sprintf("-%d", k)
-		bb := b
-		if len(bb)+len(suffix) > 40 {
-			bb = strings.TrimRight(bb[:40-len(suffix)], "-")
-		}
-		name := bb + suffix
-		if taken[name] {
-			continue
-		}
-		taken[name] = true
-		gateClass := class
-		if body.Start != nil && !*body.Start {
-			gateClass = "" // a stopped copy takes no memory (api fork.go)
-		}
-		np, e := f.createGated(u, name, "", class, gateClass)
-		if e != nil {
-			return e
-		}
-		f.copyMultiplexer(p, np)
-		copyHeld(p, np)
-		for n, s := range p.secrets {
-			c := *s
-			np.secrets[n] = &c
-		}
-		if body.Start != nil && !*body.Start {
-			f.stop(np, false)
-		}
-		if snap != nil {
-			f.event(np, "volume.restored", "", "restored from snapshot "+snap.ID+" of "+p.Name)
-		} else {
-			f.event(np, "volume.restored", "", "cloned from "+p.Name)
-		}
-		o := f.newOp(np, "restore")
-		if d := f.opts.ForkStepDelay; d > 0 {
-			f.stepFork(np, o, body.Start == nil || *body.Start, d, time.Duration(len(list)+1)*d)
-		}
-		list = append(list, forked{ProjectID: np.ID, Name: np.Name, Slug: np.Slug, Class: np.Class, OpID: o.id})
-		rec = append(rec, forkRec{projectID: np.ID, name: np.Slug, class: np.Class, opID: o.id})
-	}
-	if body.RequestID != "" {
-		f.forks[u.ID+"/"+body.RequestID] = rec
-	}
-	return answer(list)
-}
-
-// stepFork runs a fork copy's restore op through its phases (Options.
-// ForkStepDelay). Callers hold mu; only the goroutine takes it.
-func (f *Fake) stepFork(np *project, o *op, start bool, restore, starting time.Duration) {
-	final := np.State
-	// The op's own times to the nanosecond: the CLI prints them for a
-	// copy it did not watch.
-	now := func() time.Time {
-		if f.opts.Now != nil {
-			return f.now()
-		}
-		return time.Now().UTC()
-	}
-	o.created = now()
-	o.State, o.phase, o.LogURL = "running", "restore", ""
-	np.State, np.OpID = "restoring", o.id
-	go func() {
-		time.Sleep(restore)
-		if start {
-			f.mu.Lock()
-			o.phase, np.State = "start_guest", "starting"
-			f.mu.Unlock()
-			time.Sleep(starting)
-		}
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		end := now()
-		np.State, np.OpID = final, ""
-		o.State, o.phase, o.finished = "done", "", &end
-	}()
+// forkRemoved is POST /projects/:id/fork: `repose fork` was removed and
+// the route answers the api's refusal for one release (I-1082).
+func (f *Fake) forkRemoved(w http.ResponseWriter, r *http.Request) *apiError {
+	return invalid("repose fork was removed; `repose run --worktree -p PROMPT` runs another agent on its own branch on the same machine").
+		withDetail(map[string]any{"reason": "fork_removed"})
 }
 
 func (f *Fake) restoreSnapshot(w http.ResponseWriter, r *http.Request) *apiError {
@@ -1803,7 +1634,7 @@ func (f *Fake) restoreAsNew(u *userRec, p *project, snap *Snapshot, name string)
 	return np, nil
 }
 
-// copyHeld starts a restored or forked copy at what its source holds,
+// copyHeld starts a restored copy at what its source holds,
 // as the api's insertRestored does (DECISIONS I-585).
 func copyHeld(src, np *project) {
 	if src.DiskUsedBytes > 0 {

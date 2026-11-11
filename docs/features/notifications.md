@@ -57,7 +57,7 @@ todo-app  running 3h12m  large
 Events (see agents.md for how each agent produces them):
 
 - Kinds: `needs_input`, `error`, `agent_done`, plus the platform-originated
-  `billing_stopped`, `base_updated`, `base_update_failed`, `snapshot_failed`,
+  `billing_stopped`, `base_update_failed`, `snapshot_failed`,
   `destroy_failed` (DECISIONS I-165: the CLI no longer waits for a
   destroy, so its failure is announced), `stop_failed` (I-710, for the
   same reason: `repose stop` returns once the stop is under way; title
@@ -91,7 +91,11 @@ Events (see agents.md for how each agent produces them):
   (DECISIONS I-244, I-688, below). A finished turn (`completed`: Claude's
   `Stop`, codex `agent-turn-complete`, opencode's idle, herdr's completion
   and the tmux-idle heuristic) is recorded as an event and sets the
-  agent's state, and queues no delivery (I-688). Each carries the agent name (agent kinds only), the
+  agent's state, and queues no delivery (I-688). `base_updated` is an
+  event on the same terms (I-1094): a base that reached the machine
+  asks nothing of the owner, so it shows in `repose events` and on the
+  dashboard and queues no delivery on any channel; `base_update_failed`,
+  which leaves the machine on the base it had, still notifies. Each carries the agent name (agent kinds only), the
   tmux window or herdr agent key (I-504), a summary of at most 1 KB, and
   a timestamp. On a herdr project, herdr's `blocked` sets gemini's and
   pi's state to needs input without a notification; their finished turns
@@ -120,13 +124,30 @@ Events (see agents.md for how each agent produces them):
   cap lifts, as a time in the user's zone (UTC when none is set): `30
   notifications in the last hour. Paused until 14:32 UTC.` Events are
   still recorded; only delivery stops.
+- A way into the dashboard only where the dashboard has an act
+  (DECISIONS I-1096). A question carries its answers (its options'
+  reply links, else one link to the Questions page, `/questions`, which
+  answers it in place; a secret question keeps the project page and its
+  `?answer=` query, the only page that takes a value), `billing_stopped`
+  carries the plan, and the account kinds carry what each is about
+  (the billing page, the notification settings, the plan page for a
+  waitlist seat). Every other kind carries no way in at all: no "Open
+  project" on a Google Chat card, no project button on an email. The
+  agent's own `--link` (I-931) is unaffected and is the message's main
+  button. Before this the cards and most emails ended with "Open
+  project", which put the reader on a page with nothing on it to do.
+  ntfy's `Click`, which is the tap target of the notification rather
+  than a button, stays the project's page, or the Questions page for a
+  question.
 - Presence hold (DECISIONS I-689): while the owner is at the machine,
   nothing an agent reports reaches their phone. Present means the
   project's latest guest sample, at most 2 minutes old, shows a tmux
   client or an SSH session (`meter_samples.tmux_clients + ssh_sessions >
   0`; a laptop herdr bridge is an SSH session, I-511). The outbox worker
   checks it at send time for `agent_question`, `agent_done`,
-  `agent_message`, `needs_input` and `error`: while present it moves the
+  `agent_message`, `needs_input` and `error` (`repose-presence` in the
+  guest answers the same question from the machine, I-1098, agents.md):
+  while present it moves the
   row's `next_at` on by 1 minute without counting an attempt and writes
   `held` to `delivered[channel]`, for at most 10 minutes from the event,
   then sends. Before sending such a row, the worker drops it and writes
@@ -174,8 +195,9 @@ Agents can message you and ask questions (DECISIONS I-244, I-245):
   the secret. It waits 2 hours by default, and a link opened signed out
   comes back to the dialog after sign-in.
 - `--link URL [--label TEXT]` on `repose-notify` and `repose-ask` (I-931)
-  attaches one link: a Google Chat button before "Open project" (after a
-  question's own), an ntfy `view` action within its three, the email's
+  attaches one link: the Google Chat card's only button on a message
+  (after a question's own, before an act where the kind has one), an
+  ntfy `view` action within its three, the email's
   main button (a question keeps its way to answer as the main one and the
   link goes under it), and a link under the message on the dashboard and
   after it in `repose events`. Its text is "LABEL · HOST". Without
@@ -230,8 +252,8 @@ Channels (`workstreams/13-notifications.md` §5.6):
   files under `internal/api/notify/testdata/<kind>.html|.txt` pin every
   kind (`TestGoldenEmails`, `-update` rewrites them). Everything a tenant
   wrote (a summary, a project name, a question) is escaped where it is
-  placed. An agent email carries the summary, a `repose attach` row, a
-  button to the project and, once the platform's signing key exists (from
+  placed. An agent email carries the summary, a `repose attach` row and,
+  once the platform's signing key exists (from
   the api's first start), an unsubscribe line and a matching
   `List-Unsubscribe` header (RFC 8058 one-click). The link opens a page
   whose button turns email off with no login; a GET alone changes
@@ -241,11 +263,13 @@ Channels (`workstreams/13-notifications.md` §5.6):
   `agent_question` email puts a grey line under the title (agent,
   window, `asked 28 Sep 18:00 UTC`, `open until 18:30 UTC`, in the
   user's zone, UTC when none is set), the question
-  on a sunken block, one bordered button per option on its own line to
-  the signed reply link, and a link to the project; a question without
-  options gets a `Write an answer` button to the project instead. An
+  on a sunken block and one bordered button per option on its own line
+  to the signed reply link; a question without
+  options gets a `Write an answer` button to the Questions page instead,
+  and one for a secret an `Enter NAME` button to the project page's
+  dialog (I-929, I-1096). An
   `agent_done` email has the same grey line and the report on a sunken
-  block, then the `repose attach` row and a button to the project
+  block, then the `repose attach` row
   (I-688). On by default at signup; no time-based
   default change.
 - ntfy: the user sets any ntfy-compatible URL, including a self-hosted
@@ -269,9 +293,10 @@ Channels (`workstreams/13-notifications.md` §5.6):
   card plus a plain `fallbackText`: a header with the project and
   `<agent> <verb>`, the tenant text HTML-escaped in a `textParagraph`,
   and `openLink` buttons: one per option to its signed reply link;
-  Answer (to the project) for a question without reply links; Dashboard
-  (to `/projects`) for a user notice or an event with no project; else
-  Open project. A close reply has none. A notice whose text opens with
+  Answer (to the Questions page) for a question without reply links;
+  Your plan (to `/billing`) for `billing_stopped`; and none at all on
+  every other kind, since nothing else has an act on the dashboard
+  (I-1096). A close reply has none. A notice whose text opens with
   its subject (`machines_restarted`) takes the email heading as its card
   title, and `fallbackText` (the phone notification) leaves the subject
   out; a platform subtitle and its text are joined by a line break, not

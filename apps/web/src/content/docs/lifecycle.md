@@ -55,7 +55,7 @@ $ repose start todo-app
 todo-app is running (large), ready in 9s.
 ```
 
-Each agent's window opens again with the conversation it was in ([When the machine stops](/docs/run-and-attach#when-the-machine-stops)). `attach`, `run`, `ssh` and `code` start a stopped machine too; during a stop they wait for it to finish, say so if it failed, and start the machine again. `rm`, `fork`, `resize`, `snapshots create`, a restore and a config change wait the stop out and then do their work.
+Each agent's window opens again with the conversation it was in ([When the machine stops](/docs/run-and-attach#when-the-machine-stops)). `attach`, `run`, `ssh` and `code` start a stopped machine too; during a stop they wait for it to finish, say so if it failed, and start the machine again. `rm`, `resize`, `snapshots create`, a restore and a config change wait the stop out and then do their work.
 
 `repose start` is also the way out of the `error` state: it restarts the machine on its newest configuration. A project in `error` has **Restart** on its own page.
 
@@ -154,7 +154,7 @@ The project's **Snapshots** tab has **Create snapshot** and, on each snapshot, *
 
 A restore checks what it reads against the SHA-256 recorded when the snapshot was taken. If they differ it stops with `snapshot checksum mismatch` and deletes the disk it was writing, so nothing boots on it. A snapshot taken before 2026-10-03 has no digest and restores unchecked.
 
-A restore over a project destroys the old disk before writing the new one, so one that fails leaves the project in `error` with nothing to boot, and `repose start` refuses with `todo-app has no usable volume because the restore into it did not finish`. `repose stop todo-app` and restore over it again, or restore into a new project with `--as NAME`; `repose rm` removes it. A fork copy whose disk copy failed has no snapshot of its own, so `start` says to remove it and fork the source again.
+A restore over a project destroys the old disk before writing the new one, so one that fails leaves the project in `error` with nothing to boot, and `repose start` refuses with `todo-app has no usable volume because the restore into it did not finish`. `repose stop todo-app` and restore over it again, or restore into a new project with `--as NAME`; `repose rm` removes it.
 
 ## Destroy and restore
 
@@ -270,37 +270,6 @@ $ repose keep tmp-k3f9 3h
 tmp-k3f9 is temporary until Sep 29 17:02.
 ```
 
-## Fork a project
-
-`repose fork` copies a project's disk as it is at that moment into new ones, one per agent trying a different approach:
-
-```
-$ repose fork todo-app -n 3
-✓ Copied todo-app's disk into todo-app-fork-1  0.4s
-✓ Started todo-app-fork-1  14s
-✓ Started todo-app-fork-2  15s
-✓ Started todo-app-fork-3  15s
-Forked todo-app into 3 projects in 16s:
-  todo-app-fork-1  running (large)
-  todo-app-fork-2  running (large)
-  todo-app-fork-3  running (large)
-Added the git remotes todo-app-fork-1, todo-app-fork-2 and
-todo-app-fork-3.
-```
-
-The copies are made on the project's own server and take seconds whatever the disk holds. When that server has no room for them, `fork` snapshots the project first (`✓ Snapshot of todo-app taken`) and restores the copies from the snapshot on whichever servers have room. That snapshot is listed with reason `fork` and deleted a day later. Each copy starts with the same disk: the code and its uncommitted changes, installed dependencies, Docker images, logins made on the machine. It also gets the project's configuration and [secrets](/docs/secrets). Processes don't carry over, and no agent window reopens ([Snapshots](#snapshots)). The code is at the same path in every copy, `~/todo-app`. (Copying a machine whose checkout an earlier version of repose made gives `~/todo-app-fork-1`, a link to `~/todo-app`.)
-
-`--prompt "..."` starts the agent in every copy with the same prompt. To give each copy its own prompt, attach to it and type it, or run `repose run todo-app-fork-2 -p "..."`, which leaves the copy's checkout as it is.
-
-The original keeps running and is still the project `repose run` uses in your checkout. Reach the copies by name: `repose attach todo-app-fork-2`. Run in your checkout, `fork` adds a git remote for each copy, named after it, as `run` adds `repose` for the project. To keep one copy's work, commit it there and fetch it:
-
-```
-git fetch todo-app-fork-2
-git merge todo-app-fork-2/main
-```
-
-Each copy is a project: it counts toward the [100 projects an account can have](/docs/limits#projects), toward your plan's disk by what it holds (at first what the project holds), and toward the plan's memory while it runs. If the copies would take you past 100, or what they hold past your plan's disk, `repose fork` creates none of them. If running them all beside what runs now needs more memory than your plan has, it says so before copying anything and exits with code 7. `--no-start` creates the copies stopped, so they take no memory until you `repose start` one.
-
 ## Logs and events
 
 ```
@@ -320,6 +289,6 @@ Your applications' output isn't collected; it stays on the machine.
 | `starting`                | Booting.                                                                                    |
 | `running`                 | On. A running machine nobody is using may also be [frozen](#frozen-machines).                |
 | `stopping`, `stopped`     | Shutting down, or off with the disk kept.                                                   |
-| `restoring`               | A snapshot is being written to the disk, or a [fork](#fork-a-project)'s copy is being made. |
+| `restoring`               | A snapshot is being written to the disk. |
 | `destroying`, `destroyed` | Being deleted, or gone ([Destroy and restore](#destroy-and-restore)).                       |
 | `error`                   | Something failed. `repose status` says what ([Stop and start](#stop-and-start)).            |

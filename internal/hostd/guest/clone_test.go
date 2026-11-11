@@ -21,7 +21,7 @@ const (
 func cloneReq(h *harness, gid string, siblings ...string) *hostdv1.Restore {
 	return &hostdv1.Restore{
 		ProjectId: "proj-" + gid[:8], GuestId: gid, Class: "large", VolumeBytes: 40 << 30, SystemClosure: h.closure,
-		UserId: "user-1", ProjectSlug: "todo-app-fork-1", HostKey: []byte("hk"),
+		UserId: "user-1", ProjectSlug: "todo-app-2", HostKey: []byte("hk"),
 		Clone: &hostdv1.RestoreClone{SourceGuestId: gid1, PointId: forkPoint, SiblingGuestIds: siblings},
 	}
 }

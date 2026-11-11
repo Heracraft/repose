@@ -87,6 +87,29 @@ func (h *Handler) Sample(ctx context.Context) (*guestdv1.SampleResult, error) {
 		RootUsedBytes: rootUsed, RootSizeBytes: rootSize}, nil
 }
 
+// Attached says whether the owner is at the machine, by the definition
+// the presence hold uses (DECISIONS I-689): a tmux client or an SSH
+// session, a laptop herdr bridge counting as an SSH session (I-511).
+// `repose-presence` reads it through the hook socket (I-1098).
+//
+// It reads the same two numbers a Sample reports and answers from the
+// guest rather than from the api's latest sample, so it has no staleness
+// window: a session opened a moment ago is already present here. The
+// tmux client count comes from the watcher's cache, which refreshes
+// faster than the 2 minute sample the api holds; a cache too old to be
+// fresh still answers, because a stale count of clients is a better
+// answer than none and the ssh count beside it is read now.
+func (h *Handler) Attached(ctx context.Context) bool {
+	if _, sessions, err := h.watcher.procs.read(h.uid); err == nil && sessions > 0 {
+		return true
+	}
+	if ctx.Err() != nil {
+		return false
+	}
+	signals, _ := h.watcher.Signals()
+	return signals.GetTmuxClients() > 0
+}
+
 // WindowOfPane resolves a tmux pane id to its window name, for the hook socket
 // when a hook did not say which window it came from.
 func (h *Handler) WindowOfPane(ctx context.Context, pane string) (string, error) {

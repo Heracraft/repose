@@ -75,14 +75,22 @@ type QuestionLinks struct {
 	Secret string
 }
 
-// AnswerURL is where the owner answers a question: for one that asks for
-// a secret, the project page with that question's form open; else the
-// project page.
+// AnswerURL is where the owner answers a question: the dashboard's
+// Questions page, which lists every waiting one and answers it in place
+// (I-693), since that is the page with the act (DECISIONS I-1096). A
+// question that asks for a secret (I-929) keeps the project page with
+// that question's form open, which is the only page that takes a value.
+// For a message that is no question there is nothing to answer, and the
+// value is the project's page: ntfy's Click header reads it.
 func (m Message) AnswerURL() string {
-	if q := m.Question; q != nil && q.Secret != "" {
+	q := m.Question
+	switch {
+	case q == nil:
+		return m.ProjectURL()
+	case q.Secret != "":
 		return m.ProjectURL() + "?answer=" + q.ID.String()
 	}
-	return m.ProjectURL()
+	return m.Dashboard + "/questions"
 }
 
 // ProjectURL is the dashboard page of the message's project.

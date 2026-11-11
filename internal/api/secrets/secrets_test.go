@@ -464,50 +464,6 @@ func TestConcurrentResealKeepsEveryRow(t *testing.T) {
 	}
 }
 
-// A fork copies a bound row and a name-only row; both arrive bound to the
-// fork and open there, and the fork's rows do not open back in the source.
-func TestCopyNamedBindsToTheFork(t *testing.T) {
-	pool := testdb.Open(t)
-	fk := kv.New()
-	s := secrets.New(pool, fk)
-	ctx := context.Background()
-	uid, src := newProject(t, s, pool)
-	if err := s.Put(ctx, uid, src, "BOUND", []byte("b")); err != nil {
-		t.Fatal(err)
-	}
-	legacyPut(t, s, fk, pool, uid, src, "LEGACY", "l")
-	fork := uuid.Must(uuid.NewV7()).String()
-	if _, err := pool.Exec(ctx, "insert into projects (id, user_id, name, slug, class, state, volume_bytes) values ($1, $2, 'f', $3, 'large', 'stopped', 1)", fork, uid, "f-"+uuid.NewString()[:8]); err != nil {
-		t.Fatal(err)
-	}
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.CopyNamed(ctx, tx, src, fork); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	for n, want := range map[string]string{"BOUND": "b", "LEGACY": "l"} {
-		if v, bound := rowForm(t, fk, pool, fork, n); !bound || v != want {
-			t.Fatalf("fork %s: %q bound=%v", n, v, bound)
-		}
-	}
-	_, back := newProject(t, s, pool)
-	copyRows(t, pool, fork, back)
-	if _, err := s.DecryptForGuest(ctx, back); err == nil {
-		t.Fatal("the fork's rows opened in another project")
-	}
-	// Put on the fork after the copy replaces only the fork's value.
-	if err := s.Put(ctx, uid, fork, "BOUND", []byte("changed")); err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := rowForm(t, fk, pool, src, "BOUND"); v != "b" {
-		t.Fatalf("source changed with the fork: %q", v)
-	}
-}
 
 // hookKV runs hook on the first Unwrap, which Reseal calls after it has
 // read the rows and before it writes them.

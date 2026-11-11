@@ -125,7 +125,7 @@ headline starting under the logo, laid out as one ruled sheet on a
    works (it keeps working; you attach again; no notifications, per "What
    we sell"), how long snapshots are kept (seven days and the newest, and
    when repose takes them: the wreck itself is the hero's), three agents
-   on three approaches (`repose fork`), and why not set up a server
+   on three approaches (`repose run --worktree`), and why not set up a server
    yourself. Every answer is from the docs (secrets, lifecycle,
    sync). No setup trivia (where a
    login lives, Windows, how commits come back, what a stopped machine

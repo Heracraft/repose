@@ -14,7 +14,7 @@ Did you mean `repose ls`?
 `repose --help` shows its usage.
 ```
 
-Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `copy` to `cp`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
 
 ## Which project
 
@@ -64,7 +64,7 @@ If the connection drops while you're attached, `run` and `attach` print `repose:
 
 Copy this checkout's [current work](/docs/sync) over the machine's checkout, without attaching. It creates or starts the machine if needed. PROJECT works as on `run`: the machine of that name, created if there is none. It only sends; `git fetch repose` brings [the machine's commits back](/docs/sync#getting-work-back).
 
-It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
+It writes nothing and exits 6 when the machine changed files your laptop changed too, and names them, or when the machine's checkout is in the middle of a merge, rebase, am, cherry-pick, revert or bisect. From a terminal it asks which copy to keep before it stops. Changes the machine made to any other file stay where they are ([When the machine has changes of its own](/docs/sync#when-the-machine-has-changes-of-its-own)). In your home folder it exits 2. In a folder that isn't a git checkout it [offers to make one](/docs/sync#repositories-the-sync-cant-handle): a no exits 1, and without a terminal it exits 2.
 
 | Flag                      | What it does                                                       |
 | ------------------------- | ------------------------------------------------------------------ |
@@ -276,8 +276,11 @@ todo-app  running 2h14m  large
   agents     claude-2 needs input 4h, claude working
   checkout   main: 3 commits not on this laptop, 2 files not committed
              worktree-1: nothing new
-  attached   nobody
-  listening  node :5173 up 3d 410.0 MB
+  attached   2 SSH sessions, 1 tmux client
+  listening  node :5173 up 3d 410.0 MB, on your laptop
+             node :3000 up 2h 120.4 MB, on your laptop at :3001
+             postgres :5432 up 3d 40.1 MB
+  laptop     :5037 adb, :11434 ollama
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
 ```
@@ -286,13 +289,13 @@ A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
+`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address.
 
 Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. `forwards` lists what the attached laptops forward: `port`, `laptop_port`, `direction` (`to_laptop` or `from_laptop`) and `process`. |
 | `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A read that fails because the server is unreachable or busy prints `Could not read the status at 21:38:02:` and the reason, and the loop goes on; any other failure ends it. `--watch`, the old name, still works. |
 | `--wait STATE`       | Wait until the machine is in STATE, any [project state](/docs/lifecycle#states), then print the status. Exits 1 if it lands in `error` or is destroyed instead, or if the wait runs out. Not with `-f`. |
 | `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`). Only with `--wait`.                                                                            |
@@ -333,25 +336,6 @@ Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no 
 ### `repose restore [NAME]`
 
 Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` names the snapshot. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
-
-### `repose fork [PROJECT]`
-
-Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. The project itself keeps running. Without `--snapshot` it has to be running or stopped: a stopping one is waited out, and any other state exits 5.
-
-| Flag                      | What it does                                                                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-n`, `--count N`         | How many copies: 1 to 10, default 1. Another number exits 2.                                                                                         |
-| `--name NAME`             | Name them `NAME-1`, `NAME-2` and so on, in place of `PROJECT-fork-1`. Numbers a live project of yours already has are skipped.                        |
-| `--size small\|large\|xl` | Size of the copies. Default: the project's.                                                                                                          |
-| `--snapshot ID`           | Copy one of the project's [snapshots](#snapshots) instead of its disk as it is now.                                                                  |
-| `--prompt TEXT`           | Start the agent in every copy with that prompt. Your checkout isn't synced into them.                                                                |
-| `--agent NAME`            | Which agent `--prompt` starts: `claude`, `codex`, `opencode`, `gemini` or `pi`. Default: the project's. Needs `--prompt`.                             |
-| `--no-start`              | Create the copies stopped, so they take none of your plan's memory until `repose start`. Not with `--prompt`.                                        |
-| `--json`                  | Print the copies as JSON.                                                                                                                            |
-
-In a checkout whose `repose` remote is the project's machine, each copy gets a git remote of its own name; `repose rm` of a copy removes that remote again.
-
-Each copy is a project, and counts toward [the 100 an account can have](/docs/limits#projects) and toward your plan's disk and memory. A fork that would pass any of those is refused before anything is copied and exits 7; the memory refusal names `--no-start`.
 
 ### `repose resize [PROJECT] [DISK]`
 
@@ -457,6 +441,7 @@ The CLI's own settings are keys in [config.toml](#config-toml); `repose config s
 | `repose notify set`                             | `--email on\|off`, `--ntfy URL\|off` (`none` is the old `off`), `--gchat URL\|off` (a [Google Chat](/docs/notifications#google-chat) webhook). |
 | `repose notify test`                            | Send a test on every channel that's on, and print `sent`, `off` or `failed` for each, with the reason the server gave (`failed: the server answered 403`). Six tests a minute. Exits 1 when a channel failed or none is on. |
 | `repose version`                                | Print the version, as `repose 0.1.36 (herakraft)`. |
+| `repose version update [VERSION]`               | Replace this binary with the latest release, or with VERSION (`v0.1.40`) to go back to it. It checks the release signature and the archive's checksum before it writes anything, and leaves your login and settings alone. A binary a package manager owns is never touched: the command names the manager and exits 1. Releases before v0.1.28 are unsigned and exit 2. [Update](/docs/install#update). |
 | `repose completion bash\|zsh\|fish\|powershell` | Print a shell completion script. [Install](/docs/install#shell-completion) has the line that loads it for each shell. |
 | `repose help [COMMAND]`                         | Print help for a command. `repose help environment`, `repose help exit-codes` and `repose help config-file` print the tables below. A name that is neither exits 2. |
 
@@ -485,6 +470,12 @@ forward = ["apple-notes"]
 
 [projects.todo-app.mcp]
 forward = ["figma"]
+
+[forward]
+reverse = [5037, 11434]
+
+[projects.todo-app.forward]
+reverse = ["15432:5432"]
 ```
 
 | Key                   | Default  | What it does                                                                                                                                                                                                |
@@ -497,7 +488,8 @@ forward = ["figma"]
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. `[projects.NAME]` with `remote_control` replaces `remote_control` for that project. |
+| `forward.reverse`     | none     | Ports of your laptop that the machine's `localhost` reaches while you're attached: `5037` for the same port on both sides, `"15432:5432"` to listen on another one, at most 16, 1024 and above, not 9222, 9229, 2375 or 2376. Everything on the machine, agents included, reaches a lent port as a program on your laptop would: see [Your laptop's ports on the machine](/docs/machine#your-laptops-ports-on-the-machine). |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports. `[projects.NAME]` with `remote_control` replaces `remote_control` for that project. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
 | `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
@@ -507,7 +499,7 @@ forward = ["figma"]
 | Variable                     | What it sets                                                                                                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REPOSE_PROJECT`             | The project to act on, like `--project`.                                                                                                                                                    |
-| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached.                                                                                                                                           |
+| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached, in either direction.                                                                                                                      |
 | `REPOSE_TIMING=1`            | Print how long each step of `run` and `attach` took.                                                                                                                                        |
 | `REPOSE_NO_SPINNER=1`        | One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked.                                                                                         |
 | `REPOSE_NO_FASTPATH=1`       | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                                                                 |
@@ -545,6 +537,8 @@ The CLI talks to the hosted repose until you point it somewhere else with `--api
 
 Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` print local RFC 3339; `--json` prints UTC. Progress lines go to stderr. Without a terminal each step prints a line when it starts, that line with its time every 30 seconds while it runs, and a `✓` line with its time when it ends, unless the command prints the step's result itself. Scripts should read `--json` or `-q`: the text of tables and messages can change between releases.
 
+Two lines on stderr are about the CLI itself. One release behind the latest, it prints `repose 0.1.43 is older than 0.1.44, the latest release.` once for that release. Older than the oldest release the server still answers as these docs describe, it prints `repose 0.1.30 is too old for some of repose's answers.` at the end of every `run`, `attach` and `sync`. Both name [`repose version update`](#account), or the package manager that owns the binary. Neither changes an exit code, and neither prints on a machine.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -555,7 +549,7 @@ Tables print local time to the minute (`2026-10-08 21:37`); `logs` and `events` 
 | 3 | Not logged in, or the login expired. |
 | 4 | No such project. |
 | 5 | The machine isn't running. |
-| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. |
+| 6 | The machine changed files the sync would write, or is in the middle of a merge or rebase; the sync stopped. From a terminal it [asks which copy to keep](/docs/sync#when-the-machine-has-changes-of-its-own) first. |
 | 7 | A plan or account limit refused it (memory, disk, egress, the project count), or a payment problem; the message names it. |
 | 8 | No capacity, before or during a start. The message says which kind and what works for it: free memory, the host's disk pool, its build queue, its store, or a host being emptied. Stopping a machine frees memory, and nothing else. Choosing a plan while every seat is taken answers with your place on the [waitlist](/docs/limits#when-repose-is-full) and this code too. |
 | 10 | The configuration build failed. |

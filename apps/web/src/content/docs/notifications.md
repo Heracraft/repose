@@ -33,7 +33,7 @@ A self-hosted ntfy works the same, as long as it answers on the public internet.
 
 ## Google Chat
 
-Google Chat posts each notification to a space you choose, as a card with buttons. It needs a Google Workspace account: a personal Gmail account can't add webhooks.
+Google Chat posts each notification to a space you choose, as a card. It needs a Google Workspace account: a personal Gmail account can't add webhooks.
 
 1. In a desktop browser, open the space, then **Apps & integrations**, **Webhooks**, **Add webhooks**.
 2. Name it `repose` and copy its URL.
@@ -61,7 +61,6 @@ Google refuses a webhook that was deleted, or whose space removed it. repose the
 | `todo-app: claude hit an error`                 | The agent reported an error.                                                                                                                                                                                         |
 | `todo-app: snapshot failed`                     | A snapshot couldn't be taken; the body says why.                                                                                                                                                                     |
 | `todo-app: base update failed`                  | A [platform update](/docs/config#revisions-and-base-updates) didn't build with your configuration, or built and didn't switch in. The machine keeps what it had.                                                     |
-| `todo-app: base updated`                        | A platform update reached the machine. The body says whether it's running or waits for a stop and start, which a kernel change needs.                                                                                |
 | `todo-app: machine.nix did not apply`           | Your [machine.nix](/docs/config#your-machine-nix) didn't build or switch on this machine, which keeps what it had; the body has the error.                                                                           |
 | `todo-app: new system did not boot`             | A start or reboot gave the machine a new system that did not boot, so it runs its previous one; the body says why.                                                                                                   |
 | `todo-app: destroy failed`                      | A destroy didn't finish; the body says why.                                                                                                                                                                          |
@@ -79,13 +78,15 @@ A notification goes to every channel you have on.
 
 While you're at the machine, nothing an agent sends reaches a channel. It waits until you leave, or 10 minutes, whichever comes first. Being at the machine means a tmux client or an SSH connection; your editor and a herdr bridge count as SSH connections. One that's over by the time it would go isn't sent: a question you answered in the terminal or the agent withdrew, a permission prompt the agent has moved past. Notices from repose itself, such as a failed snapshot, are never held.
 
-On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page.
+On ntfy, questions and permission prompts come at urgent priority, done reports, failures and server restarts at high, and the rest at default. Tapping one opens the project's page, or the Questions page for a question.
 
 Every email comes as HTML with a plain-text version. There are no images and no tracking in any of them. Times in emails, and in the paused notice, are in the timezone on the **Settings** page, or UTC when none is set.
 
 The body is what the agent said at that moment, never your prompt and never your terminal. It does pass through ntfy.sh, Google or your email provider, so run your own ntfy server if that matters.
 
-An agent finishing its turn sends you nothing. The turn lands in `repose events` as `finished`.
+An agent finishing its turn sends you nothing. The turn lands in `repose events` as `finished`. A [platform update](/docs/config#revisions-and-base-updates) that reached the machine sends you nothing either; it lands there as `base updated`, and says whether it's running or waits for a stop and start, which a kernel change needs.
+
+A notification carries a way into the dashboard only where the dashboard has something for you to do: a question's answers, a failed payment, a seat that's yours. Everything else says what happened and stops. A `--link` an agent passed is its own button.
 
 The Claude app's own pushes are separate: with [Remote Control on](/docs/agents#drive-it-from-the-claude-app) and **Push when Claude decides** turned on in Claude Code's `/config`, a finished turn can reach your phone twice, once from here and once from Claude.
 

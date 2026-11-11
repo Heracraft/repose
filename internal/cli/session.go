@@ -66,9 +66,12 @@ type sessionOptions struct {
 	// Multiplexer is what the machine runs (I-509): messages go to tmux's
 	// status line or herdr's notifications. "" is tmux.
 	Multiplexer string `json:"multiplexer,omitempty"`
-	// OpenURLs opens, in this laptop's browser, the https links the
-	// machine's BROWSER is handed while attached (I-634).
+	// OpenURLs opens, in this laptop's browser, the links the machine's
+	// BROWSER is handed while attached (I-634, I-1108).
 	OpenURLs bool `json:"open_urls,omitempty"`
+	// Reverse is [forward] reverse: the laptop's ports lent to the
+	// machine's localhost for as long as the attach lasts (I-1104).
+	Reverse []reverseForward `json:"reverse,omitempty"`
 	// RemoteControl is config.toml's remote_control for this project
 	// (DECISIONS I-1136), which the carry sends on.
 	RemoteControl bool `json:"remote_control,omitempty"`
@@ -81,6 +84,11 @@ type sessionOptions struct {
 // helper to forward with.
 const windowsMCPForwardLine = "[mcp] forward in config.toml does nothing on Windows; run repose mcp forward NAME in a terminal of its own."
 
+// windowsReverseLine is [forward] reverse on Windows, where the same
+// absent helper would make a set key look like a broken forward
+// (I-1104).
+const windowsReverseLine = "[forward] reverse in config.toml does nothing on Windows."
+
 // startSessionHelper starts the helper for the attach that follows, and
 // never fails the attach: a helper that cannot start is simply absent.
 // Windows has no multiplexing and no exec, and tests (TargetFor set) drive
@@ -89,6 +97,9 @@ func startSessionHelper(e *Env, opts sessionOptions) {
 	if goos() == "windows" && len(opts.MCP) > 0 {
 		// Set and silently ignored would read as a broken forward.
 		_, _ = fmt.Fprintln(e.ErrOut, windowsMCPForwardLine)
+	}
+	if goos() == "windows" && len(opts.Reverse) > 0 {
+		_, _ = fmt.Fprintln(e.ErrOut, windowsReverseLine)
 	}
 	if e.TargetFor != nil || goos() == "windows" || (!opts.Carry && !opts.Forward && !opts.OpenURLs && !opts.Bridge && len(opts.MCP) == 0 && len(opts.Messages) == 0) {
 		return
@@ -191,15 +202,26 @@ func runSessionWith(ctx context.Context, opts sessionOptions, alive func() bool,
 			runSessionMCP(ctx, t, opts.MCP, opts.HomeDir, opts.RepoDir, say, alive)
 		}
 	}()
+	reversed := make(chan struct{})
 	if opts.Forward {
 		f := newForwarder(t, opts.Slug, say)
 		if opts.OpenURLs {
 			f.openURL = openBrowser
 		}
+		go func() {
+			defer close(reversed)
+			if len(opts.Reverse) > 0 {
+				runSessionReverse(ctx, t, opts.Reverse, f, say, alive)
+			}
+		}()
 		runForwards(ctx, f, alive)
-	} else if opts.OpenURLs {
-		runOpenURLs(ctx, t, openBrowser, alive)
+	} else {
+		close(reversed)
+		if opts.OpenURLs {
+			runOpenURLs(ctx, t, openBrowser, say, alive)
+		}
 	}
+	<-reversed
 	<-mcpDone
 	<-bridged
 	<-carried

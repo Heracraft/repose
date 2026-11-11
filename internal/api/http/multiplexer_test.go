@@ -213,11 +213,11 @@ func TestMultiplexerField(t *testing.T) {
 	}
 }
 
-// TestMultiplexerForkCopies: a fork and a restore as new copy the
-// source's multiplexer, and fall back to tmux when the gate would refuse
-// herdr for the copy's base, which is the source's (api.md "The base
-// gate").
-func TestMultiplexerForkCopies(t *testing.T) {
+// TestMultiplexerRestoreAsNewCopies: a restore as a new project copies
+// the source's multiplexer, and falls back to tmux when the gate would
+// refuse herdr for the copy's base, which is the source's (api.md "The
+// base gate").
+func TestMultiplexerRestoreAsNewCopies(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.h.Ctx
 	tok := e.signIn(t, "sub-muxf", "muxf")
@@ -245,15 +245,6 @@ func TestMultiplexerForkCopies(t *testing.T) {
 	g := e.do(t, tok, "GET", "/projects/"+pid+"/ops/"+r.body["op_id"].(string), nil)
 	sid := g.body["result"].(map[string]any)["snapshot_id"].(string)
 
-	fork := func(name string) map[string]any {
-		t.Helper()
-		r := e.do(t, tok, "POST", "/projects/"+pid+"/fork", map[string]any{"snapshot_id": sid, "count": 1, "name": name, "start": false})
-		if r.status != 202 {
-			t.Fatalf("fork %s: %d %s", name, r.status, r.raw)
-		}
-		np := r.body["projects"].([]any)[0].(map[string]any)
-		return e.do(t, tok, "GET", "/projects/"+np["project_id"].(string), nil).body
-	}
 	restoreNew := func(name string) map[string]any {
 		t.Helper()
 		r := e.do(t, tok, "POST", "/projects/"+pid+"/snapshots/"+sid+"/restore", map[string]any{"as_new_project": name, "start": false})
@@ -261,9 +252,6 @@ func TestMultiplexerForkCopies(t *testing.T) {
 			t.Fatalf("restore as new %s: %d %s", name, r.status, r.raw)
 		}
 		return e.do(t, tok, "GET", "/projects/"+r.body["project_id"].(string), nil).body
-	}
-	if p := fork("fa"); p["multiplexer"] != "herdr" {
-		t.Fatalf("fork of a herdr project: %v", p["multiplexer"])
 	}
 	if p := restoreNew("ra"); p["multiplexer"] != "herdr" || p["base_version"] != "2026.10.06" {
 		t.Fatalf("restore as new of a herdr project: %v on %v", p["multiplexer"], p["base_version"])
@@ -277,17 +265,14 @@ func TestMultiplexerForkCopies(t *testing.T) {
 	if _, err := e.h.Pool.Exec(ctx, "update projects set base_version = '2026.10.01' where id = $1", pid); err != nil {
 		t.Fatal(err)
 	}
-	if p := fork("fo"); p["multiplexer"] != "tmux" || p["base_version"] != "2026.10.01" {
-		t.Fatalf("fork of a herdr source behind the min base: %v on %v", p["multiplexer"], p["base_version"])
-	}
 	if p := restoreNew("ro"); p["multiplexer"] != "tmux" || p["base_version"] != "2026.10.01" {
 		t.Fatalf("restore as new of a herdr source behind the min base: %v on %v", p["multiplexer"], p["base_version"])
 	}
-	// The gate would refuse herdr now: the copy gets tmux, and the fork
-	// still succeeds.
+	// The gate would refuse herdr now: the copy gets tmux, and the
+	// restore still succeeds.
 	defer httpapi.SetHerdrMinBase("")()
-	if p := fork("fb"); p["multiplexer"] != "tmux" {
-		t.Fatalf("fork under a refusing gate: %v", p["multiplexer"])
+	if p := restoreNew("rb"); p["multiplexer"] != "tmux" {
+		t.Fatalf("restore as new under a refusing gate: %v", p["multiplexer"])
 	}
 }
 

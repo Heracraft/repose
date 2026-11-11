@@ -14,21 +14,6 @@
                 "textParagraph": {
                   "text": "The server running your machines restarted; it was back at 05:46 UTC.\u003cbr\u003eapi: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.\u003cbr\u003etodo-app: running again; its last agent turn was interrupted."
                 }
-              },
-              {
-                "buttonList": {
-                  "buttons": [
-                    {
-                      "text": "Dashboard",
-                      "type": "OUTLINED",
-                      "onClick": {
-                        "openLink": {
-                          "url": "https://repose.herakraft.co/projects"
-                        }
-                      }
-                    }
-                  ]
-                }
               }
             ]
           }

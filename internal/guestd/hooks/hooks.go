@@ -94,6 +94,8 @@ type Server struct {
 	// procRoot is where the caller's process tree is read, /proc on a
 	// guest.
 	procRoot string
+	// presence backs /presence once SetPresence is called (I-1098).
+	presence Presence
 }
 
 // NewServer builds the hook server. gid owns the socket's group, so the dev

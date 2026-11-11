@@ -77,7 +77,7 @@ The dashboard keeps these under **Settings** → **Secrets**, and each project's
 
 ## Logins copied from your laptop
 
-At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. A copied login or `.env` file lands on the machine's disk, so in its [snapshots](/docs/lifecycle#snapshots) and in anything you fork from it. `Logins copied: gh, codex` prints when a project's copied logins change.
+At each `repose run`, these are copied straight to the machine over SSH if you have them. repose never stores them. A copied login or `.env` file lands on the machine's disk, so in its [snapshots](/docs/lifecycle#snapshots) and in anything restored from them. `Logins copied: gh, codex` prints when a project's copied logins change.
 
 | Tool       | File                                                                             |
 | ---------- | -------------------------------------------------------------------------------- |
@@ -208,7 +208,7 @@ Your Claude Code setup is copied too, with the keys that hold credentials taken 
 - **The internet**, outbound, within the [network limits](/docs/limits#network).
 - **Your git host**, with whatever credentials the machine has.
 - **Not your other projects.** Each is a separate machine, and the network stops them from reaching each other. Your [Claude Code login](/docs/agents#log-in) and your [account's secrets](#secrets-for-every-project) are the exceptions; a hook or a setting an agent writes stays on its machine.
-- **Not your laptop.** Nothing on the machine can open a connection to it. A tunnel you open is the exception: a [Chrome bridge](/docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome) hands anything on the machine your logged-in Chrome, and [`repose mcp forward`](/docs/agents#mcp-servers) runs a server on your laptop for the agents to call.
+- **Not your laptop.** Nothing on the machine can open a connection to it. A tunnel you open is the exception: a [Chrome bridge](/docs/your-chrome#what-the-agents-can-and-cant-do-in-your-chrome) hands anything on the machine your logged-in Chrome, [`repose mcp forward`](/docs/agents#mcp-servers) runs a server on your laptop for the agents to call, and a port in [`forward.reverse`](/docs/machine#your-laptops-ports-on-the-machine) is a plain pipe to that port on your laptop for as long as you're attached.
 
 ## What repose stores
 

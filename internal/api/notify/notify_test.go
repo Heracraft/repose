@@ -255,12 +255,16 @@ func TestEmailTemplate(t *testing.T) {
 		"todo-app: claude finished",
 		"ran tests, 3 failures fixed",
 		"repose attach --project todo-app",
-		"https://repose.herakraft.co/projects",
 		"https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def",
 	} {
 		if !strings.Contains(gotBody, want) {
 			t.Fatalf("body missing %q, got:\n%s", want, gotBody)
 		}
+	}
+	// No way in to the dashboard: there is nothing to do there about a
+	// finished turn (DECISIONS I-1096).
+	if strings.Contains(gotBody, "https://repose.herakraft.co/projects") {
+		t.Fatalf("an open-project button on a turn end:\n%s", gotBody)
 	}
 }
 
