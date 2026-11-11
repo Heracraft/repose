@@ -268,7 +268,7 @@ func TestOfferGitInitWithoutAnIdentity(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", empty)
 	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"} {
 		t.Setenv(k, "")
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 	gitInitAnswers(t, true, true)
 	dir := t.TempDir()
