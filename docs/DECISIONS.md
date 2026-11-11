@@ -31514,7 +31514,7 @@ typing. `repose say [PROJECT] "<text>"` and `POST /projects/:id/say` do
 that from anywhere.
 
 - **The path is the agent's own terminal.** The api stores a `says` row
-  (0036), sends `SayToAgent` down the host's channel, and hostd relays
+  (0039), sends `SayToAgent` down the host's channel, and hostd relays
   it to guestd, which types it into the agent's tmux window with
   `internal/agentprompt` — the same generator, screen check and Enter
   retries `repose run -w -p` uses (I-752). Not a headless mode and not
@@ -31546,7 +31546,7 @@ that from anywhere.
   own sentence and the owner picks with `--agent`. The resolution is
   guestd's, not the api's: the api's sample is up to a minute old and
   the windows are the guest's own fact.
-- **The row follows the machine.** A `says` row (0036) is stored
+- **The row follows the machine.** A `says` row (0039) is stored
   `waiting` or `delivered` as the command answered, and a `waiting` one
   becomes `delivered` on the machine's own `agent_prompted` event, which
   is the only thing that knows a mid-turn message went in at the end of
