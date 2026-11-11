@@ -4,11 +4,11 @@ claude · main · asked 28 Sep 18:00 UTC · open until 18:30 UTC
 Drop the legacy sessions table? It has 3 rows, all from 2024.
 
 Answer with one click
-  yes: https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=email
-  no: https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=email
+  yes: https://api.repose.run/v1/questions/reply?token=aaa.bbb&via=email
+  no: https://api.repose.run/v1/questions/reply?token=ccc.ddd&via=email
 
 Or from your laptop: repose reply todo-app
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
-About agents on your machines. Stop these emails: https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def
+repose. Open the dashboard: https://repose.run
+About agents on your machines. Stop these emails: https://api.repose.run/v1/notify/unsubscribe?token=abc.def

@@ -390,7 +390,7 @@ project, each its `disk_held_bytes` or else `volume_bytes`, plus
 `AddHeldBytes`, or a `VolumeBytes` past the plan's disk; I-585, which
 replaced `AllocatedDisk`). `message` is the whole sentence ("Your Solo
 plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at
-https://repose.herakraft.co/billing."). Exempt passes everything;
+https://repose.run/billing."). Exempt passes everything;
 `Enforce = false` passes everything. Call sites: `POST /projects` (class
 and the default volume), `/projects/:id/start` (class, excluding itself),
 `/projects/restore` and `/snapshots/:sid/restore` (class when starting,

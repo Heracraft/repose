@@ -24,7 +24,7 @@
                       "type": "OUTLINED",
                       "onClick": {
                         "openLink": {
-                          "url": "https://repose.herakraft.co/billing"
+                          "url": "https://repose.run/billing"
                         }
                       }
                     }

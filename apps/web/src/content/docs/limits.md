@@ -19,7 +19,7 @@ Destroyed projects don't count, for the 100 or for disk, and neither does one st
 
 A project's own [disk](/docs/machine) is how far that project can grow.
 
-While your projects hold more than [the plan's disk](/docs/billing#what-a-plan-means), creating or restoring a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing.` Your machines keep running, and a stopped one still starts, since starting it is how you delete the files that put you over. `repose ls`, `repose status` and the Billing page say you're over before anything refuses you.
+While your projects hold more than [the plan's disk](/docs/billing#what-a-plan-means), creating or restoring a project, and growing a disk, are refused with exit code 7: `Your projects hold 104 GB and your Solo plan has 100 GB of disk. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.run/billing.` Your machines keep running, and a stopped one still starts, since starting it is how you delete the files that put you over. `repose ls`, `repose status` and the Billing page say you're over before anything refuses you.
 
 ## When repose is full
 
@@ -31,7 +31,7 @@ Upgrading to a plan with more seats needs a free seat too, and is refused while 
 
 ## Egress
 
-Data your machines send to the internet, and what a [webhook route](/docs/webhooks) replies, counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.herakraft.co/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
+Data your machines send to the internet, and what a [webhook route](/docs/webhooks) replies, counts against the plan's allowance for the billing period ([what counts](/docs/billing#what-a-plan-means)). Past four times it, starting a machine is refused with exit code 7: `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at https://repose.run/billing, or wait for the period to end.` An upgrade raises that ceiling to four times the new plan's allowance, and the refused start goes through.
 
 ## Network
 
@@ -82,4 +82,4 @@ A machine is for development work. Don't use one to:
 
 The [terms](/terms) have the full list.
 
-A machine running a process named as a known miner is stopped, with a snapshot first, so nothing on the disk is lost. The match is the process name and nothing else; repose doesn't read your files or your terminal ([what repose stores](/docs/secrets#what-repose-stores)). `repose status` and the dashboard say why: `stopped: a cryptocurrency miner (xmrig) was running; mining is not allowed on repose, see the terms at https://repose.herakraft.co/terms`. The third stop within 24 hours puts the project on hold: it can't be started or restored into a new project until we've reviewed it; reply to the notification or write to the contact address on the site. No other abuse is acted on automatically; a person decides on it.
+A machine running a process named as a known miner is stopped, with a snapshot first, so nothing on the disk is lost. The match is the process name and nothing else; repose doesn't read your files or your terminal ([what repose stores](/docs/secrets#what-repose-stores)). `repose status` and the dashboard say why: `stopped: a cryptocurrency miner (xmrig) was running; mining is not allowed on repose, see the terms at https://repose.run/terms`. The third stop within 24 hours puts the project on hold: it can't be started or restored into a new project until we've reviewed it; reply to the notification or write to the contact address on the site. No other abuse is acted on automatically; a person decides on it.

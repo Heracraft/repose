@@ -48,10 +48,11 @@ coolify_size       = "Standard_D4s_v7"
 coolify_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINF+RWPEGM/+MfUFU4nZ1HbqBt3YkNa74frsKHepY0Ca"
 
 # No Cloudflare token on this subscription yet, so the records are created by
-# hand from the table in infra/README.md. herakraft.co answers every name from
-# a proxied wildcard, so "no record" means "resolves to Cloudflare's proxy",
-# which carries neither SSH nor WireGuard (infra/README.md, "DNS while
-# manage_dns is false").
+# hand from the table in infra/README.md. A zone can answer a name that has
+# no record: herakraft.co serves every name under it from a proxied wildcard,
+# so there "no record" meant "resolves to Cloudflare's proxy", which carries
+# neither SSH nor WireGuard (infra/README.md, "DNS while manage_dns is
+# false").
 manage_dns = false
 
 # Hosts are added one at a time; see infra/README.md. Each production host
@@ -99,7 +100,12 @@ keyvault_name          = "repose-kv-3912"
 # not secret, so it lives here; nix/hosts/host-01.nix names the same vault.
 park_keyvault_name = "repose-frz-3912"
 
-dns_zone = "herakraft.co"
+# repose.run: the dashboard is the apex, the api and the gateway are
+# api.repose.run and ssh.repose.run, and dns_prefix is empty in main.tf
+# (DECISIONS I-1156). The old repose.herakraft.co names keep answering
+# while installed CLIs move; they are in the herakraft.co zone, which
+# nothing here manages.
+dns_zone = "repose.run"
 
 # Azure Monitor alerts on all three VMs, emailed to alert_email
 # (prod.local.tfvars). DECISIONS I-648; RUNBOOK "Azure alert".

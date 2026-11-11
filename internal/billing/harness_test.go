@@ -33,7 +33,7 @@ func quiet() *slog.Logger {
 func testConfig(f *fakePolar) billing.Config {
 	return billing.Config{AccessToken: "polar_oat_test", Env: billing.EnvSandbox, WebhookSecret: f.Secret(),
 		ProductSolo: "prod_solo_test", ProductPlus: "prod_plus_test", ProductPro: "prod_pro_test", DiscountIntro: "dsc_intro_test",
-		DashboardURL: "https://repose.herakraft.co", PortalReturnURL: "https://repose.herakraft.co/billing", BaseURL: f.URL(), Enforce: true}
+		DashboardURL: "https://repose.run", PortalReturnURL: "https://repose.run/billing", BaseURL: f.URL(), Enforce: true}
 }
 
 // account is a seeded user with one project.

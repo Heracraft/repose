@@ -157,4 +157,4 @@ service after that date is acceptance.
 ## Contact
 
 Questions, notices and security reports go to the contact address
-published on repose.herakraft.co.
+published on repose.run.

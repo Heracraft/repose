@@ -1,5 +1,5 @@
 {
-  "fallbackText": "The server running your machines restarted; it was back at 05:46 UTC.\napi: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.\ntodo-app: running again; its last agent turn was interrupted.",
+  "fallbackText": "The server running your machines restarted; it was back at 05:46 UTC.\napi: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing. `repose start api` starts it.\ntodo-app: running again; its last agent turn was interrupted.",
   "cardsV2": [
     {
       "cardId": "repose",
@@ -12,7 +12,7 @@
             "widgets": [
               {
                 "textParagraph": {
-                  "text": "The server running your machines restarted; it was back at 05:46 UTC.\u003cbr\u003eapi: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.\u003cbr\u003etodo-app: running again; its last agent turn was interrupted."
+                  "text": "The server running your machines restarted; it was back at 05:46 UTC.\u003cbr\u003eapi: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing. `repose start api` starts it.\u003cbr\u003etodo-app: running again; its last agent turn was interrupted."
                 }
               }
             ]

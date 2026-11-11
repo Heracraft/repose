@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Counts what a user would see while something is redeployed.
 #
-#   ops/deploy-probe.sh https://repose.herakraft.co/healthz --seconds 600
+#   ops/deploy-probe.sh https://repose.run/healthz --seconds 600
 #
 # 08-dashboard.md §9 and 05-control-plane-api.md ask for the same evidence in
 # the same words: "deploy twice while curl loops against the domain, zero

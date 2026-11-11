@@ -4,7 +4,7 @@ The seat we held for you for 72 hours is free again, and you're off the waitlist
 
 Want one later? Choose a plan on your plan page, or join the waitlist again if repose is still full.
 
-Your plan page: https://repose.herakraft.co/billing
+Your plan page: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

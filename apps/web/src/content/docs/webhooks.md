@@ -9,7 +9,7 @@ A webhook route is a public HTTPS URL that forwards to a port and path inside yo
 
 ```
 $ repose webhooks add stripe 3000/api/webhooks/stripe
-https://hooks.repose.herakraft.co/<project-id>/stripe/<token>
+https://hooks.repose.run/<project-id>/stripe/<token>
 ```
 
 The URL is about 110 characters: the hostname, your project's id, the route's name and a token.

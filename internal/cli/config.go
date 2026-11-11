@@ -13,18 +13,23 @@ import (
 	"github.com/heracraft/repose/internal/multiplexer"
 )
 
-const defaultAPIURL = "https://api.repose.herakraft.co/v1"
+const defaultAPIURL = "https://api.repose.run/v1"
 const defaultLogtoIssuer = "https://accounts.herakraft.co" // the owner's Logto (DECISIONS I-84); /oidc is appended
 // defaultLogtoClientID is the App ID Logto assigned to the `repose-cli`
 // Native application. Logto identifies applications by this opaque id, not
 // by name; "repose-cli" as client_id answered oidc.invalid_client at the
 // M2 gate (DECISIONS I-99). Public, like the dashboard's PUBLIC_LOGTO_APP_ID.
 const defaultLogtoClientID = "jccig5bb3i4d78bq4farv"
+// apiResource is the audience an access token is asked for, and it keeps
+// the old name on purpose. Logto identifies an API resource by this opaque
+// string, not by where the api answers; every installed CLI sends it and
+// every token already issued carries it, so changing it would lock out
+// every release before this one until its user updated (DECISIONS I-1156).
 const apiResource = "https://api.repose.herakraft.co"
 
 // billingURL is where a plan is chosen or changed; the api's gate names
 // the same page. Every line that names it uses this.
-const billingURL = "https://repose.herakraft.co/billing"
+const billingURL = "https://repose.run/billing"
 
 // Config is config.toml (docs/interfaces/cli-config.md).
 type Config struct {

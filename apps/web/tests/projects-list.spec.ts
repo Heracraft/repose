@@ -655,7 +655,7 @@ test('the empty list offers a plan, then the install, login and run commands', a
 	await expect(page.getByRole('link', { name: /^Quickstart/ })).toHaveAttribute('href', '/docs');
 	const commands = page.getByRole('list', { name: 'Commands' });
 	await expect(commands.locator('code')).toHaveText([
-		/curl -fsSL https:\/\/repose\.herakraft\.co\/install\.sh \| sh$/,
+		/curl -fsSL https:\/\/repose\.run\/install\.sh \| sh$/,
 		/repose login$/,
 		/repose run$/
 	]);

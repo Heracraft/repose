@@ -249,7 +249,7 @@ func VersionUpdateCmd(ctx context.Context, out, errw io.Writer, target string) e
 		return exitf(ExitUsage, "The repose on a machine comes with its base and updates with it.")
 	}
 	if goos() == "windows" {
-		return exitf(ExitGeneric, "repose has no Windows release. Install it inside WSL: https://repose.herakraft.co/docs/install")
+		return exitf(ExitGeneric, "repose has no Windows release. Install it inside WSL: https://repose.run/docs/install")
 	}
 	if _, ok := parseVersion(cliVersion); !ok {
 		return exitf(ExitUsage, "This repose is a development build (%s), so there is no release to update it to.", cliVersion)

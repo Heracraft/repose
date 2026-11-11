@@ -22,7 +22,7 @@ Environment:
     SMTP_HOST           default smtp.resend.com:587
     SMTP_USER           default resend
     SMTP_PASSWORD_FILE  the file holding the SMTP password
-    DIGEST_FROM         default repose alerts <alerts@repose.herakraft.co>
+    DIGEST_FROM         default repose alerts <alerts@mailing.repose.run>
     DIGEST_TO           where to send it
 
 Every number is optional. A source that is down prints `?` for its own
@@ -162,7 +162,7 @@ def send(subject: str, body: str) -> str | None:
         return f"{path}: {e}"
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = os.environ.get("DIGEST_FROM", "repose alerts <alerts@repose.herakraft.co>")
+    msg["From"] = os.environ.get("DIGEST_FROM", "repose alerts <alerts@mailing.repose.run>")
     msg["To"] = to
     msg.set_content(body)
     host, _, port = os.environ.get("SMTP_HOST", "smtp.resend.com:587").partition(":")

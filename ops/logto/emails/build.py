@@ -164,7 +164,7 @@ def main():
     for t in templates:
         filled = t["content"].replace("{{code}}", "665885").replace("{{application.name}}", "repose")
         filled = filled.replace("{{link}}", "https://example.com/invite")
-        filled = filled.replace("{{application.branding.logoUrl}}", "https://repose.herakraft.co/favicon.png")
+        filled = filled.replace("{{application.branding.logoUrl}}", "https://repose.run/favicon.png")
         (preview / f"{t['usageType']}.html").write_text(filled)
     print(f"{len(templates)} templates")
 

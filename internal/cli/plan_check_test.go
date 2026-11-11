@@ -37,9 +37,9 @@ func TestResizeClassChecksThePlanFirst(t *testing.T) {
 		want                 string   // "" when the change goes ahead
 	}{
 		{name: "xl on Solo", from: "large", to: "xl",
-			want: "Your Solo plan runs 8 GB at once and an xl machine needs 16 GB. Upgrade to Plus at https://repose.herakraft.co/billing."},
+			want: "Your Solo plan runs 8 GB at once and an xl machine needs 16 GB. Upgrade to Plus at https://repose.run/billing."},
 		{name: "large beside one small on Solo", from: "small", to: "large", others: []string{"web"},
-			want: "Your Solo plan runs 8 GB at once and web is using it. `repose stop web` frees it, or upgrade at https://repose.herakraft.co/billing."},
+			want: "Your Solo plan runs 8 GB at once and web is using it. `repose stop web` frees it, or upgrade at https://repose.run/billing."},
 		{name: "xl on Plus with nothing else running", plan: "plus", from: "large", to: "xl"},
 		{name: "smaller is never refused", from: "large", to: "small"},
 	} {

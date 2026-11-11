@@ -178,4 +178,4 @@ it does.
 Changes to this policy are published with the date they take effect, and
 the two quoted boundaries cannot be weakened without the code and its
 tests changing first. Questions and security reports go to the contact
-address published on repose.herakraft.co.
+address published on repose.run.

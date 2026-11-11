@@ -11,13 +11,13 @@ You need Linux or macOS (on Windows, use WSL). macOS is supported but it has not
 ## 1. Install and log in
 
 ```
-curl -fsSL https://repose.herakraft.co/install.sh | sh
+curl -fsSL https://repose.run/install.sh | sh
 repose login
 ```
 
 ## 2. Choose a plan
 
-Plans are at [repose.herakraft.co/billing](https://repose.herakraft.co/billing), first week's on us. A plan buys memory by the month, however long your machines run.
+Plans are at [repose.run/billing](https://repose.run/billing), first week's on us. A plan buys memory by the month, however long your machines run.
 
 ## 3. Skip permissions
 

@@ -2,7 +2,7 @@ You're number 7 on the waitlist
 
 We email you when a seat is yours. You then have 72 hours to choose a plan. If you don't, the seat goes to the next person and you're off the waitlist until you join again.
 
-Your place: https://repose.herakraft.co/billing
+Your place: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

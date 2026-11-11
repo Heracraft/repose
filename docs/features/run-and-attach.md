@@ -251,7 +251,7 @@ Failure output:
 
 - Not logged in: exit 3, `Not logged in. Run \`repose login\`.`
 - No plan, or the plan's memory or disk is used up: exit 7 and the api's
-  sentence, e.g. `Choose a plan at https://repose.herakraft.co/billing
+  sentence, e.g. `Choose a plan at https://repose.run/billing
   first.` (the reasons are api.md's `payment_required` table, I-289)
 - Host capacity exhausted on a create: exit 8, `repose has no room for
   this machine. A machine holds its memory while it runs, so stopping one
@@ -321,7 +321,7 @@ On the input-proxy path (macOS and Linux with a terminal), an attach whose
 ssh ends with 255 does not end the command:
 
 ```
-Connection to ssh.repose.herakraft.co closed by remote host.
+Connection to ssh.repose.run closed by remote host.
 
 repose: lost the connection to todo-app. Reconnecting; Ctrl-C stops.
 ```

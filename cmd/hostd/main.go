@@ -64,6 +64,9 @@ func options(fs *flag.FlagSet) *app.Options {
 	fs.StringVar(&o.BaseSSHKey, "base-repo-ssh-key", "", "private key file for cloning --base-repo-url over SSH")
 	fs.StringVar(&o.BuildUser, "build-user", "nixbuild", "unprivileged user fragment evaluation and builds run as (empty: hostd's own)")
 	fs.StringVar(&o.GCRootsDir, "gcroots", "/nix/var/nix/gcroots/repose", "GC roots directory")
+	// The herakraft.co name stays after the move to repose.run: this is the
+	// internal host-to-api address and the name on the api's own CA-issued
+	// certificate (DECISIONS I-1156).
 	fs.StringVar(&o.APIAddr, "api-addr", "api.repose.herakraft.co:443", "api gRPC address")
 	fs.StringVar(&o.APIServerName, "api-server-name", "", "TLS server name when it differs from the address")
 	fs.StringVar(&o.APICA, "api-ca", "", "PEM bundle to trust instead of system roots (hostdev)")

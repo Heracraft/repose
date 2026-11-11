@@ -7,7 +7,7 @@ from the recruiting app and which of its controls are rejected.
 
 ## 1. Goal
 
-The web dashboard at `repose.herakraft.co` is where users do the things that
+The web dashboard at `repose.run` is where users do the things that
 are awkward in a terminal: pick packages from a menu without writing Nix,
 manage secrets, look at cost, put a card on file, and see what an agent did
 overnight. It shows nothing the CLI cannot also do, and it does nothing the
@@ -56,7 +56,8 @@ Consumes: `interfaces/api.md` (all user routes), `interfaces/cli-config.md`
 ### 5.1 Auth
 
 `@logto/browser` `LogtoClient` with `appId` for the dashboard's SPA app,
-`resources: ["https://api.repose.herakraft.co"]`, `scopes: ["openid",
+`resources: [PUBLIC_API_RESOURCE]`, which production sets to
+`"https://api.repose.herakraft.co"` (I-1158), `scopes: ["openid",
 "profile", "email", "offline_access"]`. `+layout.ts` checks
 `isAuthenticated()`; unauthenticated users see the landing page, whose "Get
 started", "Start a free week" and header "Sign in" are links to `/signin`
@@ -85,9 +86,13 @@ and the browser flow uses the same list (I-837).
 The dashboard's `+server.ts` routes are `/healthz`, `/account` (I-578),
 `/llms.txt`, `/docs/[slug].md` and `/signin`. Nothing in `apps/web` reads
 an environment secret; the Logto app is a public client, and the only env
-values are `PUBLIC_API_URL`, `PUBLIC_LOGTO_ENDPOINT`,
-`PUBLIC_LOGTO_APP_ID` (the dashboard needs no Polar value at all: the
-checkout is a URL the api returns, DECISIONS I-604).
+values are `PUBLIC_API_URL`, `PUBLIC_API_RESOURCE`,
+`PUBLIC_LOGTO_ENDPOINT`, `PUBLIC_LOGTO_APP_ID` (the dashboard needs no
+Polar value at all: the checkout is a URL the api returns, DECISIONS
+I-604). `PUBLIC_API_RESOURCE` is the audience a token is asked for; unset,
+it is `PUBLIC_API_URL` without its `/v1`, which is what it always was
+until the api moved to `api.repose.run` and the resource stayed
+`https://api.repose.herakraft.co` (DECISIONS I-1156, I-1158).
 
 ### 5.2 Routes
 
@@ -162,8 +167,8 @@ Retrying…". A 503 with one of the codes api.md lists as answers
 build` on port 3000 as a non-root user, `HEALTHCHECK CMD wget -qO-
 http://127.0.0.1:3000/healthz || exit 1`. Coolify application type "Dockerfile",
 health check path `/healthz`, no host port mapping (Traefik routes
-`repose.herakraft.co` → 3000), so deploys are rolling. Build args carry
-the four `PUBLIC_*` values.
+`repose.run` → 3000), so deploys are rolling. Build args carry
+the `PUBLIC_*` values above.
 
 ### 5.7 Landing page
 

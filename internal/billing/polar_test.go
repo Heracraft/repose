@@ -43,7 +43,7 @@ func TestPolarConfig(t *testing.T) {
 	if err := full.Validate(); err == nil {
 		t.Fatal("two plans on one product is refused")
 	}
-	if (billing.Config{}).BillingURL() != "https://repose.herakraft.co/billing" {
+	if (billing.Config{}).BillingURL() != "https://repose.run/billing" {
 		t.Fatal("default billing url")
 	}
 	t.Setenv("POLAR_ACCESS_TOKEN", " polar_oat_env ")

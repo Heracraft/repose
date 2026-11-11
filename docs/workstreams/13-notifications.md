@@ -168,7 +168,7 @@ see the dashboard" message is sent.
 ### 5.6 Channels
 
 - **email** (Resend, `internal/api/notify/notify.go`'s `Email`): from
-  `repose <notify@repose.herakraft.co>`, subject `todo-app: claude
+  `repose <notify@mailing.repose.run>`, subject `todo-app: claude
   finished`, with nothing before it (I-934). The body is rendered by `notify.Render` (DECISIONS
   I-291): one HTML layout (`templates/layout.html`, Go `html/template`, a
   600 px table, inline styles, system fonts, the landing's paper and ink

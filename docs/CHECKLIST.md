@@ -437,7 +437,9 @@ entry and this list with it. Counts as of 2026-10-21.
       `api-grpc` (DECISIONS I-800, I-802). Evidence: `up{job="api"}` is 1
       in Prometheus, and `curl` of
       `https://api.repose.herakraft.co/metrics` from outside the tunnel
-      answers 403.
+      answers 403. That name, not `api.repose.run`: the Traefik router for
+      `/metrics` matches it, and the monitoring peer resolves it with its
+      own `/etc/hosts` line (I-1156, `ops/coolify/README.md`).
 - [ ] **The Azure alert path is proven**, not just created. Evidence: the
       portal's **Test** on action group `repose-prod` delivers to
       `alert_email`. `az monitor action-group test-notifications create`
@@ -557,12 +559,12 @@ entry and this list with it. Counts as of 2026-10-21.
 - [x] Privacy policy and terms published, containing the process-sample
       boundary verbatim and the Anthropic hosted-use statement (users
       authenticate with their own credentials; the platform stores none).
-      Evidence: `https://repose.herakraft.co/privacy` and `/terms` (the
-      m3-web live Playwright suite asserts both passages in a real browser,
+      Evidence: `https://repose.run/privacy` and `/terms` (the m3-web live
+      Playwright suite asserts both passages in a real browser,
       11/11 green 2026-09-20); `test/isolation` `TestPolicyTextContainsThe
       RequiredPassages` pins the source; since the M5 review both routes
       are prerendered so the passages are in the served HTML (`curl -s
-      https://repose.herakraft.co/privacy | tr -s '[:space:]' ' ' | grep -c
+      https://repose.run/privacy | tr -s '[:space:]' ' ' | grep -c
       'We sample the processes'` is 1, verified live at 2026-09-21 02:47Z
       after the web roll, and the terms phrase likewise).
 - [x] The Anthropic API key leaked in commit `b1a5915` has been rotated
@@ -570,7 +572,7 @@ entry and this list with it. Counts as of 2026-10-21.
       private before it is shared with contributors. Closed by DECISIONS
       I-193: the key was rotated and stays in history.
 - [ ] `repose --version` prints a version, and `curl -fsSL
-      https://repose.herakraft.co/install.sh | sh` installs it on macOS
+      https://repose.run/install.sh | sh` installs it on macOS
       arm64, macOS x86_64, Linux x86_64, Linux arm64. Partial (M5 session,
       2026-09-21 02:16Z): the served `install.sh` (200 from the dashboard)
       run in a fresh `$HOME` on Linux x86_64 downloaded

@@ -40,9 +40,16 @@ locals {
 
   location = data.azurerm_resource_group.main.location
 
-  dashboard_fqdn = "${var.dns_prefix}.${var.dns_zone}"
-  api_fqdn       = "api.${var.dns_prefix}.${var.dns_zone}"
-  ssh_fqdn       = "ssh.${var.dns_prefix}.${var.dns_zone}"
+  # dns_prefix is empty when the zone is the product's own domain, which it
+  # is in production since the move to repose.run (DECISIONS I-1156): the
+  # dashboard is the apex and the other names sit directly under it. A
+  # non-empty prefix still nests them, which is what staging does under
+  # herakraft.co. Joining with an empty prefix unguarded would produce
+  # ".repose.run" and "api..repose.run".
+  dns_label      = var.dns_prefix == "" ? "" : "${var.dns_prefix}."
+  dashboard_fqdn = "${local.dns_label}${var.dns_zone}"
+  api_fqdn       = "api.${local.dns_label}${var.dns_zone}"
+  ssh_fqdn       = "ssh.${local.dns_label}${var.dns_zone}"
 
   # What each host is made of: its entry in var.host_shapes where it names an
   # attribute, the environment's global everywhere else. A host with no entry
@@ -181,16 +188,18 @@ check "every_host_has_a_join_token" {
   }
 }
 
-# herakraft.co answers every name under it from a proxied wildcard record, so
-# "no record" is not the same as "no answer": with manage_dns off,
-# ssh.repose.herakraft.co resolves to Cloudflare's proxy, which carries
-# neither SSH nor WireGuard, and the edge's real address is reachable only as
-# a literal IP. Observed on 2026-09-20; infra/README.md, "DNS while manage_dns
-# is false", has the records to create by hand until a token exists.
+# A zone can answer a name that has no record, so "no record" is not the
+# same as "no answer": herakraft.co serves every name under it from a
+# proxied wildcard, and with manage_dns off ssh.repose.herakraft.co resolved
+# to Cloudflare's proxy, which carries neither SSH nor WireGuard, leaving the
+# edge's real address reachable only as a literal IP. Observed on 2026-09-20,
+# before the move to repose.run (DECISIONS I-1156); the hand-made record is
+# what either zone needs. infra/README.md, "DNS while manage_dns is false",
+# has the records to create by hand until a token exists.
 check "dns_is_managed_or_manual" {
   assert {
     condition     = var.manage_dns
-    error_message = "manage_dns is false: the repose names resolve to the herakraft.co wildcard, not to the edge or the control plane. Create them by hand (infra/README.md) or set manage_dns = true once CLOUDFLARE_API_TOKEN and cloudflare_zone_id exist."
+    error_message = "manage_dns is false: nothing here creates the repose names, so they answer only as far as the zone's own records and wildcard take them, not from the edge or the control plane. Create them by hand (infra/README.md) or set manage_dns = true once CLOUDFLARE_API_TOKEN and cloudflare_zone_id exist."
   }
 }
 
@@ -209,8 +218,9 @@ check "host_shapes_name_real_hosts" {
 
 # A host with no host_flake_attrs entry installs the generic `host`
 # configuration, and then never registers. Its apiAddr is the default
-# `api.repose.herakraft.co:443` (nix/hosts/default.nix), where nothing gRPC
-# answers: api-grpc's mTLS listeners are 8443 and 8444, and with
+# `api.repose.herakraft.co:443` (nix/hosts/default.nix, the internal name
+# I-1156 left where it was), where nothing gRPC answers: api-grpc's mTLS
+# listeners are 8443 and 8444, and with
 # manage_dns = false that name is Cloudflare's proxied wildcard. It also
 # ships no park key vault and no pauseIdle. The apply succeeds, the VM is
 # healthy, and the host never appears in `repose-admin hosts list` --

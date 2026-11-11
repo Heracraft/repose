@@ -361,7 +361,7 @@ Failure handling:
   ordinary stop, snapshot first (DECISIONS I-239). `repose status`,
   `repose ls` and the dashboard then say `stopped: a cryptocurrency
   miner (xmrig) was running; mining is not allowed on repose, see the
-  terms at https://repose.herakraft.co/terms`, and an `abuse_stopped`
+  terms at https://repose.run/terms`, and an `abuse_stopped`
   notification goes out. `repose start` works as usual, and a guest that
   runs it again is stopped again; the third such stop within 24 hours
   holds the project: `repose start` and a restore answer "hashy is on

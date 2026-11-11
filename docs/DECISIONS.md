@@ -33024,3 +33024,92 @@ user-visible change with its own docs, not this.
 *Conductor's ruling, owner's standing approval of 2026-11-11:* this is
 observability, not a user feature; OBSERVABILITY.md carries the fields
 and no public docs page changes.
+
+**I-1156. repose answers on `repose.run`; the Logto API resource and the
+host-to-api gRPC name keep the old name.** (domain, 2026-11-11.)
+
+The product moved off the `repose.herakraft.co` subdomain onto its own
+domain, `repose.run` (owner, 2026-11-11: "we are moving away from the
+subdomain to an actual domain"). The dashboard, the docs and
+`/install.sh` are `repose.run`, with `www.repose.run` redirected to it;
+the api is `api.repose.run`, the SSH gateway `ssh.repose.run`, the
+webhook host `hooks.repose.run`, and notifications come from `repose
+<notify@mailing.repose.run>` (the Resend domain is `mailing.repose.run`,
+verified by the owner). This branch changes the defaults in the CLI and
+the api, the nix options, the infra variables and every user-facing URL
+in the docs and the copy; the deployed values are environment variables
+Coolify holds, and the DNS records and the Coolify domains are the
+conductor's and the owner's to change.
+
+*Both domains answer through the overlap.* Coolify serves the old FQDNs
+beside the new ones and the herakraft.co records stay, because an
+installed CLI keeps its `api_url` until its user updates and a bookmark
+keeps its host for longer. Nothing written here assumes the old names
+are gone, and no redirect for them is added in code: Coolify does that.
+The old records are deleted only when the owner says the last installed
+CLI has moved.
+
+*Two names did not move.* The **Logto API resource** stays
+`https://api.repose.herakraft.co`. It is the opaque audience Logto issues
+tokens for, not an address: every installed CLI asks for it
+(`internal/cli/config.go` `apiResource`), every token already issued
+carries it in `aud`, and the api checks it (`API_RESOURCE`). Changing it
+would need a new resource in Logto, a reissue of every token, and would
+lock out every release before this one in the window between. The
+**host-to-api gRPC name** stays `api.repose.herakraft.co` too
+(`nix/hosts/default.nix` `apiAddr`, `nix/hosts/prod.nix`
+`apiServerName`, `GRPC_SERVER_NAMES`, `cmd/hostd/main.go`). It is
+internal, it is never resolved through public DNS from a host in the
+VNet, and it is the name on the certificate the api issues from its own
+CA: moving it reissues that certificate and needs a switch of every host
+and of the edge inside one window, which is its own change, not this
+one. The `/metrics` Traefik router matches the same internal name,
+resolved by one `/etc/hosts` line on the monitoring peer
+(`ops/prometheus/wireguard-peer.conf`), and stays with it.
+
+*Nothing else under `herakraft.co` moves.* `accounts.herakraft.co` is
+the owner's Logto, shared with another product (I-84);
+`cache.repose.herakraft.co`, `edge.repose.herakraft.co` and the
+observability names are internal; `support@herakraft.co` is the support
+address (I-767) and is not a repose name.
+
+*The old name cannot creep back,* because `test/domain` greps every
+tracked file for `repose.herakraft.co` and fails on any line its
+allow-list does not name, with one line of reason per entry. Dated
+records -- `docs/releases/`, `docs/reviews/`, `docs/security/`,
+`docs/proposals/`, `DECISIONS.md` itself and the status log -- are
+allow-listed as a whole: a record says what was true on its date. The
+old name still answers, so a stray one works and nothing else would
+catch it.
+
+*Infra.* `dns_zone` is `repose.run` in prod and `dns_prefix` is empty,
+which the environment module now joins without producing `.repose.run`;
+staging stays nested at `repose-staging.herakraft.co`, where its own
+prefix puts it. `manage_dns` stays false, so the records are still made
+by hand from the table in `infra/README.md`, which now lists the
+`repose.run` names and says to leave the herakraft.co ones alone.
+Nothing is applied by this branch.
+
+**I-1158. The dashboard reads the api's audience from
+`PUBLIC_API_RESOURCE`, not from `PUBLIC_API_URL`.** (domain,
+2026-11-11.)
+
+`apps/web/src/lib/api/resource.ts` derived the resource an access token
+is asked for by stripping `/v1` off `PUBLIC_API_URL` (I-878). That held
+while the api's address and its Logto resource were the same string. The
+move to `api.repose.run` (I-1156) separates them: the address is
+`https://api.repose.run/v1` and the resource stays
+`https://api.repose.herakraft.co`. Without a second variable, pointing
+the dashboard at the new api would ask Logto for a resource that does
+not exist and every sign-in would fail.
+
+So `PUBLIC_API_RESOURCE` names it outright and production sets it.
+Unset, it falls back to `PUBLIC_API_URL` without its `/v1`, exactly as
+before, so a fork, a staging deploy or a local run still needs one value
+and not two, and nothing that already works breaks on the upgrade. The
+value is public: it is an audience string in a browser's token request,
+not a secret.
+
+*Rejected:* hardcoding the resource in the dashboard, which is the one
+value a fork must be able to change; and moving the Logto resource to
+the new name, which I-1156 explains would lock out every installed CLI.

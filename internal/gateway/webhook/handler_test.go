@@ -319,7 +319,7 @@ func TestReplyRules(t *testing.T) {
 		hp := newHarness(t)
 		hp.app.answer(func(w http.ResponseWriter, _ *http.Request, _ []byte) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Set-Cookie", "session=abc; Domain=.repose.herakraft.co")
+			w.Header().Set("Set-Cookie", "session=abc; Domain=.repose.run")
 			_, _ = w.Write([]byte("<h1>sign in</h1>"))
 		})
 		w := hp.do(hp.post([]byte("{}"), nil))

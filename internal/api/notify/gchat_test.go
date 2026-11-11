@@ -270,8 +270,8 @@ func gchatFixtures() map[string]notify.Message {
 	q.EventID = uuid.MustParse("01a0c14a-0000-7000-8000-0000000000ab")
 	q.TZ = "Europe/Berlin"
 	q.Question.Replies = []string{
-		"https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=gchat",
-		"https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=gchat",
+		"https://api.repose.run/v1/questions/reply?token=aaa.bbb&via=gchat",
+		"https://api.repose.run/v1/questions/reply?token=ccc.ddd&via=gchat",
 	}
 	out["agent_question"] = q
 	free := q

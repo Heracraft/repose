@@ -11,7 +11,7 @@ rules are in [`../PRICING.md`](../PRICING.md); the implementation is
 
 ```
 $ repose run
-Choose a plan at https://repose.herakraft.co/billing first.
+Choose a plan at https://repose.run/billing first.
 ```
 
 The CLI prints the api's sentence for every `payment_required` and exits
@@ -69,7 +69,7 @@ much runs, and nothing is metered by the hour. The other reasons
 
 | `detail.reason` | When | What the user reads |
 |---|---|---|
-| `plan_limit` | the running memory plus this machine's class would pass the plan's | `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing.` (an `xl` on Solo: `an xl machine needs 16 GB. Upgrade to Plus`) |
+| `plan_limit` | the running memory plus this machine's class would pass the plan's | `Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing.` (an `xl` on Solo: `an xl machine needs 16 GB. Upgrade to Plus`) |
 | `disk_limit` | what the projects hold plus about what this adds (a create's first 1 GB, a restore's source figure; nothing for growing a disk) would pass the plan's disk, or one disk would be larger than the plan's whole disk (I-585) | `Your projects hold 99.5 GB and your Solo plan has 100 GB of disk; this needs about 1 GB more. Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at …` |
 | `egress_limit` | this period's egress passed four times the allowance | `Your machines are stopped until 1 November: this period's egress passed 1000 GB, four times the Solo plan's 250 GB allowance. Upgrade at …, or wait for the period to end.` |
 | `past_due` | the last payment failed | `Your last payment failed. Update your card at … to start machines again.` |

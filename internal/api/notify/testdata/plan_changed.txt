@@ -2,7 +2,7 @@ Your plan is Pro
 
 Your plan changes from Solo to Pro on 27 September 2026 at 15:04 UTC. An upgrade takes effect at once and the difference is prorated. A downgrade takes effect at the next renewal.
 
-Your plan: https://repose.herakraft.co/billing
+Your plan: https://repose.run/billing
 
 --
-repose. Open the dashboard: https://repose.herakraft.co
+repose. Open the dashboard: https://repose.run

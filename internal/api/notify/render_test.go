@@ -23,8 +23,8 @@ import (
 var updateGolden = flag.Bool("update", false, "rewrite testdata/<kind>.html and .txt from the fixtures")
 
 const (
-	dash    = "https://repose.herakraft.co"
-	unsubTo = "https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def"
+	dash    = "https://repose.run"
+	unsubTo = "https://api.repose.run/v1/notify/unsubscribe?token=abc.def"
 )
 
 var (
@@ -53,8 +53,8 @@ func fixtures() map[string]notify.Message {
 	}
 	q := agent("agent_question", "Drop the legacy sessions table? It has 3 rows, all from 2024.")
 	q.Question = &notify.QuestionLinks{ID: fixtureQ, Options: []string{"yes", "no"}, Replies: []string{
-		"https://api.repose.herakraft.co/v1/questions/reply?token=aaa.bbb&via=email",
-		"https://api.repose.herakraft.co/v1/questions/reply?token=ccc.ddd&via=email",
+		"https://api.repose.run/v1/questions/reply?token=aaa.bbb&via=email",
+		"https://api.repose.run/v1/questions/reply?token=ccc.ddd&via=email",
 	}, Expires: fixtureExpires}
 	q.Window, q.At = "main", fixtureExpires.Add(-30*time.Minute)
 	free := agent("agent_question", "Which address should the invoices go to?")
@@ -100,7 +100,7 @@ func fixtures() map[string]notify.Message {
 // tick writes it: no project, the whole text in the summary.
 func machinesRestarted() notify.Message {
 	return notify.Message{Kind: "machines_restarted", Summary: "The server running your machines restarted; it was back at 05:46 UTC.\n" +
-		"api: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.herakraft.co/billing. `repose start api` starts it.\n" +
+		"api: not started: Your Solo plan runs 8 GB at once and todo-app is using it. Stop it, or upgrade at https://repose.run/billing. `repose start api` starts it.\n" +
 		"todo-app: running again; its last agent turn was interrupted.",
 		Email: "u@example.com", Dashboard: dash, Unsubscribe: unsubTo}
 }

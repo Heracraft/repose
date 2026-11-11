@@ -42,9 +42,9 @@ $ repose stop                      # snapshot, then deallocate; a stopped projec
 ```
 
 Everything else (`secrets`, `config`, `snapshots`, `logs`, `destroy`, `start`)
-is a variation on that loop. The dashboard at `repose.herakraft.co` shows the
-same projects, their cost, secrets, and a config menu for people who do not
-write Nix.
+is a variation on that loop. The dashboard at `repose.run` shows the same
+projects, their cost, secrets, and a config menu for people who do not write
+Nix.
 
 ## 3. Tenancy model
 
@@ -304,7 +304,7 @@ laptop ──ssh──▶ edge (public IP)  ──wireguard──▶ host br-gue
                  gateway :22                        10.64.x.y
                  wg hub  :51820/udp
 laptop ──https─▶ Coolify VM (public IP) : api, web, logto
-host ──grpc/mtls (outbound)──▶ api.repose.herakraft.co
+host ──grpc/mtls (outbound)──▶ api.repose.herakraft.co (internal, I-1156)
 host ──wireguard (outbound)──▶ edge
 guest ──NAT──▶ internet (shaped)
 guest ──vsock──▶ hostd
@@ -317,9 +317,9 @@ guest ──vsock──▶ hostd
   WireGuard peers. The gateway dials `10.64.x.y:22` for a guest.
 - Guests reach the edge's WireGuard address only on the hook-ingest port and
   the noVNC relay; everything else is egress to the internet.
-- Preview URLs (`3000-todo-app-heracraft.repose.herakraft.co`; the hostname
-  carries the handle because slugs are unique per user, not globally) are
-  not built in the first release. The design: the edge terminates TLS with a wildcard cert,
+- Preview URLs (`3000-todo-app-heracraft.repose.run`; the hostname carries
+  the handle because slugs are unique per user, not globally) are not built
+  in the first release. The design: the edge terminates TLS with a wildcard cert,
   authenticates with a cookie from Logto, and proxies to the guest port over
   WireGuard. It is documented in `features/ports-and-previews.md` so the
   gateway is written with that path in mind.
@@ -332,7 +332,9 @@ guest ──vsock──▶ hostd
   since v1.38). The CLI stores the refresh token in the OS keychain where one
   exists, else `~/.config/repose/credentials.json` mode 0600.
 - **API auth.** JWT access tokens for the `https://api.repose.herakraft.co`
-  resource, verified by the API against Logto's JWKS.
+  resource, verified by the API against Logto's JWKS. The resource is an
+  opaque audience, not an address: it kept its name when the api moved to
+  `api.repose.run` (DECISIONS I-1156).
 - **SSH.** The API holds an SSH CA (ed25519, key in the secrets store). On
   `run` and `attach` the CLI sends the public half of its own key
   (`~/.ssh/repose/id_ed25519`, generated without a passphrase and used for

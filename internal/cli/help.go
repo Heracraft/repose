@@ -13,7 +13,7 @@ import (
 
 const (
 	helpWidth = 80
-	docsURL   = "https://repose.herakraft.co/docs/cli"
+	docsURL   = "https://repose.run/docs/cli"
 )
 
 // commandGroups is root help's sections. A visible root command that is

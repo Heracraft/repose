@@ -44,7 +44,8 @@ the `DATABASE_URL` host lookup fails, `docker inspect` the Postgres
 container's aliases on `coolify` (`RUNBOOK.md` "api cannot resolve
 repose-postgres").
 
-- `api`: domain `https://api.repose.herakraft.co:8080`; **no port
+- `api`: domains `https://api.repose.run:8080` and, while the old name
+  keeps answering, `https://api.repose.herakraft.co:8080`; **no port
   mappings at all**, and see "The api's metrics" below for why its 9103
   is not published; **no pre-deploy command**
   (the api migrates itself at start and creates the CA on first start,
@@ -71,8 +72,13 @@ repose-postgres").
   `api.repose.herakraft.co,10.255.255.1,10.200.3.4` (the IPs become IP
   SANs), so the gateway and hostd verify the certificate the app issues
   from the api's CA at start without a server-name override; hosts also
-  pass `apiServerName = api.repose.herakraft.co`.
-- `web`: domain `https://repose.herakraft.co:3000`; health check path
+  pass `apiServerName = api.repose.herakraft.co`. That first name keeps the
+  old domain after the move to repose.run, because changing it reissues the
+  internal certificate and needs a switch of every host and the edge in the
+  same window (DECISIONS I-1156).
+- `web`: domains `https://repose.run:3000`, `https://www.repose.run:3000`
+  (redirected to the first) and, while the old name keeps answering,
+  `https://repose.herakraft.co:3000`; health check path
   `/healthz`, port 3000.
 
 Required before anything serves: `LOGTO_M2M_CLIENT_ID/SECRET` (the
@@ -118,7 +124,10 @@ Three things about it that are easy to get wrong:
    the control VM's WireGuard address with one `/etc/hosts` line and
    scrapes the name, which keeps the header, the SNI and the
    certificate all correct
-   (`ops/prometheus/wireguard-peer.conf`, step 4).
+   (`ops/prometheus/wireguard-peer.conf`, step 4). The name here stays
+   `api.repose.herakraft.co` after the move to repose.run: it is resolved
+   by that one `/etc/hosts` line, never by DNS, and it is the name on the
+   internal certificate (DECISIONS I-1156).
 2. **The allow-list is the only thing keeping `/metrics` off the
    internet**, since the router is on the public entry point, and it
    matches the source address *Traefik sees*. Over WireGuard that should

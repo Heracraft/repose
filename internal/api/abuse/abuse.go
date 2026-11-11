@@ -46,7 +46,7 @@ const (
 )
 
 // TermsURL is where the messages point; app sets it from DASHBOARD_URL.
-var TermsURL = "https://repose.herakraft.co/terms"
+var TermsURL = "https://repose.run/terms"
 
 // Stopper enqueues the stop op; *ops.Engine satisfies it.
 type Stopper interface {

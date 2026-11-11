@@ -14,13 +14,13 @@ func TestRoute(t *testing.T) {
 		label string
 		port  int
 	}{
-		{"3000-todo-app-heracraft.repose.herakraft.co", true, "todo-app-heracraft", 3000},
-		{"8080-api-heracraft.repose.herakraft.co:443", true, "api-heracraft", 8080},
-		{"3000-Api-Heracraft.repose.herakraft.co", true, "api-heracraft", 3000}, // hostnames are case-insensitive; lowercased
-		{"todo-app.heracraft.repose.herakraft.co", false, "", 0},
-		{"3000-todo-.repose.herakraft.co", false, "", 0},
-		{"99999999-a-b.repose.herakraft.co", false, "", 0},
-		{"0-a-b.repose.herakraft.co", false, "", 0},
+		{"3000-todo-app-heracraft.repose.run", true, "todo-app-heracraft", 3000},
+		{"8080-api-heracraft.repose.run:443", true, "api-heracraft", 8080},
+		{"3000-Api-Heracraft.repose.run", true, "api-heracraft", 3000}, // hostnames are case-insensitive; lowercased
+		{"todo-app.heracraft.repose.run", false, "", 0},
+		{"3000-todo-.repose.run", false, "", 0},
+		{"99999999-a-b.repose.run", false, "", 0},
+		{"0-a-b.repose.run", false, "", 0},
 		{"3000-a-b.example.com", false, "", 0},
 	}
 	for _, c := range cases {
@@ -40,7 +40,7 @@ func TestRoute(t *testing.T) {
 // name under the old <slug>-<handle> form, so the parser must not claim
 // either reading.
 func TestRouteNeverSplitsSlugAndHandle(t *testing.T) {
-	tgt, err := Route("3000-todo-app-hera-craft.repose.herakraft.co")
+	tgt, err := Route("3000-todo-app-hera-craft.repose.run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestHandlerServesStubAndHealthz(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/", nil)
-	req.Host = "3000-todo-app-heracraft.repose.herakraft.co"
+	req.Host = "3000-todo-app-heracraft.repose.run"
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("preview root = %d, want 503", rec.Code)

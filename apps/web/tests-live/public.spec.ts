@@ -28,7 +28,7 @@ test('landing renders with the install command and the sign-in button', async ({
 	).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Get started' })).toBeVisible();
 	await expect(
-		page.getByText('curl -fsSL https://repose.herakraft.co/install.sh | sh').first()
+		page.getByText('curl -fsSL https://repose.run/install.sh | sh').first()
 	).toBeVisible();
 	// 08 §9's landing row asks for a screenshot; it rides in the Playwright
 	// report rather than as a committed binary.
@@ -177,10 +177,7 @@ test('the deploy serves no api of its own', async ({ request }) => {
 // that envelope — which is the shape of bug I-79 was: a whole class of
 // browser-to-api behaviour that passed against the fake and could not work
 // in production. These two assert against the real api instead.
-const API_URL = (process.env.REPOSE_LIVE_API_URL ?? 'https://api.repose.herakraft.co').replace(
-	/\/$/,
-	''
-);
+const API_URL = (process.env.REPOSE_LIVE_API_URL ?? 'https://api.repose.run').replace(/\/$/, '');
 
 test('the live api refuses a bad token in the envelope the client parses', async ({ request }) => {
 	for (const path of ['/v1/me', '/v1/projects', '/v1/catalog', '/v1/usage']) {
@@ -234,5 +231,5 @@ test('the install command on the landing page resolves to the script', async ({ 
 	// The two things a reader of the landing page is about to pipe into a
 	// shell: it installs `repose`, and it is the documented URL's script.
 	expect(body).toContain('repose');
-	expect(body).toContain('https://repose.herakraft.co/install.sh');
+	expect(body).toContain('https://repose.run/install.sh');
 });

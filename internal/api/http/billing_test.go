@@ -45,7 +45,7 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 	e.waitOp(t, r)
 	// Running large on Solo: a second machine is plan_limit, naming it.
 	r = e.do(t, tok, "POST", "/projects", map[string]any{"name": "second", "class": "small"})
-	if r.status != 402 || errDetail(r, "reason") != "plan_limit" || errMessage(r) != "Your Solo plan runs 8 GB at once and gated is using it. Stop it, or upgrade at https://repose.herakraft.co/billing." {
+	if r.status != 402 || errDetail(r, "reason") != "plan_limit" || errMessage(r) != "Your Solo plan runs 8 GB at once and gated is using it. Stop it, or upgrade at https://repose.run/billing." {
 		t.Fatalf("plan_limit on create: %d %s", r.status, r.raw)
 	}
 	stop := e.do(t, tok, "POST", "/projects/"+pid+"/stop", map[string]any{"snapshot": true})
@@ -105,8 +105,8 @@ func TestBillingGateBlocksCompute(t *testing.T) {
 	for _, c := range []struct {
 		name, update, reason, message string
 	}{
-		{"past due", "billing_status = 'past_due'", "past_due", "Your last payment failed. Update your card at https://repose.herakraft.co/billing to start machines again."},
-		{"suspended", "billing_status = 'suspended', suspended_at = now(), suspended_reason = 'billing'", "suspended", "Your account is suspended. Pay at https://repose.herakraft.co/billing to lift it, or email support."},
+		{"past due", "billing_status = 'past_due'", "past_due", "Your last payment failed. Update your card at https://repose.run/billing to start machines again."},
+		{"suspended", "billing_status = 'suspended', suspended_at = now(), suspended_reason = 'billing'", "suspended", "Your account is suspended. Pay at https://repose.run/billing to lift it, or email support."},
 	} {
 		if _, err := e.h.Pool.Exec(ctx, "update users set "+c.update+" where logto_sub = 'sub-gate'"); err != nil {
 			t.Fatal(err)

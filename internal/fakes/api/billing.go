@@ -79,7 +79,7 @@ var classGB = map[string]int{"small": 4, "large": 8, "xl": 16}
 // one-machine form to name `repose stop`, so a fake that said it another
 // way hid that from every test against it.
 func planLimitMessage(plan PlanDef, class string, slugs []string) string {
-	const url = "https://repose.herakraft.co/billing"
+	const url = "https://repose.run/billing"
 	if need := classGB[class]; need > plan.MemoryGB {
 		smallest := Plans[len(Plans)-1]
 		for _, p := range Plans {
@@ -614,7 +614,7 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 		return nil
 	case BillingNone:
 		detail := map[string]any{"reason": "subscription_required", "waitlist": nil}
-		msg := "Choose a plan at https://repose.herakraft.co/billing before a machine can start."
+		msg := "Choose a plan at https://repose.run/billing before a machine can start."
 		if w := f.bill.waitlist; w != nil {
 			detail["waitlist"] = map[string]any{"position": w.Position, "joined_at": w.JoinedAt}
 			// The api's gate says the same while the user waits (billing/gate.go).
@@ -622,10 +622,10 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 		}
 		return errf("payment_required", "%s", msg).withDetail(detail)
 	case BillingPastDue:
-		return errf("payment_required", "Your last payment failed. Update your card at https://repose.herakraft.co/billing; machines already running keep running.").
+		return errf("payment_required", "Your last payment failed. Update your card at https://repose.run/billing; machines already running keep running.").
 			withDetail(map[string]any{"reason": "past_due"})
 	case BillingSuspended:
-		return errf("payment_required", "Your account is suspended: the payment failed three days ago and your machines were stopped. Pay the invoice at https://repose.herakraft.co/billing to start them again.").
+		return errf("payment_required", "Your account is suspended: the payment failed three days ago and your machines were stopped. Pay the invoice at https://repose.run/billing to start them again.").
 			withDetail(map[string]any{"reason": "suspended"})
 	}
 	plan := f.currentPlan()
@@ -651,7 +651,7 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 		// only the ceiling one project grows to (I-585).
 		held := f.diskHeldGB(u)
 		if float64(disk.volumeBytes)/(1<<30) > float64(plan.DiskGB) {
-			return errf("payment_required", "Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at https://repose.herakraft.co/billing.",
+			return errf("payment_required", "Your %s plan has %d GB of disk, so one project's disk can be at most %d GB. Upgrade at https://repose.run/billing.",
 				plan.Name, plan.DiskGB, plan.DiskGB).
 				withDetail(map[string]any{"reason": "disk_limit", "plan": plan.ID, "limit_gb": plan.DiskGB, "volume_gb": disk.volumeBytes >> 30})
 		}
@@ -660,7 +660,7 @@ func (f *Fake) gate(u *userRec, class string, disk *diskAsk, exclude *project) *
 			if held < float64(plan.DiskGB) && disk.addGB > 0 {
 				msg += fmt.Sprintf("; this needs about %s GB more", fmtGB(disk.addGB))
 			}
-			msg += ". Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.herakraft.co/billing."
+			msg += ". Destroy a project, or delete files in one (they stop counting within a day, or when it stops), or upgrade at https://repose.run/billing."
 			return errf("payment_required", "%s", msg).
 				withDetail(map[string]any{"reason": "disk_limit", "plan": plan.ID, "limit_gb": plan.DiskGB, "used_gb": math.Ceil(held), "held_gb": held, "need_gb": disk.addGB})
 		}

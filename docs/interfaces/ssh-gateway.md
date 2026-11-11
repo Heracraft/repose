@@ -2,7 +2,7 @@
 
 ## Names
 
-- Gateway address: `ssh.repose.herakraft.co:22`.
+- Gateway address: `ssh.repose.run:22`.
 - Login name: `<project-slug>.<user-handle>`, e.g. `todo-app.heracraft`.
   The gateway splits on the last `.`.
 - Inside the guest the Unix user is always `dev`.
@@ -24,7 +24,7 @@ Two CAs, both ed25519, private keys in the api's secret store:
   boot and the guest's address as a second principal once the api has
   seen it in the create result (I-42); the gateway verifies a guest's host
   key against `<slug>.<handle>`, which it knows from the login name. The
-  CLI writes `@cert-authority ssh.repose.herakraft.co,10.64.* <host ca>`
+  CLI writes `@cert-authority ssh.repose.run,10.64.* <host ca>`
   to `~/.ssh/repose/known_hosts`, so there is never a host-key prompt.
 
 ## Gateway behaviour
@@ -168,7 +168,7 @@ and `~/.ssh/repose/hosts`, one block per project:
 ```
 Host todo-app.repose
   # project 01a0cfac-8500-75e2-b8ee-2a60cce7b7aa
-  HostName ssh.repose.herakraft.co
+  HostName ssh.repose.run
   User todo-app.heracraft
   IdentityFile ~/.ssh/repose/id_ed25519
   CertificateFile ~/.ssh/repose/id_ed25519-cert.pub

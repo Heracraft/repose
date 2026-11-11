@@ -165,7 +165,8 @@ The full click path, with the reasons, is `coolify.md`. The short form:
    runs on the VM itself (I-83), so there is no admin account, no port 8000
    and no `.env` to copy off it.
 3. Logto is the owner's `accounts.herakraft.co` (I-84). There: API resource
-   `https://api.repose.herakraft.co`, applications `repose-cli` (Native,
+   `https://api.repose.herakraft.co` (an audience, which did not move with
+   the api, I-1156), applications `repose-cli` (Native,
    device flow on) and `repose-web` (SPA), and the M2M application
    `repose-api` (Management API role) for `LOGTO_M2M_CLIENT_ID/SECRET`.
 4. Add Postgres as a Service (Docker Compose Empty, paste
@@ -210,7 +211,7 @@ once, in this order (DECISIONS I-92):
    The name must be `gateway`: `/internal` admits no other CN (I-431).
 5. `ssh_host_ed25519_key` (`ssh-keygen -t ed25519 -N ''`) and its
    certificate `ssh_host_ed25519_key-cert.pub` from `repose-admin ca
-   sign-host --principal ssh.repose.herakraft.co,<edge ip> --pubkey
+   sign-host --principal ssh.repose.run,<edge ip> --pubkey
    ssh_host_ed25519_key.pub`, so clients verify the gateway through the
    `@cert-authority` line the CLI writes.
 6. `tls/edge-internal.key`, `.crt`: the same CSR dance with
@@ -222,7 +223,7 @@ once, in this order (DECISIONS I-92):
 
 Then `systemctl restart gateway wgsync` (the gateway's `Requires=`
 starts `gateway-ssh.socket`, whose condition is now met) and verify `ssh -p 22
-probe.nobody@ssh.repose.herakraft.co` returns `certificate required`, and
+probe.nobody@ssh.repose.run` returns `certificate required`, and
 `wg show` on the edge lists the control plane's peer with a recent
 handshake (`infra/README.md`, "Wiring the control plane to the edge").
 
@@ -612,7 +613,7 @@ Prometheus has not scraped `api` or `api-grpc` for 3 minutes.
 Prometheus has not scraped the gateway on the edge for 3 minutes. Users'
 `ssh`, `run`, `attach` and `open` fail while the gateway is down.
 
-1. `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from woker-1:
+1. `ssh -p 22 probe.nobody@ssh.repose.run` from woker-1:
    `certificate required` means the gateway serves and only the scrape
    path is broken ("Every Prometheus target is down and WireGuard looks
    fine").
@@ -644,7 +645,7 @@ reach anyone; nothing covers that case since the heartbeat was dropped
 ("Watchdog"). `python3 ops/grafana/verify.py` asks Grafana to test the
 datasource and says so directly.
 
-1. Do users notice? `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` from
+1. Do users notice? `ssh -p 22 probe.nobody@ssh.repose.run` from
    woker-1. `certificate required`: the edge serves users and only the
    monitoring tunnel is broken ("Every Prometheus target is down and
    WireGuard looks fine"). No answer: users cannot reach their machines;
@@ -2030,7 +2031,7 @@ Nobody's terminal, editor or forward drops. Check it:
   drains. systemd's line `Supervising process N which is not our child`
   is expected; it does notice that process ending (I-471).
 - `wg show wg0 peers | wc -l` is the same before and after.
-- `ssh -p 22 probe.nobody@ssh.repose.herakraft.co` answers `certificate
+- `ssh -p 22 probe.nobody@ssh.repose.run` answers `certificate
   required`.
 
 A failed handover fails the switch with the gateway's reason (`the
@@ -3101,14 +3102,16 @@ There is no `http://<control ip>:8000`; the control subnet NSG does not open
 it and `infra/azure/modules/network/main.tf` has a postcondition that fails
 the plan if somebody adds it. The dashboard is the owner's instance.
 
-## ssh.repose.herakraft.co resolves to Cloudflare
+## ssh.repose.run resolves to Cloudflare
 
-`dig +short ssh.repose.herakraft.co` returns `104.21.x.x` or `172.67.x.x`
-instead of the edge's address, and SSH hangs or is refused. `herakraft.co`
-answers every name under it from a **proxied wildcard record**, so a missing
-`ssh.repose` record resolves to Cloudflare's proxy instead of failing, and
-that proxy carries neither SSH nor WireGuard. Every host configured with that hostname as
-its WireGuard endpoint fails the same way.
+`dig +short ssh.repose.run` returns `104.21.x.x` or `172.67.x.x`
+instead of the edge's address, and SSH hangs or is refused. The record is
+missing and the zone answers anyway: a **proxied wildcard record** covers
+every name under it, as `herakraft.co` does, so the name resolves to
+Cloudflare's proxy instead of failing, and that proxy carries neither SSH
+nor WireGuard. Every host configured with that hostname as its WireGuard
+endpoint fails the same way. It applies to `ssh.repose.herakraft.co` too,
+which keeps answering while installed CLIs move (I-1156).
 
 1. `make -C infra plan ENV=prod` says so too, as the `dns_is_managed_or_manual`
    check warning, whenever `manage_dns` is false.
@@ -3536,7 +3539,7 @@ so this page is the warning before a total outage of `ssh`, `run`,
    edge names the cause in `err`. A `context deadline exceeded` against
    `https://10.255.255.1:8444` is the tunnel, not the api: "Control plane
    cannot reach the edge network" above.
-2. The api answering `https://api.repose.herakraft.co/healthz` while the
+2. The api answering `https://api.repose.run/healthz` while the
    edge cannot reach `10.255.255.1:8444` is that same split: the public
    path is Coolify's proxy, the gateway's path is the tunnel.
 3. `curl -s http://10.255.0.1:9102/metrics | grep revocation_cache_age`
@@ -3617,7 +3620,8 @@ already used`.
 locally from `repose-snapshot.timer`.
 
 1. `hostd status` (control socket) shows `stream_connected: false`.
-2. From the host: `curl -sv https://api.repose.herakraft.co:443`. A TLS error naming the client certificate means the
+2. From the host: `curl -sv https://api.repose.herakraft.co:443` (the
+   internal name, I-1156). A TLS error naming the client certificate means the
    host certificate expired without rotation: `journalctl -u hostd | grep
    rotate`. hostd's *own* rotation needs the stream, so it cannot recover
    from this; the operator command does not need it. `repose-admin hosts
@@ -4007,7 +4011,7 @@ the bar (08-dashboard.md 5.5/6) means the browser's last request to
 `PUBLIC_API_URL` either failed at the network level or came back 5xx.
 
 1. Check the api from outside the browser: `curl -i
-   https://api.repose.herakraft.co/v1/healthz`. A non-200 or a hang points
+   https://api.repose.run/v1/healthz`. A non-200 or a hang points
    at the api's own runbook rows above (Postgres down, Key Vault
    unavailable) rather than the dashboard.
 2. If that curl is fine, it's CORS or the wrong origin: open the browser
@@ -4279,7 +4283,7 @@ or `POST /certs` itself fails.
    prints why after every `run` (the `Include` line is after a `Host`
    line, or `~/.ssh/config` is a read-only link, I-151) with the exact
    line to add; `ssh -G <slug>.repose | grep -i hostname` must say
-   `ssh.repose.herakraft.co`.
+   `ssh.repose.run`.
 
 ## CLI: SSH timeout after running
 

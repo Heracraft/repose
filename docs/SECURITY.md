@@ -491,7 +491,7 @@ Applied at each workstream's PR, recorded as a comment line in
 
 ## Reporting
 
-Security reports go to the owner's email listed on `repose.herakraft.co`.
+Security reports go to the owner's email listed on `repose.run`.
 Incident handling is in `ops/RUNBOOK.md` under "Suspected cross-tenant
 access": who is told, what is captured, how a tenant is notified within
 72 hours, and the isolation-suite invocation that confirms or refutes.

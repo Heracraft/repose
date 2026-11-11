@@ -130,7 +130,8 @@ and reconnect the stream.
 
 ### 5.3 The stream
 
-`stream.Run` dials `api.repose.herakraft.co:443` with the client
+`stream.Run` dials `api.repose.herakraft.co:443` (the internal name, which
+did not move to repose.run, I-1156) with the client
 certificate, opens `Session`, and sends `Hello` built from bbolt: every
 guest id, its stored state, `free_mem_bytes`, `pool_free_bytes`. The api
 replies with any commands it considers unfinished; hostd looks each

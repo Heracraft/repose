@@ -491,7 +491,7 @@ two open rows are the two that need a machine of the owner's.
       one rebuild; `ops/prometheus/wireguard-peer.conf` has all three
       parts and the `/etc/hosts` line the api's router needs (I-133).
       Closing this row also means checking that
-      `curl https://api.repose.herakraft.co/metrics` from outside
+      `curl https://api.repose.run/metrics` from outside
       answers 403. Waits on: owner (CHECKLIST-AUDIT.md "Waits on the owner", the api's
       `/metrics` Traefik router labels in Coolify, I-133). The WireGuard
       peer is live (I-170) and archive/HANDOFF-2026-09.md records hosts, hostd, fluent-bit,

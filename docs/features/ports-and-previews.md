@@ -220,25 +220,25 @@ snapshot); that is in stop-start-destroy.md.
 
 ## Not built; not approved on 2026-09-25: preview URLs
 
-`https://3000-todo-app.repose.herakraft.co` reaching port 3000 in the guest,
+`https://3000-todo-app.repose.run` reaching port 3000 in the guest,
 so a teammate or a phone can see a running dev server and a browser-driving
 agent on the laptop can hit it.
 
 Design (DECISIONS R2-6 chose to document it now):
 
-- DNS: wildcard `*.repose.herakraft.co` to the edge. TLS: a wildcard
+- DNS: wildcard `*.repose.run` to the edge. TLS: a wildcard
   certificate from Let's Encrypt via DNS-01, renewed on the edge.
 - The gateway process on the edge gains an HTTPS listener. It parses
-  `<port>-<slug>.repose.herakraft.co`, resolves `(slug, owner)` through the
+  `<port>-<slug>.repose.run`, resolves `(slug, owner)` through the
   API (`GET /internal/route` extended to accept a slug without a handle and
   return the owner; slugs are unique per user, not globally, so the URL
-  form must carry the handle: `3000-todo-app-heracraft.repose.herakraft.co`,
+  form must carry the handle: `3000-todo-app-heracraft.repose.run`,
   with the handle as the last segment before the domain). DECISIONS
   I-438: that name cannot be split back when a slug or handle has a dash,
   so the label after the port must be a per-project preview name the API
   keeps unique, chosen when this is built.
 - Authentication: a session cookie issued by the dashboard after Logto
-  login, scoped to `.repose.herakraft.co`. A request without it redirects
+  login, scoped to `.repose.run`. A request without it redirects
   to the dashboard login with a return URL. The cookie identifies the user;
   the gateway checks that user owns the project. A project can be marked
   `preview: public` by its owner to skip the check for read-only sharing;
@@ -253,7 +253,7 @@ Design (DECISIONS R2-6 chose to document it now):
 - The guest sees requests from the edge's WireGuard address with
   `X-Forwarded-For`, `X-Forwarded-Proto: https`, and `Host` rewritten to
   the preview hostname so frameworks' host checks pass. The guest base sets
-  `VITE_ALLOWED_HOSTS` and the Next.js equivalent for `*.repose.herakraft.co`.
+  `VITE_ALLOWED_HOSTS` and the Next.js equivalent for `*.repose.run`.
 - The dashboard shows a project's open ports with a preview link each.
 
 That design leaves out custom domains per project, HTTP basic auth as an

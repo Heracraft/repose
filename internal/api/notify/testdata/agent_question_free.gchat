@@ -29,7 +29,7 @@
                       "type": "OUTLINED",
                       "onClick": {
                         "openLink": {
-                          "url": "https://repose.herakraft.co/questions"
+                          "url": "https://repose.run/questions"
                         }
                       }
                     }

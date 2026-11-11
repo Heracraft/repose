@@ -30,8 +30,8 @@ resource "azurerm_public_ip" "main" {
   tags                = local.tags
 
   lifecycle {
-    # repose.herakraft.co and api.repose.herakraft.co resolve here; a
-    # replacement is a DNS outage.
+    # repose.run and api.repose.run resolve here; a replacement is a
+    # DNS outage.
     prevent_destroy = true
   }
 }

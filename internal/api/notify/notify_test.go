@@ -230,10 +230,10 @@ func TestEmailTemplate(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		gotSubject, gotBody = payload.Subject, payload.Text
 		// RFC 8058 one-click unsubscribe headers point at the same link.
-		if payload.Headers["List-Unsubscribe"] != "<https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def>" || payload.Headers["List-Unsubscribe-Post"] != "List-Unsubscribe=One-Click" {
+		if payload.Headers["List-Unsubscribe"] != "<https://api.repose.run/v1/notify/unsubscribe?token=abc.def>" || payload.Headers["List-Unsubscribe-Post"] != "List-Unsubscribe=One-Click" {
 			t.Errorf("list-unsubscribe headers %v", payload.Headers)
 		}
-		if !strings.Contains(payload.HTML, "ran tests, 3 failures fixed") || !strings.Contains(payload.HTML, "https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def") {
+		if !strings.Contains(payload.HTML, "ran tests, 3 failures fixed") || !strings.Contains(payload.HTML, "https://api.repose.run/v1/notify/unsubscribe?token=abc.def") {
 			t.Errorf("html lacks the summary or the unsubscribe link:\n%s", payload.HTML)
 		}
 		w.WriteHeader(200)
@@ -242,8 +242,8 @@ func TestEmailTemplate(t *testing.T) {
 	e := &notify.Email{APIKey: "re_test", URL: srv.URL}
 	m := notify.Message{
 		Kind: "completed", Agent: "claude", Project: "todo-app", Summary: "ran tests, 3 failures fixed",
-		Email: "u@example.com", Dashboard: "https://repose.herakraft.co",
-		Unsubscribe: "https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def",
+		Email: "u@example.com", Dashboard: "https://repose.run",
+		Unsubscribe: "https://api.repose.run/v1/notify/unsubscribe?token=abc.def",
 	}
 	if err := e.Send(context.Background(), m); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestEmailTemplate(t *testing.T) {
 		"todo-app: claude finished",
 		"ran tests, 3 failures fixed",
 		"repose attach --project todo-app",
-		"https://api.repose.herakraft.co/v1/notify/unsubscribe?token=abc.def",
+		"https://api.repose.run/v1/notify/unsubscribe?token=abc.def",
 	} {
 		if !strings.Contains(gotBody, want) {
 			t.Fatalf("body missing %q, got:\n%s", want, gotBody)
@@ -263,7 +263,7 @@ func TestEmailTemplate(t *testing.T) {
 	}
 	// No way in to the dashboard: there is nothing to do there about a
 	// finished turn (DECISIONS I-1096).
-	if strings.Contains(gotBody, "https://repose.herakraft.co/projects") {
+	if strings.Contains(gotBody, "https://repose.run/projects") {
 		t.Fatalf("an open-project button on a turn end:\n%s", gotBody)
 	}
 }

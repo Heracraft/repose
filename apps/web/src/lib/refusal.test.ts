@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { withoutBillingURL } from './refusal';
 
-const url = 'https://repose.herakraft.co/billing';
+const url = 'https://repose.run/billing';
 
 describe('withoutBillingURL', () => {
 	it.each([

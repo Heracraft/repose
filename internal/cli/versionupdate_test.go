@@ -398,7 +398,7 @@ func TestVersionUpdateRefusesBeforeTheNetwork(t *testing.T) {
 		installFakeCLI(t, f, "0.1.43")
 		t.Setenv("REPOSE_TEST_GOOS", "windows")
 		_, errw, code := runUpdate(t, "")
-		if code != ExitGeneric || !strings.Contains(errw, "repose has no Windows release. Install it inside WSL: https://repose.herakraft.co/docs/install") {
+		if code != ExitGeneric || !strings.Contains(errw, "repose has no Windows release. Install it inside WSL: https://repose.run/docs/install") {
 			t.Fatalf("exit %d, %q", code, errw)
 		}
 	})

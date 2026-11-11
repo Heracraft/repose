@@ -97,7 +97,7 @@ var CannedUser = User{
 }
 
 const (
-	gatewayHost = "ssh.repose.herakraft.co"
+	gatewayHost = "ssh.repose.run"
 	hostCAPub   = "ssh-ed25519 AAAA...fakeca"
 	userCAPub   = "ssh-ed25519 AAAA...fakeuserca"
 	baseVersion = "2026.09.15"
