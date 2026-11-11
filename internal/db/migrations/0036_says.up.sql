@@ -12,7 +12,10 @@
 -- turn), replaced (a later message for the same window took its place
 -- before it went in), failed (the machine refused it, with why in
 -- `error`). The machine is the authority on delivered and waiting: the
--- api stores what the SayToAgent command answered.
+-- api stores what the SayToAgent command answered, and a `waiting` row
+-- becomes `delivered` on the machine's `agent_prompted` event, which is
+-- the only thing that knows a mid-turn message went in at the end of
+-- the turn.
 create table says (
   id           uuid primary key,
   project_id   uuid not null references projects(id) on delete cascade,

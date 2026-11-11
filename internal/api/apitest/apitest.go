@@ -115,6 +115,7 @@ func New(t *testing.T, o Options) *Harness {
 	h.Events.SetResting(h.Resting)
 	h.Questions.Waker = h.Resting
 	h.Say = say.New(pool, h.HostMgr, log)
+	h.Events.SetSays(h.Say)
 	h.Say.Waker = h.Resting
 	h.HostMgr.SetHandlers(hostmgr.Handlers{
 		Hello: func(ctx context.Context, hostID uuid.UUID, hl *hostdv1.Hello) error {

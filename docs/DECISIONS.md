@@ -31546,6 +31546,13 @@ that from anywhere.
   own sentence and the owner picks with `--agent`. The resolution is
   guestd's, not the api's: the api's sample is up to a minute old and
   the windows are the guest's own fact.
+- **The row follows the machine.** A `says` row (0036) is stored
+  `waiting` or `delivered` as the command answered, and a `waiting` one
+  becomes `delivered` on the machine's own `agent_prompted` event, which
+  is the only thing that knows a mid-turn message went in at the end of
+  the turn. The events ingest calls `say.Delivered` through the
+  `SetSays` hook, the shape `SetQuestions` and `SetResting` already
+  have, so `events` does not import `say`.
 - **`agent_prompted`.** A delivery emits an AgentEvent of that kind,
   added to `events.GuestKinds` and hostd's `guestAgentKinds`. It is not
   in `notifyKinds`, so it notifies nobody; its summary is the sender's

@@ -257,7 +257,8 @@ gateway_sessions (project_id fk, cert_serial bigint, session_id text default '',
 settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init)
 says         (id pk, project_id fk, user_id fk,   -- `repose say` (0036, I-1144)
               tmux_window text, text text, sender text, from_owner bool,
-              state text,          -- delivered|waiting|replaced|failed
+              state text,          -- delivered|waiting|replaced|failed; a waiting row
+                                   -- becomes delivered on the machine's agent_prompted event
               error text null,     -- a few words on failed, never the machine's message
               command_id uuid,     -- the SayToAgent command (idempotency)
               created_at, updated_at)

@@ -282,6 +282,20 @@ func (s *Service) OnResult(_ context.Context, _ uuid.UUID, r *hostdv1.Result) bo
 	return true
 }
 
+// Delivered closes the message the machine has just typed into window:
+// one stored `waiting` stops waiting (DECISIONS I-1144). The events
+// ingest calls it on an `agent_prompted` event, which is the machine
+// saying the text reached the terminal. There is at most one waiting
+// message per window, so (project, window) names it. A failure leaves a
+// stale state and loses nothing else, so it is logged and not retried.
+func (s *Service) Delivered(ctx context.Context, projectID uuid.UUID, window string) {
+	if _, err := s.pool.Exec(ctx,
+		"update says set state = $1 where project_id = $2 and tmux_window = $3 and state = $4",
+		StateDelivered, projectID, window, StateWaiting); err != nil {
+		s.log.Warn("message not marked delivered", "event", "agent_prompted", "project_id", projectID.String())
+	}
+}
+
 // fail records why a message never reached the agent. reason is a few
 // words, never a message from the machine, which could carry the text.
 func (s *Service) fail(ctx context.Context, id uuid.UUID, reason string) {

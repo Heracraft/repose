@@ -963,10 +963,10 @@ pointer, not a summary.
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31380
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31417
 - **I-1144** The owner speaks first: `repose say` types a message into the agent's own terminal, and waits for the agent's prompt to do it (say, 2026-11-11) — L31507
-- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L31582
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31621
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31651
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31715
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31764
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L31858
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L31896
+- **I-1146** A free-text reply from Google Chat needs a Chat app, not an endpoint, so it is not built (say, 2026-11-11) — L31589
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31628
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31658
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31722
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31771
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L31865
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L31903

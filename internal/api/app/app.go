@@ -165,6 +165,7 @@ func New(ctx context.Context, cfg Config, version string) (*App, error) {
 	a.questions = questions.New(a.pool, a.events, a.hostMgr, log)
 	a.events.SetQuestions(a.questions)
 	a.say = say.New(a.pool, a.hostMgr, log)
+	a.events.SetSays(a.say)
 	// The rest rule and the wake (DECISIONS I-818). It sends straight to
 	// the host, outside the op engine: the op that needs a machine awake
 	// is itself that project's one open op.

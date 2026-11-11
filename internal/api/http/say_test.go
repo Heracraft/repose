@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	hostdv1 "github.com/heracraft/repose/internal/gen/hostd/v1"
 )
 
 // `repose say` end to end against the api and the fake host (DECISIONS
@@ -204,4 +206,27 @@ func stopProject(t *testing.T, a *askEnv) {
 	if _, err := a.h.Pool.Exec(a.h.Ctx, "update projects set state = 'stopped' where id = $1", a.p.ID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestAWaitingSayStopsWaitingWhenTheMachineTypesItIn (I-1144): a
+// message stored `waiting` is closed by the machine's own
+// `agent_prompted` event, which is the only thing that knows a
+// mid-turn message went in at the end of the turn.
+func TestAWaitingSayStopsWaitingWhenTheMachineTypesItIn(t *testing.T) {
+	a := newAskEnv(t, "saydelivered")
+	a.h.Fake.SetSayAnswer("waiting", "claude")
+	r := a.do(t, a.tok, "POST", "/projects/"+a.p.ID.String()+"/say", map[string]any{"text": "and squash the fixups"})
+	if r.status != 200 || r.body["state"] != "waiting" {
+		t.Fatalf("POST say: %d %s", r.status, r.raw)
+	}
+
+	a.h.Fake.AgentEvent(&hostdv1.AgentEvent{
+		GuestId: a.p.GuestID.String(), Agent: "claude", TmuxWindow: "claude",
+		Kind: "agent_prompted", Summary: a.u.Handle,
+	})
+	a.h.WaitFor("the says row to stop waiting", func() bool {
+		var state string
+		_ = a.h.Pool.QueryRow(a.h.Ctx, "select state from says where id = $1", r.body["id"]).Scan(&state)
+		return state == "delivered"
+	})
 }

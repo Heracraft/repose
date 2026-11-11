@@ -329,7 +329,9 @@ and answers with what the machine said. `delivered` means the text is in
 the agent's terminal now; `waiting` means the agent was mid-turn and the
 machine types it in at the end of the turn. One message waits per
 window, so a second while one waits answers `replaced: true` and the
-earlier row moves to `replaced`.
+earlier row moves to `replaced`. A `waiting` row becomes `delivered` on
+the machine's `agent_prompted` event, which is the only thing that knows
+a mid-turn message went in at the end of the turn.
 
 | Method | Path | Body / result |
 |---|---|---|
