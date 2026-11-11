@@ -33113,3 +33113,69 @@ not a secret.
 *Rejected:* hardcoding the resource in the dashboard, which is the one
 value a fork must be able to change; and moving the Logto resource to
 the new name, which I-1156 explains would lock out every installed CLI.
+
+**I-1162. The `says` row is the hand-off between the api's two
+processes, because only one of them can reach a host (say-replicas,
+2026-11-11). Amends I-1144.**
+
+Found on production the morning `repose say` shipped: every message
+answered "The machine did not take the message.", with
+`POST /v1/projects/{id}/say -> 409 in 7 ms`, `machine_unreachable`, and
+hostd never seeing a command. I-1144 had `say.Send` put the SayToAgent
+on the hostd stream *of its own process*. In production the api is two
+Coolify applications (I-87, I-163): `API_MODE=http` serves the CLI and
+`API_MODE=grpc` holds every host's stream. The http process has no
+stream for any host, so `hostmgr.Send` there is always
+`ErrHostNotConnected` and `say` could never be delivered. The tests
+passed because `API_MODE=all` runs both halves in one process, which is
+the one shape production does not have.
+
+- **The row is the hand-off, as it already is for an answer (I-244,
+  I-245).** The process the owner called stores the `says` row
+  `pending` and waits on it. A worker in the process holding the
+  streams claims the row (`sending`, one statement with `for update
+  skip locked`, so nothing is held under a lock for the 20 seconds a
+  delivery can take), sends the command, and writes the machine's
+  answer back into the row: `delivered` or `waiting` with the window
+  and `replaced`, or `failed` with the short reason. The waiter reads
+  it and answers exactly what it answered before. Nothing a user reads
+  changes, and neither does the response shape.
+- **Why not route the command to the replica that holds the stream.**
+  `host_sessions` already records which replica has a host, but there
+  is no path between the two api processes to carry a command over —
+  building one (a second gRPC service, or a NOTIFY-carried command with
+  its result coming back the same way) is a new inter-process protocol
+  for one message type, where the row is a hand-off the schema already
+  had.
+- **The wake moved with the delivery.** `resting.Wake` (I-818) is also
+  a command down the host's stream, so it has to happen in the process
+  that has one. It is now the worker's first step, as it is in the
+  questions worker, and a wake that fails is still a failed message the
+  sender is told about.
+- **A row nobody delivers is failed where it stands, not left.** The
+  waiter fails its own row when its 20 seconds run out and the row is
+  still `pending`, and the worker fails anything still `pending` or
+  `sending` after 40 seconds. Without that, a worker that came back a
+  minute later would type a message into the agent's terminal long
+  after the owner was told it had not arrived — which is the one
+  failure I-1144's "the api does not queue" exists to prevent.
+- **The machine's refusal is stored, because the waiter did not hear
+  it.** The sentence naming the agent windows ("2 agents are running:
+  claude, codex. Name one with --agent") is the whole value of that
+  refusal, and the process that answers the owner no longer receives
+  the command's result. It goes in a `refusal` column beside the
+  message it belongs to, only for `not_found` and `invalid_argument`,
+  and it reaches no log line, as the text never does.
+- **One worker, by advisory lock 1016**, started in the grpc branch of
+  `app.go` beside the questions worker. A new row wakes it through
+  `pg_notify('repose_says')`, with a one-second tick behind it, so the
+  owner's 20 seconds are not spent waiting on a poll interval.
+- *The general lesson, and the test that holds it.* A control-plane
+  test on one `app` proves nothing about a two-process deployment.
+  `TestSayIsDeliveredByTheReplicaHoldingTheStream` builds a second
+  `say.Service` on the same database whose sender holds no stream, and
+  asserts the message still reaches the machine; it fails on the commit
+  before this one with the exact production error. Every other api path
+  that sends a host command does so from the grpc process already —
+  the ops engine, the questions worker, `resting` — and `say` was the
+  one that did it from an HTTP handler.

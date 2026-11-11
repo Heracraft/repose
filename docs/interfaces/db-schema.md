@@ -317,9 +317,17 @@ gateway_sessions (project_id fk, cert_serial bigint, session_id text default '',
 settings     (key text pk, value text)                       -- edge_wg_pubkey, edge_wg_endpoint (repose-admin edge init)
 says         (id pk, project_id fk, user_id fk,   -- `repose say` (0039, I-1144)
               tmux_window text, text text, sender text, from_owner bool,
-              state text,          -- delivered|waiting|replaced|failed; a waiting row
-                                   -- becomes delivered on the machine's agent_prompted event
+              state text,          -- pending|sending|delivered|waiting|replaced|failed;
+                                   -- pending and sending are the hand-off between the api's
+                                   -- two processes (0040, I-1162): the http one stores the row
+                                   -- and waits on it, the grpc one claims it (sending),
+                                   -- delivers it and writes the machine's answer back.
+                                   -- A waiting row becomes delivered on the machine's
+                                   -- agent_prompted event
+              replaced bool,       -- a message was still waiting in that window (0040)
               error text null,     -- a few words on failed, never the machine's message
+              refusal text null,   -- the machine's own sentence naming the agent windows,
+                                   -- on not_found and invalid_argument only (0040)
               command_id uuid,     -- the SayToAgent command (idempotency)
               created_at, updated_at)
 
@@ -334,7 +342,8 @@ desc)`, `certificates(user_id) where revoked_at is null`, `usage_hours(hour)`,
 `questions(project_id, created_at desc)`, `questions(expires_at) where state
 = 'pending'`, `questions(deliver_next_at) where state <> 'pending' and
 delivered_at is null`, `questions(deliver_command_id)`, `says(project_id, created_at desc)`,
-`says(project_id, tmux_window) where state = 'waiting'` (0039), `usage_hours(hour) where
+`says(project_id, tmux_window) where state = 'waiting'` (0039),
+`says(created_at) where state in ('pending', 'sending')` (0040), `usage_hours(hour) where
 stripe_usage_record_id is null` (unused since I-289), `credit_ledger(user_id, created_at)`,
 `subscriptions(user_id) where status in (live) unique`, `subscriptions(user_id,
 created_at desc)`, `subscriptions(next_billed_at) where status in (live)`,
