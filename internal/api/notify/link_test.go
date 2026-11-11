@@ -15,9 +15,10 @@ import (
 )
 
 // TestAgentLinkOnEveryChannel (DECISIONS I-931): the screenshot's done
-// report with `--link`: a Chat button named label and host before Open
-// project, an ntfy action, the email's main button; and without `--link`
-// an address in the text gets no button.
+// report with `--link`: a Chat button named label and host, an ntfy
+// action, the email's main button; and without `--link` an address in
+// the text gets no button. Since I-1096 the link is the only button a
+// done report carries: nothing leads back to the project page.
 func TestAgentLinkOnEveryChannel(t *testing.T) {
 	pid := uuid.New()
 	link, _ := msglink.Check("http://localhost:8742/out/compare-simple.html", "Compare resumes")
@@ -25,9 +26,11 @@ func TestAgentLinkOnEveryChannel(t *testing.T) {
 
 	b, _ := json.Marshal(notify.RenderGChat(m))
 	card := string(b)
-	at, open := strings.Index(card, `"Compare resumes · localhost:8742"`), strings.Index(card, `"Open project"`)
-	if at < 0 || open < at || !strings.Contains(card, `"url":"http://localhost:8742/out/compare-simple.html"`) {
+	if !strings.Contains(card, `"Compare resumes · localhost:8742"`) || !strings.Contains(card, `"url":"http://localhost:8742/out/compare-simple.html"`) {
 		t.Fatalf("card %s", card)
+	}
+	if strings.Contains(card, `"Open project"`) || strings.Count(card, `"openLink"`) != 1 {
+		t.Fatalf("a done report carries the agent's link and nothing else (I-1096): %s", card)
 	}
 
 	var actions, click string
@@ -51,12 +54,11 @@ func TestAgentLinkOnEveryChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	btn, proj := strings.Index(r.Text, "Compare resumes · localhost:8742: "+link.URL), strings.Index(r.Text, "Open job: https://d/projects/"+pid.String())
-	if btn < 0 || proj < btn {
-		t.Fatalf("email text, the link first and the project under it:\n%s", r.Text)
+	if !strings.Contains(r.Text, "Compare resumes · localhost:8742: "+link.URL) {
+		t.Fatalf("email text, the link as the main button:\n%s", r.Text)
 	}
-	if hb, hp := strings.Index(r.HTML, link.URL), strings.Index(r.HTML, "https://d/projects/"+pid.String()); hb < 0 || hp < hb {
-		t.Fatalf("email html order")
+	if strings.Contains(r.Text, "https://d/projects/"+pid.String()) || !strings.Contains(r.HTML, link.URL) {
+		t.Fatalf("the project page is no button on a done report (I-1096):\n%s", r.Text)
 	}
 
 	// No --link: an address in the text stays text.
@@ -64,8 +66,8 @@ func TestAgentLinkOnEveryChannel(t *testing.T) {
 	plain.Link = msglink.Link{}
 	plain.Summary = "open http://localhost:8742/out/compare-simple.html"
 	b, _ = json.Marshal(notify.RenderGChat(plain))
-	if strings.Contains(string(b), "localhost:8742\"") || strings.Count(string(b), `"openLink"`) != 1 {
-		t.Fatalf("a link guessed from the text: %s", b)
+	if strings.Contains(string(b), "localhost:8742\"") || strings.Contains(string(b), `"openLink"`) {
+		t.Fatalf("a link guessed from the text, or a way in nobody needs: %s", b)
 	}
 	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), plain); err != nil {
 		t.Fatal(err)

@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-930 entries.
+933 entries.
 
 ## Scope
 
@@ -962,3 +962,6 @@ pointer, not a summary.
 - **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31287
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31380
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31417
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31506
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31536
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31600

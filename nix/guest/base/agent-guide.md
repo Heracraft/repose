@@ -17,10 +17,10 @@ The user may have added other repositories to this machine as folders beside it,
 
 ## Servers and ports
 
-- While the user is attached, every port a program here listens on (1024 and up, on `localhost` or `0.0.0.0`) appears on their laptop at the same port within a second or so. Tell them "open http://localhost:PORT". <!-- /docs/machine#ports -->
+- While the user is attached, every port a program here listens on (1024 and up, on `localhost` or `0.0.0.0`) appears on their laptop at the same port within a second or so. <!-- /docs/machine#ports -->
+- Before you give the user a URL for a port here, run `repose-presence`: on `attached` say "open http://localhost:PORT"; on `away` say which port it is on this machine and that `repose open PORT` on their laptop brings it over. <!-- /docs/machine#ports --> <!-- needs: repose-presence -->
 - There are no public URLs. Don't look for one or start a tunnel unless the user asks. <!-- /docs/machine#ports -->
 - Not forwarded: ports below 1024, 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 (the machine's browser), and servers that listen only on another address. A Docker port published with `-p` is forwarded. <!-- /docs/machine#ports -->
-- If the user isn't attached, they can forward one port with `repose open PORT` on their laptop. <!-- /docs/machine#ports -->
 
 ## Installing tools
 

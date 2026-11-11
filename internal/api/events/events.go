@@ -26,10 +26,13 @@ import (
 
 // Kinds that reach the user's channels. A turn end (completed) is an
 // event and sets the agent's state, and notifies nobody: an agent says it
-// is done on purpose with agent_done (DECISIONS I-688).
+// is done on purpose with agent_done (DECISIONS I-688). base_updated is
+// an event and notifies nobody either: a base that reached the machine
+// asks nothing of the owner (DECISIONS I-1094); base_update_failed, which
+// leaves the machine on its old base, still does.
 var notifyKinds = map[string]bool{
 	"needs_input": true, "error": true,
-	"billing_stopped": true, "base_updated": true, "base_update_failed": true, "snapshot_failed": true, "host_moved": true,
+	"billing_stopped": true, "base_update_failed": true, "snapshot_failed": true, "host_moved": true,
 	"destroy_failed": true,
 	// A stop that failed; the CLI returned when it began (I-710).
 	"stop_failed":          true,

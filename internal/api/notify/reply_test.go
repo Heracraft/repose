@@ -58,7 +58,8 @@ func TestReplyTokenRoundTripExpiryAndDomain(t *testing.T) {
 
 // TestNtfyQuestionHasButtons: an agent_question with options carries ntfy's
 // JSON action list, one http POST button per option, ASCII-safe; without
-// options it carries one view button to the project.
+// options it carries one view button to the Questions page, which is
+// where it is answered (DECISIONS I-1096).
 func TestNtfyQuestionHasButtons(t *testing.T) {
 	var actions, click, prio, title string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +73,7 @@ func TestNtfyQuestionHasButtons(t *testing.T) {
 	if err := (&notify.Ntfy{HTTP: srv.Client()}).Send(context.Background(), m); err != nil {
 		t.Fatal(err)
 	}
-	if title != "todo: codex asks" || prio != "5" || click != "https://d/projects/"+pid.String() {
+	if title != "todo: codex asks" || prio != "5" || click != "https://d/questions" {
 		t.Fatalf("title %q prio %q click %q", title, prio, click)
 	}
 	for _, r := range actions {
@@ -92,7 +93,7 @@ func TestNtfyQuestionHasButtons(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = json.Unmarshal([]byte(actions), &acts)
-	if len(acts) != 1 || acts[0]["action"] != "view" || acts[0]["url"] != "https://d/projects/"+pid.String() {
+	if len(acts) != 1 || acts[0]["action"] != "view" || acts[0]["url"] != "https://d/questions" {
 		t.Fatalf("free-text actions %v", acts)
 	}
 	// A message is a plain notification.
@@ -127,10 +128,15 @@ func TestEmailQuestionHasReplyLinks(t *testing.T) {
 		t.Fatalf("subject %q", subject)
 	}
 	for _, want := range []string{"Drop the legacy table?", "yes: https://api/v1/questions/reply?token=a&via=email", "no: https://api/v1/questions/reply?token=b&via=email",
-		"https://dash/projects/" + pid.String(), "repose reply todo-app", "open until 24 Sep 18:30 UTC"} {
+		"repose reply todo-app", "open until 24 Sep 18:30 UTC"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body lacks %q:\n%s", want, body)
 		}
+	}
+	// A question with options is answered from the email, so nothing
+	// else leads to the dashboard (DECISIONS I-1096).
+	if strings.Contains(body, "https://dash/projects/"+pid.String()) {
+		t.Fatalf("an open-project link beside the answers:\n%s", body)
 	}
 }
 
