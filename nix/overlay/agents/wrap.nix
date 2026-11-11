@@ -29,7 +29,8 @@ let
     # Registration failures must never block an agent (a blocked agent is a
     # silently wasted night), so setup is best-effort.
     ${pkgs.repose-agent-setup}/bin/repose-agent-setup ${bin} || true
-${pkgs.lib.optionalString (bin == "claude") remoteControl}    # The checkout's dev environment: its .envrc, or its flake's dev shell
+    ${pkgs.lib.optionalString (bin == "claude") remoteControl}
+    # The checkout's dev environment: its .envrc, or its flake's dev shell
     # when it has no .envrc (DECISIONS I-259). Never blocks the agent.
     . ${devshell}
     _repose_devshell ${bin}
