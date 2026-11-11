@@ -31602,7 +31602,12 @@ on the api; it is that repose is not a Google Chat app at all.
   field, `openLink`.
 - **Why an endpoint alone would not do it.** A message posted by an
   incoming webhook is not posted by an app, and in a space a Chat app is
-  delivered `MESSAGE` events only for messages that @-mention it. So
+  delivered `MESSAGE` events only for messages that @-mention it; the
+  only unmentioned messages it hears are those in a direct message
+  space with the app itself (Google's "Receive and respond to user
+  interactions", read 2026-11-11:
+  https://developers.google.com/workspace/chat/receive-respond-interactions).
+  So
   "the owner types a reply in the thread" reaches nothing until repose
   *is* an app in that space and the cards are posted *as that app*
   through the Chat REST API with a service account. That replaces the
