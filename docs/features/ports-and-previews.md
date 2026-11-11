@@ -1,8 +1,10 @@
 # Ports and previews
 
 A dev server running in the guest reaches the user's browser through an SSH
-port forward the CLI manages. Public preview URLs per project have a
-design below; they are not built, and were not approved on 2026-09-25
+port forward the CLI manages, and a port on the user's laptop reaches the
+guest through one going the other way (DECISIONS I-1104). Public preview
+URLs per project have a design below; they are not built, and were not
+approved on 2026-09-25
 (`docs/proposals/2026-09-24-backlog-triage.md`).
 
 The one public path into a guest is a webhook route (`webhooks.md`,
@@ -17,7 +19,7 @@ starts listening on is on the laptop's localhost too, with no command
 (DECISIONS I-199). Start `pnpm dev` in the guest and, inside tmux:
 
 ```
-⇄ localhost:5173 → :5173                          (a message for 4 s)
+⇄ localhost:5173 → your laptop                    (a message for 4 s)
 ... ⇄ 3000 5173 │ "dev@izma" 14:02 23-Sep-26         (the status bar's right side)
 ```
 
@@ -50,16 +52,19 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   except the guest's own (`forwardPlatformPorts` in
   `internal/cli/forward.go`): 6080, 6081, 5900 (the desktop, which `repose
   browser` forwards), 9224, 9225 (the agents' browser's DevTools
-  endpoint, I-246) and 5353, 5355 (mDNS, LLMNR, I-215). A listener only on another address (a
+  endpoint, I-246), 9226 (the bridge's tunnel end, which leads back to
+  the laptop, I-296) and 5353, 5355 (mDNS, LLMNR, I-215). A listener only on another address (a
   Docker bridge, the guest's own IP) is not forwarded, and nor is a port
-  bound only inside a Docker network.
+  bound only inside a Docker network. Nor is the guest end of a reverse
+  forward, this laptop's or another laptop's: forwarding it back would
+  send the laptop's own port home again.
 - A forward is `ssh -O forward -L <laptop>:127.0.0.1:<port>` on the
   existing ControlMaster: no new connection, no process per port. It is
   cancelled (`ssh -O cancel`) within two seconds of the listener closing,
   and every forward is cancelled when the attach ends.
 - The laptop port is the guest's port when it is free; otherwise the next
-  free one, and the message says so: `⇄ localhost:3001 → :3000 (3000 is
-  taken on your laptop)`. Portless's proxy port 1355 is never remapped
+  free one, and the message says so: `⇄ :3000 → your laptop's
+  localhost:3001 (3000 is taken there)`. Portless's proxy port 1355 is never remapped
   silently, since the URLs portless prints name it: `1355 is taken on
   your laptop (portless?); izma's portless is on localhost:1356`. A port
   no laptop port could be found for is tried again after 30 seconds.
@@ -70,8 +75,80 @@ Auto-forward (I-199), run by the session helper (run-and-attach.md):
   ignored after 60 s), so two laptops attached to one project each forward
   on their own laptop and the bar shows the union; the session's own
   `status-right` is unset again when the last one leaves.
-- `REPOSE_NO_FORWARD=1` turns it off, for a laptop whose ports must stay
-  free. It is the only knob.
+- Forwards that appear together are one message (I-324). One port reads
+  `⇄ localhost:5173 → your laptop`; up to eight,
+  `⇄ localhost:3000, 3001, 5173 → your laptop`; more,
+  `⇄ 12 ports → your laptop: 3000, 3001, …` (I-1106). The message names
+  the laptop because the old one named two ports and no place.
+- `REPOSE_NO_FORWARD=1` turns it off, in both directions, for a laptop
+  whose ports must stay free. It is the only knob.
+
+Reverse forwards (I-1104), run by the same helper:
+
+- `[forward] reverse` and `[projects.NAME.forward] reverse` in
+  `config.toml` list the laptop ports the guest's `localhost` reaches
+  while that laptop is attached: a number for the same port on both
+  sides, `"MACHINE:LAPTOP"` to listen on another one. They merge as
+  `[mcp] forward` does, each machine port once.
+- A refused entry fails the config load, so every command names the file
+  and the key: below 1024, above 65535, a port in
+  `forwardPlatformPorts`, one of 9222, 9229, 2375 and 2376 on the laptop
+  side, more than 16 ports, or a value that is neither a number nor
+  `"MACHINE:LAPTOP"`. A forward dropped in silence would read as a
+  broken forward.
+- The forwards travel on a connection of their own, not the
+  ControlMaster: a `-R` on the master would outlive the attach by
+  ControlPersist's ten minutes (I-149). Its remote command is `exec cat
+  >/dev/null`, which ends when the helper's pipe closes, so the
+  listeners go with the helper however it ends. One `-R` per loopback
+  address per port, since one request binds one address, and the
+  guest's `GatewayPorts no` keeps them off every other address.
+- A port the guest already listens on is left out before the connection
+  starts, and said once: `Could not lend your laptop's 5432: postgres on
+  the machine listens there. Use "15432:5432" in [forward] reverse.`, or
+  `another laptop lends 11434 on the machine` when the registry says so.
+  A race that still fails ends the connection
+  (`ExitOnForwardFailure=yes`); the helper drops the port ssh names and
+  tries again.
+- The messages name the laptop's process when the laptop's own tools
+  said (`lsof` on macOS, `ss` on Linux): `⇄ localhost:5037 on the
+  machine → adb on your laptop`, or `⇄ localhost:5037, 11434 on the
+  machine → your laptop` for several.
+- Reverse ports are not in the status bar: the bar answers "what can I
+  open on my laptop".
+- On Windows no helper runs, and a set key prints `[forward] reverse in
+  config.toml does nothing on Windows.` before the attach.
+
+The forward registry, `~/.repose/forwards/<id>` (I-1106):
+
+- Line 1 is still the guest ports this CLI forwards, as bare numbers:
+  every reader since I-199 takes that line and nothing else, and its
+  `grep -E '^[0-9]+$'` steps over what follows.
+- After it, one line per forward: `out:MACHINE:LAPTOP` for a guest port
+  on the laptop, `in:MACHINE:LAPTOP[:PROCESS]` for a laptop port lent to
+  the guest, the process name cut to `[A-Za-z0-9._-]`. The format is in
+  `interfaces/guest-conventions.md` "Ports"; both shapes are read for
+  one release.
+- `repose status` reads the same registry in the call it already makes
+  and marks the rows: `node :5173 up 3d 410.0 MB, on your laptop`, `at
+  :3001` when the laptop holds it elsewhere, and a `laptop` row for the
+  lent ports with their processes. The reverse listeners leave the
+  `listening` rows, since the `laptop` row says what they are.
+  `--json` carries them as `forwards`.
+- Only the attach's forwards are in the registry. `repose open` and
+  `repose browser` write nothing to it.
+
+Links the guest hands to `$BROWSER` (I-634, I-1108):
+
+- `repose-print-url` records an `https` link, and an `http` or `https`
+  link on the guest's own loopback, in `~/.cache/repose/open-urls`.
+- A loopback link never opens on the laptop as written: the helper waits
+  up to 5 s for a forward of that port and opens the laptop end of it
+  (`http://localhost:3001/` for the guest's 3000). With no forward it
+  opens nothing and says `A program on the machine opened localhost:3000,
+  and no forward reaches it.` The same link opens at most once a minute.
+- With `REPOSE_NO_FORWARD=1` there are no forwards, so a loopback link
+  is never opened and the line says so once per port.
 
 `repose open`:
 

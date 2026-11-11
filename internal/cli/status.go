@@ -38,6 +38,9 @@ type statusJSON struct {
 	// GitAt is set on a stopped machine's rows: when this laptop read
 	// them, before its stop (I-634).
 	GitAt *time.Time `json:"git_at,omitempty"`
+	// Forwards is what the attached laptops forward, in either
+	// direction (I-1106). Absent when none does.
+	Forwards []forwardJSON `json:"forwards,omitempty"`
 }
 
 // statusFor prints project's status, read now.
@@ -55,7 +58,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	left, hasLeft := stoppedRows(e.Dir, project)
 	if e.JSON {
 		g := <-guest
-		doc := statusJSON{Project: project, Git: g.git, GitError: g.probeErr}
+		doc := statusJSON{Project: project, Git: g.git, GitError: g.probeErr, Forwards: statusForwardsJSON(g.forwards, g.procs)}
 		if hasLeft {
 			doc.Git, doc.GitError, doc.GitAt = left.Rows, left.Error, &left.At
 		}
@@ -79,7 +82,7 @@ func statusFor(ctx context.Context, e *Env, project *Project) error {
 	}
 	writeStatus(e.Out, statusView{
 		p: project, route: route, snaps: snaps, events: events, mux: mux,
-		disk: g.disk, procs: g.procs, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
+		disk: g.disk, procs: g.procs, forwards: g.forwards, git: g.git, probeErr: g.probeErr, probeDetail: g.probeDetail, probeWaited: g.waited, bill: <-bill, now: time.Now(),
 		left: left, hasLeft: hasLeft, defaultAgent: e.Cfg.DefaultAgent, hooks: <-hooks,
 	})
 	return nil
@@ -366,7 +369,11 @@ type statusView struct {
 	mux    string
 	disk   guestDisk
 	procs  []listeningProc
-	git    []gitRow
+	// forwards is the machine's forward registry, which marks the
+	// listening ports a laptop can open and fills the `laptop` row
+	// (I-1106).
+	forwards []forwardRow
+	git      []gitRow
 	// probeErr and probeDetail say why git is empty on a running
 	// machine (I-634).
 	probeErr, probeDetail string
@@ -475,6 +482,9 @@ func writeStatus(w io.Writer, v statusView) {
 		}
 	}
 	writeListening(w, v.procs)
+	if cell := laptopPortsCell(v.forwards); cell != "" {
+		statusRow(w, "laptop", cell)
+	}
 	statusRow(w, "disk", statusDisk(p, gd)+", "+snapshotCell(p, v.snaps))
 	if last := newestEvent(v.events); last != nil {
 		agent := last.Agent

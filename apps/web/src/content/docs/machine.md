@@ -154,14 +154,14 @@ systemctl --user enable --now backup.timer
 As long as you're attached with `repose run` or `repose attach`, every port a program on the machine listens on appears on your laptop's `localhost` within a second or so. tmux shows each new forward:
 
 ```text
-⇄ localhost:5173 → :5173
+⇄ localhost:5173 → your laptop
 ```
 
-Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ 6 ports on localhost: 3000, 3001, 3002, 3003, 3004, 3005`, and tmux's status bar lists every forwarded port. A herdr machine has no such list and shows the messages as [herdr notifications](/docs/run-and-attach#herdr-instead-of-tmux).
+Ports that open together, such as the servers a test suite starts, get one message between them, like `⇄ localhost:3000, 3001, 3002 → your laptop`, and tmux's status bar lists every forwarded port. A herdr machine has no such list and shows the messages as [herdr notifications](/docs/run-and-attach#herdr-instead-of-tmux).
 
-Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one within 20 of it is used and the message says which.
+Because it's `localhost`, cookies and OAuth redirects behave as they do locally. If the port is taken on your laptop, the next free one within 20 of it is used and the message says which: `⇄ :3000 → your laptop's localhost:3001 (3000 is taken there)`.
 
-A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off.
+A forward needs a listener on `127.0.0.1` or `0.0.0.0`, or on `::1` alone (as Vite does on some setups), on port 1024 or above. A server on another address, a Docker network say, doesn't get one; a container port published with `-p 8080:80` does. The machine keeps 5353, 5355, 5900, 6080, 6081 and 9224 to 9226 for itself. `REPOSE_NO_FORWARD=1` turns the automatic forwarding off, in both directions. [`repose status`](/docs/cli#repose-status-project) marks which listening ports a laptop reaches.
 
 To forward one port without attaching, [`repose open`](/docs/cli#repose-open-local-port) runs one forward in your terminal until `Ctrl-C` and points your browser at it:
 
@@ -176,6 +176,30 @@ cloudflared tunnel --url http://localhost:3000
 ```
 
 This quick tunnel needs no Cloudflare account and prints a random `trycloudflare.com` URL that lasts until you stop it. It's for testing: at most 200 requests at a time, and no server-sent events. A stable URL takes a named tunnel on your own domain. The tunnel is a connection the machine holds open to the internet, so a [freeze](/docs/lifecycle#frozen-machines) can end it; [keep the machine from freezing](/docs/config#keeping-a-machine-from-freezing) while the URL has to work.
+
+### Your laptop's ports on the machine
+
+The other direction is off until you ask for it. List the laptop ports you want the machine to reach in `~/.config/repose/config.toml`:
+
+```toml
+[forward]
+reverse = [5037, 11434]
+
+[projects.todo-app.forward]
+reverse = ["15432:5432"]
+```
+
+`5037` is the same port on both sides: while you're attached, `localhost:5037` on the machine is your laptop's adb, so `adb devices` there lists your emulator, and `localhost:11434` is your Ollama. `"15432:5432"` puts your laptop's 5432 on the machine's 15432, listening port first, for when the machine already runs something on 5432. A `[projects.NAME.forward]` table adds to the global one for that project.
+
+tmux says what you lent:
+
+```text
+⇄ localhost:5037 on the machine → adb on your laptop
+```
+
+**Everything on the machine, agents included, reaches a lent port as a program on your laptop would.** Lend a database only with a password, and adb only with no phone plugged in: adb serves every device your laptop has, and a Postgres with `trust` on localhost gives the machine commands on your laptop.
+
+The ports live only inside the attach, on the machine's `localhost`, and go when you detach or your laptop sleeps. They must be 1024 or above, at most 16 of them, not a port the machine keeps for itself, and not 9222, 9229, 2375 or 2376: a raw pipe to Chrome's DevTools port goes round what [`repose browser bridge`](/docs/your-chrome) allows, and Node's inspector and Docker's API run code on your laptop by design. A port the machine already listens on can't be lent, and the message says to move it. Two laptops attached at once: the first to lend a port holds it. On Windows the key does nothing, and `repose run` says so.
 
 ## Browser
 
@@ -197,7 +221,7 @@ Your browser reads the password after the link's `#` and never sends it anywhere
 
 Text on the page is drawn at your tab's size in the machine's pixels; on a Retina display that is 1x, so it is sharp but not as sharp as a native page.
 
-Commands that open a page in a browser, such as `gh browse` or `gh pr create --web`, print the URL instead: `Open in your browser: https://...`. Setting `BROWSER` yourself overrides that.
+Commands that open a page in a browser, such as `gh browse` or `gh pr create --web`, print the URL instead: `Open in your browser: https://...`. Setting `BROWSER` yourself overrides that. While you're attached, [the link opens on your laptop](/docs/run-and-attach#links-the-machine-opens), a `localhost` one on the laptop port its forward uses.
 
 Playwright test suites (`pnpm exec playwright test` and the like) still run headless unless your config asks for headed browsers. While the agent's browser is up, new shells have `DISPLAY=:99`, so a headed browser you start yourself also appears in the view.
 

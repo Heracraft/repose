@@ -276,8 +276,11 @@ todo-app  running 2h14m  large
   agents     claude-2 needs input 4h, claude working
   checkout   main: 3 commits not on this laptop, 2 files not committed
              worktree-1: nothing new
-  attached   nobody
-  listening  node :5173 up 3d 410.0 MB
+  attached   2 SSH sessions, 1 tmux client
+  listening  node :5173 up 3d 410.0 MB, on your laptop
+             node :3000 up 2h 120.4 MB, on your laptop at :3001
+             postgres :5432 up 3d 40.1 MB
+  laptop     :5037 adb, :11434 ollama
   disk       6.2 GB of 39.0 GB (40G disk), snapshot 11h08m ago
   last event 14m ago, claude finished "Added auth flow"
   webhooks   stripe 200 2m ago, github 503 stopped 1h04m ago
@@ -287,13 +290,13 @@ A machine repose [froze while idle](/docs/lifecycle#frozen-machines) has `frozen
 
 `checkout` has a line for the machine's checkout and one for each git worktree beside it: the branch, its commits your laptop doesn't have (`git fetch repose` gets them), and the files `git status` lists. Your laptop's commits are read from every checkout of the project on it, wherever you run the command; with none, the line gives the last commit's age instead. A running machine that doesn't answer in 4 seconds gets one row instead: `checkout   unknown (no ssh answer in 4 s)`. A stopped project shows the rows its last stop from this laptop read, with when it read them: `main: 3 commits not on this laptop (at the stop, 9h ago)`, or `unknown at the stop, 9h ago (no ssh answer in 15 s)` when that read failed.
 
-`listening` gives each listening process, its port, how long it's been up and its memory, and so which ports an attach [forwards](/docs/machine#ports). A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
+`listening` gives each listening process, its port, how long it's been up and its memory. `on your laptop` marks a port an attached laptop [forwards](/docs/machine#ports), with `at :3001` when the laptop holds it on another port. `laptop` lists [the laptop's own ports on the machine](/docs/machine#your-laptops-ports-on-the-machine), with the program behind each. A `docker` row counts the containers running. `disk` is the machine's filesystem, used over size, then the disk's size as `repose resize` names it; the filesystem keeps a few percent of the disk for itself. That figure comes from the machine, or from its [last sample](/docs/secrets#what-repose-stores) when it doesn't answer, and with neither the row is the disk's size alone. `-v` adds a `host` row with the server and the machine's address. `webhooks` lists each [route](/docs/webhooks) a provider has called, with the last delivery's status and when; a project with no route, or none yet called, has no such row.
 
 Above the rows, one line each for what needs you: the machine [unused for a day](/docs/lifecycle#unused-machines) or [stopped for a miner](/docs/limits#what-isnt-allowed), a [temporary one's end](/docs/lifecycle#temporary-machines). Then settings a new project wouldn't get (`setup: agent codex, machine.nix off, base updates held, never frozen`), [an error](/docs/troubleshooting#machine-state) or a new system that didn't boot, repose's service not answering, which makes the rows under it old, a [disk 90 percent full](/docs/machine#memory-and-disk) with the `repose resize` that doubles it up to 320 GB, and the plan warnings `repose ls` prints.
 
 | Flag                 | What it does                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. |
+| `--json`             | The project's record, with the checkout's lines under `git`: `worktree`, `branch`, `commits_not_on_laptop`, `uncommitted_files`, `last_commit_at`. A running machine that didn't answer has `git_error` (`ssh_timeout` or `ssh_failed`) in place of `git`. A stopped one has the lines this laptop read before stopping it, or `git_error` when that read failed, and `git_at`, when it read them. `forwards` lists what the attached laptops forward: `port`, `laptop_port`, `direction` (`to_laptop` or `from_laptop`) and `process`. |
 | `-f`, `--follow`     | Redraw every 5 seconds until Ctrl-C. Piped, it prints the status again only when it changed; with `--json`, as one line. A read that fails because the server is unreachable or busy prints `Could not read the status at 21:38:02:` and the reason, and the loop goes on; any other failure ends it. `--watch`, the old name, still works. |
 | `--wait STATE`       | Wait until the machine is in STATE, any [project state](/docs/lifecycle#states), then print the status. Exits 1 if it lands in `error` or is destroyed instead, or if the wait runs out. Not with `-f`. |
 | `--timeout DURATION` | How long `--wait` waits before exiting 1 (default `10m`). Only with `--wait`.                                                                            |
@@ -479,6 +482,12 @@ forward = ["apple-notes"]
 
 [projects.todo-app.mcp]
 forward = ["figma"]
+
+[forward]
+reverse = [5037, 11434]
+
+[projects.todo-app.forward]
+reverse = ["15432:5432"]
 ```
 
 | Key                   | Default  | What it does                                                                                                                                                                                                |
@@ -490,7 +499,8 @@ forward = ["figma"]
 | `sync.exclude`        | none     | More gitignore-style patterns the sync leaves out.                                                                                                                                                          |
 | `logins.skip`         | none     | Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it.                                                                                        |
 | `mcp.forward`         | none     | MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends.                                                      |
-| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project. |
+| `forward.reverse`     | none     | Ports of your laptop that the machine's `localhost` reaches while you're attached: `5037` for the same port on both sides, `"15432:5432"` to listen on another one, at most 16, 1024 and above, not 9222, 9229, 2375 or 2376. Everything on the machine, agents included, reaches a lent port as a program on your laptop would: see [Your laptop's ports on the machine](/docs/machine#your-laptops-ports-on-the-machine). |
+| `projects`            | none     | Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports. |
 | `api_url`             | hosted   | See [Other servers](#other-servers).                                                                                                                                                                        |
 | `logto_issuer`        | hosted   | The login server. See [Other servers](#other-servers).                                                                                                                                                      |
 | `logto_client_id`     | hosted   | The CLI's application id there. See [Other servers](#other-servers).                                                                                                                                        |
@@ -500,7 +510,7 @@ forward = ["figma"]
 | Variable                     | What it sets                                                                                                                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REPOSE_PROJECT`             | The project to act on, like `--project`.                                                                                                                                                    |
-| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached.                                                                                                                                           |
+| `REPOSE_NO_FORWARD=1`        | Don't forward ports automatically while attached, in either direction.                                                                                                                      |
 | `REPOSE_TIMING=1`            | Print how long each step of `run` and `attach` took.                                                                                                                                        |
 | `REPOSE_NO_SPINNER=1`        | One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked.                                                                                         |
 | `REPOSE_NO_FASTPATH=1`       | Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing.                                                                 |

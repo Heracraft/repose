@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-936 entries.
+942 entries.
 
 ## Scope
 
@@ -282,7 +282,7 @@ pointer, not a summary.
 - **I-196** `run` and `attach` carry the laptop's Claude Code config, and merge `settings.json` — amended by I-556; amended by I-499; L4370
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4394
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
-- **I-199** Ports are auto-forwarded while a CLI session is attached — L4413
+- **I-199** Ports are auto-forwarded while a CLI session is attached — amended by I-1106; L4413
 - **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; L4426
 - **I-201** `repose cp` — L4438
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4443
@@ -392,7 +392,7 @@ pointer, not a summary.
 - **I-321** `repose config apply` with no file applies the configuration again — 2026-09-28; L8321
 - **I-322** Build log lines carry the time they reached the api — 2026-09-28; L8333
 - **I-323** `config add` and `config remove` honour `reboot_required` — L8349
-- **I-324** Port forwards that appear together get one message, in the status bar's colours — 2026-09-28; L8359
+- **I-324** Port forwards that appear together get one message, in the status bar's colours — 2026-09-28; amended by I-1106; L8359
 - **I-325** hostd refuses an apply whose record says "not running" while the hypervisor runs — 2026-09-28; L8374
 - **I-326** Config builds: two derivations at a time, and two reads in parallel — L8395
 - **I-327** The "Config" docs page is "Installing software" — L8414
@@ -621,7 +621,7 @@ pointer, not a summary.
 - **I-538** Open files: 524288 soft for the user manager and dev's logins — 2026-10-05; L15117
 - **I-539** dev may ptrace its own processes — 2026-10-05; L15133
 - **I-540** The browser has CJK fonts — 2026-10-05; L15142
-- **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; L15160
+- **I-541** `BROWSER` prints the URL — 2026-10-05; amended by I-634; amended by I-1108; L15160
 - **I-552** Removing a machine.nix leaves nothing behind: tmux follows its config, and a deleted file is named — 2026-10-06; L15172
 - **I-576** When a machine runs out of memory, the SSH session, the tmux server and dev's user manager are the last things killed and the last paged out, and the kernel kills instead of thrashing — 2026-10-07; amended by I-733; L15222
 - **I-577** The command-not-found handler calls its helper by path and cannot call itself — 2026-10-07; L15330
@@ -662,7 +662,7 @@ pointer, not a summary.
 - **I-612** A temporary machine whose checkout has work the laptop lacks outlives its session end; `repose keep PROJECT DURATION` — 2026-10-08; amended by I-630; amended by I-631; amended by I-632; amended by I-633; L16934
 - **I-613** `repose resize DISK` needs a unit and compares with the disk first — 2026-10-08; L16964
 - **I-618** `sync`'s remote flags stash and say where; the no-op line counts commits and files apart; carry lines print when they change; `run`'s not-synced line reaches the attached screen; `PROJECT:CHECKOUT` is refused where it is ignored, and `rm PROJECT:CHECKOUT` removes the checkout — 2026-10-08; amended by I-629; amended by I-633; amended by I-1100; L16976
-- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; L17061
+- **I-616** `repose status` is labelled rows with the checkout's git state; `ls` and `status` drop the running hours, show the plan, and mark the project this folder acts on — 2026-10-08; amended by I-633; amended by I-634; amended by I-638; amended by I-1106; L17061
 - **I-617** One vocabulary for agents and machines: agents are `working`, `idle` or `needs input`; a machine nobody used for a day is unused — 2026-10-08; amended by I-629; amended by I-634; L17150
 - **I-606** Agents are addressed by window: `ps` shows each one's state and tree and prints its last lines, and `attach` opens a named window — 2026-10-08; amended by I-629; amended by I-631; amended by I-634; amended by I-636; amended by I-639; L17176
 - **I-607** The first `run -p` without a Claude Code login types the prompt after the login; `-d` is `--no-attach`, and it names the window — 2026-10-08; L17230
@@ -683,7 +683,7 @@ pointer, not a summary.
 - **I-631** The cli-devx follow-ups: ids the tables print work everywhere, rm takes each fork's remote, attach starts a stopped machine, a word that names no project is a window, and a sync into another repository's history is refused (cli-devx, 2026-10-09) — amended by I-641; amended by I-709; amended by I-750; amended by I-888; L17794
 - **I-632** A copy pass over the cli-devx lines: facts once, no reassurance, one pointer to help (cli-devx, 2026-10-09) — L17891
 - **I-633** The second cli-devx follow-up: the fake says the gate's words, a project word after a group, run's phase says what it does, a second machine gets its own remote, the stash flags say machine (cli-devx, 2026-10-09) — amended by I-894; L17930
-- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; L18028
+- **I-634** The first run waits for a plan, links open on the laptop, and the CLI says what it does not know (cli-devx, 2026-10-09) — amended by I-637; amended by I-638; amended by I-710; amended by I-740; amended by I-1108; L18028
 - **I-635** Help topics, flag suggestions, and the project's agent from the CLI (cli-devx, 2026-10-09) — L18091
 - **I-636** A stop records the tmux agent windows and the next start opens them on their conversations (cli-devx, 2026-10-09) — amended by I-640; amended by I-646; amended by I-757; L18123
 - **I-637** A start the plan's memory refuses asks to stop what is in the way (cli-devx, 2026-10-09) — L18165
@@ -968,3 +968,9 @@ pointer, not a summary.
 - **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31593
 - **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31686
 - **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31723
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L31812
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L31842
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L31906
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L31955
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32049
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32087

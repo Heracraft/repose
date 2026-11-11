@@ -20,11 +20,11 @@
                 "buttonList": {
                   "buttons": [
                     {
-                      "text": "Open project",
+                      "text": "Your plan",
                       "type": "OUTLINED",
                       "onClick": {
                         "openLink": {
-                          "url": "https://repose.herakraft.co/projects/01a0c14a-f7e3-7926-be1c-75e7728878a1"
+                          "url": "https://repose.herakraft.co/billing"
                         }
                       }
                     }

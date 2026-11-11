@@ -16,7 +16,7 @@ type topicRow struct {
 // envTopic is cli.md's "Environment variables" table.
 var envTopic = []topicRow{
 	{[]string{"`REPOSE_PROJECT`"}, "The project to act on, like `--project`."},
-	{[]string{"`REPOSE_NO_FORWARD=1`"}, "Don't forward ports automatically while attached."},
+	{[]string{"`REPOSE_NO_FORWARD=1`"}, "Don't forward ports automatically while attached, in either direction."},
 	{[]string{"`REPOSE_TIMING=1`"}, "Print how long each step of `run` and `attach` took."},
 	{[]string{"`REPOSE_NO_SPINNER=1`"}, "One line per step instead of a progress line. `TERM=dumb` does the same. Questions are still asked."},
 	{[]string{"`REPOSE_NO_FASTPATH=1`"}, "Check with the server before every connection instead of reusing the last one. Slower; for when a connection keeps failing."},
@@ -58,7 +58,8 @@ var configTopic = []topicRow{
 	{[]string{"`sync.exclude`", "none"}, "More gitignore-style patterns the sync leaves out."},
 	{[]string{"`logins.skip`", "none"}, "Logins `repose run` leaves on your laptop: `gh`, `codex`, `opencode`, `env`, `mcp`. `repose secrets choose` sets it."},
 	{[]string{"`mcp.forward`", "none"}, "MCP servers [`repose mcp forward`](#repose-mcp-forward-name) runs whenever you're attached to any project, until the last attach to that project ends."},
-	{[]string{"`projects`", "none"}, "Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project."},
+	{[]string{"`forward.reverse`", "none"}, "Ports of your laptop that the machine's `localhost` reaches while you're attached: `5037` for the same port on both sides, `\"15432:5432\"` to listen on another one, at most 16, 1024 and above, not 9222, 9229, 2375 or 2376. Everything on the machine, agents included, reaches a lent port as a program on your laptop would: see [Your laptop's ports on the machine](/docs/machine#your-laptops-ports-on-the-machine)."},
+	{[]string{"`projects`", "none"}, "Per-project tables. `[projects.NAME.logins]` with `skip` replaces `logins.skip` for that project; `skip = []` copies everything for it. `[projects.NAME.mcp]` with `forward` adds servers for that project, and `[projects.NAME.forward]` with `reverse` adds ports."},
 	{[]string{"`api_url`", "hosted"}, "See [Other servers](#other-servers)."},
 	{[]string{"`logto_issuer`", "hosted"}, "The login server. See [Other servers](#other-servers)."},
 	{[]string{"`logto_client_id`", "hosted"}, "The CLI's application id there. See [Other servers](#other-servers)."},
