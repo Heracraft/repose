@@ -316,7 +316,9 @@ in
           # Every packet of the flow, not only its first (DECISIONS I-1063):
           # a GET is at least the SYN, the request and the FIN.
           import re
-          assert int(re.search(r"packets (\d+)", before).group(1)) >= 3, before
+          m = re.search(r"packets (\d+)", before)
+          assert m, before
+          assert int(m.group(1)) >= 3, before
           host.succeed("systemctl reload nftables.service")
           host.succeed("nft list chain inet repose guest_dyn | grep -q 'counter name \"egress-ga\"'")
           host.succeed("nft list set bridge repose guests | grep -q 'tap-ga'")
