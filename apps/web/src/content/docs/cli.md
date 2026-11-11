@@ -14,7 +14,7 @@ Did you mean `repose ls`?
 `repose --help` shows its usage.
 ```
 
-Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `clone` to `fork`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
+Words other CLIs use lead to the repose command: `up`, `create`, `new` and `init` to `run`, `shell` and `connect` to `ssh`, `down` to `stop`, `port`, `forward` and `tunnel` to `open`, `env` to `secrets`, `undo` to `restore`, `copy` to `cp`. A mistyped subcommand gets the same answer with `--help` after it. So does a mistyped flag, or another tool's spelling of one: docker's detach flag on `run` names `-d`, and a force flag on `stop` names `-y`.
 
 ## Which project
 
@@ -333,25 +333,6 @@ Make a [temporary machine](/docs/lifecycle#temporary-machines) a normal one, no 
 ### `repose restore [NAME]`
 
 Bring back a project destroyed in the last 30 days ([Destroy and restore](/docs/lifecycle#destroy-and-restore)). `--as NEW-NAME` restores under another name, `--snapshot ID` names the snapshot. With no NAME it takes the destroyed project whose git remote is this checkout's, and asks which one when several share that remote. It asks for a name when a live project holds this one, and exits 2 naming `--as` without a terminal. A destroy still running is waited out for up to 3 minutes, then exits 1. It ends with `Restored todo-app from its 2.1 GB snapshot of 2026-10-08 21:37 in 1m12s; it is running (large).`
-
-### `repose fork [PROJECT]`
-
-Copy the project's disk as it is now into [new projects](/docs/lifecycle#fork-a-project), each on its own machine. The project itself keeps running. Without `--snapshot` it has to be running or stopped: a stopping one is waited out, and any other state exits 5.
-
-| Flag                      | What it does                                                                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `-n`, `--count N`         | How many copies: 1 to 10, default 1. Another number exits 2.                                                                                         |
-| `--name NAME`             | Name them `NAME-1`, `NAME-2` and so on, in place of `PROJECT-fork-1`. Numbers a live project of yours already has are skipped.                        |
-| `--size small\|large\|xl` | Size of the copies. Default: the project's.                                                                                                          |
-| `--snapshot ID`           | Copy one of the project's [snapshots](#snapshots) instead of its disk as it is now.                                                                  |
-| `--prompt TEXT`           | Start the agent in every copy with that prompt. Your checkout isn't synced into them.                                                                |
-| `--agent NAME`            | Which agent `--prompt` starts: `claude`, `codex`, `opencode`, `gemini` or `pi`. Default: the project's. Needs `--prompt`.                             |
-| `--no-start`              | Create the copies stopped, so they take none of your plan's memory until `repose start`. Not with `--prompt`.                                        |
-| `--json`                  | Print the copies as JSON.                                                                                                                            |
-
-In a checkout whose `repose` remote is the project's machine, each copy gets a git remote of its own name; `repose rm` of a copy removes that remote again.
-
-Each copy is a project, and counts toward [the 100 an account can have](/docs/limits#projects) and toward your plan's disk and memory. A fork that would pass any of those is refused before anything is copied and exits 7; the memory refusal names `--no-start`.
 
 ### `repose resize [PROJECT] [DISK]`
 

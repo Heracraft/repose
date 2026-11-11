@@ -73,12 +73,6 @@ type Options struct {
 	// long after the stop is accepted: the real api reads "stopping" only
 	// once its engine has picked the op up.
 	StopPickup time.Duration
-	// ForkStepDelay makes each fork copy's restore op run its steps the
-	// way the engine does: phase restore (project "restoring") for the
-	// delay, then, when the copy starts, phase start_guest (project
-	// "starting") for the delay times the copy's number, then done. Zero
-	// keeps the instant fork.
-	ForkStepDelay time.Duration
 	// NoLongPoll makes GET /projects/:id/ops/:op_id ignore ?wait and
 	// answer without version, phase or project_state, as the api before
 	// I-236 did.
@@ -134,28 +128,22 @@ type Fake struct {
 	mux    *http.ServeMux
 	routes []string
 
-	mu       sync.Mutex
-	seq      int64
-	reqSeq   int64
-	ipSeq    int
-	serial   uint64
-	tokens   map[string]string // token -> user id
-	users    map[string]*userRec
-	projects map[string]*project
-	ops      map[string]*op
-	forks    map[string][]forkRec // by user id and request_id (I-254)
-	// forkNoClone makes a fork without snapshot_id answer 409
-	// snapshot_needed, as the api does when the source's host cannot hold
-	// the copies (I-701); oldFork answers it, and a snapshot's reason, as
-	// an api before I-701 and I-703 did.
-	forkNoClone, oldFork bool
-	certs                map[uint64]*cert
-	revoked              []revocation
-	failOnce             []failRule
-	failAlways           map[string]string
-	hits                 map[string][]time.Time
-	hosts                []Host // nil means the one canned host
-	gatewayCerts         int    // POST /internal/gateway-certs calls, for cache tests
+	mu           sync.Mutex
+	seq          int64
+	reqSeq       int64
+	ipSeq        int
+	serial       uint64
+	tokens       map[string]string // token -> user id
+	users        map[string]*userRec
+	projects     map[string]*project
+	ops          map[string]*op
+	certs        map[uint64]*cert
+	revoked      []revocation
+	failOnce     []failRule
+	failAlways   map[string]string
+	hits         map[string][]time.Time
+	hosts        []Host // nil means the one canned host
+	gatewayCerts int    // POST /internal/gateway-certs calls, for cache tests
 	// wakeFails makes POST /internal/wake answer an error, so a gateway
 	// test can see what a failed wake does to a dial (DECISIONS I-818).
 	wakeFails bool
@@ -189,7 +177,6 @@ func New(opts Options) *Fake {
 		users:      map[string]*userRec{},
 		projects:   map[string]*project{},
 		ops:        map[string]*op{},
-		forks:      map[string][]forkRec{},
 		certs:      map[uint64]*cert{},
 		failAlways: map[string]string{},
 		hits:       map[string][]time.Time{},
@@ -665,7 +652,7 @@ func (f *Fake) register() {
 	f.handle("GET /v1/projects/{id}/snapshots", f.listSnapshots)
 	f.handle("POST /v1/projects/{id}/snapshots", f.createSnapshot)
 	f.handle("POST /v1/projects/{id}/snapshots/{sid}/restore", f.restoreSnapshot)
-	f.handle("POST /v1/projects/{id}/fork", f.forkProject)
+	f.handle("POST /v1/projects/{id}/fork", f.forkRemoved)
 	// Events and logs.
 	f.handle("GET /v1/projects/{id}/events", f.listEvents)
 	f.handle("GET /v1/projects/{id}/logs", f.projectLogs)
@@ -765,16 +752,6 @@ func busyStopping(p *project) *apiError {
 type startOutcome struct {
 	failCode, failMsg string
 	warnCode, warnMsg string
-}
-
-// SetForkClone sets what a fork without snapshot_id gets: clones (the
-// default), 409 snapshot_needed (noClone), or an api before I-701's
-// "snapshot_id is required" (old, which also records every snapshot a
-// user asks for as manual, as an api before I-703 did).
-func (f *Fake) SetForkClone(noClone, old bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.forkNoClone, f.oldFork = noClone, old
 }
 
 // SetStartFailure makes the next start op of the project end in error

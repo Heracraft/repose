@@ -31414,3 +31414,92 @@ already works this way for the same reason (I-210). `repose_stash_pick`
 also compares `stash@{0}` before and after its push: a push that stashed
 nothing leaves the previous stash on top, and taking that for ours would
 restore a stranger's files over the sync's.
+**I-1082. `repose fork` is removed: the command, the api route's work and
+the api's half of hostd's clone.** (remove-fork, 2026-11-11.)
+*Made during implementation*, on the owner's decision of 2026-11-10 and
+the plan in `docs/proposals/2026-11-10-remove-fork.md`. Conductor's
+ruling on every choice the proposal left open: as proposed, owner's
+standing approval of 2026-11-11.
+
+**Supersedes I-254** (the command), **I-701** (clones on the source's
+host), **I-702** (the per-copy timed lines) and **I-703** (the fork
+snapshot). **Amends** I-255 (the fork half; a restore under another name
+keeps its checkout rule), I-610 (drops the fork half and `fork
+--no-start`), I-622 and I-631 (the fork remotes; `rm` keeps removing a
+second machine's remote, and `forgetForkRemote` is now
+`forgetMachineRemote`), I-633 (the fork interrupt lines), I-730 (the
+fork's wait on a background stop), I-736 (the fork term in placement:
+`scheduler.FitsOn` is gone, so `cpuRoomSQL` no longer takes a `single`
+argument — every placement it is asked about adds one guest), I-433 and
+I-474 (`Secrets.CopyNamed`, which nothing else called), I-549 and I-646
+(restore as new only), I-569 and I-585 (no N-copy check), I-460 (a held
+project cannot be restored as new), I-630 (`clone` and `copy` as typed
+words) and I-293 and I-300 where they name fork.
+
+Why: the product value council voted fork a gimmick, 4 of 4, score 3.9
+(`reports/2026-11-04-product-value-council.md`). Three 8 GB copies fill a
+Solo plan right after the demo, the owner does not use it, and worktrees
+give parallel attempts inside one machine's memory. What it did is
+covered: `repose run --worktree -p "..."` for N agents on N approaches in
+one machine's plan memory, `repose run NAME` for a second machine with
+the laptop's checkout, and `repose snapshots restore ID --as NAME` for a
+copy of a machine's own disk, which stays and is now the only way to
+copy one.
+
+**The reading of "one release" for something removed.** CLAUDE.md says
+the old shape stays accepted for one release. A removed endpoint and a
+removed command have no new shape to move to, so the rule is read as:
+for one release the old request still reaches something that answers it
+deliberately.
+
+- `repose fork` stays as a hidden command with `DisableFlagParsing`, so
+  any old flag reaches it. It prints where to go and exits 2 (usage).
+  `docs_test.go`'s `hiddenCommands` carries it with its reason, so
+  `cli.md` does not have to name a command nobody should type.
+  **v0.1.46 deletes it**, with its line in `hiddenCommands`. Naming the
+  release is the point: I-603's "for one release" form was still there
+  eight releases later (I-888).
+- `POST /projects/:id/fork` stays as a route and answers `400 invalid`
+  with `detail.reason: "fork_removed"`. The code behind it is gone. The
+  shape of the refusal is fixed by two released CLIs (v0.1.43, v0.1.44):
+  one prints an `invalid` as "Could not fork X: <message>. Nothing was
+  created." and exits 1, so the message reads as a clause after a colon
+  and ends without a full stop; and one falls back to taking a fork
+  snapshot on `409 snapshot_needed` or on an `invalid` whose message
+  contains "snapshot_id is required", so the refusal matches neither and
+  no old `repose fork` takes a snapshot for nothing. `gone` (410) was
+  considered: `api.md` keeps one list of codes, and an old CLI prints an
+  unknown code through its generic path with no message of its own.
+  The route goes one release after v0.1.45.
+- hostd keeps `Restore.clone`, `guest/clone.go`, `lvm.Clone` and the
+  `local_clone` feature for this release: the api has stopped sending
+  the field, and a host that is switched later than the api is deployed
+  must still answer an api that predates the removal. Reserving proto
+  field 19 and deleting that code is the release after v0.1.45, named in
+  `docs/interfaces/grpc-hostd.md` in this commit.
+
+**Owed, named here so it is not lost.** No migration ships with this
+entry. `fork` snapshots expire a day after they are taken (I-703), so a
+day after this deploys none is live; the next release's migration sets
+any `reason = 'fork'` row to `manual` and narrows
+`snapshots_reason_check` to `scheduled, stop, manual`, and takes with it
+the `fork` branches in `internal/api/snapshots/expiry.go`,
+`internal/api/ops/phases.go` and the `{reason: "fork"}` body of `POST
+/projects/:id/snapshots`. `hosts.features` stays: the idle pause reads
+`pause` from it (I-818). Fork copies users already have are ordinary
+projects named `X-fork-N`; they keep working and `repose rm` removes
+each one and its remote. Nothing migrates them.
+
+A failed clone copy that is still in `error` used to be told to remove
+it and fork the source again; it now reads the ordinary unfinished
+restore line, which already offers `repose rm`.
+
+*Evidence.* `go test ./internal/cli/...`, `./internal/api/...`,
+`./internal/hostd/...`, `./internal/billing/...` and `./internal/fakes/...`
+pass. `TestForkRouteRefuses` posts three bodies to the route against a
+real test server and holds the 400, the `fork_removed` reason, the exact
+message, and that the message neither ends in a full stop nor names
+`snapshot_id`. `go run ./cmd/repose fork todo-app -n 3` prints the
+pointer and exits 2, and `repose --help` no longer lists fork. The
+section-7 greps of the proposal print nothing outside `docs/DECISIONS.md`,
+`docs/proposals/`, `docs/workstreams/` and the stub with its test.

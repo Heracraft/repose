@@ -85,49 +85,6 @@ func TestPlanMemoryRefusalLeavesUnknownsToTheAPI(t *testing.T) {
 	}
 }
 
-// `repose fork` checks the plan's memory for all N before it snapshots,
-// and --no-start makes the forks stopped (I-610, review 5.2).
-func TestForkChecksThePlanBeforeTheSnapshot(t *testing.T) {
-	ctx := context.Background()
-	_, e, out := soloEnv(t, "")
-	src, err := e.Client.CreateProject(ctx, CreateProjectRequest{Name: "demo", Class: "large"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: "demo", Count: 3})
-	want := "Your Solo plan runs 8 GB at once and 3 large machines need 24 GB beside the 8 GB demo is using. `repose fork demo -n 3 --no-start` creates them stopped, or upgrade at https://repose.herakraft.co/billing."
-	if exitCodeOf(err) != ExitPaymentRequired || err.Error() != want {
-		t.Fatalf("err %v, want %q", err, want)
-	}
-	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: "demo", Count: 1})
-	want = "Your Solo plan runs 8 GB at once and demo is using it. `repose fork demo --no-start` creates the fork stopped, or upgrade at https://repose.herakraft.co/billing."
-	if exitCodeOf(err) != ExitPaymentRequired || err.Error() != want {
-		t.Fatalf("err %v, want %q", err, want)
-	}
-	snaps, err := e.Client.ListSnapshots(ctx, src.ID)
-	if err != nil || len(snaps) != 0 {
-		t.Fatalf("a refused fork left snapshots: %+v %v", snaps, err)
-	}
-	if ps := listed(t, e); len(ps) != 1 {
-		t.Fatalf("a refused fork made projects: %+v", ps)
-	}
-
-	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "demo", Count: 2, NoStart: true}); err != nil {
-		t.Fatalf("fork --no-start: %v", err)
-	}
-	for _, slug := range []string{"demo-fork-1", "demo-fork-2"} {
-		if p := bySlug(listed(t, e), slug); p == nil || p.State != "stopped" {
-			t.Fatalf("%s = %+v", slug, p)
-		}
-		if !strings.Contains(out.String(), "  "+slug+"  stopped (large)\n") {
-			t.Fatalf("summary:\n%s", out.String())
-		}
-	}
-	if err := ForkCmd(ctx, e, ForkOptions{ProjectArg: "demo", Count: 1, NoStart: true, Prompt: "go"}); exitCodeOf(err) != ExitUsage {
-		t.Fatalf("--no-start with --prompt: %v", err)
-	}
-}
-
 // `repose run --size` on a project that exists: a stopped one starts at
 // that size, a running one is refused with the command that changes it
 // (I-611, review B6).

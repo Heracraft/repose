@@ -431,62 +431,6 @@ func TestHostReserveIsAnEighthWithAFloorAndACeiling(t *testing.T) {
 	}
 }
 
-// A fork's copies are placed by FitsOn, not PickHost, so the CPU term has
-// to be asked there too or the whole fork path places against nothing
-// (DECISIONS I-736 over I-701). Copies that start commit their vCPUs;
-// copies created stopped commit none and are never refused for CPU, which
-// is how the memory term already behaves.
-func TestFitsOnCountsTheCopiesVCPUs(t *testing.T) {
-	pool := testdb.Open(t)
-	ctx := context.Background()
-	now := time.Now()
-	h := addHostCores(t, pool, host{"host-01", "ready", false, 256 << 30, 240 << 30, 1 << 40, now}, 8)
-	if _, err := pool.Exec(ctx, "update hosts set features = array['local_clone'] where id = $1", h); err != nil {
-		t.Fatal(err)
-	}
-	fits := func(class string, count int, start bool) bool {
-		t.Helper()
-		var ok bool
-		if err := db.InTx(ctx, pool, func(tx pgx.Tx) error {
-			var err error
-			ok, err = scheduler.FitsOn(ctx, tx, h, class, count, start, now)
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return ok
-	}
-	// 8 cores allow 12 committed guest vCPUs. Memory is never the
-	// constraint here: the host has 240 GB free.
-	if !fits("large", 6, true) {
-		t.Fatal("six large copies that start (12 vCPUs) do not fit on 8 cores, want 12 of 12")
-	}
-	if fits("large", 7, true) {
-		t.Fatal("seven large copies that start (14 vCPUs) fit on 8 cores, want a refusal")
-	}
-	if fits("xl", 4, true) {
-		t.Fatal("four xl copies that start (16 vCPUs) fit on 8 cores, want a refusal")
-	}
-	// Created stopped, they commit nothing and the CPU term must not
-	// refuse them, exactly as the memory term does not.
-	if !fits("xl", 5, false) {
-		t.Fatal("five xl copies created stopped are refused for CPU, want them placed")
-	}
-	// With the host already at its ceiling, a copy that starts is refused
-	// and a copy created stopped is still fine.
-	commit(t, pool, h, "xl", "kanali")
-	commit(t, pool, h, "xl", "toolbar")
-	commit(t, pool, h, "large", "s2-sync")
-	commit(t, pool, h, "small", "probe")
-	commit(t, pool, h, "small", "lat")
-	if fits("small", 1, true) {
-		t.Fatal("a copy that starts fits a host at its CPU ceiling, want a refusal")
-	}
-	if !fits("small", 1, false) {
-		t.Fatal("a copy created stopped is refused on a host at its CPU ceiling, want it placed")
-	}
-}
-
 // The class table, in the one Go place the api holds it: 4 GB of the
 // class's memory per guest vCPU, uniformly across the three (DECISIONS
 // I-784 amending R3-2). The uniformity is the point of the figure, not a

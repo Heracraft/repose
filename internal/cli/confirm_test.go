@@ -584,10 +584,9 @@ func TestInterruptedStopSaysItGoesOn(t *testing.T) {
 	}
 }
 
-// Ctrl-C during `resize --size` and `fork` says what is left (review A6,
-// I-633): the stop goes on and the size is the old one; the snapshot
-// goes on and nothing was forked; the copies exist and start.
-func TestInterruptedResizeAndForkSayWhatIsLeft(t *testing.T) {
+// Ctrl-C during `resize --size` says what is left (review A6, I-633):
+// the stop goes on and the size is the old one.
+func TestInterruptedResizeSaysWhatIsLeft(t *testing.T) {
 	fake := fakeapi.New(fakeapi.Options{})
 	defer fake.Close()
 	waiting := make(chan struct{}, 1)
@@ -616,30 +615,6 @@ func TestInterruptedResizeAndForkSayWhatIsLeft(t *testing.T) {
 	err := ResizeClassCmd(ctx, e, p.ID, to, func(string) (bool, error) { return true, nil })
 	if want := "Interrupted. The stop of demo goes on, and it stays " + p.Class + "."; exitCode(err) != ExitInterrupted || err.Error() != want {
 		t.Fatalf("resize: %v, want %q", err, want)
-	}
-
-	// A cloned fork (I-701) is interrupted while its copy starts.
-	ctx, cancel = context.WithCancel(context.Background())
-	go func() { <-waiting; cancel() }()
-	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1})
-	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. demo-fork-1 exists, and its start goes on." {
-		t.Fatalf("fork: %v", err)
-	}
-	// One that needs a snapshot first is interrupted while it is taken.
-	fake.SetForkClone(true, false)
-	ctx, cancel = context.WithCancel(context.Background())
-	go func() { <-waiting; cancel() }()
-	err = ForkCmd(ctx, e, ForkOptions{ProjectArg: p.ID, Count: 1})
-	if exitCode(err) != ExitInterrupted || err.Error() != "Interrupted. The snapshot of demo goes on; nothing was forked." {
-		t.Fatalf("fork from a snapshot: %v", err)
-	}
-
-	res := &ForkResult{Projects: []ForkedProject{{Slug: "demo-fork-1"}, {Slug: "demo-fork-2"}}}
-	if got := interruptedFork(res, false).Error(); got != "Interrupted. demo-fork-1 and demo-fork-2 exist, and their starts go on." {
-		t.Errorf("two: %q", got)
-	}
-	if got := interruptedFork(&ForkResult{Projects: res.Projects[:1]}, true).Error(); got != "Interrupted. demo-fork-1 exists, and its restore goes on." {
-		t.Errorf("one, --no-start: %q", got)
 	}
 }
 

@@ -119,7 +119,6 @@ repose restore [NAME] [--as NEW-NAME] [--snapshot ID]   # no NAME: the checkout'
 repose logs [PROJECT] [--kind console|build|ops] [--since 1h] [--follow|-f]
 repose events [PROJECT] [--since 24h] [--follow|-f]
 repose ls [--destroyed [--all]] [-q|--quiet]  # list all, ignores cwd; --destroyed: what can be restored; alias projects, the old name (I-273)
-repose fork [PROJECT] [-n N] [--name NAME] [--size S] [--snapshot ID] [--prompt TEXT [--agent A]] [--json]   # I-254
 repose resize [PROJECT] [DISK] [--size small|large|xl] [--yes|-y]   # grow the disk (e.g. 80G); --size changes the class (I-260); PROJECT positional (I-268)
 repose scan [DIR] [--json]     # dry run of what run installs (I-222)
 repose questions [PROJECT] [--json]            # I-245
