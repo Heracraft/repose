@@ -177,18 +177,30 @@ result.
 
 | Class | vCPU | RAM | Default volume | Monthly cap (see PRICING) |
 |---|---|---|---|---|
+| tiny | 0.5 | 2 GB | 10 GB | $49 |
 | small | 1 | 4 GB | 20 GB | $49 |
 | large | 2 | 8 GB | 40 GB | $99 |
 | xl | 4 | 16 GB | 80 GB | $199 |
 
 Every class is 4 GB of memory per guest vCPU, uniformly (DECISIONS I-784,
-amending R3-2's 2 GB). The ratio is uniform so that a host's placeable
-memory fixes its guest-vCPU count whatever mix of classes is sold: two
-`small` commit the vCPUs of one `large`, as they already took its memory.
+amending R3-2's 2 GB; I-1168 adding `tiny`). The ratio is uniform so that
+a host's placeable memory fixes its guest-vCPU count whatever mix of
+classes is sold: two `small`, or four `tiny`, commit the vCPUs of one
+`large`, as they already took its memory. `tiny` is why the sold CPU is
+counted in thousandths of a vCPU wherever it is counted (500, 1000, 2000,
+4000): the ratio has no whole answer below 4 GB, and a 2 GB class with a
+whole vCPU would make the seat count overstate a host that sells them by
+twice. A `tiny` boots one vCPU and its cgroup holds it to half of one.
+
+The classes are described by what they are big enough for, and every one
+of them runs always-on agents: `tiny` drives a browser, calls APIs and
+makes documents; `small` runs an agent on a codebase; `large` and `xl`
+are for the hardest work, builds, test suites and several agents at once.
+No class is "the class for agents" (DECISIONS I-1168).
 
 **Burst ceilings**, on a host with `repose.host.burst.enable` (DECISIONS
-I-1126; off on every host at the time of writing): small 4, large 6,
-xl 8. A guest cold-started there boots with that many vCPUs and its
+I-1126; off on every host at the time of writing): tiny 2, small 4,
+large 6, xl 8. A guest cold-started there boots with that many vCPUs and its
 cgroup still starts at the base quota its class sells; hostd raises the
 quota toward the ceiling while the host's busy CPU stays under a gate,
 and cuts every guest to its base in one tick when it does not. The vCPU

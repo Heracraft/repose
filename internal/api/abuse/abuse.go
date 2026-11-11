@@ -252,7 +252,7 @@ var busyUnattendedSQL = `select count(*) from (
 	where ts > $1 and state = 'running'
 	group by project_id
 	having min(ts) < $2 and count(*) >= $3
-	   and sum(cpu_ns)::float8 / (count(*) * 60e9 * max(` + scheduler.ClassVCPUSQL("class") + `)) >= 0.9
+	   and sum(cpu_ns)::float8 / (count(*) * 60e9 * max(` + scheduler.ClassMilliVCPUSQL("class") + `) / 1000.0) >= 0.9
 	   and max(ssh_sessions) = 0 and max(tmux_clients) = 0
 	   and max(jsonb_array_length(coalesce(agents, '[]'::jsonb))) = 0
 	   and bool_and(guestd_ok)

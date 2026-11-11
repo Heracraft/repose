@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-960 entries.
+962 entries.
 
 ## Scope
 
@@ -29,7 +29,7 @@ pointer, not a summary.
 - **R2-3** Guest disks are host-local with snapshots to Blob; projects are pinned to a host — L61
 - **R2-17** Host SKU is Intel D64s_v5 with guest images on a Premium SSD v2 managed data disk — L66
 - **R2-18** Nested virtualization is accepted, gated by a one-day benchmark before anything else is built — L73
-- **R3-2** Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1 oversubscribed, memory never — amended by I-734; amended by I-784; amended by I-1126; L78
+- **R3-2** Three size classes: small 2/4, large 4/8, xl 8/16. CPU 2:1 oversubscribed, memory never — amended by I-734; amended by I-784; amended by I-1126; amended by I-1168; L78
 - **R3-3** Config changes apply in place via switch-to-configuration; reboot only when the kernel or share layout changed — L88
 - **R3-6** LVM thin pool, one thin volume per guest, snapshot with a guest-side fsfreeze over vsock, streamed compressed to Blob. Nightly plus on stop, keep 7 — L93
 - **R3-20** Azure hosts while credits last; the OpenTofu host module is written so Hetzner is a second module — L98
@@ -738,11 +738,11 @@ pointer, not a summary.
 - **I-686** The guest freeze is turned on for host-01 (freeze-on-prod, 2026-10-12) — L20594
 - **I-734** The oversubscription ratio is counted against physical cores, not the vendor's vCPUs, and it is 1.5 (cpu-weight, 2026-10-15) — amended by I-784; L20663
 - **I-735** Hosts report physical cores, and the api records them (cpu-weight, 2026-10-15) — L20720
-- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — L20761
-- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; L20820
+- **I-736** Placement counts committed guest vCPUs against the host's cores and refuses past I-734's ratio (cpu-weight, 2026-10-15) — amended by I-1168; L20761
+- **I-737** Each guest's cgroup weight is its class's (cpu-weight, 2026-10-15) — amended by I-1126; amended by I-1168; L20820
 - **I-738** A host CPU alert, on busy guest vCPUs per physical core (cpu-weight, 2026-10-15) — L20858
 - **I-746** The validity pass stops eating the boot deadline and blaming `--load-db` for it (cpu-weight, 2026-10-15) — L20904
-- **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; L20939
+- **I-739** The seat count is the smaller of a host's memory and its CPU ceiling, per host and then summed (cpu-weight, 2026-10-15) — amended by I-784; amended by I-1168; L20939
 - **I-696** The launch gates only the owner can close live in `CHECKLIST.md`, not in a handoff file — 2026-10-12; L21012
 - **I-688** A finished turn notifies nobody; an agent says it is done with `repose-notify --done` (notify-revamp, 2026-10-12). Amends I-244, I-49, I-504 — L21039
 - **I-689** Nothing reaches the phone while the owner is at the machine (notify-revamp, 2026-10-12) — L21052
@@ -821,7 +821,7 @@ pointer, not a summary.
 - **I-781** The quickstart does not promise that other projects are out of an agent's reach (launch-truth, 2026-10-18) — L23607
 - **I-782** `hostmgr.allocate` steps over 10.255.0.3, so the launch host gets .4 (launch-truth, 2026-10-18) — L23633
 - **I-780** The cold path no longer types the prompt: it is a word on the agent's own command line; amends I-752 — 2026-10-18; L23664
-- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; L23677
+- **I-784** The size classes go to 4 GB of memory per guest vCPU: small 1, large 2, xl 4 (class-ratio, 2026-10-18). Amends R3-2, I-734 and I-739: R3-2's class table, the arithmetic I-734 read it with, and I-739's seat derivation, and with them PRICING.md's class shapes — partly amended by I-1126; amended by I-1168; L23677
 - **I-778** The host kernel is pinned apart from `nixpkgs`, and the host refuses to build below the patched version (cve-2026-99999, 2026-10-18) — L23916
 - **I-796** The freeze deadline and write rate come from the disk the images are written to, a freeze admits snapshots against all of them at once, and a guest that loses its memory at either end alerts (freeze-limits, 2026-10-18) — L23982
 - **I-798** A release's notes are written before its tag, and `release.yml` refuses to publish without them; the notes read as Simplified Technical English — 2026-10-18; L24213
@@ -961,7 +961,7 @@ pointer, not a summary.
 - **I-1116** A webhook route may answer a provider and may not serve a page, which is why it does not reopen the preview question — 2026-11-11; L31265
 - **I-1118** A webhook delivery's log line and record carry ids and counts, and never the URL — 2026-11-11; L31321
 - **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31343
-- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; L31377
+- **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; partly amended by I-1168; L31377
 - **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31475
 - **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31555
 - **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31641
@@ -992,3 +992,5 @@ pointer, not a summary.
 - **I-1160** What a switch does to a unit's directories, and what a domain move does to the gateway's host certificate, are runbook entries; the live suite asserts the words the site has — 2026-11-11; L33117
 - **I-1162** The `says` row is the hand-off between the api's two processes, because only one of them can reach a host (say-replicas, 2026-11-11). Amends I-1144 — L33178
 - **I-1166** The attach tests need a tmux newer than the runner's, because tmux 3.4 crashes on the session every attach makes (attach-window-ci, 2026-11-11) — L33244
+- **I-1168** A `tiny` class below `small`: 2 GB of memory and half a guest vCPU, four to a seat (tiny-class, 2026-11-12) — L33312
+- **I-1170** On every class, the browser's tab is what memory pressure takes; the agent is spared and a webhook receiver is not yet (tiny-class, 2026-11-12) — L33470

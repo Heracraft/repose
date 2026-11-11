@@ -9,13 +9,20 @@ Each project gets its own virtual machine running NixOS, with its own kernel, di
 
 | Size    | Cores | Memory | Disk  |
 | ------- | ----- | ------ | ----- |
+| `tiny`  | 0.5   | 2 GB   | 10 GB |
 | `small` | 1     | 4 GB   | 20 GB |
 | `large` | 2     | 8 GB   | 40 GB |
 | `xl`    | 4     | 16 GB  | 80 GB |
 
 A core is a physical core, not a hyperthread. `nproc` says the same
 number, and a machine running since before 18 October 2026 keeps the
-count it started with until its next stop.
+count it started with until its next stop. A `tiny` gets half a core and
+`nproc` says 1.
+
+Sizes by what they are big enough for: `tiny` drives a browser, calls
+APIs and writes documents; `small` runs an agent on a codebase; `large`
+and `xl` are for builds, test suites and several agents at once. Agents
+run on all of them.
 
 ## What's installed
 
@@ -241,7 +248,7 @@ npm, pnpm, yarn v1 and Docker Hub downloads go through a cache on the server. Fo
 
 On a machine out of memory, the kernel kills a process rather than let the machine stall. Your agents, the tmux or herdr server and your SSH connection are kept to the last, so the largest of the rest goes first, usually a runaway test or dev server. `sudo dmesg | grep -i killed` shows what went. The kill takes that process and nothing else: the pane it died in stays open, and the agent that started it keeps working. If it keeps happening, give the machine more memory with [`repose resize --size large`](#changing-the-size) (or `xl`).
 
-The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 1.5 GB on `small`, 3 GB on `large` and 6 GB on `xl`. A tab past that crashes and the browser stays up. A browser a Playwright test launches has no ceiling of its own.
+The agents' browser, and any `chromium` you start (Puppeteer's too), is held to 739 MB on `tiny`, 1.5 GB on `small`, 3 GB on `large` and 6 GB on `xl`. A tab past that crashes and the browser stays up. A browser a Playwright test launches has no ceiling of its own.
 
 A deleted file's blocks go back to the server at the daily `fstrim`, and at once when the machine stops. Until then the file still counts toward your [plan's disk](/docs/billing#what-a-plan-means), though `df /` on the machine has already forgotten it. `sudo fstrim /` closes the gap now.
 
@@ -266,7 +273,7 @@ Your SSH sessions and the tmux or herdr server get the CPU before the programs i
 
 ## Changing the size
 
-`repose resize --size small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
+`repose resize --size tiny|small|large|xl` changes a project's size. Only the cores and memory change; the disk keeps its size, and everything on it stays.
 
 The machine has to be stopped for the change. On a stopped project, `repose resize --size xl` changes it and the machine boots at the new size on its next start. On a running one, repose asks first, then [stops it](/docs/lifecycle#stop-and-start), changes it and starts it again, so let running work finish first. No snapshot is taken, since the change doesn't touch the disk; `repose snapshots create` first for one.
 

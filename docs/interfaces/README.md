@@ -18,7 +18,7 @@ doc in the same commit and keeps the old shape accepted for one release.
 
 Naming rules across all of them: ids are UUIDv7 strings; timestamps are RFC
 3339 UTC; sizes are bytes as integers; durations are seconds as integers;
-enums are lower_snake strings; the size class enum is `small|large|xl`; the
+enums are lower_snake strings; the size class enum is `tiny|small|large|xl`; the
 guest state enum is `creating|building|starting|running|stopping|stopped|
 restoring|destroying|destroyed|error`. `resting` is **not** an eleventh
 state (DECISIONS I-818): it is a marker on a guest that is still

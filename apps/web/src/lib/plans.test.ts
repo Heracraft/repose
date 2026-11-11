@@ -171,11 +171,12 @@ describe('the states that hold a plan memory', () => {
 // TestClassSpecsMatchBillingAndHost holds. This is the three the web can
 // read. I-784 halved them, from 2 GB of the class's memory per vCPU to
 // 4 GB; a page left at the old figure draws a machine's CPU against
-// twice the vCPUs it has.
+// twice the vCPUs it has. I-1168 added `tiny` at half a core and moved
+// the Go figure into thousandths.
 describe('the size classes', () => {
-	const CLASSES = ['small', 'large', 'xl'];
+	const CLASSES = ['tiny', 'small', 'large', 'xl'];
 
-	/** `case "small": return 1` out of a Go function body. */
+	/** `case "small": return 1000` out of a Go function body. */
 	function goClassFunc(name: string): Record<string, number> {
 		const body = schedulerSource.match(
 			new RegExp(`func ${name}\\(class string\\) int \\{([\\s\\S]*?)\\n\\}`)
@@ -186,21 +187,25 @@ describe('the size classes', () => {
 			out[cls] = Number(n);
 		}
 		const dflt = body[1].match(/default:\s*\n\s*return (\d+)/);
-		if (!dflt) throw new Error('scheduler.go: ClassVCPU has no default');
+		if (!dflt) throw new Error(`scheduler.go: ${name} has no default`);
 		out.large = Number(dflt[1]);
 		return out;
 	}
 
-	it('take their vCPUs from scheduler.ClassVCPU', () => {
-		const go = goClassFunc('ClassVCPU');
+	// Go counts the sold CPU in thousandths of a vCPU, because `tiny`
+	// sells half a core and I-784's ratio has no whole answer under 4 GB
+	// (DECISIONS I-1168); this page's figure is in cores.
+	it('take their cores from scheduler.ClassMilliVCPU', () => {
+		const go = goClassFunc('ClassMilliVCPU');
 		expect(Object.keys(go).sort()).toEqual([...CLASSES].sort());
-		for (const c of CLASSES) expect(classVCPUs(c), c).toBe(go[c]);
+		for (const c of CLASSES) expect(classVCPUs(c) * 1000, c).toBe(go[c]);
 		expect(classVCPUs('nonesuch')).toBe(0);
 	});
 
-	// The ratio is uniform across the three, which is the whole of I-784:
+	// The ratio is uniform across the four, which is the whole of I-784:
 	// a host's placeable memory then fixes its guest-vCPU count whatever
-	// mix of classes is sold, so two `small` commit what one `large` does.
+	// mix of classes is sold, so two `small` or four `tiny` commit what
+	// one `large` does.
 	it('are 4 GB of memory per vCPU, uniformly', () => {
 		for (const c of CLASSES) {
 			expect(classMemoryGB(c) / classVCPUs(c), c).toBe(4);

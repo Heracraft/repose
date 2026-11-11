@@ -83,7 +83,18 @@ const (
 // and write together, so one guest cannot take the shared data disk from
 // the others (DECISIONS I-450).
 type Class struct {
+	// VCPUs is the vCPU count the hypervisor boots the guest with, and
+	// the base of the cgroup's CPU budget on a host that does not burst.
+	// It is a whole number because Cloud Hypervisor takes one; what the
+	// class *sells* is MilliVCPUs, which is a half on `tiny`.
 	VCPUs uint32
+	// MilliVCPUs is the guest CPU the class sells, in thousandths of a
+	// vCPU (DECISIONS I-1168): tiny 500, small 1000, large 2000, xl 4000,
+	// which is 4 GB of the class's memory per vCPU for all four. This is
+	// the number placement (I-736), the seat count (I-739), the 1.5 ratio
+	// (I-734), the cgroup quota and the cgroup weight (I-737) read.
+	// Thousandths, because I-784's ratio has no whole answer below 4 GB.
+	MilliVCPUs uint32
 	// CeilingVCPUs is the most cores a guest of this class may use when
 	// the host has them idle, and the vCPU count it boots with on a host
 	// that names the `burst` feature (DECISIONS I-1126). VCPUs stays what
@@ -95,9 +106,10 @@ type Class struct {
 	DiskMBps     uint64
 }
 
-// Classes are the three size classes from DESIGN.md §5: 4 GB of memory
-// per guest vCPU, uniformly across the three (DECISIONS I-784 amending
-// R3-2). The disk caps are each at most a quarter of a host data disk's
+// Classes are the four size classes from DESIGN.md §5: 4 GB of memory
+// per guest vCPU, uniformly across the four (DECISIONS I-784 amending
+// R3-2, I-1168 adding `tiny`). `tiny` sells half a core for its 2 GB,
+// so it boots one vCPU and its cgroup holds it to 50 percent of it. The disk caps are each at most a quarter of a host data disk's
 // 16,000 IOPS and 600 MB/s. A running guest keeps the vCPUs it was
 // started with: VCPUs reaches the hypervisor only through create.go's
 // ch.Spec (--cpus boot=), and a park/restore does not carry it --
@@ -107,16 +119,17 @@ type Class struct {
 // cold start. MemMiB and the disk caps are unchanged by I-784.
 //
 // CeilingVCPUs is the burst ceiling of each class (owner, 2026-11-04;
-// DECISIONS I-1126): small 4, large 6, xl 8. A guest boots with that many
+// DECISIONS I-1126): tiny 2, small 4, large 6, xl 8. A guest boots with that many
 // vCPUs only on a host that has the `burst` feature; its cgroup still
 // starts at the base quota, and the controller is the only thing that
 // raises it. Memory does not burst, so the ceiling is also the worst case
-// for memory per `nproc`: 1.0 GB on a small, 1.33 on a large, 2.0 on an
-// xl, against 4.0 today.
+// for memory per `nproc`: 1.0 GB on a tiny, 1.0 on a small, 1.33 on a
+// large, 2.0 on an xl, against 4.0 today.
 var Classes = map[string]Class{
-	"small": {VCPUs: 1, CeilingVCPUs: 4, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
-	"large": {VCPUs: 2, CeilingVCPUs: 6, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
-	"xl":    {VCPUs: 4, CeilingVCPUs: 8, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
+	"tiny":  {VCPUs: 1, MilliVCPUs: 500, CeilingVCPUs: 2, MemMiB: 2048, DiskIOPS: 1000, DiskMBps: 40},
+	"small": {VCPUs: 1, MilliVCPUs: 1000, CeilingVCPUs: 4, MemMiB: 4096, DiskIOPS: 2000, DiskMBps: 80},
+	"large": {VCPUs: 2, MilliVCPUs: 2000, CeilingVCPUs: 6, MemMiB: 8192, DiskIOPS: 3000, DiskMBps: 120},
+	"xl":    {VCPUs: 4, MilliVCPUs: 4000, CeilingVCPUs: 8, MemMiB: 16384, DiskIOPS: 4000, DiskMBps: 150},
 }
 
 // OverheadMiB is what guest@<id> may hold beyond the guest's RAM. The RAM
@@ -139,8 +152,10 @@ const HighMarginMiB = 128
 
 // CPUWeightPerVCPU sets each guest's cgroup v2 cpu.weight from its class,
 // so that under contention the host's cycles divide in proportion to the
-// vCPUs the tenant paid for instead of equally (DECISIONS I-737): small
-// 50, large 100, xl 200. The anchor is the default class: large keeps the
+// vCPUs the tenant paid for instead of equally (DECISIONS I-737): tiny
+// 25, small 50, large 100, xl 200. It multiplies MilliVCPUs and is then
+// divided by a thousand, so the three old weights are unchanged and a
+// `tiny` sits at half a `small` (I-1168). The anchor is the default class: large keeps the
 // 100 every guest had, which is also what virtiofsd@<id> and
 // virtiofsd-auth@<id> have — they are this guest's siblings in
 // guests.slice and sit on its store-read path, so no guest is given more

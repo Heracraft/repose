@@ -7,7 +7,7 @@ order: 31
 
 ## Your plan
 
-Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. An `xl` takes 16 GB on its own, so it needs Plus or Pro.
+Solo runs 8 GB of machines at once, Plus 16 GB, Pro 32 GB. Each machine counts its memory against your plan's total while it runs or is on its way up. A `tiny` takes 2 GB, so Solo runs four of them; an `xl` takes 16 GB on its own, so it needs Plus or Pro.
 
 Starting a machine, or growing one, that would pass the total is refused with exit code 7. On a terminal `repose run`, `start` and `attach` [ask to stop one](/docs/billing#what-a-plan-means) instead.
 
@@ -63,7 +63,7 @@ Data your machines send to the internet, and what a [webhook route](/docs/webhoo
 
 ## Disk and console
 
-- Disk reads and writes together are limited by size: `small` 2,000 operations a second and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.
+- Disk reads and writes together are limited by size: `tiny` 1,000 operations a second and 40 MB/s, `small` 2,000 and 80 MB/s, `large` 3,000 and 120 MB/s, `xl` 4,000 and 150 MB/s. A machine takes a new limit when it next starts.
 - A disk can grow only as far as the server it runs on has room, even when your plan's disk has plenty. A [resize](/docs/machine#memory-and-disk) past that is refused with exit code 8 and `the host's disk pool is full, so the disk cannot grow until the operator grows the pool`, and so is starting a stopped project on a server whose disk is nearly full.
 - The machine's serial console log ([`repose logs --kind console`](/docs/cli#repose-logs-project)) takes 1 MB at once and then 2 KB a second. Output past that is dropped, and the log gets a line saying how much went: `[repose: N bytes of console output dropped, over the limit of 2048 bytes a second]`. Your programs' own output in a terminal or a log file isn't affected.
 
