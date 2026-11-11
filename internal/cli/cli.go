@@ -2051,7 +2051,7 @@ func newSayCmd(envJSON func(*cobra.Command) (*Env, error), env func() (*Env, err
 			case 1, 2:
 				return nil
 			case 0:
-				return cobraUsageError{fmt.Errorf("%s takes a message: repose say [PROJECT] \"<message>\"", cmd.CommandPath())}
+				return cobraUsageError{fmt.Errorf("%s takes a message and got no arguments: repose say [PROJECT] \"<message>\"", cmd.CommandPath())}
 			default:
 				return cobraUsageError{fmt.Errorf("%s takes one PROJECT and one message, quoted, got %s", cmd.CommandPath(), gotArgs(args))}
 			}
