@@ -1186,6 +1186,44 @@ in
           assert int(mm) == total - reserve, (mm, total, reserve)
           host.succeed("systemctl stop guest@test.service")
 
+      with subtest("the burst controller's three cgroup operations work on a real kernel"):
+          # What hostd's controller does every second (DECISIONS I-1126),
+          # against a real cgroup v2 hierarchy rather than the directory
+          # tree its unit tests use: read the root's and one guest unit's
+          # cpu.stat usage_usec, and write that unit's cpu.max. The guest
+          # unit here is a transient unit in guests.slice shaped the way
+          # hostd shapes one: CPUQuota=100%, a small's base.
+          cg = "/sys/fs/cgroup/guests.slice/guest@burst.service"
+          host.succeed(
+              "systemd-run --unit guest@burst --slice guests.slice -p CPUQuota=100% -p CPUWeight=50"
+              " -- ${pkgs.bash}/bin/bash -c 'while :; do :; done'"
+          )
+          host.wait_until_succeeds(f"test -f {cg}/cpu.stat")
+
+          def usage(path):
+              return int(host.succeed(f"awk '/^usage_usec/ {{ print $2 }}' {path}/cpu.stat").strip())
+
+          first_guest, first_host = usage(cg), usage("/sys/fs/cgroup")
+          host.sleep(2)
+          assert usage(cg) > first_guest, "the guest unit's usage_usec did not advance"
+          assert usage("/sys/fs/cgroup") > first_host, "the root cgroup's usage_usec did not advance"
+          # systemd's CPUQuota=100% is one core over the 100 ms period,
+          # which is the shape hostinfo.SetCgroupCPUMax writes.
+          assert host.succeed(f"cat {cg}/cpu.max").strip() == "100000 100000"
+          # The controller raising a small to two cores, and cutting it
+          # back to its base. A direct write, because a runtime CPUQuota
+          # over D-Bus is a property systemd keeps and a hostd that dies
+          # with it raised leaves the host oversubscribed (I-1126).
+          host.succeed(f"echo '200000 100000' > {cg}/cpu.max")
+          assert host.succeed(f"cat {cg}/cpu.max").strip() == "200000 100000"
+          throttled = int(host.succeed(f"awk '/^nr_throttled/ {{ print $2 }}' {cg}/cpu.stat").strip())
+          host.succeed(f"echo '10000 100000' > {cg}/cpu.max")
+          host.sleep(2)
+          after = int(host.succeed(f"awk '/^nr_throttled/ {{ print $2 }}' {cg}/cpu.stat").strip())
+          assert after > throttled, f"a tightened cpu.max did not throttle the unit ({throttled} -> {after})"
+          print(host.succeed(f"cat {cg}/cpu.max {cg}/cpu.stat"))
+          host.succeed("systemctl stop guest@burst.service")
+
       with subtest("guest@ units run as hostd inside the I-51 sandbox"):
           # The property list is internal/hostd/guest/testdata/unit.golden with
           # this test's ids substituted; the Go golden pins the list itself.

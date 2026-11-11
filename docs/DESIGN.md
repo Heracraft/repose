@@ -186,6 +186,16 @@ amending R3-2's 2 GB). The ratio is uniform so that a host's placeable
 memory fixes its guest-vCPU count whatever mix of classes is sold: two
 `small` commit the vCPUs of one `large`, as they already took its memory.
 
+**Burst ceilings**, on a host with `repose.host.burst.enable` (DECISIONS
+I-1126; off on every host at the time of writing): small 4, large 6,
+xl 8. A guest cold-started there boots with that many vCPUs and its
+cgroup still starts at the base quota its class sells; hostd raises the
+quota toward the ceiling while the host's busy CPU stays under a gate,
+and cuts every guest to its base in one tick when it does not. The vCPU
+column above is what the class sells, and it is the only number
+placement, the seat count and the cgroup weight read. Memory does not
+burst.
+
 Volumes are thin-provisioned, resizable upward from the CLI. The plan's
 disk counts the bytes a volume holds (the thin volume's allocated blocks),
 and its size is only the ceiling it may grow to (DECISIONS I-585,

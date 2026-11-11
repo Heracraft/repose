@@ -77,9 +77,15 @@ const (
 	// than the plan's disk (DECISIONS I-585), logged once per period
 	// with the disk_over_plan email.
 	EventBillingDiskOverPlan = "disk_over_plan"
-	EventNotifySend          = "notify_send"
-	EventNotifyFail          = "notify_fail"
-	EventAdminAction         = "admin_action"
+	// EventBurstAllowance is an account whose machines were told they
+	// may or may not use cores above the base their classes sell
+	// (DECISIONS I-1128). It carries the user, the plan, the new
+	// permission and how many guests were told, and never a figure a
+	// tenant typed.
+	EventBurstAllowance = "burst_allowance"
+	EventNotifySend     = "notify_send"
+	EventNotifyFail     = "notify_fail"
+	EventAdminAction    = "admin_action"
 	// EventPartitionDropFail is the §6 failure mode: the meter_samples or
 	// proc_samples partition drop did not run, so disk grows and nothing
 	// else breaks.

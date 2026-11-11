@@ -56,6 +56,44 @@ in
       '';
     };
 
+    burst = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Let a guest use cores above the base its class sells while this
+          host has them idle (DECISIONS I-1126). Guests cold-started here
+          boot at their class ceiling -- small 4, large 6, xl 8 -- and a
+          controller in hostd raises each guest's `cpu.max` toward it
+          while the host's busy CPU stays under `burst.gate`, and cuts
+          every guest to its base in one tick when it does not. This is
+          what puts `burst` in the host's Hello, so an api sends a host
+          without it no SetBurst.
+
+          Off by default, and off on every host in this repository. The
+          gate's value comes from a keystroke-latency curve on a host
+          (`docs/proposals/2026-11-10-burst-cores.md` §6.2) that has not
+          been run: staging was down when this shipped (2026-11-11). Turn
+          it on for a host only after that measurement.
+
+          Placement, the seat count and the cgroup weight keep counting
+          the base vCPUs, so turning this on sells nothing new and
+          changes no host's capacity (I-734, I-736, I-737, I-739).
+        '';
+      };
+      gate = lib.mkOption {
+        type = lib.types.float;
+        default = 0.75;
+        description = ''
+          The share of this host's physical cores that may be busy before
+          burst stops. UNMEASURED: 0.75 is the proposal's starting
+          number, between the 0.5 busy guest vCPUs per core that typed at
+          2.7 ms p50 and the 1.2 per core that typed at 42 ms p90 on
+          host-01 (DECISIONS I-738), with nothing measured in between.
+        '';
+      };
+    };
+
     provider = lib.mkOption {
       type = lib.types.enum [ "azure" "none" ];
       default = "azure";

@@ -134,6 +134,7 @@ create table if not exists meter_samples (
   root_size bigint,
   resting boolean not null default false,
   net_egress bigint,
+  burst_cpu_ns bigint,
   primary key (project_id, ts)
 ) partition by range (ts);
 
@@ -153,6 +154,7 @@ create table if not exists usage_hours (
   running_seconds int,
   gb_alloc bigint,
   egress_bytes bigint,
+  burst_cpu_ns bigint not null default 0,
   cost_cents bigint,
   stripe_usage_record_id text,
   primary key (project_id, hour)

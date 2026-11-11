@@ -106,6 +106,13 @@ message GuestStatus {
   // every Hello after a hostd or api restart carries it again. 0 from a
   // hostd older than I-818, which the api reads as "not resting".
   int64 resting_at = 8;
+  // The api has withdrawn this guest's burst: its account used the
+  // period's burst core-hours and overage is off, so the guest runs on
+  // the base cores its class sells until the period ends (DECISIONS
+  // I-1128). hostd keeps it in bbolt and reports it in every Hello, so
+  // the api can reconcile without resending. False from a hostd older
+  // than this, and false is "may burst".
+  bool burst_denied = 9;
 }
 
 message Hello {
@@ -129,7 +136,9 @@ message Hello {
   // What this hostd can do that an older one cannot, so the api sends a
   // command shape only to a host that takes it. "local_clone": a Restore
   // may carry `clone` (DECISIONS I-701). "pause": PauseGuest and
-  // WakeGuest (DECISIONS I-818). Absent from an older hostd, which
+  // WakeGuest (DECISIONS I-818). "burst": this host boots guests at their
+  // class ceiling, runs the cpu.max controller and takes SetBurst
+  // (DECISIONS I-1126). Absent from an older hostd, which
   // answers a command it does not know `invalid_argument`.
   repeated string features = 9;
 }
@@ -208,6 +217,15 @@ message PauseGuest { string guest_id = 1; string reason = 2; }
 // false, so the api may ask for a wake it does not know it needs
 // (DECISIONS I-818).
 message WakeGuest { string guest_id = 1; string reason = 2; }
+// SetBurst says whether one guest may use cores above the base its class
+// sells (DECISIONS I-1128). It is a state the api owns, not an event: the
+// api sends allowed=false when the account has used its period's burst
+// core-hours with overage off, and allowed=true at the next period or
+// when the user raises the limit. The same value twice changes nothing,
+// so a resend is harmless and a hostd that never heard from the api
+// bursts. hostd stores it and reports it in Hello as
+// GuestStatus.burst_denied.
+message SetBurst { string guest_id = 1; bool allowed = 2; }
 message Build {
   string project_id = 1;
   string revision_id = 2;
@@ -292,6 +310,7 @@ message Command {
     AnswerQuestion answer_question = 23;
     PauseGuest pause_guest = 24;
     WakeGuest wake_guest = 25;
+    SetBurst set_burst = 26;
   }
 }
 
@@ -426,6 +445,18 @@ message GuestSample {
   // Absent from a hostd older than DECISIONS I-1063, where billing falls
   // back to net_tx_bytes_delta.
   optional uint64 net_egress_bytes_delta = 18;
+  // Nanoseconds of CPU time this guest used above the base share its
+  // class sells, since the last sample: the burst controller's
+  // per-second sum of max(0, used - base x dt) over the minute
+  // (DECISIONS I-1126, I-1128). Counted each second rather than from the
+  // minute's average, which undercounts a guest that bursts in spurts.
+  // Absent from a hostd older than this and from a host without the
+  // `burst` feature, which the api reads as no burst.
+  optional uint64 burst_cpu_ns_delta = 19;
+  // The cap the controller has this guest at now, in thousandths of a
+  // core: its base when the gate is shut, up to its class ceiling when
+  // the host is quiet. 0 when the host runs no controller.
+  uint32 burst_cap_millicores = 20;
 }
 message HostSample { uint64 mem_free = 1; uint64 pool_free = 2; double load1 = 3; uint32 builds_running = 4; }
 message Samples { int64 ts = 1; repeated GuestSample guests = 2; HostSample host = 3; }

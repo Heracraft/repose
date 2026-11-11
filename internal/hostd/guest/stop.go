@@ -241,6 +241,7 @@ func (m *Manager) destroy(ctx context.Context, c *hostdv1.DestroyGuest) *Error {
 	m.mu.Lock()
 	delete(m.boots, g.GuestID)
 	m.mu.Unlock()
+	m.forgetBurst(g.GuestID)
 	m.refreshGuestGauge()
 	return nil
 }

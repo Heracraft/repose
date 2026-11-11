@@ -265,7 +265,7 @@ func (m *Manager) boot(ctx context.Context, g *state.Guest, firstStep int, op st
 	spec := ch.Spec{
 		GuestDir: dir, Kernel: info.Kernel, Initrd: info.Initrd, Init: info.Init, KernelParams: info.KernelParams,
 		IP: g.IP, Gateway: m.gateway(), Netmask: m.netmask(), Tap: g.Tap, MAC: g.MAC, CID: g.CID,
-		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: class.VCPUs, MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
+		VolumeDev: m.d.LVM.DevPath(VolumeName(g.GuestID)), VCPUs: m.bootVCPUs(class), MemMiB: class.MemMiB, StoreTag: m.cfg.StoreTag,
 		DiskIOPS: class.DiskIOPS, DiskBytesPerSec: class.DiskMBps * 1_000_000,
 		Hostname:          ch.Hostname(g.ProjectSlug),
 		FreePageReporting: m.cfg.FreePageReporting,

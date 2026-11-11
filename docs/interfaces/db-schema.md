@@ -172,6 +172,15 @@ meter_samples (ts timestamptz, project_id, host_id, state text, class text,
                 -- state stays 'running' and guestd_ok stays true (guestd is paused with
                 -- its guest, not lost); false for every row written before 0030 and for
                 -- a guest on a hostd older than I-818
+              net_egress bigint,  -- 0035, I-1063: what the guest sent the internet, from the
+                -- host's nft counter, which is what the plan bills. net_tx stays the tap's
+                -- figure (SSH, port forwards, hooks, the browser view included), which the
+                -- idle rule and the abuse checks read. Null from a hostd older than I-1063,
+                -- where billing reads net_tx
+              burst_cpu_ns bigint,  -- 0037, I-1126: nanoseconds the guest used above the base
+                -- cores its class sells, counted per second by the host's controller. Null
+                -- from a hostd older than I-1126 and from every host without the `burst`
+                -- feature, which billing reads as no burst
               primary key (project_id, ts))  -- partitioned by month, 90-day retention
 
 proc_samples (ts, project_id, comm text, cpu_ns bigint, rss bigint,
@@ -186,6 +195,10 @@ usage_hours  (project_id fk, hour timestamptz, class text, running_seconds int,
               stripe_usage_record_id text null,  -- 'usage:<project_id>:<hour>', or 'exempt' (I-16)
               attended_seconds int,         -- seconds of the hour with an SSH session or a tmux client (0029, I-806)
               unattended_agent_seconds int, -- seconds with an agent working and nobody attached: the product's claim
+              burst_cpu_ns bigint not null default 0,  -- 0037, I-1126: the hour's CPU time above
+                -- the base cores, summed from the samples. A plan includes some of it per
+                -- period (I-1128); past that the account's machines run on their base cores
+                -- until the period ends. 0 on every host that does not burst
               gap bool, primary key (project_id, hour))
 
 credit_ledger (id pk, user_id fk, cents bigint, reason text, ref text, created_at)

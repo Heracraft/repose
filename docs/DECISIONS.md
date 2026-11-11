@@ -31374,6 +31374,183 @@ TestRollupAddsWebhookReplyBytesToEgress`: the hour reads the samples'
 900 bytes. `go test ./internal/api/http -run
 TestWebhookDeliveriesBankEgress`: a 30-delivery batch leaves 20 records
 and 210 banked bytes, so the prune did not eat the count.
+**I-1126. Burst cores: a guest boots at its class ceiling and a
+controller in hostd raises its `cpu.max` while the host stays under a
+gate. Shipped off on every host.** (burst-cores, 2026-11-11. Amends
+R3-2 and I-784's class table by adding a ceiling to each class, and
+amends I-737, which rejected setting a guest's CPU property at run
+time.)
+
+The owner's decision of 2026-11-04 was that a machine uses more cores
+than its class sells when the host has idle ones, and that the user
+never asks for them (`reports/2026-11-04-product-value-council.md`,
+"Owner decision: automatic burst by class"). The design is
+`proposals/2026-11-10-burst-cores.md`, which this entry makes real as
+far as its stage 3.
+
+*What a class is now.* small 1 base core up to 4, large 2 up to 6, xl 4
+up to 8. `Class.VCPUs` is unchanged and is still the only number
+placement (I-736), the seat count (I-739), the 1.5 ratio (I-734) and the
+cgroup weight (I-737) read, so this sells nothing new and changes no
+host's capacity. `Class.CeilingVCPUs` is a hostd figure beside it.
+
+*Boot at the ceiling, gate with `cpu.max`; not hotplug.* Cloud
+Hypervisor takes one vCPU count and a running guest cannot gain one, so
+the ceiling has to be there from the first boot. The alternative, `--cpus
+boot=base,max=ceiling` with `vm.resize`, still needs the same `cpu.max`
+gate (added vCPUs can fill a host until hostd takes them away), needs a
+guest change to bring new CPUs online, and has an untested restore after
+a resize. It buys a more truthful `nproc` for a tool started while the
+count is high, which it then cannot take back. One kernel knob a test
+can read beats two moving parts.
+
+*The controller.* A loop in hostd, once a second: read the root cgroup's
+`cpu.stat usage_usec` and each `guests.slice/guest@<id>.service`'s;
+headroom is `gate x physical cores` less the host's use with the burst
+already running given back; if there is none, every cap goes to its base
+in this tick; otherwise the guests that used 90 percent of their current
+cap share the headroom in proportion to their I-737 weight, each rising
+at most one core a tick and never past its ceiling. **No cap is ever
+below the base the class sold.** Cut at once and raise slowly, because
+the failure that matters is a host above the line and one tick bounds it
+at about a second. The weights give the council's direction 2 for free:
+an `xl`'s burst outranks a `large`'s and a `large`'s a `small`'s, while
+no guest's base loses to another's burst.
+
+*The cap is written to the cgroup, not set over D-Bus.* A runtime
+`CPUQuota` is a property systemd keeps, so a hostd that dies with caps
+raised leaves the host oversubscribed until something notices. A direct
+write of `cpu.max` is undone by a daemon reload, which re-asserts the
+unit's own `CPUQuota` -- the base. Both fail; only one of them fails
+towards the host staying under the gate. hostd also writes every running
+guest's base at its start, before the first tick.
+
+*A frozen guest is at its base, and its idle cores are the stock.* A
+resting guest (I-818, I-844) is paused, uses nothing and is held at its
+base by name rather than by accident. A host restart restores a guest
+with the vCPU count its image holds (I-652, I-686, I-784) and
+`GuestUnitProps` gives it the base quota again, which is the safe order:
+the controller raises it at its first tick or never.
+
+*Why it ships off.* `repose.host.burst.enable`, default false, the way
+`pauseIdle` is (I-818) and `park` is (I-652); it is what puts `burst` in
+`Hello.features`, and a host that says nothing boots every guest at its
+base, runs no controller and takes no `SetBurst`. The gate's value,
+0.75 of physical cores, is **unmeasured**: I-738 measured 0.5 busy guest
+vCPUs per core at 2.7 ms p50 and 1.2 per core at 42 ms p90, and nothing
+in between, and I-784 left open whether the boundary follows vCPU
+threads, which this multiplies by three to four. The release gate the
+owner named is the latency curve of proposal §6.2 on a host; staging was
+down on 2026-11-11 and it has not been run. The conductor turns the flag
+on per host after that measurement, and §6 stays owed.
+
+*What a user would see if it were on, and does not see now.* `nproc`
+would say the ceiling at all times, so `make -j$(nproc)` on a small
+would run 4 jobs in 4 GB where it runs 1 job in 4 GB today, and a guest
+at the shut gate would stall for up to 75 ms of each 100 ms period. Both
+are real costs of this design (proposal §4) and both are reasons the
+public docs say nothing yet: with the flag off nowhere, no user can see
+either. `/docs/machine`'s "`nproc` says the same number" and "Nothing is
+capped" stay true until the first host is switched, and the commit that
+switches one carries their rewrite.
+
+*Rejected:* a per-plan exclusion for `small` on Solo (the gate is the
+protection, not the plan: a small's burst is the same stock as anyone
+else's); hotplug for the main path; `CPUQuotaPeriodSec=10ms` now, which
+is one of the things §6.2 c measures and not a thing to guess.
+
+*Evidence.* `internal/hostd/guest/burst_test.go`: a large reaches 6
+cores one core a tick on a quiet 32-core host and stops there; 7 cores
+of host work on an 8-core host puts every cap back at its base in one
+tick and never below it; a host without the flag writes no `cpu.max`,
+boots a large at `--cpus boot=2`, meters nothing and names no feature;
+with the flag a small, large and xl boot at 4, 6 and 8 and the unit
+still carries `CPUQuota=200%` and `CPUWeight=100`; the caps reset to
+base at hostd's start; an unreadable root `cpu.stat` cuts to base; the
+xl's burst outranks the small's for one core of headroom.
+`internal/hostd/hostinfo/cpu_test.go` parses `usage_usec` and writes
+`600000 100000` for six cores. `nix eval` of host-01, host-02 and
+host-stg-01 toplevels builds with the option present and false.
+
+**I-1128. Burst is metered, and a plan includes some of it; past the
+allowance a machine runs on its base cores. No overage, no charge.**
+(burst-cores, 2026-11-11. Follows I-1063's shape for the meter; amends
+I-289 and I-604 in what a plan includes, and nothing in what Polar is
+told.)
+
+Item 12 of the owner's 2026-11-04 decisions is that hostd measures the
+CPU time above each machine's base cores, each plan includes some of it,
+and usage above the allowance is billed only when the user turns overage
+on, with a dollar cap. This entry builds the measuring and the
+allowance. **The overage switch, its cap, its Polar meter and its price
+are not built** and no code here charges anybody.
+
+*Counting.* The controller already reads each guest's `usage_usec` every
+second, so it adds `max(0, used - base x dt)` per tick and the sampler
+sends the minute's total as `GuestSample.burst_cpu_ns_delta` (optional,
+field 19). Per second, not from the minute's average: a guest that uses
+three cores for thirty seconds and none for thirty averages 1.5, which
+would bill a small for half of what it used. hostd bounds a sample at
+`(ceiling - base) x 66 s` and the api clamps it again, the way I-446
+bounds every figure that crosses that line. A migration (0037) adds
+`meter_samples.burst_cpu_ns`, null from a hostd that sends none, and
+`usage_hours.burst_cpu_ns`, which the hourly rollup sums beside
+`egress_bytes`.
+
+*The allowance.* `Plan.BurstCoreHours`: Solo 20, Plus 50, Pro 120, the
+council's numbers and **starting points**. Nobody can size this
+correctly yet, because the quota hides burst demand: a guest at its base
+cap reads as using its base whether one thread wanted a core or six
+wanted six, so the only honest figures are the bounds in proposal §6.1
+and the two weeks of real `burst_cpu_ns` that stage 2 collects. The
+numbers are in `plans.go` and `PRICING.md`, where `TestPlansMatchPricingDoc`
+keeps them equal, so moving them is one commit.
+
+*Stopping.* An hourly job beside the egress overage reads each live
+subscription's `PeriodBurst` from `usage_hours` and sends every guest of
+the account a `SetBurst{allowed}`. It reconciles rather than reacts: the
+desired value is a function of the period's usage, so a missed, repeated
+or second-replica tick reaches the same answer, hostd takes the same
+value twice without doing anything, and an api restart simply re-asserts
+every guest's state at the next tick. hostd stores the flag in bbolt and
+reports it as `GuestStatus.burst_denied`, so a hostd restart does not
+hand an account past its allowance its cores back. A host that does not
+name `burst` is never sent the command.
+
+*Nothing stops and nothing is charged.* Egress has a 4x hard stop
+because egress at 4x is a stolen card; burst past the allowance cannot
+happen, because the allowance is enforced by withholding the cores. So
+there is no stop, no email and no line. What the user loses is the cores
+above their base, until the period ends. With no host bursting, every
+account's figure is 0 and this binds on nobody.
+
+*What is owed, named plainly.* The overage switch and its cap on the
+Billing page, the `burst_overage` Polar meter and the $0.04 a core-hour
+price, the two notifications at 80 and 100 percent, the `repose status`
+cores row and plan line, the `/run/repose/cores` file and the agent
+guide's line, and every public docs change, are proposal stages 4 and 5
+and are not in this change. The public docs therefore say nothing about
+burst, which is correct while no user can see it.
+
+*Unverified, and it blocks stage 4:* whether a metered price added to an
+existing Polar product reaches subscriptions that started before it. If
+it does not, every current subscription needs a product update before
+its overage can bill. `TestPolarSandbox` on the sandbox organization
+answers it.
+
+*Evidence.* `internal/api/meter/burst_test.go`: an hour of a large held
+at its 6-core ceiling writes exactly 4 core-hours into `usage_hours`,
+the next hour from a hostd that sends no figure writes 0, a re-run of
+the hour writes the same figure, and a sample claiming 2^62 ns is
+clamped to four core-hours. `internal/billing/burst_test.go`: Solo at 14
+of 20 core-hours is told `allowed=true` once and not again; at 22 it is
+told `allowed=false` once and not again; no machine is stopped and
+`overage_charges` is empty; the next period hands the cores back; a host
+without the feature is sent nothing; a send that failed is retried at
+the next tick. `internal/hostd/guest/burst_test.go`
+`TestBurstStopsForAGuestPastItsAllowance`: `SetBurst allowed=false` puts
+the guest at its base in that call, holds it there on a quiet host,
+survives in bbolt and rides in Hello.
 **I-1090. A billing-exempt account cannot join the waitlist, and the
 queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
 ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends

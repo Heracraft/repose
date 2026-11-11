@@ -264,6 +264,29 @@ proportion to the class;
 `max-jobs 2`, `cores 8`, `min-free 50G`, `max-free 100G`, sandboxed,
 `trusted-users root` only.
 
+**Burst cores** (`repose.host.burst.enable`, DECISIONS I-1126; off on
+every host at the time of writing). On a host that names the `burst`
+feature, a guest cold-started there boots with its class *ceiling* of
+vCPUs -- small 4, large 6, xl 8 -- and its unit still starts at the
+`CPUQuota` its class sells. A loop in hostd, once a second, reads the
+root cgroup's `cpu.stat usage_usec` and each `guests.slice/guest@<id>.service`'s,
+and writes `cpu.max` straight into each guest's cgroup: its base when the
+host's busy CPU is at or above `repose.host.burst.gate` (0.75 of physical
+cores, UNMEASURED) and up to its ceiling, one core a tick, when it is
+below. **No cap is ever below the base the class sold.** The headroom is
+shared among the guests that used 90 percent of their current cap, in
+proportion to their `CPUWeight`, so an `xl`'s burst outranks a `small`'s
+and no guest's base loses to another's burst. A resting guest (I-818) and
+a guest the api has sent `SetBurst allowed=false` (I-1128) are held at
+their base. hostd writes every running guest's base at its start, before
+the first tick, so a hostd that died with caps raised does not leave the
+host oversubscribed. The cap is written to the cgroup and not set as a
+runtime `CPUQuota` over D-Bus, because a daemon reload then undoes it by
+re-asserting the unit's own property, which is the base: the failure is a
+guest that loses its burst, never a host above the gate. Placement, the
+seat count and `CPUWeight` all keep counting the base vCPUs (I-734,
+I-736, I-737, I-739).
+
 ## Caches (DECISIONS I-202, I-208; `nix/hosts/caches.nix`)
 
 Every host serves guests an npm registry cache and a Docker Hub mirror at
@@ -297,13 +320,18 @@ so publish a guest base without the settings first (see I-208).
 
 hostd renders the `cloud-hypervisor` argv from the guest's system closure
 (`kernel`, `initrd`, `init`, `kernel-params`) and its record (DECISIONS
-I-27) and runs it with `systemd-run --unit guest@<id> --property
+I-27). `--cpus boot=<class vCPUs>`, or `boot=<class ceiling>` on a host
+with `repose.host.burst.enable` (I-1126): the hypervisor takes one number
+and a running guest cannot gain a vCPU, so the ceiling is there from the
+first boot and the cgroup holds the guest to its base. hostd runs it with
+`systemd-run --unit guest@<id> --property
 MemoryMax=<class RAM + 512M> --property MemoryHigh=<class RAM + 384M>
 --property CPUQuota=<vcpus*100>% --property CPUWeight=<vcpus*50>
 --property Slice=guests.slice --property User=hostd` (MemoryHigh since
 I-230; a unit started earlier has only MemoryMax until its next start.
 CPUWeight since I-737; a unit started earlier keeps `cpu.weight=100`
-until its next start) and the sandbox of DECISIONS
+until its next start. `CPUQuota` stays the base whatever the host's burst
+flag says; the controller writes `cpu.max` at run time, I-1126) and the sandbox of DECISIONS
 I-51, pinned verbatim by `internal/hostd/guest/testdata/unit.golden`:
 `NoNewPrivileges=yes`, `CapabilityBoundingSet=` (empty), `UMask=0077`,
 `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,

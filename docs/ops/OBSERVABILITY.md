@@ -65,6 +65,18 @@ its SMT threads, because busy guest vCPUs per physical core is what
 `load1` is the same number the heartbeat puts in the `hosts.load1` column,
 exported because Prometheus scrapes exporters, not the database.
 
+Burst cores (DECISIONS I-1126), on a host with `repose.host.burst.enable`
+and nowhere else: `repose_host_burst_gate_open` is 1 while the host is
+under the gate and guests may hold caps above their base cores, and 0
+while every cap is at its base, so a host whose gate never opens is
+visible without reading a cgroup. `repose_host_burst_cap_millicores` is
+the cap the controller last wrote, in thousandths of a core: a flat line
+while the gate says open is a controller that has stopped.
+`repose_host_burst_cpu_seconds_total{class}` is the CPU time guests took
+above their base, which is the quantity a plan's allowance is in
+(I-1128). None of the three carries a guest id; which guest is in the
+`burst` log line.
+
 Is the kernel one you can trust (DECISIONS I-1010)?
 `repose_host_kernel_tainted{reason}` is the kernel's own latched verdict:
 `die`, `machine_check` and `bad_page` page as `HostKernelTainted`, and

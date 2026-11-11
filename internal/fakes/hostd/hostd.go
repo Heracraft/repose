@@ -58,6 +58,9 @@ type Guest struct {
 	// RestingAt, the sample carries the flag, and WakeGuest clears both.
 	Resting   bool
 	RestingAt time.Time
+	// BurstDenied is the api's withdrawal of this guest's burst, which
+	// hostd keeps and reports in Hello (DECISIONS I-1128).
+	BurstDenied bool
 }
 
 // Options tune the fake.
@@ -82,6 +85,12 @@ type Options struct {
 	// I-818 does: the api then sends it no PauseGuest and no WakeGuest,
 	// and this fake answers either invalid_argument, as that hostd would.
 	NoPause bool
+	// Burst puts `burst` in Hello's features and makes this fake take
+	// SetBurst, as a host with `repose.host.burst.enable` does
+	// (DECISIONS I-1126). Off by default, which is every host: without
+	// it the fake answers SetBurst invalid_argument, as a hostd that
+	// does not burst does.
+	Burst bool
 }
 
 // Fake is one fake host.
@@ -352,6 +361,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 	if !f.opts.NoPause {
 		h.Features = append(h.Features, "pause")
 	}
+	if f.opts.Burst {
+		h.Features = append(h.Features, "burst")
+	}
 	if f.poolDown {
 		h.PoolFreeBytes, h.PoolBytes, h.PoolUnavailable = 0, 0, true
 	}
@@ -364,6 +376,9 @@ func (f *Fake) Hello() *hostdv1.Hello {
 			// Reconciled from bbolt and the hypervisor's vm.info, so the
 			// marker survives a hostd or api restart (I-818).
 			gs.RestingAt = g.RestingAt.Unix()
+		}
+		if g.BurstDenied {
+			gs.BurstDenied = true
 		}
 		if g.InterruptedBoot != "" {
 			gs.InterruptedBootId, gs.InterruptedAt = g.InterruptedBoot, g.InterruptedAt.Unix()
@@ -533,6 +548,8 @@ func kind(cmd *hostdv1.Command) string {
 		return "PauseGuest"
 	case *hostdv1.Command_WakeGuest:
 		return "WakeGuest"
+	case *hostdv1.Command_SetBurst:
+		return "SetBurst"
 	}
 	return ""
 }
@@ -925,6 +942,21 @@ func (f *Fake) execute(cmd *hostdv1.Command) *hostdv1.Result {
 		return ok(func(r *hostdv1.Result) {
 			r.Payload = &hostdv1.Result_Wake{Wake: &hostdv1.WakeResult{WasResting: true, WakeMs: 40}}
 		})
+	case *hostdv1.Command_SetBurst:
+		// A state the api owns, not an event: the same value twice
+		// changes nothing (DECISIONS I-1128). A host that does not
+		// burst refuses it, as a hostd before I-1126 would.
+		if !f.opts.Burst {
+			return errResult(id, "invalid_argument", "this host does not burst")
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		g, e := get(c.SetBurst.GuestId)
+		if e != nil {
+			return e
+		}
+		g.BurstDenied = !c.SetBurst.Allowed
+		return ok(nil)
 	case *hostdv1.Command_Drain:
 		f.mu.Lock()
 		f.draining = true

@@ -79,7 +79,16 @@ type Guest struct {
 	// its own, and only a pause and a wake write it. Hello carries it as
 	// GuestStatus.resting_at, so the api knows a guest came back resting
 	// after a hostd restart.
-	Resting     *Resting          `json:"resting,omitempty"`
+	Resting *Resting `json:"resting,omitempty"`
+	// BurstDenied is set while the api has withdrawn this guest's burst:
+	// its account used the period's burst core-hours and overage is off,
+	// so the guest runs on the base cores its class sells until the
+	// period ends (DECISIONS I-1128). It is stored rather than held in
+	// memory so a hostd restart does not hand the cores back, and it
+	// rides in Hello as GuestStatus.burst_denied for the api's reconcile.
+	// The default is false, which is "may burst": a host that has heard
+	// nothing from the api bursts.
+	BurstDenied bool              `json:"burst_denied,omitempty"`
 	State       string            `json:"state"`
 	Reason      string            `json:"reason,omitempty"`
 	IP          string            `json:"ip"`
@@ -267,6 +276,34 @@ func (d *DB) SetGuestState(id, st, reason string) (*Guest, error) {
 		return b.Put([]byte(id), nv)
 	})
 	return g, err
+}
+
+// SetBurstAllowed records the api's burst permission for a guest
+// (DECISIONS I-1128). It is a state the api sets, so the same value twice
+// changes nothing and a resend is harmless. A guest that is gone is not
+// an error: the api may answer for an account whose machine was destroyed
+// between the allowance check and the command.
+func (d *DB) SetBurstAllowed(id string, allowed bool) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bucketGuests)
+		v := b.Get([]byte(id))
+		if v == nil {
+			return nil
+		}
+		g := &Guest{}
+		if err := json.Unmarshal(v, g); err != nil {
+			return err
+		}
+		if g.BurstDenied == !allowed {
+			return nil
+		}
+		g.BurstDenied, g.UpdatedAt = !allowed, time.Now().UTC()
+		nv, err := json.Marshal(g)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(id), nv)
+	})
 }
 
 func idxKey(i uint32) []byte {
