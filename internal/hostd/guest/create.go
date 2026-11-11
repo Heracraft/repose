@@ -77,7 +77,7 @@ func (m *Manager) capacityCheck(guestID, class string, volumeBytes uint64, needM
 	}
 	c, ok := Classes[class]
 	if !ok {
-		return errf(CodeInvalidArgument, "class %q must be small, large or xl", class)
+		return errf(CodeInvalidArgument, "class %q must be tiny, small, large or xl", class)
 	}
 	if volumeBytes < m.cfg.MinVolumeBytes || volumeBytes > m.cfg.MaxVolumeBytes {
 		return errf(CodeInvalidArgument, "volume_bytes %d outside %d..%d", volumeBytes, m.cfg.MinVolumeBytes, m.cfg.MaxVolumeBytes)
@@ -635,7 +635,7 @@ func (m *Manager) start(ctx context.Context, commandID string, c *hostdv1.StartG
 	// boot's first state change; a start refused below leaves it as it was.
 	if c.Class != "" && c.Class != g.Class {
 		if _, ok := Classes[c.Class]; !ok {
-			return nil, errf(CodeInvalidArgument, "class %q must be small, large or xl", c.Class)
+			return nil, errf(CodeInvalidArgument, "class %q must be tiny, small, large or xl", c.Class)
 		}
 		m.log(g).Info("guest class changed", "event", "guest_start", "class", c.Class, "prev", g.Class)
 		g.Class = c.Class

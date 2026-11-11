@@ -282,7 +282,7 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) error {
 		if err := rows.Scan(&pid, &slug, &day, &class, &running, &gb, &egress, &cost, &credit); err != nil {
 			return err
 		}
-		hours := map[string]float64{"small": 0, "large": 0, "xl": 0}
+		hours := map[string]float64{"tiny": 0, "small": 0, "large": 0, "xl": 0}
 		hours[class] = float64(running) / 3600
 		// cost_cents is the egress overage share and credit_cents 0 from
 		// price_version plan-v1; both stay one release (api.md).

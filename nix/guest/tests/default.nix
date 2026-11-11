@@ -341,6 +341,104 @@ SRC
   '';
 in
 {
+  # A `tiny` guest's worth of memory (2 GB, DECISIONS I-1168) with a page
+  # that allocates until something gives. What it holds to is I-1170: the
+  # kill lands inside the browser's own slice, so the tab goes and the
+  # agent, the tmux server, dev's user manager and the browser itself do
+  # not. This is the smallest class, which is where the rule binds; the
+  # ceiling is a share of guest memory, so passing here is the hardest
+  # case of it.
+  guest-tiny-oom = mkTest "guest-tiny-oom" {
+    nodes.guest = { ... }: {
+      imports = [ node ];
+      repose.class = "tiny";
+      virtualisation.memorySize = lib.mkForce 2048;
+      virtualisation.cores = lib.mkForce 1;
+    };
+    testScript = ''
+      import json, shlex
+
+      guest.start()
+      guest.wait_for_unit("multi-user.target")
+      guest.wait_for_unit("repose-browser.socket")
+
+      # 37.5 percent of the guest's memory, which systemd resolves at boot,
+      # so one closure serves every class (I-34, I-43, I-246).
+      ceiling = int(guest.succeed("systemctl show -P MemoryMax repose-browser.slice").strip())
+      assert 700 * 1024 * 1024 < ceiling < 790 * 1024 * 1024, ceiling
+
+      guest.succeed("install -d -o dev -g dev /home/dev/site")
+      guest.succeed("""cat > /home/dev/site/hog.html <<'EOF'
+      <html><head><title>hog</title></head><body><script>
+      var keep = [];
+      function eat() {
+        for (var i = 0; i < 8; i++) {
+          var a = new Uint8Array(8 * 1024 * 1024);
+          for (var j = 0; j < a.length; j += 4096) { a[j] = 1; }
+          keep.push(a);
+        }
+        setTimeout(eat, 50);
+      }
+      eat();
+      </script></body></html>
+      EOF""")
+      guest.succeed("systemd-run --unit site -p User=dev python3 -m http.server 8123 "
+                    "--bind 127.0.0.1 --directory /home/dev/site")
+      guest.wait_for_open_port(8123)
+
+      # A stand-in agent in a pane, protected the way guestd protects a real
+      # one (I-200, I-576): this node runs fake-guestd, so the -800 is
+      # written here rather than by the refresh, and what the test is about
+      # is who the kernel takes, not who writes the value.
+      guest.succeed("install -d -o dev -g dev -m 0700 /home/dev/.repose")
+      guest.succeed("""echo '{"project_id":"0192e4b0-0000-7000-8000-000000000001","slug":"todo-app","name":"todo-app","tz":"UTC","class":"tiny"}' > /home/dev/.repose/project.json && chown dev:dev /home/dev/.repose/project.json""")
+      guest.succeed("sudo -u dev XDG_RUNTIME_DIR=/run/user/1000 systemctl --user start repose-tmux-session.service")
+      guest.wait_until_succeeds("sudo -u dev tmux ls | grep -q '^todo-app:'", timeout=180)
+      guest.succeed("sudo -u dev tmux new-window -d -t todo-app -n agent 'sleep 3600'")
+      agent = guest.succeed("sudo -u dev tmux display -p -t todo-app:agent '#{pane_pid}'").strip()
+      guest.succeed(f"echo -800 > /proc/{agent}/oom_score_adj")
+
+      manager = guest.succeed("systemctl show -p MainPID --value user@1000.service").strip()
+      server = guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip()
+
+      reg = json.loads(guest.succeed("cat /etc/repose/mcp.json"))["mcpServers"]
+
+      def navigate(url):
+          e = reg["playwright"]
+          argv = [e["command"]] + e["args"] + ["--", "browser_navigate", json.dumps({"url": url})]
+          cmd = "cd /home/dev && python3 ${./mcp-client.py} " + " ".join(shlex.quote(a) for a in argv)
+          for _ in range(4):
+              status, out = guest.execute(f"sudo -u dev bash -lc {shlex.quote(cmd)}", timeout=900)
+              if status == 0:
+                  return out
+          return ""
+
+      # The framework panics the VM on an OOM; a real guest does not.
+      guest.succeed("sysctl -w vm.panic_on_oom=0")
+      guest.succeed("dmesg -C")
+      navigate("http://127.0.0.1:8123/hog.html")
+      guest.wait_until_succeeds("dmesg | grep -q 'Memory cgroup out of memory'", timeout=240)
+      kill = guest.succeed("dmesg | grep 'Memory cgroup out of memory'")
+      print(kill)
+
+      # The slice's ceiling is what killed, not the machine running out:
+      # that is the whole of the rule, because a machine-wide kill would
+      # have ranked the agent and the receiver against the browser.
+      assert "repose-browser.slice" in guest.succeed("dmesg | grep oom-kill"), guest.succeed("dmesg | grep oom-kill")
+      assert "CONSTRAINT_MEMCG" in guest.succeed("dmesg | grep oom-kill")
+      assert "(chromium)" in kill, kill
+
+      # And nothing else moved.
+      assert guest.succeed("systemctl show -p MainPID --value user@1000.service").strip() == manager
+      assert guest.succeed("sudo -u dev tmux display -p -t todo-app '#{pid}'").strip() == server
+      assert guest.succeed("sudo -u dev tmux display -p -t todo-app:agent '#{pane_pid}'").strip() == agent
+      guest.succeed("systemctl is-active repose-browser.service")
+      guest.succeed("curl -s -m 60 -o /dev/null http://127.0.0.1:9224/json/version")
+      guest.succeed("! dmesg | grep -E 'Killed process [0-9]* \\((systemd|tmux: server|tmux: client|sshd|sshd-session|guestd|fake-guestd|systemd-journal|sleep)\\)'")
+      guest.succeed("sysctl -w vm.panic_on_oom=2")
+    '';
+  };
+
   guest-base = mkTest "guest-base" {
     nodes.guest = node;
     testScript = ''

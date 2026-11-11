@@ -50,7 +50,7 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	// unknown rather than zero: both come back null.
 	rows, err := s.d.Pool.Query(ctx, `
 		select date_bin($3::interval, ts, timestamptz 'epoch') as t,
-		       least(sum(cpu_ns::float8 / `+scheduler.ClassVCPUSQL("class")+`) / (count(*) * 60e9), 1),
+		       least(sum(cpu_ns::float8 * 1000 / `+scheduler.ClassMilliVCPUSQL("class")+`) / (count(*) * 60e9), 1),
 		       avg(nullif(mem_used, 0))::bigint,
 		       case when bool_or(mem_used > 0) then least(sum(cpu_pressure_us) filter (where mem_used > 0)::float8 / (count(*) filter (where mem_used > 0) * 60e6), 1) end,
 		       least(sum(host_cpu_wait_us)::float8 / (count(*) * 60e6), 1),
@@ -113,7 +113,7 @@ func (s *Server) projectSamples(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"window":       name,
 		"step_s":       int(win.step.Seconds()),
-		"vcpus":        scheduler.ClassVCPU(p.Class),
+		"vcpus":        scheduler.ClassVCPUs(p.Class),
 		"memory_bytes": scheduler.ClassRAM(p.Class),
 		"points":       points,
 		"procs":        procs,

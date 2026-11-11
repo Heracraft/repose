@@ -504,7 +504,7 @@ func (e *Env) projects(ctx context.Context, args []string) error {
 			fs.String("user", "", "handle of the owning user")
 			fs.Bool("create-user", false, "create the user as a billing-exempt account when the handle does not exist (DECISIONS I-16, I-113)")
 			fs.String("name", "", "project name ([A-Za-z0-9._-]{1,64})")
-			fs.String("class", "small", "small|large|xl")
+			fs.String("class", "small", "tiny|small|large|xl")
 			fs.String("host", "", "pin the placement to this host instead of the scheduler's pick")
 			fs.Bool("wait", false, "wait for the create op (build and boot) to finish")
 		})
@@ -517,7 +517,7 @@ func (e *Env) projects(ctx context.Context, args []string) error {
 			return fmt.Errorf("%w: projects create needs --user and --name", ErrUsage)
 		}
 		if !scheduler.ValidClass(class) {
-			return fmt.Errorf("%w: class is small, large or xl", ErrUsage)
+			return fmt.Errorf("%w: class is tiny, small, large or xl", ErrUsage)
 		}
 		var host *store.Host
 		if hn := fs.Lookup("host").Value.String(); hn != "" {
