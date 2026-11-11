@@ -40,6 +40,9 @@ var hiddenCommands = map[string]string{
 	// (I-281), before every ssh to <project>.repose; typing it does what
 	// that ssh would have done, and nobody needs to.
 	"repose ssh-prepare": "run by ssh from ~/.ssh/repose/config",
+	// Removed in v0.1.45 (I-1082): hidden for one release, it prints
+	// where to go and exits 2, and v0.1.46 deletes it.
+	"repose fork": "removed in v0.1.45; prints where to go",
 	// What a git or npm user types for the CLI's settings; each only
 	// says those are config.toml keys (I-622).
 	"repose config set": "answers that the CLI's settings are config.toml keys",

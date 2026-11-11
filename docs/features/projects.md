@@ -64,8 +64,8 @@ Identity:
   this one, so ...`), and nothing is written. A shallow repository on
   either side is not checked. A new NAME takes the
   checkout's remote only when no project has that remote yet; otherwise
-  it is a second project for the repository, with no remote (as a fork's
-  copies, I-254), reached by name, and the checkout's own project is still
+  it is a second project for the repository, with no remote, reached by
+  name, and the checkout's own project is still
   what a plain `run` there means. Its first sync sends the whole history.
 - A plain `repose run` in a directory that is not a git repository and
   has a `by_dir` entry lands on that project, the last one `run` made
@@ -112,13 +112,10 @@ Limits:
   projects, running or stopped, on every plan and without one, and an
   operator can raise that for one account with `repose-admin users limits
   HANDLE --projects N` (DECISIONS I-569). `POST /projects`, an as-new
-  restore and a fork past it return `400 invalid` with `detail: {reason:
+  restore past it return `400 invalid` with `detail: {reason:
   project_limit, limit, projects, requested?}`, and every command prints
   `You have 100 of the 100 projects an account can have, running or
   stopped. Destroy one first.`
-- `repose fork` makes N projects at once and is refused whole, before any
-  is created, when N more would pass the cap (snapshots.md, "Forking";
-  DECISIONS I-254).
 - No seats gate on `POST /projects` since DECISIONS I-290: creating a
   project needs a plan (`payment_required`, `detail.reason =
   subscription_required`), and the seats question is answered at checkout.

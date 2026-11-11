@@ -34,7 +34,7 @@ func (s *Server) billingService() (*billing.Service, error) {
 	return s.d.Billing, nil
 }
 
-// gate is the compute gate every start, create, restore, fork, class
+// gate is the compute gate every start, create, restore, class
 // change and volume growth passes (api.md's payment_required table). A
 // refusal becomes 402 payment_required with detail.reason and the whole
 // sentence as message.

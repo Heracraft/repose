@@ -30,7 +30,7 @@ If the agent already has a window, the new one is named `claude-2`, then `claude
 
 ## Several agents, separate trees
 
-Two agents in one working tree edit the same files. `--worktree` gives an agent its own tree beside the checkout. No more memory comes off your plan; the agents share the one machine's. An agent that needs a machine of its own gets one from [`repose fork`](/docs/lifecycle#fork-a-project), which copies this machine's disk as it stands.
+Two agents in one working tree edit the same files. `--worktree` gives an agent its own tree beside the checkout. No more memory comes off your plan; the agents share the one machine's. An agent that needs a machine of its own gets one from [`repose run NAME`](/docs/lifecycle#a-second-machine-for-the-same-repository).
 
 ```
 $ repose run --worktree -p "try the other approach"

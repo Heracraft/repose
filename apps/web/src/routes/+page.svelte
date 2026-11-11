@@ -323,9 +323,8 @@
 					>Can three agents try three approaches at once?{@render plus()}</summary
 				>
 				<p class="copy">
-					<code>repose fork your-project -n 3</code> copies the machine's disk, uncommitted changes
-					and installed dependencies included, into three new machines, and
-					<code>--prompt</code> starts an agent in each. Fetch the copy that won with git, and remove
+					<code>repose run --worktree -p "..."</code> three times puts each agent in its own working
+					tree on its own branch, on the one machine. Fetch the branch that won with git, and delete
 					the rest.
 				</p>
 			</details>

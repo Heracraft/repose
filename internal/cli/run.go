@@ -89,10 +89,10 @@ const sshRetryInterval = time.Second
 
 // errPromptNotSubmitted marks the give-up of I-752's submit loop: the
 // agent started and the prompt was typed, only the Enter was never
-// taken. A caller that wraps a failed start (`repose fork --prompt`,
-// fork.go) must not call this "could not start the agent" or answer it
-// with a command that starts a second one -- the prompt is sitting in
-// the input of the one that is already there.
+// taken. A caller that wraps a failed start must not call this "could
+// not start the agent" or answer it with a command that starts a second
+// one -- the prompt is sitting in the input of the one that is already
+// there.
 var errPromptNotSubmitted = errors.New("the agent started but did not take the prompt")
 
 // runRun implements the whole `repose run` sequence, 07-cli.md §5.5.

@@ -66,7 +66,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
 
 | Path | What |
 |---|---|
-| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a fork, a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
+| `/home/dev/<checkout>` | the project checkout, found by the rule in "The checkout" below; the tmux session's default directory. Made by the CLI's first sync, named after the laptop folder (DECISIONS I-368). On a machine set up before I-368 it is `/home/dev/<slug>`, which guestd's `SetupProject` made at every start; on such a volume restored under another slug (a restore `--as-new`) with no `/home/dev/.repose/checkout`, `SetupProject` makes `/home/dev/<slug>` a relative symlink to the checkout of the slug `project.json` named before (DECISIONS I-255) |
 | `/home/dev/.repose/checkout` | one line, the checkout's directory name under `/home/dev` (`[A-Za-z0-9._-]`, no leading dot, no `/`), written by the CLI's first sync (I-368); absent on a machine with no checkout and on one set up before I-368 |
 | `/home/dev/<checkout>-worktree-<N>` | a git worktree of the checkout on branch `worktree-<N>`, made by `repose run --worktree` (DECISIONS I-253, I-342); see "tmux". Worktrees made before I-342 are `/home/dev/<slug>-<window>` on `repose/<window>` and stay as they are |
 | `/home/dev/.repose/mcp/` | the MCP registry, `laptop.json`, `forward/NAME.json`, `agents/<agent>.json`, `rendered.json` (DECISIONS I-555); see "MCP registry" |
@@ -189,7 +189,7 @@ prefix a herdr agent's key with its checkout (see "herdr", I-504).
   minute save and the restore hold `flock ~/.repose/agent-windows.lock`.
 - When `repose-tmux-session` creates the session, it reopens the windows
   of one record, unless the record names another project id than
-  project.json (a fork's or a `snapshots restore --as` copy), which it
+  project.json (a `snapshots restore --as` copy), which it
   removes and reopens nothing: `agent-windows` if present (and removes
   `agent-windows.live`); otherwise `agent-windows.live` when its boot is
   not this one, whether or not `stopped` names that boot (a stop whose

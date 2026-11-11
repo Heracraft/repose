@@ -20,7 +20,7 @@ import (
 
 // The compute gate (api.md "Usage and billing", the payment_required
 // table; PRICING.md "What a plan means, in rules"). Every place compute is
-// asked for goes through Check: create, start, restore, fork, a class
+// asked for goes through Check: create, start, restore, a class
 // change, growing a volume. The refusal carries detail.reason and a
 // message that is the whole sentence, so an older CLI that prints it is
 // right.
@@ -48,10 +48,10 @@ func (r *Refusal) Error() string { return "payment_required: " + r.Message }
 // (empty when no memory is asked for), on behalf of Project (uuid.Nil
 // for a new one), which is excluded from the running memory it is
 // checked against. Disk asks the disk question (DECISIONS I-585): the
-// action may make the projects hold more (a create, a restore or a fork
-// as a new project, growing a volume). AddHeldBytes is about what it
-// adds at once (a new volume's first bytes, the copy of a source's), 0
-// for growing a volume, which raises only the ceiling. VolumeBytes is
+// action may make the projects hold more (a create, a restore as a new
+// project, growing a volume). AddHeldBytes is what it adds at once (a
+// new volume's first bytes, the copy of a source's), 0 for growing a
+// volume, which raises only the ceiling. VolumeBytes is
 // the disk size asked for, new or grown: one project's disk may be at
 // most the plan's whole disk.
 //

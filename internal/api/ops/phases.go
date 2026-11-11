@@ -155,15 +155,6 @@ func UnfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID
 	return u.unfinished, err
 }
 
-// UnfinishedClone is UnfinishedRestore for a fork's copy cloned on its
-// source's host (DECISIONS I-701): such a copy has no snapshot to restore
-// into it, so the way back is another fork. It names the source project,
-// or uuid.Nil when the unfinished restore was not a clone.
-func UnfinishedClone(ctx context.Context, q store.Querier, projectID uuid.UUID) (unfinished bool, source uuid.UUID, err error) {
-	u, err := unfinishedRestore(ctx, q, projectID)
-	return u.unfinished, u.cloneOf, err
-}
-
 // restoreFailure is what a project's newest failed restore says.
 type restoreFailure struct {
 	unfinished bool
@@ -171,9 +162,6 @@ type restoreFailure struct {
 	// failure, so the guest the project named then is gone and the host
 	// has released its address.
 	destroyedOld bool
-	// cloneOf: the op cloned this project from its fork source, named
-	// here, instead of reading a snapshot.
-	cloneOf uuid.UUID
 }
 
 func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID) (restoreFailure, error) {
@@ -195,17 +183,7 @@ func unfinishedRestore(ctx context.Context, q store.Querier, projectID uuid.UUID
 	if ph != PhaseBuild && ph != PhaseRestore {
 		return restoreFailure{}, nil
 	}
-	rf := restoreFailure{unfinished: true, destroyedOld: slices.Contains(phases(op)[:step], PhaseDestroyGuest)}
-	if cloneOf(op) != nil {
-		if of, _ := params["fork_of"].(string); of != "" {
-			src, err := uuid.Parse(of)
-			if err != nil {
-				return restoreFailure{}, err
-			}
-			rf.cloneOf = src
-		}
-	}
-	return rf, nil
+	return restoreFailure{unfinished: true, destroyedOld: slices.Contains(phases(op)[:step], PhaseDestroyGuest)}, nil
 }
 
 // PlanBuild builds and, when the guest runs, applies. The wake sits
@@ -906,35 +884,28 @@ func (e *Engine) buildStart(ctx context.Context, op *store.Op, p *store.Project,
 }
 
 func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Project, u *store.User) (*hostdv1.Command, uuid.UUID, bool, error) {
-	// A fork's copy cloned on its source's host (DECISIONS I-701) reads no
-	// snapshot: hostd copies the source's volume there.
-	clone := cloneOf(op)
-	if op.SnapshotID == nil && clone == nil {
+	if op.SnapshotID == nil {
 		return nil, uuid.Nil, false, &opError{code: "invalid", msg: "restore needs a snapshot"}
 	}
-	var snap *store.Snapshot
-	if clone == nil {
-		var err error
-		snap, err = store.GetSnapshot(ctx, e.pool, *op.SnapshotID)
-		if err != nil {
-			return nil, uuid.Nil, false, &opError{code: "not_found", msg: "snapshot not found"}
-		}
-		// Mark the snapshot as in use by this op inside the same lock the
-		// expiry job takes, so it is never deleted under a running restore.
-		err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
-			var deleted *time.Time
-			if err := tx.QueryRow(ctx, "select deleted_at from snapshots where id = $1 for update", snap.ID).Scan(&deleted); err != nil {
-				return err
-			}
-			if deleted != nil {
-				return &opError{code: "not_found", msg: "snapshot was deleted"}
-			}
-			_, err := tx.Exec(ctx, "update snapshots set restoring_op_id = $2 where id = $1", snap.ID, op.ID)
+	snap, err := store.GetSnapshot(ctx, e.pool, *op.SnapshotID)
+	if err != nil {
+		return nil, uuid.Nil, false, &opError{code: "not_found", msg: "snapshot not found"}
+	}
+	// Mark the snapshot as in use by this op inside the same lock the
+	// expiry job takes, so it is never deleted under a running restore.
+	err = db.InTx(ctx, e.pool, func(tx db.Tx) error {
+		var deleted *time.Time
+		if err := tx.QueryRow(ctx, "select deleted_at from snapshots where id = $1 for update", snap.ID).Scan(&deleted); err != nil {
 			return err
-		})
-		if err != nil {
-			return nil, uuid.Nil, false, err
 		}
+		if deleted != nil {
+			return &opError{code: "not_found", msg: "snapshot was deleted"}
+		}
+		_, err := tx.Exec(ctx, "update snapshots set restoring_op_id = $2 where id = $1", snap.ID, op.ID)
+		return err
+	})
+	if err != nil {
+		return nil, uuid.Nil, false, err
 	}
 	// The new guest id is fixed on first build so a re-send is identical.
 	gidStr, _ := op.Params["new_guest_id"].(string)
@@ -952,10 +923,6 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	}
 	if to, ok := op.Params["to_host_id"].(string); ok && to != "" {
 		hostID = uuid.MustParse(to)
-	}
-	if clone != nil {
-		// Only the source's host holds what a clone copies.
-		hostID = clone.host
 	}
 	if hostID == uuid.Nil {
 		err := db.InTx(ctx, e.pool, func(tx db.Tx) error {
@@ -980,8 +947,8 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 	// build so a re-send says the same (I-142): the host_moved event is
 	// for a project that came up somewhere else, not for a restore over
 	// the same host's volume.
-	// A new project (a fork's copy, a restore as a new project) had no
-	// host, so it moved from nowhere: not a move either.
+	// A new project (a restore as a new project) had no host, so it moved
+	// from nowhere: not a move either.
 	if _, ok := op.Params["host_moved"]; !ok {
 		op.Params["host_moved"] = p.HostID != nil && *p.HostID != hostID
 	}
@@ -1018,39 +985,8 @@ func (e *Engine) buildRestore(ctx context.Context, op *store.Op, p *store.Projec
 		Secrets: d.secrets, Env: d.env, SshCaPub: e.ca.UserCAPub(), Principals: d.principals, HostKey: d.hostKey, HostCert: d.hostCert,
 		UserId: p.UserID.String(), ProjectSlug: p.Slug, RemoteUrl: remote, ProjectJson: d.project,
 	}
-	if clone != nil {
-		r.Clone = &hostdv1.RestoreClone{SourceGuestId: clone.guest, PointId: clone.point, SiblingGuestIds: clone.siblings}
-	} else {
-		r.BlobPath, r.Sha256 = snap.BlobPath, sha256Of(snap)
-	}
+	r.BlobPath, r.Sha256 = snap.BlobPath, sha256Of(snap)
 	return &hostdv1.Command{CommandId: newCommandID(), Cmd: &hostdv1.Command_Restore{Restore: r}}, hostID, false, nil
-}
-
-// forkClone is what a fork's restore op carries to clone its source on
-// the source's host (I-701), from the params the fork route wrote.
-type forkClone struct {
-	guest, point string
-	host         uuid.UUID
-	siblings     []string
-}
-
-func cloneOf(op *store.Op) *forkClone {
-	guest, _ := op.Params["clone_of_guest"].(string)
-	hostStr, _ := op.Params["clone_host_id"].(string)
-	point, _ := op.Params["fork_point"].(string)
-	host, err := uuid.Parse(hostStr)
-	if guest == "" || point == "" || err != nil {
-		return nil
-	}
-	c := &forkClone{guest: guest, point: point, host: host}
-	if raw, ok := op.Params["fork_siblings"].([]any); ok {
-		for _, v := range raw {
-			if s, ok := v.(string); ok {
-				c.siblings = append(c.siblings, s)
-			}
-		}
-	}
-	return c
 }
 
 // sha256Of is the digest a Restore checks the blob against (I-462): ""

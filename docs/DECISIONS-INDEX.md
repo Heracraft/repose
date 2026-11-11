@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-923 entries.
+924 entries.
 
 ## Scope
 
@@ -338,7 +338,7 @@ pointer, not a summary.
 - **I-250** Claude Code in a guest starts in `bypassPermissions` unless the user set another default — 2026-09-25; amended by I-546; L6326
 - **I-251** cloudflared is a menu entry in group `deploy` — 2026-09-25; L6378
 - **I-253** Any number of agent windows in one guest, and `repose run --worktree` puts one in its own git worktree beside the checkout — 2026-09-25; partly superseded by I-342; amended by I-509; L6393
-- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; amended by I-701; L6443
+- **I-254** `repose fork`: one snapshot, N new projects created in one api transaction, each its own machine — 2026-09-25; amended by I-701; superseded by I-1082; L6443
 - **I-255** A volume set up under another slug links its old checkout to the new name — 2026-09-25; L6535
 - **I-258** The sync keeps the laptop's split between staged and unstaged work — 2026-09-26; L6566
 - **I-267** User SSH certificates last 24 hours — 2026-09-26; L6587
@@ -955,3 +955,4 @@ pointer, not a summary.
 - **I-1063** Egress is what a guest sends the internet, counted by nft, not by its tap — 2026-11-10; L30871
 - **I-1065** A folder that is not a git repository is offered one — 2026-11-10; L30951
 - **I-1067** Each attach is its own tmux session, grouped with the project's — 2026-11-10; L31012
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31058

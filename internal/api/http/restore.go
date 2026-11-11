@@ -268,7 +268,7 @@ func (s *Server) restoreAsNew(ctx context.Context, u *store.User, src *store.Pro
 			}
 		}
 		var err error
-		opID, err = s.insertRestored(ctx, tx, u, src, snap, newID, name, src.Class, remote, start, nil)
+		opID, err = s.insertRestored(ctx, tx, u, src, snap, newID, name, src.Class, remote, start)
 		return err
 	})
 	if err != nil {
@@ -284,11 +284,11 @@ func (s *Server) restoreAsNew(ctx context.Context, u *store.User, src *store.Pro
 
 // insertRestored inserts the project a restore creates (id newID, called
 // name, of class, with remote) from src's volume size, zone, agent, base
-// and configuration, and enqueues the restore of snap into it with
-// params added to the op's own. The caller holds the user's row lock and
-// has checked the limits. A name a live project holds is `409 conflict`
-// with `detail.reason = "name_taken"`.
-func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, src *store.Project, snap *store.Snapshot, newID uuid.UUID, name, class string, remote *string, start bool, params map[string]any) (uuid.UUID, error) {
+// and configuration, and enqueues the restore of snap into it. The
+// caller holds the user's row lock and has checked the limits. A name a
+// live project holds is `409 conflict` with `detail.reason =
+// "name_taken"`.
+func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, src *store.Project, snap *store.Snapshot, newID uuid.UUID, name, class string, remote *string, start bool) (uuid.UUID, error) {
 	rid := store.NewID()
 	// The copy keeps the source's multiplexer, or tmux when herdr would be
 	// refused for the base the copy runs (I-502).
@@ -334,19 +334,6 @@ func (s *Server) insertRestored(ctx context.Context, tx db.Tx, u *store.User, sr
 		hasClosure = true
 	}
 	opParams := map[string]any{"start": start}
-	for k, v := range params {
-		opParams[k] = v
-	}
-	// A copy cloned on its source's host (snap nil, I-701) is placed
-	// there now, so a build it needs runs where its volume will be.
-	var sid *uuid.UUID
-	if snap != nil {
-		id := snap.ID
-		sid = &id
-	} else if host, _ := params["clone_host_id"].(string); host != "" {
-		if _, err := tx.Exec(ctx, "update projects set host_id = $2 where id = $1", newID, host); err != nil {
-			return uuid.Nil, err
-		}
-	}
-	return s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindRestore, ProjectID: &newID, SnapshotID: sid, Params: opParams, Phases: ops.PlanRestore(target, hasClosure, start)}, false)
+	sid := snap.ID
+	return s.d.Engine.Enqueue(ctx, tx, ops.NewOp{Kind: ops.KindRestore, ProjectID: &newID, SnapshotID: &sid, Params: opParams, Phases: ops.PlanRestore(target, hasClosure, start)}, false)
 }
