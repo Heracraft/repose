@@ -34,6 +34,7 @@ Where a row names two sections, the first is the common cause.
 | Never became ready after a start | "Guest not ready" |
 | No tmux session, or the agent windows are gone | "No session on a machine (tmux or herdr)" |
 | Browser tools refuse every connection | "Browser tools on a machine refuse every connection" |
+| A browser stopped that somebody wanted | "A browser on a machine keeps stopping, or one a tenant started is gone" |
 | A tool that is on the laptop is missing in the machine | "CLI: a laptop tool is missing in the guest" |
 | Claude asks to log in again in every project | "Claude asks for a login in every project" |
 | Slow to start | "BootSlow", or "GuestWakeSlow" if it was resting |
@@ -2699,6 +2700,38 @@ browser fine or an empty desktop.
    the socket must be listening; the browser's own failures are in
    `journalctl -u repose-browser.service` (an OOM kill of the whole
    browser rather than a renderer means the slice limit, I-246).
+   `repose-browser-proxy.service` is inactive whenever no DevTools
+   connection is open, which is normal: it exits ten seconds after its
+   last one and the socket starts it again (I-1122).
+
+## A browser on a machine keeps stopping, or one a tenant started is gone
+
+The agents' browser stops after 10 minutes with no DevTools command and
+no viewer once every agent is `idle` or `needs_input`, 30 while one
+works, and guestd stops a stray headless browser (I-1122, I-1124). Both
+can read to a tenant as "my browser disappeared".
+
+1. **The agents' browser.** `stat -c '%n %y' /run/repose/desktop/last-cdp
+   /run/repose/desktop/last-client /run/repose/desktop/last-agent-working`
+   on the guest gives the three times the rule reads, and
+   `journalctl -u repose-desktop-idle-check` the passes. A browser that
+   stops while a tool is using it means the tool's commands are not
+   reaching 9225 as the check sees them: check `ss -tni state established
+   '( sport = :9225 )'` for a `bytes_received` that moves between two
+   calls. A tenant who wants a browser that never stops runs their own
+   on 9222, which repose never touches.
+2. **A stray.** `journalctl -u guestd --grep 'stray browser'` names each
+   one by process name, pid, how long it ran and its CPU seconds. A
+   browser is stopped only with its launcher gone, nothing connected,
+   and the machine quiet for ten minutes; if the line names one the
+   tenant wanted, tell them to keep the launching process alive, or
+   something connected to it, and record the case: the five conditions
+   are meant to make this impossible. A unit of the tenant's own is not
+   an answer for Chromium, which moves itself into
+   `app-org.chromium.Chromium-<pid>.scope` whatever unit it starts in
+   (I-1124).
+3. The rule runs in guestd, so a machine on a base older than this one
+   has neither behaviour; `cat /etc/repose/base-version` says which.
 
 ## Guest unresponsive
 

@@ -31551,6 +31551,195 @@ the next tick. `internal/hostd/guest/burst_test.go`
 `TestBurstStopsForAGuestPastItsAllowance`: `SetBurst allowed=false` puts
 the guest at its base in that call, holds it there on a quiet host,
 survives in bbolt and rides in Hello.
+
+**I-1122. The agents' browser stops after 10 minutes with no DevTools
+command and nobody watching once every agent is idle, keeps 30 minutes
+while one works, and comes back with its tabs.** (idle-browser,
+2026-11-11. Answers I-930's open question; closes I-948's gap.
+Conductor's ruling, owner's standing approval of 2026-11-11, on the
+choices `docs/proposals/2026-11-10-idle-browser.md` left open: two
+tiers, no config key, tabs restored.)
+
+I-930 made the 30-minute stop fire at all. What it left: a Chromium
+nobody is driving still has 30 minutes to burn about 15 s of CPU a
+minute against the rest rule's 6 s, so the earliest freeze is about 46
+minutes after the last browser call. The council's measurement put the
+shared browser and stray headless browsers second among idle CPU sinks
+(`reports/2026-11-04-product-value-council.md`).
+
+- **Two thresholds, 600 and 1800 seconds.** The freeze cannot start
+  while an agent works, so a browser stopped mid-turn saves nothing and
+  costs the agent its page; an agent that edits code for 15 minutes
+  between two looks at its page is ordinary. Once every agent is `idle`
+  or `needs_input` -- the freeze's own test, `internal/api/idle.UsedSQL`
+  -- the browser is the only thing between the machine and its freeze,
+  and that is where 10 minutes pays: the earliest freeze moves from
+  about 46 to about 26 minutes. guestd stamps
+  `/run/repose/desktop/last-agent-working` on each refresh that sees an
+  agent working and the idle check reads its age; no stamp means no
+  agent has worked since the boot, which is the short threshold, and the
+  check never creates it, because creating it would read as work. The
+  viewer keeps its own 30 minutes, so `idle_minutes` on the viewer page,
+  `cli.md` and `tutorial-watch-browser.md` do not change. *Rejected:* a
+  flat 10 minutes (it takes an agent's page away mid-turn for a freeze
+  that cannot happen).
+- **A command, not traffic.** The check counted `bytes_sent` on the
+  browser's side of the CDP sockets. That is the browser's replies *and*
+  its events: a tool that enabled the Network or Runtime domain gets an
+  event for every request a polling page makes, so a page with a
+  live-reload socket could hold the browser up with no tool call at all.
+  It now counts `bytes_received`, which is what the tool sent. The rest
+  of I-930 stands: a changed total, not a greater one, so a browser
+  restart reads as traffic.
+- **The proxy stamps its own start, which closes I-948's gap.** A
+  DevTools request that opens and closes between two checks takes its
+  bytes with it, so a machine reached only by short requests had its
+  browser stopped while it was in use. `repose-browser-proxy.service`
+  now runs `repose-desktop-stamp last-cdp` from `ExecStartPre` and
+  `systemd-socket-proxyd --exit-idle-time=10s`, so it exits ten seconds
+  after its last connection closes and the next request starts it and
+  stamps again. *Rejected:* the proposal's `Accept=yes` with one proxy
+  instance per connection. `systemd-socket-proxyd` supports `Accept=no`
+  alone -- its man page says so, in the sentence that names the
+  difference from socat -- so a per-connection proxy would mean
+  a relay of our own -- a bash `/dev/tcp` pair of `cat`s, or socat in
+  the closure -- on the agents' browser path. What is left uncovered is
+  narrow and written down: a short request that arrives while another
+  connection is held open is unseen, and that connection's own bytes
+  answer for it.
+- **The tabs come back.** `repose-browser-start` sets the profile's
+  `session.restore_on_startup` to 1 with `jq`, beside the crashed-flag
+  reset, so the start after an idle stop opens the pages the agent had.
+  Each page reloads, so form input and in-page state are lost and the
+  profile's logins are not; Chromium does not resend a POST on restore.
+  A profile that has never run has no `Preferences` and is started on
+  `about:blank`; a profile that has is started with no URL at all,
+  because a URL on the command line is opened *beside* the restored tabs
+  and would leave one more `about:blank` at every start.
+- **No config key.** With the tabs restored a stop costs a cold start
+  and the state of the page, and the agent sees the same URL. A key
+  would carry a docs entry, a `repose config` row and a test for a value
+  almost nobody changes; a user who wants a browser that never stops
+  starts their own on 9222, which is kept free for exactly that.
+  `keep_awake` (I-820) keeps a machine from freezing and does not change
+  this rule: a browser nobody uses still burns that machine's cores.
+
+*Evidence.* `guest-desktop`: the browser survives 11 idle minutes with
+`last-agent-working` fresh and stops at 31; it stops at 11 with the
+stamp 11 minutes old, and with no stamp at all, and the check leaves no
+stamp behind; one short `curl http://127.0.0.1:9224/json/version`
+against a running browser stamps `last-cdp` and keeps it; after an idle
+stop a `chrome-devtools-mcp` call with no warming request lands on the
+page the agent had, with `MEASURE cold start`; a socket held open to
+5900 keeps the browser up with nothing driving it.
+`guest-browser-starts-after-a-kill` reads the unit texts: `bytes_received`
+and no `bytes_sent`, both thresholds, `last-agent-working`, the proxy's
+`ExecStartPre` stamp and its `--exit-idle-time`, and `restore_on_startup`
+in the start script.
+
+
+**I-1124. guestd stops a headless browser whose launcher has exited,
+that nobody is connected to, on a machine that has been quiet for ten
+minutes. This amends I-200.** (idle-browser, 2026-11-11. Conductor's
+ruling, owner's standing approval of 2026-11-11.)
+
+I-200 rejected idle reaping, because "it eventually kills the one server
+someone needed", and `internal/guestd/sample/oom.go` said nothing is
+ever killed or stopped by guestd. The measured cost of holding that line
+everywhere: 7.4 CPU hours of `chrome-headless` in 14 days across 3
+accounts (the 2026-10-11 sample, `2026-10-11-pause-idle-machines.md`
+§5), untouched by any fix since, and a stray that burns more than about
+4 s a minute blocks the freeze until the machine is stopped by hand.
+`keystroke-path.nix:91-104` records a 1.4 GB headless Chromium a
+Playwright test left in a pane.
+
+The amendment is for browsers and for one shape of browser only. A
+process is a stray when all five hold:
+
+1. it runs as `dev`, its name is `chrome-headless`, `chromium`, `chrome`
+   or `headless_shell`, and its parent's name is none of those, so it is
+   the top of a browser tree and its renderers go with it;
+2. its cgroup is a `.scope` under dev's `user-<uid>.slice` (a tmux
+   pane, an SSH session, the browser wrapper's run scope) or
+   `repose-herdr-server.service`, whose panes share the unit. Any other
+   `.service` is how a person runs a browser on purpose; the agents'
+   shared browser is the system unit `repose-browser.service` and a
+   container is outside dev's slice, so neither can match;
+3. its parent is pid 1 or dev's user manager, which is where the kernel
+   moves a child whose parent died: the launcher has exited;
+4. no TCP connection is established to a port it listens on. Its own
+   outgoing connections do not count -- a page fetching the internet is
+   the stray at work, not somebody using it. A process listening on 9225
+   is never a stray whatever its cgroup says: that is the agents'
+   browser, and condition 2 answers for it only while Chromium stays in
+   its unit (below);
+5. 1 to 4 have held for ten one-minute passes in a row, and in each of
+   those minutes the machine had no SSH session of dev's, no tmux client
+   and every agent `idle` or `needs_input`. That is the guest-side half
+   of the rest rule (`internal/api/idle.UsedSQL`, negated) less the CPU
+   term, which the stray is the cause of. A herdr client arrives over
+   SSH and is in the SSH count, so there is no third term for it.
+
+guestd then opens a pidfd, checks that the start time is still the one
+it first saw, sends SIGTERM, and SIGKILL ten seconds later. The pidfd is
+what makes this safe: it refers to that process for as long as it is
+held, so neither signal can reach a pid the kernel handed out again. One
+log line, `comm`, `pid`, `ran_s`, `cpu_s`, and nothing else: no URL, no
+title, no argument (R5-3). No `Warning` kind and no notification -- a
+stray is by definition a process nobody is using.
+
+**Why CPU is not one of the conditions.** CPU does not tell use from
+waste: I-930's idle page took 13.4 s a minute, and a test waiting on a
+server takes almost none. The launcher being gone is a fact about the
+process, and the quiet machine is the moment the stray starts to cost
+the user a freeze. I-930's "presence is not activity" applies to
+absence too.
+
+**A unit of your own is not how you keep a Chromium, and the docs do
+not say it is.** The proposal's escape hatch was
+`systemd-run --user --unit NAME chromium ...`, on the reading that
+condition 2 would then spare it. The VM test says otherwise, and this is
+the finding worth keeping: a `chromium --headless=new` started by
+`systemd-run --user --unit keepc` was measured in
+`app-org.chromium.Chromium-4967.scope` under
+`user@1000.service/app.slice`. Chromium moves its own process group into
+a transient scope of its own as soon as it can reach dev's user bus,
+whatever unit or scope it was started in, so its cgroup says nothing
+about where the user put it. (The first draft of this entry also had
+`repose-browser-scope` skip its scope for a program already in a user
+`.service`, to make that hatch work; it is dropped, because the hatch
+does not work anyway and the change took every browser started from any
+`.service` out of the memory cap I-733 sets. The wrapper is unchanged.)
+
+Condition 2 stays, because Playwright's `chrome-headless-shell` -- the
+7.4 hours this rule is for -- has no such integration and does stay in
+the unit it is given. What changed is what the docs promise: a browser
+is kept by its launcher still running, or by something connected to it,
+and those two hold for every browser.
+
+*Rejected:* the api deciding from its samples and sending an `Exec`
+through hostd. It would add an `Exec` use to `vsock-guestd.md`, a minute
+of lag, and no answer at all for a host a user brings under I-647; the
+guest-side rule works everywhere. *Rejected:* a `Warning` kind for the
+operator. *Rejected:* reading `/proc/<pid>/fdinfo` for socket inodes
+instead of the fd links; the links are read and everything that is not
+`socket:[...]` is dropped without being looked at, so no path is kept,
+and matching an inode that an fdinfo gives no type for would match a
+regular file's by number.
+
+*Evidence.* `internal/guestd/sample/stray_test.go` on a fixture `/proc`:
+an orphan is stopped at the tenth pass and not the ninth; ten passes are
+ten minutes whatever the watcher's 5 s refresh does; each of a node
+process, a renderer, a browser in a unit of its own, the agents' shared
+browser, a browser in a container, a browser whose launcher still runs,
+a browser with a client, a machine someone is on, and another user's
+browser is left alone through twenty passes; a minute of use starts the
+ten over; a pid reused between two passes starts the count over; and the
+real signal path refuses a start time that has moved on, proved against
+a live child process. The `guest-stray-browser` VM test runs the real
+guestd against four browsers in one twelve-minute quiet window: the
+orphan is gone with its journal line, and the three others -- one with a
+client, one in `keepc.service`, one whose launcher is alive -- are not.
 **I-1090. A billing-exempt account cannot join the waitlist, and the
 queue passes its row over.** (waitlist-choice, 2026-11-11; conductor's
 ruling, owner's standing approval of 2026-11-11. Completes I-1033; amends

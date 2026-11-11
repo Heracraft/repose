@@ -10,7 +10,7 @@ entry marked superseded, amended or reversed has a later entry that says so,
 and the later entry wins. The entry text is the decision; a title here is a
 pointer, not a summary.
 
-947 entries.
+949 entries.
 
 ## Scope
 
@@ -283,7 +283,7 @@ pointer, not a summary.
 - **I-197** Gitignored `.env` files travel over SSH at `run` — amended by I-422; L4394
 - **I-198** The guest's timezone follows the laptop on every `run` and `attach`, — L4408
 - **I-199** Ports are auto-forwarded while a CLI session is attached — amended by I-1106; L4413
-- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; L4426
+- **I-200** Agents outlive dev servers under memory pressure; nothing is killed on a timer — amended by I-505; amended by I-576; amended by I-1124; L4426
 - **I-201** `repose cp` — L4438
 - **I-202** Each host runs a pull-through cache for the npm registry and for Docker Hub — L4443
 - **I-203** The first sync of a large GitHub repository clones in the guest — amended by I-713; amended by I-714; L4451
@@ -963,19 +963,21 @@ pointer, not a summary.
 - **I-1120** A webhook reply's bytes are the project's egress, counted at the edge and banked by the hour — 2026-11-11; L31343
 - **I-1126** Burst cores: a guest boots at its class ceiling and a controller in hostd raises its `cpu.max` while the host stays under a gate. Shipped off on every host — 2026-11-11; L31377
 - **I-1128** Burst is metered, and a plan includes some of it; past the allowance a machine runs on its base cores. No overage, no charge — 2026-11-11; L31475
-- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31554
-- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31596
-- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31637
-- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31716
-- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31780
-- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L31873
-- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L31910
-- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32000
-- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32067
-- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32111
-- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32141
-- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32205
-- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32254
-- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32348
-- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32386
-- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32420
+- **I-1122** The agents' browser stops after 10 minutes with no DevTools command and nobody watching once every agent is idle, keeps 30 minutes while one works, and comes back with its tabs — 2026-11-11; L31555
+- **I-1124** guestd stops a headless browser whose launcher has exited, that nobody is connected to, on a machine that has been quiet for ten minutes. This amends I-200 — 2026-11-11; L31641
+- **I-1090** A billing-exempt account cannot join the waitlist, and the queue passes its row over — 2026-11-11; L31743
+- **I-1092** The waitlist rows a page view made are cleared by an operator command, not a migration — 2026-11-11; L31785
+- **I-1086** `repose version update` replaces the CLI, with install.sh's checks; amends I-749 — 2026-11-11; L31826
+- **I-1088** `X-Repose-CLI-Oldest`, and a skew line that repeats while it matters — 2026-11-11; L31905
+- **I-1100** On a terminal the sync's overlap refusal is a one-key choice, not a flag to type the command again with — 2026-11-11; L31969
+- **I-1102** The guest's apply reports the overlapping paths that are submodules, and the stash of a chosen copy is found by its commit, never by its index — 2026-11-11; L32062
+- **I-1082** `repose fork` is removed: the command, the api route's work and the api's half of hostd's clone — 2026-11-11; L32099
+- **I-1148** A headless `gemini -p` is not the configuration an agent on a machine runs in, and the browser check was reading it as one — 2026-11-11; L32189
+- **I-1150** A test clock read before the fixture exists is a proxy for the database's clock, and it fails in the direction that reads as a bug — 2026-11-11; L32256
+- **I-1094** `base_updated` notifies nobody; it stays an event — 2026-11-11; L32300
+- **I-1096** A notification carries a way into the dashboard only where the dashboard has an act — 2026-11-11; L32330
+- **I-1098** `repose-presence`: the guest asks whether the owner is at the machine — 2026-11-11; L32394
+- **I-1104** The laptop lends ports to the machine: `[forward] reverse` in config.toml, held by the session helper for the length of an attach — 2026-11-11; L32443
+- **I-1106** The forward messages name the laptop, the registry says which way each forward goes, and `repose status` shows both — 2026-11-11; L32537
+- **I-1108** A `localhost` link the machine opens goes to the laptop port its forward uses, or nowhere — 2026-11-11; L32575
+- **I-1152** The rest rule writes down why each machine did not freeze — 2026-11-11; L32609

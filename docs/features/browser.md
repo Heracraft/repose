@@ -191,13 +191,76 @@ its password field; a new CLI against an older base opens stock noVNC's
   running for the agent; with it gone, Xvnc stops and `DISPLAY` is no
   longer exported.
 - The viewer stops after 30 minutes with no client. The agents' browser
-  stops after 30 minutes with no DevTools *traffic* and no viewer client.
-  Traffic, not a connection: an MCP server keeps its CDP connection open
-  for the agent's whole session and sends nothing between calls, so
-  counting open sockets held the browser alive for ever and the machine
-  could never freeze -- Chromium alone burns about 15 s of CPU a minute
-  against the rest rule's 6 s (I-930). The check sums `bytes_sent` on
-  the CDP sockets each minute and treats a changed total as use.
+  stops after **10** minutes with no DevTools command and no viewer
+  client once every agent is `idle` or `needs_input`, and keeps 30
+  minutes while an agent works (I-1122). The freeze cannot start while
+  an agent works, so a browser stopped mid-turn saves nothing and costs
+  the agent its page; once every agent is idle the browser is the only
+  thing between the machine and its freeze. guestd stamps
+  `/run/repose/desktop/last-agent-working` on each refresh that sees an
+  agent working, and the idle check reads its age to pick the threshold;
+  no stamp means no agent has worked since the boot, which is the short
+  threshold.
+- A **command**, not traffic and not a connection. An MCP server keeps
+  its CDP connection open for the agent's whole session and sends
+  nothing between calls, so counting open sockets held the browser alive
+  for ever and the machine could never freeze -- Chromium alone burns
+  about 15 s of CPU a minute against the rest rule's 6 s (I-930). And
+  `bytes_sent` on the browser's side is its replies *and* its events, so
+  a page with a live-reload socket or a poll kept the browser up with no
+  tool call at all. The check sums `bytes_received` on the CDP sockets
+  each minute and treats a changed total as use (I-1122).
+- A DevTools request that opens and closes between two checks takes its
+  bytes with it, which used to stop the browser of a machine reached
+  only by short requests (I-948). `repose-browser-proxy.service` stamps
+  `last-cdp` when it starts and exits ten seconds after its last
+  connection closes, so each such request stamps the clock itself.
+  `systemd-socket-proxyd` supports `Accept=no` alone, so the stamp is
+  per proxy start and not per connection: a short request that arrives
+  while another connection is held open is still unseen, and that
+  connection's own bytes answer for it.
+- The browser comes back with the tabs it had. `repose-browser-start`
+  sets the profile's `session.restore_on_startup` to 1, so the start
+  after an idle stop opens the pages the agent had; each page reloads,
+  so form input and in-page state are lost and the profile's logins are
+  not. A profile that has never run is started on `about:blank` instead,
+  since a URL on the command line would be opened beside the restored
+  tabs. Chromium writes its session a couple of seconds after a
+  navigation commits, so a browser stopped in the same breath as a
+  navigation comes back on the page before it.
+- A **stray headless browser** is stopped by guestd (I-1124, which
+  amends I-200's "nothing is killed on a timer"). All five must hold,
+  for ten one-minute passes in a row: the process runs as `dev` and is
+  the top of a browser tree (`chrome-headless`, `chromium`, `chrome`,
+  `headless_shell`, whose parent is none of those); its cgroup is a
+  `.scope` under dev's `user-<uid>.slice` or `repose-herdr-server.service`,
+  never a unit of its own and never a container; its parent is pid 1 or
+  dev's user manager, so its launcher has exited; no TCP connection is
+  established to a port it listens on; and in each of those minutes the
+  machine had no SSH session, no multiplexer client and every agent
+  `idle` or `needs_input`. A process listening on 9225 is never a stray
+  whatever its cgroup says: that is the agents' browser, and I-1122's
+  rule governs it. guestd then opens a pidfd, checks the start time
+  again so a reused pid is never hit, sends SIGTERM and SIGKILL ten
+  seconds later. It logs one line with the process name, the pid, how
+  long the process ran and its CPU seconds, and nothing else.
+- **What keeps a browser.** Its launcher still running, or something
+  connected to it. A unit of its own does not, for Chromium: as soon as
+  Chromium can reach dev's user bus it moves itself into
+  `app-org.chromium.Chromium-<pid>.scope` under dev's `app.slice`,
+  whatever unit or scope it was started in, so its cgroup says nothing
+  about where the user put it. The `guest-stray-browser` VM test prints
+  that cgroup (`MEASURE real chromium cgroup`); the run of 2026-11-11
+  that found it had started the browser with
+  `systemd-run --user --unit keepc`, which the proposal had offered as
+  the way to keep one. Chromium with no user bus to reach, which is the
+  agents' browser in its system unit, stays where it is put -- and
+  because that is an accident of its environment, a process listening on
+  9225 is excluded by name above. Playwright's `chrome-headless-shell`,
+  which is the 7.4 hours this rule is for, has no such integration and
+  stays in the unit it is given, which is why the `.service` condition
+  is kept. The docs promise only the two conditions that hold for every
+  browser.
 - A crashed or killed browser starts again on the next DevTools
   connection with the same profile, and both MCP servers reconnect on
   their next call.
@@ -217,7 +280,15 @@ its password field; a new CLI against an older base opens stock noVNC's
   served on 6080, a real RFB client authenticates with the boot's
   password and receives the framebuffer, its SetDesktopSize changes the X
   screen and the browser's window to the requested size, the password
-  survives a stop and start of the display, and the idle stops hold.
+  survives a stop and start of the display, and the idle stops hold --
+  both thresholds, the short request that stamps the clock, the tabs
+  that come back with no warming request, and the viewer that keeps the
+  browser up while nothing drives it. The guest-stray-browser VM test
+  runs the real guestd against four browsers in one twelve-minute quiet
+  window and stops the one orphan.
+- `golang.org/x/sys/unix` pidfds make the stray's signal safe against a
+  reused pid; `internal/guestd/sample/stray_test.go` drives each of the
+  five conditions on a fixture `/proc`.
 
 ## Why Claude in Chrome cannot work here
 

@@ -9,7 +9,9 @@
 # (DECISIONS I-296), the same endpoint is served by
 # repose-browser-bridge.socket instead, whose proxy reaches the laptop's
 # own Chrome through the CLI's reverse tunnel on 127.0.0.1:9226; the MCP
-# servers notice nothing but a reconnect. That browser runs in the system slice
+# servers notice nothing but a reconnect. The browser stops when nobody
+# drives it (desktop.nix, DECISIONS I-1122) and comes back with the tabs
+# it had. That browser runs in the system slice
 # repose-browser.slice; the MCP servers and any chromium a user starts run
 # in the per-user slice of the same name, so a runaway page cannot take the
 # agent down with it. A renderer the ceiling kills ends that tab, not the
@@ -157,11 +159,27 @@ let
   # launches (which pass --enable-unsafe-swiftshader too).
   browserStart = pkgs.writeShellScript "repose-browser-start" ''
     mkdir -p ${profileDir}
+    prefs=${profileDir}/Default/Preferences
     # A kill leaves the profile marked as crashed, and Chromium then offers
     # to restore the last session on top of the agent's page.
     ${pkgs.gnused}/bin/sed -i -e 's/"exit_type":"Crashed"/"exit_type":"Normal"/' \
       -e 's/"exited_cleanly":false/"exited_cleanly":true/' \
-      ${profileDir}/Default/Preferences 2>/dev/null || true
+      "$prefs" 2>/dev/null || true
+    # The idle stop takes the agent's pages with it, so the next start
+    # brings them back: restore_on_startup 1 is Chromium's "continue
+    # where you left off" (DECISIONS I-1122). Each page reloads, so
+    # in-page state and form input are lost and the logins in the
+    # profile are not. A URL on the command line would be opened beside
+    # the restored tabs and leave one more about:blank at every start,
+    # so it is passed only for a profile that has never run.
+    if [ -s "$prefs" ] \
+       && (umask 077; ${pkgs.jq}/bin/jq '.session.restore_on_startup = 1' "$prefs" > "$prefs.repose" 2>/dev/null); then
+      mv -f "$prefs.repose" "$prefs"
+      set --
+    else
+      rm -f "$prefs.repose"
+      set -- about:blank
+    fi
     exec ${pkgs.chromium}/bin/chromium \
       --user-data-dir=${profileDir} \
       --remote-debugging-port=${toString backendPort} \
@@ -170,7 +188,7 @@ let
       --hide-crash-restore-bubble \
       --disable-gpu --enable-unsafe-swiftshader \
       --start-maximized --window-position=0,0 \
-      about:blank
+      "$@"
   '';
 
   # A kill leaves Chromium's profile lock behind, which stops the next
@@ -363,6 +381,17 @@ in
     };
   };
 
+  # The proxy stamps last-cdp when it starts, and exits ten seconds after
+  # its last connection closes, so the next connection stamps again
+  # (DECISIONS I-1122). That is what closes I-948's gap: the idle check
+  # reads bytes off *established* sockets, so a DevTools request that
+  # opens and closes between two checks took its bytes with it and a
+  # machine reached only by short requests had its browser stopped while
+  # it was in use. systemd-socket-proxyd supports Accept=no alone (its
+  # man page, the sentence on socat), so the stamp is per proxy start
+  # rather than per connection; a short request that arrives while
+  # another connection is held open is still unseen, and that
+  # connection's own bytes answer for it.
   systemd.services.repose-browser-proxy = {
     description = "repose: proxy ${toString cdpPort} to the agents' browser, starting it";
     restartIfChanged = false;
@@ -370,7 +399,9 @@ in
     bindsTo = [ "repose-browser.service" ];
     after = [ "repose-browser.service" ];
     serviceConfig = {
-      ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd 127.0.0.1:${toString backendPort}";
+      # Written as root and left dev's, whoever made it first (I-727).
+      ExecStartPre = "+${stamp}/bin/repose-desktop-stamp last-cdp";
+      ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd --exit-idle-time=10s 127.0.0.1:${toString backendPort}";
       PrivateTmp = true;
       DynamicUser = true;
     };
